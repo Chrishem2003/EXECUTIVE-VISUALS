@@ -11,7 +11,7 @@ RUN set -eux; \
     url="https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.0/${asset}"; \
     curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 "$url" --output /tmp/c2pa-node.zip; \
     echo "$digest  /tmp/c2pa-node.zip" | sha256sum --check -; \
-    entry="$(unzip -Z1 /tmp/c2pa-node.zip | head -n 1)"; \
+    entry="$(unzip -Z1 /tmp/c2pa-node.zip | sed -n '1p')"; \
     test -n "$entry"; \
     unzip -p /tmp/c2pa-node.zip "$entry" > /opt/c2pa/index.node; \
     test -s /opt/c2pa/index.node; \
