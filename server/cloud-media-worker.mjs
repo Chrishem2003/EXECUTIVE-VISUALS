@@ -70,7 +70,7 @@ export function createCloudMediaWorker({
         workerId,
         execute: executor,
         leaseSeconds: options.leaseSeconds ?? 90,
-        heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15000,
+        heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15000,\n        signal: options.signal,
         onProgress: options.onProgress ?? (() => {}),
         onEvent: options.onEvent ?? (() => {})
       });
