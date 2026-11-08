@@ -12,7 +12,7 @@ export function normalizeCreativeGraphSnapshot(graph,projectId){
  for(const item of graph.nodes){
   if(!item||typeof item.id!=="string"||!item.id.trim()||item.id.length>240||!NODE_TYPES.has(item.type)||typeof item.label!=="string"||item.label.length>240||!STATUSES.has(item.status)||nodeIds.has(item.id))throw new Error("CREATIVE_GRAPH_SNAPSHOT_INVALID");
   nodeIds.add(item.id);
-  nodes.push({id:item.id,type:item.type,label:item.label,detail:typeof item.detail==="string"?item.detail.slice(0,2000):undefined,status:item.status});
+  nodes.push({id:item.id,type:item.type,label:item.label,...(typeof item.detail==="string"?{detail:item.detail.slice(0,2000)}:{}),status:item.status});
  }
  if(!nodeIds.has("project:"+projectId))throw new Error("CREATIVE_GRAPH_PROJECT_MISMATCH");
  const edges=[];
