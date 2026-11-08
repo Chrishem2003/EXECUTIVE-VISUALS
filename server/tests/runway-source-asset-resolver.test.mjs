@@ -143,6 +143,24 @@ test("Runway source resolver enforces the byte limit when Content-Length is abse
   assert.equal(cancelled, true);
 });
 
+test("Runway source resolver cancels response bodies rejected by metadata headers", async () => {
+  let cancelled = false;
+  const { resolver } = fixture({
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(1024)); },
+      cancel() { cancelled = true; }
+    }), {
+      status: 200,
+      headers: { "content-type": "video/mp4", "content-length": "2048" }
+    })
+  });
+  await assert.rejects(
+    () => resolver.prepare({ operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED"
+  );
+  assert.equal(cancelled, true);
+});
+
 test("Runway source preparation validates content type and byte length against asset metadata", async () => {
   const { resolver } = fixture({
     fetchImpl: async () => new Response(bytes, {
