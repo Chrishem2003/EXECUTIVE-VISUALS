@@ -113,3 +113,6 @@ Supabase-authenticated accounts can request a password reset from the sign-in sc
 
 
 See [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md) for the verified free-tier infrastructure audit, safe target architecture and exact gates required before the app can be called durable or production-ready.
+
+
+For the complete merged-vs-pending feature inventory, ordered consolidation plan and production release gates, see [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md).
