@@ -85,7 +85,11 @@ Current C2PA settings:
 | Variable | Purpose | Guidance |
 |---|---|---|
 | `C2PA_TRUST_ANCHORS` | PEM root trust-anchor file path | Optional administrator-controlled root anchors. |
-| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier and signer | Defaults to 250 MiB; retain a conservative limit. |\n| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; enabling it alone does not provision a signer. |\n| `C2PA_SIGNING_KEY_REF` | External KMS/HSM key reference | Identifier only; never store private key material here. |\n| `C2PA_TSA_URL` | Timestamp authority | HTTPS endpoint; required by default for signing. |\n| `C2PA_SIGNING_MEDIA_ROOT` | Private signing workspace root | Must match the cloud worker's `CLOUD_WORKER_TEMP_ROOT`; use a dedicated, private scratch directory. |
+| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier and signer | Defaults to 250 MiB; retain a conservative limit. |
+| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; enabling it alone does not provision a signer. |
+| `C2PA_SIGNING_KEY_REF` | External KMS/HSM key reference | Identifier only; never store private key material here. |
+| `C2PA_TSA_URL` | Timestamp authority | HTTPS endpoint; required by default for signing. |
+| `C2PA_SIGNING_MEDIA_ROOT` | Private signing workspace root | Must match the cloud worker's `CLOUD_WORKER_TEMP_ROOT`; use a dedicated, private scratch directory. |
 
 Planned signing and lineage constraints:
 
@@ -122,7 +126,11 @@ The API reads configuration from environment variables. Important settings inclu
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase public client key | Configure as deployment secret/config; never commit credentials. |
 | `COOKIE_SECURE` | Secure cookie override | Set to `true` behind HTTPS where required. |
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
-| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |\n| `CLOUD_WORKER_TEMP_ROOT` | Private cloud worker scratch directory | Must exist and be private; when C2PA signing is enabled it must match `C2PA_SIGNING_MEDIA_ROOT`. |\n| `C2PA_TRUST_ANCHORS` | PEM public trust bundle path | Administrator-managed, read-only public certificates only. |\n| `C2PA_MAX_VERIFY_BYTES` | C2PA parser/signing size limit | Defaults to 250 MiB. |\n| `C2PA_SIGNING_MEDIA_ROOT` | Dedicated signing workspace root | Must match `CLOUD_WORKER_TEMP_ROOT`; never use a shared or browser-writable directory. |
+| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |
+| `CLOUD_WORKER_TEMP_ROOT` | Private cloud worker scratch directory | Must exist and be private; when C2PA signing is enabled it must match `C2PA_SIGNING_MEDIA_ROOT`. |
+| `C2PA_TRUST_ANCHORS` | PEM public trust bundle path | Administrator-managed, read-only public certificates only. |
+| `C2PA_MAX_VERIFY_BYTES` | C2PA parser/signing size limit | Defaults to 250 MiB. |
+| `C2PA_SIGNING_MEDIA_ROOT` | Dedicated signing workspace root | Must match `CLOUD_WORKER_TEMP_ROOT`; never use a shared or browser-writable directory. |
 | `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; do not enable without an approved protected signer provider. |
 | `C2PA_SIGNING_KEY_REF` | External key reference | Identifier only; never a private key or secret value. |
 | `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
