@@ -60,7 +60,7 @@ For media processing, install FFmpeg and FFprobe and ensure both executables are
 Executive Visuals does not use the existing NEMA or shared Chrishem Supabase projects. Until a separately funded hosted environment is approved, use the isolated local Supabase stack and disposable CI verification. No billing upgrade or new hosted resource is required.
 
 - [Zero-cost local staging guide](docs/LOCAL-STAGING.md) — Windows/Docker setup, local-only credentials, worker startup and safety boundaries.
-- CI job `supabase-local-stack` starts the Supabase stack in an isolated GitHub runner, applies every migration, verifies all 13 application tables have RLS enabled, checks the private media bucket and storage policies, then tears the stack down.
+- CI job `supabase-local-stack` starts the Supabase stack in an isolated GitHub runner, applies every migration, verifies all 14 application tables have RLS enabled, checks the private media bucket and storage policies, then tears the stack down.
 - This verifies migrations and local service integration; it is not a publicly accessible hosted staging deployment and does not claim hosted backups, public OAuth callbacks or always-on worker availability.
 
 Never link this local environment to the NEMA projects or run remote database-push commands as part of local setup.
