@@ -110,3 +110,6 @@ Project collaboration in the Runtime Console now includes a visible member list,
 ### Account recovery
 
 Supabase-authenticated accounts can request a password reset from the sign-in screen and set a new password using the short-lived recovery token returned in the email link. The server uses a fixed `PUBLIC_APP_URL` redirect (never a user-supplied redirect), validates the recovery session before updating the password, and returns an enumeration-safe confirmation message. Configure `PUBLIC_APP_URL=https://executive-visuals.onrender.com` on the application service and add that exact URL to the Supabase Auth redirect allowlist before using the flow. Recovery email delivery depends on the Supabase Auth email provider and its rate limits; no SMTP provider is configured by this code.
+
+
+See [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md) for the verified free-tier infrastructure audit, safe target architecture and exact gates required before the app can be called durable or production-ready.
