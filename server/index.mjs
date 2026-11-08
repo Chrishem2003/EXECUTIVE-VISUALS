@@ -523,6 +523,50 @@ export function createAppServer() {
           send(res,200,{ok:true},cors);return;
         }
       }
+      const creativeGraphSnapshotMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-graph\/snapshot$/i);
+      if(creativeGraphSnapshotMatch){
+        const projectId=creativeGraphSnapshotMatch[1],project=getProjectAccess(db,user.id,projectId);
+        if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){
+          const row=db.prepare("SELECT id,revision,graph_hash,graph_json,created_at FROM creative_graph_snapshots WHERE project_id=? ORDER BY revision DESC LIMIT 1").get(projectId);
+          send(res,200,{snapshot:row?{id:row.id,revision:row.revision,graphHash:row.graph_hash,graph:parseJson(row.graph_json),createdAt:row.created_at}:null},cors);return;
+        }
+        if(req.method==="POST"){
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"CREATIVE_GRAPH_SNAPSHOT_FORBIDDEN","Editor access is required to record a review baseline.");return;}
+          const body=await readJson(req,2*1024*1024),graph=body.graph;
+          const nodeTypes=new Set(["project","brief","intent","evidence","evidence_candidate","character","world_record","scene","shot","timeline","clip","asset"]);
+          const relations=new Set(["contains","guides","supports","features","uses","appears_in","derived_from","evidence_for"]);
+          const statuses=new Set(["linked","needs_evidence","review"]);
+          if(!graph||!Array.isArray(graph.nodes)||!Array.isArray(graph.edges)||graph.nodes.length<1||graph.nodes.length>1000||graph.edges.length>5000){
+            fail(res,400,"CREATIVE_GRAPH_SNAPSHOT_INVALID","A graph with 1–1000 nodes and at most 5000 edges is required.");return;
+          }
+          const nodes=[],nodeIds=new Set();
+          for(const item of graph.nodes){
+            if(!item||typeof item.id!=="string"||!item.id.trim()||item.id.length>240||!nodeTypes.has(item.type)||typeof item.label!=="string"||item.label.length>240||!statuses.has(item.status)||nodeIds.has(item.id)){
+              fail(res,400,"CREATIVE_GRAPH_SNAPSHOT_INVALID","Graph nodes must have unique bounded IDs, known types, labels and statuses.");return;
+            }
+            nodeIds.add(item.id);
+            nodes.push({id:item.id,type:item.type,label:item.label,detail:typeof item.detail==="string"?item.detail.slice(0,2000):undefined,status:item.status});
+          }
+          if(!nodeIds.has("project:"+projectId)){
+            fail(res,400,"CREATIVE_GRAPH_PROJECT_MISMATCH","The graph must contain the selected project node.");return;
+          }
+          const edges=[];
+          for(const item of graph.edges){
+            if(!item||!nodeIds.has(item.from)||!nodeIds.has(item.to)||!relations.has(item.relation)||!["explicit","project_scope"].includes(item.evidence)){
+              fail(res,400,"CREATIVE_GRAPH_SNAPSHOT_INVALID","Every edge must connect known nodes with a supported relation and evidence class.");return;
+            }
+            edges.push({from:item.from,to:item.to,relation:item.relation,evidence:item.evidence});
+          }
+          const normalized={nodes,edges},graphJson=stableJson(normalized),graphHash=hash(graphJson);
+          const revision=Number(db.prepare("SELECT COALESCE(MAX(revision),0)+1 AS revision FROM creative_graph_snapshots WHERE project_id=?").get(projectId).revision);
+          const id=randomUUID();
+          db.prepare("INSERT INTO creative_graph_snapshots(id,project_id,owner_id,revision,graph_hash,graph_json) VALUES(?,?,?,?,?,?)").run(id,projectId,user.id,revision,graphHash,graphJson);
+          audit(db,user.id,"creative_graph.snapshot_created","creative_graph_snapshot",id,{revision,graphHash,nodeCount:nodes.length,edgeCount:edges.length},projectId);
+          send(res,201,{snapshot:{id,revision,graphHash,graph:normalized,createdAt:now()}},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for creative graph snapshots.");return;
+      }
       const projectMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)$/i);
       if(projectMatch){
         const id=projectMatch[1],project=getProjectAccess(db,user.id,id);if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
