@@ -26,6 +26,7 @@ The application now includes a local API service with:
 - User-owned projects, project-scoped creative workspace documents and optimistic revision checks.
 - Binary media uploads to local disk with SHA-256 integrity metadata.
 - Asset ownership isolation and original/derivative relationships.
+- Server-side C2PA manifest inspection through the official CAI Node SDK in the Docker runtime, with separate `not_found`, `invalid`, `valid`, `trusted` and `indeterminate` outcomes.
 - Persistent workflow records and an observable job/event queue with renewable leases, stale-worker recovery, bounded retries, backoff and cross-process cancellation polling.
 - A local FFmpeg media adapter for probe, thumbnail, transcode, audio extraction, proxy generation and master-timeline rendering with synchronized audio, still-image overlays and burned-in captions when FFmpeg/FFprobe are installed.
 - Explicit rejection of unimplemented image/video/speech generation; no fake success. A server-side text gateway is available but disabled by default, requires a completed upstream human-approval node, and requires explicit remote-access opt-in for non-local endpoints.
@@ -38,6 +39,8 @@ The browser and API run together in development. SQLite and media files are stor
 ## Run locally
 ```bash
 npm install
+# Optional local C2PA inspection support (the Docker image installs this automatically)
+npm install --no-save --package-lock=false @contentauth/c2pa-node@0.10.0
 npm run dev
 ```
 Open the Vite URL (normally http://localhost:5173). The API health endpoint is http://127.0.0.1:4179/api/health.
@@ -65,7 +68,7 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 ## Research and implementation records
 - [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, phased backlog and acceptance evidence.
 
-- [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
+- [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, authenticated C2PA inspection and remaining signing/lineage work.
 
 
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
