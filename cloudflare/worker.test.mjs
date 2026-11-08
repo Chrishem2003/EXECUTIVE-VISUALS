@@ -63,8 +63,9 @@ test("D1 Worker authenticates through the existing API before creating staging r
     headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
     body: JSON.stringify({ name: "D1 staging project", settings: { fps: 24 } })
   }), env);
-  assert.equal(create.status, 201);
-  const created = await create.json();
+  const createdResponse = await create.json();
+  assert.equal(create.status, 201, JSON.stringify(createdResponse));
+  const created = createdResponse;
   assert.equal(created.project.name, "D1 staging project");
   assert.equal(created.project.ownerId, userId);
   assert.equal(created.storage, "cloudflare-d1-staging");
