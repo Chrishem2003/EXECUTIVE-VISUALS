@@ -50,7 +50,9 @@ export function createRunwaySourceAssetResolver({
     const allowed = kinds === "image" ? IMAGE_TYPES : kinds === "audio" ? AUDIO_TYPES : VIDEO_TYPES;
     if (!allowed.has(asset.mediaType)) throw fail("Source asset media type is not supported for this operation.", "VIDEO_INPUT_ASSET_TYPE_INVALID");
     const signed = await assets.createSignedUrl({ ownerId, assetId, expiresIn: 300 });
-    if (!signed?.asset || signed.asset.id !== assetId || signed.asset.objectPath !== asset.objectPath ||
+    if (!signed?.asset || signed.asset.id !== assetId ||
+        (signed.asset.projectId || null) !== (asset.projectId || null) ||
+        signed.asset.objectPath !== asset.objectPath ||
         signed.asset.storageBucket !== "executive-visuals-media") {
       throw fail("Private source signing returned a mismatched asset record.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
     }
@@ -167,7 +169,8 @@ export function createRunwaySourceAssetResolver({
           referenceImages.push({ uri: first.url, role: "first" });
         }
         const imageIds = input.referenceImageAssetIds || input.referenceAssetIds || [];
-        if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4)) {
+        if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4) ||
+            new Set(imageIds).size !== imageIds.length || firstFrameId && imageIds.includes(firstFrameId)) {
           throw fail("Runway Model Router accepts at most four owner-scoped reference images including the first frame.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         for (const assetId of imageIds) {
@@ -177,7 +180,7 @@ export function createRunwaySourceAssetResolver({
         const sourceVideoId = input.sourceVideoAssetId || null;
         const videoIds = input.referenceVideoAssetIds || [];
         if (!Array.isArray(videoIds) || videoIds.length > (sourceVideoId ? 1 : 2) ||
-            sourceVideoId && videoIds.includes(sourceVideoId)) {
+            new Set(videoIds).size !== videoIds.length || sourceVideoId && videoIds.includes(sourceVideoId)) {
           throw fail("Runway Model Router accepts one source video and at most one distinct reference video.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         const referenceVideos = [];
