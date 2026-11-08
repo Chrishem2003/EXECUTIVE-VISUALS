@@ -129,6 +129,32 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       return mapProject(row);
     },
 
+    async getWorkspaceDocument({ actorId, projectId } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID");
+      const access = await projectAccess(actorId, projectId);
+      if (!access) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+      const row = await db.prepare("SELECT revision, document_json, updated_at FROM ev_project_workspace_documents WHERE project_id = ? LIMIT 1").bind(projectId).first();
+      if (!row) throw new Error("Project workspace document is missing.");
+      return { document: parse(row.document_json), revision: Number(row.revision), updatedAt: row.updated_at };
+    },
+
+    async updateWorkspaceDocument({ actorId, projectId, expectedRevision, document } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID");
+      if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error("Expected workspace revision is invalid.");
+      if (!object(document) || json(document).length > 256 * 1024) throw new Error("Workspace document must be an object no larger than 256 KB.");
+      const access = await projectAccess(actorId, projectId);
+      if (!access) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+      if (access.actor_role === "viewer" || access.actor_role === "reviewer") { const error = new Error("Project workspace is read-only for this member."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+      const row = await db.prepare(`
+        UPDATE ev_project_workspace_documents
+        SET document_json = ?, revision = revision + 1, updated_at = ?
+        WHERE project_id = ? AND revision = ?
+        RETURNING revision, document_json, updated_at
+      `).bind(json(document), clock(), projectId, expectedRevision).first();
+      if (!row) { const error = new Error("Workspace revision changed."); error.code = "D1_PROJECT_REVISION_CONFLICT"; throw error; }
+      return { document: parse(row.document_json), revision: Number(row.revision), updatedAt: row.updated_at };
+    },
+
     async addMember({ actorId, projectId, memberId, role } = {}) {
       validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID"); validUuid(memberId, "Member ID");
       if (!["editor", "reviewer", "viewer"].includes(role)) throw new Error("Project member role is invalid.");
