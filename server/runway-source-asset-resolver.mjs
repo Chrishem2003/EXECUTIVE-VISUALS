@@ -79,7 +79,9 @@ export function createRunwaySourceAssetResolver({
     const allowed = kinds === "image" ? IMAGE_TYPES : kinds === "audio" ? AUDIO_TYPES : VIDEO_TYPES;
     if (!allowed.has(asset.mediaType)) throw fail("Source asset media type is not supported for this operation.", "VIDEO_INPUT_ASSET_TYPE_INVALID");
     const signed = await assets.createSignedUrl({ ownerId, assetId, expiresIn: 300 });
-    if (!signed?.asset || signed.asset.id !== assetId || signed.asset.objectPath !== asset.objectPath ||
+    if (!signed?.asset || signed.asset.id !== assetId ||
+        (signed.asset.projectId || null) !== (asset.projectId || null) ||
+        signed.asset.objectPath !== asset.objectPath ||
         signed.asset.storageBucket !== "executive-visuals-media") {
       throw fail("Private source signing returned a mismatched asset record.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
     }
