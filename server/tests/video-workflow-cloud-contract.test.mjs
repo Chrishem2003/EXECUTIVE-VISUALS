@@ -149,7 +149,7 @@ test("cloud node contract resolves through the existing owner-scoped Model Route
         const asset = records.get(assetId);
         if (!asset || asset.ownerId !== requestedOwner) return null;
         return {
-          asset: { id: asset.id, objectPath: asset.objectPath, storageBucket: asset.storageBucket },
+          asset: { id: asset.id, projectId: asset.projectId, objectPath: asset.objectPath, storageBucket: asset.storageBucket },
           url: "https://project.supabase.co/storage/v1/object/sign/" + asset.objectPath + "?token=test"
         };
       }
