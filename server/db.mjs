@@ -163,6 +163,38 @@ export function openDatabase(filename) {
     CREATE INDEX IF NOT EXISTS model_usage_owner_idx ON model_usage_events(owner_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_project_idx ON model_usage_events(project_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_job_idx ON model_usage_events(job_id);
+    CREATE TABLE IF NOT EXISTS evidence_records (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      source_asset_id TEXT NOT NULL REFERENCES assets(id),
+      source_sha256 TEXT NOT NULL,
+      target_type TEXT NOT NULL CHECK(target_type IN ('project','scene','shot','timeline','asset')),
+      target_id TEXT NOT NULL,
+      evidence_kind TEXT NOT NULL,
+      claim TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT '',
+      source_ref TEXT NOT NULL DEFAULT '',
+      observed_at TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','needs_review','verified','rejected')),
+      review_note TEXT NOT NULL DEFAULT '',
+      reviewed_by TEXT REFERENCES users(id),
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS evidence_records_project_idx ON evidence_records(project_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS evidence_records_asset_idx ON evidence_records(source_asset_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS evidence_records_target_idx ON evidence_records(target_type,target_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS evidence_record_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      evidence_id TEXT NOT NULL REFERENCES evidence_records(id),
+      actor_id TEXT NOT NULL REFERENCES users(id),
+      event_type TEXT NOT NULL CHECK(event_type IN ('submitted','reviewed')),
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS evidence_record_events_evidence_idx ON evidence_record_events(evidence_id,id);
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_id TEXT NOT NULL REFERENCES users(id),
