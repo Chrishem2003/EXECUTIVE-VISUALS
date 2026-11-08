@@ -1,4 +1,6 @@
 name: Quality checks
+permissions:
+  contents: write
 on:
   push:
     branches: [main]
@@ -25,6 +27,14 @@ jobs:
           fc-match "DejaVu Sans"
       - name: Generate lockfile for pinned CAI SDK (temporary bootstrap)
         run: npm install --package-lock-only --ignore-scripts
+      - name: Commit generated lockfile (temporary bootstrap)
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build(deps): lock official CAI C2PA SDK" || true
+          git push origin "HEAD:${{ github.head_ref }}"
       - run: npm ci
       - name: Upload generated lockfile (temporary bootstrap)
         uses: actions/upload-artifact@v4
