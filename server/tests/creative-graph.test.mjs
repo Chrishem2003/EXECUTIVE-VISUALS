@@ -83,3 +83,26 @@ test("revision comparison distinguishes added and removed production nodes",()=>
  assert.ok(comparison.removedNodeIds.includes("shot:shot-1"));
  assert.ok(comparison.changedNodeIds.includes("scene:scene-1"));
 });
+
+test("submitted evidence is a source reference, not proof, until a reviewer verifies it",()=>{
+ const record={id:"evidence-submitted",projectId:"project-1",sourceAssetId:"asset-1",sourceSha256:"a".repeat(64),target:{type:"shot",id:"shot-1"},kind:"performance_observation",claim:"The presenter demonstrates the approved product workflow.",status:"submitted"};
+ const graph=buildCreativeGraph({...fixture,evidenceRecords:[record]});
+ assert.ok(graph.edges.some(edge=>edge.from==="asset:asset-1"&&edge.to==="evidence:evidence-submitted"&&edge.relation==="derived_from"));
+ assert.ok(graph.edges.some(edge=>edge.from==="evidence:evidence-submitted"&&edge.to==="shot:shot-1"&&edge.relation==="evidence_for"));
+ assert.equal(graph.edges.some(edge=>edge.from==="evidence:evidence-submitted"&&edge.to==="shot:shot-1"&&edge.relation==="supports"),false);
+ assert.equal(graph.nodes.find(node=>node.id==="evidence:evidence-submitted").status,"review");
+});
+
+test("verified evidence supports a target only when source hash, project and target all resolve",()=>{
+ const record={id:"evidence-verified",projectId:"project-1",sourceAssetId:"asset-1",sourceSha256:"a".repeat(64),target:{type:"shot",id:"shot-1"},kind:"performance_observation",claim:"The presenter demonstrates the approved product workflow.",status:"verified"};
+ const graph=buildCreativeGraph({...fixture,evidenceRecords:[record]});
+ assert.ok(graph.edges.some(edge=>edge.from==="evidence:evidence-verified"&&edge.to==="shot:shot-1"&&edge.relation==="supports"));
+ assert.equal(graph.nodes.find(node=>node.id==="evidence:evidence-verified").status,"linked");
+ const badHash=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-tampered",sourceSha256:"b".repeat(64)}]});
+ assert.ok(badHash.unlinkedEvidence.includes("evidence-tampered"));
+ assert.equal(badHash.edges.some(edge=>edge.to==="evidence:evidence-tampered"),false);
+ assert.equal(badHash.edges.some(edge=>edge.from==="evidence:evidence-tampered"),false);
+ const badTarget=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-target-missing",target:{type:"shot",id:"missing"}}]});
+ assert.ok(badTarget.unlinkedEvidence.includes("evidence-target-missing"));
+ assert.equal(badTarget.nodes.find(node=>node.id==="evidence:evidence-target-missing").status,"review");
+});
