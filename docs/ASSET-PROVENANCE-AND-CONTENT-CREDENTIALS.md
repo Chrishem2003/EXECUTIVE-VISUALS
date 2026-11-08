@@ -81,3 +81,6 @@ The provenance test suite verifies deterministic record creation, record tamperi
 The browser app now includes **Manage → Trust & provenance**, a concise evidence ledger showing completed implementation stages, the exact verification scope, and release gates that remain open. It links to the Asset Library's authenticated per-asset inspection panel, PR #249 and CI evidence. The page does not equate a valid signature with trusted identity, rights clearance or factual accuracy, and does not represent an unconfigured KMS/HSM or staging environment as complete.
 
 A 96 MiB streaming preservation stress test now exercises file-backed copy, streamed checksum verification, ingredient validation and final output integrity. The near-limit performance/memory profile remains a separate release gate.
+
+
+The Asset Library only offers direct C2PA inspection for media types covered by the current app/CAI overlap (JPEG, PNG, WebP, GIF, MP3, WAV, M4A, MP4 and MOV). For app-ingestible WebM, MKV and OGG assets, the UI explicitly says C2PA inspection is unsupported by the current format matrix instead of presenting a misleading inspection action. These ingest formats remain outside the C2PA signing/preservation claim until a supported SDK path is tested.
