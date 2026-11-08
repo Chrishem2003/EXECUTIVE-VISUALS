@@ -25,7 +25,7 @@ assert.match(docker,/RUN npm run build/);
 assert.match(docker,/FROM node:24\\.22\\.1-bookworm-slim AS runtime/);
 assert.match(docker,/sha256sum --check/);
 assert.match(docker,/TARGETARCH/);
-assert.match(docker,/--exclude=server\\/tests/);
+assert.ok(docker.includes("--exclude=server/tests"));
 assert.match(docker,/COPY --from=build \/app\/runtime-server/);
 assert.doesNotMatch(docker,/COPY --from=build \/app\/server/);
 assert.match(docker,/COPY --from=build \/app\/dist/);
