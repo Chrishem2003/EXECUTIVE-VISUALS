@@ -127,3 +127,34 @@ test("signer rejects output overwrite and paths outside its media root", async t
   await assert.rejects(() => sign({ inputPath: source, outputPath: output, mimeType: "image/png", actionDescription: "Edit" }), error => error.code === "C2PA_OUTPUT_ALREADY_EXISTS");
   await assert.rejects(() => sign({ inputPath: source, outputPath: join(tmpdir(), "outside.png"), mimeType: "image/png", actionDescription: "Edit" }), error => error.code === "C2PA_ASSET_PATH_OUTSIDE_MEDIA_ROOT");
 });
+
+test("cancellation during protected signing aborts publication and removes the partial output", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-cancel-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const sourcePath = join(dir, "source.png"), inputPath = join(dir, "transformed.png"), outputPath = join(dir, "cancelled.png");
+  await writeFile(sourcePath, onePixelPng());
+  await writeFile(inputPath, onePixelPng(0, 255, 0));
+  const controller = new AbortController();
+  const sign = createC2paTransformationSigner({
+    enabled: true, mediaRoot: dir, certificateChain, keyRef: "test-cancel-key",
+    requireTimestamp: false,
+    signingProvider: {
+      async sign({ payload, signal }) {
+        assert.equal(signal, controller.signal);
+        const signer = createSign("SHA256");
+        signer.update(payload);
+        signer.end();
+        controller.abort();
+        return signer.sign(privateKey);
+      }
+    },
+    sdkLoader: () => import("@contentauth/c2pa-node")
+  });
+  await assert.rejects(() => sign({
+    inputPath, sourcePath, outputPath, mimeType: "image/png", sourceMimeType: "image/png",
+    actionDescription: "Cancelled edit", signal: controller.signal
+  }), error => error.code === "JOB_CANCELLED");
+  await assert.rejects(() => stat(outputPath));
+});
