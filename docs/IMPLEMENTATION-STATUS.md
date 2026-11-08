@@ -460,7 +460,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 
 ## New implementation slice — asset provenance (PR #235)
 
-**Status:** implemented on `feat/asset-provenance-ledger-v1`; awaiting final CI/review before promotion.
+**Status:** merged into `main` via PR #235 (squash commit `e0d379c157fd686d0f9a3c50213c02648c384bbd`). GitHub Quality checks passed on the exact reviewed PR head `68348abf04e4b7f5178c0adb5ca6c0243369e035` before merge; no production deployment was performed.
 
 - New uploads receive a canonical SHA-256 application provenance record bound to asset ID, content hash, media type, byte size, source kind and ingest timestamp.
 - The record is persisted with the existing asset metadata and its hash is included in the upload audit event.
