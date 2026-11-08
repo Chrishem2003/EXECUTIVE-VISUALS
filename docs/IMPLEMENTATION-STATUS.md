@@ -456,3 +456,27 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+## Governed cloud Video Studio workflow bridge — 8 November 2026
+
+**Branch:** feat/p0-workflow-quote-ledger  
+**Pull request:** #248 (draft; not merged)
+
+### Implemented in source control
+- Durable, service-role-only workflow quote ledger, bound to verified actor, project owner, canonical request hash, operation, router config, route evidence, USD estimate and short expiry.
+- Non-billable quote API persists the quote before returning it; failed persistence fails closed.
+- Explicit approval API requires confirmed=true, project editor authorization, a bounded USD approval ceiling and current private-input revalidation.
+- Service-role-only PostgreSQL approval/enqueue RPC binds approval to the exact quote, config, request ID/hash and project; creates the existing budget approval, reserves the project budget, queues one durable job, and consumes the quote in a single transaction.
+- Exact idempotent retries return the original job, approval and reservation; conflicting retries fail.
+- Project-scoped runway/model-router budget policy must already be enabled. No default customer policy is created.
+- Added API and disposable PostgreSQL assertions, both migration sequences, README update and platform capability matrix.
+
+### Current release boundary
+- The API handlers do not submit provider tasks.
+- Remote router, gateway and worker flags remain independently gated.
+- Interactive workflow execution remains in legacy mode; video.generate nodes are not yet mapped to cloud job status or cloud asset outputs.
+- Provider-authoritative settlement, cancellation reconciliation, workflow-node progress, private output-to-timeline handoff and isolated staging acceptance remain incomplete.
+- No shared staging/production migration or deployment was performed; no paid generation or paid upgrade occurred.
+
+### Verification checkpoint
+The first integration attempt exposed a migration-order gap in the Google Drive workflow; that workflow now applies the quote and approval migrations before reusing the cloud-video PostgreSQL script. The next exact-head CI run must verify the corrected approval migration and argument order. Do not mark this bridge complete or merge PR #248 until both build and PostgreSQL workflows pass on the current head.
