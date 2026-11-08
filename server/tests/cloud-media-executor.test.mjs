@@ -221,7 +221,7 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
     });
     await assert.rejects(
       execute({ job: { id: "job-reject", owner_id: "owner", job_type: "media.upscale", input: { sourceAssetId: "asset-reject", width: 640, height: 360 } }, onProgress() {} }),
-      error => error.code === "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH"
+      error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED"
     );
     assert.equal(publishCount, 0, "invalid derivative must never be published");
   } finally {
@@ -454,7 +454,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
   await writeFile(source, pngHeader(10,10));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
@@ -462,7 +462,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
-  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":39,\"height\":40}]}' ;; esac");
   let published;
   try {
     const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
