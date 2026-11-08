@@ -520,3 +520,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - A job interrupted by graceful shutdown is persisted as `cancelled` while its lease remains valid. If the terminal update cannot be confirmed, durable lease recovery remains responsible; the worker does not claim success.
 - A shutdown signal received before claim prevents acquiring another job. Added worker-cycle and supervisor integration tests.
 - Next: complete storage publication/recovery reconciliation and exercise authorization across owner/editor/reviewer/viewer roles before production worker enablement.
+
+
+### Evidence source integrity hardening — 8 November 2026
+
+- Evidence submission and review now re-hash the actual managed file and compare its byte size and SHA-256 with the immutable asset record; missing or modified source bytes fail closed.
+- All evidence review decisions require a written rationale (minimum eight characters), retained with reviewer identity in the event history.
+- AI Director evidence cards display the source fingerprint plus available method and source reference.
+- Added API-level tamper and review-reason regression tests, in addition to the evidence-ledger unit test.
+- This verifies source-byte continuity at submission and review time; it does not establish factual truth, legal rights or C2PA trust.
