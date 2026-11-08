@@ -473,11 +473,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The authenticated provenance route first applies the existing asset authorization check, then returns separate application-integrity and C2PA verification results.
 - C2PA outcomes are mapped from the SDK's `validation_state`: `Invalid` → `invalid`, `Valid` → `valid_untrusted`, and `Trusted` → `valid_trusted` only when an administrator-controlled PEM trust anchor is configured. Without that policy, `Trusted` is conservatively downgraded to `valid_untrusted`.
 - The adapter checks the on-disk file and byte size, enforces a default 250 MiB parser limit, bounds returned validation findings, and fails closed on missing SDK, unknown state, unavailable files or SDK errors.
-- Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings and file safety. A separate integration test exercises the installed native SDK against a generated valid PNG without a manifest.
+- Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings, unsupported formats and file safety. Native integration tests exercise a valid unsigned PNG, generate a genuine signed PNG with an ephemeral test-only certificate chain, validate the untrusted/trusted paths and reject altered pixel data.
 - This integration is verification-only. It does not create manifests, sign media, preserve ingredients through transformations, prove identity, establish rights or verify factual accuracy.
 - Full build includes `verify:c2pa` and the existing provenance verification suite.
 
-**Next:** add genuine signed and byte-tampered image/video fixtures, validate the trust-anchor policy against a controlled test certificate, then implement ingredient-aware transformation manifests and protected callback signing. Production signing remains disabled.
+**Next:** expand genuine signed/tampered fixtures across supported video formats, validate certificate-chain/timestamp/revocation behavior, then implement ingredient-aware transformation manifests and protected callback signing. Production signing remains disabled.
 
 
 ### C2PA asset-library user journey
