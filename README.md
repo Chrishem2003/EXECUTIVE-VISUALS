@@ -11,6 +11,18 @@ The Cloudflare URL is an edge/frontend preview, **not an isolated staging enviro
 
 CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
+## Governed cloud video workflow progress
+
+The integration branch now has a non-billable Runway Model Router quote
+contract for supported `video.generate` workflow nodes. The quote is bound
+to the project and canonical request hash, and the quote ledger records its
+actor, provider/model/operation, routed model, estimate, pricing source and
+short expiry before the API returns it. Quote records are server-only and
+covered by disposable PostgreSQL CI checks. This is not yet paid execution:
+explicit quote approval, atomic customer-credit/provider-budget reservation,
+durable workflow job mapping and private output publication remain release
+gates. Cloud workflow mode and paid provider execution remain disabled.
+
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards. The AI Director now includes a deterministic Creative DNA compiler for audience promise, emotional journey, hook angles, visual grammar, sound identity, proof checks and platform cut planning.
 - Workflow canvas, typed media ports, server-side validation and targeted run planning.
