@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
+**Updated:** 8 November 2026  
+**Branch:** `feat/c2pa-node-provenance-verification` (provenance increment; based on `main`)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -25,6 +25,7 @@
 | Projects | Persistent project creation, listing, optimistic revision updates, archive and project-scoped creative workspace documents with revision conflict protection | SQLite local database; owner/editor writes and viewer reads |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; cloud storage upload/signing adapter is contract-tested but not connected to asset API |
+| Asset provenance and C2PA Content Credentials | Deterministic application provenance records on upload; authenticated `GET /api/assets/:assetId/c2pa` uses pinned `@contentauth/c2pa-node@0.10.0` Reader/Context APIs; checksum and size are checked before/after native parsing; statuses distinguish trusted, valid-but-untrusted, invalid, absent and unavailable; a real CAI-signed test PNG is generated and verified in CI | Verification only; only SDK `Trusted` state is trusted; no production signing key, trust anchor, signing endpoint or automatic transformation-chain preservation; Node 22.23.4+ required |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
@@ -61,7 +62,8 @@ The build pipeline runs:
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
 5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
-5. Real FFmpeg rendering and output inspection.
+5. Real CAI C2PA signing/Reader round-trip with an upstream test-only certificate, verifier trust-state and asset-integrity tests.
+6. Real FFmpeg rendering and output inspection.
 6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
 7. Production Vite build.
