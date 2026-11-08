@@ -406,3 +406,18 @@ The first real C2PA implementation slice is now on feature branch `feat/c2pa-ser
 ### Release posture
 
 This branch is implementation work, not a production release. Do not merge to `main` or deploy until native SDK CI, genuine signed fixtures, security review, full user journey and isolated staging gates pass. No production service, shared database, production storage or signing key has been modified.
+
+
+## 13. Implementation update — 8 November 2026: protected callback signer foundation
+
+A server-only `server/c2pa-signing.mjs` adapter has been added on `feat/c2pa-protected-signing`.
+
+- Uses CAI `Builder` and `CallbackSigner` to sign a new derivative manifest.
+- Requires an injected protected provider callback receiving only a key reference, algorithm and signing payload; no production private key enters the application.
+- Requires an HTTPS timestamp authority by default; the integration test explicitly opts out for the upstream test signer only.
+- Rejects path traversal/out-of-root paths, output overwrites, unsupported formats, oversized inputs and invalid source manifests.
+- Preserves an existing source manifest through `addIngredientFromReader`; unsigned source media receives an edit-intent parent ingredient.
+- Records a `c2pa.edited` action, verifies the signed output and returns checksum/size/ingredient metadata.
+- Integration tests use the public upstream CAI test-only signer fixture to sign two sequential edits and verify source ingredient lineage.
+
+This is not yet production signing: no KMS/HSM adapter, production certificate or TSA is configured, and the module is not connected to the production export worker. Keep the signing feature flag off. Next steps are worker/export integration, real protected key-provider wiring, timestamp/revocation policy, and supported video fixtures.
