@@ -297,7 +297,7 @@ test("Runway Model Router rejects duplicate reference video IDs before asset loo
 });
 
 test("Runway Model Router rejects a reference image repeated as the first frame", async () => {
-  const { resolver, calls } = fixture();
+  const { resolver, calls } = fixture({ mediaType: "image/png" });
   await assert.rejects(
     resolver.prepare({
       provider: "runway", model: "model-router", operation: "image-to-video",
