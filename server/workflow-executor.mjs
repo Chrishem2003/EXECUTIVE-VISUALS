@@ -21,6 +21,7 @@ import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRe
 import { buildMediaQualityReport } from "./media-quality.mjs";
 import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
 import { assertVideoWorkflowExecutionMode } from "./video-workflow-execution-mode.mjs";
+import { executeCloudVideoWorkflowNode } from "./workflow-cloud-video-bridge.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -90,7 +91,7 @@ function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attemp
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
   .run(status,attempt,json(input),output===null?null:json(output),error===null?null:json(error),["completed","failed","blocked","skipped"].includes(status)?now():null,runId,nodeId);
 }
-export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{}}){
+export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},cloudTimelineApi=null}){
  const input=parseJson(job.input_json),runId=String(input.runId||"");
  const run=db.prepare("SELECT * FROM workflow_runs WHERE id=?").get(runId);
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
@@ -302,10 +303,22 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const assetIds=assets.map(asset=>asset.id),asset=assets[0];
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.image=asset.id;output.images=assetIds;output.assetIds=assetIds;output.assets=assetIds;output.outputCount=assetIds.length;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
-    assertVideoWorkflowExecutionMode();
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
-    let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
+    if(String(config.provider||"")==="runway"&&String(config.model||"")==="model-router"){
+     assertVideoWorkflowExecutionMode("cloud",{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
+     const cloudStarted=Date.now();
+     const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
+      onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
+     recordModelUsage({db,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
+      provider:"runway",capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-cloudStarted});
+     output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
+     output.video=result.assetId;output.assetIds=result.assetIds;output.assets=result.assetIds;
+     output.mimeType="video/mp4";output.provider=result.provider;output.model=result.model;
+     output.cloudJobId=result.cloudJobId;output.quoteId=result.quoteId;output.costEvidenceReference=result.costEvidenceReference;
+    }else{
+     assertVideoWorkflowExecutionMode("legacy");
+     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     const explicitReference=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"face-animation",explicitReference);
@@ -364,6 +377,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:generationRequest.prompt,model:result.model,provenance,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
+    }
    }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??config.text??"");
