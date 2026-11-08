@@ -191,14 +191,16 @@ test("requires a database-verifiable lease identity before reserving a publicati
  await rm(root,{recursive:true,force:true});
 });
 
-test("a stale token is rejected by atomic finalization and its unique upload is compensated",async()=>{
+test("a stale token is rejected by atomic finalization and its unique upload is queued for tombstone cleanup",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-publication-stale-token-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
  const staleLease={...leaseContext,leaseToken:"723e4567-e89b-42d3-a456-426614174000"};
  await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease,assertLease:async()=>true}),error=>error.code==="CLOUD_ASSET_HTTP_409");
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
- assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,0,"an ambiguous finalization must not race a late database commit with an immediate delete");
+ const cleanup=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
+ assert.ok(cleanup,"the unique attempt object must be recorded for delayed tombstone cleanup");
  assert.equal(f.publicationReservation.status,"reserved");
  assert.equal(f.publicationAsset,null);
  await rm(root,{recursive:true,force:true});
@@ -347,5 +349,6 @@ test("queues durable cleanup when atomic publication finalization fails after up
  const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
  assert.ok(queued);
  assert.equal(JSON.parse(queued.options.body).object_path,f.storageCalls.find(call=>call.op==="uploadFile").path);
+ assert.equal(f.storageCalls.some(call=>call.op==="remove"),false,"uncertain finalization is never followed by an immediate storage delete");
  await rm(root,{recursive:true,force:true});
 });
