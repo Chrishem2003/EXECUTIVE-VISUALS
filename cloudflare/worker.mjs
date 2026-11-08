@@ -101,24 +101,24 @@ async function d1Api(request, env, url) {
 
   const repo = createD1Repository({ db: env.DB, allowR2: false });
   try {
-    await repo.resolvePrincipal({ subject: user.id, provider: user.provider, email: user.email });
+    const principal = await repo.resolvePrincipal({ subject: user.id, provider: user.provider, email: user.email });
     if (url.pathname === "/api/d1/projects" && request.method === "GET") {
-      const projects = await repo.listProjects({ actorId: user.id });
+      const projects = await repo.listProjects({ actorId: principal.id });
       return json({ projects, storage: "cloudflare-d1-staging" });
     }
     if (url.pathname === "/api/d1/projects" && request.method === "POST") {
       const body = await readJson(request);
-      const project = await repo.createProject({ ownerId: user.id, name: body.name, description: body.description || "", settings: body.settings || {} });
+      const project = await repo.createProject({ ownerId: principal.id, name: body.name, description: body.description || "", settings: body.settings || {} });
       return json({ project, storage: "cloudflare-d1-staging" }, 201);
     }
     const match = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})$/i);
     if (match && request.method === "GET") {
-      const project = await repo.getProject({ actorId: user.id, projectId: match[1] });
+      const project = await repo.getProject({ actorId: principal.id, projectId: match[1] });
       return project ? json({ project, storage: "cloudflare-d1-staging" }) : json({ error: { code: "D1_PROJECT_NOT_FOUND", message: "Project not found." } }, 404);
     }
     if (match && request.method === "PATCH") {
       const body = await readJson(request);
-      const project = await repo.updateProject({ actorId: user.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
+      const project = await repo.updateProject({ actorId: principal.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
       return json({ project, storage: "cloudflare-d1-staging" });
     }
     return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404);
