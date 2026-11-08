@@ -80,3 +80,7 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-integration.sql
+      - name: Apply per-attempt lease fencing migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108090000_job_lease_fencing_tokens.sql
+      - name: Verify lease fencing privileges, stale token rejection and atomic completion
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/job-lease-fencing-postgres-integration.sql
