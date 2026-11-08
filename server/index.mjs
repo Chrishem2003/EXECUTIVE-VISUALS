@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -99,10 +99,13 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
 async function sha256ManagedAsset(asset){
-  const file=resolve(MEDIA_ROOT,asset.storage_path||"");
-  const root=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
-  if(!file.startsWith(root)||!existsSync(file)||!statSync(file).isFile())return {valid:false};
-  if(statSync(file).size!==asset.byte_size)return {valid:false};
+  const candidate=resolve(MEDIA_ROOT,asset.storage_path||"");
+  const lexicalRoot=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+  if(!candidate.startsWith(lexicalRoot)||!existsSync(candidate))return {valid:false};
+  let file,root;
+  try{file=realpathSync(candidate);root=realpathSync(MEDIA_ROOT);}catch{return {valid:false};}
+  const realRoot=root.endsWith(sep)?root:root+sep;
+  if(!file.startsWith(realRoot)||!statSync(file).isFile()||statSync(file).size!==asset.byte_size)return {valid:false};
   const digest=createHash("sha256");
   for await(const chunk of createReadStream(file))digest.update(chunk);
   return {valid:digest.digest("hex")===String(asset.sha256||"").toLowerCase()};
