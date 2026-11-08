@@ -434,3 +434,9 @@ The AI Director now reads cloud production records, proof candidates, character 
 - Build gate: `npm run verify:evidence-ledger`.
 - Integrated authorized project evidence records into the Creative Intelligence Graph. Only verified records with matching source SHA-256 and a resolvable same-project target create supporting edges; unresolved or non-verified records remain review-only.
 - Next: implement revision-aware evidence invalidation and downstream stale-impact propagation across shots, timelines, variants, exports and publishing.
+
+
+### Revision-aware change propagation checkpoint
+- Added immutable per-project Creative Intelligence Graph baselines and graph-hash revisions.
+- AI Director compares the current graph with the latest reviewed baseline and identifies changed nodes plus downstream potentially stale dependencies.
+- Next: connect these review signals to durable timeline/export/variant/publishing revision records and require explicit reapproval where dependencies changed. No automatic invalidation or publication block exists yet.
