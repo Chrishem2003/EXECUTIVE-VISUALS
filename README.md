@@ -126,7 +126,7 @@ The API reads configuration from environment variables. Important settings inclu
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase public client key | Configure as deployment secret/config; never commit credentials. |
 | `COOKIE_SECURE` | Secure cookie override | Set to `true` behind HTTPS where required. |
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
-| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |
+| `CLOUD_TIMELINE_API_ENABLED` | Cloud Projects, private cloud asset shelf and timeline API gate | Keep disabled until the dedicated isolated Supabase schema, private bucket, RLS/storage policies and staging release gates pass. Requires `AUTH_MODE=supabase`. |
 | `CLOUD_WORKER_TEMP_ROOT` | Private cloud worker scratch directory | Must exist and be private; when C2PA signing is enabled it must match `C2PA_SIGNING_MEDIA_ROOT`. |
 | `C2PA_TRUST_ANCHORS` | PEM public trust bundle path | Administrator-managed, read-only public certificates only. |
 | `C2PA_MAX_VERIFY_BYTES` | C2PA parser/signing size limit | Defaults to 250 MiB. |
@@ -136,6 +136,8 @@ The API reads configuration from environment variables. Important settings inclu
 | `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
 
 Never commit API keys, service-role keys, provider tokens, certificates, private keys, signing-service credentials or production data. Do not put Supabase service-role credentials in browser-visible variables. A `.env.example` file should contain placeholders only.
+
+The Runtime Asset Library includes a separate **Private Cloud Storage** shelf when `CLOUD_TIMELINE_API_ENABLED=true` and verified Supabase authentication is active. It lists account-authorized cloud assets, accepts streamed personal uploads, displays recorded SHA-256 metadata and creates short-lived signed preview/download links on demand. This shelf does not silently switch local media jobs to cloud execution; local `/api/assets` remains the processing path until the cloud worker and media lifecycle are explicitly integrated and accepted in staging. The Cloud Projects workspace continues to provide project-scoped uploads.
 
 For detailed operational steps, see [Developer and operations guide](docs/DEVELOPMENT-AND-OPERATIONS.md).
 
