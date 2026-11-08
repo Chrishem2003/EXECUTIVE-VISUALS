@@ -20,6 +20,7 @@ import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPri
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
@@ -207,11 +208,16 @@ async function storeUpload(req,user,projectId) {
   }
   const sha256=digest.digest("hex");
   const extension=extname(originalName).toLowerCase();
-  const metadata=(extension===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip"))?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{};
-  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
-    .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
-  audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
-  return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,createdAt:now()};
+  const createdAt=now();
+  const provenance=createAssetProvenanceRecord({asset:{id,sha256,mediaType,size},createdAt});
+  const metadata={
+    ...((extension===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip"))?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{}),
+    provenance
+  };
+  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+    .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata),createdAt);
+  audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256,provenanceHash:provenance.recordHash},projectId||null);
+  return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,provenance,createdAt};
 }
 async function processNextJob() {
   recoverExpiredJobs(db);
@@ -569,9 +575,14 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file))?$/i);
+      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance))?$/i);
       if(assetMatch){
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(assetMatch[2]==="provenance"&&req.method==="GET"){
+          const metadata=parseJson(asset.metadata_json,{}),provenance=metadata.provenance||null;
+          const verification=verifyAssetProvenanceRecord(provenance,{id:asset.id,sha256:asset.sha256,mediaType:asset.media_type,size:Number(asset.byte_size)});
+          send(res,200,{assetId:asset.id,provenance,verification,notice:"Internal integrity verification is not a C2PA signature, identity proof, rights clearance or factual verification."},cors);return;
+        }
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
