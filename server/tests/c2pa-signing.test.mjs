@@ -24,12 +24,12 @@ function pngChunk(type, data) {
   const checksum = Buffer.alloc(4); checksum.writeUInt32BE(crc32(Buffer.concat([name, data])));
   return Buffer.concat([length, name, data, checksum]);
 }
-function onePixelPng() {
+function onePixelPng(red = 255, green = 0, blue = 0) {
   const signature = Buffer.from([137,80,78,71,13,10,26,10]);
   const header = Buffer.alloc(13);
   header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4);
   header[8] = 8; header[9] = 6;
-  return Buffer.concat([signature, pngChunk("IHDR", header), pngChunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 255]))), pngChunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([signature, pngChunk("IHDR", header), pngChunk("IDAT", deflateSync(Buffer.from([0, red, green, blue, 255]))), pngChunk("IEND", Buffer.alloc(0))]);
 }
 
 test("protected signer is disabled by default", async () => {
@@ -48,15 +48,19 @@ test("production signing requires a timestamp authority unless explicitly waived
   await assert.rejects(() => sign({}), error => error.code === "C2PA_TIMESTAMP_AUTHORITY_REQUIRED");
 });
 
-test("CallbackSigner delegates private-key operations and preserves source ingredient lineage", async t => {
+test("CallbackSigner signs transformed bytes and preserves original source ingredient lineage", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-callback-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
   const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
-  const inputPath = join(dir, "source.png");
+  const sourcePath = join(dir, "source.png");
+  const firstInput = join(dir, "first-transformed.png");
   const firstOutput = join(dir, "first-edit.png");
+  const secondInput = join(dir, "second-transformed.png");
   const secondOutput = join(dir, "second-edit.png");
-  await writeFile(inputPath, onePixelPng());
+  await writeFile(sourcePath, onePixelPng(255, 0, 0));
+  await writeFile(firstInput, onePixelPng(0, 255, 0));
+  await writeFile(secondInput, onePixelPng(0, 0, 255));
 
   let calls = 0;
   const signingProvider = {
@@ -82,23 +86,27 @@ test("CallbackSigner delegates private-key operations and preserves source ingre
   });
 
   const first = await sign({
-    inputPath, outputPath: firstOutput, mimeType: "image/png",
+    inputPath: firstInput, sourcePath, outputPath: firstOutput,
+    mimeType: "image/png", sourceMimeType: "image/png",
     actionDescription: "First timeline edit",
     sourceAssetId: "asset-source"
   });
   assert.equal(first.status, "signed_and_verified");
   assert.equal(first.sourceManifestPreserved, false);
-  assert.ok(first.ingredientCount >= 1, "edit intent must create a parent ingredient");
+  assert.equal(first.sourceAndInputDiffer, true);
+  assert.equal(first.ingredientCount, 1, "the original source, not the transformed pixels, must be recorded as the parent ingredient");
   assert.match(first.sha256, /^[a-f0-9]{64}$/);
   assert.equal((await stat(firstOutput)).isFile(), true);
 
   const second = await sign({
-    inputPath: firstOutput, outputPath: secondOutput, mimeType: "image/png",
+    inputPath: secondInput, sourcePath: firstOutput, outputPath: secondOutput,
+    mimeType: "image/png", sourceMimeType: "image/png",
     actionDescription: "Second timeline edit",
     sourceAssetId: "asset-first-edit"
   });
   assert.equal(second.status, "signed_and_verified");
   assert.equal(second.sourceManifestPreserved, true);
+  assert.equal(second.sourceAndInputDiffer, true);
   assert.ok(second.ingredientCount >= 1, "new manifest must retain the previous signed asset as an ingredient");
   assert.equal(second.sourceManifestState, first.validationState);
   assert.equal((await stat(secondOutput)).isFile(), true);
