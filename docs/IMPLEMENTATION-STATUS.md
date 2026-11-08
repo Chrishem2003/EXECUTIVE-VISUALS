@@ -62,7 +62,8 @@
 - Signed outputs are re-hashed after preservation; metadata records the preservation result. Local cancellation and cloud abort signals are passed through the preservation step.
 - CI passed at exact branch head `d9784b4`: reproducible `npm ci`, typecheck, full build/regression suite, real CAI SDK multi-source signing/ingredient validation, local timeline provenance-hook checks (including real FFmpeg render), cloud timeline preservation-before-publication test, and disposable PostgreSQL asset-publication integration.
 - No production signer, private key, trust anchor, external signing service, deployment, paid provider request or database migration is configured or invoked.
-- Remaining validation: exercise local SQLite media and local timeline paths with credential-bearing media fixtures in independent integration tests; test large media and cancellation; run isolated staging acceptance with an approved signer.
+- Added `server/tests/local-c2pa-roundtrip.test.mjs` to exercise the real local SQLite `media.transcode` publication path with an upstream test-only CAI signer, then read the published MP4 back and verify its embedded source ingredient and post-signing checksum. This test is wired into `npm run verify:provenance`; it has not yet been executed in this environment.
+- Remaining validation: execute the new local round-trip test and extend independent coverage to local AI upscale/timeline operations, supported image/audio/video formats, large media and cancellation; run isolated staging acceptance with an approved signer.
 
 ## Build verification
 
@@ -73,6 +74,7 @@ The build pipeline runs:
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
 5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
 5. Real CAI C2PA signing/Reader round-trip with an upstream test-only certificate, verifier trust-state and asset-integrity tests.
+6. Local SQLite media transcode round-trip: signed source MP4 → FFmpeg derivative → embedded ingredient validation → post-signing SHA-256/publication metadata check (`npm run verify:provenance`).
 6. Real FFmpeg rendering and output inspection.
 6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
