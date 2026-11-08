@@ -121,6 +121,26 @@ test("D1 Worker health reports staging binding without exposing data", async () 
   DB.close();
 });
 
+
+test("D1 staging CORS allows only the configured app origin and bearer headers", async () => {
+  const env = { APP_ORIGIN: "https://executive-visuals.onrender.com" };
+  const allowed = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "OPTIONS",
+    headers: { origin: env.APP_ORIGIN, "access-control-request-method": "GET", "access-control-request-headers": "authorization" }
+  }), env);
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), env.APP_ORIGIN);
+  assert.match(allowed.headers.get("access-control-allow-headers"), /authorization/i);
+  assert.equal(allowed.headers.get("access-control-allow-credentials"), null);
+
+  const denied = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "OPTIONS",
+    headers: { origin: "https://attacker.example", "access-control-request-method": "GET" }
+  }), env);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("access-control-allow-origin"), null);
+});
+
 test("staging Worker blocks production business APIs instead of proxying them", async t => {
   let upstreamCalls = 0;
   t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response("unexpected"); });
