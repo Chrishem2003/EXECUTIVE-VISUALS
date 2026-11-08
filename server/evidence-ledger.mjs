@@ -5,7 +5,7 @@ const TARGET_TYPES = new Set(["project","scene","shot","timeline","asset"]);
 const REVIEW_STATES = new Set(["needs_review","verified","rejected"]);
 const clean = (value, max) => typeof value === "string" ? value.trim().replace(/\\s+/g," ").slice(0,max) : "";
 
-function toRecord(row) {
+function atomic(db, work) {\n  db.exec("BEGIN IMMEDIATE");\n  try { const result = work(); db.exec("COMMIT"); return result; }\n  catch (error) { try { db.exec("ROLLBACK"); } catch {} throw error; }\n}\n\nfunction toRecord(row) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -45,7 +45,7 @@ export function createEvidenceRecord(db, { id = randomUUID(), ownerId, projectId
     if (typeof observedAt !== "string" || !Number.isFinite(parsed)) throw new Error("EVIDENCE_OBSERVED_AT_INVALID");
     observed = new Date(parsed).toISOString();
   }
-  const transaction = db.transaction(() => {
+  const transaction = () => atomic(db, () => {
     db.prepare(`INSERT INTO evidence_records(id,owner_id,project_id,source_asset_id,source_sha256,target_type,target_id,evidence_kind,claim,method,source_ref,observed_at,note)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,ownerId,projectId,sourceAsset.id,String(sourceAsset.sha256).toLowerCase(),targetType,targetId.trim(),evidenceKind,evidenceClaim,evidenceMethod,reference,observed,evidenceNote);
     db.prepare("INSERT INTO evidence_record_events(evidence_id,actor_id,event_type,details_json) VALUES(?,?,?,?)").run(id,ownerId,"submitted",json({sourceSha256:String(sourceAsset.sha256).toLowerCase(),targetType,targetId:targetId.trim(),kind:evidenceKind}));
@@ -77,7 +77,7 @@ export function reviewEvidenceRecord(db, { evidenceId, reviewerId, status, revie
     const reviewedAt = new Date().toISOString();
     const changed = db.prepare("UPDATE evidence_records SET status=?,review_note=?,reviewed_by=?,reviewed_at=? WHERE id=? AND status IN ('submitted','needs_review')").run(status,note,reviewerId,reviewedAt,evidenceId);
     if (changed.changes !== 1) throw new Error("EVIDENCE_REVIEW_CONFLICT");
-    db.prepare("INSERT INTO evidence_record_events(evidence_id,actor_id,event_type,details_json) VALUES(?,?,?,?,?)".replace("VALUES(?,?,?,?,?)","VALUES(?,?,?,?)"))
+    db.prepare("INSERT INTO evidence_record_events(evidence_id,actor_id,event_type,details_json) VALUES(?,?,?,?)")
       .run(evidenceId,reviewerId,"reviewed",json({status,reviewNote:note}));
     return db.prepare(`SELECT e.*,a.original_name AS source_asset_name,a.media_type AS source_media_type
       FROM evidence_records e JOIN assets a ON a.id=e.source_asset_id WHERE e.id=?`).get(evidenceId);
