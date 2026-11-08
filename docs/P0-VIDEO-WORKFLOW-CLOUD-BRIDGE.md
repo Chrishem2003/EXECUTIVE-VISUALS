@@ -109,3 +109,17 @@ legacy workflow execution.
 The integration branch now contains the guarded application and PostgreSQL enqueue contract for the dedicated `runway/model-router` worker adapter. The contract accepts only explicit `text-to-video`, `image-to-video` and `video-to-video` operations, and enforces a 2–30 second duration at the SQL boundary. The migration is source-controlled and exercised by the disposable PostgreSQL 16 integration job. It does not activate remote execution, create customer budget policies or call the provider. The worker's non-billable preflight must remain within the exact approved USD ceiling before paid submission, and settlement must use provider-reported realized task cost.
 
 This closes the previously documented application/SQL allowlist gap. It does **not** complete the general Studio workflow bridge: authenticated workflow-node orchestration, quote/approval binding, atomic credit and provider-budget reservation, durable job-to-node status mapping, cancellation/recovery, private output publication and actual-cost reconciliation remain required under P0 issue #209.
+
+## Authenticated non-billable workflow quote endpoint (2026-11-08)
+
+Branch `feat/p0-video-workflow-bridge-quote` adds
+`POST /api/cloud/workflows/video/quote` as the first API-facing bridge slice.
+
+- The request requires a verified Supabase caller and owner/editor write access to the exact project.
+- It accepts only a `video.generate` node with the explicit `runway/model-router` contract.
+- Private image/video/audio references are resolved server-side by the existing owner/project-scoped source resolver before the provider dry-run.
+- The Model Router dry-run quote returns the exact canonical request hash, routed provider/model, estimated credits/USD, pricing source, short expiry and explicit `billable:false` / `requiresExplicitApproval:true` markers.
+- Dry-run quoting now requires a server-side API key/configuration but does not require the paid-execution opt-in flags. Actual `submit()` still requires both `RUNWAY_MODEL_ROUTER_ENABLED=true` and `RUNWAY_VIDEO_ALLOW_REMOTE=true`.
+- The endpoint does not create an approval, reserve provider budget or customer credits, enqueue a job, or invoke paid generation. It is a quote surface only, not the P0 bridge acceptance.
+
+Remaining P0 work is exact quote/actor approval persistence, atomic customer-credit plus provider-budget reservation, durable idempotent enqueue through the existing queue, workflow run/node status mapping, cancellation dispatch/reconciliation, stable private output asset propagation, and isolated staging end-to-end acceptance.

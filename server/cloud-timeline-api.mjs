@@ -12,6 +12,8 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
+import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
+import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -36,7 +38,7 @@ function buildAleph2GenerationInput({projectId,input,metadata}={}){
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,env=process.env}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -52,6 +54,19 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   url,serviceRoleKey,fetchImpl,
   resolveRunwaySourceMetadata:sourceResolver?.resolveMetadata
  });
+ const routerConfig=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+ const routerKey=String(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET||"");
+ const workflowRouterAdapter=runwayRouterAdapter || (
+  sourceResolver && routerKey && /^[a-z][a-z0-9_-]{0,63}$/.test(routerConfig)
+   ? createRunwayModelRouterVideoAdapter({
+      configId:routerConfig,apiKey:routerKey,
+      enabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true",
+      allowRemote:env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
+      fetchImpl,prepareInput:sourceResolver.prepare,
+      ingestOutputs:async()=>{throw Object.assign(new Error("Output ingestion is worker-only."),{code:"VIDEO_OUTPUT_INGESTION_WORKER_ONLY"});}
+     })
+   : null
+ );
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -105,6 +120,53 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="DELETE"){
      const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
      return response(200,{asset:result});
+    }
+   }
+
+   if(path==="/api/cloud/workflows/video/quote"&&method==="POST"){
+    if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
+    const projectId=String(body.projectId||"");
+    if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    try{
+     const requestId=String(body.requestId||"");
+     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
+     if(workflowRequest.input.sourceVideoAssetId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
+      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+         !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
+         metadata.durationSeconds<2||metadata.durationSeconds>30){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
+      }
+      if(Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
+      }
+     }
+     const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
+     const estimate=await workflowRouterAdapter.preflight(prepared);
+     if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
+        !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
+        !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
+        typeof estimate.model!=="string"||!estimate.model.trim()||
+        typeof estimate.provider!=="string"||!estimate.provider.trim()){
+      return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
+     }
+     return response(200,{quote:{
+      id:randomUUID(),projectId,requestId:workflowRequest.requestId,
+      requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
+      model:workflowRequest.model,operation:workflowRequest.operation,
+      routedProvider:estimate.provider,routedModel:estimate.model,
+      estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
+      currency:estimate.currency,configId:estimate.configId,
+      pricingSource:"runway_model_router_dry_run",billable:false,
+      requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET),
+      expiresAt:new Date(Date.now()+5*60*1000).toISOString()
+     }});
+    }catch(error){
+     const code=String(error?.code||"VIDEO_WORKFLOW_QUOTE_FAILED");
+     const status=code.includes("UNSUPPORTED")||code.includes("INVALID")||code.includes("MISMATCH")||code.includes("REQUIRED")?422:503;
+     return response(status,{error:{code,message:String(error?.message||"Video workflow quote failed.").slice(0,300)}});
     }
    }
    if(path==="/api/cloud/transformations/readiness"&&method==="GET"){
