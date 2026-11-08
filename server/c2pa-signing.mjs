@@ -158,13 +158,16 @@ export function createC2paTransformationSigner({
         }
       });
       const builder = await Sdk.Builder.newAsync(builderContext);
+      let expectedSourceInstanceId = null;
       if (sourceReader) {
-        await builder.addIngredientFromReader(sourceReader);
+        const sourceIngredient = await builder.addIngredientFromReader(sourceReader);
+        expectedSourceInstanceId = sourceIngredient?.instance_id || null;
       } else if (source !== input) {
+        expectedSourceInstanceId = "urn:sha256:" + await sha256File(source);
         await builder.addIngredient(JSON.stringify({
           title: basename(source),
           format: sourceMimeType,
-          instance_id: "urn:sha256:" + await sha256File(source),
+          instance_id: expectedSourceInstanceId,
           relationship: "parentOf"
         }), { path: source, mimeType: sourceMimeType });
       }
@@ -209,7 +212,13 @@ export function createC2paTransformationSigner({
       const validationState = outputStore?.validation_state ?? null;
       if (!["Valid", "Trusted"].includes(validationState)) fail("C2PA_SIGNED_OUTPUT_VALIDATION_FAILED");
       const activeManifest = outputReader.getActive?.();
-      const ingredientCount = Array.isArray(activeManifest?.ingredients) ? activeManifest.ingredients.length : 0;
+      const ingredients = Array.isArray(activeManifest?.ingredients) ? activeManifest.ingredients : [];
+      const parentIngredients = ingredients.filter(ingredient => ingredient?.relationship === "parentOf");
+      if (parentIngredients.length !== 1) fail("C2PA_PARENT_INGREDIENT_INVALID");
+      if (expectedSourceInstanceId && !parentIngredients.some(ingredient => ingredient?.instance_id === expectedSourceInstanceId)) {
+        fail("C2PA_SOURCE_INGREDIENT_MISMATCH");
+      }
+      const ingredientCount = ingredients.length;
       if (ingredientCount < 1) fail("C2PA_INGREDIENT_LINEAGE_MISSING");
 
       const outputSha256 = await sha256File(destination);
