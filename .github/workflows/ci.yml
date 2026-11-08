@@ -53,6 +53,10 @@ jobs:
           sudo apt-get install -y postgresql-client
       - name: Bootstrap disposable Supabase-compatible schema
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-bootstrap.sql
+      - name: Apply durable storage cleanup outbox migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql
+      - name: Verify storage cleanup outbox permissions and path constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-storage-cleanup-postgres-integration.sql
       - name: Apply asset publication ledger migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
