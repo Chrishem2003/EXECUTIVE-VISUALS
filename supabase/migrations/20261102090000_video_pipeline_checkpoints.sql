@@ -79,16 +79,16 @@ begin
     raise exception 'VIDEO_PIPELINE_CHECKPOINT_OUTPUT_INVALID';
   end if;
 
-  select a.*
+  select output_asset.*
     into published_asset
-  from executive_visuals.assets a
-  where a.id = output_id_text::uuid
-    and a.owner_id = new.owner_id
-    and a.project_id = new.project_id
-    and a.derivative_of = new.input_asset_id
-    and a.media_type = output_media_type
-    and lower(a.sha256) = output_sha
-    and a.deleted_at is null;
+  from executive_visuals.assets output_asset
+  where output_asset.id = output_id_text::uuid
+    and output_asset.owner_id = new.owner_id
+    and output_asset.project_id = new.project_id
+    and output_asset.derivative_of = new.input_asset_id
+    and output_asset.media_type = output_media_type
+    and output_asset.sha256 = lower(new.output_json ->> 'sha256')
+    and output_asset.deleted_at is null;
 
   if not found then
     raise exception 'VIDEO_PIPELINE_CHECKPOINT_OUTPUT_SCOPE_INVALID';
