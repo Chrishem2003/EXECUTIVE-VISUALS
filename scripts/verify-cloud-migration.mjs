@@ -60,7 +60,7 @@ if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpoi
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
 if (!publicationSql.includes("unique(owner_id, publication_key)") || !publicationSql.includes("unique(asset_id)")) issues.push("Asset publication identity must be unique per owner and asset.");
 if (!publicationSql.includes("payload_sha256") || !publicationSql.includes("status in ('reserved','published')")) issues.push("Asset publication ledger must bind a checksum to a recoverable state.");
 if (!publicationSql.includes("alter table executive_visuals.asset_publications enable row level security;")) issues.push("Asset publication ledger must enable RLS.");
