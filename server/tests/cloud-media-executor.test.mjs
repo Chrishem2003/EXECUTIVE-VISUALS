@@ -23,7 +23,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   process.env.FFPROBE_PATH = ffprobe;
   let materializedArgs, cleaned = false;
   try {
-    const execute = createCloudMediaExecutor({ c2paPreserver,
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize(args) {
@@ -66,7 +66,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   const c2paCalls=[];
   const c2paPreserver=async args=>{c2paCalls.push(args);return{status:"preserved",preserved:true,ingredientCount:1,outputSha256:"c".repeat(64)};};
   try {
-    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
+    const execute = createCloudMediaExecutor({ c2paPreserver,
       tempRoot: directory,
       mediaIO: {
         async materialize({ ownerId, assetId }) {
