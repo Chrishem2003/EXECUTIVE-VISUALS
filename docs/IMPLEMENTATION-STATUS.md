@@ -2,7 +2,7 @@
 
 **Updated:** 8 November 2026  
 **Branch:** `feat/c2pa-protected-signing`  
-**Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
+**Delivery posture:** local runtime implemented; Supabase email/password sign-in, registration and refresh-cookie lifecycle implemented; external-auth staging blueprint hardened; public release not approved pending password recovery, dedicated isolated backend, private durable storage, backup/restore tests and hosted deployment verification.
 
 ## Implemented in the current branch
 
@@ -71,7 +71,7 @@ A green build does not prove external provider execution, cloud durability, fram
 ## Not yet production-complete
 
 - Durable cloud database and object storage in a dedicated isolated project; PostgREST queue and private object-storage adapters plus a lease-aware worker-cycle orchestrator are implemented and contract-tested, but remain intentionally disconnected until the isolated schema is exposed, storage policies and credentials are configured, and the media/workflow data layer is cloud-compatible.
-- Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration. The current browser auth gate requires users to paste a Supabase access token; ordinary email/password sign-in and refresh-session UX are not yet implemented.
+- Password recovery/reset UX, MFA/SSO and email invitation delivery. Supabase email/password registration/sign-in, confirmation-required handling, HttpOnly access/refresh cookies, refresh-on-authentication and logout/revocation are implemented and unit-tested; hosted identity configuration and recovery acceptance remain outstanding.
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads and range downloads.
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
