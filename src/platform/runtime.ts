@@ -3,6 +3,7 @@ import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "..
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
+type CloudRuntimeAsset={id:string;projectId:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf:string|null;metadata:Record<string,unknown>;createdAt:string};
 type C2paVerification={status:"not_available"|"not_supported"|"invalid"|"valid_untrusted"|"valid_trusted"|"verification_error";manifestPresent:boolean;embedded:boolean;validationState:string|null;validationFindings:Array<{code:string;success?:boolean;explanation?:string;url?:string}>;errorCode?:string;trustPolicyConfigured?:boolean;trustPolicyType?:"user_anchors"|"none"};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
@@ -11,9 +12,10 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];c2paResults:Record<string,C2paVerification>;c2paLoading:Record<string,boolean>;projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],c2paResults:{},c2paLoading:{},projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];c2paResults:Record<string,C2paVerification>;c2paLoading:Record<string,boolean>;projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;cloudAssetApiEnabled:boolean;cloudAssets:CloudRuntimeAsset[]}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],c2paResults:{},c2paLoading:{},projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,cloudAssetApiEnabled:false,cloudAssets:[]
 };
+const cloudAssetUrls=new Map<string,string>();
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
@@ -87,6 +89,11 @@ export function renderAssetLibrary(){
  return '<div id="runtime-workspace" data-runtime-view="library"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out</button>':'')+'</div>'+
  (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderAssets()+'</section>'+
+ '<section class="panel cloud-asset-panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Synced cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div>'+
+ (state.cloudAssetApiEnabled&&state.authMode==="supabase"
+  ?'<p>Private, account-scoped media stored in the configured cloud bucket. These files are separate from local worker media until cloud processing is enabled for the project.</p><label class="upload secondary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain,.vtt,.json"></label>'+
+   (state.cloudAssets.length?'<div class="runtime-assets">'+state.cloudAssets.map(asset=>'<article class="runtime-asset"><div><b>'+esc(asset.name)+'</b><small>'+esc(asset.mediaType)+' · '+(asset.size/1048576).toFixed(2)+' MB</small><small>SHA-256 · '+esc(asset.sha256.slice(0,16))+'… · '+esc(fmt(asset.createdAt))+'</small></div><div class="asset-actions"><button data-ev-cloud-asset-link="'+esc(asset.id)+'">Create private preview link</button>'+(cloudAssetUrls.has(asset.id)?'<a class="download-output" href="'+esc(cloudAssetUrls.get(asset.id)!)+'" target="_blank" rel="noopener noreferrer">Open / download</a>':'')+'</div></article>').join('')+'</div>':'<div class="empty">No private cloud assets yet. Upload an original to begin.</div>')
+  :'<div class="notice">'+(state.authMode!=="supabase"?"Cloud asset storage requires verified Supabase authentication.":"Cloud asset storage is not enabled on this server.")+' Local asset storage remains available.</div>')+'</section>'+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
 }
 export function renderReferenceImageOptions(){
@@ -176,7 +183,12 @@ async function refresh(){
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ if(state.cloudAssetApiEnabled&&state.authMode==="supabase"){
+  try{const cloud=await apiRequest<{assets:CloudRuntimeAsset[]}>("/api/cloud/assets");state.cloudAssets=cloud.assets||[];}
+  catch(error){state.cloudAssets=[];state.message="Private cloud asset library unavailable: "+(error instanceof Error?error.message:"request failed");}
+ }else{state.cloudAssets=[];cloudAssetUrls.clear();}
+ window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
@@ -188,8 +200,8 @@ async function refresh(){
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
-  state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}&cloudAssetApi:{enabled:boolean}>("/api/health");
+  state.authMode=health.authMode;state.cloudAssetApiEnabled=health.cloudAssetApi?.enabled===true;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
@@ -234,13 +246,15 @@ document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{await apiRequest("/api/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Upload failed"));}}await refresh();paint();})();}
+ if(target.id==="ev-cloud-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:file});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Cloud upload failed"));}}await refresh();paint();})();}
 });
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
- if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];state.c2paResults={};state.c2paLoading={};paint();return;}
+ const cloudPreview=target.closest<HTMLElement>("[data-ev-cloud-asset-link]");if(cloudPreview){const id=cloudPreview.dataset.evCloudAssetLink||"";void apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(id)).then(result=>{cloudAssetUrls.set(id,result.url);paint();}).catch(error=>alert(error instanceof Error?error.message:"Could not create a private cloud link."));return;}
+ if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.cloudAssets=[];cloudAssetUrls.clear();state.projects=[];state.c2paResults={};state.c2paLoading={};paint();return;}
  const verify=target.closest<HTMLElement>("[data-ev-c2pa-verify]");if(verify){void verifyAssetC2pa(verify.dataset.evC2paVerify||"");return;}
  const job=target.closest<HTMLElement>("[data-ev-job]");
  if(job){const assetId=job.dataset.evAsset||"",jobType=job.dataset.evJob||"",input:Record<string,unknown>={};for(const [key,value] of Object.entries(job.dataset))if(key.startsWith("ev")&&!["evAsset","evJob"].includes(key)){const name=key.slice(2).replace(/^[A-Z]/,letter=>letter.toLowerCase());input[name]=value!==""&&Number.isFinite(Number(value))?Number(value):value;}void apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType,sourceAssetId:assetId,projectId:state.projectId||undefined,...input})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
