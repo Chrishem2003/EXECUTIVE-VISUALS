@@ -72,7 +72,7 @@ function currentCreativeGraph(){
 }
 function creativeGraphPanel(){
  const graph=currentCreativeGraph(),counts=graph.counts;
- const types=["brief","intent","evidence","character","scene","shot","timeline","clip","asset"] as const;
+ const types=["brief","intent","evidence","character","world_record","scene","shot","timeline","clip","asset"] as const;
  const options=graph.nodes.map(node=>'<option value="'+esc(node.id)+'" '+(node.id===state.creativeImpactNodeId?'selected':'')+'>'+esc(node.type.toUpperCase()+" · "+node.label)+'</option>').join("");
  const edges=graph.edges.slice(0,24).map(edge=>'<li><b>'+esc(graph.nodes.find(node=>node.id===edge.from)?.label||edge.from)+'</b> <span class="muted">— '+esc(edge.relation.replaceAll("_"," "))+' →</span> <b>'+esc(graph.nodes.find(node=>node.id===edge.to)?.label||edge.to)+'</b> <small class="muted">('+esc(edge.evidence)+')</small></li>').join("");
  const impact=state.creativeImpactReport;
