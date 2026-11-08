@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
 **Updated:** 8 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
+**Branch:** `feat/c2pa-protected-signing`  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -474,10 +474,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - C2PA outcomes are mapped from the SDK's `validation_state`: `Invalid` → `invalid`, `Valid` → `valid_untrusted`, and `Trusted` → `valid_trusted` only when an administrator-controlled PEM trust anchor is configured. Without that policy, `Trusted` is conservatively downgraded to `valid_untrusted`.
 - The adapter checks the on-disk file and byte size, enforces a default 250 MiB parser limit, bounds returned validation findings, and fails closed on missing SDK, unknown state, unavailable files or SDK errors.
 - Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings, unsupported formats and file safety. Native integration tests exercise a valid unsigned PNG, generate a genuine signed PNG with the upstream CAI test-only certificate chain, validate the untrusted/trusted paths and reject altered pixel data.
-- The verifier is integrated into the Asset Library. A separate callback signer adapter now exists in `server/c2pa-signing.mjs`; it creates new transformation manifests, preserves source ingredients and verifies output. It remains disabled by default, is not wired to production exports and has no KMS/HSM provider configured. Production signing remains off.
+- The verifier is integrated into the Asset Library. A separate callback signer adapter now exists in `server/c2pa-signing.mjs`; it signs the already-transformed output bytes while recording the original source as an ingredient, then reopens and verifies the signed output. `createCloudMediaExecutor` and `createCloudMediaWorker` accept the callback and invoke it before derivative publication. The default `cloud-worker-process` does not instantiate a provider, and local timeline render/export is not yet connected. No KMS/HSM provider, production certificate or TSA is configured; production signing remains off.
 - Full build includes `verify:c2pa` and the existing provenance verification suite.
 
-**Next:** connect the callback signer to the governed worker/export path, provision a protected KMS/HSM provider and production certificate/TSA, then expand signed/tampered fixtures across supported video formats and verify certificate-chain/timestamp/revocation behavior. Production signing remains disabled.
+**Next:** provision and independently review a protected KMS/HSM provider, production certificate chain and HTTPS TSA; wire that provider into the cloud worker process; then extend signed/tampered fixtures across additional supported video/audio formats and verify certificate-chain/timestamp/revocation behavior. Connect timeline render/export after its durable cloud persistence boundary is ready. Production signing remains disabled.
 
 
 ### C2PA asset-library user journey
@@ -485,4 +485,4 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Asset-library users can request Content Credentials verification for an asset and see manifest presence, validation state, trust-policy status, error code and up to five validation findings.
 - The UI makes no verification claim before the user invokes the endpoint; the server performs the actual check after asset authorization.
 - The result is displayed separately from the application's SHA-256 provenance record.
-- Ingredient-aware signing exists as a server-side adapter but is not connected to production exports. KMS/HSM integration, production certificate/TSA provisioning and production signing remain incomplete.
+- Ingredient-aware signing exists as a server-side adapter and is available as an optional cloud media worker dependency; the default worker process has no provider configured. KMS/HSM integration, production certificate/TSA provisioning, timeline export integration and production signing remain incomplete.
