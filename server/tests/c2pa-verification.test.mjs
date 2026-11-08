@@ -97,9 +97,9 @@ test("fails closed when the SDK cannot be loaded or its validation state is unkn
 test("rejects oversized, missing, changed-size and non-file assets before SDK loading", async t => {
   const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
   let loads = 0;
-  const verify = createC2paVerifier({ maxBytes: 10, sdkLoader: async () => { loads++; return fakeSdk("Valid").sdk; } });
-  assert.equal((await verify(f)).errorCode, "C2PA_ASSET_TOO_LARGE");
+  const verify = createC2paVerifier({ maxBytes: 20, sdkLoader: async () => { loads++; return fakeSdk("Valid").sdk; } });
+  assert.equal((await verify({ ...f, size: 21 })).errorCode, "C2PA_ASSET_TOO_LARGE");
   assert.equal((await verify({ ...f, size: f.size + 1 })).errorCode, "C2PA_ASSET_SIZE_MISMATCH");
-  assert.equal((await verify({ ...f, path: join(f.dir, "missing.jpg") })).errorCode, "C2PA_ASSET_TOO_LARGE");
+  assert.equal((await verify({ ...f, path: join(f.dir, "missing.jpg") })).errorCode, "C2PA_ASSET_UNAVAILABLE");
   assert.equal(loads, 0);
 });
