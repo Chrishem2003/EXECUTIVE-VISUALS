@@ -105,3 +105,8 @@ The application shell now surfaces the authenticated account in the persistent t
 
 
 Project collaboration in the Runtime Console now includes a visible member list, each member's access role and owner-only add/remove controls. Adding a member requires an existing account in the workspace; the UI explicitly states that it does not send an email invitation. Editor, reviewer and viewer roles remain enforced by the API.
+
+
+### Account recovery
+
+Supabase-authenticated accounts can request a password reset from the sign-in screen and set a new password using the short-lived recovery token returned in the email link. The server uses a fixed `PUBLIC_APP_URL` redirect (never a user-supplied redirect), validates the recovery session before updating the password, and returns an enumeration-safe confirmation message. Configure `PUBLIC_APP_URL=https://executive-visuals.onrender.com` on the application service and add that exact URL to the Supabase Auth redirect allowlist before using the flow. Recovery email delivery depends on the Supabase Auth email provider and its rate limits; no SMTP provider is configured by this code.
