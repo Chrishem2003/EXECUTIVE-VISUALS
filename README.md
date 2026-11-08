@@ -168,3 +168,8 @@ Choose a graph node and run **Analyze downstream impact** before changing it. Th
 ## Evidence intelligence and review
 
 Executive Visuals now has a project-scoped evidence ledger for source-backed production claims. Editors submit evidence against an asset and an explicit project/scene/shot/timeline/asset target; the API snapshots the source SHA-256 and records a submission event. Project owners, editors and reviewers can review the record, with reviewer identity and decision preserved in a separate event history. Client-submitted records always begin as `submitted`; clients cannot self-verify evidence. See [Evidence intelligence and review ledger](docs/EVIDENCE-INTELLIGENCE-AND-REVIEW-LEDGER.md) for API routes, lifecycle, permission rules and interpretation limits. Reviewer-verified records now connect to their explicit scene, shot, timeline or asset targets in the AI Director graph only when the source SHA-256 and project scope match. Submitted or rejected records remain review-only; unresolved targets are shown as disconnected. Evidence review is not a guarantee of factual truth, legal rights or identity.
+
+
+## Creative graph revision baselines
+
+AI Director can record immutable, per-project Creative Intelligence Graph review baselines. Later graph changes are compared against the saved revision; added, removed and changed nodes are identified and downstream dependencies are surfaced as potentially stale for human review. Project-scope membership edges are excluded from change fingerprints to avoid falsely marking every project item stale. This does not automatically mutate timelines or invalidate exports. See [Creative graph revision baselines](docs/CREATIVE-GRAPH-REVISION-BASELINES.md).
