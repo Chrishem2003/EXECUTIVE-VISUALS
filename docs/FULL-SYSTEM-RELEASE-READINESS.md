@@ -1,7 +1,7 @@
 # Executive Visuals — full-system release readiness plan
 
 **Audit date:** 8 November 2026  
-**Baseline:** `main` at `65238a0` (account identity and project-membership UI merged; CI #8487 passed).
+**Baseline:** `main` at `3955955` (account identity, project membership and the in-app Release readiness workspace merged; CI #8501 passed).
 
 This plan distinguishes code that is merged, code that has passed CI but is still on a branch, and features that cannot work end-to-end until external infrastructure and credentials exist. A passing test suite does not mean a provider, persistent store or production workflow is activated.
 
@@ -14,9 +14,11 @@ This plan distinguishes code that is merged, code that has passed CI but is stil
 | Six-format C2PA round-trip matrix | Merged | JPEG, PNG, WebP, MP3, WAV and MP4 tested. This is not every format in the CAI SDK. |
 | Asset Library Content Credentials inspection | Merged | Authenticated API and UI states are implemented; independent browser acceptance remains. |
 | Account identity in app shell and Overview | Merged | PR #250; email, role, active project and sign-out navigation are visible. |
+| Full-system Release readiness workspace | Merged | PR #252; in-app inventory separates merged capabilities, in-progress branches and blocked release gates. |
 | Project member list and owner-only add/remove | Merged | PR #250; adds existing accounts only and does not send invitations. |
 
 ## 2. Current verified branch work
+| [#254](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/254) | Expand the in-app completed-stage inventory to list all verified provenance and account milestones | Open; UI-only; exact-head CI pending. |
 
 | PR | Scope | State / decision |
 |---|---|---|
