@@ -15,6 +15,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
@@ -411,6 +412,20 @@ export function createAppServer() {
           if(plan.status!=="approved"){fail(res,409,"TRANSFORMATION_APPROVAL_REQUIRED","Approve the plan and budget before submission.");return;}
           fail(res,409,"TRANSFORMATION_ADAPTER_UNAVAILABLE","No verified video-transformation adapter is enabled. The approved plan remains saved; no provider request or charge was made.");return;
         }
+      }
+      if(path==="/api/video-cost-estimate"&&req.method==="POST"){
+        if(!rateAllowed("video-cost-estimate:"+user.id,30,60000)){fail(res,429,"RATE_LIMITED","Too many cost estimate requests. Try again shortly.");return;}
+        const body=await readJson(req,16*1024);
+        const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
+        const quote=estimateVideoGenerationCost(body,pricing);
+        send(res,200,quote,cors);return;
+      }
+      if(path==="/api/video-production-quote"&&req.method==="POST"){
+        if(!rateAllowed("video-production-quote:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many production quote requests. Try again shortly.");return;}
+        const body=await readJson(req,32*1024);
+        const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
+        const quote=estimateVideoProductionCost(body,pricing);
+        send(res,200,quote,cors);return;
       }
       if(path==="/api/providers"&&req.method==="GET"){
         const aiUpscale=await aiUpscaleAdapter.probe();
