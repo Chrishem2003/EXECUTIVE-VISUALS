@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -60,10 +61,24 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'`);
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
-  let published, publishedContent, cleaned = false;
+  let published, publishedContent, cleaned = false, signingCall;
   try {
     const execute = createCloudMediaExecutor({
       tempRoot: directory,
+      signC2paTransformation: async args => {
+        signingCall = args;
+        assert.equal(await readFile(args.inputPath, "utf8"), "rendered-media");
+        assert.equal(await readFile(args.sourcePath, "utf8"), "source-media");
+        assert.equal(args.sourceMimeType, "video/mp4");
+        assert.equal(args.mimeType, "video/mp4");
+        await writeFile(args.outputPath, "rendered-media-signed");
+        return {
+          status: "signed_and_verified",
+          sha256: createHash("sha256").update("rendered-media-signed").digest("hex"),
+          byteSize: Buffer.byteLength("rendered-media-signed"),
+          ingredientCount: 1
+        };
+      },
       mediaIO: {
         async materialize({ ownerId, assetId }) {
           assert.equal(ownerId, "verified-owner");
@@ -96,9 +111,13 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(published.mediaType, "video/mp4");
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);
-    assert.equal(result.byteSize, Buffer.byteLength("rendered-media"));
+    assert.equal(result.byteSize, Buffer.byteLength("rendered-media-signed"));
     assert.equal(cleaned, true);
-    assert.equal(publishedContent, "rendered-media");
+    assert.equal(publishedContent, "rendered-media-signed");
+    assert.equal(signingCall.sourceAssetId, "asset-source");
+    assert.equal(signingCall.actionDescription, "Executed media.color media operation.");
+    assert.equal(published.metadata.c2pa.status, "signed_and_verified");
+    assert.equal(result.c2pa.ingredientCount, 1);
   } finally {
     if (previous === undefined) delete process.env.FFMPEG_PATH;
     else process.env.FFMPEG_PATH = previous;
@@ -414,6 +433,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(published.derivativeOf, "image-source");
     assert.equal(published.mediaType, "image/png");
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
+    assert.equal(published.metadata.c2pa.status, "not_configured");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
