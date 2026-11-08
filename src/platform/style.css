@@ -492,3 +492,13 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .creative-impact-result{margin-top:14px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .creative-impact-result ul{padding-left:18px;max-height:220px;overflow:auto}
 @media(max-width:850px){.creative-graph-columns{grid-template-columns:1fr}}
+
+
+/* Source-backed evidence capture and reviewer decision history */
+.evidence-ledger-panel{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.evidence-ledger-panel .form-grid{margin:14px 0 18px}
+.evidence-ledger-list{display:grid;gap:10px;margin-top:16px}
+.evidence-ledger-record{min-width:0;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.evidence-ledger-record p{overflow-wrap:anywhere}
+.evidence-ledger-record small{display:block;overflow-wrap:anywhere}
+.evidence-ledger-record .button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
