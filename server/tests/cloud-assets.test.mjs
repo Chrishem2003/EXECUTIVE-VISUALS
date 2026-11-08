@@ -11,8 +11,9 @@ const projectId="223e4567-e89b-42d3-a456-426614174000";
 const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
+const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,publicationInsertResponse=null}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
@@ -28,18 +29,23 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
    if(options.method==="PATCH")return response([{id:"cleanup-1"}]);
    return response(cleanupRows);
   }
-  if(url.includes("/rpc/reserve_asset_publication")){
+  if(url.includes("/rpc/reserve_asset_publication_v2")){
    const payload=JSON.parse(options.body);
-   if(publicationReservation&&(publicationReservation.payload_sha256!==payload.p_payload_sha256||publicationReservation.project_id!==payload.p_project_id))return response({message:"publication conflict"},409);
-   if(!publicationReservation)publicationReservation={owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
+   if(publicationReservation&&(publicationReservation.job_id!==payload.p_job_id||publicationReservation.payload_sha256!==payload.p_payload_sha256||publicationReservation.project_id!==payload.p_project_id))return response({message:"publication conflict"},409);
+   if(!publicationReservation)publicationReservation={job_id:payload.p_job_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
    return response([publicationReservation]);
   }
-  if(url.includes("/rpc/complete_asset_publication")){
+  if(url.includes("/rpc/finalize_asset_publication_v1")){
+   if(finalizationError)return response({message:"atomic finalization unavailable"},finalizationError.status||500);
+   const payload=JSON.parse(options.body);
+   if(payload.p_job_id!==leaseContext.jobId||payload.p_worker_id!==leaseContext.workerId||payload.p_lease_token!==leaseContext.leaseToken)return response({message:"invalid worker lease"},409);
+   if(!publicationReservation||publicationReservation.job_id!==payload.p_job_id||publicationReservation.asset_id!==payload.p_asset_id||publicationReservation.payload_sha256!==payload.p_payload_sha256)return response({message:"publication reservation mismatch"},409);
+   if(publicationAsset&&(publicationAsset.original_name!==payload.p_original_name||publicationAsset.media_type!==payload.p_media_type||publicationAsset.byte_size!==payload.p_byte_size||publicationAsset.sha256!==payload.p_payload_sha256||publicationAsset.storage_bucket!==payload.p_storage_bucket||publicationAsset.derivative_of!==payload.p_derivative_of||JSON.stringify(publicationAsset.metadata)!==JSON.stringify(payload.p_metadata)))return response({message:"existing asset identity mismatch"},409);
+   if(!publicationAsset)publicationAsset={...row,id:payload.p_asset_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,original_name:payload.p_original_name,media_type:payload.p_media_type,byte_size:payload.p_byte_size,sha256:payload.p_payload_sha256,storage_bucket:payload.p_storage_bucket,object_path:payload.p_object_path,derivative_of:payload.p_derivative_of,metadata:payload.p_metadata,deleted_at:null};
    publicationReservation={...publicationReservation,status:"published"};
-   return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
+   return response([publicationAsset]);
   }
   if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){
-   if(publicationInsertResponse!==null)return response(publicationInsertResponse.body??publicationInsertResponse,publicationInsertResponse.status??200);
    const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);
   }
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
