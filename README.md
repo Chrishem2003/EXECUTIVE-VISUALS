@@ -41,7 +41,7 @@ The browser and API run together in development. SQLite and media files are stor
 - Node.js 24.22.1 or later in the Node 24 line is the recommended baseline; the CAI Node SDK also supports patched Node 22.23.4+ and Node 26.12.1+ releases.
 - npm (the lockfile is npm lockfile v3).
 - FFmpeg and FFprobe on PATH for media processing and timeline rendering.
-- The C2PA signed-fixture test uses the official upstream CAI test certificate/key pair, clearly marked test-only; no OpenSSL CLI is required.
+- The C2PA signed-fixture tests use the official upstream CAI test certificate/key pair to sign PNG and MP4 assets, clearly marked test-only; no OpenSSL CLI is required.
 - A supported operating system and architecture for the native CAI Node package. The package downloads precompiled binaries during installation on supported targets. See the [official CAI Node documentation](https://contentauth.github.io/c2pa-js/modules/_contentauth_c2pa-node.html).
 
 ## Run locally
