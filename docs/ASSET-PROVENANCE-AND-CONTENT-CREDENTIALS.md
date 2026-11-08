@@ -48,7 +48,7 @@ Current environment settings:
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `C2PA_TRUST_ANCHORS` | Local PEM trust-anchor file used by the SDK trust policy | Unset; trusted state is disabled |
+| `C2PA_TRUST_ANCHORS` | Local PEM root trust-anchor file; its PEM content is loaded server-side and passed as CAI user anchors | Unset |\n| `C2PA_ALLOWED_SIGNERS` | Local PEM end-entity certificate allowlist; direct trust of listed signing certificates | Unset; use only for tightly controlled signer identities |
 | `C2PA_MAX_VERIFY_BYTES` | Maximum asset size passed to the native parser | 262144000 bytes (250 MiB) |
 
 The adapter is verification-only. It does not sign assets or claim transformation continuity.
@@ -119,7 +119,7 @@ Test the full chain through proxy generation, transcode, timeline render, export
 
 ## Acceptance tests
 
-The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, trust-policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using an ephemeral test-only certificate chain, verify it as valid-but-untrusted without trust anchors, verify it as trusted with the explicit test root anchor, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
+The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, root-anchor and end-entity allowlist policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using an ephemeral test-only certificate chain, verify it as valid-but-untrusted without a trust policy, verify it as trusted with an explicit end-entity allowlist, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
 
 - A known-good signed JPEG/PNG fixture is detected and cryptographically validated.
 - A known-good signed supported video fixture is detected and cryptographically validated.
