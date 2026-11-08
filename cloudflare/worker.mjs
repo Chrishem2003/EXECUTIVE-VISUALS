@@ -72,17 +72,17 @@ async function authenticate(request, env) {
   if (response.status === 401 || response.status === 403) {
     throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED", setCookies: sessionCookies });
   }
-  if (!response.ok) throw Object.assign(new Error("The application identity service rejected the request."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
+  if (!response.ok) throw Object.assign(new Error("The application identity service rejected the request."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE", setCookies: sessionCookies });
   let payload;
   try { payload = await response.json(); } catch {
     throw Object.assign(new Error("The application identity service returned an invalid response."), { status: 502, code: "IDENTITY_RESPONSE_INVALID" });
   }
   const user = payload?.user;
   if (!user || typeof user.id !== "string" || !UUID.test(user.id)) {
-    throw Object.assign(new Error("The authenticated account identity is invalid."), { status: 401, code: "AUTH_REQUIRED" });
+    throw Object.assign(new Error("The authenticated account identity is invalid."), { status: 401, code: "AUTH_REQUIRED", setCookies: sessionCookies });
   }
   const provider = payload.authMode === "supabase" ? "supabase" : payload.authMode === "local" ? "local" : "";
-  if (!provider) throw Object.assign(new Error("The account authentication mode is not supported by D1 staging."), { status: 403, code: "AUTH_MODE_UNSUPPORTED" });
+  if (!provider) throw Object.assign(new Error("The account authentication mode is not supported by D1 staging."), { status: 403, code: "AUTH_MODE_UNSUPPORTED", setCookies: sessionCookies });
   return { user: { id: user.id, email: typeof user.email === "string" ? user.email : null, provider }, setCookies: sessionCookies };
 }
 
@@ -140,7 +140,7 @@ async function d1Api(request, env, url) {
       const project = await repo.updateProject({ actorId: principal.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
       return withCookies(json({ project, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
-    return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404);
+    return withCookies(json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404), sessionCookies);
   } catch (error) {
     return withCookies(errorResponse(error), sessionCookies);
   }
