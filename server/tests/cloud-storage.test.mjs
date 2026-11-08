@@ -86,3 +86,14 @@ test("cloud asset object paths match owner and project storage policy prefixes",
  assert.throws(()=>buildCloudAssetObjectPath({ownerId:"invalid",assetId,filename:"x.mp4"}),/UUID/);
  assert.throws(()=>buildCloudAssetObjectPath({ownerId,assetId,filename:"../escape.mp4"}),/filename/);
 });
+
+test("streaming uploads only enable upsert when explicitly requested",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-upsert-")),file=join(root,"render.mp4");await writeFile(file,Buffer.from("render"));
+ const headers=[];
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{for await(const chunk of options.body){}headers.push(options.headers);return response({Key:"ok"});}});
+ await storage.uploadFile(path,file,"video/mp4");
+ await storage.uploadFile(path,file,"video/mp4",{upsert:true});
+ assert.equal(headers[0]["x-upsert"],"false");
+ assert.equal(headers[1]["x-upsert"],"true");
+ await rm(root,{recursive:true,force:true});
+});
