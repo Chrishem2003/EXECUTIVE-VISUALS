@@ -478,3 +478,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Full build includes `verify:c2pa` and the existing provenance verification suite.
 
 **Next:** add genuine signed and byte-tampered image/video fixtures, validate the trust-anchor policy against a controlled test certificate, then implement ingredient-aware transformation manifests and protected callback signing. Production signing remains disabled.
+
+
+### C2PA asset-library user journey
+
+- Asset-library users can request Content Credentials verification for an asset and see manifest presence, validation state, trust-policy status, error code and up to five validation findings.
+- The UI makes no verification claim before the user invokes the endpoint; the server performs the actual check after asset authorization.
+- The result is displayed separately from the application's SHA-256 provenance record.
+- Production signing, ingredient-aware transformation manifests and KMS/HSM integration are not yet implemented.
