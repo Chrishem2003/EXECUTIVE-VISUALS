@@ -125,7 +125,7 @@ async function loadTransformationReadiness(projectId:string){
  }catch{state.transformationReadiness=null;}
 }
 async function loadCloudWorkspace(){
- state.cloudLoading=true;state.cloudMessage="Loading private cloud workspace…";render();
+ state.cloudLoading=true;state.cloudTimelineDocuments=[];state.cloudTimelines=[];state.creativeImpactReport=null;state.cloudMessage="Loading private cloud workspace…";render();
  try{
   const result=await apiRequest<{projects:Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:CloudCreativeProduction}}>}>("/api/cloud/projects");
   state.cloudProjects=result.projects||[];
@@ -142,7 +142,7 @@ async function loadCloudWorkspace(){
   const savedSeries=savedProduction?.seriesPlans;
   if(Array.isArray(savedSeries)){state.seriesPlans=savedSeries;state.activeSeriesId=selectedCloudProject?.settings?.creativeProduction?.activeSeriesId||savedSeries[0]?.id||"";}
   const query=state.cloudProjectId?"?projectId="+encodeURIComponent(state.cloudProjectId):"";
-  const assets=await apiRequest<{assets:Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>}>("/api/cloud/assets"+query);
+  const assets=state.cloudProjectId?await apiRequest<{assets:Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>}>("/api/cloud/assets"+query):{assets:[]};
   state.cloudAssets=assets.assets||[];
   await loadTransformationPlans(state.cloudProjectId);
   await loadTransformationReadiness(state.cloudProjectId);
