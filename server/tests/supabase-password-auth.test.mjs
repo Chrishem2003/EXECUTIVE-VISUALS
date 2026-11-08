@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {signInWithSupabasePassword,signUpWithSupabasePassword,refreshSupabaseSession,getSupabaseUser} from "../supabase-password-auth.mjs";
+import {signInWithSupabasePassword,signUpWithSupabasePassword,refreshSupabaseSession,getSupabaseUser,requestSupabasePasswordRecovery,updateSupabasePassword} from "../supabase-password-auth.mjs";
 const config={supabaseUrl:"https://example.supabase.co",publishableKey:"sb_publishable_test"};
 function mockFetch(payload,status=200){return async (url,options)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload),url:String(url),options});}
 const session={access_token:"access-token",refresh_token:"refresh-token",expires_in:3600,user:{id:"user-1",email:"test@example.com"}};
@@ -24,4 +24,32 @@ test("refreshes a session and validates user identity",async()=>{
  assert.equal(refreshed.accessToken,"access-token");
  const user=await getSupabaseUser({...config,accessToken:"access-token",fetchImpl:mockFetch({id:"user-1",email:"test@example.com"})});
  assert.equal(user.id,"user-1");
+});
+
+test("requests password recovery with a fixed HTTPS application redirect",async()=>{
+ let requested;
+ const result=await requestSupabasePasswordRecovery({...config,email:"Test@example.com",redirectTo:"https://app.example.com/",fetchImpl:async(url,options)=>{requested={url:String(url),options};return{ok:true,status:200,text:async()=>""};}});
+ assert.equal(result.ok,true);
+ assert.equal(requested.url,"https://example.supabase.co/auth/v1/recover?redirect_to=https%3A%2F%2Fapp.example.com%2F");
+ assert.deepEqual(JSON.parse(requested.options.body),{email:"test@example.com"});
+});
+test("rejects unsafe recovery redirects and malformed email before network access",async()=>{
+ let called=false;
+ const fetchImpl=async()=>{called=true;throw new Error("unexpected");};
+ await assert.rejects(()=>requestSupabasePasswordRecovery({...config,email:"bad",redirectTo:"https://app.example.com",fetchImpl}),e=>e.code==="INVALID_EMAIL");
+ await assert.rejects(()=>requestSupabasePasswordRecovery({...config,email:"user@example.com",redirectTo:"https://app.example.com/continue?next=https://evil.example",fetchImpl}),e=>e.code==="SUPABASE_AUTH_CONFIG_INVALID");
+ assert.equal(called,false);
+});
+test("updates a password only with a recovery access token and strong password",async()=>{
+ let requested;
+ const result=await updateSupabasePassword({...config,accessToken:"recovery-access-token",password:"new-strong-password",fetchImpl:async(url,options)=>{requested={url:String(url),options};return{ok:true,status:200,text:async()=>JSON.stringify({id:"user-1",email:"test@example.com"})};}});
+ assert.deepEqual(result,{user:{id:"user-1",email:"test@example.com"}});
+ assert.equal(requested.url,"https://example.supabase.co/auth/v1/user");
+ assert.equal(requested.options.method,"PUT");
+ assert.equal(requested.options.headers.authorization,"Bearer recovery-access-token");
+ assert.deepEqual(JSON.parse(requested.options.body),{password:"new-strong-password"});
+});
+test("rejects weak passwords and missing recovery tokens",async()=>{
+ await assert.rejects(()=>updateSupabasePassword({...config,accessToken:"recovery-token",password:"short"}),e=>e.code==="WEAK_PASSWORD");
+ await assert.rejects(()=>updateSupabasePassword({...config,accessToken:"",password:"new-strong-password"}),e=>e.code==="RECOVERY_SESSION_REQUIRED");
 });
