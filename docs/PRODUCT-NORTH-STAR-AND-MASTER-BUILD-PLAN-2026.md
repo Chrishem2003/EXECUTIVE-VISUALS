@@ -384,6 +384,7 @@ The first real C2PA implementation slice is now on feature branch `feat/c2pa-ser
 - Pinned the maintained official `@contentauth/c2pa-node` package to `0.10.0` and synchronized the npm lockfile.
 - Added a server-only adapter using `Reader.fromAsset`, `Context` and the SDK's manifest `validation_state`.
 - Connected verification to the existing authenticated `GET /api/assets/:assetId/provenance` route after asset authorization.
+- Added a per-asset Verify Content Credentials action in the Asset Library and a results panel for manifest state, trust status and validation findings.
 - Disabled remote manifest fetching and added file-backed parsing, byte-size checks and a default 250 MiB verification cap.
 - Preserved bounded SDK validation findings and mapped `Invalid`, `Valid` and `Trusted` to explicit application states.
 - Required an administrator-controlled PEM trust-anchor file before returning `valid_trusted`; without a configured trust policy the result is conservatively downgraded to `valid_untrusted`.
