@@ -491,6 +491,6 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 ## Creative Intelligence Graph (new integration)
 
 - AI Director now builds a project-scoped dependency graph from saved cloud production records, creative DNA, characters, series scenes/shots, proof candidates, private assets and accessible cloud timeline documents.
-- Links are created only from explicit IDs, marker IDs and asset references. Shared project membership is labelled as scope, not misrepresented as a creative dependency.
+- Links are created only from explicit IDs, series story-bible references, marker IDs and asset references. Shared project membership is labelled as scope, not misrepresented as a creative dependency.
 - Downstream change-impact analysis lists dependent shots, clips and timelines for human review. It does not mutate production data or infer missing links.
 - Verification: `npm run verify:creative-graph`; full CI also runs TypeScript checks and production build.
