@@ -7,7 +7,7 @@ const PROJECT = "22222222-2222-4222-8222-222222222222";
 const ASSET = "33333333-3333-4333-8333-333333333333";
 const bytes = Buffer.alloc(1024, 7);
 
-function fixture({ projectId = PROJECT, mediaType = "video/mp4", signedUrl = "https://storage.example.com/storage/v1/object/sign/private/a?token=x", fetchImpl, execFileImpl } = {}) {
+function fixture({ projectId = PROJECT, signedProjectId = projectId, mediaType = "video/mp4", signedUrl = "https://storage.example.com/storage/v1/object/sign/private/a?token=x", fetchImpl, execFileImpl } = {}) {
   const asset = {
     id: ASSET, ownerId: OWNER, projectId, name: "source.mp4", mediaType,
     size: bytes.length, storageBucket: "executive-visuals-media",
@@ -16,7 +16,7 @@ function fixture({ projectId = PROJECT, mediaType = "video/mp4", signedUrl = "ht
   const calls = [];
   const assets = {
     async get(args) { calls.push(["get", args]); return asset; },
-    async createSignedUrl(args) { calls.push(["sign", args]); return { asset, url: signedUrl }; }
+    async createSignedUrl(args) { calls.push(["sign", args]); return { asset: { ...asset, projectId: signedProjectId }, url: signedUrl }; }
   };
   return {
     calls,
@@ -51,6 +51,19 @@ test("Runway source preparation rejects cross-project asset references", async (
     () => resolver.prepare({ operation: "video-to-video", projectId: "44444444-4444-4444-8444-444444444444", sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
     error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
   );
+});
+
+test("Runway source resolver rejects signed URLs bound to a different project asset", async () => {
+  let fetched = false;
+  const { resolver } = fixture({
+    signedProjectId: "44444444-4444-4444-8444-444444444444",
+    fetchImpl: async () => { fetched = true; return new Response(bytes); }
+  });
+  await assert.rejects(
+    () => resolver.prepare({ operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(fetched, false);
 });
 
 test("Runway source preparation rejects untrusted signed URL origins before fetching", async () => {
