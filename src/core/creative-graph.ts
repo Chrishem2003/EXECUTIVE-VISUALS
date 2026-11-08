@@ -28,7 +28,6 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
  const evidenceCandidates=(input.creativeDNA?.proofAndTrustChecks||[]).map(x=>clean(x,500)).filter(Boolean);
  const proofCandidate=evidenceCandidates.find(x=>/^proof candidate supplied:/i.test(x));
  if(proofCandidate){const id="evidence:"+projectId+":"+key(proofCandidate).slice(0,100);add({id,type:"evidence",label:"Proof candidate",detail:proofCandidate,status:"needs_evidence"});link(intentNode,id,"supports");}
- const assetIds=new Set<string>();
  for(const asset of input.assets||[]){const id=clean(asset.id,120);if(!id)continue;add({id:"asset:"+id,type:"asset",label:clean(asset.name,180)||id,detail:clean(asset.mediaType,80),status:"linked"});if(projectNode)link(projectNode,"asset:"+id,"contains","project_scope");}
  const characterMap=new Map<string,string>();
  const addCharacter=(character:{id:string;name:string;description?:string;referenceAssetIds?:string[]})=>{const id=clean(character.id,120);if(!id)return;const nodeId="character:"+id;characterMap.set(id,nodeId);add({id:nodeId,type:"character",label:clean(character.name,160)||"Unnamed character",detail:clean(character.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of character.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}};
