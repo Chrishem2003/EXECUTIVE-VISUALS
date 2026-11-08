@@ -66,6 +66,21 @@ test("Runway source preparation rejects untrusted signed URL origins before fetc
   assert.equal(fetched, false);
 });
 
+test("Runway source resolver refuses redirects from private signed storage URLs", async () => {
+  let fetchOptions;
+  const { resolver } = fixture({
+    fetchImpl: async (_url, options) => {
+      fetchOptions = options;
+      throw new TypeError("redirect mode error");
+    }
+  });
+  await assert.rejects(
+    () => resolver.prepare({ operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED"
+  );
+  assert.equal(fetchOptions.redirect, "error");
+});
+ 
 test("Runway source resolver cancels oversized streamed bodies before buffering the full asset", async () => {
   let cancelled = false;
   const boundedResolver = createRunwaySourceAssetResolver({
