@@ -22,7 +22,7 @@
     "verify:render": "node scripts/verify-render-worker.mjs",
     "verify:real-render": "node scripts/verify-real-render.mjs",
     "verify:cloud": "node scripts/verify-cloud-migration.mjs",
-    "verify:d1": "node --test server/tests/d1-repository.test.mjs",
+    "verify:d1": "node --test server/tests/d1-repository.test.mjs cloudflare/worker.test.mjs",
     "verify:workflow-executor": "node scripts/verify-workflow-executor.mjs",
     "verify:workflow-run": "node scripts/verify-workflow-run.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs",
