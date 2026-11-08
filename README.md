@@ -63,8 +63,10 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 
 ## Research and implementation records
+- [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, phased backlog and acceptance evidence.
 
-- [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, architecture principles, phased backlog, acceptance evidence and safety gates.
+- [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
+
 
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
 - [Product integration and scale plan](docs/PRODUCT-INTEGRATION-AND-SCALE-PLAN.md)
