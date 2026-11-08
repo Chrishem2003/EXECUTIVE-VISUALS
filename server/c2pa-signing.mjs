@@ -242,7 +242,9 @@ export function createC2paTransformationSigner({
       }
       if (signal?.aborted) fail("JOB_CANCELLED");
       if (error?.code === "JOB_CANCELLED" || (typeof error?.code === "string" && error.code.startsWith("C2PA_"))) throw error;
-      fail("C2PA_TRANSFORMATION_SIGNING_FAILED");
+      const wrapped = new Error("C2PA_TRANSFORMATION_SIGNING_FAILED", { cause: error });
+      wrapped.code = "C2PA_TRANSFORMATION_SIGNING_FAILED";
+      throw wrapped;
     }
   };
 }
