@@ -2,24 +2,54 @@ const C2PA_STATES = new Set(["Invalid", "Valid", "Trusted"]);
 
 function normalizeFinding(item) {
   if (!item || typeof item !== "object") return null;
-  const code = typeof item.code === "string" ? item.code.slice(0, 160) : "C2PA_VALIDATION_FINDING";
-  const explanation = typeof item.explanation === "string" ? item.explanation.slice(0, 1000) : "";
-  const severity = typeof item.severity === "string" ? item.severity.slice(0, 40) : "unknown";
-  return { code, explanation, severity };
+  const finding = {
+    code: typeof item.code === "string" ? item.code.slice(0, 160) : "C2PA_VALIDATION_FINDING",
+    explanation: typeof item.explanation === "string" ? item.explanation.slice(0, 1000) : ""
+  };
+  if (typeof item.success === "boolean") finding.success = item.success;
+  if (typeof item.url === "string") finding.url = item.url.slice(0, 500);
+  return finding;
+}
+
+function collectFindings(store) {
+  const legacy = Array.isArray(store?.validation_status) ? store.validation_status : [];
+  const results = store?.validation_results?.activeManifest;
+  const modern = results && typeof results === "object"
+    ? ["failure", "informational", "success"].flatMap(group => Array.isArray(results[group]) ? results[group] : [])
+    : [];
+  const unique = new Map();
+  for (const item of [...legacy, ...modern]) {
+    const finding = normalizeFinding(item);
+    if (finding) unique.set(finding.code + "\\0" + finding.explanation, finding);
+  }
+  return [...unique.values()];
 }
 
 function getManifestState(store) {
   const state = store?.validation_state;
-  if (C2PA_STATES.has(state)) return state;
-  const statuses = Array.isArray(store?.validation_status) ? store.validation_status : [];
-  if (statuses.some(item => String(item?.code || "").toLowerCase().includes("error"))) return "Invalid";
-  return null;
+  return C2PA_STATES.has(state) ? state : null;
+}
+
+function noManifestResult(configured) {
+  return {
+    status: configured ? "not_found" : "not_available",
+    configured,
+    validationState: null,
+    embedded: false,
+    activeManifest: null,
+    manifestCount: 0,
+    findings: [{
+      code: configured ? "C2PA_MANIFEST_NOT_FOUND" : "C2PA_SDK_NOT_INSTALLED",
+      explanation: configured ? "No C2PA manifest was found in this asset." : "Install the official @contentauth/c2pa-node package to enable C2PA inspection.",
+      success: null
+    }]
+  };
 }
 
 /**
  * Inspect an asset using the official Content Authenticity Initiative Node SDK.
  * The caller must authorize access and supply a server-controlled absolute path.
- * No trust state is inferred: only the SDK's explicit ValidationState is used.
+ * Trust and validity are taken only from the SDK's explicit validation_state.
  */
 export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => import("@contentauth/c2pa-node") }) {
   if (typeof path !== "string" || !path.trim()) throw new TypeError("A server-controlled asset path is required.");
@@ -30,14 +60,7 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
     sdk = await sdkLoader();
   } catch (error) {
     if (error?.code === "ERR_MODULE_NOT_FOUND" || /Cannot find package/.test(String(error?.message || ""))) {
-      return {
-        status: "not_available",
-        configured: false,
-        validationState: null,
-        embedded: false,
-        activeManifest: null,
-        findings: [{ code: "C2PA_SDK_NOT_INSTALLED", explanation: "Install the official @contentauth/c2pa-node package to enable C2PA inspection.", severity: "info" }]
-      };
+      return noManifestResult(false);
     }
     throw error;
   }
@@ -49,7 +72,7 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
       validationState: null,
       embedded: false,
       activeManifest: null,
-      findings: [{ code: "C2PA_SDK_API_UNAVAILABLE", explanation: "The installed CAI SDK does not expose the required Reader and Context APIs.", severity: "error" }]
+      findings: [{ code: "C2PA_SDK_API_UNAVAILABLE", explanation: "The installed CAI SDK does not expose the required Reader and Context APIs.", success: null }]
     };
   }
 
@@ -65,21 +88,29 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
     }
   });
   const reader = await sdk.Reader.fromAsset({ path, mimeType }, context);
+  // The official SDK returns null when an asset contains no C2PA manifest.
+  if (!reader) return noManifestResult(true);
+
   const store = reader.json();
   const activeLabel = store?.active_manifest || null;
   const activeManifest = activeLabel && store?.manifests ? store.manifests[activeLabel] || null : null;
   const validationState = getManifestState(store);
-  const validationItems = Array.isArray(store?.validation_status) ? store.validation_status : [];
-  const findings = validationItems.map(normalizeFinding).filter(Boolean);
+  const findings = collectFindings(store);
+  const embedded = Boolean(reader.isEmbedded());
 
-  if (!reader.isEmbedded() && !activeManifest) {
+  if (!activeManifest && !validationState) {
     return {
-      status: "not_found",
+      status: "indeterminate",
       configured: true,
       validationState: null,
-      embedded: false,
-      activeManifest: null,
-      findings: [{ code: "C2PA_MANIFEST_NOT_FOUND", explanation: "No embedded C2PA manifest was found in this asset.", severity: "info" }]
+      embedded,
+      activeManifest: activeLabel,
+      manifestCount: Object.keys(store?.manifests || {}).length,
+      findings: [...findings, {
+        code: "C2PA_VALIDATION_INCOMPLETE",
+        explanation: "The SDK did not provide a complete active manifest and validation state. No validity or trust is inferred.",
+        success: null
+      }]
     };
   }
   if (!activeManifest || !validationState) {
@@ -87,9 +118,14 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
       status: "indeterminate",
       configured: true,
       validationState,
-      embedded: Boolean(reader.isEmbedded()),
+      embedded,
       activeManifest: activeLabel,
-      findings: [...findings, { code: "C2PA_VALIDATION_INCOMPLETE", explanation: "The SDK did not provide a complete active manifest and validation state. No validity or trust is inferred.", severity: "warning" }]
+      manifestCount: Object.keys(store?.manifests || {}).length,
+      findings: [...findings, {
+        code: "C2PA_VALIDATION_INCOMPLETE",
+        explanation: "The SDK did not provide a complete active manifest and validation state. No validity or trust is inferred.",
+        success: null
+      }]
     };
   }
 
@@ -97,7 +133,7 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
     status: validationState === "Invalid" ? "invalid" : validationState === "Trusted" ? "trusted" : "valid",
     configured: true,
     validationState,
-    embedded: Boolean(reader.isEmbedded()),
+    embedded,
     activeManifest: activeLabel,
     manifestCount: Object.keys(store?.manifests || {}).length,
     findings
