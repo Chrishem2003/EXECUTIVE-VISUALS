@@ -102,3 +102,6 @@ Open **Manage → Trust & provenance** in the app for the implementation ledger,
 ## Signed-in account display
 
 The application shell now surfaces the authenticated account in the persistent top bar and sidebar. The overview dashboard also shows the signed-in email, authentication mode, active project and project role, with direct access to the account/runtime console and sign-out. The display is populated from the authenticated `/api/me` response and the currently selected project membership; it does not expose internal account IDs or session tokens. On narrow screens the top-bar identity collapses to an accessible avatar control to preserve workspace space.
+
+
+Project collaboration in the Runtime Console now includes a visible member list, each member's access role and owner-only add/remove controls. Adding a member requires an existing account in the workspace; the UI explicitly states that it does not send an email invitation. Editor, reviewer and viewer roles remain enforced by the API.
