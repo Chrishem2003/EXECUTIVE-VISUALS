@@ -157,11 +157,23 @@ GET /api/assets/ASSET_ID/provenance
 Cookie: ev_session=...
 ```
 
-Today this endpoint returns the application integrity record and `c2pa: not_checked`. Keep that distinction until the CAI adapter and the acceptance suite above are implemented and connected.
+The endpoint returns two independent results:
+
+- `provenance`: the application's upload-time SHA-256 record and its binding to the current asset row.
+- `c2pa`: the server-side CAI SDK verification result, including manifest presence, embedded status, SDK validation state, trust-policy configuration, bounded validation findings and a safe error code where applicable.
+
+The route performs the existing asset authorization check before reading the managed file or invoking the native SDK. Verification is on-demand and read-only. It never trusts browser-supplied paths, manifest JSON or validation claims. The SDK is loaded lazily, receives a file-backed asset and known MIME type, and has remote manifest fetching disabled. A missing manifest is `not_available`; unsupported formats are `not_supported`; invalid signatures/structure are `invalid`; valid but not trusted under the configured policy is `valid_untrusted`; a valid result under configured administrator trust anchors may be `valid_trusted`; parser, policy or SDK failures are `verification_error`.
+
+The transformation signer and cloud media hook are implemented separately. They do not cause the verification endpoint to sign assets, and they do not make production signing active. The default worker process has no signer configured. Timeline render/export signing and a reviewed production KMS/HSM, certificate, TSA and revocation policy remain release gates.
 
 ## Related verification
 
 ```bash
 npm run verify:provenance
+npm run verify:c2pa
 npm run verify:server
+npm run typecheck
+npm run build
 ```
+
+The native integration suite must run with the pinned CAI package and its checksum-pinned binary. Unit tests with an injected SDK loader are not a substitute for real signed/tampered media fixtures.
