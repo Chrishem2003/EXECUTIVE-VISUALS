@@ -59,6 +59,9 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
       verifyTrust: true,
       verifyTimestampTrust: true,
       remoteManifestFetch: false
+    },
+    trust: {
+      verifyTrustList: true
     }
   });
   const reader = await sdk.Reader.fromAsset({ path, mimeType }, context);
