@@ -74,6 +74,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
         await writeFile(args.outputPath, "rendered-media-signed");
         return {
           status: "signed_and_verified",
+          validationState: "Valid",
           sha256: createHash("sha256").update("rendered-media-signed").digest("hex"),
           byteSize: Buffer.byteLength("rendered-media-signed"),
           ingredientCount: 1
