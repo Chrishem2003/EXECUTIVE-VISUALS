@@ -98,13 +98,13 @@ These are application-level labels. Preserve the exact SDK validation codes and 
 
 - The adapter is disabled by default (`C2PA_SIGNING_ENABLED=false`).
 - It requires an injected `signingProvider.sign({ keyRef, algorithm, payload })` callback. The callback receives the signing payload and returns a signature; the private key stays in the external provider.
-- The adapter requires a public certificate chain, a key reference, a server-owned media root and (by default) an HTTPS timestamp authority.
+- The adapter requires a public certificate chain, a key reference, a dedicated server-owned signing workspace root (`C2PA_SIGNING_MEDIA_ROOT`) and (by default) an HTTPS timestamp authority. For cloud media jobs, this root must match `CLOUD_WORKER_TEMP_ROOT`.
 - It rejects source/output paths outside the media root, output overwrites, unsupported formats, oversized files and invalid source manifests.
-- It records a `c2pa.edited` action, adds the source as an ingredient, signs a new output manifest and reopens the output with the SDK to verify it.
-- When the source already has a valid manifest, the adapter imports its ingredient history with `addIngredientFromReader`. For unsigned sources, edit intent creates a parent ingredient from the source stream.
+- The adapter accepts the already-transformed bytes as `inputPath`, the original parent asset as `sourcePath`, and a new `outputPath`. It records a `c2pa.edited` action, adds the original source as an ingredient, signs the transformed bytes and reopens the output with the SDK to verify it.
+- When the source already has a valid manifest, the adapter imports its ingredient history with `addIngredientFromReader`. When the source has no manifest and differs from the transformed input, it adds an explicit file-backed parent ingredient; when they are the same asset, edit intent supplies the parent ingredient.
 - It returns the output checksum, size, SDK validation state, source-manifest state and ingredient count. It removes partial output on failure.
 
-This is a tested signing adapter, **not yet a production signing service**. It is not connected to the production worker/export route, and no KMS/HSM provider, production certificate or TSA has been provisioned. The integration test uses the upstream CAI test-only private key through a local callback; it does not configure or enable production signing.
+This is a tested signing adapter, **not yet a production signing service**. `createCloudMediaExecutor` and `createCloudMediaWorker` accept the optional protected signer callback and invoke it before publishing a derivative; the default `cloud-worker-process` does not instantiate a provider. Local timeline rendering/export is not yet connected, and no KMS/HSM provider, production certificate or TSA has been provisioned. The integration test uses the upstream CAI test-only private key through a local callback; it does not configure or enable production signing.
 
 The SDK provides Builder APIs and callback-based signing options. The signing path must not require the application to load a production private key into process memory.
 
