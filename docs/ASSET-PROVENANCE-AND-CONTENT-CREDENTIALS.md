@@ -92,6 +92,20 @@ These are application-level labels. Preserve the exact SDK validation codes and 
 
 ## Signing and protected key management
 
+### Implemented callback signer adapter
+
+`server/c2pa-signing.mjs` now provides a server-only transformation signing adapter built on the official SDK `Builder` and `CallbackSigner` APIs.
+
+- The adapter is disabled by default (`C2PA_SIGNING_ENABLED=false`).
+- It requires an injected `signingProvider.sign({ keyRef, algorithm, payload })` callback. The callback receives the signing payload and returns a signature; the private key stays in the external provider.
+- The adapter requires a public certificate chain, a key reference, a server-owned media root and (by default) an HTTPS timestamp authority.
+- It rejects source/output paths outside the media root, output overwrites, unsupported formats, oversized files and invalid source manifests.
+- It records a `c2pa.edited` action, adds the source as an ingredient, signs a new output manifest and reopens the output with the SDK to verify it.
+- When the source already has a valid manifest, the adapter imports its ingredient history with `addIngredientFromReader`. For unsigned sources, edit intent creates a parent ingredient from the source stream.
+- It returns the output checksum, size, SDK validation state, source-manifest state and ingredient count. It removes partial output on failure.
+
+This is a tested signing adapter, **not yet a production signing service**. It is not connected to the production worker/export route, and no KMS/HSM provider, production certificate or TSA has been provisioned. The integration test uses the upstream CAI test-only private key through a local callback; it does not configure or enable production signing.
+
 The SDK provides Builder APIs and callback-based signing options. The signing path must not require the application to load a production private key into process memory.
 
 - Use a dedicated signing service or KMS/HSM-backed callback signer.
@@ -120,7 +134,7 @@ Test the full chain through proxy generation, transcode, timeline render, export
 
 ## Acceptance tests
 
-The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, root-anchor and end-entity allowlist policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using the official upstream CAI test-only certificate chain, verify it as valid-but-untrusted without a trust policy, verify it as trusted with an explicit end-entity allowlist, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
+The feature branch includes deterministic verifier tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, user-anchor policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests inspect an unsigned PNG, create a genuine signed PNG with the upstream CAI test-only certificate chain, verify it as valid-but-untrusted without a trust policy, verify it as trusted with an explicit user anchor, and reject altered pixel data. A separate callback-signing integration test exercises `CallbackSigner`, validates the output, performs a second transformation and verifies that source-manifest ingredient lineage is retained. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
 
 - A known-good signed JPEG/PNG fixture is detected and cryptographically validated.
 - A known-good signed supported video fixture is detected and cryptographically validated.
