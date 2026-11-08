@@ -142,7 +142,7 @@ function mediaJobApi({asset={id:"823e4567-e89b-42d3-a456-426614174000",ownerId:o
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
-  timelineService:{timelines:{},assets:{async get(input){calls.push({assetGet:input});return asset;}}},
+  timelineService:{timelines:{},assets:{async get(input){calls.push({assetGet:input});return asset;}}},mediaJobsEnabled:true,
   authorize:async input=>input.ownerId===owner&&(!input.projectId||input.projectId===project)&&(input.action==="read"||canWrite)
  });
  return{api,calls};
@@ -197,4 +197,12 @@ test("Asset Library cloud media jobs require idempotency keys and reject unknown
  assert.equal(missing.status,400);
  const unknown=await f.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"media-unknown",body:{jobType:"shell.exec"}});
  assert.equal(unknown.status,400);
+});
+
+
+test("Asset Library cloud media job API stays disabled unless a worker deployment is explicitly enabled",async()=>{
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async get(){return{id:"823e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,mediaType:"video/mp4"};}}},authorize:async()=>true});
+ const result=await api.handle({method:"POST",path:"/api/cloud/assets/823e4567-e89b-42d3-a456-426614174000/media-jobs",ownerId:owner,idempotencyKey:"media-disabled",body:{jobType:"media.probe"}});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"CLOUD_MEDIA_WORKER_DISABLED");
 });
