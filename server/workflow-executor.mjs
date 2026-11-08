@@ -153,6 +153,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
   const priorNodeRun=stored.find(row=>row.node_id===nodeId);
   const priorNodeOutput=parseJson(priorNodeRun?.output_json,{});
   const resumeReceipt=priorNodeRun?.status==="pending"&&priorNodeOutput.cloudJobId?priorNodeOutput:null;
+  let cloudResumeReceipt=resumeReceipt;
   const attempt=(priorNodeRun?.attempt||0)+1;
   saveNode(db,runId,nodeId,"running",{input:nodeInput,output:resumeReceipt,attempt});
   try{
@@ -313,10 +314,18 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      if(executionMode!=="cloud")throw Object.assign(new Error("Set VIDEO_WORKFLOW_EXECUTION_MODE=cloud only after the authenticated cloud workspace and worker release gates are ready."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
      const cloudStarted=Date.now();
      const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
+      onJobEnqueued:receipt=>{
+       cloudResumeReceipt=receipt;
+       const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+       saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:receipt,error:detail,attempt});
+       db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+        .run(json(detail),now(),runId);
+      },
       onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
      if(result.pending===true){
       const pendingOutput={cloudJobId:result.cloudJobId,quoteId:result.quoteId,requestId:result.requestId,
-       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,cloudJobStatus:result.status};
+       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,status:result.status};
+      cloudResumeReceipt=pendingOutput;
       const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
       saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:pendingOutput,error:detail,attempt});
       db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
@@ -462,12 +471,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE","BILLING_INSUFFICIENT_CREDITS","BILLING_ACCOUNT_SUSPENDED","BILLING_SPEND_ALREADY_RESERVED","BILLING_CREDIT_CONFIG_INVALID","MEDIA_RIGHTS_REQUIRED","VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED","VIDEO_WORKFLOW_CLOUD_ADAPTER_REQUIRED","VIDEO_WORKFLOW_CLOUD_DISABLED","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED","VIDEO_WORKFLOW_CLOUD_PROJECT_NOT_LINKED","VIDEO_WORKFLOW_CLOUD_PROJECT_LINK_FAILED","VIDEO_WORKFLOW_CLOUD_CONFIG_INVALID","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED","VIDEO_WORKFLOW_APPROVAL_FAILED","VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED","VIDEO_WORKFLOW_CLOUD_JOB_TIMEOUT","VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT"]);
-   const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
-   saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
+   const retryableCloudCodes=new Set(["VIDEO_WORKFLOW_JOB_STATUS_UNAVAILABLE","VIDEO_WORKFLOW_OUTPUT_ASSET_UNAVAILABLE","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED"]);
+   const retryableCloud=Boolean(cloudResumeReceipt&&retryableCloudCodes.has(detail.code));
+   const storedDetail=retryableCloud?{code:"CLOUD_VIDEO_JOB_PENDING",message:"Cloud output reconciliation will retry automatically: "+detail.message,cloudJobId:cloudResumeReceipt.cloudJobId,lastError:detail.code}:detail;
+   const blockedCodes=new Set(["CLOUD_VIDEO_JOB_PENDING","ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE","BILLING_INSUFFICIENT_CREDITS","BILLING_ACCOUNT_SUSPENDED","BILLING_SPEND_ALREADY_RESERVED","BILLING_CREDIT_CONFIG_INVALID","MEDIA_RIGHTS_REQUIRED","VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED","VIDEO_WORKFLOW_CLOUD_ADAPTER_REQUIRED","VIDEO_WORKFLOW_CLOUD_DISABLED","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED","VIDEO_WORKFLOW_CLOUD_PROJECT_NOT_LINKED","VIDEO_WORKFLOW_CLOUD_PROJECT_LINK_FAILED","VIDEO_WORKFLOW_CLOUD_CONFIG_INVALID","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED","VIDEO_WORKFLOW_APPROVAL_FAILED","VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED","VIDEO_WORKFLOW_CLOUD_JOB_TIMEOUT","VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT"]);
+   const blocked=retryableCloud||blockedCodes.has(storedDetail.code)||storedDetail.code.startsWith("REMOTE_USAGE_");
+   saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,output:cloudResumeReceipt,error:storedDetail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
-   db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
-   throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+detail.message),{code:detail.code});
+   db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(storedDetail),now(),now(),runId);
+   throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+storedDetail.message),{code:storedDetail.code});
   }
  }
  db.prepare("UPDATE workflow_runs SET status='completed',updated_at=?,completed_at=?,error_json=NULL WHERE id=?").run(now(),now(),runId);
