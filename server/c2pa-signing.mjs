@@ -111,7 +111,7 @@ export function createC2paTransformationSigner({
       sourceInfo = statSync(source);
       if (!sourceInfo.isFile()) fail("C2PA_SOURCE_NOT_FILE");
     } catch (error) {
-      if (error?.code?.startsWith("C2PA_")) throw error;
+      if (typeof error?.code === "string" && error.code.startsWith("C2PA_")) throw error;
       fail("C2PA_SOURCE_UNAVAILABLE");
     }
     if (sourceInfo.size < 1 || sourceInfo.size > maxBytes) fail("C2PA_SOURCE_SIZE_INVALID");
