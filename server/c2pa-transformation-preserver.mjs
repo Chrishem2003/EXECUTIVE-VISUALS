@@ -63,6 +63,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   if(outputHash.size!==outputInfo.size)throw failure("C2PA_TRANSFORM_FILE_CHANGED","The transformed output changed during preflight.",409);
   let sdk;
   try{sdk=await sdkLoader();}catch{throw failure("C2PA_SDK_UNAVAILABLE","The official CAI C2PA Node SDK is unavailable.",503);}
+  throwIfAborted(signal);
   if(!sdk?.Reader||!sdk?.Builder||!sdk?.Context)throw failure("C2PA_SDK_INVALID","The installed CAI SDK does not expose Reader, Builder and Context APIs.",503);
   const verifyContext=new sdk.Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}});
   const credentialSources=[];
@@ -71,6 +72,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    try{reader=await sdk.Reader.fromAsset({path:source.path,mimeType:source.mediaType},verifyContext);}catch{
     throw failure("C2PA_SOURCE_MANIFEST_INVALID","A source C2PA manifest could not be parsed; transformation lineage was not signed.");
    }
+   throwIfAborted(signal);
    if(!reader)continue;
    const embedded=typeof reader.isEmbedded==="function"?reader.isEmbedded():true;
    const remoteUrl=typeof reader.remoteUrl==="function"?reader.remoteUrl():null;
@@ -96,6 +98,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
     format:source.mediaType,instance_id:"xmp:iid:"+randomUUID(),
     relationship:index===0?"parentOf":"componentOf"
    }),{path:source.path,mimeType:source.mediaType});
+   throwIfAborted(signal);
   }
   builder.setIntent("edit");
   builder.addAction(JSON.stringify({
@@ -111,6 +114,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    if(!signedInfo?.isFile()||signedInfo.size<1||signedInfo.size>maxBytes)throw failure("C2PA_SIGNED_OUTPUT_INVALID","The signed transformation output is missing or exceeds the size limit.");
    const signedHash=await hashFile(temporaryPath,signal);
    const signedReader=await sdk.Reader.fromAsset({path:temporaryPath,mimeType:outputMimeType},verifyContext);
+   throwIfAborted(signal);
    if(!signedReader)throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The signed derivative does not contain an embedded C2PA manifest.");
    const signedStore=signedReader.json(),active=signedStore?.active_manifest&&signedStore?.manifests?.[signedStore.active_manifest];
    const ingredients=Array.isArray(active?.ingredients)?active.ingredients:[];
