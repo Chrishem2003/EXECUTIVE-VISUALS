@@ -24,7 +24,7 @@ test("cloud project creation preserves an explicitly linked local project UUID",
  const result=await f.api.handle({method:"POST",path:"/api/cloud/projects",ownerId:owner,body:{projectId:project,name:"Local production",description:"Shared identity"}});
  assert.equal(result.status,200);
  assert.equal(result.body.project.id,project);
- assert.equal(result.body.linkedExistingOrLocal,true);
+ assert.equal(result.body.projectIdBound,true);
  assert.equal(f.calls.find(call=>call[0]==="project-create")[1].projectId,project);
 });
 test("cloud project creation rejects malformed explicit IDs",async()=>{
