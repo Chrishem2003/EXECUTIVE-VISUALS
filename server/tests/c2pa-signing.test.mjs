@@ -95,6 +95,11 @@ test("CallbackSigner signs transformed bytes and preserves original source ingre
   assert.equal(first.sourceManifestPreserved, false);
   assert.equal(first.sourceAndInputDiffer, true);
   assert.equal(first.ingredientCount, 1, "the original source, not the transformed pixels, must be recorded as the parent ingredient");
+  const { Reader, Context } = await import("@contentauth/c2pa-node");
+  const firstReader = await Reader.fromAsset({ path: firstOutput, mimeType: "image/png" }, new Context({ verify: { verifyAfterReading: true, verifyTrust: false } }));
+  const firstParent = firstReader.getActive().ingredients.find(ingredient => ingredient.relationship === "parentOf");
+  const sourceDigest = (await import("node:crypto")).createHash("sha256").update(await readFile(sourcePath)).digest("hex");
+  assert.equal(firstParent.instance_id, "urn:sha256:" + sourceDigest, "the signed manifest must identify the exact original source bytes");
   assert.match(first.sha256, /^[a-f0-9]{64}$/);
   assert.equal((await stat(firstOutput)).isFile(), true);
 
@@ -108,6 +113,9 @@ test("CallbackSigner signs transformed bytes and preserves original source ingre
   assert.equal(second.sourceManifestPreserved, true);
   assert.equal(second.sourceAndInputDiffer, true);
   assert.ok(second.ingredientCount >= 1, "new manifest must retain the previous signed asset as an ingredient");
+  const secondReader = await Reader.fromAsset({ path: secondOutput, mimeType: "image/png" }, new Context({ verify: { verifyAfterReading: true, verifyTrust: false } }));
+  const secondParent = secondReader.getActive().ingredients.find(ingredient => ingredient.relationship === "parentOf");
+  assert.equal(secondParent.active_manifest, firstReader.getActive().label, "the next edit must retain the prior signed manifest as its parent");
   assert.equal(second.sourceManifestState, first.validationState);
   assert.equal((await stat(secondOutput)).isFile(), true);
   assert.ok(calls >= 2, "the KMS/HSM callback must be invoked for each derivative");
