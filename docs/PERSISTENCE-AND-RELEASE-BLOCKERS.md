@@ -25,6 +25,7 @@
 
 - Cloudflare D1 is available on Workers Free. Current published limits include 5 million rows read/day, 100,000 rows written/day, 5 GB total storage across the account, 500 MB per Free database and 7-day Time Travel. The existing staging database is empty, so a schema can be built and tested without touching another product.
 - Cloudflare R2 Standard currently includes 10 GB-month storage, 1 million Class A operations and 10 million Class B operations per month, with no egress charge. Usage above the free allowance is billed. R2 activation requires completing the dashboard subscription/checkout flow; it has not been activated here.
+- Cloudflare Email Sending is not available on Workers Free; arbitrary-recipient outbound email requires Workers Paid. Free Email Routing is inbound/forwarding only and cannot replace transactional password-reset email. No paid email plan was enabled.
 - Render Free web services have ephemeral filesystems and cannot attach persistent disks. Render Free Postgres expires after 30 days, so it is not a suitable durable production datastore.
 - Supabase Free allows two active projects across organisations for an owner/admin. The two current projects are already used by other platform work.
 
