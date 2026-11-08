@@ -96,3 +96,25 @@ test("D1 Worker health reports staging binding without exposing data", async () 
   assert.deepEqual(await response.json(), { status: "ready", database: "executive-visuals-staging", metadataOnly: true, r2Enabled: false });
   DB.close();
 });
+
+test("staging Worker blocks production business APIs instead of proxying them", async t => {
+  let upstreamCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response("unexpected"); });
+  const response = await worker.fetch(new Request("https://staging.example/api/projects"), { API_ORIGIN: "https://executive-visuals.onrender.com" });
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error.code, "STAGING_ROUTE_NOT_FOUND");
+  assert.equal(upstreamCalls, 0);
+});
+
+test("staging Worker proxies only login/logout authentication routes", async t => {
+  t.mock.method(globalThis, "fetch", async request => {
+    assert.equal(new URL(request.url).pathname, "/api/auth/login");
+    assert.equal(request.method, "POST");
+    return new Response(JSON.stringify({ user: { id: userId }, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json", "set-cookie": "ev_supabase_access=test; HttpOnly; Secure" } });
+  });
+  const response = await worker.fetch(new Request("https://staging.example/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "editor@example.test", password: "not-a-real-password" })
+  }), { API_ORIGIN: "https://executive-visuals.onrender.com" });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("set-cookie"), /ev_supabase_access=test/);
+});
