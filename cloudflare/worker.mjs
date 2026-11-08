@@ -19,10 +19,10 @@ function safeApiOrigin(value) {
 }
 
 function errorResponse(error) {
-  const status = error?.code === "D1_PROJECT_NOT_FOUND" ? 404
+  const status = error?.status || (error?.code === "D1_PROJECT_NOT_FOUND" ? 404
     : error?.code === "D1_PROJECT_ACCESS_DENIED" ? 403
     : error?.code === "D1_PROJECT_REVISION_CONFLICT" ? 409
-    : 400;
+    : 400);
   return json({ error: { code: error?.code || "D1_REQUEST_INVALID", message: String(error?.message || "The D1 request could not be completed.").slice(0, 300) } }, status);
 }
 
