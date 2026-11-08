@@ -221,7 +221,6 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-      const info = await stat(outputPath);
       if (!info.isFile() || info.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
       let outputProbe = null;
       const structuralProbe = await runProcess(ffprobe, ["-v","error","-show_format","-show_streams","-of","json",outputPath], { signal, timeoutMs, onProgress });
