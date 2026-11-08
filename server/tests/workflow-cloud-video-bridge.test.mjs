@@ -16,7 +16,7 @@ const quoteId="923e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running"}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded"}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_expires_at:new Date(Date.now()+60000).toISOString()};
  const db={prepare(sql){
@@ -36,7 +36,7 @@ function fixture({budget=2,jobStatus="running"}={}){
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
    }
-   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,status:"succeeded",output:{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},costEvidenceReference:"cost:verified"}}}};
+   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},costEvidenceReference:"cost:verified"}:null}}};
    if(input.method==="GET"&&input.path==="/api/cloud/assets/"+cloudAssetId)return{status:200,body:{asset:{id:cloudAssetId,projectId,mediaType:"video/mp4",size:video.length,sha256},url:"https://supabase.example/storage/v1/object/sign/video"}};
    if(input.method==="POST"&&input.path==="/api/cloud/jobs/"+cloudJobId+"/cancel")return{status:202,body:{}};
    throw new Error("Unexpected cloud API call: "+input.method+" "+input.path);
@@ -85,4 +85,23 @@ test("cloud workflow node refuses a budget ceiling below the fresh quote before 
 
 test("cloud workflow node refuses to run without an authenticated cloud API",async()=>{
  await assert.rejects(()=>executeCloudVideoWorkflowNode({}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_DISABLED");
+});
+
+test("cloud workflow node returns a durable pending receipt without holding the local worker",async()=>{
+ const f=fixture({cloudStatus:"running"}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-pending-test-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+  });
+  assert.equal(result.pending,true);
+  assert.equal(result.cloudJobId,cloudJobId);
+  assert.equal(result.quoteId,quoteId);
+  assert.equal(f.calls.filter(call=>call.path==="/api/cloud/workflows/video/approve").length,1);
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
 });
