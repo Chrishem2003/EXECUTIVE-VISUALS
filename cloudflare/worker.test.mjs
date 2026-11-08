@@ -142,3 +142,35 @@ test("staging Worker proxies only login/logout authentication routes", async t =
   assert.equal(response.status, 200);
   assert.match(response.headers.get("set-cookie"), /ev_supabase_access=test/);
 });
+
+test("D1 Worker exposes authenticated revisioned workspace documents", async t => {
+  const DB = makeD1();
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    user: { id: userId, email: "editor@example.test" }, authMode: "supabase"
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const createdResponse = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "POST", headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Workspace-backed project" })
+  }), env);
+  assert.equal(createdResponse.status, 201);
+  const { project } = await createdResponse.json();
+  const read = await worker.fetch(new Request(`https://staging.example/api/d1/projects/${project.id}/workspace`, {
+    headers: { authorization: "Bearer staging-test-token" }
+  }), env);
+  assert.equal(read.status, 200);
+  const initial = await read.json();
+  assert.equal(initial.revision, 1);
+  assert.deepEqual(initial.document, {});
+  const update = await worker.fetch(new Request(`https://staging.example/api/d1/projects/${project.id}/workspace`, {
+    method: "PUT",
+    headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ expectedRevision: 1, document: { brief: "Persisted in D1", frameRate: 24 } })
+  }), env);
+  assert.equal(update.status, 200);
+  const saved = await update.json();
+  assert.equal(saved.revision, 2);
+  assert.equal(saved.document.brief, "Persisted in D1");
+  DB.close();
+});
+
