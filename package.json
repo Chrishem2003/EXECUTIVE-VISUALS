@@ -62,5 +62,9 @@
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "allowScripts": {
+    "@contentauth/c2pa-node@0.10.0": true,
+    "esbuild@0.25.12": true
   }
 }
