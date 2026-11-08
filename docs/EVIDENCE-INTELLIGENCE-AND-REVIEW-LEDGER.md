@@ -34,3 +34,10 @@ Project viewers may read evidence but cannot submit or review it. Personal asset
 ## Validation
 
 Run `npm run verify:evidence-ledger` for database-backed tests covering source hash snapshots, submission events, reviewer attribution, terminal review behavior and input validation. The command is included in `npm run build`.
+
+
+## Source integrity enforcement
+
+Evidence submission and reviewer decisions verify the current managed file bytes against both the stored byte size and the asset's recorded SHA-256. If the file is missing, has changed size, or hashes differently, the API returns `EVIDENCE_SOURCE_INTEGRITY_FAILED` and does not create or approve the evidence record. Restore the original source through a controlled recovery process; do not overwrite the evidence record or substitute another file under the same asset ID. Every review decision (`verified`, `needs_review`, or `rejected`) requires a reason of at least eight characters; the reviewer identity, decision and reason are retained in the append-only event history. The AI Director displays a shortened source SHA-256 fingerprint, method and source reference to help reviewers identify the exact source.
+
+This check proves that the bytes currently being reviewed match the bytes recorded at ingest. It does not prove the claim itself, establish rights or consent, or replace C2PA signature/trust validation.
