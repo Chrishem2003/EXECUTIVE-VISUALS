@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,startCloudWorkerProcess } from "../cloud-worker-process.mjs";
+import { runCloudWorkerCycle } from "../cloud-worker.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -9,7 +10,7 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
- const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);
+ const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);assert.equal(config.c2paSigningEnabled,false);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_HEARTBEAT_MS:"90000"}),/heartbeat/);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_POLL_MS:"10"}),/poll interval/);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_LEASE_SECONDS:"30",CLOUD_WORKER_HEARTBEAT_MS:"30000"}),/shorter than the lease/);
@@ -56,4 +57,53 @@ test("cloud worker supervisor does not start timers or claim work if stopped dur
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
  const starting=supervisor.start();await started;await supervisor.stop();releaseRecovery();await starting;
  assert.equal(ran,false,"a stopped supervisor must not claim jobs after startup recovery finishes");
+});
+
+test("C2PA cloud-worker signing requires a dedicated matching workspace, key reference and HTTPS TSA",()=>{
+ const signingEnv={
+  ...env,CLOUD_WORKER_TEMP_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_ENABLED:"true",C2PA_SIGNING_MEDIA_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_KEY_REF:"kms-key-alias/ev-production",C2PA_TSA_URL:"https://tsa.example.com"
+ };
+ const config=readCloudWorkerConfig(signingEnv);
+ assert.equal(config.c2paSigningEnabled,true);
+ assert.equal(config.c2paSigningMediaRoot,config.tempRoot);
+ assert.equal(config.c2paSigningKeyRef,"kms-key-alias/ev-production");
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_WORKER_TEMP_ROOT:""}),/explicit private/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_MEDIA_ROOT:"/tmp/other"}),/must match/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_KEY_REF:""}),/C2PA_SIGNING_KEY_REF/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_TSA_URL:"http://tsa.example.com"}),/HTTPS/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_MEDIA_WORKER_ENABLED:"false"}),/media worker family/);
+});
+
+test("cloud worker startup fails closed when C2PA signing lacks an injected protected provider or public chain",async()=>{
+ const signingEnv={
+  ...env,CLOUD_WORKER_TEMP_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_ENABLED:"true",C2PA_SIGNING_MEDIA_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_KEY_REF:"kms-key-alias/ev-production",C2PA_TSA_URL:"https://tsa.example.com"
+ };
+ await assert.rejects(()=>startCloudWorkerProcess(signingEnv),/no authenticated KMS\/HSM signingProvider/);
+ await assert.rejects(()=>startCloudWorkerProcess(signingEnv,{signingProvider:{sign:async()=>Buffer.alloc(64)}}),/public certificate chain/);
+});
+
+
+test("supervisor stop aborts active media execution and persists a cancelled job",async()=>{
+ const calls=[];let markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});
+ const queue={
+  async claim(){calls.push("claim");return{id:"long-render"};},
+  async renew(){calls.push("renew");return true;},
+  async finish(id,workerId,status,output,error){calls.push(["finish",status,error]);return true;}
+ };
+ const worker={
+  async recoverExpired(){return 0;},
+  async runCycle(options){return runCloudWorkerCycle({
+   queue,workerId:"media-worker",leaseSeconds:60,heartbeatIntervalMs:10000,signal:options.signal,
+   execute:async({signal})=>{markStarted();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));}
+  });}
+ };
+ const supervisor=createCloudWorkerSupervisor({workers:[worker],leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
+ await supervisor.start();await started;await supervisor.stop();
+ assert.deepEqual(calls[0],"claim");
+ assert.equal(calls.some(call=>Array.isArray(call)&&call[0]==="finish"&&call[1]==="cancelled"),true);
 });
