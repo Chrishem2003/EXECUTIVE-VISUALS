@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
-RUN mkdir -p /app/runtime-server && tar -C /app --exclude=server/tests -cf /tmp/server-runtime.tar server && tar -xf /tmp/server-runtime.tar -C /app/runtime-server --strip-components=1 && rm /tmp/server-runtime.tar
+RUN mkdir -p /app/runtime-server && tar -C /app --exclude=server/tests -cf /tmp/server-runtime.tar server && if tar -tf /tmp/server-runtime.tar | grep -q '^server/tests/'; then echo 'Test fixtures must not enter the runtime image' >&2; exit 1; fi && tar -xf /tmp/server-runtime.tar -C /app/runtime-server --strip-components=1 && rm /tmp/server-runtime.tar
 
 FROM node:24-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
