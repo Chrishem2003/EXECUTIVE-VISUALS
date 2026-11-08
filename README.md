@@ -63,6 +63,8 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 
 ## Research and implementation records
+- [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
+
 
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
 - [Product integration and scale plan](docs/PRODUCT-INTEGRATION-AND-SCALE-PLAN.md)

@@ -153,6 +153,13 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(asset.name,"frame.png");
   assert.equal(asset.size,12);
   assert.equal(asset.sha256.length,64);
+  assert.equal(asset.provenance.schema,"executive-visuals.provenance.v1");
+  assert.equal(asset.provenance.asset.sha256,asset.sha256);
+  const provenance=await request("/api/assets/"+asset.id+"/provenance",{},cookieA);
+  assert.equal(provenance.status,200);
+  const provenanceBody=await provenance.json();
+  assert.equal(provenanceBody.verification.status,"integrity_verified");
+  assert.equal(provenanceBody.verification.c2pa,"not_checked");
 
   const assets=await request("/api/assets",{},cookieA);
   assert.equal((await assets.json()).assets.length,1);
@@ -162,6 +169,8 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal((await hidden.json()).assets.length,0);
   const forbidden=await request("/api/assets/"+asset.id+"/file",{},cookieB);
   assert.equal(forbidden.status,404);
+  const hiddenProvenance=await request("/api/assets/"+asset.id+"/provenance",{},cookieB);
+  assert.equal(hiddenProvenance.status,404);
   const ownProject=await request("/api/projects/"+project.id,{},cookieB);
   assert.equal(ownProject.status,404);
 });
