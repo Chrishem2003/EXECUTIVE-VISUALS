@@ -10,6 +10,19 @@ function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: output });
 }
 
+function responseCookies(response) {
+  if (typeof response.headers.getSetCookie === "function") return response.headers.getSetCookie();
+  const cookie = response.headers.get("set-cookie");
+  return cookie ? [cookie] : [];
+}
+
+function withCookies(response, cookies = []) {
+  if (!cookies.length) return response;
+  const headers = new Headers(response.headers);
+  for (const cookie of cookies) headers.append("set-cookie", cookie);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function safeApiOrigin(value) {
   const origin = new URL(value);
   if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
@@ -55,8 +68,9 @@ async function authenticate(request, env) {
   } catch {
     throw Object.assign(new Error("The application identity service is unavailable."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
   }
+  const sessionCookies = responseCookies(response);
   if (response.status === 401 || response.status === 403) {
-    throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED" });
+    throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED", setCookies: sessionCookies });
   }
   if (!response.ok) throw Object.assign(new Error("The application identity service rejected the request."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
   let payload;
@@ -69,7 +83,7 @@ async function authenticate(request, env) {
   }
   const provider = payload.authMode === "supabase" ? "supabase" : payload.authMode === "local" ? "local" : "";
   if (!provider) throw Object.assign(new Error("The account authentication mode is not supported by D1 staging."), { status: 403, code: "AUTH_MODE_UNSUPPORTED" });
-  return { id: user.id, email: typeof user.email === "string" ? user.email : null, provider };
+  return { user: { id: user.id, email: typeof user.email === "string" ? user.email : null, provider }, setCookies: sessionCookies };
 }
 
 async function requireSchema(db) {
@@ -95,35 +109,40 @@ async function d1Api(request, env, url) {
   if (!await requireSchema(env.DB)) {
     return json({ error: { code: "D1_MIGRATION_REQUIRED", message: "The isolated staging schema has not been applied." } }, 503);
   }
-  let user;
-  try { user = await authenticate(request, env); }
-  catch (error) { return json({ error: { code: error.code || "AUTH_REQUIRED", message: error.message } }, error.status || 401); }
+  let user, sessionCookies = [];
+  try {
+    const authenticated = await authenticate(request, env);
+    user = authenticated.user;
+    sessionCookies = authenticated.setCookies;
+  } catch (error) {
+    return withCookies(json({ error: { code: error.code || "AUTH_REQUIRED", message: error.message } }, error.status || 401), error.setCookies);
+  }
 
   const repo = createD1Repository({ db: env.DB, allowR2: false });
   try {
     const principal = await repo.resolvePrincipal({ subject: user.id, provider: user.provider, email: user.email });
     if (url.pathname === "/api/d1/projects" && request.method === "GET") {
       const projects = await repo.listProjects({ actorId: principal.id });
-      return json({ projects, storage: "cloudflare-d1-staging" });
+      return withCookies(json({ projects, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
     if (url.pathname === "/api/d1/projects" && request.method === "POST") {
       const body = await readJson(request);
       const project = await repo.createProject({ ownerId: principal.id, name: body.name, description: body.description || "", settings: body.settings || {} });
-      return json({ project, storage: "cloudflare-d1-staging" }, 201);
+      return withCookies(json({ project, storage: "cloudflare-d1-staging" }, 201), sessionCookies);
     }
     const match = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})$/i);
     if (match && request.method === "GET") {
       const project = await repo.getProject({ actorId: principal.id, projectId: match[1] });
-      return project ? json({ project, storage: "cloudflare-d1-staging" }) : json({ error: { code: "D1_PROJECT_NOT_FOUND", message: "Project not found." } }, 404);
+      return withCookies(project ? json({ project, storage: "cloudflare-d1-staging" }) : json({ error: { code: "D1_PROJECT_NOT_FOUND", message: "Project not found." } }, 404), sessionCookies);
     }
     if (match && request.method === "PATCH") {
       const body = await readJson(request);
       const project = await repo.updateProject({ actorId: principal.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
-      return json({ project, storage: "cloudflare-d1-staging" });
+      return withCookies(json({ project, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
     return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404);
   } catch (error) {
-    return errorResponse(error);
+    return withCookies(errorResponse(error), sessionCookies);
   }
 }
 
