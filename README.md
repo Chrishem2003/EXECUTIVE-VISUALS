@@ -24,6 +24,14 @@ CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning,
 - Timecoded review comments, approvals and change requests.
 - Operations, capability readiness and audit history.
 
+## AI upscaling integrity and quality gate
+
+The local Real-ESRGAN NCNN adapter validates source image dimensions, enforces safe pixel limits, checks output image signatures and requires exact 2×/3×/4× output dimensions. It refuses to overwrite source/output files and keeps execution self-tests separate from visual-quality approval.
+
+Visual quality is not marked verified until representative portrait, fine-texture, text/graphics, animation and low-light/noisy fixtures have valid provenance-pinned benchmark records and independent human review. See [AI upscaling integrity and quality gate](docs/AI-UPSCALE-INTEGRITY-AND-QUALITY.md).
+
+AI upscaling remains fail-closed unless the executable, allowlisted model weights and explicit worker enablement are configured. No paid inference provider is enabled by default.
+
 ## Runtime milestone
 The application now includes a local API service with:
 - Local account registration and sign-in for development.
