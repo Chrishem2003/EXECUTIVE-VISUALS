@@ -16,6 +16,8 @@ async function createTestSigningIdentity(dir) {
   const signerCsr = join(dir, "ephemeral-test-signer.csr");
   const signerCert = join(dir, "ephemeral-test-signer-cert.pem");
   const certificateChainPath = join(dir, "ephemeral-test-chain.pem");
+  const extensionsPath = join(dir, "ephemeral-test-extensions.cnf");
+  await writeFile(extensionsPath, "basicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature\\nextendedKeyUsage=critical,codeSigning\\n");
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
     "-nodes", "-keyout", rootKey, "-out", rootCert, "-days", "1",
@@ -31,8 +33,8 @@ async function createTestSigningIdentity(dir) {
   execFileSync("openssl", [
     "x509", "-req", "-in", signerCsr, "-CA", rootCert, "-CAkey", rootKey,
     "-CAcreateserial", "-out", signerCert, "-days", "1", "-sha256",
-    "-extfile", "/dev/stdin"
-  ], { input: "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n", stdio: ["pipe", "ignore", "ignore"] });
+    "-extfile", extensionsPath
+  ], { stdio: "ignore" });
   await writeFile(certificateChainPath, Buffer.concat([await readFile(signerCert), await readFile(rootCert)]));
   return { certificateChain: await readFile(certificateChainPath), privateKey: await readFile(signerKey) };
 }
