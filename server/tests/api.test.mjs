@@ -106,6 +106,19 @@ test("multi-shot production quote API is authenticated, itemized and read-only",
   assert.equal(quote.disclaimer.includes("No generation jobs were submitted"),true);
 });
 
+test("capability atlas is authenticated, read-only and distinguishes implemented from unavailable operations",async()=>{
+  assert.equal((await fetch(base+"/api/capabilities")).status,401);
+  const cookie=await register("capability-atlas-owner@example.test");
+  const response=await request("/api/capabilities",{},cookie);
+  assert.equal(response.status,200);
+  const atlas=await response.json();
+  assert.equal(atlas.version,2);
+  assert.equal(atlas.summary.implementedOperations,2);
+  assert.equal(atlas.summary.documentedNotIntegrated,10);
+  assert.equal(atlas.providers[0].policy.requestsSubmitted,false);
+  assert.equal(atlas.providers[0].policy.credentialsExposed,false);
+  assert.equal(atlas.providers[0].operations.find(x=>x.id==="video.video_to_video").status,"documented_not_integrated");
+});
 test("usage API reports account request allowance without exposing secrets",async()=>{
   assert.equal((await fetch(base+"/api/usage")).status,401);
   const cookie=await register("usage-owner@example.test");
