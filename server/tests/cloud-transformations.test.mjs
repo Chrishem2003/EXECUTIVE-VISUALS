@@ -8,7 +8,7 @@ const source="33333333-3333-4333-8333-333333333333";
 const reference="44444444-4444-4444-8444-444444444444";
 
 function fixture({canWrite=true,readiness={}}={}){
- const state={jobs:[],events:[]};
+ const state={jobs:[],events:[],approvals:[],enqueueCalls:[]};
  const assets=new Map([
   [source,{id:source,ownerId:owner,projectId:project,mediaType:"video/mp4"}],
   [reference,{id:reference,ownerId:owner,projectId:project,mediaType:"image/png"}]
@@ -21,7 +21,11 @@ function fixture({canWrite=true,readiness={}}={}){
  const fetchImpl=async(url,options={})=>{
   const parsed=new URL(url),method=options.method||"GET",table=parsed.pathname.split("/").pop();
   let result=[];
-  if(table==="jobs"){
+  if(table==="create_video_generation_budget_approval"&&method==="POST"){
+   const approval=JSON.parse(options.body);state.approvals.push(approval);result=approval.p_approval_id;
+  }else if(table==="enqueue_video_generation_job"&&method==="POST"){
+   state.enqueueCalls.push(JSON.parse(options.body));result=[{job_id:"55555555-5555-4555-8555-555555555555",job_status:"queued",idempotent_replay:false,budget_reservation_id:"66666666-6666-4666-8666-666666666666"}];
+  }else if(table==="jobs"){
    if(method==="GET"){
     result=state.jobs.filter(row=>{
      for(const key of ["id","owner_id","idempotency_key","project_id","job_type","status"]){const value=parsed.searchParams.get(key);if(value&&value.startsWith("eq.")&&String(row[key])!==decodeURIComponent(value.slice(3)))return false;}
@@ -30,14 +34,20 @@ function fixture({canWrite=true,readiness={}}={}){
    }else if(method==="POST"){
     const row=JSON.parse(options.body);row.created_at=new Date().toISOString();row.updated_at=row.created_at;state.jobs.push(row);result=[row];
    }else if(method==="PATCH"){
-    result=state.jobs.filter(row=>{for(const key of ["id","status"]){const value=parsed.searchParams.get(key);if(value&&value.startsWith("eq.")&&String(row[key])!==decodeURIComponent(value.slice(3)))return false;}if(parsed.searchParams.has("approved_at")&&row.approved_at!==null&&row.approved_at!==undefined)return false;return true;});
+    result=state.jobs.filter(row=>{
+     for(const key of ["id","status"]){const value=parsed.searchParams.get(key);if(value&&value.startsWith("eq.")&&String(row[key])!==decodeURIComponent(value.slice(3)))return false;}
+     const approvedAt=parsed.searchParams.get("approved_at");
+     if(approvedAt==="is.null"&&row.approved_at!==null&&row.approved_at!==undefined)return false;
+     if(approvedAt==="not.is.null"&&(row.approved_at===null||row.approved_at===undefined))return false;
+     return true;
+    });
     for(const row of result)Object.assign(row,JSON.parse(options.body));
    }
   }else if(table==="job_events"&&method==="POST"){state.events.push(JSON.parse(options.body));result=[];}
   return new Response(JSON.stringify(result),{status:200,headers:{"content-type":"application/json"}});
  };
- const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite,transformationReadiness:async()=>readiness});
- const body={projectId:project,sourceAssetId:source,operation:"vehicle_replace",prompt:"Replace the vehicle with a graphite electric SUV.",durationSeconds:8,referenceAssetIds:[reference],preservation:["camera_motion","composition"],rightsConfirmed:true,subjectConsentConfirmed:false};
+ const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite,transformationReadiness:async()=>readiness,runwaySourceResolver:{async resolveMetadata({ownerId,projectId,assetId}){return{ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:8,frameCount:192,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,sourceDynamicRange:"sdr"};}}});
+ const body={projectId:project,sourceAssetId:source,operation:"vehicle_replace",prompt:"Replace the vehicle with a graphite electric SUV.",durationSeconds:8,referenceAssetIds:[],preservation:["camera_motion","composition"],rightsConfirmed:true,subjectConsentConfirmed:false};
  return{api,state,body,assets};
 }
 
@@ -58,7 +68,7 @@ test("cloud transformation creation enforces rights, person consent, project ass
  const noConsent=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:{...f.body,operation:"person_replace"},idempotencyKey:"cloud-transform-003"});
  assert.equal(noConsent.body.error.code,"SUBJECT_CONSENT_REQUIRED");
  f.assets.set(reference,{id:reference,ownerId:owner,projectId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",mediaType:"image/png"});
- const wrongProject=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-004"});
+ const wrongProject=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:{...f.body,referenceAssetIds:[reference]},idempotencyKey:"cloud-transform-004"});
  assert.equal(wrongProject.body.error.code,"REFERENCE_ASSET_INVALID");
  const viewer=fixture({canWrite:false});
  const denied=await viewer.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:viewer.body,idempotencyKey:"cloud-transform-005"});
@@ -69,12 +79,18 @@ test("cloud approval records budget metadata but submit remains blocked without 
  const f=fixture();
  const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-006"});
  const id=created.body.plan.id;
- const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{estimatedCostMicros:100,approvedBudgetMicros:99,currency:"USD",adapterId:"video",capability:"video.transform"}});
- assert.equal(bad.body.error.code,"TRANSFORMATION_BUDGET_INVALID");
- const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{estimatedCostMicros:100,approvedBudgetMicros:150,currency:"USD",adapterId:"video-transform",capability:"video.transform"}});
- assert.equal(approved.status,200);assert.equal(approved.body.plan.status,"approved");assert.ok(approved.body.plan.approval.id);
+ const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:99,currency:"USD"}});
+ assert.equal(bad.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ assert.equal(approved.status,200);assert.equal(approved.body.plan.status,"approved");assert.ok(approved.body.plan.approval.id);assert.ok(approved.body.plan.approval.estimatedCostMicros>100);
+ assert.equal(f.state.approvals.length,1);
+ assert.equal(f.state.approvals[0].p_approval_id,approved.body.plan.approval.id);
+ assert.equal(f.state.approvals[0].p_provider,"runway");
+ assert.equal(f.state.approvals[0].p_model,"aleph2");
+ assert.match(f.state.approvals[0].p_request_hash,/^[a-f0-9]{64}$/);
+ assert.equal(f.state.approvals[0].p_approved_max_amount,3);
  const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
- assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
+ assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
  assert.equal(f.state.jobs[0].status,"awaiting_approval");assert.equal(f.state.events.length,2);
 });
 
@@ -96,4 +112,40 @@ test("transformation readiness endpoint reports ready only when all release evid
  assert.equal(result.status,200);
  assert.equal(result.body.readiness.status,"ready");
  assert.equal(result.body.readiness.canSubmit,true);
+});
+
+
+test("Aleph 2 submit rejects changed transformation inputs after approval without enqueueing",async()=>{
+ const readiness={adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true};
+ const f=fixture({readiness});
+ const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-007"});
+ const id=created.body.plan.id;
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ assert.equal(approved.status,200);
+ f.state.jobs[0].input.prompt="Different prompt after approval.";
+ const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
+ assert.equal(submit.status,409);
+ assert.equal(submit.body.error.code,"TRANSFORMATION_APPROVAL_REQUEST_MISMATCH");
+ assert.equal(f.state.enqueueCalls.length,0);
+});
+
+
+test("Aleph 2 transformation approval and submit use the same durable approval and request hash",async()=>{
+ const readiness={adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true};
+ const f=fixture({readiness});
+ const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-008"});
+ const id=created.body.plan.id;
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ assert.equal(approved.status,200);
+ const submitted=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
+ assert.equal(submitted.status,202);
+ assert.equal(f.state.approvals.length,1);
+ assert.equal(f.state.enqueueCalls.length,1);
+ assert.equal(f.state.enqueueCalls[0].p_budget_approval_id,f.state.approvals[0].p_approval_id);
+ assert.equal(f.state.enqueueCalls[0].p_request_hash,f.state.approvals[0].p_request_hash);
+ assert.equal(f.state.enqueueCalls[0].p_model,"aleph2");
+ assert.equal(f.state.enqueueCalls[0].p_reserved_amount,3);
+ assert.equal(submitted.body.job.status,"queued");
+ assert.equal(f.state.jobs[0].status,"submitted");
+ assert.equal(f.state.jobs[0].output.videoJobId,submitted.body.job.id);
 });

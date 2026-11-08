@@ -20,10 +20,20 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
+import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
+import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
+import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
+import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
+import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attempt-store.mjs";
+import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+const isAdminUser = user => !!user?.email && ADMIN_EMAILS.has(String(user.email).trim().toLowerCase());
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -49,12 +59,87 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+ensureBillingSchema(db);
+ensureBillingWebhookSchema(db);
+ensureDodoSubscriptionSchema(db);
+const dodoRecurringCheckoutReady=()=>dodoSubscriptionCheckoutEnabled()&&listBillingPlans(db).some(plan=>/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||"")));
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const googleDriveOAuthEnabled = process.env.GOOGLE_DRIVE_OAUTH_ENABLED === "true";
+if (googleDriveOAuthEnabled && (
+  AUTH_MODE !== "supabase" ||
+  !cloudTimelineApiEnabled ||
+  !process.env.SUPABASE_URL ||
+  !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  !process.env.GOOGLE_OAUTH_CLIENT_ID ||
+  !process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
+  !process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+  !process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY ||
+  !process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY ||
+  process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY === process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY ||
+  !process.env.GOOGLE_PICKER_API_KEY ||
+  !/^\\d{6,24}$/.test(String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER || ""))
+)) {
+  throw new Error("Google Drive requires Supabase auth, a healthy private cloud workspace, OAuth and Picker credentials, and two different encryption keys.");
+}
+if (googleDriveOAuthEnabled && new URL(process.env.GOOGLE_OAUTH_REDIRECT_URI).pathname !== "/api/integrations/google-drive/callback") {
+  throw new Error("Google Drive OAuth redirect URI must use /api/integrations/google-drive/callback.");
+}
+const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
+const googleDriveExportAttemptStore = googleDriveOAuthEnabled ? createGoogleDriveExportAttemptStore({
+  encryptionKey: process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY
+}) : null;
+const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOAuthStateStore() : null;
+const googleDriveOAuth = googleDriveOAuthEnabled ? createGoogleDriveOAuth({
+  stateStore: googleDriveOAuthStateStore,
+  connections: googleDriveConnectionStore
+}) : null;
+const googleDriveAssetService = googleDriveOAuthEnabled ? createCloudAssetService({
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)
+}) : null;
+const googleDriveBridge = googleDriveOAuthEnabled ? createGoogleDrivePrivateFileBridge({
+  attempts: googleDriveExportAttemptStore,
+  getUserAccessToken: ({ ownerId }) => googleDriveOAuth.getAccessToken({ ownerId }),
+  assets: googleDriveAssetService.assets,
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),
+  loadPrivateAsset: async ({ ownerId, projectId = null, assetId }) => {
+    const asset = await googleDriveAssetService.assets.get({ ownerId, assetId });
+    if ((asset.projectId || null) !== (projectId || null)) throw Object.assign(new Error("Private asset project scope does not match."), { code: "GOOGLE_DRIVE_ASSET_FORBIDDEN" });
+    const signed = await googleDriveAssetService.assets.createSignedUrl({ ownerId, assetId, expiresIn: 60 });
+    const signedUrl = new URL(signed.url), storageOrigin = new URL(process.env.SUPABASE_URL).origin;
+    if (signedUrl.protocol !== "https:" || signedUrl.origin !== storageOrigin || signedUrl.username || signedUrl.password) {
+      throw Object.assign(new Error("Private asset storage returned an unsafe signed URL."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+    }
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(signedUrl, { redirect: "error", signal: controller.signal });
+      if (!response.ok || !response.body) throw Object.assign(new Error("Private asset download failed."), { code: "GOOGLE_DRIVE_ASSET_DOWNLOAD_FAILED" });
+      const declared = Number(response.headers.get("content-length") || asset.size);
+      const maxBytes = Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES);
+      if (declared !== asset.size || declared > maxBytes) throw Object.assign(new Error("Private asset download size is invalid."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      const reader = response.body.getReader(), chunks = []; let total = 0;
+      try {
+        while (true) {
+          const part = await reader.read(); if (part.done) break;
+          total += part.value.byteLength;
+          if (total > maxBytes) { await reader.cancel().catch(() => {}); throw Object.assign(new Error("Private asset exceeds the export limit."), { code: "GOOGLE_DRIVE_ASSET_INVALID" }); }
+          chunks.push(part.value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(total); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      if (bytes.byteLength !== asset.size || createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
+        throw Object.assign(new Error("Private asset integrity verification failed."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      }
+      return { asset, bytes };
+    } finally { clearTimeout(timer); }
+  }
+}) : null;
+
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -75,7 +160,7 @@ const SECURITY_HEADERS = {
   "cross-origin-resource-policy":"same-origin",
   "permissions-policy":"camera=(), microphone=(), geolocation=()"
 };
-const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const HTML_CSP = "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; frame-src 'self' https://drive.google.com https://docs.google.com; connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://content.googleapis.com; img-src 'self' data: blob: https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; media-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readJson = async (req,limit=1024*1024) => {
@@ -83,6 +168,11 @@ const readJson = async (req,limit=1024*1024) => {
   for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Request body must be valid JSON."),{status:400,code:"INVALID_JSON"}); }
+};
+const readRaw = async (req,limit=1024*1024) => {
+  const chunks=[];let size=0;
+  for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
+  return Buffer.concat(chunks);
 };
 const cookieValue = (req,name) => {
   const raw=req.headers.cookie||"";
@@ -184,14 +274,23 @@ async function storeUpload(req,user,projectId) {
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
   if(projectId&&!canWriteProject(db,user.id,projectId))throw Object.assign(new Error("Project not found or you do not have editor access."),{status:404,code:"PROJECT_NOT_FOUND"});
   const declaredSize=Number(req.headers["content-length"]||0);
+  if(!Number.isSafeInteger(declaredSize)||declaredSize<0)throw Object.assign(new Error("Upload Content-Length is invalid."),{status:400,code:"UPLOAD_LENGTH_INVALID"});
   if(declaredSize>MAX_UPLOAD_BYTES)throw Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"});
+  const projectOwner=projectId?db.prepare("SELECT owner_id FROM projects WHERE id=?").get(projectId)?.owner_id:user.id;
+  if(!projectOwner)throw Object.assign(new Error("Project owner could not be resolved."),{status:404,code:"PROJECT_NOT_FOUND"});
+  const storagePlan=getBillingOverview(db,projectOwner).plan;
+  const storageLimit=storagePlan?.limits?.storageBytes===undefined?null:Number(storagePlan.limits.storageBytes);
+  const currentStorage=()=>Number(db.prepare(`SELECT COALESCE(SUM(byte_size),0) AS bytes FROM assets
+    WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?))`).get(projectOwner,projectOwner).bytes||0);
+  const storageUsedBeforeUpload=currentStorage();
+  assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:storageUsedBeforeUpload,incomingBytes:declaredSize});
   let decodedName="upload";
   try{decodedName=decodeURIComponent(String(req.headers["x-file-name"]||"upload"));}
   catch{throw Object.assign(new Error("File name header is malformed."),{status:400,code:"INVALID_FILE_NAME"});}
   const originalName=safeName(decodedName);
   const id=randomUUID(), ext=EXTENSIONS[mediaType]||"bin", relative="uploads/"+id+"."+ext, absolute=join(MEDIA_ROOT,relative);
   const digest=createHash("sha256");let size=0;
-  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>MAX_UPLOAD_BYTES){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>MAX_UPLOAD_BYTES){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"}));return;}if(storageLimit!==null){try{assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:storageUsedBeforeUpload,incomingBytes:size});}catch(error){callback(error);return;}}digest.update(chunk);callback(null,chunk);}});
   try { await pipeline(req,meter,createWriteStream(absolute,{flags:"wx"})); }
   catch(error){await unlink(absolute).catch(()=>{});throw error;}
   if(size===0){await unlink(absolute).catch(()=>{});throw Object.assign(new Error("Empty uploads are not accepted."),{status:400,code:"EMPTY_UPLOAD"});}
@@ -206,9 +305,18 @@ async function storeUpload(req,user,projectId) {
   const sha256=digest.digest("hex");
   const extension=extname(originalName).toLowerCase();
   const metadata=(extension===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip"))?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{};
-  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
-    .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
-  audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
+  try{
+    db.exec("BEGIN IMMEDIATE");
+    assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:currentStorage(),incomingBytes:size});
+    db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
+    audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
+    db.exec("COMMIT");
+  }catch(error){
+    try{db.exec("ROLLBACK");}catch{}
+    await unlink(absolute).catch(()=>{});
+    throw error;
+  }
   return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,createdAt:now()};
 }
 async function processNextJob() {
@@ -268,6 +376,19 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let billingWebhookBusy=false;
+const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY)?setInterval(async()=>{
+  if(billingWebhookBusy)return;
+  billingWebhookBusy=true;
+  try {
+    if(process.env.FLW_SECRET_KEY)await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});
+    if(process.env.DODO_PAYMENTS_WEBHOOK_KEY)processNextDodoWebhook(db);
+  }
+  catch(error){ process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n"); }
+  finally { billingWebhookBusy=false; }
+},5000):null;
+billingWebhookTimer?.unref();
+
 
 export function createAppServer() {
   return createServer(async(req,res)=>{
@@ -276,8 +397,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=(path==="/api/webhooks/flutterwave"||path==="/api/webhooks/dodo")&&req.method==="POST"?"/payment-webhook":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/payment-webhook"?120:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -293,8 +414,36 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",platform:{primaryDatabase:"sqlite",persistentDataDirRequired:REQUIRE_PERSISTENT_DATA_DIR,persistentDataDirConfigured:REQUIRE_PERSISTENT_DATA_DIR&&isWithinDataDir(DB_FILE)&&isWithinDataDir(MEDIA_ROOT),cloudWorkspace:{enabled:Boolean(cloudTimelineApi),database:cloudTimelineApi?"supabase-postgres":"disabled",objectStorage:cloudTimelineApi?"supabase-private-bucket":"disabled"},auth:{mode:AUTH_MODE,supabaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY)},workers:{enabled:process.env.DISABLE_WORKER!=="true"},billing:{plansEnabled:true,checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),recurringSubscriptionsEnabled:dodoRecurringCheckoutReady()}},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
+      if(path==="/api/webhooks/flutterwave"&&req.method==="POST"){
+        if(!String(req.headers["content-type"]||"").toLowerCase().startsWith("application/json")){
+          fail(res,415,"WEBHOOK_CONTENT_TYPE_INVALID","Flutterwave webhook requests must use application/json.");return;
+        }
+        const rawBody=await readRaw(req,1024*1024);
+        const result=receiveFlutterwaveWebhook(db,{
+          rawBody,
+          signature:String(req.headers["verif-hash"]||""),
+          secretHash:process.env.FLW_WEBHOOK_SECRET||""
+        });
+        send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
+      }
+      if(path==="/api/webhooks/dodo"&&req.method==="POST"){
+        if(!String(req.headers["content-type"]||"").toLowerCase().startsWith("application/json")){
+          fail(res,415,"WEBHOOK_CONTENT_TYPE_INVALID","Dodo webhook requests must use application/json.");return;
+        }
+        const rawBody=await readRaw(req,1024*1024);
+        const result=receiveDodoWebhook(db,{
+          rawBody,
+          webhookId:String(req.headers["webhook-id"]||""),
+          signature:String(req.headers["webhook-signature"]||""),
+          timestamp:String(req.headers["webhook-timestamp"]||""),
+          webhookKey:process.env.DODO_PAYMENTS_WEBHOOK_KEY||""
+        });
+        send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
+      }
+
+
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(AUTH_MODE==="supabase"){
@@ -334,9 +483,226 @@ export function createAppServer() {
         }else setCookie(res,"",0);
         send(res,200,{ok:true},cors);return;
       }
+
+      if(path==="/api/integrations/google-drive/callback"&&req.method==="GET"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        if(url.searchParams.has("error")){
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+        try{
+          await googleDriveOAuth.complete({state:url.searchParams.get("state"),code:url.searchParams.get("code")});
+          res.writeHead(303,{"location":"/?googleDrive=connected","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }catch(error){
+          process.stderr.write("Google Drive OAuth callback failed: "+String(error.code||"GOOGLE_OAUTH_CALLBACK_FAILED")+"\\n");
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+      }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
-      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+const billingAccount=touchBillingAccount(db,user);
+      const suspendedBillingAccess=path==="/api/integrations/google-drive/status"||path==="/api/integrations/google-drive/disconnect"||path==="/api/billing/overview"||path==="/api/billing/plans"||path==="/api/billing/customer-portal"||
+        /^\/api\/billing\/(?:orders\/ev_[a-f0-9]{32}|dodo-orders\/[0-9a-f-]{36})$/i.test(path);
+      if(billingAccount.status==="suspended"&&!suspendedBillingAccess){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Billing status and cancellation access remain available.");return;}
+
+      if(path==="/api/integrations/google-drive/status"&&req.method==="GET"){
+        if(!googleDriveOAuth||!googleDriveConnectionStore){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const connection=await googleDriveConnectionStore.get(user.id);
+          send(res,200,{connected:Boolean(connection),email:connection?.email||null,grantedScopes:connection?.grantedScopes||[]},cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_CONNECTION_STORE_UNAVAILABLE","Google Drive connection status is temporarily unavailable.");return;}
+      }
+      if(path==="/api/integrations/google-drive/connect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{send(res,200,await googleDriveOAuth.begin({ownerId:user.id}),cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_UNAVAILABLE","Google Drive authorization could not be started.");return;}
+      }
+      if(path==="/api/integrations/google-drive/picker-token"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        const developerKey=String(process.env.GOOGLE_PICKER_API_KEY||"").trim();
+        const appId=String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER||"").trim();
+        if(!developerKey||developerKey.length>512||!/^\\d{6,24}$/.test(appId)){fail(res,503,"GOOGLE_PICKER_NOT_CONFIGURED","Google Picker API key and numeric Cloud project number are not configured.");return;}
+        try{
+          const accessToken=await googleDriveOAuth.getAccessToken({ownerId:user.id});
+          send(res,200,{accessToken,developerKey,appId,expiresInSeconds:300},cors);return;
+        }catch(error){fail(res,401,error.code||"GOOGLE_OAUTH_NOT_CONNECTED","Connect Google Drive before opening the file picker.");return;}
+      }
+      if(path==="/api/integrations/google-drive/disconnect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const result=await googleDriveOAuth.disconnect({ownerId:user.id});
+          audit(db,user.id,"integration.google_drive.disconnected","integration","google-drive",{revoked:result.revoked});
+          send(res,200,result,cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_DISCONNECT_FAILED","Google Drive could not be disconnected cleanly.");return;}
+      }
+      if(path==="/api/integrations/google-drive/import"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file import is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.importFile({ownerId:user.id,projectId:body.projectId||null,fileId:body.fileId});
+          audit(db,user.id,"integration.google_drive.file_imported","asset",result.asset.id,{providerFileId:result.sourceFileId,projectId:body.projectId||null});
+          send(res,201,{asset:result.asset,source:result.source},cors);return;
+        }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_FILE_UNSUPPORTED"||error.code==="GOOGLE_DRIVE_FILE_ID_INVALID"?400:error.code==="GOOGLE_DRIVE_ACCESS_DENIED"||error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:502;fail(res,status,error.code||"GOOGLE_DRIVE_IMPORT_FAILED",error.message||"Google Drive file import failed.");return;}
+      }
+      if(path==="/api/integrations/google-drive/export"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file export is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
+          audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
+          send(res,201,{file:result},cors);return;
+        }catch(error){
+          const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:
+            ["GOOGLE_DRIVE_ASSET_FORBIDDEN","GOOGLE_DRIVE_FOLDER_UNAVAILABLE"].includes(error.code)?403:
+            ["GOOGLE_DRIVE_EXPORT_SCOPE_INVALID","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID"].includes(error.code)?400:
+            ["GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT","GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED","GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT","GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED","GOOGLE_DRIVE_EXPORT_IN_PROGRESS"].includes(error.code)?409:
+            ["GOOGLE_DRIVE_EXPORT_STORE_UNAVAILABLE","GOOGLE_DRIVE_EXPORT_STORE_TIMEOUT"].includes(error.code)?503:502;
+          fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;
+        }
+      }
+      const admin=isAdminUser(user);
+      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
+      const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
+      if(billingOrderMatch&&req.method==="GET"){
+        const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
+          FROM billing_payment_orders o JOIN billing_plans p ON p.id=o.plan_id
+          WHERE o.tx_ref=? AND o.user_id=? LIMIT 1`).get(billingOrderMatch[1],user.id);
+        if(!order){fail(res,404,"BILLING_ORDER_NOT_FOUND","Payment order not found.");return;}
+        send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
+      }
+
+      if(path==="/api/billing/subscription-checkout"&&req.method==="POST"){
+        const body=await readJson(req,16*1024);
+        const checkout=await createDodoSubscriptionCheckout(db,{user,planId:String(body.planId||"")});
+        send(res,200,{checkout},cors);return;
+      }
+      if(path==="/api/billing/customer-portal"&&req.method==="POST"){
+        const portal=await createDodoCustomerPortalSession(db,{user});
+        send(res,200,{portal},cors);return;
+      }
+      const dodoOrderMatch=path.match(/^\/api\/billing\/dodo-orders\/([0-9a-f-]{36})$/i);
+      if(dodoOrderMatch&&req.method==="GET"){
+        const order=getDodoCheckoutStatus(db,{orderId:dodoOrderMatch[1],userId:user.id});
+        send(res,200,{order},cors);return;
+      }
+      if(path==="/api/billing/checkout"&&req.method==="POST"){
+        if(process.env.BILLING_CHECKOUT_ENABLED!=="true" || (process.env.BILLING_ENFORCEMENT_ENABLED!=="true" && process.env.CREDITS_ENABLED!=="true") || !process.env.FLW_SECRET_KEY ||
+            !process.env.FLW_WEBHOOK_SECRET || !process.env.PUBLIC_APP_URL){
+          fail(res,503,"BILLING_CHECKOUT_DISABLED","Flutterwave checkout is disabled until merchant approval, webhook secrets and the public return URL are configured.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const checkout=await createFlutterwaveCheckout(db,{
+          user,planId:String(body.planId||""),
+          secretKey:process.env.FLW_SECRET_KEY,
+          publicAppUrl:process.env.PUBLIC_APP_URL
+        });
+        send(res,200,{checkout},cors);return;
+      }
+      if(path.startsWith("/api/admin/")&&path!=="/api/admin/ai-upscale/self-test"){
+        if(!admin){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
+        if(path==="/api/admin/overview"&&req.method==="GET"){send(res,200,{overview:getAdminOverview(db)},cors);return;}
+        if(path==="/api/admin/users"&&req.method==="GET"){
+          const query=String(url.searchParams.get("q")||"");
+          const limit=Number(url.searchParams.get("limit")||100);
+          send(res,200,{users:listAdminUsers(db,{query,limit})},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db,{activeOnly:false})},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="GET"){send(res,200,{prices:listBillingModelPrices(db)},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const price=saveBillingModelPrice(db,body);
+          audit(db,user.id,"admin.model_price_saved","model_price",price.id,{provider:price.provider,model:price.model,capability:price.capability,priceMicros:price.priceMicros,currency:price.currency,verifiedAt:price.verifiedAt});
+          send(res,200,{price},cors);return;
+        }
+        if(path==="/api/admin/refunds"&&req.method==="GET"){
+          const refunds=db.prepare("SELECT id,provider,refund_id,payment_id,amount_minor,currency,user_id,reconciliation_required,reconciliation_note,created_at,reconciled_at,reconciled_by FROM billing_refund_events ORDER BY created_at DESC LIMIT 100").all();
+          send(res,200,{refunds},cors);return;
+        }
+        const refundReconcileMatch=path.match(/^\/api\/admin\/refunds\/([0-9a-f-]{36})\/reconcile$/i);
+        if(refundReconcileMatch&&req.method==="POST"){
+          const refund=db.prepare("SELECT * FROM billing_refund_events WHERE id=?").get(refundReconcileMatch[1]);
+          if(!refund){fail(res,404,"REFUND_NOT_FOUND","Refund record not found.");return;}
+          if(Number(refund.reconciliation_required)!==1){fail(res,409,"REFUND_ALREADY_RECONCILED","Refund record does not require reconciliation.");return;}
+          const body=await readJson(req,8*1024);
+          const resolution=String(body.resolution||"");
+          const note=String(body.note||"").trim().slice(0,1000);
+          if(!["credit_adjusted","no_credit_entitlement"].includes(resolution)||note.length<5){
+            fail(res,400,"REFUND_RECONCILIATION_INVALID","Choose a valid resolution and provide an audit note.");return;
+          }
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            const grantTotal=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(amount),0) AS credits FROM billing_credit_ledger
+              WHERE user_id=? AND event_type='subscription_grant' AND amount>0
+                AND json_extract(metadata_json,'$.provider')='dodo'
+                AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+            const alreadyReversed=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(-amount),0) AS credits FROM billing_credit_ledger
+              WHERE user_id=? AND event_type='admin_adjustment' AND amount<0
+                AND json_extract(metadata_json,'$.refundProvider')='dodo'
+                AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+            let creditsToReverse=0;
+            if(resolution==="credit_adjusted"){
+              creditsToReverse=Number(body.creditsToReverse);
+              if(!refund.user_id||!Number.isSafeInteger(creditsToReverse)||creditsToReverse<=0||creditsToReverse>grantTotal-alreadyReversed){
+                throw Object.assign(new Error("Enter a positive credit reversal no greater than the remaining credits granted for this payment."),{code:"REFUND_ADJUSTMENT_INVALID",status:400});
+              }
+            }else if(grantTotal>alreadyReversed){
+              throw Object.assign(new Error("This payment has granted credits. Record a credit reversal before resolving the refund."),{code:"REFUND_CREDITS_STILL_OUTSTANDING",status:400});
+            }
+            let adjustmentLedgerId=null;
+            if(creditsToReverse>0){
+              adjustmentLedgerId=randomUUID();
+              db.prepare(`INSERT INTO billing_credit_ledger
+                (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+                VALUES(?,?,?,'admin_adjustment',?,?,?,?)`)
+                .run(adjustmentLedgerId,refund.user_id,-creditsToReverse,"Dodo refund credit reversal (manual reconciliation)",refund.payment_id,
+                  "dodo-refund-manual:"+refund.refund_id,json({refundProvider:"dodo",paymentId:refund.payment_id,refundId:refund.refund_id,creditsReversed:creditsToReverse,manualReconciliation:true}));
+            }
+            const changed=db.prepare("UPDATE billing_refund_events SET reconciliation_required=0,reconciled_at=?,reconciled_by=?,reconciliation_note=? WHERE id=? AND reconciliation_required=1")
+              .run(now(),user.id,resolution+": "+note,refund.id);
+            if(changed.changes!==1)throw Object.assign(new Error("Refund record changed during reconciliation."),{code:"REFUND_RECONCILIATION_CONFLICT",status:409});
+            audit(db,user.id,"admin.refund_reconciled","refund",refund.id,{provider:refund.provider,refundId:refund.refund_id,paymentId:refund.payment_id,resolution,creditsReversed:creditsToReverse,adjustmentLedgerId});
+            db.exec("COMMIT");
+            send(res,200,{ok:true,refundId:refund.id,resolution,creditsReversed:creditsToReverse,adjustmentLedgerId},cors);return;
+          }catch(error){
+            try{db.exec("ROLLBACK");}catch{}
+            if(String(error?.code||"").startsWith("REFUND_")){fail(res,error.status||400,error.code,error.message);return;}
+            throw error;
+          }
+        }
+        if(path==="/api/admin/audit"&&req.method==="GET"){
+          const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
+          send(res,200,{events:events.map(row=>({id:row.id,type:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,details:parseJson(row.details_json),createdAt:row.created_at}))},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="POST"){
+          const body=await readJson(req,64*1024);
+          const plan=saveBillingPlan(db,body);
+          audit(db,user.id,"admin.billing_plan_saved","billing_plan",plan.id,{code:plan.code,active:plan.active});
+          send(res,200,{plan},cors);return;
+        }
+        const subscriptionMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/subscription$"));
+        if(subscriptionMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=assignManualSubscription(db,{userId:subscriptionMatch[1],planId:String(body.planId||""),periodDays:Number(body.periodDays||30),status:String(body.status||"active"),actorId:user.id});
+          audit(db,user.id,"admin.subscription_assigned","subscription",result.id,{userId:result.userId,planId:result.planId,status:result.status});
+          send(res,200,{subscription:result},cors);return;
+        }
+        const creditsMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/credits$"));
+        if(creditsMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=adjustBillingCredits(db,{userId:creditsMatch[1],amount:Number(body.amount),description:String(body.description||""),actorId:user.id,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+          audit(db,user.id,"admin.credits_adjusted","user",creditsMatch[1],{amount:result.amount,ledgerId:result.id,replayed:result.replayed});
+          send(res,200,{adjustment:result},cors);return;
+        }
+        const statusMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/status$"));
+        if(statusMatch&&req.method==="POST"){
+          const body=await readJson(req,8*1024);
+          const result=setBillingAccountStatus(db,{userId:statusMatch[1],status:String(body.status||"")});
+          audit(db,user.id,"admin.account_status_changed","user",statusMatch[1],{status:result.status});
+          send(res,200,{account:result},cors);return;
+        }
+        fail(res,404,"ADMIN_ROUTE_NOT_FOUND","Administrator route not found.");return;
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
@@ -345,8 +711,8 @@ export function createAppServer() {
         });
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
@@ -751,9 +1117,21 @@ export function createAppServer() {
           }
         }
         const id=randomUUID();
-        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-          .run(id,user.id,projectId,type,inputJson,key||null);
-        addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          const concurrencyLimit=Number(getBillingOverview(db,user.id).plan?.limits?.concurrentJobs??1);
+          assertConcurrentJobCapacity(db,{userId:user.id,limit:concurrencyLimit});
+          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
+            .run(id,user.id,projectId,type,inputJson,key||null);
+          addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          db.exec("ROLLBACK");
+          if(error?.code==="BILLING_CONCURRENT_JOB_LIMIT"||error?.code==="BILLING_CONCURRENCY_CONFIG_INVALID"){
+            fail(res,error.status||429,error.code,error.message);return;
+          }
+          throw error;
+        }
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
       const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);

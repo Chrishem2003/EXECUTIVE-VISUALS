@@ -6,15 +6,17 @@ function parseTimestamp(value){
  return Number(match[1]||0)*3600+Number(match[2])*60+Number(match[3])+Number(match[4])/1000;
 }
 export function validateWebVtt(content,{durationSeconds=null,maxCues=MAX_CUES}={}){
- const text=String(content??""),findings=[];
+ const text=String(content??"").replace(/^\uFEFF/,""),findings=[];
  const add=(code,severity,detail,cueIndex)=>findings.push({code,severity,detail,...(Number.isInteger(cueIndex)?{cueIndex}:{})});
  if(Buffer.byteLength(text,"utf8")>MAX_BYTES)return{status:"blocked",format:"webvtt",cueCount:0,findings:[{code:"CAPTION_FILE_TOO_LARGE",severity:"error",detail:"Caption file exceeds the 2 MiB limit."}],metrics:{overlaps:0,longLines:0,highReadingSpeed:0}};
  if(!text.startsWith("WEBVTT")||!/^WEBVTT(?:\s|$)/.test(text))return{status:"blocked",format:"webvtt",cueCount:0,findings:[{code:"CAPTION_HEADER_INVALID",severity:"error",detail:"WebVTT must begin with a valid WEBVTT header."}],metrics:{overlaps:0,longLines:0,highReadingSpeed:0}};
  const lines=text.replace(/^\uFEFF/,"").replace(/\r\n?/g,"\n").split("\n");
  const cues=[];let index=0;
+ const cueLimit=Math.max(1,Math.min(MAX_CUES,Math.floor(Number(maxCues)||MAX_CUES)));
  for(let i=1;i<lines.length;){
   while(i<lines.length&&!lines[i].trim())i++;
   if(i>=lines.length)break;
+  if(index>=cueLimit){add("CAPTION_CUE_LIMIT_EXCEEDED","error","Caption file exceeds the cue limit.");break;}
   if(/^NOTE(?:\s|$)/.test(lines[i])){while(i<lines.length&&lines[i].trim())i++;continue;}
   if(lines[i].startsWith("STYLE")||lines[i].startsWith("REGION")){while(i<lines.length&&lines[i].trim())i++;continue;}
   let timing=lines[i].includes("-->")?lines[i]:null;
@@ -29,7 +31,6 @@ export function validateWebVtt(content,{durationSeconds=null,maxCues=MAX_CUES}={
   else if(!cueText){add("CAPTION_CUE_EMPTY","error","Caption cue "+(index+1)+" contains no readable text.",index);}
   else cues.push({start,end,text:cueText,index});
   index++;
-  if(index>Math.min(MAX_CUES,Number(maxCues)||MAX_CUES)){add("CAPTION_CUE_LIMIT_EXCEEDED","error","Caption file exceeds the cue limit.");break;}
  }
  let overlaps=0,longLines=0,highReadingSpeed=0;
  cues.sort((a,b)=>a.start-b.start||a.index-b.index);

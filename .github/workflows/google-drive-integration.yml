@@ -1,0 +1,85 @@
+name: Google Drive integration quality
+on:
+  push:
+    branches: [integration/drive-billing-settings-2026, integration/omni-provider-workers-2026]
+  pull_request:
+    branches: [main, integration/drive-billing-settings-2026, integration/omni-provider-workers-2026]
+concurrency:
+  group: google-drive-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Ensure media test tools are available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg fonts-dejavu-core
+          fi
+          ffmpeg -version
+          fc-match "DejaVu Sans"
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full quality and regression suite
+        run: npm run build
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: executive_visuals_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible schema
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Seed isolated owner, project and private asset
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-postgres-fixtures.sql
+      - name: Apply durable video submission ledger migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
+      - name: Apply video budget reservation and enqueue migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
+      - name: Apply Aleph 2 transformation approval migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108120000_aleph2_transformation_budget_approval.sql
+      - name: Apply Runway Model Router enqueue contract migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108210000_runway_model_router_enqueue_contract.sql
+      - name: Verify video queue, budget reservations and lease constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply Gemini Omni interaction ownership and retention migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
+      - name: Verify Gemini interaction ownership and retention constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-video-interactions-postgres-integration.sql
+      - name: Apply encrypted Google Drive connection migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105150000_google_drive_connections.sql
+      - name: Apply one-time OAuth state migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105153000_google_drive_oauth_states.sql
+      - name: Apply durable Drive export-attempt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
+      - name: Apply Drive export lease-integrity migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105180000_google_drive_export_lease_integrity.sql
+      - name: Verify encrypted credentials and service-role-only grants
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-private-tables-postgres-integration.sql
+      - name: Verify durable Drive export ledger and lease constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql

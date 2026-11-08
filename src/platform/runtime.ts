@@ -13,6 +13,9 @@ let workspaceSaveChain:Promise<void>=Promise.resolve();
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
  status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
+let jobsPollTimer:number|null=null;
+let jobsPollInFlight=false;
+let jobsLastCheckedAt=0;
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
@@ -47,8 +50,17 @@ function renderAssets(){
  }).join("")+'</div>';
 }
 function renderJobs(){
- if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
- return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
+ const queued=state.jobs.filter(job=>job.status==="queued").length;
+ const running=state.jobs.filter(job=>job.status==="running").length;
+ const failed=state.jobs.filter(job=>job.status==="failed").length;
+ const completed=state.jobs.filter(job=>job.status==="completed").length;
+ const summary='<div class="runtime-summary"><div><small>Queued</small><b>'+queued+'</b></div><div><small>Running</small><b>'+running+'</b></div><div><small>Completed</small><b>'+completed+'</b></div><div><small>Failed</small><b>'+failed+'</b></div></div><p class="runtime-engine-note">Live queue refreshes every 5 seconds while this workspace is visible'+(jobsLastCheckedAt?' · last checked '+fmt(new Date(jobsLastCheckedAt).toISOString()):' · waiting for first refresh')+'.</p>';
+ if(!state.jobs.length)return summary+'<div class="empty">No jobs submitted. New processing tasks will appear here automatically.</div>';
+ return summary+'<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
+}
+
+function renderJobQueue(){
+ return '<div class="runtime-section-heading"><div><div class="eyebrow">ASYNC PROCESSING</div><h3>Live job queue</h3></div><span>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+' active</span></div>'+renderJobs();
 }
 export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
@@ -58,7 +70,7 @@ export function renderRuntimeWorkspace(){
  '<div class="runtime-two-col"><section class="panel"><div class="eyebrow">PROJECT REGISTRY</div><h3>Persistent projects</h3><form id="ev-project-form"><label>New project name</label><input name="name" required maxlength="160" placeholder="Campaign, film, episode or client project"><button class="primary">Create project</button></form><label>Current project</label><select id="ev-project-select">'+projectOptions()+'</select><div class="runtime-project-list">'+state.projects.map(p=>'<div><b>'+esc(p.name)+'</b><small>'+esc(p.id)+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">MEDIA INGEST</div><h3>Upload original media</h3><p>Originals are stored unchanged. Uploads receive a SHA-256 checksum and remain private to this account.</p><label class="upload primary">＋ Select media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · supported image, video, audio and document types</small><p class="runtime-engine-note">FFmpeg: '+(state.ffmpeg?"available":"not detected")+' · FFprobe: '+(state.ffprobe?"available":"not detected")+'</p></section></div>'+
  '<section class="panel"><div class="eyebrow">REMOTE AI USAGE GUARDRAIL</div><h3>Request allowance</h3>'+(state.remoteUsage?('<div class="runtime-summary"><div><small>Used · rolling 24h</small><b>'+state.remoteUsage.used+'</b></div><div><small>Daily limit</small><b>'+(state.remoteUsage.limit===null?"Config error":state.remoteUsage.limit)+'</b></div><div><small>Remaining</small><b>'+(state.remoteUsage.remaining===null?"—":state.remoteUsage.remaining)+'</b></div><div><small>Remote execution</small><b>'+(state.remoteUsage.configurationValid?(state.remoteUsage.remoteDisabled?"Disabled by limit":"Guarded"):"Blocked · invalid config")+'</b></div></div><p class="runtime-engine-note">'+(state.remoteUsage.configurationValid?"Account-wide remote requests are counted before dispatch. Failed requests remain counted until they age out of the 24-hour window.":"Remote requests fail closed until REMOTE_AI_DAILY_REQUEST_LIMIT is corrected.")+' Cost is not estimated; check provider pricing before enabling remote services.</p>'):'<div class="empty">Usage allowance is unavailable until the API is connected.</div>')+'</section>'+'<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">SOURCE & DERIVATIVE LIBRARY</div><h3>Media assets</h3></div><span>'+state.assets.length+' items</span></div>'+renderAssets()+'</section>'+
- '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ASYNC PROCESSING</div><h3>Job queue</h3></div><span>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+' active</span></div>'+renderJobs()+'</section>'+
+ '<section class="panel" id="runtime-job-queue">'+renderJobQueue()+'</section>'+
  '<section class="panel"><div class="eyebrow">COLLABORATIVE REVIEW</div><h3>Comments and decisions</h3>'+(state.projectId&&["owner","editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<form id="ev-review-form"><input type="hidden" name="assetId" value=""><p class="review-target" id="ev-review-target">Project-level review · choose “Review asset” on a media item to attach feedback to that asset.</p><label>Decision</label><select name="decision"><option value="comment">Comment</option><option value="request_changes">Request changes</option><option value="approve">Approve</option></select><label>Timecode (seconds, optional)</label><input name="timecode" type="number" min="0" step="0.001" placeholder="12.500"><label>Review note</label><textarea name="body" rows="3" required maxlength="10000" placeholder="Describe the issue, requested change or approval."></textarea><button class="primary">Submit review</button></form>':'<small>Select a project and use an owner, editor or reviewer account to comment or approve.</small>')+
  '<div class="review-list">'+state.reviews.map(r=>'<article><div><b>'+esc(r.decision.replace("_"," "))+(r.asset_id?' · '+esc(state.assets.find(a=>a.id===r.asset_id)?.name||"media asset"):' · project')+'</b><span class="job-status">'+esc(r.status)+'</span></div><p>'+esc(r.body)+'</p><small>'+(r.timecode_seconds===null||r.timecode_seconds===undefined?"No timecode":r.timecode_seconds.toFixed(3)+"s")+' · '+esc(r.created_at)+'</small>'+(state.projects.find(p=>p.id===state.projectId)?.access_role==="owner"||["editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<div><button data-ev-review-status="resolved" data-ev-review-id="'+esc(r.id)+'">Resolve</button><button data-ev-review-status="open" data-ev-review-id="'+esc(r.id)+'">Reopen</button></div>':'')+'</article>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">AUDIT TRAIL</div><h3>Recent workspace events</h3>'+(state.audit.length?'<div class="audit-list">'+state.audit.slice(0,25).map(e=>'<div><b>'+esc(e.type)+'</b><small>'+esc(e.subjectType)+' · '+esc(e.subjectId)+' · '+esc(e.createdAt)+'</small></div>').join("")+'</div>':'<div class="empty">No events recorded yet.</div>')+'</section></div>';
@@ -98,11 +110,22 @@ export function renderEngineStatus(){
  const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";
  const text=state.textGatewayEnabled&&state.textGatewayConfigured?"Enabled · approval-gated":state.textGatewayEnabled?"Enabled but incomplete":"Disabled by default";
  const image=state.imageGatewayEnabled&&state.imageGatewayConfigured?"Enabled · approval-gated":state.imageGatewayEnabled?"Enabled but incomplete":"Disabled by default";
+ const modelCatalog=state.providers.flatMap(provider=>(provider.availableModels||[]).map(model=>{
+  const details=[model.minDurationSeconds!==undefined&&model.maxDurationSeconds!==undefined?model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":null,
+   model.aspectRatios?.length?"Ratios: "+model.aspectRatios.join(", "):null,
+   model.resolutions?.length?"Resolutions: "+model.resolutions.join(", "):null,
+   model.inputModes?.length?"Inputs: "+model.inputModes.join(", "):null,
+   model.readiness||null].filter(Boolean).join(" · ");
+  return '<div class="engine"><i></i><b>'+esc(model.label)+'</b><small>'+esc(provider.id)+' · '+esc(model.id)+'</small><small>'+esc(details||"Catalogued model profile")+'</small></div>';
+ })).join("");
+ const remoteAdapters=state.providers.filter(provider=>["video","video-google-omni","voice","transcription"].includes(provider.id)).map(provider=>
+  '<div class="engine"><i></i><b>'+esc(provider.id)+' · '+esc(provider.status.replace(/_/g," "))+'</b><small>'+esc(provider.model||"No model selected")+' · '+esc(provider.reason)+'</small><small>Capabilities: '+esc(provider.capabilities.join(", "))+'</small></div>'
+ ).join("");
  return '<div id="runtime-workspace" data-runtime-view="engines"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh status</button></div>'+
  '<div class="runtime-summary"><div><small>Local media engine</small><b>'+local+'</b></div><div><small>Text gateway</small><b>'+text+'</b></div><div><small>Image gateway</small><b>'+image+'</b></div><div><small>Stored assets</small><b>'+state.assets.length+'</b></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b></div></div>'+
  '<section class="panel"><div class="eyebrow">UNIFIED PROVIDER CONTROL</div><h3>Capability routing & readiness</h3><p>One shared registry for all production workspaces. Status checks do not submit generation requests. Remote execution remains blocked until server-side opt-in is configured.</p><div class="engine-grid">'+state.providers.map(provider=>'<div class="engine"><i></i><b>'+esc(provider.id.replace(/-/g," "))+' · '+esc(provider.status.replace(/_/g," "))+'</b><small>'+esc(provider.model||"No model selected")+' · '+esc(provider.reason)+'</small><small>Capabilities: '+esc(provider.capabilities.join(", "))+'</small></div>').join("")+'</div></section>'+'<section class="panel"><div class="eyebrow">CONNECTED LOCAL ADAPTERS</div><h3>Media processing</h3><div class="engine-grid">'+["Media probe · FFprobe","Thumbnails · FFmpeg","Transcode · FFmpeg","Audio extraction · FFmpeg","Proxy generation · FFmpeg","Denoise · hqdn3d","Color correction · eq","Resize / reframe · scale + pad","Frame interpolation · minterpolate","Upscale / scaling · Lanczos, bicubic, spline36 + sharpening","Speech cleanup · afftdn + loudnorm","Timeline master render · FFmpeg"].map(label=>'<div class="engine"><i></i><b>'+label+'</b><small>'+(state.ffmpeg||label.startsWith("Media probe")&&state.ffprobe?"Local adapter connected":"Engine unavailable")+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">APPROVAL-GATED TEXT ADAPTER</div><h3>Text-model gateway</h3><p>'+text+'. Configure <code>AI_GATEWAY_ENABLED</code>, <code>AI_GATEWAY_URL</code> and <code>AI_GATEWAY_MODEL</code> on the server. The API key remains server-side. A completed upstream human-approval node is required before any text request is sent.</p></section>'+
- '<section class="panel"><div class="eyebrow">APPROVAL-GATED IMAGE ADAPTER</div><h3>Image generation</h3><p>'+image+'. Configure <code>IMAGE_GATEWAY_ENABLED</code>, <code>IMAGE_GATEWAY_URL</code> and <code>IMAGE_GATEWAY_MODEL</code> on the server. Outputs are validated and stored as private assets. A completed upstream human-approval node is required before a request is sent.</p></section><section class="panel"><div class="eyebrow">NOT CONNECTED</div><h3>Other external media generation</h3><p>Remote video generation, voice generation, dubbing, lip-sync, neural restoration models and publishing adapters are not connected. Local video denoise, color correction, resize/reframe, interpolation and scaling are available from video asset actions. Their nodes fail closed; the application does not pretend a missing provider has completed a job.</p></section></div>';
+ '<section class="panel"><div class="eyebrow">APPROVAL-GATED IMAGE ADAPTER</div><h3>Image generation</h3><p>'+image+'. Configure <code>IMAGE_GATEWAY_ENABLED</code>, <code>IMAGE_GATEWAY_URL</code> and <code>IMAGE_GATEWAY_MODEL</code> on the server. Outputs are validated and stored as private assets. A completed upstream human-approval node is required before a request is sent.</p></section><section class="panel"><div class="eyebrow">MODEL CATALOGUE</div><h3>Available model profiles</h3><p>Only model profiles returned by the configured provider registry appear here. A listed model is not an assertion that credentials, remote execution or paid generation are enabled.</p><div class="engine-grid">'+(modelCatalog||'<div class="engine"><b>No additional model profiles are currently advertised.</b><small>Configure a supported provider on the server to populate this catalogue.</small></div>')+'</div></section><section class="panel"><div class="eyebrow">VIDEO & VOICE PROVIDERS</div><h3>Generation and speech adapter status</h3><div class="engine-grid">'+(remoteAdapters||'<div class="engine"><b>No remote media adapters registered.</b><small>Unavailable capabilities remain disabled.</small></div>')+'</div></section></div>';
 }
 export function renderRuntimeOverview(){
  return '<div id="runtime-workspace" data-runtime-view="overview" class="stats"><div><small>Project records</small><b>'+state.projects.length+'</b><span>Account-scoped</span></div><div><small>Uploaded assets</small><b>'+state.assets.length+'</b><span>Private to this account</span></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b><span>Queued or running</span></div><div><small>Media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable")+'</b><span>FFmpeg / FFprobe</span></div></div><div class="notice">Free hosting currently uses instance-local SQLite and media storage. Export important project records and keep original media backed up; durable shared storage is not yet connected.</div>';
@@ -167,6 +190,22 @@ async function refresh(){
  else {state.members=[];state.reviews=[];}
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
+function startRuntimeJobPolling(){
+ if(jobsPollTimer!==null)window.clearInterval(jobsPollTimer);
+ jobsPollTimer=window.setInterval(async()=>{
+  if(jobsPollInFlight||state.status!=="online"||document.visibilityState!=="visible"||!document.querySelector("#runtime-workspace[data-runtime-view='runtime']"))return;
+  jobsPollInFlight=true;
+  try{
+   const response=await apiRequest<{jobs:RuntimeJob[]}>("/api/jobs");
+   state.jobs=response.jobs||[];
+   jobsLastCheckedAt=Date.now();
+   const queue=document.querySelector<HTMLElement>("#runtime-job-queue");
+   if(queue)queue.innerHTML=renderJobQueue();
+  }catch{
+   // Preserve the last known queue state; a transient poll failure must not sign the user out.
+  }finally{jobsPollInFlight=false;}
+ },5000);
+}
 export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
@@ -175,6 +214,7 @@ export async function initRuntime(){
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
+ if(state.status==="online")startRuntimeJobPolling();
  window.dispatchEvent(new Event("ev:runtime-ready"));
 }
 async function authenticate(form:HTMLFormElement){
@@ -187,7 +227,7 @@ async function authenticate(form:HTMLFormElement){
    if(response.confirmationRequired){state.user=null;state.status="auth-required";state.message="Account created. Check your email to confirm the address, then sign in.";paint();return;}
    state.user=response.user;
   }
-  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
+  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();startRuntimeJobPolling();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("click",event=>{

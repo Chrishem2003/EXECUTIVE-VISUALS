@@ -114,3 +114,113 @@ test("rejects resolution or audio settings the configured adapter cannot honor",
   assert.throws(() => assertVideoCapabilities(noAudio, { audioModes: [] }),
     (error) => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
 });
+
+test("accepts the documented unsigned 32-bit provider seed range",()=>{
+  const request=normalizeVideoGenerationRequest({...base,seed:4294967295});
+  assert.equal(request.seed,4294967295);
+  assert.throws(()=>normalizeVideoGenerationRequest({...base,seed:4294967296}),VideoGenerationValidationError);
+});
+
+test("normalizes video-to-video source assets and ordered keyframe asset references", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframes: [{ assetId: "frame-1", at: 2.5 }, { assetId: "frame-2", at: 7 }],
+    durationSeconds: 12
+  });
+  assert.equal(request.operation, "video-to-video");
+  assert.equal(request.sourceVideoAssetId, "source-video");
+  assert.deepEqual(request.keyframes, [{ assetId: "frame-1", at: 2.5 }, { assetId: "frame-2", at: 7 }]);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframes: [{ assetId: "frame-1", at: 5 }, { assetId: "frame-2", at: 2 }]
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframeAssetIds: ["frame-1"]
+  }), VideoGenerationValidationError);
+});
+
+test("normalizes prompt-free video upscale controls and defaults to 2k", () => {
+  const request = normalizeVideoGenerationRequest({
+    operation: "video-upscale", sourceVideoAssetId: "source-video",
+    outputFrames: 900, creativity: 25, sharpen: 60, smartGrain: 10,
+    flavor: "vivid", fpsBoost: true, durationSeconds: 30
+  });
+  assert.equal(request.prompt, undefined);
+  assert.equal(request.resolution, "2k");
+  assert.equal(request.outputFrames, 900);
+  assert.equal(request.fpsBoost, true);
+  assert.equal(request.flavor, "vivid");
+});
+
+test("requires a source asset for video editing and rejects invalid upscale controls", () => {
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-video", prompt: "Edit this clip"
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-upscale", sourceVideoAssetId: "source", creativity: 101
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-video", prompt: "Edit this clip",
+    sourceVideoAssetId: "source", keyframeAssetIds: Array.from({ length: 6 }, (_, i) => "frame-" + i)
+  }), VideoGenerationValidationError);
+});
+
+
+test("normalizes HDR conversion as a source-video operation without requiring a prompt", () => {
+  const request = normalizeVideoGenerationRequest({
+    operation: "video-to-hdr", sourceVideoAssetId: "source-hdr", durationSeconds: 15,
+    outputFormat: "hlg"
+  });
+  assert.equal(request.operation, "video-to-hdr");
+  assert.equal(request.prompt, undefined);
+  assert.equal(request.outputFormat, "hlg");
+  assert.equal(request.sourceVideoAssetId, "source-hdr");
+});
+
+test("normalizes typed private reference assets with provider-aware bounds", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base,
+    referenceImageAssetIds: ["image-1", "image-2"],
+    referenceVideoAssetIds: ["video-1"],
+    referenceAudioAssetIds: ["audio-1"],
+    audioMode: "reference"
+  });
+  assert.deepEqual(request.referenceAssetIds, ["image-1", "image-2"]);
+  assert.deepEqual(request.referenceVideoAssetIds, ["video-1"]);
+  assert.deepEqual(request.referenceAudioAssetIds, ["audio-1"]);
+  assert.equal(assertVideoCapabilities(request, {
+    referenceImages: true, referenceVideos: true, referenceAudio: true,
+    audioModes: ["reference"], aspectRatios: ["16:9"], resolutions: ["provider_default"]
+  }), true);
+  assert.throws(() => normalizeVideoGenerationRequest({ ...base, referenceAudioAssetIds: ["audio-1", "audio-2"] }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({ ...base, referenceVideoAssetIds: Array.from({ length: 3 }, (_, i) => "video-" + i) }), VideoGenerationValidationError);
+});
+
+test("fails closed when a provider does not declare typed reference media support", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base, referenceVideoAssetIds: ["video-1"], referenceAudioAssetIds: ["audio-1"]
+  });
+  assert.throws(() => assertVideoCapabilities(request, {
+    referenceVideos: false, referenceAudio: false, audioModes: ["provider_default"]
+  }), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+});
+
+
+test("source video counts toward the two-video Runway Router limit", () => {
+  const sourceVideoAssetId = "source-video";
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: ["ref-1", "ref-2"]
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: [sourceVideoAssetId]
+  }), VideoGenerationValidationError);
+  const request = normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: ["ref-1"]
+  });
+  assert.equal(request.referenceVideoAssetIds.length + 1, 2);
+});
+

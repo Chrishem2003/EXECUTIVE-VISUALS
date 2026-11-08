@@ -24,6 +24,123 @@ test("cloud timeline get and update use verified owner and optimistic revision",
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202);const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
 test("cloud render submission requires project editor authorization",async()=>{const f=setup({canWrite:false});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{}});assert.equal(result.status,404);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST"),false);});
 test("cloud render idempotency replays only the exact same timeline revision",async()=>{const existing=[{id:"623e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}}];const f=setup({existing});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,idempotencyKey:"render-1"});assert.equal(result.status,200);assert.equal(result.body.idempotentReplay,true);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].endsWith("/jobs")),false);});
+test("Aleph 2 quote is non-mutating, source-probed and provider-priced",async()=>{
+ const calls=[];
+ const sourceAsset={id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId:sourceAsset.id});return sourceAsset;}}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwaySourceResolver:{async resolveMetadata(input){assert.deepEqual(input,{ownerId:owner,projectId:project,assetId:sourceAsset.id});return{ownerId:owner,projectId:project,assetId:sourceAsset.id,mediaType:"video/mp4",durationSeconds:10.2,frameRate:30,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle and preserve the original camera movement.",rightsConfirmed:true}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.provider,"runway");
+ assert.equal(result.body.quote.model,"aleph2");
+ assert.equal(result.body.quote.currency,"USD");
+ assert.ok(result.body.quote.estimatedCostMicros>=560000);
+ assert.equal(result.body.quote.source.durationSeconds,10.2);
+ assert.equal(result.body.quote.source.frameRate,30);
+ assert.equal(result.body.quote.output.durationSeconds,11);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresApproval,true);
+ assert.ok(Date.parse(result.body.quote.expiresAt)>Date.now());
+ assert.equal(calls.length,0,"quote must not write approvals, jobs, reservations or provider submissions");
+});
+
+test("Aleph 2 quote returns a safe validation error for missing source assets",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{async get(){return null;}}},
+  authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){throw new Error("must not resolve missing source");}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the vehicle carefully.",rightsConfirmed:true}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SOURCE_VIDEO_INVALID");
+});
+
+test("Aleph 2 quote rejects server-probed clips below the provider minimum",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{async get(){return{id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};}}},
+  authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{mediaType:"video/mp4",durationSeconds:1.5,width:1920,height:1080,frameCount:45};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the vehicle carefully.",rightsConfirmed:true}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"VIDEO_DURATION_UNSUPPORTED");
+});
+
+test("Aleph 2 quote requires editor access and explicit media rights",async()=>{
+ const sourceAsset={id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};
+ const makeApi=canWrite=>createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{async get(){return sourceAsset;}}},
+  authorize:async()=>canWrite,
+  runwaySourceResolver:{async resolveMetadata(){return{mediaType:"video/mp4",durationSeconds:10,width:1920,height:1080,frameCount:300};}}
+ });
+ const denied=await makeApi(false).handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle safely.",rightsConfirmed:true}});
+ assert.equal(denied.status,404);
+ const noRights=await makeApi(true).handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle safely."}});
+ assert.equal(noRights.status,403);
+ assert.equal(noRights.body.error.code,"MEDIA_RIGHTS_REQUIRED");
+});
+
+test("Aleph 2 transformation draft rejects source durations below the provider minimum",async()=>{
+ const f=setup();
+ const result=await f.api.handle({
+  method:"POST",path:"/api/cloud/transformations",ownerId:owner,idempotencyKey:"aleph2-too-short",
+  body:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the vehicle while preserving the shot.",durationSeconds:1,rightsConfirmed:true}
+ });
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"TRANSFORMATION_INPUT_INVALID");
+ assert.match(result.body.error.message,/2 to 30 seconds/);
+});
+
+test("video cancellation creates a durable owner-authorized request without calling the provider inline",async()=>{
+ const jobId="a23e4567-e89b-42d3-a456-426614174000",requestId="b23e4567-e89b-42d3-a456-426614174000";
+ const calls=[];
+ const job={id:jobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"processing",cancel_requested_at:null};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([job]);}};
+   if(url.endsWith("/rpc/request_video_generation_cancellation"))return{ok:true,status:200,async text(){return JSON.stringify([{request_id:requestId,job_id:jobId,request_status:"requested",cancel_requested_at:"2026-11-08T12:00:00Z",idempotent_replay:false}]);}};
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},
+  authorize:async input=>input.ownerId===owner&&input.projectId===project&&input.action==="write"
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+jobId+"/cancel",ownerId:owner,body:{}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.cancellation.id,requestId);
+ assert.equal(result.body.providerCancellationPending,true);
+ assert.ok(calls.some(call=>call.url.endsWith("/rpc/request_video_generation_cancellation")));
+ assert.equal(calls.some(call=>call.url.includes("api.dev.runwayml.com")),false,
+  "HTTP request records intent; a worker performs provider cancellation and billing reconciliation");
+ const rpc= calls.find(call=>call.url.endsWith("/rpc/request_video_generation_cancellation"));
+ assert.deepEqual(JSON.parse(rpc.options.body),{p_job_id:jobId,p_requested_by:owner});
+});
+
+test("video cancellation requires editor authorization and does not write when denied",async()=>{
+ const jobId="a23e4567-e89b-42d3-a456-426614174000";
+ const calls=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,async text(){return JSON.stringify([{id:jobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"processing"}]);}};},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>false
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+jobId+"/cancel",ownerId:editor,body:{}});
+ assert.equal(result.status,404);
+ assert.equal(calls.some(call=>call.url.includes("/rpc/request_video_generation_cancellation")),false);
+});
+
 test("cloud timeline API rejects unverified or malformed owner IDs and ignores unrelated routes",async()=>{const f=setup();assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:"not-uuid"})).status,401);assert.equal(await f.api.handle({method:"GET",path:"/api/not-cloud",ownerId:owner}),null);});
 
 test("cloud render job inspection allows project reviewers and returns durable status",async()=>{
@@ -49,6 +166,26 @@ test("cloud timeline API readiness requires exposed schema tables and a private 
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:false};}})});
  const result=await api.checkReadiness();assert.equal(result.ready,true);assert.equal(result.storage,"private");
 });
+test("cloud timeline API checks video ledger and budget tables before video worker startup", async () => {
+ const checked=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true"},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  fetchImpl:async(url)=>{
+   const value=String(url);
+   if(value.includes("/storage/v1/bucket/"))return{ok:true,status:200,async json(){return{public:false};}};
+   checked.push(value);
+   return{ok:true,status:200,async text(){return"[]";}};
+  }
+ });
+ const result=await api.checkReadiness();
+ assert.equal(result.ready,true);
+ for(const table of ["video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations","video_generation_cancellation_requests"]){
+  assert.ok(checked.some(url=>url.includes("/"+table+"?")),table+" must be checked");
+ }
+});
+
 test("cloud timeline API refuses a public media bucket",async()=>{
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:true};}})});
  await assert.rejects(()=>api.checkReadiness(),/not confirmed private/);
@@ -126,4 +263,236 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
+
+
+test("legacy Aleph2 approvals without a canonical request hash are blocked before enqueue", async () => {
+ const planId="823e4567-e89b-42d3-a456-426614174000";
+ const approvalId="923e4567-e89b-42d3-a456-426614174000";
+ const row={
+  id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",
+  status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",
+  estimated_cost:{approvalId,estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},
+  input:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace only the car with a red electric SUV while preserving camera movement.",durationSeconds:5,preservation:["camera_motion"]}
+ };
+ const calls=[];
+ const fetchImpl=async(url,options)=>{
+  calls.push({url,options});
+  if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+  return{ok:true,status:201,async text(){return"";}};
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
+  }}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner,body:{}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_APPROVAL_REQUEST_MISMATCH");
+ assert.ok(!calls.some(call=>call.url.endsWith("/rpc/enqueue_video_generation_job")));
+ assert.ok(!calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
+});
+
+test("cloud transformation submission refuses unapproved or non-Aleph adapters before queueing", async () => {
+ const planId="823e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",approvedBudgetMicros:5000000,currency:"USD",adapterId:"other:provider",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",prompt:"Edit this clip",operation:"vehicle_replace"}};
+ let queued=false;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>({ok:true,status:200,async text(){return url.includes("/jobs?")&&options.method==="GET"?JSON.stringify([row]):"[]";}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(){throw new Error("must not resolve source");}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
+ assert.equal(queued,false);
+});
+
+
+test("cloud transformation approval derives its estimate from probed source media, not client claims", async () => {
+ const planId="d23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",approved_at:null,input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle"}};
+ const calls=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.includes("/jobs?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"awaiting_approval",approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:JSON.parse(options.body).estimated_cost}]);}};
+   return{ok:true,status:201,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
+  }}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/approve",ownerId:owner,body:{estimatedCostMicros:1,approvedBudgetMicros:5000000,currency:"USD",adapterId:"attacker:model",capability:"unverified"}});
+ assert.equal(result.status,200);
+ const patch=calls.find(call=>call.options.method==="PATCH");
+ const approval=JSON.parse(patch.options.body).estimated_cost;
+ assert.ok(approval.estimatedCostMicros>1);
+ assert.equal(approval.approvedBudgetMicros,5000000);
+ assert.equal(approval.adapterId,"runway:aleph2");
+ assert.equal(approval.capability,"video-to-video");
+ assert.equal(approval.sourceMetadata.durationSeconds,10.2);
+ const ledgerCall=calls.find(call=>call.url.endsWith("/rpc/create_video_generation_budget_approval"));
+ assert.ok(ledgerCall,"approval must be persisted to the durable budget ledger before plan approval");
+ const ledger=JSON.parse(ledgerCall.options.body);
+ assert.equal(ledger.p_approval_id,approval.approvalId);
+ assert.equal(ledger.p_request_hash,approval.requestHash);
+ assert.equal(ledger.p_approved_max_amount,5);
+ assert.match(ledger.p_request_hash,/^[a-f0-9]{64}$/);
+});
+
+test("cloud transformation approval rejects a budget below the server-derived provider estimate", async () => {
+ const planId="d23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",approved_at:null,input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle"}};
+ let patched=false;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.includes("/jobs?")&&options.method==="PATCH"){patched=true;return{ok:true,status:200,async text(){return"[]";}};}
+   return{ok:true,status:201,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/approve",ownerId:owner,body:{approvedBudgetMicros:1000,currency:"USD"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
+ assert.equal(patched,false);
+});
+
+
+test("cloud transformation submit remains blocked when any release gate is unverified", async () => {
+ const planId="e23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",prompt:"Replace vehicle",operation:"vehicle_replace"}};
+ let queueCalls=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.endsWith("/rpc/enqueue_video_generation_job"))queueCalls++;
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
+ assert.equal(result.body.error.missing.length,8);
+ assert.equal(queueCalls,0);
+});
+
+
+test("cloud transformation mapper does not turn submitted jobs back into approved drafts", async () => {
+ const row={id:"f23e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"submitted",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle",durationSeconds:11,referenceAssetIds:[],preservation:[]}};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return JSON.stringify([row]);}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+ });
+ const result=await api.handle({method:"GET",path:"/api/cloud/transformations",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.plans[0].status,"submitted");
+ assert.equal(result.body.plans[0].approval.adapterId,"runway:aleph2");
+});
+
+
+test("cloud workflow video quote authorizes the project and returns a non-billable exact-request quote",async()=>{
+ const prepared=[],preflights=[];
+ const routerAdapter={
+  async prepareInput(input,context){prepared.push({input,context});return{...input,referenceImages:[]};},
+  async preflight(input){preflights.push(input);return{billable:false,estimatedCredits:275,estimatedUsd:2.75,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwayRouterAdapter:routerAdapter,
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:video-node:1",node,values:{prompt:"A cinematic product launch"}}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresExplicitApproval,true);
+ assert.equal(result.body.quote.paidExecutionEnabled,false);
+ assert.equal(result.body.quote.estimatedAmount,2.75);
+ assert.equal(result.body.quote.estimatedCredits,275);
+ assert.match(result.body.quote.requestHash,/^[a-f0-9]{64}$/);
+ assert.equal(prepared.length,1);
+ assert.equal(prepared[0].context.job.owner_id,owner);
+ assert.equal(preflights.length,1);
+ assert.equal(preflights[0].operation,"text-to-video");
+});
+
+test("cloud workflow video quote rejects viewers before resolving private inputs or contacting provider",async()=>{
+ let prepared=0,preflight=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>false,
+  runwayRouterAdapter:{
+   async prepareInput(){prepared++;return{};},
+   async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:video-node:1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(result.status,404);
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
+});
+
+test("cloud workflow video quote fails closed for unsupported nodes and unavailable quote adapters",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+ });
+ const unsupported=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"image.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(unsupported.status,422);
+ const unavailable=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(unavailable.status,503);
+});
+
+
+test("cloud workflow video-to-video quote binds duration to server-probed source metadata",async()=>{
+ let prepared=0,preflight=0;
+ const sourceId="b23e4567-e89b-42d3-a456-426614174000";
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>true,
+  runwaySourceResolver:{
+   async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
+   async prepare(){return{};}
+  },
+  runwayRouterAdapter:{
+   async prepareInput(){prepared++;return{};},
+   async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"workflow-1:video-node:2",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:5}},
+  values:{prompt:"Edit this source while preserving the camera movement",sourceVideoAssetId:sourceId}
+ }});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"VIDEO_SOURCE_METADATA_MISMATCH");
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
 });
