@@ -327,7 +327,29 @@ export function createCloudAssetRepository({
           continue;
         }
         try {
-          await storage.remove(row.object_path);
+          const parts=row.object_path.split("/");
+          const isAttempt=parts.length===3&&parts[2].startsWith("attempt-");
+          if(isAttempt){
+            const assetId=validUuid(parts[1],"cleanup asset ID");
+            const publications=await request("asset_publications?select=id,job_id,owner_id,project_id,publication_key,asset_id&asset_id=eq."+encodeURIComponent(assetId)+"&limit=1");
+            const publication=Array.isArray(publications)?publications[0]:null;
+            if(!publication||!publication.job_id||publication.asset_id!==assetId||publication.owner_id!==parts[0]&&publication.project_id!==parts[0]){
+              throw Object.assign(new Error("Attempt cleanup has no matching owner-scoped publication reservation."),{code:"PUBLICATION_CLEANUP_RESERVATION_MISSING"});
+            }
+            const claims=await request("rpc/claim_asset_publication_cleanup_v1",{method:"POST",body:{
+              p_job_id:publication.job_id,p_owner_id:publication.owner_id,p_project_id:publication.project_id||null,
+              p_publication_key:publication.publication_key,p_object_path:row.object_path,p_min_age:"24 hours"
+            }});
+            const claim=Array.isArray(claims)?claims[0]:null;
+            if(!claim||claim.object_path!==row.object_path||!UUID.test(claim.claim_id||"")||!UUID.test(claim.claim_token||"")||claim.status!=="claimed"){
+              throw Object.assign(new Error("Publication cleanup claim returned an invalid tombstone."),{code:"PUBLICATION_CLEANUP_CLAIM_INVALID"});
+            }
+            await storage.remove(row.object_path);
+            const completed=await request("rpc/complete_asset_publication_cleanup_v1",{method:"POST",body:{p_claim_id:claim.claim_id,p_claim_token:claim.claim_token}});
+            if(completed!==true)throw Object.assign(new Error("Publication cleanup tombstone could not be completed."),{code:"PUBLICATION_CLEANUP_COMPLETION_FAILED"});
+          }else{
+            await storage.remove(row.object_path);
+          }
           const changed=await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
             method:"PATCH",prefer:"return=representation",body:{completed_at:instant,last_error:null}
           });
@@ -338,7 +360,7 @@ export function createCloudAssetRepository({
           await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
             method:"PATCH",prefer:"return=minimal",body:{attempts,next_attempt_at:new Date(Date.parse(instant)+delay*1000).toISOString(),last_error:String(error?.code||"storage_remove_failed").slice(0,100)}
           });
-          results.push({id:row.id,removed:false,retryScheduled:true,attempts});
+          results.push({id:row.id,removed:false,retryScheduled:true,attempts,reason:String(error?.code||"storage_remove_failed")});
         }
       }
       return {examined:results.length,removed:results.filter(item=>item.removed).length,results};
