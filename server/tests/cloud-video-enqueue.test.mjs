@@ -521,11 +521,9 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     prompt: "Replace the background while preserving subject motion",
     durationSeconds: 12, aspectRatio: "16:9"
   };
-  await assert.rejects(
-    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
-    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
-  );
-  assert.equal(calls, 0);
+  const queued = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 }));
+  assert.equal(queued.jobId, resultRow.job_id);
+  assert.equal(calls, 1);
   const invalid = createCloudVideoEnqueue({
     ...base, env,
     resolveRunwaySourceMetadata: async () => ({ ...metadata, durationSeconds: 12.1 }),
@@ -535,7 +533,7 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     invalid.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
     error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH"
   );
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 
