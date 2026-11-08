@@ -127,18 +127,16 @@ async function d1Api(request, env, url) {
   }
 }
 
-async function proxyApplication(request, env) {
+async function proxyAuth(request, env) {
   const origin = safeApiOrigin(env.API_ORIGIN);
   const incoming = new URL(request.url);
   const target = new URL(incoming.pathname + incoming.search, origin);
-  const headers = new Headers(request.headers);
+  const headers = new Headers();
+  for (const name of ["cookie", "authorization", "content-type", "accept"]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
   headers.set("origin", origin.origin);
-  headers.set("x-forwarded-host", incoming.host);
-  headers.set("x-forwarded-proto", incoming.protocol.slice(0, -1));
-  headers.set("cache-control", "no-store");
-  headers.delete("host");
-  headers.delete("connection");
-  headers.delete("content-length");
   const upstreamRequest = new Request(target, {
     method: request.method,
     headers,
@@ -163,9 +161,14 @@ export default {
       try { return await d1Api(request, env, url); }
       catch (error) { return json({ error: { code: error.code || "D1_UNAVAILABLE", message: "The staging data service is temporarily unavailable." } }, 503); }
     }
-    try { return await proxyApplication(request, env); }
+    const authRoute = (url.pathname === "/api/auth/login" || url.pathname === "/api/auth/logout") && request.method === "POST";
+    const identityRoute = url.pathname === "/api/me" && request.method === "GET";
+    if (!authRoute && !identityRoute) {
+      return json({ error: { code: "STAGING_ROUTE_NOT_FOUND", message: "This isolated Worker exposes only D1 staging APIs and authentication." } }, 404);
+    }
+    try { return await proxyAuth(request, env); }
     catch {
-      return json({ error: { code: "EDGE_UPSTREAM_UNAVAILABLE", message: "The application API is temporarily unavailable. Please retry shortly." } }, 502);
+      return json({ error: { code: "IDENTITY_SERVICE_UNAVAILABLE", message: "The application identity service is temporarily unavailable." } }, 502);
     }
   }
 };
