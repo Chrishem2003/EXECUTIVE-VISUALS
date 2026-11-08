@@ -1,12 +1,12 @@
-export type CreativeGraphNodeType = "project"|"brief"|"intent"|"evidence"|"character"|"scene"|"shot"|"timeline"|"clip"|"asset";
+export type CreativeGraphNodeType = "project"|"brief"|"intent"|"evidence"|"character"|"scene"|"shot"|"timeline"|"clip"|"asset"|"world_record";
 export interface CreativeGraphNode { id:string; type:CreativeGraphNodeType; label:string; detail?:string; status:"linked"|"needs_evidence"|"review"; }
 export interface CreativeGraphEdge { from:string; to:string; relation:"contains"|"guides"|"supports"|"features"|"uses"|"appears_in"|"derived_from"; evidence:"explicit"|"project_scope"; }
 export interface CreativeGraphInput {
  project?:{id:string;name:string;brief?:string};
  creativeDNA?:{creativePromise?:string;proofAndTrustChecks?:string[];storyBeats?:string[]};
  characters?:Array<{id:string;name:string;description?:string;referenceAssetIds?:string[]}>;
- shots?:Array<{id:string;scene?:string;action?:string;characterIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>;
- seriesPlans?:Array<{id:string;title?:string;storyBible?:{entries?:Array<{id:string;kind:string;name:string;description?:string;referenceAssetIds?:string[]}>};seasons?:Array<{episodes?:Array<{id:string;title?:string;scenes?:Array<{id:string;title?:string;purpose?:string;shots?:Array<{id:string;prompt?:string;characterIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>}>}>}>}>;
+ shots?:Array<{id:string;scene?:string;action?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>;
+ seriesPlans?:Array<{id:string;title?:string;storyBible?:{entries?:Array<{id:string;kind:string;name:string;description?:string;referenceAssetIds?:string[]}>};seasons?:Array<{episodes?:Array<{id:string;title?:string;scenes?:Array<{id:string;title?:string;purpose?:string;storyBibleEntryIds?:string[];shots?:Array<{id:string;prompt?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>}>}>}>}>;
  timelines?:Array<{id:string;name:string;timeline?:{markers?:Array<{id:string;name?:string;note?:string}>;tracks?:Array<{clips?:Array<{id:string;assetId:string;name?:string;metadata?:Record<string,unknown>}>}>}}>;
  assets?:Array<{id:string;name:string;mediaType?:string}>;
 }
@@ -29,10 +29,13 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
  const proofCandidate=evidenceCandidates.find(x=>/^proof candidate supplied:/i.test(x));
  if(proofCandidate){const id="evidence:"+projectId+":"+key(proofCandidate).slice(0,100);add({id,type:"evidence",label:"Proof candidate",detail:proofCandidate,status:"needs_evidence"});link(intentNode,id,"supports");}
  for(const asset of input.assets||[]){const id=clean(asset.id,120);if(!id)continue;add({id:"asset:"+id,type:"asset",label:clean(asset.name,180)||id,detail:clean(asset.mediaType,80),status:"linked"});if(projectNode)link(projectNode,"asset:"+id,"contains","project_scope");}
- const characterMap=new Map<string,string>();
+ const characterMap=new Map<string,string>(),storyBibleMap=new Map<string,string>();
  const addCharacter=(character:{id:string;name:string;description?:string;referenceAssetIds?:string[]})=>{const id=clean(character.id,120);if(!id)return;const nodeId="character:"+id;characterMap.set(id,nodeId);add({id:nodeId,type:"character",label:clean(character.name,160)||"Unnamed character",detail:clean(character.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of character.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}};
  for(const character of input.characters||[])addCharacter(character);
- for(const series of input.seriesPlans||[])for(const entry of series.storyBible?.entries||[])if(entry.kind==="character")addCharacter(entry);
+ for(const series of input.seriesPlans||[])for(const entry of series.storyBible?.entries||[]){
+  if(entry.kind==="character"){addCharacter(entry);storyBibleMap.set(entry.id,"character:"+entry.id);}
+  else{const id=clean(entry.id,120);if(!id)continue;const nodeId="world-record:"+id;storyBibleMap.set(id,nodeId);add({id:nodeId,type:"world_record",label:clean(entry.name,160)||entry.kind,detail:clean(entry.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of entry.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}}
+ }
  const shotIds=new Set<string>(),sceneByKey=new Map<string,string>();
  const addShot=(shot:{id:string;scene?:string;action?:string;characterIds?:string[];proofReference?:string;referenceAssetIds?:string[]},sceneNode?:string)=>{
   const id=clean(shot.id,120);if(!id||shotIds.has(id))return;shotIds.add(id);const nodeId="shot:"+id;
@@ -69,7 +72,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   }
  }
  const counts={} as Record<CreativeGraphNodeType,number>;
- for(const type of ["project","brief","intent","evidence","character","scene","shot","timeline","clip","asset"] as CreativeGraphNodeType[])counts[type]=[...nodes.values()].filter(n=>n.type===type).length;
+ for(const type of ["project","brief","intent","evidence","character","world_record","scene","shot","timeline","clip","asset"] as CreativeGraphNodeType[])counts[type]=[...nodes.values()].filter(n=>n.type===type).length;
  return {nodes:[...nodes.values()],edges,counts,unlinkedShots,notes:["Only explicit IDs and saved project membership create links. Shared project scope is labelled separately from authored relationships.","Proof candidates are not verified evidence. Missing references remain visible; no character-to-shot relationship is inferred from names or descriptions."]};
 }
 export function analyzeCreativeImpact(graph:CreativeGraph,changedNodeId:string){
