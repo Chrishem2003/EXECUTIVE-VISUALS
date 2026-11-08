@@ -37,13 +37,16 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   else{const id=clean(entry.id,120);if(!id)continue;const nodeId="world-record:"+id;storyBibleMap.set(id,nodeId);add({id:nodeId,type:"world_record",label:clean(entry.name,160)||entry.kind,detail:clean(entry.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of entry.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}}
  }
  const shotIds=new Set<string>(),sceneByKey=new Map<string,string>();
- const addShot=(shot:{id:string;scene?:string;action?:string;characterIds?:string[];proofReference?:string;referenceAssetIds?:string[]},sceneNode?:string)=>{
+ const addShot=(shot:{id:string;scene?:string;action?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]},sceneNode?:string)=>{
   const id=clean(shot.id,120);if(!id||shotIds.has(id))return;shotIds.add(id);const nodeId="shot:"+id;
   add({id:nodeId,type:"shot",label:id,detail:clean(shot.action,600),status:"linked"});
   if(sceneNode)link(sceneNode,nodeId,"contains");
   else if(projectNode)link(projectNode,nodeId,"contains","project_scope");
-  let linked=false;for(const characterId of shot.characterIds||[]){const target=characterMap.get(clean(characterId,120));if(target){link(target,nodeId,"features");linked=true;}}
-  if((shot.characterIds||[]).length&&!linked)unlinkedShots.push(id);
+  const requestedCharacters=(shot.characterIds||[]).map(value=>clean(value,120)).filter(Boolean);
+  for(const characterId of requestedCharacters){const target=characterMap.get(characterId);if(target)link(target,nodeId,"features");}
+  const requestedBible=(shot.storyBibleEntryIds||[]).map(value=>clean(value,120)).filter(Boolean);
+  for(const entryId of requestedBible){const target=storyBibleMap.get(entryId);if(target)link(target,nodeId,"features");}
+  if(requestedCharacters.some(characterId=>!characterMap.has(characterId))||requestedBible.some(entryId=>!storyBibleMap.has(entryId)))unlinkedShots.push(id);
   const proof=clean(shot.proofReference,200);if(proof){const proofNode="evidence-ref:"+key(proof).slice(0,120);add({id:proofNode,type:"evidence",label:"Shot evidence reference",detail:proof,status:"needs_evidence"});link(proofNode,nodeId,"supports");}
   for(const assetId of shot.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}
  };
@@ -51,6 +54,8 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const sceneId=clean(scene.id,120);if(!sceneId)continue;const nodeId="scene:"+sceneId;
   add({id:nodeId,type:"scene",label:clean(scene.title,160)||sceneId,detail:clean(scene.purpose,500),status:"linked"});
   if(projectNode)link(projectNode,nodeId,"contains","project_scope");
+  if(intentNode)link(intentNode,nodeId,"guides","project_scope");
+  for(const entryId of scene.storyBibleEntryIds||[]){const target=storyBibleMap.get(clean(entryId,120));if(target)link(target,nodeId,"features");else unlinkedShots.push("scene:"+sceneId);}
   sceneByKey.set(key(scene.title||sceneId),nodeId);
   for(const shot of scene.shots||[])addShot(shot,nodeId);
  }
