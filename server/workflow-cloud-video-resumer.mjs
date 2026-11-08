@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { addJobEvent, audit, json, parseJson } from "./db.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -11,16 +11,18 @@ function transitionToQueued({db,row,cloudJobId}){
   const output=parseJson(node?.output_json,{});
   const error=parseJson(node?.error_json,{});
   if(run?.status!=="blocked"||node?.status!=="blocked"||error.code!=="CLOUD_VIDEO_JOB_PENDING"||output.cloudJobId!==cloudJobId)return false;
-  const key="workflow-resume:"+row.run_id+":"+row.node_id+":"+cloudJobId;
+  const parkedJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(run.job_id);
+  if(parkedJob?.status!=="blocked")return false;
+  const key="workflow-resume-"+createHash("sha256").update(run.id+":"+row.node_id+":"+cloudJobId).digest("hex");
   const existing=db.prepare("SELECT id FROM jobs WHERE owner_id=? AND idempotency_key=?").get(run.owner_id,key);
+  const updatedNode=db.prepare("UPDATE workflow_node_runs SET status='pending',error_json=NULL,completed_at=NULL WHERE run_id=? AND node_id=? AND status='blocked'")
+   .run(run.id,row.node_id);
+  if(updatedNode.changes!==1)return false;
   const jobId=existing?.id||randomUUID();
   if(!existing){
    db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json,idempotency_key) VALUES(?,?,?,'workflow.execute','queued',0,?,?)")
     .run(jobId,run.owner_id,run.project_id,json({runId:run.id}),key);
   }
-  const updatedNode=db.prepare("UPDATE workflow_node_runs SET status='pending',error_json=NULL,completed_at=NULL WHERE run_id=? AND node_id=? AND status='blocked'")
-   .run(run.id,row.node_id);
-  if(updatedNode.changes!==1)return false;
   const updatedRun=db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,error_json=NULL,updated_at=?,completed_at=NULL WHERE id=? AND status='blocked'")
    .run(jobId,now(),run.id);
   if(updatedRun.changes!==1)throw new Error("Workflow run changed while resuming its completed cloud video job.");
