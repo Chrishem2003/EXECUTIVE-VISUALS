@@ -64,7 +64,8 @@
 - Expanded acceptance CI passed at commit `4edd495` in run `8435`: `npm ci`, typecheck, full build/regression suite including the new local SQLite C2PA transcode round-trip (21/21 provenance tests), and the disposable PostgreSQL publication integration job.
 - No production signer, private key, trust anchor, external signing service, deployment, paid provider request or database migration is configured or invoked.
 - Added `server/tests/local-c2pa-roundtrip.test.mjs` to exercise the real local SQLite `media.transcode` publication path with an upstream test-only CAI signer, then read the published MP4 back and verify its embedded source ingredient and post-signing checksum. The first CI attempt exposed a missing persisted-job fixture; after correcting the fixture to create the real queued job row, the test passed (21/21 provenance tests) in GitHub Actions run `8435` at commit `4edd495`.
-- Added `server/tests/c2pa-format-roundtrip.test.mjs` for real CAI SDK signing, transformation preservation and Reader validation across the application's six media formats: JPEG, PNG, WebP, MP3, WAV and MP4. The matrix is wired into `npm run verify:provenance`; its CI result is pending.
+- Added `server/tests/c2pa-format-roundtrip.test.mjs` for real CAI SDK signing, transformation preservation and Reader validation across the application's six media formats: JPEG, PNG, WebP, MP3, WAV and MP4. All six round-trips passed; the provenance suite passed 28/28 tests in GitHub Actions run `8439` at commit `f5a4cc0`.
+- Full branch CI run `8439` also passed dependency installation, typecheck, full build/regression suite and disposable PostgreSQL asset-publication integration.
 - Remaining validation: local AI upscale/timeline operations, broader format/codec variants, large media and cancellation; run isolated staging acceptance with an approved signer.
 
 ## Build verification
