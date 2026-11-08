@@ -22,10 +22,22 @@ function makeD1() {
           return {
             async first() { return sqlite.prepare(sql).get(...values) ?? null; },
             async all() { return { results: sqlite.prepare(sql).all(...values) }; },
-            async run() { return sqlite.prepare(sql).run(...values); }
+            async run() { return sqlite.prepare(sql).run(...values); },
+            __run() { return sqlite.prepare(sql).run(...values); }
           };
         }
       };
+    },
+    async batch(statements) {
+      sqlite.exec("BEGIN");
+      try {
+        const results = statements.map(statement => ({ success: true, meta: statement.__run() }));
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
     },
     close() { sqlite.close(); }
   };
@@ -72,10 +84,10 @@ test("asset metadata requires checksum, private storage key and same-tenant deri
   const db = makeD1();
   const repo = createD1Repository({ db, id: () => "55555555-5555-4555-8555-555555555555", clock: () => "2026-11-08T00:00:00.000Z" });
   await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase" });
-  const asset = await repo.createAsset({ ownerId, name: "source.mp4", mediaType: "video/mp4", size: 1024, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/source.mp4" });
+  const asset = await repo.createAsset({ actorId: ownerId, name: "source.mp4", mediaType: "video/mp4", size: 1024, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/source.mp4" });
   assert.equal(asset.sha256, "a".repeat(64));
   assert.equal(asset.storageKey, ownerId + "/source.mp4");
-  await assert.rejects(repo.createAsset({ ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "bad", storageProvider: "local-staging", storageKey: ownerId + "/bad.mp4" }), /checksum/);
+  await assert.rejects(repo.createAsset({ actorId: ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "bad", storageProvider: "local-staging", storageKey: ownerId + "/bad.mp4" }), /checksum/);
   await assert.rejects(repo.createAsset({ ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/../bad.mp4" }), /storage key/);
   db.close();
 });
