@@ -205,6 +205,8 @@ test("Asset Library cloud media job API stays disabled unless a worker deploymen
  const result=await api.handle({method:"POST",path:"/api/cloud/assets/823e4567-e89b-42d3-a456-426614174000/media-jobs",ownerId:owner,idempotencyKey:"media-disabled",body:{jobType:"media.probe"}});
  assert.equal(result.status,503);
  assert.equal(result.body.error.code,"CLOUD_MEDIA_WORKER_DISABLED");
+ const history=await api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner});
+ assert.equal(history.status,503);
 });
 
 
