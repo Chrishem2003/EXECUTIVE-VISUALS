@@ -61,6 +61,7 @@ begin
   where id=v_job.id;
   v_recovered:=executive_visuals.recover_expired_jobs(10);
   if v_recovered<>1 then raise exception 'expired job was not recovered'; end if;
+  update executive_visuals.jobs set available_at=clock_timestamp() where id=v_job.id;
   if executive_visuals.assert_job_lease_v2(v_job.id,'worker-a',v_first_token) then
     raise exception 'recovered worker token remained valid';
   end if;
