@@ -106,3 +106,13 @@ test("verified evidence supports a target only when source hash, project and tar
  assert.ok(badTarget.unlinkedEvidence.includes("evidence-target-missing"));
  assert.equal(badTarget.nodes.find(node=>node.id==="evidence:evidence-target-missing").status,"review");
 });
+
+test("source asset fingerprint changes become graph revisions and flag dependent production items",()=>{
+ const baselineInput={...fixture,assets:[{id:"asset-1",name:"reference.png",mediaType:"image/png",sha256:"a".repeat(64),size:128}]};
+ const changedInput=structuredClone(baselineInput);
+ changedInput.assets[0].sha256="b".repeat(64);
+ const baseline=buildCreativeGraph(baselineInput),current=buildCreativeGraph(changedInput);
+ const comparison=compareCreativeGraphSnapshot(current,baseline);
+ assert.ok(comparison.changedNodeIds.includes("asset:asset-1"));
+ assert.ok(comparison.potentiallyStaleIds.includes("character:character-1"));
+});
