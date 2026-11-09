@@ -82,6 +82,26 @@ test("D1 Worker authenticates through the existing API before creating staging r
   const projects = await list.json();
   assert.equal(projects.projects.length, 1);
   assert.equal(projects.projects[0].id, created.project.id);
+  assert.deepEqual(projects.page, { limit: 50, offset: 0 });
+
+  const secondCreate = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "POST", headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Second bounded page project" })
+  }), env);
+  assert.equal(secondCreate.status, 201);
+  const second = await worker.fetch(new Request("https://staging.example/api/d1/projects?limit=1&offset=1", {
+    headers: { authorization: "Bearer staging-test-token" }
+  }), env);
+  assert.equal(second.status, 200);
+  const secondPage = await second.json();
+  assert.equal(secondPage.projects.length, 1);
+  assert.equal(secondPage.page.limit, 1);
+  assert.equal(secondPage.page.offset, 1);
+
+  const invalidPage = await worker.fetch(new Request("https://staging.example/api/d1/projects?limit=1000", {
+    headers: { authorization: "Bearer staging-test-token" }
+  }), env);
+  assert.equal(invalidPage.status, 400);
   DB.close();
 });
 
