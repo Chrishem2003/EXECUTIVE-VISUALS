@@ -16,7 +16,7 @@ function majorToMinor(value,currency){
   const text=String(value);
   if(!/^\d+(?:\.\d+)?$/.test(text))throw Object.assign(new Error("Provider amount is invalid."),{code:"PROVIDER_AMOUNT_INVALID"});
   const [whole,fraction=""]=text.split(".");
-  if(fraction.length>decimals)throw Object.assign(new Error("Provider amount precision does not match currency."),{code:"PROVIDER_AMOUNT_PRECISION_INVALID"});
+  if(fraction.length>decimals && /[^0]/.test(fraction.slice(decimals)))throw Object.assign(new Error("Provider amount precision does not match currency."),{code:"PROVIDER_AMOUNT_PRECISION_INVALID"});
   const factor=10n**BigInt(decimals);
   return Number(BigInt(whole)*factor+BigInt((fraction+"0".repeat(decimals)).slice(0,decimals)||"0"));
 }
