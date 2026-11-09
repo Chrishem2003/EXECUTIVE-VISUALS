@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
 const cleanupSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql"), "utf8");
+const timelineRevisionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261109200000_timeline_revision_history.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -20,6 +21,8 @@ for (const table of ["projects","workflows","timelines","assets","jobs","reviews
 for (const policy of ["ev_projects_read","ev_members_read","ev_project_workspace_read","ev_project_workspace_insert","ev_project_workspace_update","ev_workflows_read","ev_workflow_runs_read","ev_workflow_node_runs_read","ev_timelines_read","ev_assets_read","ev_jobs_read","ev_job_events_read","ev_consents_read","ev_reviews_read","ev_audit_read"]) {
   if (!sql.includes(`create policy ${policy}`)) issues.push(`Read policy is missing: ${policy}.`);
 }
+if (!timelineRevisionSql.includes("create table if not exists executive_visuals.timeline_revisions") || !timelineRevisionSql.includes("after insert or update of revision on executive_visuals.timelines")) issues.push("Immutable timeline revision snapshots are not captured.");
+if (!timelineRevisionSql.includes("security definer") || !timelineRevisionSql.includes("create policy ev_timeline_revisions_read")) issues.push("Timeline revision snapshots require server-side capture and an authorized read policy.");
 if (!sql.includes("create trigger ev_workflow_runs_snapshot_immutable")) issues.push("Workflow run snapshots must be immutable.");
 if (!sql.includes("create policy ev_workflow_runs_insert") || !sql.includes("status='awaiting_approval'") || !sql.includes("and job_id is null")) {
   issues.push("New workflow runs must be created in a gated, unsubmitted state.");
