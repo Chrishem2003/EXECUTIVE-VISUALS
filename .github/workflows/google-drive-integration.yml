@@ -81,6 +81,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109250000_cloud_customer_credit_job_settlement.sql
       - name: Apply cloud subscription entitlement migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109260000_cloud_subscription_entitlements.sql
+      - name: Apply cloud subscription lifecycle sync migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110230000_cloud_subscription_lifecycle_sync.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Verify cloud customer credit reservations and settlement
