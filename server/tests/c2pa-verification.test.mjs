@@ -6,15 +6,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
 
-async function fixture(bytes=Buffer.from("stable media bytes")){
- const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-test-")),filePath=join(dir,"asset.mp4");
+async function fixture(bytes=Buffer.from("stable media bytes"),extension=".mp4"){
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-test-")),filePath=join(dir,"asset"+extension);
  await writeFile(filePath,bytes);
  return{dir,filePath,sha256:createHash("sha256").update(bytes).digest("hex"),size:bytes.length,cleanup:()=>rm(dir,{recursive:true,force:true})};
 }
-function sdkFor(store,{embedded=true,onRead=null}={}){
+function sdkFor(store,{embedded=true,onRead=null,mimeType="video/mp4"}={}){
  class Context{constructor(settings){this.settings=settings;}}
  const Reader={async fromAsset(asset,context){
-  assert.equal(asset.mimeType,"video/mp4");
+  assert.equal(asset.mimeType,mimeType);
   assert.ok(context instanceof Context);
   assert.equal(context.settings.verify.verifyAfterReading,true);
   assert.equal(context.settings.verify.remoteManifestFetch,false);
@@ -149,10 +149,31 @@ test("reports a remote-only manifest as unavailable instead of absent",async()=>
 });
 
 
+
+test("inspects PDF Content Credentials using the stored PDF extension and MIME type", async () => {
+ const bytes=Buffer.from("%PDF-1.7\\n% Executive Visuals C2PA verification fixture\\n");
+ const f=await fixture(bytes,".pdf");
+ try{
+  let readerCalled=false;
+  const sdk=sdkFor(validStore,{mimeType:"application/pdf",onRead:async asset=>{
+   readerCalled=true;
+   assert.equal(asset.path,f.filePath);
+  }});
+  const result=await createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"application/pdf",expectedSha256:f.sha256,expectedSize:f.size
+  });
+  assert.equal(readerCalled,true);
+  assert.equal(result.status,"valid_untrusted");
+  assert.equal(result.present,true);
+  assert.equal(result.valid,true);
+  assert.equal(result.trusted,false);
+ }finally{await f.cleanup();}
+});
+
 test("reports unsupported asset formats as unavailable rather than invalid", async () => {
   const f = await fixture();
   try {
-    for (const mediaType of ["application/pdf", "video/webm", "video/x-matroska", "audio/ogg"]) {
+    for (const mediaType of ["text/plain", "text/vtt", "application/json", "video/webm", "video/x-matroska", "audio/ogg"]) {
       let sdkLoaded = false;
       const result = await createC2paVerifier({
         sdkLoader: async () => { sdkLoaded = true; return sdkFor(validStore); },
