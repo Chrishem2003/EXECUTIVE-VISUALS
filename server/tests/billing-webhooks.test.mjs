@@ -7,7 +7,7 @@ import {
 import {
   ensureBillingWebhookSchema, createBillingPurchaseOrder,
   verifyFlutterwaveWebhookSignature, receiveFlutterwaveWebhook,
-  processNextFlutterwaveWebhook, createFlutterwaveCheckout,
+  processNextFlutterwaveWebhook, createFlutterwaveCheckout, cancelFlutterwaveSubscription,
   createFlutterwaveSubscriptionCheckout
 } from "../billing-webhooks.mjs";
 
@@ -370,5 +370,60 @@ test("Flutterwave webhook worker respects active leases and releases completed l
   assert.ok(row.processed_at);
   assert.equal(row.lease_owner,null);
   assert.equal(row.lease_expires_at,null);
+  db.close();
+});
+
+
+test("customer cancellation resolves exactly one owned Flutterwave subscription before deactivation",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-customer-cancel','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',?,?,?)`)
+    .run(plan.id,new Date().toISOString(),new Date(Date.now()+30*86400000).toISOString(),
+      JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  const calls=[];
+  const fetchImpl=async(url,options)=>{
+    calls.push({url:String(url),method:options.method});
+    if(options.method==="GET")return new Response(JSON.stringify({status:"success",data:[
+      {id:3210,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}}
+    ]}),{status:200});
+    return new Response(JSON.stringify({status:"success",data:{id:3210,status:"cancelled"}}),{status:200});
+  };
+  const result=await cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",fetchImpl});
+  assert.equal(result.requested,true);
+  assert.equal(result.status,"awaiting_webhook");
+  assert.equal(result.subscriptionId,"flw-customer-cancel");
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].method,"GET");
+  assert.match(calls[0].url,/transaction_id=7654321/);
+  assert.equal(calls[1].method,"PUT");
+  assert.match(calls[1].url,/subscriptions\/3210\/cancel$/);
+  assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().status,"active");
+  assert.ok(JSON.parse(db.prepare("SELECT metadata_json FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().metadata_json).cancellationRequestedAt);
+  db.close();
+});
+
+test("customer cancellation fails closed when Flutterwave returns ambiguous subscription matches",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-ambiguous-cancel','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',?,?,?)`)
+    .run(plan.id,new Date().toISOString(),new Date(Date.now()+30*86400000).toISOString(),
+      JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  let cancelCalled=false;
+  await assert.rejects(()=>cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",
+    fetchImpl:async(_url,options)=>options.method==="GET"
+      ?new Response(JSON.stringify({status:"success",data:[
+        {id:3210,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}},
+        {id:3211,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}}
+      ]}),{status:200})
+      :(cancelCalled=true,new Response(JSON.stringify({status:"success"}),{status:200}))
+  }),error=>error.code==="BILLING_SUBSCRIPTION_MATCH_AMBIGUOUS");
+  assert.equal(cancelCalled,false);
+  assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-ambiguous-cancel'").get().status,"active");
   db.close();
 });
