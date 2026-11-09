@@ -95,3 +95,42 @@ No merchant account, payment plan, payment API key or live transaction is create
 - Flutterwave Uganda pricing: https://flutterwave.com/ug/pricing
 - Pesapal recurring payments: https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/recurringpayments
 - Stripe country availability: https://stripe.com/global
+
+
+## Cloud subscription entitlement implementation — staging only
+
+The cloud PostgreSQL entitlement foundation is now source-controlled in
+`20261109260000_cloud_subscription_entitlements.sql`:
+
+- A versioned plan catalogue for Free, Creator, Studio and Enterprise.
+- Subscription records with provider identity, billing period, lifecycle state,
+  cancellation-at-period-end and grace-period fields.
+- A unique subscription-period grant ledger, preventing duplicate monthly or
+  annual credit allocations on webhook retries.
+- A service-role-only activation RPC and period-credit grant RPC.
+- A default Free subscription provisioned for new and existing cloud credit
+  accounts. Free includes local editing but does not authorize paid video
+  generation.
+- The cloud generation-credit reservation RPC checks video-generation
+  entitlement and customer-credit balance atomically. Scheduled cancellation
+  retains access through the already-paid period; past-due access is bounded
+  by its grace deadline.
+- Creator, Studio and Enterprise entries are catalogue templates only:
+  prices are unset, period credits are zero, and checkout is disabled. No
+  customer-facing paid offer is represented as live.
+
+The new `cloud-subscription-ledger.mjs` client exposes the server-side
+subscription activation and period-credit grant RPCs. It does not itself
+declare a payment successful; only a separately verified provider event may
+call activation.
+
+PostgreSQL integration checks cover default-Free provisioning, Free-plan
+video-generation denial, verified plan activation, idempotent period credits,
+Creator generation reservation, and access during scheduled cancellation.
+Node tests cover service-role RPC routing, validation, idempotent grants and
+secret redaction.
+
+**Still gated:** provider webhook-to-cloud activation wiring, payment
+verification in sandbox, renewal event ordering, cancellation/past-due
+reconciliation, plan pricing and credit allocation approval, and production
+migration/deployment. No live payment collection is enabled.
