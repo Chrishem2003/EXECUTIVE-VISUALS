@@ -329,6 +329,31 @@ fs.writeFileSync(output, pngBytes(input.readUInt32BE(16) * scale, input.readUInt
   }
 });
 
+test("AI upscaler enforces one total timeout budget across automatic tile retries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-total-timeout-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "timed-out.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeader(1, 1));
+  const source = "#!/usr/bin/env node\nconst fs = require(\"node:fs\");\nconst args = process.argv.slice(2);\nconst value = key => args[args.indexOf(key) + 1];\nconst tile = Number(value(\"-t\"));\nconst output = value(\"-o\");\nconst attemptsFile = \"/tmp/attempts-placeholder\";\nfs.appendFileSync(attemptsFile, String(tile) + \",\");\nsetTimeout(() => {\n  if (tile === 0) {\n    process.stderr.write(\"CUDA out of memory\");\n    process.exit(2);\n  }\n  fs.writeFileSync(output, \"completed output\");\n}, 600);\n".replace("/tmp/attempts-placeholder", JSON.stringify(attemptsFile));
+  await writeFile(binary, source);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 1000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 0, format: "png" }),
+      error => error.code === "AI_UPSCALE_TIMEOUT"
+    );
+    const { readFile, access } = await import("node:fs/promises");
+    assert.equal(await readFile(attemptsFile, "utf8"), "0,256,");
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler never changes an explicit tile size and removes partial failed output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-vram-explicit-"));
   const binary = join(directory, "engine");
