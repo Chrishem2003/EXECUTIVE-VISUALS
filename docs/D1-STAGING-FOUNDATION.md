@@ -61,3 +61,20 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 - No Supabase project, key, or auth configuration was changed.
 - No R2 bucket was activated or created.
 - No paid service was enabled.
+
+
+## Free-plan guardrails and live staging baseline
+
+The staging design must remain within the account's existing free allowances. As documented by Cloudflare (reviewed 9 November 2026):
+
+- Workers Free: 100,000 requests per day, 10 ms CPU time per HTTP request, and 50 subrequests per invocation. A Worker that exceeds the daily request allowance returns error 1027; do not assume unlimited availability.
+- D1 Free: up to 10 databases per account, 500 MB per database, 5 GB total D1 storage, 5 million rows read per day, 100,000 rows written per day, and 7 days of Time Travel history.
+- Keep metadata only in D1. Media bytes, large binary payloads, render outputs and proxies must not be stored in SQL rows. R2 remains disabled until separately approved; no paid-plan upgrade is permitted by this plan.
+
+References: [Workers platform limits](https://developers.cloudflare.com/workers/platform/limits/) · [D1 platform limits](https://developers.cloudflare.com/d1/platform/limits/) · [Workers pricing and included usage](https://developers.cloudflare.com/workers/platform/pricing/).
+
+Read-only account audit on 9 November 2026 observed the existing `executive-visuals-staging` database at 126,976 bytes. The migration ledger contains exactly `0001_initial.sql`; all seven application tables (`ev_users`, `ev_projects`, `ev_project_members`, `ev_project_workspace_documents`, `ev_assets`, `ev_jobs`, `ev_audit_events`) exist and each currently contains zero rows. The only write observed was none: the audit used SELECT statements only. No user or project data was seeded.
+
+**Metadata caveat:** the Cloudflare database-list response reported `num_tables: 0` during this audit, while a direct read-only query against `sqlite_master` confirmed the seven application tables, migration ledger and indexes. Use the direct schema/migration query as the acceptance evidence; do not treat the list-response `num_tables` field as authoritative until its discrepancy is explained.
+
+Free-plan quotas are ceilings, not a capacity guarantee. Add application-level request/body bounds, bounded pagination, index-backed queries and a visible quota/error state before inviting external testers. Avoid automatic retries that can multiply reads or writes after quota errors.
