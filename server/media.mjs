@@ -399,7 +399,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
       return {outputAsset,processing,c2paPreservation};
-    }finally{clearInterval(poll);}
+    }catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+    finally{clearInterval(poll);}
   }
   if (job.job_type === "media.ai-upscale") {
     if (!source.media_type.startsWith("image/")) throw Object.assign(new Error("AI super-resolution currently accepts still images only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
