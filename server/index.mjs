@@ -876,6 +876,7 @@ export function createAppServer() {
           if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
           const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
           if(!source||!String(source.media_type||"").startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for video AI upscaling.");return;}
+          if(body.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm that you own or are authorized to process this source video.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
         }
