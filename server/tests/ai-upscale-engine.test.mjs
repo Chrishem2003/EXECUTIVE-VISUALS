@@ -656,6 +656,29 @@ fs.symlinkSync(${JSON.stringify(input)}, out);
 });
 
 
+
+for (const format of ["jpg", "webp"]) {
+  test(`AI upscaler rejects symlinked ${format.toUpperCase()} output paths`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), `ev-ai-upscale-symlink-${format}-`));
+    const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+    const input = join(directory, "source.png"), output = join(directory, `linked.${format}`);
+    await writeFile(input, pngHeader(1, 1));
+    const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2), out = args[args.indexOf("-o") + 1];
+fs.symlinkSync(${JSON.stringify(input)}, out);
+`;
+    await writeFile(binary, generator); await chmod(binary, 0o755);
+    await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+    try {
+      const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+      await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+      const { lstat, access } = await import("node:fs/promises");
+      await assert.rejects(lstat(output));
+      await access(input);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+}
+
 test("AI upscaler rejects PNG containers with empty image-data chunks", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-empty-idat-"));
   const binary = join(directory, "engine"), model = "realesrgan-x4plus";
