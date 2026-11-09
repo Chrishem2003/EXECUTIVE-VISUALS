@@ -10,9 +10,13 @@ const SHA256 = /^[a-f0-9]{64}$/i;
 function reviewEvidenceValid(record) {
   const metrics = record?.metrics && typeof record.metrics === "object" && !Array.isArray(record.metrics) ? record.metrics : {};
   const normalizedMetricsValid = ["ssim", "lpips"].every(key => metrics[key] === undefined || (Number.isFinite(metrics[key]) && metrics[key] >= 0 && metrics[key] <= 1));
-  return normalizedMetricsValid && record?.qualityReview === "reviewed_pass" &&
+  const benchmarkAt = Date.parse(record?.timestamp);
+  const reviewedAt = Date.parse(record?.qualityReviewedAt);
+  const reviewTimeValid = Number.isFinite(benchmarkAt) && Number.isFinite(reviewedAt) &&
+    reviewedAt >= benchmarkAt && reviewedAt <= Date.now() + 5 * 60 * 1000;
+  return normalizedMetricsValid && reviewTimeValid && record?.qualityReview === "reviewed_pass" &&
     typeof record.qualityReviewer === "string" && record.qualityReviewer.trim().length >= 2 &&
-    typeof record.qualityReviewedAt === "string" && Number.isFinite(Date.parse(record.qualityReviewedAt)) &&
+    typeof record.qualityReviewedAt === "string" && Number.isFinite(reviewedAt) &&
     typeof record.qualityReviewNotes === "string" && record.qualityReviewNotes.trim().length >= 20 &&
     typeof record.qualityReviewArtifactPath === "string" && record.qualityReviewArtifactPath.trim().length > 0 &&
     !isAbsolute(record.qualityReviewArtifactPath) && !record.qualityReviewArtifactPath.split(/[\\/]/).includes("..") &&
