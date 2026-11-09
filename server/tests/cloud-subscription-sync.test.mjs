@@ -58,6 +58,27 @@ test("failed credit grant retries activation safely before retrying grant",async
  }finally{db.close();}
 });
 
+test("status lifecycle sync updates cloud state without granting another period of credits",async()=>{
+ const db=setup();let statusCalls=0,activationCalls=0,grantCalls=0;
+ try{
+  enqueueCloudSubscriptionSync(db,{...input,providerEventId:"webhook-event-cancelled",action:"status",
+    metadata:{targetStatus:"cancelled",cancelAtPeriodEnd:false,graceUntil:null}});
+  const ledger={
+   async syncSubscriptionStatus(args){
+    statusCalls++;assert.equal(args.provider,"dodo");assert.equal(args.providerSubscriptionId,input.providerSubscriptionId);
+    assert.equal(args.status,"cancelled");assert.equal(args.cancelAtPeriodEnd,false);
+    return {subscriptionId:"cloud-sub-1",status:"cancelled",replayed:false};
+   },
+   async activateSubscription(){activationCalls++;throw new Error("status sync must not reactivate");},
+   async grantPeriodCredits(){grantCalls++;throw new Error("status sync must not grant credits");}
+  };
+  const result=await processNextCloudSubscriptionSync(db,{ledger});
+  assert.equal(result.processed,true);assert.equal(result.status,"cancelled");
+  assert.equal(statusCalls,1);assert.equal(activationCalls,0);assert.equal(grantCalls,0);
+  assert.ok(db.prepare("SELECT processed_at FROM cloud_subscription_sync_outbox").get().processed_at);
+ }finally{db.close();}
+});
+
 test("outbox rejects invalid periods and unsupported providers",()=>{
  const db=setup();try{
   assert.throws(()=>enqueueCloudSubscriptionSync(db,{...input,provider:"manual"}));
