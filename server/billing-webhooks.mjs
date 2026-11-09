@@ -12,6 +12,17 @@ function safeEqual(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+function addBillingPeriod(startValue,interval){
+  const start=new Date(startValue);
+  if(!Number.isFinite(start.getTime()))throw fail("Subscription billing period start is invalid.","BILLING_PERIOD_INVALID",500);
+  const year=start.getUTCFullYear(),month=start.getUTCMonth(),day=start.getUTCDate();
+  if(interval==="year")return new Date(Date.UTC(year+1,month,Math.min(day,new Date(Date.UTC(year+1,month+1,0)).getUTCDate()),start.getUTCHours(),start.getUTCMinutes(),start.getUTCSeconds(),start.getUTCMilliseconds())).toISOString();
+  if(interval!=="month")throw fail("Unsupported recurring subscription interval.","BILLING_PERIOD_INVALID",500);
+  const targetMonth=month+1,targetYear=year+Math.floor(targetMonth/12),normalizedMonth=targetMonth%12;
+  const lastDay=new Date(Date.UTC(targetYear,normalizedMonth+1,0)).getUTCDate();
+  return new Date(Date.UTC(targetYear,normalizedMonth,Math.min(day,lastDay),start.getUTCHours(),start.getUTCMinutes(),start.getUTCSeconds(),start.getUTCMilliseconds())).toISOString();
+}
+
 function currencyExponent(currency) {
   const code = String(currency || "").toUpperCase();
   if (!/^[A-Z]{3}$/.test(code)) return null;
@@ -140,7 +151,7 @@ export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash }
   const customerEmail=String(data?.customer?.email||"").trim().toLowerCase();
   const paymentPlanId=String(data?.plan?.id??data?.payment_plan??"");
   if ((!cancellation&&![ "charge.completed", "charge.failed" ].includes(eventType)) ||
-      (!cancellation&&(!/^[0-9]{1,30}$/.test(transactionId)||!/^ev_[a-f0-9]{32}$/.test(txRef)||
+      (!cancellation&&(!/^[0-9]{1,30}$/.test(transactionId)||!/^[A-Za-z0-9_-]{1,128}$/.test(txRef)||
         !["successful","failed","pending"].includes(status)||!Number.isFinite(amount)||amount<0||currencyExponent(currency)===null)) ||
       (cancellation&&(!customerEmail.includes("@")||!/^[0-9]{1,18}$/.test(paymentPlanId)))) {
     throw fail("Flutterwave webhook event fields are invalid or unsupported.", "BILLING_WEBHOOK_INVALID", 400);
@@ -411,7 +422,60 @@ export async function processNextFlutterwaveWebhook(db, {
     const order = db.prepare("SELECT * FROM billing_payment_orders WHERE tx_ref=? AND provider='flutterwave'").get(data.tx_ref);
     if (!order) {
       const recurring=db.prepare("SELECT c.*,p.code AS plan_code,p.name AS plan_name,p.amount_minor,p.currency,p.interval,p.credits_per_period,p.active AS plan_active,a.email AS account_email FROM billing_flutterwave_subscription_checkouts c JOIN billing_plans p ON p.id=c.plan_id JOIN billing_accounts a ON a.user_id=c.user_id WHERE c.tx_ref=? LIMIT 1").get(data.tx_ref);
-      if(!recurring)throw fail("No pending billing order matches this payment reference.","BILLING_ORDER_NOT_FOUND",404);
+      if(!recurring){
+        if(payload.event==="charge.failed"){markProcessed();return {processed:true,paid:false,retryableCheckout:true,eventId:event.event_id};}
+        if(payload.event!=="charge.completed"||data.status!=="successful")throw fail("Flutterwave renewal is not in a successful state.","BILLING_PAYMENT_PENDING",409);
+        const verified=await verifyTransaction({transactionId:String(data.id)});
+        const verifiedCustomerId=String(verified?.customer?.id||"");
+        const email=String(data.customer?.email||verified?.customer?.email||"").trim().toLowerCase();
+        const paymentPlanId=String(data.payment_plan||verified?.payment_plan||"");
+        let local=null;
+        if(paymentPlanId&&email){
+          local=db.prepare(`SELECT s.*,p.code AS plan_code,p.amount_minor,p.currency,p.interval,p.credits_per_period
+            FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id
+            JOIN billing_accounts a ON a.user_id=s.user_id
+            WHERE s.provider='flutterwave' AND lower(a.email)=? AND s.status IN ('active','past_due')
+              AND json_extract(s.metadata_json,'$.paymentPlanId')=?
+            ORDER BY s.current_period_end DESC LIMIT 1`).get(email,paymentPlanId);
+        }else if(verifiedCustomerId&&email){
+          const matches=db.prepare(`SELECT s.*,p.code AS plan_code,p.amount_minor,p.currency,p.interval,p.credits_per_period
+            FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id
+            JOIN billing_accounts a ON a.user_id=s.user_id
+            WHERE s.provider='flutterwave' AND lower(a.email)=? AND s.provider_customer_id=?
+              AND s.status IN ('active','past_due') ORDER BY s.current_period_end DESC LIMIT 2`).all(email,verifiedCustomerId);
+          if(matches.length===1)local=matches[0];
+        }
+        if(!local)throw fail("Flutterwave renewal could not be matched to one active subscription.","FLW_RENEWAL_UNMATCHED",409);
+        const exponent=currencyExponent(local.currency);
+        const paidMinor=Math.round(Number(verified?.amount)*(10**exponent));
+        if(String(verified?.id)!==String(data.id)||String(verified?.tx_ref)!==String(data.tx_ref)||
+          String(verified?.status).toLowerCase()!=="successful"||
+          String(verified?.currency).toUpperCase()!==String(local.currency).toUpperCase()||
+          !Number.isSafeInteger(paidMinor)||paidMinor<Number(local.amount_minor)||
+          (verifiedCustomerId&&local.provider_customer_id&&verifiedCustomerId!==String(local.provider_customer_id))){
+          throw fail("Verified Flutterwave renewal does not match the existing subscription.","BILLING_PAYMENT_MISMATCH",409);
+        }
+        const timestamp=now(),periodStart=Date.parse(local.current_period_end)>Date.now()?local.current_period_end:timestamp;
+        const periodEnd=addBillingPeriod(periodStart,local.interval);
+        const metadata=parse(local.metadata_json);
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          db.prepare("UPDATE billing_subscriptions SET status='active',current_period_start=?,current_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+            .run(periodStart,periodEnd,json({...metadata,lastRenewalTransactionId:String(verified.id),lastRenewalEventId:event.event_id}),timestamp,local.id);
+          db.prepare(`INSERT OR IGNORE INTO billing_credit_ledger
+            (id,user_id,amount,event_type,description,reference_id,idempotency_key,expires_at,metadata_json)
+            VALUES(?,?,?,'subscription_grant',?,?,?,?,?)`)
+            .run(randomUUID(),local.user_id,Number(local.credits_per_period),"Flutterwave subscription renewal credits",
+              local.id,"flutterwave-subscription-renewal:"+local.provider_subscription_id+":"+String(verified.id),
+              periodEnd,json({provider:"flutterwave",paymentId:String(verified.id),paymentPlanId:paymentPlanId||metadata.paymentPlanId}));
+          enqueueCloudSubscriptionSync(db,{provider:"flutterwave",providerEventId:event.event_id,ownerId:local.user_id,
+            planCode:local.plan_code,providerCustomerId:local.provider_customer_id||verifiedCustomerId||null,
+            providerSubscriptionId:local.provider_subscription_id,periodStart,periodEnd,status:"active",
+            metadata:{paymentId:String(verified.id),paymentPlanId:paymentPlanId||metadata.paymentPlanId,currency:local.currency}});
+          markProcessed(timestamp);db.exec("COMMIT");
+        }catch(error){db.exec("ROLLBACK");throw error;}
+        return {processed:true,paid:true,renewed:true,eventId:event.event_id,subscriptionId:local.id};
+      }
       if(recurring.status==="active"){markProcessed();return {processed:true,duplicate:true,eventId:event.event_id};}
       if(recurring.status!=="pending"||!recurring.plan_active)throw fail("Recurring checkout is no longer eligible for settlement.","BILLING_ORDER_NOT_PENDING",409);
       if(payload.event==="charge.failed"||data.status==="failed"){markProcessed();return {processed:true,paid:false,retryableCheckout:true,eventId:event.event_id};}
@@ -425,10 +489,7 @@ export async function processNextFlutterwaveWebhook(db, {
         throw fail("Verified Flutterwave recurring payment does not match the configured plan.","BILLING_PAYMENT_MISMATCH",409);
       }
       const timestamp=now(),periodStart=timestamp;
-      const periodEndDate=new Date(timestamp);
-      if(recurring.interval==="year")periodEndDate.setUTCFullYear(periodEndDate.getUTCFullYear()+1);
-      else periodEndDate.setUTCMonth(periodEndDate.getUTCMonth()+1);
-      const periodEnd=periodEndDate.toISOString();
+      const periodEnd=addBillingPeriod(periodStart,recurring.interval);
       const providerCustomerId=String(verified?.customer?.id||"")||null;
       const providerSubscriptionId=String(verified?.subscription_id||"")||("flw-plan:"+recurring.provider_payment_plan_id+":"+recurring.user_id+":"+recurring.id);
       const localSubscriptionId=randomUUID();
