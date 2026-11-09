@@ -383,7 +383,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       });
       const result=await processor.process({
         sourcePath,outputPath,model:input.model||"realesrgan-x4plus",
-        scale:input.scale??2,tile:input.tile??0,signal:controller.signal,onProgress
+        scale:input.scale??2,tile:input.tile??0,expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
       });
       if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
       let c2paPreservation;
