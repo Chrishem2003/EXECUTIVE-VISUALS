@@ -175,3 +175,30 @@ test("LPIPS adapter rejects malformed or download-enabled worker responses", asy
   const assessor = createLpipsPerceptualAssessor({ spawnProcess: fakeSpawn });
   await assert.rejects(assessor.assess({ candidatePath, referencePath }), error => error.code === "AI_UPSCALE_LPIPS_PROTOCOL");
 });
+
+test("LPIPS adapter rejects unexpected device receipts", async t => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const root = await mkdtemp(join(tmpdir(), "ev-lpips-device-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const candidatePath = join(root, "candidate.png"), referencePath = join(root, "reference.png");
+  await writeFile(candidatePath, "candidate"); await writeFile(referencePath, "reference");
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => {};
+    process.nextTick(() => {
+      child.stdout.end(JSON.stringify({
+        ok: true, metric: "LPIPS", version: "0.1", network: "alex",
+        device: "remote-gpu", distance: 0.2, width: 64, height: 64,
+        modelDownloadsAllowed: false
+      }));
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const assessor = createLpipsPerceptualAssessor({ spawnProcess: fakeSpawn });
+  await assert.rejects(assessor.assess({ candidatePath, referencePath }), error => error.code === "AI_UPSCALE_LPIPS_PROTOCOL");
+});
