@@ -144,13 +144,14 @@ export function createFinancialIntelligenceApi({
     const eventKey=hashText(event+":"+providerEventId+":"+status+":"+payloadHash);
     const existing=await dbRequest("payment_webhook_events?select=id&provider=eq.flutterwave&event_key=eq."+eventKey+"&limit=1");
     if(Array.isArray(existing.data)&&existing.data.length)return response(200,{received:true,duplicate:true});
-    await dbRequest("payment_webhook_events",{
+    const inserted=await dbRequest("payment_webhook_events",{
       method:"POST",body:{
         provider:"flutterwave",event_key:eventKey,event_type:event,
         payload_hash:payloadHash,signature_verified:true,
         processing_status:"received",payload
       },prefer:"return=minimal",allowConflict:true
     });
+    if(inserted.status===409)return response(200,{received:true,duplicate:true});
     try{
       if(!/refund/i.test(event)) {
         await dbRequest("payment_webhook_events?provider=eq.flutterwave&event_key=eq."+eventKey,{
