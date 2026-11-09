@@ -136,6 +136,11 @@ test("rejects human review exports whose fixture checksum differs from the packa
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
  assert.equal(result.valid,false);assert.match(result.errors.join(" "),/checksum does not match/);
 });
+test("accepts a Fail decision when a reviewer records a visible defect",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].decision="reviewed_fail";notes.fixtures[0].checks.artifactControl="issue";
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.deepEqual(result,{valid:true,errors:[]});
+});
 test("rejects a Pass decision when any rubric item reports an issue",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].checks.edgeTextIntegrity="issue";
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
