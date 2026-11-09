@@ -773,7 +773,7 @@ export function createAppServer() {
         if(!Array.isArray(items)||items.length<1||items.length>100){
           fail(res,400,"INVALID_BATCH","Batch must contain between 1 and 100 image assets.");return;
         }
-        const projectId=body.projectId||null;
+        let projectId=body.projectId||null;
         if(projectId&&!canWriteProject(db,user.id,projectId)){
           fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;
         }
@@ -789,8 +789,13 @@ export function createAppServer() {
           }
           seenAssets.add(sourceAssetId);
           const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
-          if(!source||!String(source.media_type||"").startsWith("image/")||(projectId&&source.project_id!==projectId)){
-            fail(res,404,"SOURCE_ASSET_NOT_FOUND","Every source must be an accessible image in the selected project.");return;
+          if(!source||!String(source.media_type||"").startsWith("image/")){
+            fail(res,404,"SOURCE_ASSET_NOT_FOUND","Every source must be an accessible image.");return;
+          }
+          const sourceProjectId=source.project_id||null;
+          if(index===0&&!body.projectId)projectId=sourceProjectId;
+          if(sourceProjectId!==projectId){
+            fail(res,400,"PROJECT_MISMATCH","All batch images must belong to the same selected project or private workspace.");return;
           }
           const model=String(item.model||body.model||"realesrgan-x4plus");
           try{
