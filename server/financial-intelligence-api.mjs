@@ -338,6 +338,18 @@ export function createFinancialIntelligenceApi({
         const result=await dbRequest("payment_transactions?select=id,tx_ref,amount_minor,currency,status,payment_method,description,paid_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&order=created_at.desc&limit="+limit+"&offset="+offset);
         return response(200,{transactions:Array.isArray(result.data)?result.data:[],limit,offset});
       }
+      if(path==="/api/billing/invoices"&&method==="GET"){
+        const limit=Math.max(1,Math.min(SAFE_PAGE,Number(query.limit)||25));
+        const offset=Math.max(0,Math.min(10000,Number(query.offset)||0));
+        const result=await dbRequest("billing_invoices?select=id,payment_transaction_id,invoice_number,currency,total_minor,issued_at,snapshot,pdf_object_path&owner_id=eq."+encodeURIComponent(ownerId)+"&order=issued_at.desc&limit="+limit+"&offset="+offset);
+        const invoices=(Array.isArray(result.data)?result.data:[]).map(row=>({
+          id:row.id,paymentTransactionId:row.payment_transaction_id,
+          invoiceNumber:row.invoice_number,currency:row.currency,
+          totalMinor:Number(row.total_minor),issuedAt:row.issued_at,
+          snapshot:row.snapshot,pdfAvailable:Boolean(row.pdf_object_path)
+        }));
+        return response(200,{invoices,limit,offset});
+      }
       if(path==="/api/billing/refunds"&&method==="GET"){
         const limit=Math.max(1,Math.min(SAFE_PAGE,Number(query.limit)||25));
         const offset=Math.max(0,Math.min(10000,Number(query.offset)||0));
