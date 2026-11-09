@@ -875,7 +875,7 @@ export function createAppServer() {
           const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??2);
           if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
           const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
-          if(!source||!String(source.media_type||"").startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for video AI upscaling.");return;}
+          if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible MP4 or QuickTime video asset for provenance-preserving AI upscaling.");return;}
           if(source.project_id&&source.project_id!==String(body.projectId||"")){fail(res,400,"PROJECT_MISMATCH","The source video must belong to the selected project.");return;}
           if(body.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm that you own or are authorized to process this source video.");return;}
           const tile=Number(body.tile??0);
