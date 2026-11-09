@@ -206,7 +206,7 @@ export function flutterwavePaymentPlanEnvName(planCode) {
 }
 
 export function flutterwaveRecurringCheckoutEnabled(env=process.env) {
-  return env.FLW_SUBSCRIPTIONS_ENABLED==="true" &&
+  return env.FLW_SUBSCRIPTIONS_ENABLED==="true" && env.FLW_MERCHANT_APPROVED==="true" &&
     (env.BILLING_ENFORCEMENT_ENABLED==="true"||env.CREDITS_ENABLED==="true") &&
     !!(env.FLW_SECRET_KEY&&env.FLW_WEBHOOK_SECRET&&env.PUBLIC_APP_URL);
 }
