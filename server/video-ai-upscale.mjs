@@ -136,8 +136,8 @@ export function createVideoAiUpscaleProcessor({
       const args=["-hide_banner","-nostdin","-y","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
       args.push("-movflags","+faststart",outputPath);
-      await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
       outputCreated=true;
+      await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
       progress(94);
       const outputProbeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,width,height,avg_frame_rate,nb_read_frames,codec_name","-show_entries","format=duration","-of","json",outputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
       const output=parseProbe(outputProbeResult.stdout);
