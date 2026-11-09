@@ -29,7 +29,7 @@ export function validateUpscaleHumanReviewNotes(notes, reviewManifest) {
   if (notes.model !== reviewManifest.model || !MODELS.has(notes.model)) add("Review model does not match the package manifest.");
   if (notes.humanReviewRequired !== true || notes.qualityVerified !== false) add("Human review must remain required and qualityVerified must remain false.");
   if (typeof notes.reviewer !== "string" || notes.reviewer.trim().length < 2 || notes.reviewer.trim().length > 120) add("Reviewer name must contain 2 to 120 characters.");
-  if (typeof notes.exportedAt !== "string" || !Number.isFinite(Date.parse(notes.exportedAt)) || /^\d{4}-\d{2}-\d{2}T/.test(notes.exportedAt)) add("Review export timestamp must be a valid ISO date-time.");
+  if (typeof notes.exportedAt !== "string" || !Number.isFinite(Date.parse(notes.exportedAt)) || !/^\d{4}-\d{2}-\d{2}T/.test(notes.exportedAt)) add("Review export timestamp must be a valid ISO date-time.");
   const expected = reviewManifest.fixtures;
   if (expected.length !== 5 || !Array.isArray(notes.fixtures) || notes.fixtures.length !== expected.length) {
     add("Review notes must contain exactly the five fixtures in the package manifest.");
