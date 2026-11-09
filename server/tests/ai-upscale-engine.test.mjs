@@ -84,6 +84,18 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.deepEqual(tuned.args.slice(-4), ["-j", "1:3:2", "-f", "png"]);
 });
 
+test("AI upscaler recommends an allowlisted model by explicitly selected content type", () => {
+  const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
+  assert.deepEqual(adapter.recommendModel("photograph"), {
+    contentType: "photograph", model: "realesrgan-x4plus", scale: 4,
+    reason: "General-purpose photographic restoration and detail recovery."
+  });
+  assert.equal(adapter.recommendModel("natural_detail").model, "realesrnet-x4plus");
+  assert.equal(adapter.recommendModel("anime").model, "realesrgan-x4plus-anime");
+  assert.equal(adapter.recommendModel("animation_video").model, "realesr-animevideov3");
+  assert.throws(() => adapter.recommendModel("medical_scan"), error => error.code === "AI_UPSCALE_INVALID_CONTENT_TYPE");
+});
+
 test("AI upscale model names match the supported NCNN model catalog", () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
   for (const model of ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]) {
