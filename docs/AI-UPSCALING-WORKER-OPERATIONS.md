@@ -6,6 +6,10 @@ The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option
 
 The adapter exposes the NCNN CLI `-g` option as `gpu`. The default `auto` lets NCNN select the Vulkan device. An explicit device index from `0` through `31` can be selected for hosts with multiple Vulkan devices. The chosen value is included in execution and self-test diagnostics. The adapter does not probe device capabilities or guarantee that a selected index is present; deployment validation must confirm that the configured worker can initialize that device.
 
+## Content-aware model recommendations
+
+The adapter exposes `recommendModel(contentType)` as an explicit preset helper. Supported content types are `photograph`, `natural_detail`, `anime`, and `animation_video`. It returns an allowlisted NCNN model, a suggested scale, and a rationale. This is operator-selected guidance, not automatic image classification; the caller must pass the returned model to `plan` or `execute` and may override it after review. The helper does not claim that one model is universally best for a particular asset.
+
 ## Safe thread tuning
 
 - Default: `1:2:2` (conservative worker profile).
