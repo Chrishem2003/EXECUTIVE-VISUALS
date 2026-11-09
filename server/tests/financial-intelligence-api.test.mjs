@@ -261,3 +261,25 @@ test("credit balance endpoint fails closed on malformed database values",async()
   assert.equal(result.status,502);
   assert.equal(result.body.error.code,"CREDIT_BALANCE_INVALID");
 });
+
+
+test("customer invoice history is owner-scoped and never exposes private object paths",async()=>{
+  let requestUrl="";
+  const service=api(async(url)=>{
+    requestUrl=String(url);
+    return json([{
+      id:"44444444-4444-4444-8444-444444444444",
+      payment_transaction_id:paymentId,invoice_number:"EV-20261110-ABCDEF1234",
+      currency:"UGX",total_minor:5000,issued_at:"2026-11-10T10:00:00Z",
+      snapshot:{description:"Creator credits",credit_units:100},
+      pdf_object_path:"private/owner/invoice.pdf"
+    }]);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/invoices",ownerId:owner,query:{limit:"10",offset:"0"}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.invoices.length,1);
+  assert.equal(result.body.invoices[0].pdfAvailable,true);
+  assert.equal(Object.hasOwn(result.body.invoices[0],"pdf_object_path"),false);
+  assert.ok(requestUrl.includes("owner_id=eq."+owner));
+  assert.ok(requestUrl.includes("limit=10"));
+});
