@@ -6,7 +6,7 @@ Executive Visuals separates three different claims:
 2. **Execution verified** — a model-specific self-test completed successfully on the worker.
 3. **Quality verified** — a complete, model-specific fixture benchmark passed human review.
 
-All three states are required before the corresponding model preset becomes eligible for execution. The worker checks model installation, explicit enablement, the model-specific execution self-test and the model-specific reviewed benchmark both when rendering readiness and when accepting a job. A successful process exit, valid image header, or correct output dimensions is not proof of perceptual quality.
+All three states are required before the corresponding model preset becomes eligible for execution. The worker checks model installation, explicit enablement, the model-specific execution self-test and the model-specific reviewed benchmark both when rendering readiness and when accepting a job. A successful process exit, valid image header, or correct output dimensions is not proof of perceptual quality. The inference worker also pins the source file's device, inode, size and nanosecond timestamps before processing, then checks them again before accepting the derivative. If the source is replaced, modified, removed or changed into a symlink during inference, the derivative is deleted and the job fails closed.
 
 ## Local evidence file
 
