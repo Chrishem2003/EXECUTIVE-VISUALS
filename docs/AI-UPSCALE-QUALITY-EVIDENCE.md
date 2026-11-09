@@ -16,9 +16,11 @@ The worker reads an operator-managed JSON file from the local filesystem when `G
 AI_UPSCALE_QUALITY_EVIDENCE_PATH=/absolute/private/path/upscale-quality-evidence.json
 ```
 
-The path must refer to a regular, non-symlink file no larger than 4 MiB. The file is read-only; the application does not write review evidence. Do not commit real review artifacts, private source media, or customer assets to Git.
+The path must refer to a regular, non-symlink file no larger than 4 MiB. The reader opens the file without following symlinks where the host supports `O_NOFOLLOW`, checks the opened file descriptor, and enforces the byte limit again after reading. The file is read-only; the application does not write review evidence. Do not commit real review artifacts, private source media, or customer assets to Git.
 
-The JSON document has one top-level `records` array. Each model must have a distinct, complete set of records covering all five categories:
+The JSON document has one top-level `records` array.
+
+Run `npm run verify:upscale-evidence` on the worker host to validate the configured file and print a sanitized per-model readiness report. Exit code `0` means at least one model has passed; `1` means the file is configured but no model passed; `2` means no evidence file is configured. The report does not print reviewer notes, evidence paths or source media. Each model must have a distinct, complete set of records covering all five categories:
 
 - `portrait`
 - `fine_texture`
