@@ -127,6 +127,7 @@ export function createCloudVideoWorker({
   resolveAdapter,
   ingestOutputs,
   resolveActualCost,
+  customerCredits,
   deferSeconds = 30
 } = {}) {
   if (!ledger || (!adapter && typeof resolveAdapter !== "function") ||
@@ -139,7 +140,7 @@ export function createCloudVideoWorker({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          signal
+          customerCredits, signal
         })
       });
     },
