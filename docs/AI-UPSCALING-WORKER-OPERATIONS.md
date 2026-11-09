@@ -11,7 +11,8 @@ The adapter exposes the NCNN CLI `-g` option as `gpu`. The default `auto` lets N
 - Default: `1:2:2` (conservative worker profile).
 - Format: three integer values, `load:proc:save`.
 - Each value must be between 1 and 4.
-- Combined total must not exceed 8.
+- Each stage is independently capped at 4; the maximum accepted profile is `4:4:4`.
+- Upstream guidance suggests `4:4:4` for batches of many small images and `2:2:2` for large images. Benchmark memory and throughput on the target worker before changing the default.
 - The adapter passes the value as a separate argv item; it never invokes a shell.
 - Invalid values fail before the executable is launched.
 
