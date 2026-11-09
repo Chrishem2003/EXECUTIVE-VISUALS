@@ -6,7 +6,14 @@ import { performance } from "node:perf_hooks";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, summarizeUpscaleBenchmarks } from "./upscale-benchmark.mjs";
 
-const ALLOWED_MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime"]);
+export const SUPPORTED_UPSCALE_BENCHMARK_MODELS = Object.freeze([
+  "realesrgan-x4plus",
+  "realesrgan-x4plus-anime",
+  "realesr-animevideov3",
+  "realesrnet-x4plus"
+]);
+
+const ALLOWED_MODELS = new Set(SUPPORTED_UPSCALE_BENCHMARK_MODELS);
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_FIXTURE_BYTES = 250 * 1024 * 1024;
 const MAX_MODEL_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024;
