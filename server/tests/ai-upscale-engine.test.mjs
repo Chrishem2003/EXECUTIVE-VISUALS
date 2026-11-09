@@ -632,3 +632,25 @@ const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ih
     const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test("AI upscaler rejects symlinked PNG output instead of validating a target file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-symlink-png-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "linked.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+fs.symlinkSync(${JSON.stringify(input)}, out);
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { lstat, access } = await import("node:fs/promises");
+    await assert.rejects(lstat(output));
+    await access(input);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
