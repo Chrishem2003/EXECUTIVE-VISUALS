@@ -231,11 +231,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId||rows[0].job_type!=="timeline.render")
       throw new Error("Cloud render job creation returned an invalid record.");
     }catch(error){
-     if(creditReservation)await request("rpc/release_credit_reservation",{method:"POST",body:{p_reservation_id:creditReservation.reservation_id,p_reason:"Cloud render job creation failed"}});
+     // Only release on a definite client-side database rejection. A timeout,
+     // network failure or server error may have committed the job; keep the
+     // reservation held until reconciliation can inspect the durable job row.
+     if(creditReservation&&Number.isInteger(error.status)&&error.status>=400&&error.status<500)
+      await request("rpc/release_credit_reservation",{method:"POST",body:{p_reservation_id:creditReservation.reservation_id,p_reason:"Cloud render job creation was rejected"}});
      throw error;
     }
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"timeline.render",timelineId,timelineRevision:timeline.revision,creditReservationStatus:creditReservation?"reserved":"disabled"}},prefer:"return=minimal"});
-    return response(202,{job:rows[0],billing:creditReservation?{reservedCredits:creditReservation.credit_units,reservationId:creditReservation.reservation_id}:{enabled:false}});
+    return response(202,{job:rows[0],billing:creditReservation?{reservedCredits:creditReservation.credit_units,status:"reserved"}:{enabled:false}});
    }
    if(method==="GET"&&!match[2]){
     const timeline=await service.timelines.get({ownerId,timelineId});
