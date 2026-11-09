@@ -1,4 +1,6 @@
 import { lstat, mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -8,6 +10,12 @@ const rational=value=>{
   return Number.isFinite(a)&&Number.isFinite(b)&&b>0?a/b:null;
 };
 const finite=value=>value===null||value===undefined||String(value).trim()===""?null:Number.isFinite(Number(value))?Number(value):null;
+async function sha256File(path){
+  const hash=createHash("sha256");
+  for await(const chunk of createReadStream(path))hash.update(chunk);
+  return hash.digest("hex");
+}
+function fileIdentity(info){return [info.dev,info.ino,info.size,info.mtimeMs,info.ctimeMs].join(":");}
 const checkCancelled=signal=>{if(signal?.aborted)throw fail("Video AI upscaling was cancelled.","JOB_CANCELLED");};
 const run=async(runCommand,binary,args,options={})=>{
   checkCancelled(options.signal);
@@ -77,7 +85,7 @@ export function createVideoAiUpscaleProcessor({
   if(!Number.isInteger(maxFrames)||maxFrames<1||maxFrames>18000)throw new TypeError("Video frame limit must be between 1 and 18,000.");
   if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>3600)throw new TypeError("Video duration limit is invalid.");
   async function process({
-    sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,signal,onProgress=()=>{}
+    sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,expectedSourceSha256=null,signal,onProgress=()=>{}
   }={}){
     const started=Date.now();
     const progress=value=>{checkCancelled(signal);if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");onProgress(Math.max(0,Math.min(99,Math.round(value))));};
@@ -85,6 +93,8 @@ export function createVideoAiUpscaleProcessor({
     if(![2,4].includes(Number(scale)))throw fail("Video AI upscale supports 2x or 4x image-model scale.","AI_UPSCALE_INVALID_OPTIONS");
     const sourceInfo=await lstat(sourcePath).catch(()=>null);
     if(!sourceInfo?.isFile()||sourceInfo.isSymbolicLink()||sourceInfo.size<1||sourceInfo.size>maxInputBytes)throw fail("Video source must be a readable regular file within the input byte budget.","VIDEO_AI_UPSCALE_INPUT_INVALID");
+    const sourceIdentity=fileIdentity(sourceInfo),sourceSha256=await sha256File(sourcePath);
+    if(expectedSourceSha256&&sourceSha256!==expectedSourceSha256)throw fail("Video source bytes do not match the stored asset digest.","VIDEO_AI_UPSCALE_SOURCE_CHANGED");
     const existing=await lstat(outputPath).catch(()=>null);
     if(existing)throw fail("Video output already exists; source files are never overwritten.","VIDEO_AI_UPSCALE_OUTPUT_EXISTS");
     let workspace=null,outputCreated=false;
@@ -133,7 +143,7 @@ export function createVideoAiUpscaleProcessor({
       progress(84);
       const fpsText=source.video.avg_frame_rate||source.video.r_frame_rate;
       const audioCodecSafe=source.audio.every(stream=>["aac","mp3","ac3","eac3","alac"].includes(String(stream.codec_name||"").toLowerCase()));
-      const args=["-hide_banner","-nostdin","-y","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
+      const args=["-hide_banner","-nostdin","-n","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
       args.push("-movflags","+faststart",outputPath);
       outputCreated=true;
@@ -146,9 +156,11 @@ export function createVideoAiUpscaleProcessor({
       if(output.audio.length!==source.audio.length)throw fail("Rendered video did not preserve the source audio stream count.","VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
       const outputInfo=await stat(outputPath);
       if(!outputInfo.isFile()||outputInfo.size<1||outputInfo.size>maxOutputBytes)throw fail("Rendered video is empty or exceeds the output byte budget.","VIDEO_AI_UPSCALE_OUTPUT_INVALID");
+      const sourceInfoAfter=await lstat(sourcePath).catch(()=>null);
+      if(!sourceInfoAfter?.isFile()||sourceInfoAfter.isSymbolicLink()||fileIdentity(sourceInfoAfter)!==sourceIdentity||await sha256File(sourcePath)!==sourceSha256)throw fail("Video source changed during enhancement; the derivative was rejected.","VIDEO_AI_UPSCALE_SOURCE_CHANGED");
       progress(98);
       return {
-        path:outputPath,byteSize:outputInfo.size,inputBytes,frameCount:source.frames,
+        path:outputPath,byteSize:outputInfo.size,inputBytes,sourceSha256,frameCount:source.frames,
         frameRate:{numerator:Number(String(fpsText).split("/")[0]),denominator:Number(String(fpsText).split("/")[1]||1)},
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
         model,scale:Number(scale),tile:Number(tile),audioStreams:source.audio.length,
