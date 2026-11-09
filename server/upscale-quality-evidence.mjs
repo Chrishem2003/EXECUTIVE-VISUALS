@@ -1,9 +1,10 @@
-import { open } from "node:fs/promises";
+import { open, lstat, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { sha256Hex, summarizeUpscaleBenchmarks } from "./upscale-benchmark.mjs";
 
 const MAX_EVIDENCE_BYTES = 4 * 1024 * 1024;
+const MAX_REVIEW_ARTIFACT_BYTES = 25 * 1024 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/i;
 
 function reviewEvidenceValid(record) {
@@ -13,7 +14,35 @@ function reviewEvidenceValid(record) {
     typeof record.qualityReviewer === "string" && record.qualityReviewer.trim().length >= 2 &&
     typeof record.qualityReviewedAt === "string" && Number.isFinite(Date.parse(record.qualityReviewedAt)) &&
     typeof record.qualityReviewNotes === "string" && record.qualityReviewNotes.trim().length >= 20 &&
+    typeof record.qualityReviewArtifactPath === "string" && record.qualityReviewArtifactPath.trim().length > 0 &&
+    !isAbsolute(record.qualityReviewArtifactPath) && !record.qualityReviewArtifactPath.split(/[\\/]/).includes("..") &&
     typeof record.qualityReviewArtifactSha256 === "string" && SHA256.test(record.qualityReviewArtifactSha256);
+}
+
+async function verifyReviewArtifact(record, evidenceDirectory) {
+  if (!reviewEvidenceValid(record)) return false;
+  const root = await realpath(evidenceDirectory);
+  const candidate = resolve(root, record.qualityReviewArtifactPath);
+  const lexicalPath = relative(root, candidate);
+  if (!lexicalPath || lexicalPath === ".." || lexicalPath.startsWith(".." + sep) || isAbsolute(lexicalPath)) return false;
+  let handle;
+  try {
+    const linkInfo = await lstat(candidate);
+    if (!linkInfo.isFile() || linkInfo.isSymbolicLink()) return false;
+    const actualPath = await realpath(candidate);
+    const actualRelative = relative(root, actualPath);
+    if (!actualRelative || actualRelative === ".." || actualRelative.startsWith(".." + sep) || isAbsolute(actualRelative)) return false;
+    handle = await open(actualPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    const info = await handle.stat();
+    if (!info.isFile() || info.size < 1 || info.size > MAX_REVIEW_ARTIFACT_BYTES) return false;
+    const bytes = await handle.readFile();
+    if (bytes.length < 1 || bytes.length > MAX_REVIEW_ARTIFACT_BYTES) return false;
+    return sha256Hex(bytes) === record.qualityReviewArtifactSha256.toLowerCase();
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
 }
 
 /**
@@ -68,7 +97,8 @@ export async function loadUpscaleQualityEvidence({ filePath = process.env.AI_UPS
   for (const model of modelIds) {
     const records = payload.records.filter(record => record?.model === model);
     const summary = summarizeUpscaleBenchmarks(records);
-    const reviewed = records.length > 0 && records.every(reviewEvidenceValid);
+    const artifactChecks = await Promise.all(records.map(record => verifyReviewArtifact(record, dirname(path))));
+    const reviewed = records.length > 0 && records.every(reviewEvidenceValid) && artifactChecks.every(Boolean);
     const qualityVerified = summary.qualityVerified === true && reviewed;
     const reviewedAt = records.map(record => Date.parse(record.qualityReviewedAt)).filter(Number.isFinite);
     const checkedAt = reviewedAt.length ? new Date(Math.max(...reviewedAt)).toISOString() : "";
