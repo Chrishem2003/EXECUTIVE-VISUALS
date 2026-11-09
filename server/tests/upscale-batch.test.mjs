@@ -109,6 +109,16 @@ test("cancellation prevents queued items from starting and marks in-flight work"
   assert.equal(result.status, "cancelled");
 });
 
+test("batch orchestration keeps visual review mandatory even if an adapter clears the flag", async () => {
+  const processor = createUpscaleBatchProcessor({
+    adapter: { execute: async () => ({ qualityReviewRequired: false, path: "/workspace/result.png" }) }
+  });
+  const result = await processor.process({ items: items(1) });
+  assert.equal(result.qualityReviewRequired, true);
+  assert.equal(result.results[0].qualityReviewRequired, true);
+  assert.deepEqual(result.results[0].qualityAssessment, { status: "not_assessed", method: null });
+});
+
 test("progress observer errors cannot fail a batch", async () => {
   const processor = createUpscaleBatchProcessor({ adapter: fakeAdapter() });
   const result = await processor.process({ items: items(2), onProgress() { throw new Error("observer failure"); } });
