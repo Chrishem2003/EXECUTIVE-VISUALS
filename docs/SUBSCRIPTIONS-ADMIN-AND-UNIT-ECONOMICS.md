@@ -111,3 +111,10 @@ The development branch now contains the first subscription foundation:
 Flutterwave's Payment Plans documentation explicitly says that attaching a plan fixes the payment method to card. It also documents email-bound subscriptions, three additional retry attempts at 30-minute intervals, and cancellation after repeated failures. Uganda's MTN/Airtel MoMo guide describes one-time authorization, not recurring MoMo. The first recurring integration should therefore be card-only where enabled on the approved merchant account; do not market MoMo auto-renewal without written provider confirmation. See the official references below.
 
 **Release gate:** execute the new migration and API tests in isolated staging; then implement provider-backed subscription lifecycle events and verify renewal/cancellation/recovery. Do not expose paid plans until the merchant's recurring method, settlement and unit economics are verified.
+
+
+## Provider compatibility decision — 2026-11-10
+
+Flutterwave's current developer homepage states that a merchant can use only one API version at a time. Executive Visuals currently integrates V4 OAuth for checkout/refunds, while Flutterwave Payment Plans are documented under V3 and are card-only. Do not mix V3 Payment Plans calls into the V4 runtime.
+
+Before recurring subscriptions can be implemented, either obtain written confirmation of a V4-compatible recurring product or plan a complete V4-to-V3 migration of checkout, verification, refunds, webhook verification and reconciliation. This is not authorized as an automatic switch. The admin-only provider-readiness endpoint exposes this blocker without revealing credentials. Recurring billing remains disabled.
