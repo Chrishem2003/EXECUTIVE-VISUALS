@@ -6,7 +6,7 @@ import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
   setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,resolveBillingCreditCost,assertBillingStorageQuota,assertConcurrentJobCapacity,
-  spendBillingCredits,refundBillingCredits,applyDailyFreeCredits
+  spendBillingCredits,refundBillingCredits,settleBillingSpend,applyDailyFreeCredits
 } from "../billing.mjs";
 
 function setup() {
@@ -90,6 +90,87 @@ test("account status and admin reporting expose only known application accounts"
   assert.equal(overview.recurringSubscriptionsEnabled,false);
   assert.throws(()=>setBillingAccountStatus(db,{userId:"user-4",status:"owner"}),e=>e.code==="BILLING_STATUS_INVALID");
   db.close();
+});
+
+
+test("provider credit settlement refunds only the unused estimate and is idempotent",()=>{
+  const env={...process.env,BILLING_ENFORCEMENT_ENABLED:"true",CREDITS_DAILY_FREE:"20"};
+  const db=setup();
+  try{
+    touchBillingAccount(db,{id:"settlement-refund-user",email:"settlement-refund@example.test"},{env});
+    const spend=spendBillingCredits(db,{
+      userId:"settlement-refund-user",capability:"video.generate",
+      referenceId:"video-job-1",idempotencyKey:"generation-spend:video-job-1",env
+    });
+    assert.equal(spend.charged,15);
+    const settlement=settleBillingSpend(db,{
+      userId:"settlement-refund-user",spendIdempotencyKey:"generation-spend:video-job-1",
+      settlementKey:"provider-settlement:task-001",actualCredits:9,
+      evidence:{provider:"runway",evidenceType:"provider_task_receipt",evidenceId:"task-001",providerTaskId:"task-001"}
+    });
+    assert.equal(settlement.settled,true);
+    assert.equal(settlement.replayed,false);
+    assert.equal(settlement.estimatedCredits,15);
+    assert.equal(settlement.actualCredits,9);
+    assert.equal(settlement.adjustmentCredits,6);
+    assert.equal(settlement.balance,11);
+    const replay=settleBillingSpend(db,{
+      userId:"settlement-refund-user",spendIdempotencyKey:"generation-spend:video-job-1",
+      settlementKey:"provider-settlement:task-001",actualCredits:9,
+      evidence:{provider:"runway",evidenceType:"provider_task_receipt",evidenceId:"task-001"}
+    });
+    assert.equal(replay.replayed,true);
+    assert.equal(replay.balance,11);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM billing_credit_settlements").get().count,1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM billing_credit_ledger WHERE idempotency_key='billing-settlement:provider-settlement:task-001'").get().count,1);
+  }finally{db.close();}
+});
+
+test("provider settlement debits an estimate shortfall exactly once and rejects conflicting replays",()=>{
+  const env={...process.env,BILLING_ENFORCEMENT_ENABLED:"true",CREDITS_DAILY_FREE:"20"};
+  const db=setup();
+  try{
+    touchBillingAccount(db,{id:"settlement-debit-user",email:"settlement-debit@example.test"},{env});
+    spendBillingCredits(db,{
+      userId:"settlement-debit-user",capability:"image.generate",
+      referenceId:"image-job-1",idempotencyKey:"generation-spend:image-job-1",env
+    });
+    const result=settleBillingSpend(db,{
+      userId:"settlement-debit-user",spendIdempotencyKey:"generation-spend:image-job-1",
+      settlementKey:"provider-settlement:image-001",actualCredits:7,
+      evidence:{provider:"fal",evidenceType:"provider_invoice",evidenceId:"invoice-001",invoiceReference:"invoice-001"}
+    });
+    assert.equal(result.adjustmentCredits,-4);
+    assert.equal(result.balance,13);
+    assert.throws(()=>settleBillingSpend(db,{
+      userId:"settlement-debit-user",spendIdempotencyKey:"generation-spend:image-job-1",
+      settlementKey:"provider-settlement:image-001",actualCredits:8,
+      evidence:{provider:"fal",evidenceType:"provider_invoice",evidenceId:"invoice-001"}
+    }),error=>error.code==="BILLING_SETTLEMENT_CONFLICT"&&error.status===409);
+    assert.throws(()=>settleBillingSpend(db,{
+      userId:"settlement-debit-user",spendIdempotencyKey:"generation-spend:image-job-1",
+      settlementKey:"provider-settlement:image-002",actualCredits:7,
+      evidence:{provider:"fal",evidenceType:"provider_invoice",evidenceId:"invoice-002"}
+    }),error=>error.code==="BILLING_SETTLEMENT_CONFLICT"&&error.status===409);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM billing_credit_settlements").get().count,1);
+    assert.equal(getBillingBalance(db,"settlement-debit-user"),13);
+  }finally{db.close();}
+});
+
+test("provider settlement rejects missing spend, unsupported evidence and invalid actual credits",()=>{
+  const db=setup();
+  try{
+    touchBillingAccount(db,{id:"settlement-invalid-user",email:"settlement-invalid@example.test"});
+    const input={
+      userId:"settlement-invalid-user",spendIdempotencyKey:"generation-spend:missing",
+      settlementKey:"provider-settlement:missing",actualCredits:0,
+      evidence:{provider:"runway",evidenceType:"provider_cancelled_no_charge",evidenceId:"cancel-001"}
+    };
+    assert.throws(()=>settleBillingSpend(db,input),error=>error.code==="BILLING_SETTLEMENT_SPEND_NOT_FOUND");
+    assert.throws(()=>settleBillingSpend(db,{...input,actualCredits:-1}),error=>error.code==="BILLING_SETTLEMENT_INVALID");
+    assert.throws(()=>settleBillingSpend(db,{...input,evidence:{provider:"runway",evidenceType:"unverified_guess",evidenceId:"x"}}),error=>error.code==="BILLING_SETTLEMENT_INVALID");
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM billing_credit_settlements").get().count,0);
+  }finally{db.close();}
 });
 
 test("model price references require a valid source URL and retain provenance",()=>{

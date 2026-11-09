@@ -11,6 +11,24 @@ The Cloudflare URL is an edge/frontend preview, **not an isolated staging enviro
 
 CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
+## Governed cloud video workflow progress
+
+The integration branch now has a non-billable Runway Model Router quote
+contract for supported `video.generate` workflow nodes. The quote is bound
+to the project and canonical request hash, and the quote ledger records its
+actor, provider/model/operation, routed model, estimate, pricing source and
+short expiry before the API returns it. Quote records are server-only and
+covered by disposable PostgreSQL CI checks. This is not yet paid execution:
+explicit quote approval, atomic customer-credit/provider-budget reservation,
+durable workflow job mapping and private output publication remain release
+gates. Cloud workflow mode and paid provider execution remain disabled.
+
+## Governed Video Studio workflow bridge
+Local projects can now be linked to the cloud workspace using the same UUID after server-side ownership verification. This establishes a shared project scope for the upcoming workflow-node/cloud-job bridge; project documents, memberships and local asset bytes are not implicitly synchronized.
+
+
+The source-controlled cloud bridge now connects the interactive workflow executor to the non-billable Model Router quote, explicit approval, atomic budget reservation, durable cloud enqueue, lease-aware job polling, private output ingestion and verified local asset handoff. Local input assets are copied to the same-UUID cloud project only after ownership/access checks and SHA-256 verification. Output files are downloaded only from the configured Supabase origin and rechecked before local registration. The bridge requires `VIDEO_WORKFLOW_EXECUTION_MODE=cloud`, an upstream human-approval node and an explicit per-node `approvedMaxAmount` USD ceiling; connected source/reference assets also require `rightsConfirmed=true`. A separate five-second resumer parks and requeues workflow runs so the local worker is not held during remote generation. Provider execution remains independently gated and disabled by default; no remote provider, budget policy, secret or production deployment was enabled by this implementation.
+
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards. The AI Director now includes a deterministic Creative DNA compiler for audience promise, emotional journey, hook angles, visual grammar, sound identity, proof checks and platform cut planning.
 - Workflow canvas, typed media ports, server-side validation and targeted run planning.
@@ -70,6 +88,8 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 
 ## Research and implementation records
+- [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, phased backlog and acceptance evidence.
+- [Video Platform Implementation Matrix (2026-11-08)](docs/VIDEO-PLATFORM-IMPLEMENTATION-MATRIX-2026-11-08.md) — cross-domain feature inventory, current integration gaps, competitive capability research and dependency-ordered build programme.
 
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
 - [Product integration and scale plan](docs/PRODUCT-INTEGRATION-AND-SCALE-PLAN.md)

@@ -7,7 +7,8 @@ import {
 import {
   ensureBillingWebhookSchema, createBillingPurchaseOrder,
   verifyFlutterwaveWebhookSignature, receiveFlutterwaveWebhook,
-  processNextFlutterwaveWebhook, createFlutterwaveCheckout
+  processNextFlutterwaveWebhook, createFlutterwaveCheckout, cancelFlutterwaveSubscription,
+  createFlutterwaveSubscriptionCheckout
 } from "../billing-webhooks.mjs";
 
 function setup() {
@@ -203,6 +204,127 @@ test("Flutterwave checkout uses the stored one-time price and Uganda mobile-mone
   db.close();
 });
 
+test("Flutterwave recurring checkout uses a configured payment plan and card-only billing",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  let request;
+  const checkout=await createFlutterwaveSubscriptionCheckout(db,{
+    user:{id:"user-pay-1",email:"pay@example.test"},planId:plan.id,
+    secretKey:"flw-test-secret-key",publicAppUrl:"https://executive.example.com",
+    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_MERCHANT_APPROVED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
+      BILLING_ENFORCEMENT_ENABLED:"true",FLW_PAYMENT_PLAN_ID_CREATOR_MONTHLY:"87654"},
+    fetchImpl:async(url,options)=>{
+      request={url:String(url),body:JSON.parse(options.body)};
+      return new Response(JSON.stringify({status:"success",data:{link:"https://checkout.flutterwave.com/v3/hosted/pay/recurring"}}),{status:200});
+    }
+  });
+  assert.equal(request.url,"https://api.flutterwave.com/v3/payments");
+  assert.equal(request.body.payment_plan,87654);
+  assert.equal(request.body.payment_options,"card");
+  assert.equal(request.body.currency,"UGX");
+  assert.equal(request.body.amount,25000);
+  assert.equal(checkout.paymentMethod,"card");
+  assert.equal(db.prepare("SELECT status FROM billing_flutterwave_subscription_checkouts WHERE id=?").get(checkout.orderId).status,"pending");
+  db.close();
+});
+
+test("verified Flutterwave recurring first payment activates one subscription and grants one period",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const checkout=await createFlutterwaveSubscriptionCheckout(db,{
+    user:{id:"user-pay-1",email:"pay@example.test"},planId:plan.id,secretKey:"flw-test-secret-key",
+    publicAppUrl:"https://executive.example.com",
+    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_MERCHANT_APPROVED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
+      BILLING_ENFORCEMENT_ENABLED:"true",FLW_PAYMENT_PLAN_ID_CREATOR_MONTHLY:"87654"},
+    fetchImpl:async()=>new Response(JSON.stringify({status:"success",data:{link:"https://checkout.flutterwave.com/pay/session"}}),{status:200})
+  });
+  const signed=signedPayload({event:"charge.completed",data:{id:7654321,tx_ref:checkout.txRef,status:"successful",
+    amount:25000,currency:"UGX",customer:{id:9988,email:"pay@example.test"}}});
+  receiveFlutterwaveWebhook(db,signed);
+  const processed=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>({
+    id:7654321,tx_ref:checkout.txRef,status:"successful",currency:"UGX",amount:25000,
+    customer:{id:9988},subscription_id:"flw-subscription-9988"
+  })});
+  assert.equal(processed.paid,true);
+  assert.equal(processed.subscription,true);
+  assert.equal(getBillingBalance(db,"user-pay-1"),800);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_subscriptions WHERE provider='flutterwave'").get().n,1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_credit_ledger WHERE event_type='subscription_grant'").get().n,1);
+  const replay=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("must not reverify processed charge");}});
+  assert.equal(replay.processed,false);
+  db.close();
+});
+
+test("verified Flutterwave recurring renewal extends one billing period and grants credits once",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-renewal-sub','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',
+      '2026-11-10T00:00:00.000Z','2026-12-10T00:00:00.000Z',?)`)
+    .run(plan.id,JSON.stringify({paymentPlanId:"87654"}));
+  const payment={event:"charge.completed",data:{id:8765432,tx_ref:"flwrenewal_001",status:"successful",
+    amount:25000,currency:"UGX",payment_plan:87654,customer:{email:"pay@example.test",id:9988}}};
+  receiveFlutterwaveWebhook(db,signedPayload(payment));
+  const verifyTransaction=async()=>({id:8765432,tx_ref:"flwrenewal_001",status:"successful",
+    amount:25000,currency:"UGX",payment_plan:87654,customer:{id:9988,email:"pay@example.test"}});
+  const processed=await processNextFlutterwaveWebhook(db,{verifyTransaction});
+  assert.equal(processed.renewed,true);
+  assert.equal(getBillingBalance(db,"user-pay-1"),800);
+  const sub=db.prepare("SELECT current_period_start,current_period_end,status FROM billing_subscriptions WHERE id='flw-renewal-sub'").get();
+  assert.equal(sub.current_period_start,"2026-12-10T00:00:00.000Z");
+  assert.equal(sub.current_period_end,"2027-01-10T00:00:00.000Z");
+  assert.equal(sub.status,"active");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_credit_ledger WHERE idempotency_key LIKE 'flutterwave-subscription-renewal:%'").get().n,1);
+  const outbox=db.prepare("SELECT provider,provider_event_id FROM cloud_subscription_sync_outbox").get();
+  assert.equal(outbox.provider,"flutterwave");
+  assert.equal(outbox.provider_event_id,"charge.completed:8765432:successful");
+  db.close();
+});
+
+test("Flutterwave subscription cancellation updates local and cloud lifecycle without granting credits",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const start=new Date().toISOString(),end=new Date(Date.now()+30*86400000).toISOString();
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-local-sub','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',?,?,?)`)
+    .run(plan.id,start,end,JSON.stringify({paymentPlanId:"87654"}));
+  const signed=signedPayload({event:"subscription.cancelled",data:{status:"deactivated",customer:{email:"pay@example.test"},plan:{id:87654}}});
+  receiveFlutterwaveWebhook(db,signed);
+  const processed=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("cancellation must not verify a charge");}});
+  assert.equal(processed.cancelled,true);
+  assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-local-sub'").get().status,"cancelled");
+  const sync=db.prepare("SELECT action,metadata_json FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(processed.eventId);
+  assert.equal(sync.action,"status");
+  assert.equal(JSON.parse(sync.metadata_json).targetStatus,"cancelled");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_credit_ledger WHERE event_type='subscription_grant'").get().n,0);
+  db.close();
+});
+
+test("ambiguous Flutterwave cancellation webhook never cancels an arbitrary local subscription",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const start=new Date().toISOString(),end=new Date(Date.now()+30*86400000).toISOString();
+  for(const id of ["flw-webhook-a","flw-webhook-b"])db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES(?, 'user-pay-1',?,'active','flutterwave','9988',?,?,?,?)`)
+    .run(id,plan.id,id,start,end,JSON.stringify({paymentPlanId:"87654"}));
+  receiveFlutterwaveWebhook(db,signedPayload({event:"subscription.cancelled",data:{
+    status:"deactivated",customer:{email:"pay@example.test"},plan:{id:87654}
+  }}));
+  const result=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("not a charge");}});
+  assert.equal(result.unmatched,true);
+  assert.equal(result.ambiguous,true);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_subscriptions WHERE provider='flutterwave' AND status='active'").get().n,2);
+  db.close();
+});
+
 test("Flutterwave checkout rejects untrusted provider URLs and fails the order closed", async () => {
   const { db, plan } = setup();
   await assert.rejects(() => createFlutterwaveCheckout(db, {
@@ -267,5 +389,77 @@ test("Flutterwave webhook worker respects active leases and releases completed l
   assert.ok(row.processed_at);
   assert.equal(row.lease_owner,null);
   assert.equal(row.lease_expires_at,null);
+  db.close();
+});
+
+
+test("customer cancellation resolves exactly one owned Flutterwave subscription before deactivation",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-customer-cancel','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',?,?,?)`)
+    .run(plan.id,new Date().toISOString(),new Date(Date.now()+30*86400000).toISOString(),
+      JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  const calls=[];
+  const fetchImpl=async(url,options)=>{
+    calls.push({url:String(url),method:options.method});
+    if(options.method==="GET")return new Response(JSON.stringify({status:"success",data:[
+      {id:3210,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}}
+    ]}),{status:200});
+    return new Response(JSON.stringify({status:"success",data:{id:3210,status:"cancelled"}}),{status:200});
+  };
+  const result=await cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",fetchImpl});
+  assert.equal(result.requested,true);
+  assert.equal(result.status,"awaiting_webhook");
+  assert.equal(result.subscriptionId,"flw-customer-cancel");
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].method,"GET");
+  assert.match(calls[0].url,/transaction_id=7654321/);
+  assert.equal(calls[1].method,"PUT");
+  assert.match(calls[1].url,/subscriptions\/3210\/cancel$/);
+  assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().status,"active");
+  assert.ok(JSON.parse(db.prepare("SELECT metadata_json FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().metadata_json).cancellationRequestedAt);
+  db.close();
+});
+
+test("customer cancellation refuses multiple active local subscriptions before provider calls",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const start=new Date().toISOString(),end=new Date(Date.now()+30*86400000).toISOString();
+  for(const id of ["flw-local-a","flw-local-b"])db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES(?, 'user-pay-1',?,'active','flutterwave','9988',?,?,?,?)`)
+    .run(id,plan.id,id,start,end,JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  let providerCalled=false;
+  await assert.rejects(()=>cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",
+    fetchImpl:async()=>{providerCalled=true;throw new Error("must not call provider");}}),
+    error=>error.code==="BILLING_SUBSCRIPTION_AMBIGUOUS");
+  assert.equal(providerCalled,false);
+  db.close();
+});
+
+test("customer cancellation fails closed when Flutterwave returns ambiguous subscription matches",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-ambiguous-cancel','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',?,?,?)`)
+    .run(plan.id,new Date().toISOString(),new Date(Date.now()+30*86400000).toISOString(),
+      JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  let cancelCalled=false;
+  await assert.rejects(()=>cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",
+    fetchImpl:async(_url,options)=>options.method==="GET"
+      ?new Response(JSON.stringify({status:"success",data:[
+        {id:3210,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}},
+        {id:3211,transaction_id:7654321,plan:{id:87654},customer:{email:"pay@example.test"}}
+      ]}),{status:200})
+      :(cancelCalled=true,new Response(JSON.stringify({status:"success"}),{status:200}))
+  }),error=>error.code==="BILLING_SUBSCRIPTION_MATCH_AMBIGUOUS");
+  assert.equal(cancelCalled,false);
+  assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-ambiguous-cancel'").get().status,"active");
   db.close();
 });

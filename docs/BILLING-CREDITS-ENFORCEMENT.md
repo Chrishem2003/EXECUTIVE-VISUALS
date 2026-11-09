@@ -111,3 +111,100 @@ Official references:
 - Merchant acceptance policy and AI-content review category: https://docs.dodopayments.com/miscellaneous/merchant-acceptance
 - Accepted merchant countries: https://docs.dodopayments.com/miscellaneous/list-of-countries-we-accept-payments-from
 - Customer portal sessions: https://docs.dodopayments.com/api-reference/customers/post-customers-customer-id-customer-portal-session
+
+
+## Immutable provider-usage settlement (local billing ledger)
+
+The local billing engine now exposes `settleBillingSpend` for post-execution
+reconciliation against authoritative provider evidence. It does not edit or
+delete the original `generation_spend` row. Instead, one transaction inserts
+a unique settlement record and, only when the actual credit amount differs
+from the preflight charge, one compensating append-only ledger entry:
+
+- Actual usage below the estimate creates a positive `generation_refund`.
+- Actual usage above the estimate creates an additional negative `generation_spend`.
+- Equal usage records a settlement without adding a zero-value ledger row.
+- The original spend can be settled only once; both the original spend and
+  settlement idempotency keys are protected against conflicting retries.
+- A repeated identical settlement returns the stored result. A different
+  actual amount, spend, or settlement key is rejected as a conflict.
+- Evidence is mandatory and typed as a provider task receipt, provider invoice,
+  provider usage reconciliation, or verified no-charge cancellation. The
+  stored evidence is bounded to provider, evidence type, evidence ID, and
+  optional task/invoice references.
+
+The adjustment and settlement record commit atomically. If the provider's
+verified actual usage exceeds the estimate, the difference is debited even if
+that makes the current balance negative; further generation remains subject
+to the ordinary balance check. This prevents the platform from silently
+absorbing unestimated provider cost.
+
+**Scope limitation:** this is a tested local SQLite billing-ledger primitive.
+It is not yet wired into the Supabase cloud workflow approval/enqueue
+transaction or a live provider callback. Cloud customer-credit reservation,
+provider invoice ingestion, and cross-ledger reconciliation remain release
+gates. No production billing flag or payment collection is enabled by this
+change.
+
+
+## Cloud PostgreSQL customer-credit reservation — implemented, staging-only
+
+The cloud video workflow now has a PostgreSQL customer-credit ledger and
+transactional reservation lifecycle in addition to the local SQLite billing
+engine. The cloud implementation is additive and is not applied to production
+by this change.
+
+- `executive_visuals.billing_credit_accounts` serializes account mutations
+  with a row lock and carries the active/suspended billing gate.
+- `executive_visuals.billing_credit_ledger` is append-only. Grants, generation
+  reservations, refunds and verified settlement adjustments are immutable,
+  uniquely idempotent ledger entries.
+- `executive_visuals.billing_credit_reservations` records the per-job
+  reservation and terminal settlement/release state.
+- Service-role-only RPCs grant credits, reserve before dispatch, settle against
+  typed provider evidence, and release a reservation when dispatch is safely
+  cancelled before provider submission.
+- The workflow approval/enqueue RPC now creates the customer-credit
+  reservation in the same PostgreSQL transaction as the provider-budget
+  reservation and durable job enqueue. Insufficient credits abort the whole
+  transaction; they cannot leave a queued job or consume the workflow quote.
+- Exact approval retries return the existing job and do not reserve credits
+  twice. Conflicting amounts, owners, jobs or settlement evidence are rejected.
+- Settlements refund unused estimated credits or debit an actual-usage shortfall
+  with compensating ledger entries. The original reservation entry is never
+  edited or deleted.
+
+The disposable PostgreSQL CI suite verifies grant idempotency, reservation
+debits, insufficient balance rejection, settlement/refund math, conflicting
+replays, release, ledger immutability, and customer-credit reservation within
+the workflow approval/enqueue transaction. Both the Quality and Google Drive
+PostgreSQL integration workflows exercise the migration chain.
+
+**Provider-worker settlement — implemented for successful workflow jobs, staging-only:**
+
+- The hosted cloud worker now calls the job-scoped
+  `settle_generation_credits_for_job` RPC after the provider's authoritative
+  task-cost resolver returns and before private output ingestion is marked
+  complete.
+- The resolver must return an integer `actualCredits` alongside the verified
+  provider-currency amount and evidence reference. USD cost is not silently
+  converted into customer credits; no conversion is guessed.
+- The RPC verifies the job owner, job type, provider identity and existing
+  customer-credit reservation before settling. It delegates to the immutable,
+  idempotent reservation settlement function.
+- Settlement evidence is bound to provider, provider task ID and the resolver's
+  evidence reference. A lost response can be retried with the same evidence;
+  conflicting retries are rejected.
+- If the actual credit amount is absent, the settlement service is unavailable,
+  or the RPC result is ambiguous, the worker quarantines the completed provider
+  task for reconciliation. It does not mark the job as an ordinary failure or
+  repeat a paid provider POST.
+- The provider-specific cost resolver must supply `actualCredits` from
+  authoritative provider usage/billing evidence before workflow-quoted video
+  jobs can pass this gate. The existing task-USD resolver alone is insufficient.
+
+**Still outstanding:** verified no-charge release for pre-dispatch cancellation,
+provider-failed/cancelled task reconciliation, subscription entitlement and
+plan synchronization in the cloud schema, payment-provider sandbox lifecycle,
+renewal/cancellation webhooks, and production cutover. The current change does
+not activate payment collection, live subscriptions, or production billing.

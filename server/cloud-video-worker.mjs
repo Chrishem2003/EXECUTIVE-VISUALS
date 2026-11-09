@@ -6,6 +6,8 @@ const QUARANTINE_CODES = new Set([
   "VIDEO_SUBMISSION_IN_PROGRESS",
   "VIDEO_SUBMISSION_TERMINAL",
   "VIDEO_BUDGET_COST_UNRESOLVED",
+  "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNAVAILABLE",
+  "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED",
   "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW",
   "VIDEO_OUTPUT_INGESTION_CLEANUP_PENDING",
   "VIDEO_OUTPUT_COLLECTION_INVALID",
@@ -80,7 +82,8 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      costEvidenceReference: output.costEvidenceReference
+      costEvidenceReference: output.costEvidenceReference,
+      customerCreditSettlement: output.customerCreditSettlement || null
     };
     const finished = await enqueue.finish({
       jobId: job.id, workerId, status: "succeeded",
@@ -127,6 +130,7 @@ export function createCloudVideoWorker({
   resolveAdapter,
   ingestOutputs,
   resolveActualCost,
+  customerCredits,
   deferSeconds = 30
 } = {}) {
   if (!ledger || (!adapter && typeof resolveAdapter !== "function") ||
@@ -139,7 +143,7 @@ export function createCloudVideoWorker({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          signal
+          customerCredits, signal
         })
       });
     },

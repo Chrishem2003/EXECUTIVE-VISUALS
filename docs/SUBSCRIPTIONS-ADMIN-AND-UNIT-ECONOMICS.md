@@ -95,3 +95,152 @@ No merchant account, payment plan, payment API key or live transaction is create
 - Flutterwave Uganda pricing: https://flutterwave.com/ug/pricing
 - Pesapal recurring payments: https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/recurringpayments
 - Stripe country availability: https://stripe.com/global
+
+
+## Cloud subscription entitlement implementation — staging only
+
+The cloud PostgreSQL entitlement foundation is now source-controlled in
+`20261109260000_cloud_subscription_entitlements.sql`:
+
+- A versioned plan catalogue for Free, Creator, Studio and Enterprise.
+- Subscription records with provider identity, billing period, lifecycle state,
+  cancellation-at-period-end and grace-period fields.
+- A unique subscription-period grant ledger, preventing duplicate monthly or
+  annual credit allocations on webhook retries.
+- Recurring subscription periods can advance on the same provider subscription
+  identity; stale period updates are rejected and repeated renewal deliveries
+  are idempotent.
+- A service-role-only activation RPC and period-credit grant RPC.
+- A default Free subscription provisioned for new and existing cloud credit
+  accounts. Free includes local editing but does not authorize paid video
+  generation.
+- The cloud generation-credit reservation RPC checks video-generation
+  entitlement and customer-credit balance atomically. Scheduled cancellation
+  retains access through the already-paid period; past-due access is bounded
+  by its grace deadline.
+- Creator, Studio and Enterprise entries are catalogue templates only:
+  prices are unset, period credits are zero, and checkout is disabled. No
+  customer-facing paid offer is represented as live.
+
+The new `cloud-subscription-ledger.mjs` client exposes the server-side
+subscription activation and period-credit grant RPCs. It does not itself
+declare a payment successful; only a separately verified provider event may
+call activation.
+
+PostgreSQL integration checks cover default-Free provisioning, Free-plan
+video-generation denial, verified plan activation, idempotent period credits,
+Creator generation reservation, and access during scheduled cancellation.
+Node tests cover service-role RPC routing, validation, idempotent grants and
+secret redaction.
+
+**Still gated:** provider webhook-to-cloud activation wiring, payment
+verification in sandbox, renewal event ordering, cancellation/past-due
+reconciliation, plan pricing and credit allocation approval, and production
+migration/deployment. No live payment collection is enabled.
+
+
+## Verified Dodo → cloud subscription synchronization
+
+Verified Dodo subscription activation and renewal events now enqueue a durable
+local outbox record in the same SQLite transaction as the local subscription
+and credit-ledger update. A separate worker mirrors that record to the
+Supabase `executive_visuals` schema using the service-role-only subscription
+activation and period-credit RPCs.
+
+- The outbox is unique by provider + webhook event ID.
+- It stores only the owner, mapped plan code, provider subscription/customer
+  IDs, billing period, verified event ID and bounded reconciliation metadata.
+- Activation and period-credit grant are separate idempotent calls. If the
+  worker stops after activation, retry safely replays activation before
+  granting the period credits.
+- Failed cloud synchronization is retained with an attempt count and a
+  retryable error code; the Dodo webhook is not reprocessed or double-credited.
+- The worker runs only when both Supabase URL and service-role credentials are
+  configured. No credentials are committed.
+
+Current scope is Dodo activation and renewal. Provider cancellation, pause,
+past-due and plan-change state synchronization, Flutterwave recurring
+subscription events, payment sandbox verification and production activation
+remain separate gates. This does not enable checkout or live payment
+collection by itself.
+
+
+## Provider subscription lifecycle synchronization
+
+A separate service-role-only PostgreSQL RPC now mirrors verified Dodo lifecycle
+events without invoking the period-credit grant operation. The durable outbox
+supports distinct `activate` and `status` actions, so cancellation, pause,
+past-due, recovery, expiry and plan changes cannot accidentally allocate a
+second period of credits.
+
+- Dodo lifecycle updates and their outbox records commit in the same local
+  transaction as the local subscription state change.
+- The cloud status RPC updates lifecycle state, optional plan mapping,
+  scheduled-cancellation state and past-due grace deadline.
+- Provider event IDs are retained in cloud metadata; exact status-event retries
+  return an idempotent receipt.
+- A scheduled cancellation can remain active through the current paid period;
+  an immediate cancellation, pause or expiry removes generation entitlement
+  according to the cloud reservation policy.
+- PostgreSQL integration coverage checks pause, past-due grace, recovery and
+  duplicate status-event handling.
+
+Flutterwave recurring subscription lifecycle integration and live provider
+sandbox verification remain separate work. This migration is not applied to
+production by this PR.
+
+
+## Flutterwave recurring subscription checkout
+
+Flutterwave recurring subscriptions are now available as a separate card-based
+checkout path. Each active monthly/yearly application plan maps to a
+pre-created Flutterwave Payment Plan using
+`FLW_PAYMENT_PLAN_ID_<PLAN_CODE>` (uppercase plan code with punctuation
+normalized to underscores). The platform never creates or changes merchant
+payment plans automatically.
+
+Required environment gates:
+
+- `FLW_SUBSCRIPTIONS_ENABLED=true` and `FLW_MERCHANT_APPROVED=true`
+- `FLW_SECRET_KEY` and `FLW_WEBHOOK_SECRET`
+- `PUBLIC_APP_URL`
+- `BILLING_ENFORCEMENT_ENABLED=true` or `CREDITS_ENABLED=true`
+- One matching `FLW_PAYMENT_PLAN_ID_<PLAN_CODE>` for each recurring plan
+
+The first charge is verified server-to-server before local subscription
+activation, first-period credit grant and cloud-ledger synchronization. The
+provider cancellation webhook updates local and cloud lifecycle state without
+granting credits. Authenticated users can retrieve the status of their own
+checkout through the recurring-order status endpoint.
+
+**Payment-method limitation:** Flutterwave Payment Plans force card payments.
+The Uganda mobile-money option remains available on the separate one-time
+checkout; it is not presented as a recurring payment method. Merchant
+dashboard configuration and sandbox/live provider verification are still
+required before enabling this path in production.
+
+Verified recurring renewal charges are reconciled separately from the initial
+checkout. Renewal settlement requires a successful server-side transaction
+verification and an unambiguous match using the provider payment-plan ID and
+customer email, or a unique provider customer identity. The billing period
+advances from the later of the existing period end or the verified processing
+time; a transaction-specific idempotency key prevents duplicate period-credit
+grants. Events that cannot be matched unambiguously remain retryable for
+operator investigation rather than granting credits.
+
+
+## Customer-managed Flutterwave cancellation
+
+Authenticated customers can request cancellation from the billing workspace.
+The server looks up the provider subscription using the account email, mapped
+payment-plan ID and verified initial transaction ID, and proceeds only when
+Flutterwave returns exactly one matching numeric subscription ID. It then
+calls the individual-subscription deactivation endpoint. The local entitlement
+is deliberately not marked cancelled by the browser/API response: the signed
+provider cancellation webhook remains the source of truth and updates local
+and cloud subscription state. Ambiguous lookup results, missing references,
+provider errors and unconfirmed responses fail closed.
+
+Dodo customers continue to manage cancellation through the provider's hosted
+customer portal. Flutterwave subscription cancellation is immediate at the
+provider; the UI warns that entitlement changes wait for webhook confirmation.

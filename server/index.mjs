@@ -17,12 +17,14 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resumeCompletedCloudVideoWorkflows } from "./workflow-cloud-video-resumer.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
-import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout, createFlutterwaveSubscriptionCheckout, getFlutterwaveSubscriptionCheckoutStatus, cancelFlutterwaveSubscription, flutterwavePaymentPlanEnvName, flutterwaveRecurringCheckoutEnabled } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
+import { processNextCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
 import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attempt-store.mjs";
@@ -337,7 +339,7 @@ async function processNextJob() {
   try {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
-      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,cloudTimelineApi,
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
@@ -350,7 +352,17 @@ async function processNextJob() {
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
-    if(completeJob(db,job.id,WORKER_ID,result,now())){
+    if(current.job_type==="workflow.execute"&&result?.status==="blocked"){
+      const runId=String(parseJson(current.input_json,{}).runId||"");
+      const workflowError=runId?db.prepare("SELECT error_json FROM workflow_runs WHERE id=?").get(runId):null;
+      const details=parseJson(workflowError?.error_json,{code:"WORKFLOW_BLOCKED",message:"Workflow is waiting for an external job."});
+      const changed=db.prepare("UPDATE jobs SET status='blocked',output_json=?,error_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
+        .run(json(result),json(details),now(),now(),job.id,WORKER_ID,now());
+      if(changed.changes===1){
+        addJobEvent(db,job.id,job.owner_id,"job.blocked",details);
+        audit(db,job.owner_id,"job.blocked","job",job.id,{jobType:job.job_type,runId},job.project_id);
+      }
+    }else if(completeJob(db,job.id,WORKER_ID,result,now())){
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
@@ -376,13 +388,23 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let cloudWorkflowResumeBusy=false;
+const cloudWorkflowResumeTimer=cloudTimelineApi&&process.env.DISABLE_WORKER!=="true"?setInterval(async()=>{
+ if(cloudWorkflowResumeBusy)return;
+ cloudWorkflowResumeBusy=true;
+ try{await resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,onError:error=>process.stderr.write("Cloud workflow resume check failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n")});}
+ catch(error){process.stderr.write("Cloud workflow resume cycle failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n");}
+ finally{cloudWorkflowResumeBusy=false;}
+},5000):null;
+cloudWorkflowResumeTimer?.unref();
 let billingWebhookBusy=false;
-const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY)?setInterval(async()=>{
+const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY||(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY))?setInterval(async()=>{
   if(billingWebhookBusy)return;
   billingWebhookBusy=true;
   try {
     if(process.env.FLW_SECRET_KEY)await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});
     if(process.env.DODO_PAYMENTS_WEBHOOK_KEY)processNextDodoWebhook(db);
+    if(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY)await processNextCloudSubscriptionSync(db);
   }
   catch(error){ process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n"); }
   finally { billingWebhookBusy=false; }
@@ -561,8 +583,8 @@ const billingAccount=touchBillingAccount(db,user);
       }
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
-      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
-      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>{const dodoReady=dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""));const flutterwaveReady=flutterwaveRecurringCheckoutEnabled()&&/^\d{1,18}$/.test(String(process.env[flutterwavePaymentPlanEnvName(plan.code)]||""));return {...plan,subscriptionCheckoutAvailable:dodoReady||flutterwaveReady,subscriptionProvider:dodoReady?"dodo":flutterwaveReady?"flutterwave":null};});send(res,200,{plans},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady()||flutterwaveRecurringCheckoutEnabled(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled()||flutterwaveRecurringCheckoutEnabled(),flutterwaveRecurringSubscriptionsEnabled:flutterwaveRecurringCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
       const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
       if(billingOrderMatch&&req.method==="GET"){
         const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
@@ -572,6 +594,26 @@ const billingAccount=touchBillingAccount(db,user);
         send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
       }
 
+      const flutterwaveSubscriptionOrderMatch=path.match(/^\/api\/billing\/flutterwave-subscription-orders\/([0-9a-f-]{36})$/i);
+      if(flutterwaveSubscriptionOrderMatch&&req.method==="GET"){
+        const order=getFlutterwaveSubscriptionCheckoutStatus(db,{orderId:flutterwaveSubscriptionOrderMatch[1],userId:user.id});
+        send(res,200,{order},cors);return;
+      }
+      if(path==="/api/billing/flutterwave-subscription-cancel"&&req.method==="POST"){
+        if(!flutterwaveRecurringCheckoutEnabled()){fail(res,503,"FLW_SUBSCRIPTIONS_DISABLED","Flutterwave recurring subscription management is disabled.");return;}
+        const result=await cancelFlutterwaveSubscription(db,{user,secretKey:process.env.FLW_SECRET_KEY});
+        audit(db,user.id,"billing.subscription.cancel_requested","subscription",result.subscriptionId||"current",{provider:"flutterwave",status:result.status});
+        send(res,200,{cancellation:result},cors);return;
+      }
+      if(path==="/api/billing/flutterwave-subscription-checkout"&&req.method==="POST"){
+        if(!flutterwaveRecurringCheckoutEnabled()){
+          fail(res,503,"FLW_SUBSCRIPTIONS_DISABLED","Flutterwave recurring checkout is disabled until recurring billing, merchant approval, webhook verification and payment-plan configuration are enabled.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const checkout=await createFlutterwaveSubscriptionCheckout(db,{user,planId:String(body.planId||""),
+          secretKey:process.env.FLW_SECRET_KEY,publicAppUrl:process.env.PUBLIC_APP_URL,env:process.env});
+        send(res,200,{checkout},cors);return;
+      }
       if(path==="/api/billing/subscription-checkout"&&req.method==="POST"){
         const body=await readJson(req,16*1024);
         const checkout=await createDodoSubscriptionCheckout(db,{user,planId:String(body.planId||"")});
@@ -714,11 +756,24 @@ const billingAccount=touchBillingAccount(db,user);
       if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows"))){
         const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
+        let cloudBody=body;
+        if(path==="/api/cloud/projects"&&req.method==="POST"&&body.localProjectId){
+          const localProjectId=String(body.localProjectId);
+          const localProject=getOwnedProject(db,user.id,localProjectId);
+          if(!localProject||localProject.archived_at){fail(res,404,"LOCAL_PROJECT_NOT_FOUND","An active local project owned by this account is required for cloud linking.");return;}
+          if(body.projectId&&String(body.projectId)!==localProject.id){fail(res,400,"PROJECT_ID_MISMATCH","The supplied cloud project ID must match the selected local project ID.");return;}
+          cloudBody={...body,projectId:localProject.id,name:body.name||localProject.name,description:body.description??localProject.description};
+        }
         const cloudResult=await cloudTimelineApi.handle({
-          method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
+          method:req.method,path,ownerId:user.id,body:cloudBody,query:Object.fromEntries(url.searchParams.entries()),
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
-        if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
+        if(cloudResult){
+          if(path==="/api/cloud/projects"&&req.method==="POST"&&body.localProjectId&&cloudResult.status>=200&&cloudResult.status<300){
+            audit(db,user.id,"cloud.project_linked","project",String(body.localProjectId),{cloudProjectId:cloudResult.body?.project?.id||null},String(body.localProjectId));
+          }
+          send(res,cloudResult.status,cloudResult.body,cors);return;
+        }
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
