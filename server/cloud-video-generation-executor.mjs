@@ -19,6 +19,7 @@ export async function executeCloudVideoGenerationJob({
   resolveAdapter,
   ingestOutputs,
   resolveActualCost,
+  customerCredits,
   signal
 } = {}) {
   if (!job?.id || !job?.owner_id || job.job_type !== "video.generate" ||
@@ -170,6 +171,31 @@ export async function executeCloudVideoGenerationJob({
       typeof cost.evidenceReference !== "string" || !cost.evidenceReference.trim() || cost.evidenceReference.length > 1000) {
     throw fail("Actual provider cost does not match the approved reservation or lacks evidence.", "VIDEO_BUDGET_COST_UNRESOLVED");
   }
+  let customerCreditSettlement = null;
+  if (input.workflowQuoteId) {
+    if (!customerCredits || typeof customerCredits.settleJob !== "function") {
+      throw fail("Workflow generation completed without a customer-credit settlement service.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNAVAILABLE");
+    }
+    if (!Number.isSafeInteger(cost.actualCredits) || cost.actualCredits < 0 || cost.actualCredits > 1000000000) {
+      throw fail("Provider cost evidence did not include an authoritative integer customer-credit amount.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
+    try {
+      customerCreditSettlement = await customerCredits.settleJob({
+        jobId: job.id,
+        ownerId: job.owner_id,
+        provider: input.provider,
+        actualCredits: cost.actualCredits,
+        evidence: {
+          provider: input.provider,
+          evidenceType: "provider_task_receipt",
+          evidenceId: providerTaskId,
+          evidenceReference: cost.evidenceReference
+        }
+      });
+    } catch {
+      throw fail("Provider cost is known but customer-credit settlement could not be durably confirmed; job requires reconciliation.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
+  }
   let ingested;
   try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
   catch (error) {
@@ -196,6 +222,7 @@ export async function executeCloudVideoGenerationJob({
     usage: ingested.usage || null,
     actualAmount: cost.amount,
     currency: cost.currency,
-    costEvidenceReference: cost.evidenceReference
+    costEvidenceReference: cost.evidenceReference,
+    customerCreditSettlement
   });
 }
