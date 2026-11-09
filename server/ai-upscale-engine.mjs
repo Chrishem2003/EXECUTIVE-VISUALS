@@ -172,7 +172,7 @@ function bitDepthFromHeader(bytes) {
 async function readImageBitDepth(path) {
   const handle = await open(path, "r");
   try {
-    const header = Buffer.alloc(64);
+    const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
     return bitDepthFromHeader(header.subarray(0, bytesRead));
   } finally { await handle.close(); }
