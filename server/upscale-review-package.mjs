@@ -37,22 +37,84 @@ async function fingerprint(path) {
   return { sha256: digest.digest("hex"), bytes };
 }
 
+const PNG_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let value = n;
+    for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    table[n] = value >>> 0;
+  }
+  return table;
+})();
+
+function updatePngCrc(crc, bytes) {
+  for (const byte of bytes) crc = PNG_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return crc >>> 0;
+}
+
+async function readExact(handle, length, position) {
+  const buffer = Buffer.alloc(length);
+  let read = 0;
+  while (read < length) {
+    const result = await handle.read(buffer, read, length - read, position + read);
+    if (!result.bytesRead) throw fail("Enhanced output PNG is truncated.");
+    read += result.bytesRead;
+  }
+  return buffer;
+}
+
 async function readPngDimensions(path) {
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
     const info = await handle.stat();
-    if (!info.isFile() || info.size < 33) throw fail("Enhanced output must be a complete PNG image.");
-    const header = Buffer.alloc(33);
-    const { bytesRead } = await handle.read(header, 0, header.length, 0);
-    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    if (bytesRead !== header.length || !header.subarray(0, 8).equals(signature) ||
-        header.readUInt32BE(8) !== 13 || header.toString("ascii", 12, 16) !== "IHDR") {
-      throw fail("Enhanced output must have a valid PNG signature and IHDR header.");
+    if (!info.isFile() || info.size < 57 || info.size > MAX_IMAGE) throw fail("Enhanced output must be a complete PNG image.");
+    const signature = await readExact(handle, 8, 0);
+    if (!signature.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) throw fail("Enhanced output must have a valid PNG signature.");
+    let offset = 8, width = 0, height = 0, chunkIndex = 0, hasIdat = false, hasIend = false;
+    while (offset < info.size) {
+      if (info.size - offset < 12) throw fail("Enhanced output PNG has a truncated chunk.");
+      const chunkHeader = await readExact(handle, 8, offset);
+      const length = chunkHeader.readUInt32BE(0);
+      const type = chunkHeader.toString("ascii", 4, 8);
+      if (length > info.size - offset - 12) throw fail("Enhanced output PNG chunk exceeds the file boundary.");
+      if (chunkIndex === 0 && (type !== "IHDR" || length !== 13)) throw fail("Enhanced output PNG must begin with a valid IHDR chunk.");
+      if (chunkIndex > 0 && type === "IHDR") throw fail("Enhanced output PNG contains a duplicate IHDR chunk.");
+      if (type === "IEND" && (length !== 0 || !hasIdat)) throw fail("Enhanced output PNG is missing image data or has an invalid IEND chunk.");
+      if (hasIend) throw fail("Enhanced output PNG contains data after IEND.");
+
+      let crc = updatePngCrc(0xffffffff, chunkHeader.subarray(4, 8));
+      let dataOffset = offset + 8, remaining = length;
+      const ihdr = type === "IHDR" ? Buffer.alloc(13) : null;
+      let copied = 0;
+      while (remaining > 0) {
+        const size = Math.min(64 * 1024, remaining);
+        const bytes = await readExact(handle, size, dataOffset);
+        crc = updatePngCrc(crc, bytes);
+        if (ihdr) { bytes.copy(ihdr, copied); copied += bytes.length; }
+        dataOffset += size;
+        remaining -= size;
+      }
+      const expectedCrc = (await readExact(handle, 4, dataOffset)).readUInt32BE(0);
+      if (((crc ^ 0xffffffff) >>> 0) !== expectedCrc) throw fail("Enhanced output PNG contains an invalid chunk checksum.");
+      if (type === "IHDR") {
+        width = ihdr.readUInt32BE(0);
+        height = ihdr.readUInt32BE(4);
+        const bitDepth = ihdr[8], colorType = ihdr[9], compression = ihdr[10], filter = ihdr[11], interlace = ihdr[12];
+        const validDepths = ({0:[1,2,4,8,16],2:[8,16],3:[1,2,4,8],4:[8,16],6:[8,16]})[colorType] || [];
+        if (!width || !height || width > 0x7fffffff || height > 0x7fffffff ||
+            !validDepths.includes(bitDepth) || compression !== 0 || filter !== 0 || ![0,1].includes(interlace)) {
+          throw fail("Enhanced output PNG dimensions or IHDR fields are invalid.");
+        }
+      }
+      if (type === "IDAT") hasIdat = true;
+      if (type === "IEND") {
+        hasIend = true;
+        if (dataOffset + 4 !== info.size) throw fail("Enhanced output PNG contains trailing bytes after IEND.");
+      }
+      offset = dataOffset + 4;
+      chunkIndex++;
     }
-    const width = header.readUInt32BE(16), height = header.readUInt32BE(20);
-    if (!width || !height || width !== Math.floor(width) || height !== Math.floor(height)) {
-      throw fail("Enhanced output PNG dimensions are invalid.");
-    }
+    if (!hasIend || !hasIdat || offset !== info.size) throw fail("Enhanced output PNG is incomplete.");
     return { width, height };
   } finally { await handle.close().catch(() => {}); }
 }
