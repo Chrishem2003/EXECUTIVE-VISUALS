@@ -376,6 +376,97 @@ export function refundBillingCredits(db,{userId,spendIdempotencyKey,reason="Prov
   }catch(error){db.exec("ROLLBACK");throw error;}
 }
 
+
+/**
+ * Reconcile a completed provider operation against the original customer
+ * credit spend. The original spend is never edited: a single immutable
+ * settlement row and, when needed, one compensating ledger entry are written
+ * in the same transaction. Actual usage must carry provider evidence.
+ */
+export function settleBillingSpend(db, {
+  userId, spendIdempotencyKey, settlementKey, actualCredits,
+  evidence = {}, now = Date.now()
+} = {}) {
+  const spendKey=String(spendIdempotencyKey||"").trim();
+  const settleKey=String(settlementKey||"").trim();
+  const actual=Number(actualCredits);
+  const provider=String(evidence?.provider||"").trim().toLowerCase();
+  const evidenceType=String(evidence?.evidenceType||"").trim();
+  const evidenceId=String(evidence?.evidenceId||"").trim();
+  const allowedEvidence=new Set([
+    "provider_task_receipt","provider_invoice","provider_usage_reconciliation",
+    "provider_cancelled_no_charge"
+  ]);
+  if(!userId||spendKey.length<8||spendKey.length>200||
+     settleKey.length<8||settleKey.length>200||
+     !Number.isSafeInteger(actual)||actual<0||actual>100000000||
+     !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(provider)||
+     !allowedEvidence.has(evidenceType)||!evidenceId||evidenceId.length>240) {
+    throw fail("Credit settlement requires a valid spend, idempotency key, actual credits and provider evidence.","BILLING_SETTLEMENT_INVALID",400);
+  }
+  const evidenceJson=safeJson({
+    provider,evidenceType,evidenceId,
+    providerTaskId:evidence.providerTaskId?String(evidence.providerTaskId).slice(0,240):null,
+    invoiceReference:evidence.invoiceReference?String(evidence.invoiceReference).slice(0,240):null
+  });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const spend=db.prepare(`SELECT id,user_id,amount,event_type,reference_id
+      FROM billing_credit_ledger WHERE user_id=? AND idempotency_key=?`).get(userId,spendKey);
+    if(!spend||spend.event_type!=="generation_spend"||Number(spend.amount)>=0) {
+      throw fail("The original generation spend was not found for this account.","BILLING_SETTLEMENT_SPEND_NOT_FOUND",404);
+    }
+    const estimated=Math.abs(Number(spend.amount));
+    const existing=db.prepare(`SELECT id,user_id,spend_ledger_id,settlement_key,
+      estimated_credits,actual_credits,adjustment_ledger_id
+      FROM billing_credit_settlements WHERE spend_ledger_id=? OR settlement_key=?`)
+      .get(spend.id,settleKey);
+    if(existing) {
+      if(existing.user_id!==userId||existing.spend_ledger_id!==spend.id||
+         existing.settlement_key!==settleKey||Number(existing.actual_credits)!==actual) {
+        throw fail("This credit spend or settlement key was already reconciled with different evidence or actual usage.","BILLING_SETTLEMENT_CONFLICT",409);
+      }
+      db.exec("COMMIT");
+      return {
+        settled:true,replayed:true,estimatedCredits:Number(existing.estimated_credits),
+        actualCredits:Number(existing.actual_credits),
+        adjustmentCredits:estimated-actual,
+        balance:getBillingBalance(db,userId,new Date(now).toISOString()),
+        settlementId:existing.id,adjustmentLedgerId:existing.adjustment_ledger_id||null
+      };
+    }
+    const delta=estimated-actual;
+    const settlementId=randomUUID();
+    let adjustmentLedgerId=null;
+    if(delta!==0) {
+      adjustmentLedgerId=randomUUID();
+      const amount=delta>0?delta:-delta;
+      const eventType=delta>0?"generation_refund":"generation_spend";
+      const description=delta>0?"Provider usage settlement refund":"Provider usage settlement additional charge";
+      db.prepare(`INSERT INTO billing_credit_ledger
+        (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?)`)
+        .run(adjustmentLedgerId,userId,delta>0?amount:-amount,eventType,description,
+          spend.reference_id,"billing-settlement:"+settleKey,
+          safeJson({originalSpendId:spend.id,estimatedCredits:estimated,actualCredits:actual,evidence:JSON.parse(evidenceJson)}),
+          new Date(now).toISOString());
+    }
+    db.prepare(`INSERT INTO billing_credit_settlements
+      (id,user_id,spend_ledger_id,settlement_key,estimated_credits,actual_credits,adjustment_ledger_id,metadata_json,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`)
+      .run(settlementId,userId,spend.id,settleKey,estimated,actual,adjustmentLedgerId,evidenceJson,new Date(now).toISOString());
+    db.exec("COMMIT");
+    return {
+      settled:true,replayed:false,estimatedCredits:estimated,actualCredits:actual,
+      adjustmentCredits:delta,balance:getBillingBalance(db,userId,new Date(now).toISOString()),
+      settlementId,adjustmentLedgerId
+    };
+  } catch(error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function listBillingPlans(db, { activeOnly = true } = {}) {
   const rows = db.prepare("SELECT * FROM billing_plans " + (activeOnly ? "WHERE active=1 " : "") + "ORDER BY amount_minor ASC,name ASC").all();
   return rows.map(row => ({
