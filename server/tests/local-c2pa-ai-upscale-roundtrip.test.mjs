@@ -48,7 +48,7 @@ test("local SQLite AI-upscale executor preserves a signed image through derivati
    aiUpscalerFactory:()=>({execute:async({inputPath,outputPath,signal,model,scale,tile})=>{
     assert.ok(signal instanceof AbortSignal);
     run(["-hide_banner","-loglevel","error","-i",inputPath,"-vf","scale=128:128:flags=lanczos","-frames:v","1","-y",outputPath]);
-    return{engine:"test-only-upscaler",method:"deterministic-lanczos-fixture",model,scale,tile};
+    return{engine:"test-only-upscaler",method:"deterministic-lanczos-fixture",model,scale,tile,inputDimensions:{width:32,height:32},outputDimensions:{width:128,height:128}};
    }})
   });
   assert.equal(result.c2paPreservation.status,"preserved");
@@ -66,6 +66,8 @@ test("local SQLite AI-upscale executor preserves a signed image through derivati
   const metadata=JSON.parse(row.metadata_json);
   assert.equal(metadata.c2paPreservation.status,"preserved");
   assert.equal(metadata.processing.engine,"test-only-upscaler");
+  assert.deepEqual(metadata.processing.inputDimensions,{width:32,height:32});
+  assert.deepEqual(metadata.processing.outputDimensions,{width:128,height:128});
  }finally{
   db.close();
   await rm(root,{recursive:true,force:true});

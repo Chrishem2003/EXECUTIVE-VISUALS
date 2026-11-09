@@ -21,6 +21,10 @@ const validRecord = overrides => ({
   executionStatus: "passed",
   qualityReview: "not_reviewed",
   timestamp: "2026-11-02T00:00:00.000Z",
+  qualityReviewer: "qa-reviewer-01",
+  qualityReviewedAt: "2026-11-03T00:00:00.000Z",
+  qualityReviewNotes: "Compared source and output at native and 100 percent zoom; no unacceptable artifacts found.",
+  qualityReviewArtifactSha256: digest("e"),
   metrics: { psnr: 31.2, ssim: 0.91 },
   ...overrides
 });
@@ -109,6 +113,21 @@ test("enforces normalized metric ranges and accepts absent optional metrics", ()
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { psnr: 0, ssim: 0, lpips: 1 } })).valid, true);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { ssim: -0.1 } })).valid, false);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: {} })).valid, true);
+});
+
+test("reviewed quality requires reviewer, timestamp, notes and a hashed review artifact", () => {
+  const incomplete = validRecord({ qualityReview: "reviewed_pass", qualityReviewer: "", qualityReviewNotes: "ok", qualityReviewArtifactSha256: "invalid" });
+  const result = validateUpscaleBenchmarkRecord(incomplete);
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("qualityReviewer")));
+  assert.ok(result.issues.some(issue => issue.includes("qualityReviewNotes")));
+  assert.ok(result.issues.some(issue => issue.includes("qualityReviewArtifactSha256")));
+});
+
+test("LPIPS is constrained to its normalized zero-to-one range", () => {
+  const result = validateUpscaleBenchmarkRecord(validRecord({ metrics: { lpips: 1.01 } }));
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("metrics.lpips must not exceed 1")));
 });
 
 test("summary fails closed for a non-array input", () => {

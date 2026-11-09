@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 
-const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrgan-x2plus"]);
+const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]);
 const FORMATS = new Set(["png", "jpg", "webp"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
@@ -60,10 +60,68 @@ function run(binary, args, timeoutMs, signal) {
   });
 }
 
+const MAX_IMAGE_HEADER_BYTES = 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 32768;
+const MAX_IMAGE_PIXELS = 100_000_000;
+
+function dimensionsFromHeader(bytes) {
+  let width = 0, height = 0;
+  if (bytes.length >= 24 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR") {
+    width = bytes.readUInt32BE(16);
+    height = bytes.readUInt32BE(20);
+  } else if (bytes.length >= 30 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP") {
+    const chunk = bytes.toString("ascii",12,16);
+    if (chunk === "VP8X" && bytes.length >= 30) {
+      width = 1 + bytes.readUIntLE(24,3);
+      height = 1 + bytes.readUIntLE(27,3);
+    } else if (chunk === "VP8 " && bytes.length >= 30 && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+      width = bytes.readUInt16LE(26) & 0x3fff;
+      height = bytes.readUInt16LE(28) & 0x3fff;
+    } else if (chunk === "VP8L" && bytes.length >= 25 && bytes[20] === 0x2f) {
+      const b1 = bytes[21], b2 = bytes[22], b3 = bytes[23], b4 = bytes[24];
+      width = 1 + (((b2 & 0x3f) << 8) | b1);
+      height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
+    }
+  } else if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    const sof = new Set([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf]);
+    let offset = 2;
+    while (offset + 4 <= bytes.length) {
+      if (bytes[offset] !== 0xff) { offset++; continue; }
+      while (bytes[offset] === 0xff) offset++;
+      const marker = bytes[offset++];
+      if (marker === 0xd9 || marker === 0xda) break;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 2 > bytes.length) break;
+      const segmentLength = bytes.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > bytes.length) break;
+      if (sof.has(marker) && segmentLength >= 7) {
+        height = bytes.readUInt16BE(offset + 3);
+        width = bytes.readUInt16BE(offset + 5);
+        break;
+      }
+      offset += segmentLength;
+    }
+  }
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
+      width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION || width * height > MAX_IMAGE_PIXELS) {
+    throw fail("Image dimensions are missing, malformed or exceed the safe processing limit.", "AI_UPSCALE_IMAGE_DIMENSIONS_INVALID");
+  }
+  return { width, height };
+}
+
+async function readImageDimensions(path) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return dimensionsFromHeader(header.subarray(0, bytesRead));
+  } finally { await handle.close(); }
+}
+
 async function validateImageOutput(path, format) {
   const handle = await open(path, "r");
   try {
-    const header = Buffer.alloc(32);
+    const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
     const bytes = header.subarray(0, bytesRead);
     const valid = format === "png"
@@ -72,6 +130,7 @@ async function validateImageOutput(path, format) {
         ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
         : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
     if (!valid) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
+    return dimensionsFromHeader(bytes);
   } finally { await handle.close(); }
 }
 
@@ -158,14 +217,18 @@ export function createRealEsrganAdapter({
     if (!readiness.available || !readiness.executionEnabled) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
+    const inputDimensions = await readImageDimensions(input);
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const info = await stat(output).catch(() => null);
     if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    await validateImageOutput(output, prepared.format);
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    const outputDimensions = await validateImageOutput(output, prepared.format);
+    if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
+      throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
+    }
+    return { path: output, byteSize: info.size, inputDimensions, outputDimensions, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });

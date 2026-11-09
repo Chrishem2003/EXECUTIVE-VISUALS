@@ -5,6 +5,36 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
+function pngHeader(width, height) {
+  const bytes = Buffer.alloc(24);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
+  bytes.writeUInt32BE(13,8);
+  bytes.write("IHDR",12,"ascii");
+  bytes.writeUInt32BE(width,16);
+  bytes.writeUInt32BE(height,20);
+  return bytes;
+}
+
+async function writeFakeEngine(path, fixedDimension = null) {
+  const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
+  const source = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
+const size = ${sizeExpression};
+const png = Buffer.alloc(24);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+png.writeUInt32BE(13,8);
+png.write("IHDR",12,"ascii");
+png.writeUInt32BE(size,16);
+png.writeUInt32BE(size,20);
+fs.writeFileSync(out,png);
+`;
+  await writeFile(path, source);
+  await chmod(path, 0o755);
+}
+
 test("AI upscaler is fail-closed when binary and model weights are absent", async () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/missing/realesrgan", modelDirectory: "/missing/models" });
   const status = await adapter.probe();
@@ -20,17 +50,25 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/a.png" }), error => error.code === "AI_UPSCALE_INVALID_PATH");
 });
 
+test("AI upscale model names match the supported NCNN model catalog", () => {
+  const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
+  for (const model of ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]) {
+    assert.equal(adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model }).model, model);
+  }
+  assert.throws(
+    () => adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model: "realesrgan-x2plus" }),
+    error => error.code === "AI_UPSCALE_INVALID_MODEL"
+  );
+});
+
 test("AI upscaler launches without a shell and publishes only a new bounded output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-"));
   const binary = join(directory, "engine");
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "enhanced.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
-  await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
-`);
-  await chmod(binary, 0o755);
+  await writeFile(input, pngHeader(1,1));
+  await writeFakeEngine(binary);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   try {
@@ -49,11 +87,8 @@ test("AI upscaler reports execution checks separately from unverified inference 
   const binary = join(directory, "engine");
   const model = "realesrgan-x4plus";
   const input = join(directory, "fixture.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
-  await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
-`);
-  await chmod(binary, 0o755);
+  await writeFile(input, pngHeader(1,1));
+  await writeFakeEngine(binary);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   try {
@@ -78,7 +113,7 @@ test("AI upscaler rejects an executable that exits successfully but emits a corr
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "corrupt.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, pngHeader(1,1));
   await writeFile(binary, String.raw`#!/bin/sh
 while [ "$1" != "" ]; do
   if [ "$1" = "-o" ]; then shift; printf 'not-an-image-output' > "$1"; fi
@@ -99,6 +134,50 @@ done
   }
 });
 
+test("AI upscaler rejects malformed source image headers before launching the engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-invalid-source-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "output.png");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFakeEngine(binary);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_IMAGE_DIMENSIONS_INVALID"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI upscaler rejects valid image files whose dimensions do not match the requested scale", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-dimensions-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "wrong-size.png");
+  await writeFile(input, pngHeader(8, 6));
+  await writeFakeEngine(binary, 1);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH"
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler does not overwrite a symbolic-link output target", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-link-"));
   const binary = join(directory, "engine");
@@ -106,7 +185,7 @@ test("AI upscaler does not overwrite a symbolic-link output target", async () =>
   const input = join(directory, "source.png");
   const protectedFile = join(directory, "protected.png");
   const output = join(directory, "linked-output.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, pngHeader(1,1));
   await writeFile(protectedFile, "preserve-this-file");
   await writeFile(binary, String.raw`#!/bin/sh
 exit 0
