@@ -68,7 +68,7 @@ export function parseTemporalLumaSamples(stderr=""){
  const samples=[];
  for(const block of String(stderr||"").split(/(?=frame:\s*\d+\s+pts:)/g)){
   const frame=block.match(/frame:\s*(\d+)\s+pts:\s*(-?\d+)\s+pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
-  const read=key=>{const match=block.match(new RegExp("lavfi\\\\.signalstats\\\\."+key+"\\\\s*=\\\\s*(-?(?:\\\\d+(?:\\\\.\\\\d*)?|\\\\.\\\\d+))"));return match?Number(match[1]):null;};
+  const read=key=>{const match=block.match(new RegExp("lavfi\\.signalstats\\."+key+"\\s*=\\s*(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))"));return match?Number(match[1]):null;};
   const meanLuma=read("YAVG");
   if(!frame||!Number.isFinite(meanLuma)||meanLuma<0||meanLuma>255)continue;
   const sample={frame:Number(frame[1]),pts:Number(frame[2]),timeSeconds:Number(frame[3]),meanLuma};
@@ -102,7 +102,8 @@ export function buildTemporalColorFindings({samples=[],sceneChanges=[],minSatura
    let j=i+1,last=firstDelta,transitions=1,maxDelta=Math.abs(firstDelta);
    while(j<deltas.length){
     const current=deltas[j],previous=deltas[j-1],value=readDelta(current);
-    if(current.index!==previous.index+1||!Number.isFinite(value)||Math.abs(value)<threshold||Math.sign(value)===Math.sign(last))break;
+    if(current.index!==previous.index+1||!Number.isFinite(value)||Math.abs(value)<threshold)break;
+    if(kind==="saturation"&&Math.sign(value)===Math.sign(last))break;
     if(kind==="chroma"){
      const dot=previous.u*current.u+previous.v*current.v;
      const previousMagnitude=Math.hypot(previous.u,previous.v),currentMagnitude=Math.hypot(current.u,current.v);
