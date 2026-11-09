@@ -704,14 +704,17 @@ for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filt
     const binary = join(directory, "engine"), model = "realesrgan-x4plus";
     const input = join(directory, "source.png"), output = join(directory, "invalid-idat.png");
     await writeFile(input, pngHeader(1, 1));
-    const generator = "#!/usr/bin/env node\n" +
-      "import fs from 'node:fs';import zlib from 'node:zlib';const args=process.argv.slice(2),out=args[args.indexOf('-o')+1];\n" +
-      "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\n" +
-      "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\n" +
-      "const raw=" + (invalidData === "short-scanlines" ? "Buffer.alloc(17)" : "Buffer.alloc(18)") + ";\n" +
-      "if(" + JSON.stringify(invalidData) + " === \"invalid-filter\") raw[0] = 5;\n" +
-      "const payload=" + (invalidData === "not-a-zlib-stream" ? "Buffer.from('not-a-zlib-stream')" : invalidData === "trailing-zlib-data" ? "Buffer.concat([zlib.deflateSync(raw),Buffer.from('tail')])" : "zlib.deflateSync(raw)") + ";\n" +
-      "fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',payload),chunk('IEND',Buffer.alloc(0))]));process.exit(0);\n";
+    const engineScript = join(directory, "fixture.cjs");
+    const script =
+      "const fs=require('node:fs'),zlib=require('node:zlib'),args=process.argv.slice(2),out=args[args.indexOf('-o')+1];\\n" +
+      "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\\n" +
+      "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\\n" +
+      "const raw=" + (invalidData === "short-scanlines" ? "Buffer.alloc(17)" : "Buffer.alloc(18)") + ";\\n" +
+      "if(" + JSON.stringify(invalidData) + " === 'invalid-filter') raw[0]=5;\\n" +
+      "const payload=" + (invalidData === "not-a-zlib-stream" ? "Buffer.from('not-a-zlib-stream')" : invalidData === "trailing-zlib-data" ? "Buffer.concat([zlib.deflateSync(raw),Buffer.from('tail')])" : "zlib.deflateSync(raw)") + ";\\n" +
+      "fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',payload),chunk('IEND',Buffer.alloc(0))]));\\n";
+    await writeFile(engineScript, script);
+    const generator = "#!/bin/sh\\nexec node " + JSON.stringify(engineScript) + " \\"$@\\"\\n";
     await writeFile(binary, generator); await chmod(binary, 0o755);
     await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
     try {
