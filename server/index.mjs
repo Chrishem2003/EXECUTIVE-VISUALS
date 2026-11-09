@@ -57,7 +57,7 @@ const EXTENSIONS = {
   "audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg",
   "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
-const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
+const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.ai-video-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -857,6 +857,15 @@ export function createAppServer() {
           if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+        }
+        if(type==="media.ai-video-upscale"){
+          if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+          const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??2);
+          if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
+          const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
+          if(!source||!String(source.media_type||"").startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for video AI upscaling.");return;}
+          const readiness=await aiUpscaleAdapter.probe(model);
+          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
         }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){
