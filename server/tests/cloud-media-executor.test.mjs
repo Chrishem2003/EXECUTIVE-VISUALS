@@ -462,7 +462,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
 });
 
 
-test("cloud AI upscale blocks publication when output dimensions do not match", async () => {
+test("cloud AI upscale returns a specific dimension-mismatch error and blocks publication", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-mismatch-"));
   const previousBinary = process.env.REALESRGAN_NCNN_PATH;
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
