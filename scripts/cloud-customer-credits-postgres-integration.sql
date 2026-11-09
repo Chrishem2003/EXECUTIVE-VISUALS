@@ -59,7 +59,7 @@ end
 $credit_reservation_assertions$;
 
 select * from executive_visuals.settle_generation_credit_reservation(
- :'reserve_reservation_id'::uuid,18,
+ (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),18,
  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
 ) \gset settlement_
 
@@ -71,7 +71,7 @@ begin
  where owner_id='11111111-1111-4111-8111-111111111111';
  if current_balance<>82 then raise exception 'settlement did not refund unused 12 credits'; end if;
  select * into r from executive_visuals.settle_generation_credit_reservation(
-  :'reserve_reservation_id'::uuid,18,
+  (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),18,
   '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
  );
  if not r.replayed or r.balance<>82 or r.adjustment<>12 then
@@ -79,7 +79,7 @@ begin
  end if;
  begin
   perform * from executive_visuals.settle_generation_credit_reservation(
-   :'reserve_reservation_id'::uuid,19,
+   (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),19,
    '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001"}'::jsonb
   );
   raise exception 'conflicting settlement unexpectedly succeeded';
@@ -106,7 +106,7 @@ do $credit_release_assertions$
 declare r record;
 begin
  select * into r from executive_visuals.release_generation_credit_reservation(
-  :'release_reservation_id'::uuid,'Provider submission was cancelled before dispatch'
+  (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-release'),'Provider submission was cancelled before dispatch'
  );
  if r.balance<>82 then raise exception 'reservation release did not restore credits'; end if;
 end
@@ -117,7 +117,7 @@ begin
  begin
   update executive_visuals.billing_credit_ledger
   set description='tampered'
-  where id=:'grant_ledger_id'::uuid;
+  where id=(select id from executive_visuals.billing_credit_ledger where idempotency_key='integration-credit-grant-001');
   raise exception 'credit ledger unexpectedly allowed mutation';
  exception when others then
   if sqlerrm='credit ledger unexpectedly allowed mutation' then raise; end if;
