@@ -1,0 +1,4 @@
+import { createUpscaleReviewPackage } from "../upscale-review-package.mjs";
+const [reportPath,manifestPath,runDirectory,outputDirectory]=process.argv.slice(2);
+if(!reportPath||!manifestPath||!runDirectory||!outputDirectory){process.stderr.write("Usage: npm run review:upscale -- <benchmark-report.json> <fixture-manifest.json> <run-directory> <new-review-directory>\n");process.exitCode=2;}
+else{try{const result=await createUpscaleReviewPackage({reportPath,manifestPath,runDirectory,outputDirectory});process.stdout.write(JSON.stringify({...result,nextStep:"Open review.html and complete all five human assessments. The package is not quality approval."},null,2)+"\n");}catch(error){process.stderr.write(JSON.stringify({error:error.message,code:error.code||"AI_UPSCALE_REVIEW_PACKAGE_FAILED"},null,2)+"\n");process.exitCode=1;}}
