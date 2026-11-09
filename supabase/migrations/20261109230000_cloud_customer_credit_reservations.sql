@@ -101,7 +101,7 @@ begin
   where l.idempotency_key = p_idempotency_key;
   if existing.id is not null then
     if existing.owner_id <> p_owner_id or existing.amount <> p_amount
-       or existing.event_type <> 'grant' then
+       or existing.event_type <> 'grant' or existing.evidence <> p_evidence then
       raise exception 'BILLING_CREDIT_IDEMPOTENCY_CONFLICT';
     end if;
     select coalesce(sum(l.amount),0) into current_balance
@@ -205,11 +205,13 @@ begin
   end if;
 
   select * into reservation from executive_visuals.billing_credit_reservations r
-  where r.id=p_reservation_id for update;
+  where r.id=p_reservation_id;
   if reservation.id is null then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
   perform 1 from executive_visuals.billing_credit_accounts a
   where a.owner_id=reservation.owner_id and a.status='active' for update;
   if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
+  select * into reservation from executive_visuals.billing_credit_reservations r
+  where r.id=p_reservation_id for update;
 
   if reservation.state='settled' then
     if reservation.actual_credits<>p_actual_credits or reservation.evidence<>p_evidence then
@@ -260,11 +262,13 @@ begin
     raise exception 'BILLING_CREDIT_RELEASE_ARGUMENTS_INVALID';
   end if;
   select * into reservation from executive_visuals.billing_credit_reservations r
-  where r.id=p_reservation_id for update;
+  where r.id=p_reservation_id;
   if reservation.id is null then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
   perform 1 from executive_visuals.billing_credit_accounts a
   where a.owner_id=reservation.owner_id and a.status='active' for update;
   if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
+  select * into reservation from executive_visuals.billing_credit_reservations r
+  where r.id=p_reservation_id for update;
   if reservation.state='released' then
     select coalesce(sum(l.amount),0) into current_balance
     from executive_visuals.billing_credit_ledger l where l.owner_id=reservation.owner_id;
