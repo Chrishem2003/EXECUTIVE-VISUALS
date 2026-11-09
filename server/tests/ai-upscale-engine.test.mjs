@@ -139,6 +139,41 @@ test("AI upscale model names match the supported NCNN model catalog", () => {
   );
 });
 
+test("AI upscaler executes an explicit content preset and returns recommendation provenance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-content-execute-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus-anime";
+  const input = join(directory, "source.png");
+  const output = join(directory, "anime-enhanced.png");
+  await writeFile(input, pngHeader(1, 1));
+  await writeFakeEngine(binary, null, 6, [1, 1]);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const result = await adapter.executeForContent({
+      contentType: "anime",
+      inputPath: input,
+      outputPath: output,
+      tile: 128
+    });
+    assert.equal(result.model, model);
+    assert.equal(result.scale, 4);
+    assert.equal(result.contentType, "anime");
+    assert.match(result.recommendationReason, /Anime/);
+    assert.deepEqual(result.inputDimensions, { width: 1, height: 1 });
+    assert.deepEqual(result.outputDimensions, { width: 4, height: 4 });
+    assert.equal(result.method, "ai-super-resolution");
+    await assert.rejects(adapter.executeForContent({
+      contentType: "medical_scan",
+      inputPath: input,
+      outputPath: join(directory, "invalid.png")
+    }), error => error.code === "AI_UPSCALE_INVALID_CONTENT_TYPE");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler launches without a shell and publishes only a new bounded output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-"));
   const binary = join(directory, "engine");
