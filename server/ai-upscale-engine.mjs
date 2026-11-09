@@ -494,7 +494,6 @@ export function createRealEsrganAdapter({
     const tileSize = boundedInteger(tile, 0, 0, 512, "Tile size");
     if (tileSize !== 0 && tileSize < 32) throw fail("Tile size must be zero or between 32 and 512.", "AI_UPSCALE_INVALID_OPTIONS");
     // NCNN's -j load:proc:save controls decode, inference and encode workers.
-    // Keep a conservative aggregate cap because higher values can increase GPU memory use.
     if (typeof threads !== "string" || !/^[1-4]:[1-4]:[1-4]$/.test(threads)) {
       throw fail("Thread configuration must be load:proc:save with each value between 1 and 4.", "AI_UPSCALE_INVALID_OPTIONS");
     }
