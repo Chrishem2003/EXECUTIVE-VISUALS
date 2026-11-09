@@ -54,7 +54,7 @@
     "verify:upscale-batch": "node --test server/tests/upscale-batch.test.mjs",
     "verify:video-ai-upscale": "node --test server/tests/video-ai-upscale.test.mjs",
     "assess:upscale-pair": "node server/scripts/assess-upscale-pair.mjs",
-    "verify:flashvsr": "node --test server/tests/flashvsr-adapter.test.mjs"
+    "verify:flashvsr": "node scripts/verify-flashvsr-bridge.mjs && node --test server/tests/flashvsr-adapter.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
