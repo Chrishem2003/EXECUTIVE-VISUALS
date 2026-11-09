@@ -14,6 +14,13 @@ select * from executive_visuals.grant_generation_credits(
  'Postgres integration seed','{"source":"ci_fixture"}'::jsonb
 ) \gset grant_
 
+select * from executive_visuals.activate_generation_subscription(
+ '66666666-6666-4666-8666-666666666666','creator','manual',null,
+ 'integration-credit-test-subscription',
+ clock_timestamp(),clock_timestamp()+interval '30 days','active',
+ '{"source":"ci_fixture"}'::jsonb
+);
+
 do $credit_grant_replay$
 declare r record;
 begin
