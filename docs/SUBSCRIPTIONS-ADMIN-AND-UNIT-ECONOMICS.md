@@ -227,3 +227,20 @@ advances from the later of the existing period end or the verified processing
 time; a transaction-specific idempotency key prevents duplicate period-credit
 grants. Events that cannot be matched unambiguously remain retryable for
 operator investigation rather than granting credits.
+
+
+## Customer-managed Flutterwave cancellation
+
+Authenticated customers can request cancellation from the billing workspace.
+The server looks up the provider subscription using the account email, mapped
+payment-plan ID and verified initial transaction ID, and proceeds only when
+Flutterwave returns exactly one matching numeric subscription ID. It then
+calls the individual-subscription deactivation endpoint. The local entitlement
+is deliberately not marked cancelled by the browser/API response: the signed
+provider cancellation webhook remains the source of truth and updates local
+and cloud subscription state. Ambiguous lookup results, missing references,
+provider errors and unconfirmed responses fail closed.
+
+Dodo customers continue to manage cancellation through the provider's hosted
+customer portal. Flutterwave subscription cancellation is immediate at the
+provider; the UI warns that entitlement changes wait for webhook confirmation.
