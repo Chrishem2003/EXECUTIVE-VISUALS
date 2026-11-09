@@ -69,6 +69,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108230000_video_workflow_quote_ledger.sql
       - name: Apply atomic workflow approval and enqueue migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108240000_video_workflow_approval_enqueue.sql
+      - name: Apply quote-bound Runway Model Router enqueue and owner gate migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109200000_model_router_budget_enqueue_owner_gate.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Apply Gemini Omni interaction ownership and retention migration
