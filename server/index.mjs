@@ -24,6 +24,7 @@ import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabase
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
+import { processNextCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
 import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attempt-store.mjs";
@@ -397,12 +398,13 @@ const cloudWorkflowResumeTimer=cloudTimelineApi&&process.env.DISABLE_WORKER!=="t
 },5000):null;
 cloudWorkflowResumeTimer?.unref();
 let billingWebhookBusy=false;
-const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY)?setInterval(async()=>{
+const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY||(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY))?setInterval(async()=>{
   if(billingWebhookBusy)return;
   billingWebhookBusy=true;
   try {
     if(process.env.FLW_SECRET_KEY)await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});
     if(process.env.DODO_PAYMENTS_WEBHOOK_KEY)processNextDodoWebhook(db);
+    if(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY)await processNextCloudSubscriptionSync(db);
   }
   catch(error){ process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n"); }
   finally { billingWebhookBusy=false; }
