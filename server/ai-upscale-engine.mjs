@@ -255,7 +255,8 @@ export function createRealEsrganAdapter({
     try {
       // Include inode/device and nanosecond ctime as well as size/mtime. This
       // detects same-size replacements and content edits even when mtime is restored.
-      const metadata = await Promise.all(files.map(path => stat(path, { bigint: true })));
+      const metadata = await Promise.all(files.map(path => lstat(path, { bigint: true })));
+      if (metadata.some(item => !item.isFile() || item.isSymbolicLink())) return null;
       return metadata.map(item => [item.dev, item.ino, item.size, item.mtimeNs, item.ctimeNs].join(":")).join("|");
     } catch { return null; }
   }
