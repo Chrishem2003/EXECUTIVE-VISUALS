@@ -107,3 +107,37 @@ test("fails closed when the local worker is not explicitly enabled", async t => 
   };
   await assert.rejects(runUpscaleBenchmark({ model: "realesrgan-x4plus", ...env, adapter }), /Worker execution is disabled/);
 });
+
+
+test("preflights every fixture's size and checksum before probing or self-testing the model", async t => {
+  const env = await setup(t);
+  const oversizedPath = join(env.root, "fixtures", "low_light_noisy.png");
+  await writeFile(oversizedPath, Buffer.alloc(250 * 1024 * 1024 + 1, 1));
+  let probeCalls = 0;
+  let selfTestCalls = 0;
+  let executeCalls = 0;
+  const adapter = {
+    probe: async () => { probeCalls++; return { available: true, executionEnabled: true }; },
+    selfTest: async () => { selfTestCalls++; return { passed: true, executionVerified: true }; },
+    execute: async () => { executeCalls++; throw new Error("must not execute"); }
+  };
+  await assert.rejects(runUpscaleBenchmark({ model: "realesrgan-x4plus", ...env, adapter }), /size limit/);
+  assert.equal(probeCalls, 0);
+  assert.equal(selfTestCalls, 0);
+  assert.equal(executeCalls, 0);
+  await assert.rejects(readdir(env.output), { code: "ENOENT" });
+});
+
+test("rejects a missing later fixture before the model self-test starts", async t => {
+  const env = await setup(t);
+  await rm(join(env.root, "fixtures", "low_light_noisy.png"));
+  let probeCalls = 0;
+  let selfTestCalls = 0;
+  const adapter = {
+    probe: async () => { probeCalls++; return { available: true, executionEnabled: true }; },
+    selfTest: async () => { selfTestCalls++; return { passed: true, executionVerified: true }; }
+  };
+  await assert.rejects(runUpscaleBenchmark({ model: "realesrgan-x4plus", ...env, adapter }), /ENOENT/);
+  assert.equal(probeCalls, 0);
+  assert.equal(selfTestCalls, 0);
+});
