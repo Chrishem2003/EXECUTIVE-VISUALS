@@ -88,8 +88,8 @@ function stopTimelinePlayback(){
 }
 function syncPreviewAtFrame(frame:number){
  if(!state.timeline)return;
- state.playheadFrame=clampTimelineFrame(frame,state.timeline);
- const seconds=frameToTimelineSeconds(state.playheadFrame,state.timeline);
+ const maxFrame=Math.ceil(timelineDurationSeconds(state.timeline)*fps());state.playheadFrame=Math.min(maxFrame,Math.max(0,Number.isFinite(frame)?frame:0));
+ const seconds=frameToTimelineSeconds(Math.round(state.playheadFrame),state.timeline);
  const playback=getTimelinePlaybackFrame(state.timeline,seconds);
  const active=new Map(playback.active.map(item=>[item.clipId,item]));
  const topVideo=playback.activeVideo[playback.activeVideo.length-1];
@@ -118,7 +118,7 @@ function syncPreviewAtFrame(frame:number){
  const output=document.querySelector<HTMLElement>("#tl-preview-time");
  if(output)output.textContent=formatPlaybackTime(state.playheadFrame);
  const slider=document.querySelector<HTMLInputElement>("#tl-preview-seek");
- if(slider&&document.activeElement!==slider)slider.value=String(state.playheadFrame);
+ if(slider&&document.activeElement!==slider)slider.value=String(Math.round(state.playheadFrame));
 }
 function formatPlaybackTime(frame:number){
  const rate=fps(),seconds=Math.floor(Math.max(0,frame)/rate),ff=Math.floor(Math.max(0,frame)%rate);
