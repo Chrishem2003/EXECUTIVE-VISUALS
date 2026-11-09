@@ -188,3 +188,39 @@ second period of credits.
 Flutterwave recurring subscription lifecycle integration and live provider
 sandbox verification remain separate work. This migration is not applied to
 production by this PR.
+
+
+## Flutterwave recurring subscription checkout
+
+Flutterwave recurring subscriptions are now available as a separate card-based
+checkout path. Each active monthly/yearly application plan maps to a
+pre-created Flutterwave Payment Plan using
+`FLW_PAYMENT_PLAN_ID_<PLAN_CODE>` (uppercase plan code with punctuation
+normalized to underscores). The platform never creates or changes merchant
+payment plans automatically.
+
+Required environment gates:
+
+- `FLW_SUBSCRIPTIONS_ENABLED=true`
+- `FLW_SECRET_KEY` and `FLW_WEBHOOK_SECRET`
+- `PUBLIC_APP_URL`
+- `BILLING_ENFORCEMENT_ENABLED=true` or `CREDITS_ENABLED=true`
+- One matching `FLW_PAYMENT_PLAN_ID_<PLAN_CODE>` for each recurring plan
+
+The first charge is verified server-to-server before local subscription
+activation, first-period credit grant and cloud-ledger synchronization. The
+provider cancellation webhook updates local and cloud lifecycle state without
+granting credits. Authenticated users can retrieve the status of their own
+checkout through the recurring-order status endpoint.
+
+**Payment-method limitation:** Flutterwave Payment Plans force card payments.
+The Uganda mobile-money option remains available on the separate one-time
+checkout; it is not presented as a recurring payment method. Merchant
+dashboard configuration and sandbox/live provider verification are still
+required before enabling this path in production.
+
+**Renewal reconciliation remains a follow-on gate:** the current batch verifies
+and activates the initial recurring charge and mirrors cancellation. A
+separate renewal reconciliation path must be validated against actual
+Flutterwave recurring-charge payloads before claiming automatic recurring
+credit renewal is production-ready.
