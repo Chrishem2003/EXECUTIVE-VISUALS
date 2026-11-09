@@ -171,6 +171,14 @@ test("provider catalog exposes only source-attributed pricing metadata and never
 
 
 
+test("AI upscaler cannot become ready from reviewed evidence without a model self-test",()=>{
+ const catalog=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:false,qualityVerified:true,qualityEvidence:{fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},model:"realesrgan-x4plus",models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:false,qualityVerified:true,qualityEvidence:{model:"realesrgan-x4plus",fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z"}}]}});
+ const provider=catalog.providers.find(item=>item.id==="ai-upscale");
+ assert.equal(provider.status,"unverified");
+ assert.deepEqual(provider.capabilities,[]);
+ assert.equal(provider.availableModels[0].readiness,"unverified");
+});
+
 test("upscale model readiness is reported independently and never inferred from another model review",()=>{
  const catalog=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"general-fixture",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},model:"realesrgan-x4plus",models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{model:"realesrgan-x4plus",fixtureId:"general-fixture",checkedAt:"2026-11-01T00:00:00.000Z"}},{model:"realesrgan-x4plus-anime",available:false,executionEnabled:true,executionVerified:false,qualityVerified:false}]}});
  const models=catalog.providers.find(item=>item.id==="ai-upscale").availableModels;
