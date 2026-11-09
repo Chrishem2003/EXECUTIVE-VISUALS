@@ -180,3 +180,62 @@ test("Flutterwave OAuth access token is cached and refreshed before expiry",asyn
   assert.equal(await getToken(),"token-2");
   assert.equal(calls,2);
 });
+
+
+test("Uganda mobile-money checkout uses server-priced active catalogue and idempotent v4 charge",async()=>{
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,options});
+    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
+      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+    if(target.includes("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))
+      return json([]);
+    if(target.endsWith("/payment_transactions")&&options.method==="POST")
+      return json([{id:paymentId,metadata:{product_code:"creator_credits",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
+      return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"&&options.method==="POST")
+      return json({data:{id:"chg_checkout",status:"pending",next_action:{type:"payment_instruction",payment_instruction:{note:"Approve on phone"}}}});
+    if(target.includes("/payment_transactions?id=eq."+paymentId)&&options.method==="PATCH")
+      return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/billing/checkout",ownerId:owner,idempotencyKey:"checkout-key-0001",
+    body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}
+  });
+  assert.equal(result.status,202);
+  assert.equal(result.body.payment.providerChargeId,"chg_checkout");
+  const charge=calls.find(call=>call.target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges");
+  assert.ok(charge);
+  const body=JSON.parse(charge.options.body);
+  assert.equal(body.amount,5000);
+  assert.equal(body.currency,"UGX");
+  assert.equal(body.payment_method.mobile_money.network,"MTN");
+  assert.equal(body.payment_method.mobile_money.country_code,"256");
+  assert.equal(body.payment_method.mobile_money.phone_number,"771234567");
+  assert.equal(charge.options.headers["x-idempotency-key"],"checkout-key-0001");
+});
+
+test("payment webhook verifies Flutterwave charge and atomically fulfils once",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({type:"charge.completed",data:{id:"chg_paid",status:"succeeded"}}));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  let grants=0;
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.includes("/payment_webhook_events?select=id"))return json([]);
+    if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/charges/chg_paid")
+      return json({data:{id:"chg_paid",reference:"EV-TEST-REFERENCE",amount:5000,currency:"UGX",status:"succeeded",payment_method_details:{type:"mobile_money"}}});
+    if(target.includes("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref"))
+      return json([{id:paymentId,owner_id:owner,provider_transaction_id:"chg_paid",tx_ref:"EV-TEST-REFERENCE",amount_minor:5000,currency:"UGX",status:"pending",metadata:{product_code:"creator_credits",credit_units:100},description:"Creator credits"}]);
+    if(target.includes("/rpc/finalize_payment_purchase")){grants++;return json({status:"successful",credit_units:100,invoice_number:"EV-20261110-TEST"});}
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave"))return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.result.status,"successful");
+  assert.equal(grants,1);
+});
