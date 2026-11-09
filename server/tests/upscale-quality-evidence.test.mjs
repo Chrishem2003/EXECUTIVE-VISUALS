@@ -82,6 +82,18 @@ test("rejects incomplete category coverage and missing reviewer evidence", async
   }
 });
 
+test("rejects non-normalized LPIPS metrics even when reviewer fields are present", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-metric-range-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    await writeFile(path, JSON.stringify({ records: recordsFor("realesrgan-x4plus", { metrics: { lpips: 1.2 } }) }));
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("fails closed for invalid JSON and symlink evidence paths", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-upscale-invalid-"));
   const path = join(directory, "benchmarks.json");
