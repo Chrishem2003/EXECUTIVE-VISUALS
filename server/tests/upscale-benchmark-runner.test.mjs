@@ -43,8 +43,10 @@ async function setup(t) {
   await mkdir(fixtures);
   await mkdir(models);
   await writeFile(join(root, "realesrgan-ncnn-vulkan"), "mock executable");
-  await writeFile(join(models, "realesrgan-x4plus.param"), "mock param");
-  await writeFile(join(models, "realesrgan-x4plus.bin"), "mock weights");
+  for (const model of ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]) {
+    await writeFile(join(models, model + ".param"), "mock param");
+    await writeFile(join(models, model + ".bin"), "mock weights");
+  }
   for (const category of categories) await writeFile(join(fixtures, category + ".png"), "320x240");
   const manifestPath = join(root, "manifest.json");
   await writeFile(manifestPath, JSON.stringify(manifest()));
@@ -58,6 +60,15 @@ test("requires exactly one fixture from every required visual category", () => {
   assert.throws(() => validateUpscaleFixtureManifest({ fixtures: valid.fixtures.slice(0, 4) }), /exactly one fixture/);
   assert.throws(() => validateUpscaleFixtureManifest({ fixtures: [...valid.fixtures.slice(0, 4), { ...valid.fixtures[0], fixtureId: "duplicate-category" }] }), /exactly once/);
   assert.throws(() => validateUpscaleFixtureManifest({ fixtures: valid.fixtures.map((item, index) => index === 0 ? { ...item, path: "../outside.png" } : item) }), /traverse outside/);
+});
+
+test("supports the documented Real-ESRGAN NCNN general and anime model variants", async t => {
+  const env = await setup(t);
+  for (const model of ["realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]) {
+    const result = await runUpscaleBenchmark({ model, ...env, adapter: fakeAdapter() });
+    assert.equal(result.records.length, 5);
+    assert.ok(result.records.every(record => record.model === model));
+  }
 });
 
 test("runs local fixtures and writes execution-only evidence that still requires human review", async t => {
