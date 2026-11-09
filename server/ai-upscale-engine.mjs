@@ -257,10 +257,15 @@ async function readExact(handle, length, position) {
   return buffer;
 }
 async function validatePngFile(path, maxBytes) {
-  const handle = await open(path, "r");
+  const before = await lstat(path, { bigint: true }).catch(() => null);
+  if (!before?.isFile() || before.isSymbolicLink()) throw fail("AI upscaling output must be a regular, non-symlink PNG file.", "AI_UPSCALE_OUTPUT_INVALID");
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.size < 57 || info.size > maxBytes) throw fail("AI upscaling PNG output is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
+    const info = await handle.stat({ bigint: true });
+    if (!info.isFile() || info.isSymbolicLink() || info.dev !== before.dev || info.ino !== before.ino ||
+        info.size !== before.size || info.size < 57 || info.size > maxBytes) {
+      throw fail("AI upscaling PNG output changed during validation or is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
     const signature = await readExact(handle, 8, 0);
     if (!signature.equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw fail("AI upscaling output has an invalid PNG signature.", "AI_UPSCALE_OUTPUT_INVALID");
     let offset = 8, index = 0, width = 0, height = 0, bitDepth = 0, colorType = -1;
