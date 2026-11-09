@@ -174,10 +174,12 @@ export function createRealEsrganAdapter({
   modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
   timeoutMs = 30 * 60 * 1000,
   maxOutputBytes = 250 * 1024 * 1024,
+  maxOutputPixels = MAX_IMAGE_PIXELS,
   enabled = process.env.AI_UPSCALE_ENABLED === "true"
 } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
+  if (!Number.isInteger(maxOutputPixels) || maxOutputPixels < 1 || maxOutputPixels > MAX_IMAGE_PIXELS) throw new Error("AI upscale pixel budget is invalid.");
 
   const executionFingerprints = new Map();
 
@@ -253,6 +255,11 @@ export function createRealEsrganAdapter({
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
     const inputDimensions = await readImageDimensions(input);
+    const projectedWidth = inputDimensions.width * prepared.scale;
+    const projectedHeight = inputDimensions.height * prepared.scale;
+    if (projectedWidth > MAX_IMAGE_DIMENSION || projectedHeight > MAX_IMAGE_DIMENSION || projectedWidth * projectedHeight > maxOutputPixels) {
+      throw fail("Requested upscale dimensions exceed the safe output pixel budget.", "AI_UPSCALE_OUTPUT_BUDGET_EXCEEDED");
+    }
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
