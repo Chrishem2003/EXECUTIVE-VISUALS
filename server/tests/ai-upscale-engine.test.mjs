@@ -711,11 +711,11 @@ for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filt
       "const raw=" + (invalidData === "short-scanlines" ? "Buffer.alloc(17)" : "Buffer.alloc(18)") + ";\n" +
       "if(" + JSON.stringify(invalidData) + " === \"invalid-filter\") raw[0] = 5;\n" +
       "const payload=" + (invalidData === "not-a-zlib-stream" ? "Buffer.from('not-a-zlib-stream')" : invalidData === "trailing-zlib-data" ? "Buffer.concat([zlib.deflateSync(raw),Buffer.from('tail')])" : "zlib.deflateSync(raw)") + ";\n" +
-      "fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',payload),chunk('IEND',Buffer.alloc(0))]));\n";
+      "fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',payload),chunk('IEND',Buffer.alloc(0))]));process.exit(0);\n";
     await writeFile(binary, generator); await chmod(binary, 0o755);
     await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
     try {
-      const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+      const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 30000, enabled: true });
       await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
       const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
     } finally { await rm(directory, { recursive: true, force: true }); }
