@@ -159,13 +159,14 @@ export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash }
   const eventId=cancellation
     ? "subscription.cancelled:"+createHash("sha256").update(customerEmail+":"+paymentPlanId).digest("hex")
     : eventType+":"+transactionId+":"+status;
+  const knownOneTimeOrder=!cancellation&&!!db.prepare("SELECT 1 AS found FROM billing_payment_orders WHERE tx_ref=?").get(txRef);
   const minimalPayload=cancellation
     ? {event:eventType,data:{status:String(data.status||"deactivated"),currency,amount:Number(data.amount)||0,
         customer:{email:customerEmail},plan:{id:paymentPlanId}}}
     : {event:eventType,data:{id:transactionId,tx_ref:txRef,status,amount,currency,
-        ...(customerEmail||data?.customer?.id?{customer:{...(customerEmail?{email:customerEmail}:{}),...(data?.customer?.id?{id:String(data.customer.id)}:{})}}:{}),
-        ...(data?.payment_plan||data?.plan?.id?{payment_plan:String(data.payment_plan??data.plan.id)}:{}),
-        ...(data?.meta&&typeof data.meta==="object"?{meta:{subscription_checkout_id:String(data.meta.subscription_checkout_id||"")}}:{})}};
+        ...(!knownOneTimeOrder&& (customerEmail||data?.customer?.id)?{customer:{...(customerEmail?{email:customerEmail}:{}),...(data?.customer?.id?{id:String(data.customer.id)}:{})}}:{}),
+        ...(!knownOneTimeOrder&&(data?.payment_plan||data?.plan?.id)?{payment_plan:String(data.payment_plan??data.plan.id)}:{}),
+        ...(!knownOneTimeOrder&&data?.meta&&typeof data.meta==="object"?{meta:{subscription_checkout_id:String(data.meta.subscription_checkout_id||"")}}:{})}};
   // Hash the normalized fields that affect settlement, not provider-added
   // transport metadata such as timestamps or customer profile details.
   const payloadHash = createHash("sha256").update(json(minimalPayload)).digest("hex");
