@@ -165,7 +165,7 @@ export function createVideoAiUpscaleProcessor({
       if(output.video.codec_name!=="h264"||output.video.pix_fmt!==outputPixelFormat||Math.abs(output.fps-source.fps)>0.0001)throw fail("Rendered video codec, pixel format or frame rate failed verification.","VIDEO_AI_UPSCALE_OUTPUT_PROFILE_MISMATCH");
       for(let index=0;index<source.audio.length;index++){
         const expectedCodec=audioCodecSafe?source.audio[index].codec_name:"aac",actual=output.audio[index];
-        if(actual.codec_name!==expectedCodec||(source.audio[index].channels&&Number(actual.channels)!==Number(source.audio[index].channels)))throw fail("Rendered audio codec or channel layout failed verification.","VIDEO_AI_UPSCALE_AUDIO_PROFILE_MISMATCH");
+        if(actual.codec_name!==expectedCodec||(source.audio[index].channels&&Number(actual.channels)!==Number(source.audio[index].channels))||(source.audio[index].sample_rate&&Number(actual.sample_rate)!==Number(source.audio[index].sample_rate)))throw fail("Rendered audio codec, sample rate or channel layout failed verification.","VIDEO_AI_UPSCALE_AUDIO_PROFILE_MISMATCH");
       }
       if(output.subtitles.some(stream=>stream.codec_name!=="mov_text"))throw fail("Rendered subtitle codec is not MP4-compatible mov_text.","VIDEO_AI_UPSCALE_SUBTITLE_PROFILE_MISMATCH");
       let temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:"Temporal signal analysis has not completed."};
