@@ -79,6 +79,7 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, phased backlog and acceptance evidence.
 
 - [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
+- [AI Upscale Quality Evidence](docs/AI-UPSCALE-QUALITY-EVIDENCE.md) — model-specific execution/quality gates and the offline reviewed-benchmark evidence contract.
 - [Protected C2PA signer architecture](docs/C2PA-PROTECTED-SIGNER-ARCHITECTURE.md) — callback-based KMS/HSM boundary, key isolation, audit controls and release gates.
 
 

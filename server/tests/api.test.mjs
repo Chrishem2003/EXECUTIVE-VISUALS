@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -280,6 +280,19 @@ test("local media jobs are queued with idempotency and no duplicate execution",a
   assert.ok((await events.json()).events.some(x=>x.type==="job.queued"));
 });
 
+test("AI upscale job submission is rejected until the selected model has its own reviewed benchmark",async()=>{
+  const cookie=await register("upscale-quality-gate@example.test");
+  const png=Buffer.alloc(24);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+  png.writeUInt32BE(13,8);png.write("IHDR",12,"ascii");png.writeUInt32BE(1,16);png.writeUInt32BE(1,20);
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"quality-gate.png"},body:png},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const response=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"media.ai-upscale",sourceAssetId:asset.id,model:"realesrgan-x4plus-anime",scale:4})},cookie);
+  assert.equal(response.status,409);
+  assert.equal((await response.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
+});
+ 
 test("unauthenticated requests and unsupported upload types are rejected",async()=>{
   const noAuth=await fetch(base+"/api/projects");
   assert.equal(noAuth.status,401);

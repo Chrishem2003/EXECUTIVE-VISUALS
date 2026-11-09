@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -445,7 +446,9 @@ export function createAppServer() {
         send(res,200,atlas,cors);return;
       }
       if(path==="/api/providers"&&req.method==="GET"){
-        const aiUpscale=await aiUpscaleAdapter.probe();
+        const [modelProbes,qualityEvidence]=await Promise.all([Promise.all(["realesrgan-x4plus","realesrgan-x4plus-anime"].map(model=>aiUpscaleAdapter.probe(model))),loadUpscaleQualityEvidence()]);
+        const upscaleModels=modelProbes.map(model=>({...model,qualityVerified:qualityEvidence.models[model.model]?.qualityVerified===true,qualityEvidence:qualityEvidence.models[model.model]?.qualityEvidence||null,qualityReason:qualityEvidence.models[model.model]?.reason||qualityEvidence.reason}));
+        const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
@@ -771,6 +774,13 @@ export function createAppServer() {
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
+        if(type==="media.ai-upscale"){
+          const model=String(body.model||"realesrgan-x4plus");
+          const evidence=await loadUpscaleQualityEvidence();
+          if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
+          const readiness=await aiUpscaleAdapter.probe(model);
+          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+        }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){
           const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(body.timelineId||""));
