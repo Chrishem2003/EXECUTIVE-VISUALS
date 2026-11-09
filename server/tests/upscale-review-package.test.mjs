@@ -156,6 +156,16 @@ test("rejects a Pass decision when any rubric item reports an issue",()=>{
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
  assert.equal(result.valid,false);assert.match(result.errors.join(" "),/cannot pass/);
 });
+test("rejects review exports with a timestamp missing its timezone",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.exportedAt="2026-11-09T12:00:00";
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/complete ISO date-time with timezone/);
+});
+test("rejects impossible calendar dates in review timestamps",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.exportedAt="2026-99-45T12:00:00.000Z";
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/complete ISO date-time with timezone/);
+});
 test("rejects review exports with an invalid ISO timestamp",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.exportedAt="not-a-date";
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
