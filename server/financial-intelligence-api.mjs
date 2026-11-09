@@ -254,6 +254,34 @@ export function createFinancialIntelligenceApi({
     if(!billingEnabled)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
+      if(path==="/api/billing/plans"&&method==="GET"){
+        const result=await dbRequest("subscription_plans?select=plan_code,name,description,billing_interval,amount_minor,currency,included_credits,entitlements,version&status=eq.active&is_public=eq.true&order=amount_minor.asc");
+        return response(200,{plans:Array.isArray(result.data)?result.data:[]});
+      }
+      if(path==="/api/billing/subscription"&&method==="GET"){
+        const result=await dbRequest("customer_subscriptions?select=id,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
+        const subscription=Array.isArray(result.data)?result.data[0]||null:null;
+        return response(200,{subscription});
+      }
+      if(path==="/api/admin/subscriptions/grant"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
+        const customerId=String(body.customerId||"");
+        const planCode=String(body.planCode||"").trim().toLowerCase();
+        const reason=String(body.reason||"").trim().slice(0,500);
+        const start=new Date(body.periodStart||Date.now());
+        const end=new Date(body.periodEnd||"");
+        if(!UUID.test(customerId)||!/^[a-z][a-z0-9_-]{1,63}$/.test(planCode)||
+          reason.length<3||!Number.isFinite(start.getTime())||!Number.isFinite(end.getTime())||
+          end<=start||end.getTime()-start.getTime()>366*24*60*60*1000)
+          return error(400,"SUBSCRIPTION_GRANT_INVALID","Provide a customer, valid plan, reason and a period no longer than 366 days.");
+        const granted=await rpc("grant_customer_subscription",{
+          p_actor_id:ownerId,p_owner_id:customerId,p_plan_code:planCode,
+          p_period_start:start.toISOString(),p_period_end:end.toISOString(),p_reason:reason
+        });
+        const subscriptionId=typeof granted==="string"?granted:granted?.grant_customer_subscription||granted?.id;
+        if(!UUID.test(String(subscriptionId||"")))throw Object.assign(new Error("Subscription grant returned an invalid ID."),{code:"SUBSCRIPTION_GRANT_INVALID_RESULT"});
+        return response(201,{subscription:{id:subscriptionId,status:"active",planCode},message:"Subscription entitlement granted and audited."});
+      }
       if(path==="/api/billing/credits"&&method==="GET"){
         const result=await rpc("get_credit_balance",{p_owner_id:ownerId});
         const balance=Array.isArray(result)?result[0]:result;
