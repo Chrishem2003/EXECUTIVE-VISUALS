@@ -22,7 +22,7 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
-import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout, createFlutterwaveSubscriptionCheckout, flutterwavePaymentPlanEnvName, flutterwaveRecurringCheckoutEnabled } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
 import { processNextCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
@@ -583,8 +583,8 @@ const billingAccount=touchBillingAccount(db,user);
       }
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
-      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
-      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:(dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||"")))||(flutterwaveRecurringCheckoutEnabled()&&/^\\d{1,18}$/.test(String(process.env[flutterwavePaymentPlanEnvName(plan.code)]||"")))}));send(res,200,{plans},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled()||flutterwaveRecurringCheckoutEnabled(),flutterwaveRecurringSubscriptionsEnabled:flutterwaveRecurringCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
       const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
       if(billingOrderMatch&&req.method==="GET"){
         const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
@@ -594,6 +594,15 @@ const billingAccount=touchBillingAccount(db,user);
         send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
       }
 
+      if(path==="/api/billing/flutterwave-subscription-checkout"&&req.method==="POST"){
+        if(!flutterwaveRecurringCheckoutEnabled()){
+          fail(res,503,"FLW_SUBSCRIPTIONS_DISABLED","Flutterwave recurring checkout is disabled until recurring billing, merchant approval, webhook verification and payment-plan configuration are enabled.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const checkout=await createFlutterwaveSubscriptionCheckout(db,{user,planId:String(body.planId||""),
+          secretKey:process.env.FLW_SECRET_KEY,publicAppUrl:process.env.PUBLIC_APP_URL,env:process.env});
+        send(res,200,{checkout},cors);return;
+      }
       if(path==="/api/billing/subscription-checkout"&&req.method==="POST"){
         const body=await readJson(req,16*1024);
         const checkout=await createDodoSubscriptionCheckout(db,{user,planId:String(body.planId||"")});
