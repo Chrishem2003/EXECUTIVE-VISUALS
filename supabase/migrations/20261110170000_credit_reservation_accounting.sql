@@ -123,10 +123,12 @@ declare
   reservation_row executive_visuals.credit_reservations%rowtype;
 begin
   if p_reservation_id is null then raise exception 'Reservation ID is required'; end if;
-  select * into reservation_row from executive_visuals.credit_reservations
-   where id=p_reservation_id for update;
+  select owner_id into reservation_row.owner_id from executive_visuals.credit_reservations
+   where id=p_reservation_id;
   if not found then raise exception 'Credit reservation not found'; end if;
   perform pg_advisory_xact_lock(hashtextextended(reservation_row.owner_id::text,0));
+  select * into reservation_row from executive_visuals.credit_reservations
+   where id=p_reservation_id for update;
 
   if reservation_row.status='settled' then
     return jsonb_build_object('reservation_id',reservation_row.id,'status','settled','already_settled',true);
