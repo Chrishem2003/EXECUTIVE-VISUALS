@@ -39,7 +39,7 @@ begin
   where code='creator';
   select * into grant_one from executive_visuals.activate_generation_subscription(
     '77777777-7777-4777-8777-777777777777','creator','manual',null,
-    'manual-subscription-test-001',clock_timestamp(),
+    'dodo-subscription-test-001',clock_timestamp(),
     clock_timestamp()+interval '30 days','active','{"test":true}'::jsonb
   );
   subscription:=grant_one.subscription_id;
@@ -57,14 +57,14 @@ begin
   next_period_end:=next_period_start+interval '30 days';
   select * into grant_one from executive_visuals.activate_generation_subscription(
     '77777777-7777-4777-8777-777777777777','creator','manual',null,
-    'manual-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
+    'dodo-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
   );
   if grant_one.subscription_id<>subscription or grant_one.replayed then
     raise exception 'subscription renewal did not advance the existing subscription';
   end if;
   select * into grant_two from executive_visuals.activate_generation_subscription(
     '77777777-7777-4777-8777-777777777777','creator','manual',null,
-    'manual-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
+    'dodo-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
   );
   if grant_two.subscription_id<>subscription or not grant_two.replayed then
     raise exception 'subscription renewal replay was not idempotent';
@@ -81,13 +81,39 @@ begin
   begin
     perform * from executive_visuals.activate_generation_subscription(
       '77777777-7777-4777-8777-777777777777','creator','manual',null,
-      'manual-subscription-test-001','2026-10-01T00:00:00Z','2026-11-01T00:00:00Z','active','{"test":true}'::jsonb
+      'dodo-subscription-test-001','2026-10-01T00:00:00Z','2026-11-01T00:00:00Z','active','{"test":true}'::jsonb
     );
     raise exception 'stale subscription renewal unexpectedly applied';
   exception when others then
     if sqlerrm='stale subscription renewal unexpectedly applied' then raise; end if;
     if sqlerrm<>'BILLING_SUBSCRIPTION_PERIOD_STALE' then raise; end if;
   end;
+
+  select * into grant_one from executive_visuals.sync_generation_subscription_status(
+    'dodo','dodo-subscription-test-001','paused',null,false,null,
+    '{"providerEventId":"dodo-status-paused","test":true}'::jsonb
+  );
+  if grant_one.subscription_id<>subscription or grant_one.replayed or grant_one.status<>'paused' then
+    raise exception 'subscription pause status sync failed';
+  end if;
+  select * into grant_two from executive_visuals.sync_generation_subscription_status(
+    'dodo','dodo-subscription-test-001','paused',null,false,null,
+    '{"providerEventId":"dodo-status-paused","test":true}'::jsonb
+  );
+  if grant_two.subscription_id<>subscription or not grant_two.replayed then
+    raise exception 'subscription pause status replay was not idempotent';
+  end if;
+  select * into grant_one from executive_visuals.sync_generation_subscription_status(
+    'dodo','dodo-subscription-test-001','past_due',null,false,
+    clock_timestamp()+interval '7 days',
+    '{"providerEventId":"dodo-status-past-due","test":true}'::jsonb
+  );
+  if grant_one.status<>'past_due' then raise exception 'past-due grace status sync failed'; end if;
+  select * into grant_one from executive_visuals.sync_generation_subscription_status(
+    'dodo','dodo-subscription-test-001','active',null,false,null,
+    '{"providerEventId":"dodo-status-recovered","test":true}'::jsonb
+  );
+  if grant_one.status<>'active' then raise exception 'subscription recovery status sync failed'; end if;
 
   insert into executive_visuals.jobs(id,owner_id,job_type,status,input)
   values('88888888-8888-4888-8888-888888888888',
