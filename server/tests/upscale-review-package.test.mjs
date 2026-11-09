@@ -126,6 +126,11 @@ test("accepts a complete human review export bound to all five package checksums
  const manifest=reviewManifest(),result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
  assert.deepEqual(result,{valid:true,errors:[]});
 });
+test("rejects malformed SHA-256 values even when notes match the manifest",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);manifest.fixtures[0].outputSha256="not-a-sha256";notes.fixtures[0].outputSha256="not-a-sha256";
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/valid SHA-256 digests/);
+});
 test("rejects human review exports whose fixture checksum differs from the package",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].outputSha256="c".repeat(64);
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
