@@ -32,8 +32,8 @@ test("playback frame selects all overlapping enabled picture, audio and overlay 
 
 test("playback honors clip source in-points, speed, and half-open clip boundaries",()=>{
  const timeline=fixture();
- const atOne=getTimelinePlaybackFrame(timeline,1);
- assert.equal(atOne.active.find(item=>item.clipId==="v1-a").mediaTimeSeconds,2);
+ const atOne=getTimelinePlaybackFrame(timeline,0.9);
+ assert.equal(atOne.active.find(item=>item.clipId==="v1-a").mediaTimeSeconds,1.9);
  assert.equal(atOne.active.find(item=>item.clipId==="v2-a"),undefined);
  const atTwo=getTimelinePlaybackFrame(timeline,2);
  assert.equal(atTwo.active.find(item=>item.clipId==="v2-a").mediaTimeSeconds,2);
