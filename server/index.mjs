@@ -445,7 +445,8 @@ export function createAppServer() {
         send(res,200,atlas,cors);return;
       }
       if(path==="/api/providers"&&req.method==="GET"){
-        const aiUpscale=await aiUpscaleAdapter.probe();
+        const upscaleModels=await Promise.all(["realesrgan-x4plus","realesrgan-x4plus-anime"].map(model=>aiUpscaleAdapter.probe(model)));
+        const aiUpscale={...upscaleModels[0],models:upscaleModels};
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
