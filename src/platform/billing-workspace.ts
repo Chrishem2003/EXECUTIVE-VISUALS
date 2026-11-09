@@ -55,8 +55,17 @@ export async function refreshDodoReturn(){
  catch(error){state.dodoOrder=null;state.message=error instanceof Error?error.message:"Subscription status could not be checked.";}
  finally{state.loading=false;paint();}
 }
+export async function refreshFlutterwaveSubscriptionReturn(){
+ const orderId=new URLSearchParams(window.location.search).get("order_id")||"";
+ if(!/^[0-9a-f-]{36}$/i.test(orderId)){state.flutterwaveSubscriptionOrder=null;state.message="No valid subscription order reference was supplied.";paint();return;}
+ state.loading=true;
+ try{const result=await apiRequest<{order:FlutterwaveSubscriptionOrder}>("/api/billing/flutterwave-subscription-orders/"+orderId);state.flutterwaveSubscriptionOrder=result.order;state.message="";}
+ catch(error){state.flutterwaveSubscriptionOrder=null;state.message=error instanceof Error?error.message:"Subscription status could not be checked.";}
+ finally{state.loading=false;paint();}
+}
 export async function refreshBillingReturn(){
  if(new URLSearchParams(window.location.search).get("provider")==="dodo")return refreshDodoReturn();
+ if(new URLSearchParams(window.location.search).get("provider")==="flutterwave_subscription")return refreshFlutterwaveSubscriptionReturn();
  const txRef=new URLSearchParams(window.location.search).get("tx_ref")||"";
  if(!/^ev_[a-f0-9]{32}$/.test(txRef)){state.paymentOrder=null;state.message="No valid payment reference was supplied.";paint();return;}
  state.loading=true;
