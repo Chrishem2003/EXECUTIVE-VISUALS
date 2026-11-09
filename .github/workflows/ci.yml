@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/upscale-batch-model-coverage]
+    branches: [main, feat/upscale-batch-model-coverage, feat/video-ai-upscale-frame-pipeline-2026-11-09]
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
