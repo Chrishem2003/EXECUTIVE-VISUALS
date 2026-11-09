@@ -144,7 +144,7 @@ test("AI upscaler requires independent fixture evidence, not a claimed inference
  const executionProvider=executionOnly.providers.find(item=>item.id==="ai-upscale");
  assert.equal(executionProvider.status,"unverified");
  assert.deepEqual(executionProvider.capabilities,[]);
- const qualityChecked=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:true,reason:"Execution verified."},{model:"realesrgan-x4plus-anime",available:true,executionEnabled:true,executionVerified:true,reason:"Execution verified."}],model:"realesrgan-x4plus",reason:"Fixture quality checks passed."}});
+ const qualityChecked=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{model:"realesrgan-x4plus",fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z"},reason:"Execution verified."},{model:"realesrgan-x4plus-anime",available:true,executionEnabled:true,executionVerified:true,qualityVerified:false,reason:"Execution verified."}],model:"realesrgan-x4plus",reason:"Fixture quality checks passed."}});
  const verifiedProvider=qualityChecked.providers.find(item=>item.id==="ai-upscale");
  assert.equal(verifiedProvider.status,"ready");
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
@@ -172,7 +172,7 @@ test("provider catalog exposes only source-attributed pricing metadata and never
 
 
 test("upscale model readiness is reported independently and never inferred from another model review",()=>{
- const catalog=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"general-fixture",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},model:"realesrgan-x4plus",models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:true},{model:"realesrgan-x4plus-anime",available:false,executionEnabled:true,executionVerified:false}]}});
+ const catalog=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"general-fixture",checkedAt:"2026-11-01T00:00:00.000Z",model:"realesrgan-x4plus"},model:"realesrgan-x4plus",models:[{model:"realesrgan-x4plus",available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{model:"realesrgan-x4plus",fixtureId:"general-fixture",checkedAt:"2026-11-01T00:00:00.000Z"}},{model:"realesrgan-x4plus-anime",available:false,executionEnabled:true,executionVerified:false,qualityVerified:false}]}});
  const models=catalog.providers.find(item=>item.id==="ai-upscale").availableModels;
  assert.equal(models.find(model=>model.id==="realesrgan-x4plus").readiness,"ready");
  assert.equal(models.find(model=>model.id==="realesrgan-x4plus-anime").readiness,"unavailable");
