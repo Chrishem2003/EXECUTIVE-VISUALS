@@ -28,6 +28,19 @@ async function regularFile(path, label) {
   } catch { return false; }
 }
 
+async function fingerprintRegularFile(path, label) {
+  try {
+    const info = await lstat(path, { bigint: true });
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw fail(label + " must remain a regular, non-symlink file.", "AI_UPSCALE_INPUT_CHANGED");
+    }
+    return [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(":");
+  } catch (error) {
+    if (error.code === "AI_UPSCALE_INPUT_CHANGED") throw error;
+    throw fail(label + " changed or became unavailable during processing.", "AI_UPSCALE_INPUT_CHANGED");
+  }
+}
+
 function run(binary, args, timeoutMs, signal) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
@@ -324,6 +337,9 @@ export function createRealEsrganAdapter({
     if (!readiness.available || !readiness.executionEnabled) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
+    // Pin source identity and metadata across header inspection and inference so
+    // the derivative cannot silently be attributed to bytes that were replaced mid-job.
+    const inputFingerprintBefore = await fingerprintRegularFile(input, "AI upscale input");
     const inputDimensions = await readImageDimensions(input);
     const sourceBitDepth = await readImageBitDepth(input);
     if (sourceBitDepth !== null && sourceBitDepth > 8) throw fail("This NCNN/Vulkan adapter has not certified high-bit-depth input. Use an 8-bit source or a separately validated high-bit-depth inference path.", "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED");
@@ -339,6 +355,10 @@ export function createRealEsrganAdapter({
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     const execution = await runWithTileFallback(prepared.binary, prepared.args, timeoutMs, options.signal, output, prepared.tile);
     try {
+      const inputFingerprintAfter = await fingerprintRegularFile(input, "AI upscale input");
+      if (inputFingerprintAfter !== inputFingerprintBefore) {
+        throw fail("AI upscale source changed during inference; the derivative was rejected.", "AI_UPSCALE_INPUT_CHANGED");
+      }
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
       const outputDimensions = await validateImageOutput(output, prepared.format);

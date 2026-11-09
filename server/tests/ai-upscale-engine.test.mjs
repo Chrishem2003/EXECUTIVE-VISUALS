@@ -82,6 +82,39 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
 });
 
 
+test("AI upscaler rejects a source replaced during inference and removes its derivative", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-source-race-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "must-be-removed.png");
+  await writeFile(input, pngHeader(1, 1));
+  const script = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+fs.writeFileSync(${JSON.stringify(input)}, "replacement bytes");
+const png = Buffer.alloc(24);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
+png.writeUInt32BE(2,16); png.writeUInt32BE(2,20);
+fs.writeFileSync(out,png);
+`;
+  await writeFile(binary, script);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_INPUT_CHANGED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("AI upscaler reports execution checks separately from unverified inference quality", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-selftest-"));
   const binary = join(directory, "engine");

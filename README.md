@@ -82,6 +82,7 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 - [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
 - [AI Upscale Quality Evidence](docs/AI-UPSCALE-QUALITY-EVIDENCE.md) — model-specific execution/quality gates and the offline reviewed-benchmark evidence contract.
+- The local AI upscaler pins source-file identity and metadata across inference and rejects/deletes derivatives if the source changes mid-job.
 - [Protected C2PA signer architecture](docs/C2PA-PROTECTED-SIGNER-ARCHITECTURE.md) — callback-based KMS/HSM boundary, key isolation, audit controls and release gates.
 
 
