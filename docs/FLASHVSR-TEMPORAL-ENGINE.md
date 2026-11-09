@@ -53,7 +53,7 @@ The integration is 4× only. The upstream v1.1 long-video demo uses a 128-pixel 
 - Returns video-only output; the application remuxes the original source audio/subtitle streams and then performs its existing codec, timestamp, checksum and provenance checks.
 - Never overwrites the source asset.
 
-The adapter subprocess uses argument arrays (no shell), bounded stdout/stderr capture, a hard timeout and cancellation. Temporary input/output files are scoped to a per-job temporary directory and removed on completion or failure.
+The adapter subprocess uses argument arrays (no shell), byte-accurate stdout/stderr capture limits, a hard timeout and cancellation. Timeout, cancellation and capture-limit failures first request SIGTERM, then escalate to SIGKILL after a bounded grace period so an unresponsive model process cannot be left running. Temporary input/output files are scoped to a per-job temporary directory and removed on completion or failure. Contract tests cover both timeout and cancellation escalation.
 
 ## API and UI
 
