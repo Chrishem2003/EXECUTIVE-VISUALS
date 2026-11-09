@@ -870,8 +870,8 @@ begin
     or cost_row.job_id is null or cost_row.owner_id <> job_row.owner_id
     or cost_row.provider <> 'runway' or cost_row.model <> 'model-router'
     or cost_row.provider_task_id <> 'router-task-pg-integration'
-    or cost_row.currency <> 'USD' or cost_row.reserved_amount <> 4.5
-    or cost_row.actual_amount <> 2.25 or cost_row.unused_reservation <> 2.25
+    or cost_row.currency <> 'USD' or cost_row.reserved_amount <> 2.75
+    or cost_row.actual_amount <> 2.25 or cost_row.unused_reservation <> 0.5
     or cost_row.evidence_reference <> 'provider-receipt:router-task-pg-integration'
     or policy.reserved_amount <> 4.5 or policy.spent_amount <> 2.25
     or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
