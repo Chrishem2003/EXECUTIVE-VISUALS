@@ -324,3 +324,36 @@ process.exit(2);
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("AI upscaler rejects projected output dimensions before invoking the GPU process", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-output-budget-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "must-not-exist.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeader(16, 16));
+  await writeFile(binary, `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, maxOutputPixels: 1000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 0, format: "png" }),
+      error => error.code === "AI_UPSCALE_OUTPUT_BUDGET_EXCEEDED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(attemptsFile));
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI upscaler rejects output pixel budgets outside the safe worker ceiling", () => {
+  assert.throws(() => createRealEsrganAdapter({ maxOutputPixels: 100_000_001 }), /pixel budget is invalid/);
+});
