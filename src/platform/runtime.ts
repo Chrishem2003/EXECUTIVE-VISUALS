@@ -86,7 +86,7 @@ function renderAiUpscaleControls(assetId:string):string{
   const title=readiness?.reason||provider?.reason||"Model-specific readiness has not been reported.";
   return '<button type="button" '+(ready?'':'disabled aria-disabled="true"')+' aria-label="'+label+'" title="'+esc(title)+'" data-ev-job="media.ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="'+model+'" data-ev-scale="'+scale+'" data-ev-tile="128" data-ev-format="png">'+label+'</button>';
  };
- const modelCard=(label:string,model:string,readiness:{id:string;readiness?:string;reason?:string}|undefined,presets:string)=>{
+ const modelCard=(label:string,readiness:{id:string;readiness?:string;reason?:string}|undefined,presets:string)=>{
   const ready=readiness?.readiness==="ready";
   const stateLabel=ready?"READY":readiness?.readiness==="unavailable"?"NOT INSTALLED":readiness?.readiness==="disabled"?"DISABLED":"LOCKED";
   const reason=readiness?.reason||"The worker has not reported readiness for this model.";
@@ -94,8 +94,8 @@ function renderAiUpscaleControls(assetId:string):string{
  };
  const stateText=provider?.reason||"The worker has not reported AI upscaling readiness.";
  return '<section class="ai-upscale-controls" aria-label="AI image super-resolution"><div class="ai-upscale-heading"><div><small class="ai-upscale-label">IMAGE FINISHING</small><strong>AI super-resolution</strong></div><span class="ai-upscale-original">ORIGINAL PRESERVED</span></div><div class="ai-upscale-model-grid">'+
-  modelCard("General-purpose","realesrgan-x4plus",general,button("realesrgan-x4plus",2,"2×",general)+button("realesrgan-x4plus",3,"3×",general)+button("realesrgan-x4plus",4,"4×",general))+
-  modelCard("Anime & illustration","realesrgan-x4plus-anime",anime,button("realesrgan-x4plus-anime",4,"4×",anime))+
+  modelCard("General-purpose",general,button("realesrgan-x4plus",2,"2×",general)+button("realesrgan-x4plus",3,"3×",general)+button("realesrgan-x4plus",4,"4×",general))+
+  modelCard("Anime & illustration",anime,button("realesrgan-x4plus-anime",4,"4×",anime))+
   '</div><p class="ai-upscale-footnote">'+esc(stateText)+' Each model must pass its own installation, execution and reviewed-quality checks. Results are saved as separate derivatives; the source asset is not overwritten.</p></section>';
 }
 
