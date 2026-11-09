@@ -80,6 +80,7 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109250000_cloud_customer_credit_job_settlement.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-customer-credits-postgres-integration.sql
       - name: Apply Gemini Omni interaction ownership and retention migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
       - name: Verify Gemini interaction ownership and retention constraints
