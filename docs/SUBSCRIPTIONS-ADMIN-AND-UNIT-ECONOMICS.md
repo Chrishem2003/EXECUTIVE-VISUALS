@@ -107,6 +107,9 @@ The cloud PostgreSQL entitlement foundation is now source-controlled in
   cancellation-at-period-end and grace-period fields.
 - A unique subscription-period grant ledger, preventing duplicate monthly or
   annual credit allocations on webhook retries.
+- Recurring subscription periods can advance on the same provider subscription
+  identity; stale period updates are rejected and repeated renewal deliveries
+  are idempotent.
 - A service-role-only activation RPC and period-credit grant RPC.
 - A default Free subscription provisioned for new and existing cloud credit
   accounts. Free includes local editing but does not authorize paid video
