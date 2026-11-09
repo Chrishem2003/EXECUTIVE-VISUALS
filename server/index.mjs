@@ -876,7 +876,10 @@ export function createAppServer() {
           if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
           const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
           if(!source||!String(source.media_type||"").startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for video AI upscaling.");return;}
+          if(source.project_id&&source.project_id!==String(body.projectId||"")){fail(res,400,"PROJECT_MISMATCH","The source video must belong to the selected project.");return;}
           if(body.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm that you own or are authorized to process this source video.");return;}
+          const tile=Number(body.tile??0);
+          if(!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Tile size must be automatic (0) or an integer from 32 to 512.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
         }
