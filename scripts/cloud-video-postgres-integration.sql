@@ -521,7 +521,9 @@ insert into executive_visuals.assets(
 
 select executive_visuals.finish_video_generation_job(
  (select job_id from test_context),'video-worker-pg-test','succeeded',
- jsonb_build_object('providerTaskId','runway-task-pg-test',
+ jsonb_build_object('provider','runway','model','gen4.5',
+   'providerTaskId','runway-task-pg-test',
+   'costEvidenceReference','provider-receipt:runway-task-pg-test',
    'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000')),
  null,0.75
 );
