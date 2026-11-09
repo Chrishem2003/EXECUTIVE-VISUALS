@@ -37,9 +37,10 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
   }
   throw new Error("Unexpected command "+binary);
  };
- const upscalerFactory=()=>({execute:async({outputPath:path})=>{await writeFile(path,"upscaled-frame");return {outputDimensions:{width:128,height:128},tileAttempts:[256]};}});
+ const observedOptions=[];
+ const upscalerFactory=()=>({execute:async(options)=>{observedOptions.push({threads:options.threads,tta:options.tta,gpu:options.gpu});await writeFile(options.outputPath,"upscaled-frame");return {outputDimensions:{width:128,height:128},tileAttempts:[256],tileFallbackUsed:observedOptions.length===2};}});
  const processor=createVideoAiUpscaleProcessor({runCommand,upscalerFactory,maxFrames:10,maxDurationSeconds:5,tempRoot:root});
- return {root,sourcePath,outputPath,processor};
+ return {root,sourcePath,outputPath,processor,observedOptions};
 }
 
 test("video AI upscaler enhances every frame, retains audio streams and verifies exact output frame count",async t=>{
@@ -87,4 +88,12 @@ test("video AI upscaler rejects source replacement during processing and removes
  const f=await fixture(t,{mutateSourceOnAssembly:true});
  await assert.rejects(f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,scale:2}),error=>error.code==="VIDEO_AI_UPSCALE_SOURCE_CHANGED");
  await assert.rejects(readFile(f.outputPath));
+});
+
+test("video AI upscaler passes explicit NCNN tuning and records per-frame automatic tile fallback",async t=>{
+ const f=await fixture(t);
+ const result=await f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,scale:2,threads:"2:3:2",tta:true,gpu:"auto"});
+ assert.deepEqual(f.observedOptions[0],{threads:"2:3:2",tta:true,gpu:"auto"});
+ assert.equal(result.tileFallbackCount,1);
+ assert.deepEqual(result.tileFallbackFrames,[1]);
 });
