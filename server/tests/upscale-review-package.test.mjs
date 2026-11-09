@@ -19,3 +19,23 @@ test("creates a checksum-verified five-fixture human review package",async t=>{c
 test("rejects changed output bytes before creating a package",async t=>{const e=await setup(t);await writeFile(join(e.run,"fixture-portrait.png"),"tampered");await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/checksum mismatch/);});
 test("rejects symlinked run directories",async t=>{const e=await setup(t),link=join(e.root,"run-link");await symlink(e.run,link);await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:link}),/regular directory/);});
 test("refuses to overwrite an existing review package directory",async t=>{const e=await setup(t);await mkdir(e.outputDirectory);await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/already exists/);});
+
+test("rejects fixture symlinks that point outside the manifest directory",async t=>{
+ const e=await setup(t),fixture=join(e.fixtures,"portrait.png"),outside=join(e.run,"outside.png");
+ await writeFile(outside,"outside-private-image");
+ await rm(fixture);
+ await symlink(outside,fixture);
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/regular non-symlink/);
+});
+test("rejects manifest fixture paths that traverse outside the fixture root",async t=>{
+ const e=await setup(t),manifest=JSON.parse(await readFile(e.manifestPath,"utf8"));
+ manifest.fixtures[0].path="../run/fixture-portrait.png";
+ await writeFile(e.manifestPath,JSON.stringify(manifest));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/cannot traverse|remain relative/);
+});
+test("rejects benchmark records whose model identity differs from the report",async t=>{
+ const e=await setup(t),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ report.records[0].model="realesrgan-x4plus-anime";
+ await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid|match the report model/);
+});
