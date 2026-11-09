@@ -439,7 +439,7 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
    }
    return{ok:true,status:200,async text(){return"[]";}};
   },
-  timelineService:{timelines:{},assets:{}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId};}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:routerAdapter,
   env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
@@ -481,7 +481,7 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
    }
    return{ok:true,status:200,async text(){return"[]";}};
   },
-  timelineService:{timelines:{},assets:{}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId};}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:{async prepareInput(input,context){prepared.push({input,context});return{...input};},async preflight(){throw new Error("approval must not call provider preflight");}},
   env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
