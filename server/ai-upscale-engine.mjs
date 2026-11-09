@@ -148,9 +148,24 @@ function bitDepthFromHeader(bytes) {
   if (bytes.length >= 25 &&
       bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) &&
       bytes.toString("ascii", 12, 16) === "IHDR") return bytes[24];
-  // JPEG and WebP inputs handled by this adapter use 8-bit samples.
-  if ((bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
-      (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP")) return 8;
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    const sof = new Set([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf]);
+    let offset = 2;
+    while (offset + 4 <= bytes.length) {
+      if (bytes[offset] !== 0xff) { offset++; continue; }
+      while (bytes[offset] === 0xff) offset++;
+      const marker = bytes[offset++];
+      if (marker === 0xd9 || marker === 0xda) break;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 2 > bytes.length) break;
+      const segmentLength = bytes.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > bytes.length) break;
+      if (sof.has(marker) && segmentLength >= 7) return bytes[offset + 2];
+      offset += segmentLength;
+    }
+  }
+  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" &&
+      bytes.toString("ascii", 8, 12) === "WEBP") return 8;
   return null;
 }
 
