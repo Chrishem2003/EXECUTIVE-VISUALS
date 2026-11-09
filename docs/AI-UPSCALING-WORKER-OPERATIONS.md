@@ -2,6 +2,12 @@
 
 The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option to control image-load, processing, and image-save worker counts.
 
+## Batch image enhancement
+
+Use `createUpscaleBatchProcessor({ adapter, defaultConcurrency })` from `server/upscale-batch.mjs` to process 1–100 independent assets through the existing single-image adapter. The processor caps concurrency at four (default one), rejects duplicate output paths and any output that would overwrite an input in the same batch, preserves per-item source/output digests and quality-review state, isolates item failures, supports cancellation, and reports progress. It does not bypass adapter validation or mark perceptual quality as passed.
+
+The benchmark runner supports all four inference-engine model identifiers: `realesrgan-x4plus`, `realesrgan-x4plus-anime`, `realesr-animevideov3`, and `realesrnet-x4plus`. A benchmark still requires the selected model files, local execution self-test, and one fixture for each required content category. Registry coverage does not imply that every model has been run or visually approved.
+
 ## GPU device selection
 
 The adapter exposes the NCNN CLI `-g` option as `gpu`. The default `auto` lets NCNN select the Vulkan device. An explicit device index from `0` through `31` can be selected for hosts with multiple Vulkan devices. The chosen value is included in execution and self-test diagnostics. The adapter does not probe device capabilities or guarantee that a selected index is present; deployment validation must confirm that the configured worker can initialize that device.
