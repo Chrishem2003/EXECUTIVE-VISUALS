@@ -63,6 +63,14 @@ create unique index if not exists customer_subscriptions_one_current_idx
   on executive_visuals.customer_subscriptions(owner_id)
   where status in ('trialing','active','past_due','pending');
 
+-- Preserve signed provider subscription callbacks that cannot yet be mapped
+-- to a local subscription; never silently discard cancellation or renewal signals.
+alter table executive_visuals.payment_webhook_events
+  drop constraint if exists payment_webhook_events_processing_status_check;
+alter table executive_visuals.payment_webhook_events
+  add constraint payment_webhook_events_processing_status_check
+  check (processing_status in ('received','processing','processed','ignored','failed','needs_review'));
+
 create table if not exists executive_visuals.subscription_events (
   id uuid primary key default gen_random_uuid(),
   subscription_id uuid not null references executive_visuals.customer_subscriptions(id) on delete restrict,
