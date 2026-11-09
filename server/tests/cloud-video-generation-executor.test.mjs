@@ -14,7 +14,7 @@ const job = {
 const succeeded = { taskId, status: "succeeded", outputUrls: ["https://cdn.example.test/output.mp4"] };
 function fixture({ state = "prepared", submitError = null, recordResult = true, status = succeeded,
   metadata = {}, submittedMetadata = {}, cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
-  costError = null, ingestError = null } = {}) {
+  costError = null, ingestError = null, creditError = null } = {}) {
   const calls = [];
   let currentState = state;
   let currentTaskId = state === "submitted" ? taskId : null;
@@ -36,6 +36,7 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   };
   return {
     calls, ledger, adapter,
+    customerCredits: { async settleJob(value) { calls.push(["settleCredits", value]); if (creditError) throw creditError; return { balance: 40, adjustment: 2, replayed: false }; } },
     ingestOutputs: async value => { calls.push(["ingest", value.providerTaskId]); if (ingestError) throw ingestError; return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } }; },
     resolveActualCost: async value => { calls.push(["cost", value.providerTaskId, value.submissionMetadata]); if (costError) throw costError; return cost; }
   };
