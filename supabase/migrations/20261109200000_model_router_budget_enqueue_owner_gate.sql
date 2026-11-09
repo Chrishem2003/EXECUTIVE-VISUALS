@@ -11,7 +11,8 @@ as $validate_video_budget_approval$
 begin
   -- Server-side approval RPCs execute with service_role. Direct authenticated
   -- inserts remain bound to auth.uid() and the project's owner.
-  if coalesce(auth.role(), '') <> 'service_role'
+  if current_user not in ('postgres','service_role')
+     and coalesce(auth.role(), '') <> 'service_role'
      and new.owner_id is distinct from auth.uid() then
     raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
   end if;
