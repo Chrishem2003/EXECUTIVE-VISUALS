@@ -42,6 +42,8 @@ export function validateUpscaleHumanReviewNotes(notes, reviewManifest) {
     const source = expectedById.get(item.fixtureId);
     if (!source || seen.has(item.fixtureId)) { add("Fixture IDs must match the manifest exactly and cannot repeat."); continue; }
     seen.add(item.fixtureId);
+    const isSha256 = value => typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+    if (!isSha256(source.inputSha256) || !isSha256(source.outputSha256) || !isSha256(item.inputSha256) || !isSha256(item.outputSha256)) add("Fixture source/output checksums must be valid SHA-256 digests: " + item.fixtureId + ".");
     if (item.fixtureCategory !== source.fixtureCategory || item.inputSha256 !== source.inputSha256 || item.outputSha256 !== source.outputSha256) add("Fixture category or source/output checksum does not match the package manifest for " + item.fixtureId + ".");
     if (!["reviewed_pass", "reviewed_fail"].includes(item.decision)) add("Every fixture requires a Pass or Fail decision: " + item.fixtureId + ".");
     if (typeof item.notes !== "string" || item.notes.trim().length < 20 || item.notes.length > 2000) add("Review notes must contain 20 to 2000 characters: " + item.fixtureId + ".");
