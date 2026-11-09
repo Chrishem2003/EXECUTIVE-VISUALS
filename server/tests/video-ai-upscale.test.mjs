@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createVideoAiUpscaleProcessor } from "../video-ai-upscale.mjs";
 
-async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,outputAudio=1,timestamps="0.000000\n0.500000\n1.000000\n",sourceTransfer="bt709"}={}){
+async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,outputAudio=1,timestamps="0.000000\n0.500000\n1.000000\n",sourceTransfer="bt709",mutateSourceOnAssembly=false}={}){
  const root=await mkdtemp(join(tmpdir(),"ev-video-upscale-test-"));
  t.after(()=>rm(root,{recursive:true,force:true}));
  const sourcePath=join(root,"source.mp4"),outputPath=join(root,"result.mp4");
@@ -32,6 +32,7 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
   }
   if(binary==="ffmpeg"){
    await writeFile(args.at(-1),"rendered-video");
+   if(mutateSourceOnAssembly)await writeFile(sourcePath,"mutated-source-bytes");
    return {stdout:"",stderr:""};
   }
   throw new Error("Unexpected command "+binary);
@@ -74,4 +75,16 @@ test("video AI upscaler stops immediately when its job is cancelled",async t=>{
  const f=await fixture(t);
  const controller=new AbortController();controller.abort();
  await assert.rejects(f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,scale:2,signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
+});
+
+test("video AI upscaler rejects audio stream loss and removes the output",async t=>{
+ const f=await fixture(t,{outputAudio:0});
+ await assert.rejects(f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,scale:2}),error=>error.code==="VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
+ await assert.rejects(readFile(f.outputPath));
+});
+
+test("video AI upscaler rejects source replacement during processing and removes the output",async t=>{
+ const f=await fixture(t,{mutateSourceOnAssembly:true});
+ await assert.rejects(f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,scale:2}),error=>error.code==="VIDEO_AI_UPSCALE_SOURCE_CHANGED");
+ await assert.rejects(readFile(f.outputPath));
 });
