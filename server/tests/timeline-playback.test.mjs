@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, rational } from "../../src/core/timeline.ts";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame } from "../../src/core/timeline-playback.ts";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset } from "../../src/core/timeline-playback.ts";
 
 function fixture(){
  let timeline=createTimeline("project-1","timeline-1","Playback",{numerator:30000,denominator:1001});
@@ -64,4 +64,16 @@ test("playback at an empty timeline position yields no active media without nega
  const frame=getTimelinePlaybackFrame(fixture(),-2);
  assert.equal(frame.playheadSeconds,0);
  assert.equal(frame.active.length,0);
+});
+
+test("preview prefers only a source-linked authorized video proxy and otherwise falls back to original",()=>{
+ const source={id:"source",mediaType:"video/mp4"};
+ const good={id:"proxy-good",mediaType:"video/mp4",derivativeOf:"source"};
+ const unrelated={id:"proxy-other",mediaType:"video/mp4",derivativeOf:"another-source"};
+ const image={id:"proxy-image",mediaType:"image/webp",derivativeOf:"source"};
+ const clip={metadata:{proxyAssetId:"proxy-good"}};
+ assert.equal(selectTimelinePreviewAsset(clip,source,[good,unrelated,image]),good);
+ assert.equal(selectTimelinePreviewAsset({metadata:{proxyAssetId:"proxy-other"}},source,[good,unrelated]),source);
+ assert.equal(selectTimelinePreviewAsset({metadata:{proxyAssetId:"proxy-image"}},source,[image]),source);
+ assert.equal(selectTimelinePreviewAsset({metadata:{proxyAssetId:"missing"}},source,[]),source);
 });
