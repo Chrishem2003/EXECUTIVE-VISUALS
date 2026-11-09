@@ -84,13 +84,21 @@ function renderAiUpscaleControls(assetId:string):string{
  const button=(model:string,scale:number,label:string,readiness:{id:string;readiness?:string;reason?:string}|undefined)=>{
   const ready=readiness?.readiness==="ready";
   const title=readiness?.reason||provider?.reason||"Model-specific readiness has not been reported.";
-  return '<button '+(ready?'':'disabled aria-disabled="true"')+' title="'+esc(title)+'" data-ev-job="media.ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="'+model+'" data-ev-scale="'+scale+'" data-ev-tile="128" data-ev-format="png">'+label+'</button>';
+  return '<button type="button" '+(ready?'':'disabled aria-disabled="true"')+' aria-label="'+label+'" title="'+esc(title)+'" data-ev-job="media.ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="'+model+'" data-ev-scale="'+scale+'" data-ev-tile="128" data-ev-format="png">'+label+'</button>';
  };
- const generalReady=general?.readiness==="ready";
- const animeReady=anime?.readiness==="ready";
+ const modelCard=(label:string,model:string,readiness:{id:string;readiness?:string;reason?:string}|undefined,presets:string)=>{
+  const ready=readiness?.readiness==="ready";
+  const stateLabel=ready?"READY":readiness?.readiness==="unavailable"?"NOT INSTALLED":readiness?.readiness==="disabled"?"DISABLED":"LOCKED";
+  const reason=readiness?.reason||"The worker has not reported readiness for this model.";
+  return '<section class="ai-upscale-model" aria-label="'+label+' model presets"><div class="ai-upscale-model-head"><strong>'+label+'</strong><span class="ai-upscale-state '+(ready?'is-ready':'is-locked')+'" role="status">'+stateLabel+'</span></div><div class="ai-upscale-presets">'+presets+'</div><p>'+esc(reason)+'</p></section>';
+ };
  const stateText=provider?.reason||"The worker has not reported AI upscaling readiness.";
- return '<div class="ai-upscale-controls"><small class="ai-upscale-label">AI SUPER-RESOLUTION · ORIGINAL PRESERVED</small><div class="ai-upscale-presets">'+button("realesrgan-x4plus",2,"General · 2×",general)+button("realesrgan-x4plus",3,"General · 3×",general)+button("realesrgan-x4plus",4,"General · 4×",general)+button("realesrgan-x4plus-anime",4,"Anime · 4×",anime)+'</div><small>General: '+esc(general?.reason||(generalReady?"Model-specific quality gate passed.":"Model weights and review status not reported."))+'</small><small>Anime: '+esc(anime?.reason||(animeReady?"Model-specific quality gate passed.":"Anime model weights and review status not reported."))+'</small><small>'+esc(stateText)+' Presets remain disabled until the selected model has installed weights, a successful execution self-test and its own reviewed quality evidence. The output is a separate derivative; the original is retained.</small></div>';
+ return '<section class="ai-upscale-controls" aria-label="AI image super-resolution"><div class="ai-upscale-heading"><div><small class="ai-upscale-label">IMAGE FINISHING</small><strong>AI super-resolution</strong></div><span class="ai-upscale-original">ORIGINAL PRESERVED</span></div><div class="ai-upscale-model-grid">'+
+  modelCard("General-purpose","realesrgan-x4plus",general,button("realesrgan-x4plus",2,"2×",general)+button("realesrgan-x4plus",3,"3×",general)+button("realesrgan-x4plus",4,"4×",general))+
+  modelCard("Anime & illustration","realesrgan-x4plus-anime",anime,button("realesrgan-x4plus-anime",4,"4×",anime))+
+  '</div><p class="ai-upscale-footnote">'+esc(stateText)+' Each model must pass its own installation, execution and reviewed-quality checks. Results are saved as separate derivatives; the source asset is not overwritten.</p></section>';
 }
+
 function renderAssets(){
  if(!state.assets.length)return '<div class="empty">No stored media yet. Upload a source file to begin.</div>';
  return '<div class="runtime-assets">'+state.assets.map(a=>{
