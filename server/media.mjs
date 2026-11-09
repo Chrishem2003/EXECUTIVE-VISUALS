@@ -378,7 +378,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const processor=createVideoAiUpscaleProcessor({
         runCommand:(binary,args,options={})=>run(binary,args,options.timeoutMs||30*60*1000,job.id,activeProcesses,()=>controller.signal.aborted,options.maxCaptureBytes||16000),
         upscalerFactory:aiUpscalerFactory,
-        maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),
+        maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||300),
         maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
         maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),
         maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
