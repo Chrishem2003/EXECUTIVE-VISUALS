@@ -46,6 +46,28 @@ test("grants a subscription period idempotently through the ledger RPC",async()=
   assert.deepEqual(await ledger.grantPeriodCredits(args),{ledgerId:"ledger-1",balance:120,replayed:true});
 });
 
+test("syncs subscription cancellation and grace-period status without activation",async()=>{
+  let request;
+  const ledger=createCloudSubscriptionLedger({...base,fetchImpl:async(url,options)=>{
+    request={url,body:JSON.parse(options.body)};
+    return new Response(JSON.stringify([{subscription_id:"sub-row-1",replayed:false,status:"past_due"}]),{status:200});
+  }});
+  const result=await ledger.syncSubscriptionStatus({
+    provider:"dodo",providerSubscriptionId:"subscription-123",status:"past_due",
+    planCode:"creator",cancelAtPeriodEnd:false,graceUntil:"2026-12-10T00:00:00.000Z",
+    metadata:{providerEventId:"evt-123"}
+  });
+  assert.deepEqual(result,{subscriptionId:"sub-row-1",replayed:false,status:"past_due"});
+  assert.equal(request.url,"https://example.supabase.co/rest/v1/rpc/sync_generation_subscription_status");
+  assert.equal(request.body.p_status,"past_due");
+  assert.equal(request.body.p_grace_until,"2026-12-10T00:00:00.000Z");
+  assert.equal(request.body.p_metadata.providerEventId,"evt-123");
+  await assert.rejects(ledger.syncSubscriptionStatus({
+    provider:"dodo",providerSubscriptionId:"subscription-123",status:"cancelled",
+    graceUntil:"2026-12-10T00:00:00.000Z"
+  }));
+});
+
 test("rejects invalid receipts and redacts service credentials",async()=>{
   const invalid=createCloudSubscriptionLedger({...base,fetchImpl:async()=>new Response("[]",{status:200})});
   await assert.rejects(invalid.grantPeriodCredits({subscriptionId:"sub-1",periodStart:subscription.periodStart}));
