@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -445,8 +446,9 @@ export function createAppServer() {
         send(res,200,atlas,cors);return;
       }
       if(path==="/api/providers"&&req.method==="GET"){
-        const upscaleModels=await Promise.all(["realesrgan-x4plus","realesrgan-x4plus-anime"].map(model=>aiUpscaleAdapter.probe(model)));
-        const aiUpscale={...upscaleModels[0],models:upscaleModels};
+        const [modelProbes,qualityEvidence]=await Promise.all([Promise.all(["realesrgan-x4plus","realesrgan-x4plus-anime"].map(model=>aiUpscaleAdapter.probe(model))),loadUpscaleQualityEvidence()]);
+        const upscaleModels=modelProbes.map(model=>({...model,qualityVerified:qualityEvidence.models[model.model]?.qualityVerified===true,qualityEvidence:qualityEvidence.models[model.model]?.qualityEvidence||null}));
+        const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
