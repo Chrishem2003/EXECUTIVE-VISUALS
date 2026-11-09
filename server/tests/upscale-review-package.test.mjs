@@ -76,6 +76,27 @@ test("rejects PNG files with a corrupted IDAT CRC even when the file checksum ma
  await writeFile(e.reportPath,JSON.stringify(report));
  await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid chunk checksum/);
 });
+test("rejects non-consecutive IDAT chunks",async t=>{
+ const e=await setup(t),valid=pngBytes(20,16),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ const ihdrEnd=8+8+13+4,idatLength=valid.readUInt32BE(ihdrEnd),idatStart=ihdrEnd+8,idatData=valid.subarray(idatStart,idatStart+idatLength);
+ const split=Math.max(1,Math.floor(idatData.length/2));
+ const output=Buffer.concat([valid.subarray(0,ihdrEnd),pngChunk("IDAT",idatData.subarray(0,split)),pngChunk("tEXt",Buffer.from("Comment\\0split")),pngChunk("IDAT",idatData.subarray(split)),pngChunk("IEND",Buffer.alloc(0))]);
+ await writeFile(join(e.run,"fixture-portrait.png"),output);report.records[0].outputSha256=hash(output);await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/IDAT chunks must be consecutive/);
+});
+test("rejects an unsupported critical PNG chunk",async t=>{
+ const e=await setup(t),valid=pngBytes(20,16),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ const ihdrEnd=8+8+13+4,output=Buffer.concat([valid.subarray(0,ihdrEnd),pngChunk("ABCD",Buffer.alloc(0)),valid.subarray(ihdrEnd)]);
+ await writeFile(join(e.run,"fixture-portrait.png"),output);report.records[0].outputSha256=hash(output);await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/unsupported critical chunk/);
+});
+test("rejects a PLTE chunk for grayscale PNG output",async t=>{
+ const e=await setup(t),valid=pngBytes(20,16),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(20,0);ihdr.writeUInt32BE(16,4);ihdr[8]=8;ihdr[9]=0;
+ const idatLength=valid.readUInt32BE(33),idatStart=41,idat=valid.subarray(33,idatStart+idatLength+4),output=Buffer.concat([valid.subarray(0,8),pngChunk("IHDR",ihdr),pngChunk("PLTE",Buffer.from([0,0,0])),idat,valid.subarray(idatStart+idatLength+4)]);
+ await writeFile(join(e.run,"fixture-portrait.png"),output);report.records[0].outputSha256=hash(output);await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid or misplaced PLTE/);
+});
 test("rejects PNG files truncated before IEND",async t=>{
  const e=await setup(t),valid=pngBytes(20,16),output=valid.subarray(0,valid.length-12),report=JSON.parse(await readFile(e.reportPath,"utf8"));
  await writeFile(join(e.run,"fixture-portrait.png"),output);
