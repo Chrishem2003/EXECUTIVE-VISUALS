@@ -209,7 +209,7 @@ async function runAction(action:HTMLElement){
   if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
   try{
    await persist();
-   if(state.mode==="cloud"){const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/timelines/"+state.timeline.id+"/render",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({})});state.cloudRenderJobId=queued.job.id;state.cloudRenderJobStatus=queued.job.status;}else await apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"timeline.render",timelineId:state.timeline.id,projectId:state.timeline.projectId||undefined})});
+   if(state.mode==="cloud"){const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/timelines/"+state.timeline.id+"/render",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({})});state.cloudRenderJobId=queued.job.id;state.cloudRenderJobStatus=queued.job.status;}else await apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"timeline.render",timelineId:state.timeline.id,projectId:timeline.projectId||undefined})});
    state.message=state.mode==="cloud"?"Cloud master render queued. Check Cloud Projects for durable job status.":"Master render queued. Check Production Operations for progress and the finished MP4.";
    window.dispatchEvent(new Event("ev:jobs-updated"));
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
@@ -254,14 +254,16 @@ async function runAction(action:HTMLElement){
  }
  if(type==="generate-proxy"||type==="generate-frame-preview"){
   if(state.mode!=="local"){state.message="Proxy and frame-preview jobs are currently available in the local media worker only.";paint();return;}
-  const clipId=action.dataset.clip||"",clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+  const timeline=state.timeline;
+  if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
+  const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a video clip with an accessible source asset.";paint();return;}
   try{
    const jobType=type==="generate-proxy"?"media.proxy":"media.thumbnail";
    const frameInput=document.querySelector<HTMLInputElement>("#tl-preview-source-frame");
    const sourceFrame=Math.max(0,Math.min(100000000,Number(frameInput?.value??clip.sourceRange.start.value)||0));
    const seconds=sourceFrame/sourceRate(asset,"video");
-   const body=jobType==="media.proxy"?{jobType,sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{jobType,sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined,seconds};
+   const body=jobType==="media.proxy"?{jobType,sourceAssetId:asset.id,projectId:timeline.projectId||undefined,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{jobType,sourceAssetId:asset.id,projectId:timeline.projectId||undefined,seconds};
    const queued=await apiRequest<{job:{id:string;status:string}}>("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify(body)});
    state.mediaJobId=queued.job.id;state.mediaJobType=jobType;state.mediaClipId=clipId;state.message=(jobType==="media.proxy"?"960p editing proxy":"Frame preview")+" queued. Use Check media job to attach or load the output.";
    window.dispatchEvent(new Event("ev:jobs-updated"));
