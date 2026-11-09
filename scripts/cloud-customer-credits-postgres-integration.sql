@@ -21,7 +21,7 @@ begin
   '66666666-6666-4666-8666-666666666666',100,'integration-credit-grant-001',
   'Replay','{"source":"ci_fixture"}'::jsonb
  );
- if not r.replayed or r.balance<>100 then raise exception 'credit grant idempotency failed'; end if;
+ if r.replayed is distinct from true or r.balance is distinct from 100 then raise exception 'credit grant idempotency failed: replayed %, balance %',r.replayed,r.balance; end if;
 end
 $credit_grant_replay$;
 
