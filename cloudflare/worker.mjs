@@ -151,8 +151,12 @@ async function d1Api(request, env, url) {
   try {
     const principal = await repo.resolvePrincipal({ subject: user.id, provider: user.provider, email: user.email });
     if (url.pathname === "/api/d1/projects" && request.method === "GET") {
-      const projects = await repo.listProjects({ actorId: principal.id });
-      return withCookies(json({ projects, storage: "cloudflare-d1-staging" }), sessionCookies);
+      const rawLimit = url.searchParams.get("limit");
+      const rawOffset = url.searchParams.get("offset");
+      const limit = rawLimit === null ? 50 : Number(rawLimit);
+      const offset = rawOffset === null ? 0 : Number(rawOffset);
+      const projects = await repo.listProjects({ actorId: principal.id, limit, offset });
+      return withCookies(json({ projects, page: { limit, offset }, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
     if (url.pathname === "/api/d1/projects" && request.method === "POST") {
       const body = await readJson(request);
