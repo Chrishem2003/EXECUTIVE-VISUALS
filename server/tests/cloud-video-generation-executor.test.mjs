@@ -13,7 +13,7 @@ const job = {
 };
 const succeeded = { taskId, status: "succeeded", outputUrls: ["https://cdn.example.test/output.mp4"] };
 function fixture({ state = "prepared", submitError = null, recordResult = true, status = succeeded,
-  metadata = {}, submittedMetadata = {}, cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
+  metadata = {}, submittedMetadata = {}, cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9", actualCredits: 12 },
   costError = null, ingestError = null, creditError = null } = {}) {
   const calls = [];
   let currentState = state;
@@ -55,6 +55,42 @@ test("cloud executor submits once, records task, verifies cost and ingests priva
   assert.equal(submission[3], ownerId);
 });
 
+
+test("workflow generation settles customer credits with provider task evidence before output ingestion", async () => {
+  const f = fixture();
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  const result = await executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f });
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "settleCredits", "ingest"]);
+  const settlement = f.calls.find(call => call[0] === "settleCredits")[1];
+  assert.equal(settlement.jobId, job.id);
+  assert.equal(settlement.ownerId, ownerId);
+  assert.equal(settlement.provider, "runway");
+  assert.equal(settlement.actualCredits, 12);
+  assert.equal(settlement.evidence.evidenceId, taskId);
+  assert.equal(settlement.evidence.evidenceReference, "provider-invoice:line-9");
+  assert.equal(result.customerCreditSettlement.balance, 40);
+});
+
+test("workflow generation refuses to guess customer credits when provider evidence omits actual credits", async () => {
+  const f = fixture({ cost: { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" } });
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "settleCredits"), false);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
+test("workflow generation quarantines settlement transport failures for idempotent reconciliation", async () => {
+  const f = fixture({ creditError: new Error("temporary database outage") });
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
 
 test("cloud executor runs non-billable provider preflight before the paid submission", async () => {
   const f = fixture();
