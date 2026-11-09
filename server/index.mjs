@@ -900,14 +900,20 @@ export function createAppServer() {
           const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
           if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))||source.project_id!==projectId){fail(res,400,"VIDEO_BATCH_SOURCE_INVALID","Every source must be an accessible MP4/MOV asset in the selected project.");return;}
           if(item.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm source-media rights for every video in the batch.");return;}
-          const model=String(item.model||"realesrgan-x4plus"),scale=Number(item.scale??2),tile=Number(item.tile??0),threads=String(item.threads??"1:2:2");
-          if(![2,4].includes(scale)||!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)||! /^[1-4]:[1-4]:[1-4]$/.test(threads)||(item.tta!==undefined&&typeof item.tta!=="boolean")){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Each video item must use 2x/4x scale, a supported tile size, valid thread plan and boolean TTA setting.");return;}
-          if(!readinessByModel.has(model)){
-            const readiness=await aiUpscaleAdapter.probe(model);
-            readinessByModel.set(model,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+          const engine=String(item.engine||"realesrgan-framewise"),model=engine==="flashvsr-v1.1-tiny-long"?"FlashVSR-v1.1-tiny-long":String(item.model||"realesrgan-x4plus"),scale=Number(item.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2)),tile=Number(item.tile??0),threads=String(item.threads??"1:2:2");
+          if(!["realesrgan-framewise","flashvsr-v1.1-tiny-long"].includes(engine)||engine==="flashvsr-v1.1-tiny-long"&&scale!==4||engine!=="flashvsr-v1.1-tiny-long"&&![2,4].includes(scale)||!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)||! /^[1-4]:[1-4]:[1-4]$/.test(threads)||(item.tta!==undefined&&typeof item.tta!=="boolean")){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Each video item must use a supported engine and scale, tile size, thread plan and boolean TTA setting.");return;}
+          const readinessKey=engine+":"+model;
+          if(!readinessByModel.has(readinessKey)){
+            if(engine==="flashvsr-v1.1-tiny-long"){
+              const readiness=await flashVsrAdapter.probe();
+              readinessByModel.set(readinessKey,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+            }else{
+              const readiness=await aiUpscaleAdapter.probe(model);
+              readinessByModel.set(readinessKey,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+            }
           }
-          if(!readinessByModel.get(model)){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","Every selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
-          normalized.push({sourceAssetId,model,scale,tile,threads,tta:item.tta===true,rightsConfirmed:true});
+          if(!readinessByModel.get(readinessKey)){fail(res,409,engine==="flashvsr-v1.1-tiny-long"?"FLASHVSR_NOT_READY":"AI_UPSCALE_MODEL_NOT_READY","Every selected engine must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+          normalized.push({sourceAssetId,engine,model,scale,tile,threads,tta:item.tta===true,rightsConfirmed:true});
         }
         const baseKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,160);
         const batchId=randomUUID();
