@@ -20,7 +20,33 @@ The path must refer to a regular, non-symlink file no larger than 4 MiB. The rea
 
 The JSON document has one top-level `records` array.
 
-Run `npm run verify:upscale-evidence` on the worker host to validate the configured file and print a sanitized per-model readiness report. Exit code `0` means at least one model has passed; `1` means the file is configured but no model passed; `2` means no evidence file is configured. The report does not print reviewer notes, evidence paths or source media. Each model must have a distinct, complete set of records covering all five categories:
+Run `npm run verify:upscale-evidence` on the worker host to validate the configured file and print a sanitized per-model readiness report. Exit code `0` means at least one model has passed; `1` means the file is configured but no model passed; `2` means no evidence file is configured. The report does not print reviewer notes, evidence paths or source media.
+
+## Generating a local execution benchmark
+
+The benchmark runner creates execution records but never approves visual quality. Prepare a local manifest containing exactly one fixture for each required category:
+
+```json
+{
+  "fixtures": [
+    { "fixtureId": "portrait-01", "fixtureCategory": "portrait", "path": "fixtures/portrait.png", "scale": 4 },
+    { "fixtureId": "texture-01", "fixtureCategory": "fine_texture", "path": "fixtures/texture.png", "scale": 4 },
+    { "fixtureId": "text-01", "fixtureCategory": "text", "path": "fixtures/text.png", "scale": 4 },
+    { "fixtureId": "animation-01", "fixtureCategory": "animation", "path": "fixtures/animation.png", "scale": 4 },
+    { "fixtureId": "lowlight-01", "fixtureCategory": "low_light_noisy", "path": "fixtures/lowlight.png", "scale": 4 }
+  ]
+}
+```
+
+Run this only on an isolated local worker with the NCNN/Vulkan executable and model files already installed. Explicitly enable the local engine for this operator-invoked command:
+
+```sh
+AI_UPSCALE_ENABLED=true REALESRGAN_NCNN_PATH=/absolute/path/realesrgan-ncnn-vulkan REALESRGAN_MODEL_DIR=/absolute/path/models npm run benchmark:upscale -- realesrgan-x4plus ./benchmark-fixtures.json ./benchmark-output
+```
+
+Use `realesrgan-x4plus-anime` to benchmark the anime model separately. The runner performs a model self-test, executes all five fixtures, checks exact output dimensions, hashes the executable, model files, inputs and outputs, and confirms those artifacts did not change during the run. It stores output images in a unique run folder and writes a separate JSON report. It rejects symlinked fixtures and unsafe paths.
+
+Every generated record deliberately has `qualityReview: "not_reviewed"`. Compare each source/output pair at native and enlarged viewing scales, record visible artifacts, text/edge integrity, detail retention, noise behavior and temporal consistency where relevant, then add the required human-review fields and review-artifact digest. Only after a genuine review may the records be copied into the configured evidence file. A successful benchmark command is not permission to enable production inference. Each model must have a distinct, complete set of records covering all five categories:
 
 - `portrait`
 - `fine_texture`
