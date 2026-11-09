@@ -97,7 +97,7 @@ begin
     '77777777-7777-4777-8777-777777777777',
     '88888888-8888-4888-8888-888888888888',15,'subscription-entitlement-test'
   );
-  if grant_one.reservation_id is null or grant_one.balance<>105 then
+  if grant_one.reservation_id is null or grant_one.balance<>225 then
     raise exception 'entitled creator generation reservation failed';
   end if;
 
