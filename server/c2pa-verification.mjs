@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises";
 const SHA256=/^[a-f0-9]{64}$/i;
 const DEFAULT_MAX_BYTES=250*1024*1024;
 const MAX_VALIDATION_ITEMS=100;
+const SUPPORTED_C2PA_MEDIA_TYPES=new Set(["image/jpeg","image/png","image/webp","image/gif","audio/mpeg","audio/wav","audio/x-wav","audio/mp4","video/mp4","video/quicktime"]);
 
 function fail(code,message,status=422){
  const error=new Error(message);error.code=code;error.status=status;return error;
@@ -71,6 +72,7 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
  return async function verifyC2paAsset({filePath,mediaType,expectedSha256,expectedSize}={}){
   if(typeof filePath!=="string"||!filePath)throw fail("C2PA_ASSET_PATH_REQUIRED","A stored asset path is required.");
   if(typeof mediaType!=="string"||!mediaType.includes("/"))throw fail("C2PA_MEDIA_TYPE_REQUIRED","A valid media type is required.");
+  const normalizedMediaType=mediaType.split(";")[0].trim().toLowerCase();
   if(typeof expectedSha256!=="string"||!SHA256.test(expectedSha256))throw fail("C2PA_ASSET_HASH_REQUIRED","A valid stored SHA-256 is required.");
   const before=await stat(filePath).catch(()=>null);
   if(!before?.isFile())throw fail("C2PA_ASSET_NOT_FOUND","The stored media asset is unavailable.",404);
@@ -78,6 +80,10 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   if(expectedSize!==undefined&&Number(expectedSize)!==before.size)throw fail("C2PA_ASSET_SIZE_MISMATCH","The stored asset size no longer matches its metadata.",409);
   const first=await hashFile(filePath);
   if(first.size!==before.size||first.sha256!==expectedSha256.toLowerCase())throw fail("C2PA_ASSET_INTEGRITY_MISMATCH","The stored asset does not match its registered SHA-256.",409);
+  if(!SUPPORTED_C2PA_MEDIA_TYPES.has(normalizedMediaType))return{
+   status:"validation_unavailable",present:null,valid:false,trusted:false,assetSha256:first.sha256,
+   validationState:null,findings:["C2PA_FORMAT_UNSUPPORTED"],manifest:null,validationStatuses:[]
+  };
   let sdk;
   try{sdk=await sdkLoader();}catch{throw fail("C2PA_SDK_UNAVAILABLE","The official CAI C2PA Node SDK is unavailable.",503);}
   if(!sdk?.Reader||!sdk?.Context)throw fail("C2PA_SDK_INVALID","The installed CAI C2PA SDK does not expose the required Reader and Context APIs.",503);
@@ -85,7 +91,7 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   if(trustAnchorsPath)settings.trust={trustAnchors:trustAnchorsPath,verifyTrustList:false};
   let reader;
   try{
-   reader=await sdk.Reader.fromAsset({path:filePath,mimeType:mediaType},new sdk.Context(settings));
+   reader=await sdk.Reader.fromAsset({path:filePath,mimeType:normalizedMediaType},new sdk.Context(settings));
   }catch{
    const after=await stat(filePath).catch(()=>null);
    const current=after?.isFile()?await hashFile(filePath).catch(()=>null):null;
