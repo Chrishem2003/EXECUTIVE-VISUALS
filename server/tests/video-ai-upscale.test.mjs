@@ -17,7 +17,7 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
  ];
  const outputStreams=[
   {codec_type:"video",codec_name:"h264",width:outputWidth,height:outputHeight,avg_frame_rate:"2/1",r_frame_rate:"2/1",nb_read_frames:String(outputFrames),duration:"1.5",start_time:"0",pix_fmt:"yuv420p"},
-  ...Array.from({length:outputAudio},()=>({codec_type:"audio",codec_name:"aac",start_time:"0",channels:2})),
+  ...Array.from({length:outputAudio},()=>({codec_type:"audio",codec_name:"aac",start_time:"0",sample_rate:"48000",channels:2})),
   ...Array.from({length:outputSubtitles},()=>({codec_type:"subtitle",codec_name:"mov_text"}))
  ];
  const temporalMetadata=[40,70,41,72,42].map((saturation,index)=>"[Parsed_metadata] frame:"+index+" pts:"+(index*14062)+" pts_time:"+(index*0.125).toFixed(6)+"\\n[Parsed_metadata] lavfi.signalstats.YAVG=80\\n[Parsed_metadata] lavfi.signalstats.SATAVG="+saturation+"\\n[Parsed_metadata] lavfi.signalstats.UAVG=128\\n[Parsed_metadata] lavfi.signalstats.VAVG=128").join("\\n");
