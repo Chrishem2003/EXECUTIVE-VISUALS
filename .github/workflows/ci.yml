@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: contentauth/c2pa-js
-          ref: 480975b
+          ref: 480975bc4103d03d1ca1705187ef46860950a5d8
           path: c2pa-js
       - uses: actions/setup-node@v4
         with:
