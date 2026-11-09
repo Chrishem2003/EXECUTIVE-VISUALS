@@ -25,6 +25,10 @@ function fakeAdapter({ mismatch = false } = {}) {
       await writeFile(outputPath, Buffer.from("mock image derivative"));
       return {
         model,
+        requestedTile: 128,
+        tile: 128,
+        tileFallbackUsed: false,
+        tileAttempts: [128],
         inputDimensions: { width, height },
         outputDimensions: { width: width * scale, height: height * scale + (mismatch ? 1 : 0) }
       };
@@ -67,6 +71,8 @@ test("runs local fixtures and writes execution-only evidence that still requires
   assert.equal(result.summary.execution.passed, 5);
   assert.equal(result.summary.qualityVerified, false);
   assert.ok(result.records.every(record => record.qualityReview === "not_reviewed"));
+  assert.ok(result.records.every(record => record.requestedTile === 128 && record.tile === 128 && record.tileFallbackUsed === false));
+  assert.ok(result.records.every(record => JSON.stringify(record.tileAttempts) === "[128]"));
   assert.ok(result.records.every(record => /^[a-f0-9]{64}$/.test(record.inputSha256) && /^[a-f0-9]{64}$/.test(record.outputSha256)));
   const report = JSON.parse(await readFile(result.reportPath, "utf8"));
   assert.equal(report.qualityReviewRequired, true);
