@@ -84,7 +84,7 @@ function renderAiUpscaleControls(assetId:string):string{
  const button=(model:string,scale:number,label:string,readiness:{id:string;readiness?:string;reason?:string}|undefined)=>{
   const ready=readiness?.readiness==="ready";
   const title=readiness?.reason||provider?.reason||"Model-specific readiness has not been reported.";
-  return '<button type="button" '+(ready?'':'disabled aria-disabled="true"')+' aria-label="'+label+'" title="'+esc(title)+'" data-ev-job="media.ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="'+model+'" data-ev-scale="'+scale+'" data-ev-tile="128" data-ev-format="png">'+label+'</button>';
+  return '<button type="button" '+(ready?'':'disabled aria-disabled="true"')+' aria-label="'+label+'" title="'+esc(title)+'" data-ev-job="media.ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="'+model+'" data-ev-scale="'+scale+'" data-ev-tile="0" data-ev-format="png">'+label+'</button>';
  };
  const modelCard=(label:string,readiness:{id:string;readiness?:string;reason?:string}|undefined,presets:string)=>{
   const ready=readiness?.readiness==="ready";
