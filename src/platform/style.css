@@ -659,3 +659,21 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .ai-upscale-model{padding:11px}
   .ai-upscale-presets button{flex:1;min-width:0}
 }
+
+
+/* Interactive source/derivative wipe: keyboard-accessible range control, no source replacement */
+.asset-compare-wipe{display:grid;gap:8px;min-width:0}
+.asset-compare-stage{position:relative;isolation:isolate;overflow:hidden;aspect-ratio:16/9;min-height:180px;background:#090d13;border:1px solid var(--line);border-radius:7px}
+.asset-compare-stage>.asset-compare-source,.asset-compare-enhanced img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain}
+.asset-compare-enhanced{position:absolute;inset:0;overflow:hidden;clip-path:inset(0 calc(100% - var(--ev-compare,50%)) 0 0)}
+.asset-compare-divider{position:absolute;top:0;bottom:0;left:var(--ev-compare,50%);width:2px;transform:translateX(-1px);background:#f8fafc;box-shadow:0 0 0 1px #111827aa;pointer-events:none}
+.asset-compare-divider:after{content:'↔';position:absolute;top:50%;left:50%;display:grid;place-items:center;width:26px;height:26px;transform:translate(-50%,-50%);border:1px solid #f8fafc;border-radius:50%;background:#171827;color:#fff;font-size:13px;box-shadow:0 2px 10px #0009}
+.asset-compare-tag{position:absolute;top:9px;z-index:2;padding:4px 6px;border:1px solid #ffffff36;border-radius:4px;background:#0a0d14cc;color:#fff;font-size:8px;font-weight:700;letter-spacing:.6px;pointer-events:none}
+.asset-compare-tag-source{left:9px}
+.asset-compare-tag-enhanced{right:9px}
+.asset-compare-control{display:grid;gap:5px;color:var(--muted);font-size:10px}
+.asset-compare-control input[type=range]{width:100%;margin:0;accent-color:#a78bfa;cursor:ew-resize}
+.asset-compare-links{display:flex;flex-wrap:wrap;gap:12px;font-size:10px}
+.asset-compare-links a{color:#c4b5fd;text-decoration:underline;text-underline-offset:2px}
+@media(max-width:600px){.asset-compare-stage{min-height:130px}}
+@media(prefers-reduced-motion:no-preference){.asset-compare-enhanced,.asset-compare-divider{transition:clip-path .06s linear,left .06s linear}}
