@@ -21,7 +21,7 @@ begin
      or p_actual_credits is null or p_actual_credits < 0 or p_actual_credits > 1000000000
      or p_evidence is null or jsonb_typeof(p_evidence) <> 'object'
      or p_evidence->>'provider' is distinct from p_provider
-     or p_evidence->>'evidenceType' not in
+     or coalesce(p_evidence->>'evidenceType','') not in
        ('provider_task_receipt','provider_invoice','provider_usage_reconciliation')
      or coalesce(p_evidence->>'evidenceId','') = ''
      or coalesce(p_evidence->>'evidenceReference','') = '' then
