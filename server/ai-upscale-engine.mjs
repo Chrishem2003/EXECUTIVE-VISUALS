@@ -269,7 +269,7 @@ async function validatePngFile(path, maxBytes) {
     const signature = await readExact(handle, 8, 0);
     if (!signature.equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw fail("AI upscaling output has an invalid PNG signature.", "AI_UPSCALE_OUTPUT_INVALID");
     let offset = 8, index = 0, width = 0, height = 0, bitDepth = 0, colorType = -1;
-    let hasIdat = false, idatEnded = false, hasPlte = false, hasIend = false;
+    let hasIdat = false, idatBytes = 0, idatEnded = false, hasPlte = false, hasIend = false;
     const critical = new Set(["IHDR", "PLTE", "IDAT", "IEND"]);
     while (offset < info.size) {
       if (info.size - offset < 12) throw fail("AI upscaling PNG output has a truncated chunk.", "AI_UPSCALE_OUTPUT_INVALID");
@@ -292,7 +292,7 @@ async function validatePngFile(path, maxBytes) {
         hasPlte = true;
       }
       if ((typeBytes[0] & 0x20) === 0 && !critical.has(type)) throw fail("AI upscaling PNG contains an unsupported critical chunk.", "AI_UPSCALE_OUTPUT_INVALID");
-      if (type === "IEND" && (length !== 0 || !hasIdat)) throw fail("AI upscaling PNG is missing IDAT or has an invalid IEND.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (type === "IEND" && (length !== 0 || !hasIdat || idatBytes === 0)) throw fail("AI upscaling PNG is missing image data or has an invalid IEND.", "AI_UPSCALE_OUTPUT_INVALID");
       let crc = updatePngCrc(0xffffffff, typeBytes), dataOffset = offset + 8, remaining = length;
       const ihdr = type === "IHDR" ? Buffer.alloc(13) : null;
       let copied = 0;
@@ -313,7 +313,7 @@ async function validatePngFile(path, maxBytes) {
           throw fail("AI upscaling PNG has invalid dimensions or IHDR fields.", "AI_UPSCALE_OUTPUT_INVALID");
         }
       }
-      if (type === "IDAT") hasIdat = true;
+      if (type === "IDAT") { hasIdat = true; idatBytes += length; }
       if (type === "IEND") {
         if (colorType === 3 && !hasPlte) throw fail("AI upscaling indexed PNG is missing PLTE.", "AI_UPSCALE_OUTPUT_INVALID");
         hasIend = true;
