@@ -537,7 +537,7 @@ test("cloud workflow video quote fails closed when durable persistence is unavai
   fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote")
    ?{ok:false,status:503,async text(){return JSON.stringify({message:"database unavailable"});}}
    :{ok:true,status:200,async text(){return"[]";}},
-  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true,
   runwayRouterAdapter:{
    async prepareInput(input){return input;},
    async preflight(){providerCalls++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
@@ -575,7 +575,7 @@ test("cloud workflow video quote fails closed for unsupported nodes and unavaila
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
-  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true
  });
  const unsupported=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"image.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
  assert.equal(unsupported.status,422);
@@ -590,7 +590,7 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
-  timelineService:{timelines:{},assets:{}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async()=>true,
   runwaySourceResolver:{
    async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
@@ -611,3 +611,48 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
  assert.equal(prepared,0);
  assert.equal(preflight,0);
 });
+
+
+test("cloud workflow quote requires the actual project owner before provider preflight",async()=>{
+ let prepared=0,preflight=0,writes=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(){prepared++;return{};},async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:editor,body:{
+  projectId:project,requestId:"workflow-editor-quote",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"}
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED");
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
+ assert.equal(writes,0);
+});
+
+test("cloud workflow approval requires the actual project owner before any budget or job write",async()=>{
+ let writes=0,prepared=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(){prepared++;return{};}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:editor,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-editor-approval",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"},approvedMaxAmount:2.75
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED");
+ assert.equal(prepared,0);
+ assert.equal(writes,0);
+});
+
