@@ -154,3 +154,23 @@ test("rejects benchmark summaries that mix model versions or executable/model ar
   assert.equal(weightsSummary.qualityVerified, false);
   assert.equal(weightsSummary.invalidRecords.length, 1);
 });
+
+
+test("rejects multiple distinct fixtures for the same required category", () => {
+  const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
+  const approved = categories.map((fixtureCategory, index) => validRecord({
+    fixtureId: `category-${index}`,
+    fixtureCategory,
+    qualityReview: "reviewed_pass"
+  }));
+  const extraPortrait = validRecord({
+    fixtureId: "category-portrait-extra",
+    fixtureCategory: "portrait",
+    qualityReview: "reviewed_pass"
+  });
+  const summary = summarizeUpscaleBenchmarks([...approved, extraPortrait]);
+  assert.equal(summary.qualityVerified, false);
+  assert.equal(summary.validRecordCount, 5);
+  assert.equal(summary.invalidRecords.length, 1);
+  assert.match(summary.invalidRecords[0].issues.join(" "), /exactly one fixture record/);
+});
