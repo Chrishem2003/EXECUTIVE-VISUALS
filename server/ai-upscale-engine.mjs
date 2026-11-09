@@ -495,9 +495,8 @@ export function createRealEsrganAdapter({
     if (tileSize !== 0 && tileSize < 32) throw fail("Tile size must be zero or between 32 and 512.", "AI_UPSCALE_INVALID_OPTIONS");
     // NCNN's -j load:proc:save controls decode, inference and encode workers.
     // Keep a conservative aggregate cap because higher values can increase GPU memory use.
-    if (typeof threads !== "string" || !/^[1-4]:[1-4]:[1-4]$/.test(threads) ||
-        threads.split(":").reduce((sum, value) => sum + Number(value), 0) > 8) {
-      throw fail("Thread configuration must be load:proc:save with each value 1-4 and a combined maximum of 8.", "AI_UPSCALE_INVALID_OPTIONS");
+    if (typeof threads !== "string" || !/^[1-4]:[1-4]:[1-4]$/.test(threads)) {
+      throw fail("Thread configuration must be load:proc:save with each value between 1 and 4.", "AI_UPSCALE_INVALID_OPTIONS");
     }
     if (typeof tta !== "boolean") throw fail("TTA must be a boolean.", "AI_UPSCALE_INVALID_OPTIONS");
     const gpuId = gpu === "auto" ? "auto" : Number.isInteger(gpu) ? String(gpu) : typeof gpu === "string" && /^(?:0|[1-9][0-9]?)$/.test(gpu) ? gpu : null;
