@@ -97,3 +97,22 @@ execute function executive_visuals.record_video_generation_cost_ledger();
 
 comment on table executive_visuals.video_generation_cost_ledger is
   'Append-only provider actual-cost evidence written in the same transaction as cloud video job completion.';
+
+create or replace function executive_visuals.reject_video_cost_ledger_mutation()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $reject_video_cost_ledger_mutation$
+begin
+  raise exception 'VIDEO_COST_LEDGER_IS_APPEND_ONLY';
+end;
+$reject_video_cost_ledger_mutation$;
+
+revoke all on function executive_visuals.reject_video_cost_ledger_mutation()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists ev_video_cost_ledger_immutable
+  on executive_visuals.video_generation_cost_ledger;
+create trigger ev_video_cost_ledger_immutable
+before update or delete on executive_visuals.video_generation_cost_ledger
+for each row execute function executive_visuals.reject_video_cost_ledger_mutation();
