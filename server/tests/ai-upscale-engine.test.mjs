@@ -696,3 +696,26 @@ fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chun
     const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+for (const invalidData of ["not-a-zlib-stream", "short-scanlines"]) {
+  test("AI upscaler rejects invalid PNG IDAT datastream: " + invalidData, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-invalid-idat-"));
+    const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+    const input = join(directory, "source.png"), output = join(directory, "invalid-idat.png");
+    await writeFile(input, pngHeader(1, 1));
+    const generator = "#!/usr/bin/env node\\n" +
+      "const fs=require('node:fs'),zlib=require('node:zlib'),args=process.argv.slice(2),out=args[args.indexOf('-o')+1];\\n" +
+      "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\\n" +
+      "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\\n" +
+      "const payload=" + (invalidData === "not-a-zlib-stream" ? "Buffer.from('not-a-zlib-stream')" : "zlib.deflateSync(Buffer.alloc(17))") + ";\\n" +
+      "fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',payload),chunk('IEND',Buffer.alloc(0))]));\\n";
+    await writeFile(binary, generator); await chmod(binary, 0o755);
+    await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+    try {
+      const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+      await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+      const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+}
