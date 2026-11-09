@@ -89,7 +89,13 @@ function isGpuMemoryFailure(error) {
 async function runWithTileFallback(binary, args, timeoutMs, signal, outputPath, requestedTile) {
   const candidates = requestedTile === 0 ? [0, ...FALLBACK_TILE_SIZES] : [requestedTile];
   const attemptedTiles = [];
+  const startedAt = Date.now();
   for (let index = 0; index < candidates.length; index++) {
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      await unlink(outputPath).catch(() => {});
+      throw fail("AI upscaling job exceeded its total time limit across tile retries.", "AI_UPSCALE_TIMEOUT");
+    }
     const tile = candidates[index];
     const attemptArgs = args.slice();
     const tileIndex = attemptArgs.indexOf("-t");
@@ -99,7 +105,7 @@ async function runWithTileFallback(binary, args, timeoutMs, signal, outputPath, 
     attemptArgs[tileIndex + 1] = String(tile);
     attemptedTiles.push(tile);
     try {
-      await run(binary, attemptArgs, timeoutMs, signal);
+      await run(binary, attemptArgs, remainingMs, signal);
       return { tile, attemptedTiles, fallbackUsed: tile !== requestedTile };
     } catch (error) {
       await unlink(outputPath).catch(() => {});
