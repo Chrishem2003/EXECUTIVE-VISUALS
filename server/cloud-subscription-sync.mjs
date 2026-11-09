@@ -10,6 +10,7 @@ export function ensureCloudSubscriptionSyncSchema(db){
     CREATE TABLE IF NOT EXISTS cloud_subscription_sync_outbox(
       id TEXT PRIMARY KEY,
       provider TEXT NOT NULL CHECK(provider IN ('dodo','flutterwave')),
+      action TEXT NOT NULL DEFAULT 'activate' CHECK(action IN ('activate','status')),
       provider_event_id TEXT NOT NULL,
       owner_id TEXT NOT NULL,
       plan_code TEXT NOT NULL,
@@ -30,13 +31,15 @@ export function ensureCloudSubscriptionSyncSchema(db){
     CREATE INDEX IF NOT EXISTS cloud_subscription_sync_pending_idx
       ON cloud_subscription_sync_outbox(processed_at,lease_expires_at,created_at);
   `);
+  const columns=new Set(db.prepare("PRAGMA table_info(cloud_subscription_sync_outbox)").all().map(row=>row.name));
+  if(!columns.has("action"))db.exec("ALTER TABLE cloud_subscription_sync_outbox ADD COLUMN action TEXT NOT NULL DEFAULT 'activate' CHECK(action IN ('activate','status'))");
 }
 
 export function enqueueCloudSubscriptionSync(db,{
   provider,providerEventId,ownerId,planCode,providerCustomerId=null,
-  providerSubscriptionId,periodStart,periodEnd,status="active",metadata={}
+  providerSubscriptionId,periodStart,periodEnd,status="active",metadata={},action="activate"
 }={}){
-  if(!["dodo","flutterwave"].includes(provider)||!providerEventId||!ownerId||
+  if(!["dodo","flutterwave"].includes(provider)||!["activate","status"].includes(action)||!providerEventId||!ownerId||
     !/^[a-z][a-z0-9_-]{1,40}$/.test(String(planCode||""))||!providerSubscriptionId||
     !Number.isFinite(Date.parse(periodStart))||!Number.isFinite(Date.parse(periodEnd))||
     Date.parse(periodEnd)<=Date.parse(periodStart)||!["active","trialing","past_due"].includes(status)){
@@ -44,10 +47,10 @@ export function enqueueCloudSubscriptionSync(db,{
   }
   const id=randomUUID();
   db.prepare(`INSERT OR IGNORE INTO cloud_subscription_sync_outbox
-    (id,provider,provider_event_id,owner_id,plan_code,provider_customer_id,
+    (id,provider,action,provider_event_id,owner_id,plan_code,provider_customer_id,
      provider_subscription_id,period_start,period_end,status,metadata_json,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id,provider,String(providerEventId),String(ownerId),String(planCode),
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id,provider,action,String(providerEventId),String(ownerId),String(planCode),
       providerCustomerId?String(providerCustomerId):null,String(providerSubscriptionId),
       new Date(periodStart).toISOString(),new Date(periodEnd).toISOString(),status,
       JSON.stringify(metadata||{}),now());
@@ -85,23 +88,32 @@ export async function processNextCloudSubscriptionSync(db,{
       url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl
     });
     const metadata=parse(event.metadata_json);
-    const activated=await client.activateSubscription({
-      ownerId:event.owner_id,planCode:event.plan_code,provider:event.provider,
-      providerCustomerId:event.provider_customer_id,
-      providerSubscriptionId:event.provider_subscription_id,
-      periodStart:event.period_start,periodEnd:event.period_end,status:event.status,
-      metadata:{...metadata,providerEventId:event.provider_event_id,source:"verified_provider_webhook"}
-    });
-    const granted=await client.grantPeriodCredits({
-      subscriptionId:activated.subscriptionId,periodStart:event.period_start
-    });
+    const sourceMetadata={...metadata,providerEventId:event.provider_event_id,source:"verified_provider_webhook"};
+    let result;
+    if(event.action==="status"){
+      result=await client.syncSubscriptionStatus({
+        provider:event.provider,providerSubscriptionId:event.provider_subscription_id,
+        status:metadata.targetStatus,planCode:event.plan_code,
+        cancelAtPeriodEnd:metadata.cancelAtPeriodEnd===true,
+        graceUntil:metadata.graceUntil||null,metadata:sourceMetadata
+      });
+    }else{
+      const activated=await client.activateSubscription({
+        ownerId:event.owner_id,planCode:event.plan_code,provider:event.provider,
+        providerCustomerId:event.provider_customer_id,
+        providerSubscriptionId:event.provider_subscription_id,
+        periodStart:event.period_start,periodEnd:event.period_end,status:event.status,metadata:sourceMetadata
+      });
+      const granted=await client.grantPeriodCredits({subscriptionId:activated.subscriptionId,periodStart:event.period_start});
+      result={subscriptionId:activated.subscriptionId,ledgerId:granted.ledgerId,balance:granted.balance,
+        replayed:activated.replayed||granted.replayed};
+    }
     const done=db.prepare(`UPDATE cloud_subscription_sync_outbox
       SET processed_at=?,last_error=NULL,lease_owner=NULL,lease_expires_at=NULL
       WHERE id=? AND lease_owner=? AND processed_at IS NULL`)
       .run(now(),event.id,leaseOwner);
     if(done.changes!==1)throw fail("Cloud subscription sync lease was lost.","CLOUD_SUBSCRIPTION_SYNC_LEASE_LOST");
-    return {processed:true,subscriptionId:activated.subscriptionId,ledgerId:granted.ledgerId,
-      balance:granted.balance,replayed:activated.replayed||granted.replayed};
+    return {processed:true,...result};
   }catch(error){
     db.prepare(`UPDATE cloud_subscription_sync_outbox
       SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
