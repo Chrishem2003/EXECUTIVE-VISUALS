@@ -150,6 +150,7 @@ export async function runUpscaleBenchmark({
       const inputSha256 = await sha256File(fixture.inputPath, "Input fixture", MAX_FIXTURE_BYTES);
       const outputPath = join(outputRoot, fixture.fixtureId + ".png");
       const started = performance.now();
+      generatedOutputs.push(outputPath);
       const result = await adapter.execute({
         inputPath: fixture.inputPath,
         outputPath,
@@ -158,7 +159,6 @@ export async function runUpscaleBenchmark({
         tile: 128,
         format: "png"
       });
-      generatedOutputs.push(outputPath);
       if (result.model !== model ||
           result.outputDimensions?.width !== result.inputDimensions?.width * fixture.scale ||
           result.outputDimensions?.height !== result.inputDimensions?.height * fixture.scale) {
