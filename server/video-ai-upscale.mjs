@@ -85,7 +85,7 @@ export function createVideoAiUpscaleProcessor({
   if(!Number.isInteger(maxFrames)||maxFrames<1||maxFrames>18000)throw new TypeError("Video frame limit must be between 1 and 18,000.");
   if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>3600)throw new TypeError("Video duration limit is invalid.");
   async function process({
-    sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,expectedSourceSha256=null,signal,onProgress=()=>{}
+    sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,threads="1:2:2",tta=false,gpu="auto",expectedSourceSha256=null,signal,onProgress=()=>{}
   }={}){
     const started=Date.now();
     const progress=value=>{checkCancelled(signal);if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");onProgress(Math.max(0,Math.min(99,Math.round(value))));};
@@ -127,15 +127,15 @@ export function createVideoAiUpscaleProcessor({
       progress(12);
       const upscaler=upscalerFactory({timeoutMs:frameTimeoutMs,maxOutputBytes:250*1024*1024,maxOutputPixels});
       if(!upscaler||typeof upscaler.execute!=="function")throw fail("The configured AI image upscaler is unavailable.","AI_UPSCALE_ENGINE_UNAVAILABLE");
-      const tileAttempts=[];
+      const tileFallbackFrames=[];let tileFallbackCount=0;
       for(let index=0;index<extracted.length;index++){
         checkCancelled(signal);
         if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");
         const inputFrame=join(inputFrames,extracted[index]);
         const outputFrame=join(outputFrames,extracted[index]);
-        const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),format:"png",signal});
+        const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
         if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
-        tileAttempts.push(...(result.tileAttempts||[]));
+        if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
         progress(12+Math.round(((index+1)/source.frames)*70));
       }
       const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
@@ -163,9 +163,9 @@ export function createVideoAiUpscaleProcessor({
         path:outputPath,byteSize:outputInfo.size,inputBytes,sourceSha256,frameCount:source.frames,
         frameRate:{numerator:Number(String(fpsText).split("/")[0]),denominator:Number(String(fpsText).split("/")[1]||1)},
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
-        model,scale:Number(scale),tile:Number(tile),audioStreams:source.audio.length,
+        model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,
         audioHandling:audioCodecSafe?"original-audio-streams-copied":"audio-transcoded-to-aac",
-        frameProcessing:"sequential-image-model-inference",temporalConsistency:"not-certified",
+        frameProcessing:"sequential-image-model-inference",tileFallbackCount,tileFallbackFrames,temporalConsistency:"not-certified",
         qualityReviewRequired:true,qualityReviewReasons:["temporal-consistency-not-certified","human-review-required"]
       };
     }catch(error){
