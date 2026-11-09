@@ -51,11 +51,15 @@ function validateBatch(items, concurrency, maxItems) {
  */
 export function createUpscaleBatchProcessor({
   adapter,
+  assessor = null,
   defaultConcurrency = 1,
   maxItems = MAX_BATCH_ITEMS
 } = {}) {
   if (!adapter || typeof adapter.execute !== "function") {
     throw new TypeError("A configured AI upscaling adapter with execute() is required.");
+  }
+  if (assessor !== null && typeof assessor.assess !== "function") {
+    throw new TypeError("The optional quality assessor must provide assess().");
   }
   if (!Number.isInteger(defaultConcurrency) || defaultConcurrency < 1 || defaultConcurrency > MAX_CONCURRENCY) {
     throw new TypeError("Default batch concurrency must be from 1 to " + MAX_CONCURRENCY + ".");
@@ -95,6 +99,22 @@ export function createUpscaleBatchProcessor({
             ...item.options,
             signal
           });
+          let qualityAssessment = { status: "not_assessed", method: null };
+          if (assessor) {
+            try {
+              qualityAssessment = await assessor.assess({
+                candidatePath: result.path ?? item.outputPath,
+                tileSize: item.options.tile ?? 256,
+                signal
+              });
+            } catch (assessmentError) {
+              qualityAssessment = {
+                status: "assessment_unavailable",
+                method: "ffmpeg-pixel-analysis",
+                code: assessmentError?.code || "AI_UPSCALE_QUALITY_FAILED"
+              };
+            }
+          }
           results[index] = {
             id: item.id,
             status: "succeeded",
@@ -105,8 +125,8 @@ export function createUpscaleBatchProcessor({
             outputDimensions: result.outputDimensions ?? null,
             model: result.model ?? item.options.model ?? null,
             scale: result.scale ?? item.options.scale ?? null,
-            qualityAssessment: result.qualityAssessment ?? { status: "not_assessed", method: null },
-            // No trusted perceptual assessor is connected yet; keep the review gate closed.
+            qualityAssessment,
+            // Automated metrics inform review; only signed human evidence can clear the gate.
             qualityReviewRequired: true
           };
         } catch (error) {
