@@ -346,7 +346,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
   const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
-  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,effectClips:segments.filter(item=>item.effectsEnabled).length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
 export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
