@@ -67,11 +67,21 @@ export function summarizeUpscaleBenchmarks(records) {
   const validRecords = [];
   const invalidRecords = [];
   const seenFixtureIds = new Set();
+  const identityKeys = ["model", "modelVersion", "binarySha256", "modelFilesSha256"];
+  let benchmarkIdentity = null;
   for (const record of records) {
     const validation = validateUpscaleBenchmarkRecord(record);
     const duplicate = typeof record?.fixtureId === "string" && seenFixtureIds.has(record.fixtureId);
     if (typeof record?.fixtureId === "string") seenFixtureIds.add(record.fixtureId);
     if (duplicate) validation.issues.push("fixtureId must be unique within a benchmark summary");
+    if (validation.valid && !duplicate) {
+      const identity = Object.fromEntries(identityKeys.map(key => [key, key.endsWith("Sha256") ? record[key].toLowerCase() : record[key]]));
+      if (benchmarkIdentity === null) benchmarkIdentity = identity;
+      else if (identityKeys.some(key => identity[key] !== benchmarkIdentity[key])) {
+        validation.valid = false;
+        validation.issues.push("all records in a benchmark summary must use the same model and pinned executable/model artifacts");
+      }
+    }
     if (validation.valid && !duplicate) validRecords.push(record);
     else invalidRecords.push({ fixtureId: record?.fixtureId || null, issues: validation.issues });
   }

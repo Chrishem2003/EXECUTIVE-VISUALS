@@ -127,3 +127,19 @@ test("fails closed for invalid JSON and symlink evidence paths", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("rejects a model benchmark whose fixture records use different pinned model artifacts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-mixed-artifacts-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    const mixed = recordsFor();
+    mixed[4].binarySha256 = digest("f");
+    await writeFile(path, JSON.stringify({ records: mixed }));
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+    assert.equal(result.models["realesrgan-x4plus"].qualityEvidence, null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
