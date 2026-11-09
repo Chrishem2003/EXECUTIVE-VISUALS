@@ -10,14 +10,14 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, selectTimelinePreviewAsset, timelineDurationSeconds } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, selectTimelinePreviewAsset, timelineDurationSeconds, isTimelinePreviewUrlFresh } from "../core/timeline-playback";
 
 type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -66,18 +66,28 @@ function updatePreviewDiagnostics(){
 function releaseTimelinePreview(){
  stopTimelinePlayback();
  for(const url of Object.values(state.previewAssetUrls))if(url.startsWith("blob:"))URL.revokeObjectURL(url);
- state.previewAssetUrls={};state.previewUnavailableAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
+ state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
 }
 async function signedCloudPreviewUrl(asset:Asset):Promise<string>{
  const signed=await apiRequest<{asset:Asset;url:string;expiresIn:number}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
  let mediaUrl:URL;try{mediaUrl=new URL(signed.url);}catch{throw new Error("Cloud storage returned an invalid preview URL.");}
  if(signed.asset?.id!==asset.id||signed.asset.mediaType!==asset.mediaType||mediaUrl.protocol!=="https:"||mediaUrl.username||mediaUrl.password||mediaUrl.hash||!mediaUrl.pathname.includes("/storage/v1/object/sign/")||!Number.isInteger(signed.expiresIn)||signed.expiresIn<30||signed.expiresIn>3600)throw new Error("Cloud storage returned an unsafe or mismatched preview asset.");
+ state.previewAssetUrlExpiresAt[asset.id]=Date.now()+signed.expiresIn*1000;
  return mediaUrl.href;
 }
 async function previewUrlForAsset(asset:Asset):Promise<string>{
- if(state.mode==="cloud")return signedCloudPreviewUrl(asset);
+ const cached=state.previewAssetUrls[asset.id];
+ if(state.mode==="cloud"){
+  if(cached&&isTimelinePreviewUrlFresh(state.previewAssetUrlExpiresAt[asset.id]||0))return cached;
+  const renewed=await signedCloudPreviewUrl(asset);
+  state.previewAssetUrls[asset.id]=renewed;
+  return renewed;
+ }
+ if(cached)return cached;
  const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(asset.id)+"/file");
- return URL.createObjectURL(blob);
+ const url=URL.createObjectURL(blob);
+ state.previewAssetUrls[asset.id]=url;
+ return url;
 }
 async function loadTimelinePreview(){
  if(!state.timeline)throw new Error("Open a timeline before loading playback media.");
@@ -97,8 +107,7 @@ async function loadTimelinePreview(){
  try{
   let fallbacks=0;
   for(const {asset,source} of required.values()){
-   if(state.previewAssetUrls[asset.id])continue;
-   try{state.previewAssetUrls[asset.id]=await previewUrlForAsset(asset);}
+   try{await previewUrlForAsset(asset);}
    catch(error){
     if(asset.id===source.id)throw error;
     state.previewUnavailableAssetIds.push(asset.id);fallbacks++;
