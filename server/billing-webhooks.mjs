@@ -299,7 +299,7 @@ export async function cancelFlutterwaveSubscription(db,{user,secretKey=process.e
   const metadata=parse(local.metadata_json);
   const paymentPlanId=String(metadata.paymentPlanId||"");
   const initialTransactionId=String(metadata.initialTransactionId||"");
-  if(!/^\\d{1,18}$/.test(paymentPlanId)||!/^[0-9]{1,30}$/.test(initialTransactionId))
+  if(!/^[0-9]{1,18}$/.test(paymentPlanId)||!/^[0-9]{1,30}$/.test(initialTransactionId))
     throw fail("This subscription is missing the verified provider references needed for safe cancellation.","BILLING_SUBSCRIPTION_REFERENCE_MISSING",409);
   const query=new URLSearchParams({email:String(local.email).trim().toLowerCase(),plan:paymentPlanId,transaction_id:initialTransactionId,status:"active",page:"1"});
   const headers={authorization:"Bearer "+secretKey,accept:"application/json"};
