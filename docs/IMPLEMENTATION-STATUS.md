@@ -1,14 +1,14 @@
 # Executive Visuals — implementation status
 
-**Updated:** 8 November 2026  
-**Branch:** `feat/c2pa-node-provenance-verification` (provenance increment; based on `main`)  
+**Updated:** 9 November 2026  
+**Branch:** `main` (studio readability and responsive polish integrated in PR #266; CI quality checks passed)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
 
 | Area | Implemented behavior | Boundary |
 |---|---|---|
-| Product shell and navigation | Unified browser application with a dedicated Explore directory, searchable capability catalogue, persistent grouped navigation, collapsible desktop rail, mobile drawer, active workspace states and Ctrl/Cmd-K command search | Browser app; keyboard and responsive navigation |
+| Product shell and navigation | Unified browser application with a dedicated Explore directory, searchable capability catalogue, persistent grouped navigation, collapsible desktop rail, mobile drawer, active workspace states and Ctrl/Cmd-K command search; studio readability pass adds stronger typography and contrast, responsive layout refinements, visible keyboard focus and reduced-motion support | Browser app; keyboard and responsive navigation |
 | Sign-in landing | Full-screen branded sign-in / account-creation experience with clear privacy messaging and mode-specific identity flow | Uses existing local development auth or configured external identity token verification; does not add a new OAuth provider or change backend auth policy |
 | Creative DNA compiler | AI Director compiles a brief into an editable creative promise, audience contract, emotional journey, five hook mechanisms, visual grammar, sound identity, story beats, distribution cuts, proof/rights checks and preflight; completeness is a deterministic field-coverage score | Local deterministic planning; not model inference or media generation; cloud project settings include the compiled Creative DNA snapshot; automated tests pass in GitHub Actions |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
