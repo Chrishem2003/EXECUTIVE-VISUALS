@@ -208,7 +208,7 @@ begin
   where r.id=p_reservation_id;
   if reservation.id is null then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
   perform 1 from executive_visuals.billing_credit_accounts a
-  where a.owner_id=reservation.owner_id and a.status='active' for update;
+  where a.owner_id=reservation.owner_id for update;
   if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
   select * into reservation from executive_visuals.billing_credit_reservations r
   where r.id=p_reservation_id for update;
@@ -265,7 +265,7 @@ begin
   where r.id=p_reservation_id;
   if reservation.id is null then raise exception 'BILLING_CREDIT_RESERVATION_NOT_FOUND'; end if;
   perform 1 from executive_visuals.billing_credit_accounts a
-  where a.owner_id=reservation.owner_id and a.status='active' for update;
+  where a.owner_id=reservation.owner_id for update;
   if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
   select * into reservation from executive_visuals.billing_credit_reservations r
   where r.id=p_reservation_id for update;
