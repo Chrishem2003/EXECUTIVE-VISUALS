@@ -257,6 +257,34 @@ test("verified Flutterwave recurring first payment activates one subscription an
   db.close();
 });
 
+test("verified Flutterwave recurring renewal extends one billing period and grants credits once",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES('flw-renewal-sub','user-pay-1',?,'active','flutterwave','9988','flw-subscription-9988',
+      '2026-11-10T00:00:00.000Z','2026-12-10T00:00:00.000Z',?)`)
+    .run(plan.id,JSON.stringify({paymentPlanId:"87654"}));
+  const payment={event:"charge.completed",data:{id:8765432,tx_ref:"flwrenewal_001",status:"successful",
+    amount:25000,currency:"UGX",payment_plan:87654,customer:{email:"pay@example.test",id:9988}}};
+  receiveFlutterwaveWebhook(db,signedPayload(payment));
+  const verifyTransaction=async()=>({id:8765432,tx_ref:"flwrenewal_001",status:"successful",
+    amount:25000,currency:"UGX",payment_plan:87654,customer:{id:9988,email:"pay@example.test"}});
+  const processed=await processNextFlutterwaveWebhook(db,{verifyTransaction});
+  assert.equal(processed.renewed,true);
+  assert.equal(getBillingBalance(db,"user-pay-1"),800);
+  const sub=db.prepare("SELECT current_period_start,current_period_end,status FROM billing_subscriptions WHERE id='flw-renewal-sub'").get();
+  assert.equal(sub.current_period_start,"2026-12-10T00:00:00.000Z");
+  assert.equal(sub.current_period_end,"2027-01-10T00:00:00.000Z");
+  assert.equal(sub.status,"active");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_credit_ledger WHERE idempotency_key LIKE 'flutterwave-subscription-renewal:%'").get().n,1);
+  const outbox=db.prepare("SELECT provider,provider_event_id FROM cloud_subscription_sync_outbox").get();
+  assert.equal(outbox.provider,"flutterwave");
+  assert.equal(outbox.provider_event_id,"charge.completed:8765432:successful");
+  db.close();
+});
+
 test("Flutterwave subscription cancellation updates local and cloud lifecycle without granting credits",async()=>{
   const {db}=setup();
   const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
