@@ -144,6 +144,39 @@ function dimensionsFromHeader(bytes) {
   return { width, height };
 }
 
+function imageHasAlpha(bytes) {
+  if (bytes.length >= 26 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR") {
+    const colorType = bytes[25];
+    if (colorType === 4 || colorType === 6) return true;
+    if (colorType !== 3) return false;
+    let offset = 8;
+    while (offset + 12 <= bytes.length) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      if (length > bytes.length - offset - 12) break;
+      if (type === "tRNS") return true;
+      if (type === "IDAT" || type === "IEND") return false;
+      offset += length + 12;
+    }
+    return false;
+  }
+  if (bytes.length >= 30 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP") {
+    const chunk = bytes.toString("ascii",12,16);
+    if (chunk === "VP8X") return Boolean(bytes[20] & 0x10);
+    if (chunk === "VP8L" && bytes[20] === 0x2f) return Boolean(bytes[24] & 0x10);
+  }
+  return false;
+}
+
+async function readImageHasAlpha(path) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return imageHasAlpha(header.subarray(0, bytesRead));
+  } finally { await handle.close(); }
+}
+
 async function readImageDimensions(path) {
   const handle = await open(path, "r");
   try {
@@ -255,6 +288,8 @@ export function createRealEsrganAdapter({
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
     const inputDimensions = await readImageDimensions(input);
+    const sourceHasAlpha = await readImageHasAlpha(input);
+    if (sourceHasAlpha && prepared.format === "jpg") throw fail("JPEG cannot preserve source transparency. Choose PNG or WebP output.", "AI_UPSCALE_ALPHA_JPEG_UNSUPPORTED");
     const projectedWidth = inputDimensions.width * prepared.scale;
     const projectedHeight = inputDimensions.height * prepared.scale;
     if (projectedWidth > MAX_IMAGE_DIMENSION || projectedHeight > MAX_IMAGE_DIMENSION || projectedWidth * projectedHeight > maxOutputPixels) {
@@ -268,11 +303,14 @@ export function createRealEsrganAdapter({
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
       const outputDimensions = await validateImageOutput(output, prepared.format);
+      const outputHasAlpha = await readImageHasAlpha(output);
+      if (sourceHasAlpha && !outputHasAlpha) throw fail("AI upscaling output lost source transparency; the derivative was rejected.", "AI_UPSCALE_ALPHA_LOST");
       if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
         throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
       }
       return {
         path: output, byteSize: info.size, inputDimensions, outputDimensions,
+        sourceHasAlpha, outputHasAlpha, alphaPreserved: !sourceHasAlpha || outputHasAlpha,
         model: prepared.model, scale: prepared.scale, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
         tileAttempts: execution.attemptedTiles, format: prepared.format,
