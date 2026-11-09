@@ -513,7 +513,7 @@ document.addEventListener("change",event=>{
 });
 function isTimelinePreviewMediaEvent(event:Event){
  const target=event.target;
- return target instanceof HTMLMediaElement&&Boolean(target.closest("#timeline-playback"));
+ return (target instanceof HTMLMediaElement||target instanceof HTMLImageElement)&&Boolean(target.closest("#timeline-playback"));
 }
 document.addEventListener("waiting",event=>{
  if(!isTimelinePreviewMediaEvent(event))return;
