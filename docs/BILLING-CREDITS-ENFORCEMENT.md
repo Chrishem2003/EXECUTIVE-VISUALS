@@ -145,3 +145,46 @@ transaction or a live provider callback. Cloud customer-credit reservation,
 provider invoice ingestion, and cross-ledger reconciliation remain release
 gates. No production billing flag or payment collection is enabled by this
 change.
+
+
+## Cloud PostgreSQL customer-credit reservation — implemented, staging-only
+
+The cloud video workflow now has a PostgreSQL customer-credit ledger and
+transactional reservation lifecycle in addition to the local SQLite billing
+engine. The cloud implementation is additive and is not applied to production
+by this change.
+
+- `executive_visuals.billing_credit_accounts` serializes account mutations
+  with a row lock and carries the active/suspended billing gate.
+- `executive_visuals.billing_credit_ledger` is append-only. Grants, generation
+  reservations, refunds and verified settlement adjustments are immutable,
+  uniquely idempotent ledger entries.
+- `executive_visuals.billing_credit_reservations` records the per-job
+  reservation and terminal settlement/release state.
+- Service-role-only RPCs grant credits, reserve before dispatch, settle against
+  typed provider evidence, and release a reservation when dispatch is safely
+  cancelled before provider submission.
+- The workflow approval/enqueue RPC now creates the customer-credit
+  reservation in the same PostgreSQL transaction as the provider-budget
+  reservation and durable job enqueue. Insufficient credits abort the whole
+  transaction; they cannot leave a queued job or consume the workflow quote.
+- Exact approval retries return the existing job and do not reserve credits
+  twice. Conflicting amounts, owners, jobs or settlement evidence are rejected.
+- Settlements refund unused estimated credits or debit an actual-usage shortfall
+  with compensating ledger entries. The original reservation entry is never
+  edited or deleted.
+
+The disposable PostgreSQL CI suite verifies grant idempotency, reservation
+debits, insufficient balance rejection, settlement/refund math, conflicting
+replays, release, ledger immutability, and customer-credit reservation within
+the workflow approval/enqueue transaction. Both the Quality and Google Drive
+PostgreSQL integration workflows exercise the migration chain.
+
+**Remaining integration gate:** the provider worker must call the cloud
+settlement/release RPCs with authoritative task receipts or invoice evidence
+for every terminal path. The current cloud migration establishes the durable
+accounting contract and atomic enqueue gate; it does not silently treat local
+SQLite billing as cloud settlement. Plan catalogue synchronization,
+subscription lifecycle webhooks, payment-provider settlement and production
+cutover remain separate approval-gated work. No payment collection or
+production billing flag is enabled.
