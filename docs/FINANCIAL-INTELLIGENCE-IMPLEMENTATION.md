@@ -196,3 +196,20 @@ Added `supabase/migrations/20261110150000_flutterwave_ugx_checkout.sql` and exte
 - Only Uganda UGX mobile-money MTN/Airtel is in this batch. Card checkout, subscriptions, renewals, chargeback evidence workflows and failed-payment recovery are subsequent batches.
 - The new SQL migration has not been applied to any Supabase project. Billing remains disabled by default. No merchant account, API key, live payment, refund or production deployment was configured.
 - CI status has not yet reported checks for the latest branch commit; tests are added but not reported as passed.
+
+
+## Batch 3 — credit balance and reservation accounting (development branch)
+
+Added `supabase/migrations/20261110170000_credit_reservation_accounting.sql` and an owner-scoped read endpoint.
+
+- Introduces `credit_reservations` with reserved / settled / released states, owner scope, job linkage, metadata and idempotency key.
+- Adds `get_credit_balance` RPC. Balance is computed server-side as immutable ledger credits minus active reservations; clients cannot supply or edit the balance.
+- Adds atomic `reserve_credit_units` RPC. Owner-level advisory transaction locking prevents concurrent jobs from reserving the same available credits; duplicate keys replay only when amount and job match.
+- Adds `settle_credit_reservation` RPC. Successful execution writes one negative `settlement` ledger entry and changes the reservation state in the same transaction.
+- Adds `release_credit_reservation` RPC. Failed/cancelled work can release a reservation without creating a spend entry; settled reservations cannot be released.
+- All reservation tables and RPCs are service-role only. No client can invoke reserve, settle or release directly.
+- Adds authenticated `GET /api/billing/credits` and tests for owner scoping and malformed balance data.
+
+### Integration gate
+
+This batch establishes the accounting primitives only. It does **not** yet reserve or settle credits in the cloud generation/timeline worker or local generation pipeline. Do not activate credit packs or advertise purchased credits as usable until job creation, provider submission, terminal success/failure, retry/recovery and cancellation are wired to these RPCs. The new migration remains unapplied; no staging or production database was changed.
