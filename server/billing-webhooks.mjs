@@ -47,6 +47,21 @@ export function ensureBillingWebhookSchema(db) {
       WHERE provider_transaction_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS billing_payment_pending_idx
       ON billing_payment_orders(provider,status,created_at);
+    CREATE TABLE IF NOT EXISTS billing_flutterwave_subscription_checkouts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES billing_accounts(user_id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL REFERENCES billing_plans(id),
+      provider_payment_plan_id INTEGER NOT NULL,
+      tx_ref TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','failed','cancelled')),
+      provider_customer_id TEXT,
+      provider_subscription_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS billing_flw_subscription_owner_idx
+      ON billing_flutterwave_subscription_checkouts(user_id,status,created_at DESC);
+
     CREATE TABLE IF NOT EXISTS billing_refund_events (
       id TEXT PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -160,6 +175,84 @@ export async function verifyFlutterwaveTransaction({ transactionId, secretKey, f
   return body.data;
 }
 
+
+export function flutterwavePaymentPlanEnvName(planCode) {
+  const suffix=String(planCode||"").toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+  return suffix ? "FLW_PAYMENT_PLAN_ID_"+suffix : "";
+}
+
+export function flutterwaveRecurringCheckoutEnabled(env=process.env) {
+  return env.FLW_SUBSCRIPTIONS_ENABLED==="true" &&
+    (env.BILLING_ENFORCEMENT_ENABLED==="true"||env.CREDITS_ENABLED==="true") &&
+    !!(env.FLW_SECRET_KEY&&env.FLW_WEBHOOK_SECRET&&env.PUBLIC_APP_URL);
+}
+
+export async function createFlutterwaveSubscriptionCheckout(db,{
+  user,planId,secretKey,publicAppUrl,env=process.env,fetchImpl=fetch
+}={}) {
+  if(!flutterwaveRecurringCheckoutEnabled({...env,FLW_SECRET_KEY:secretKey,FLW_WEBHOOK_SECRET:env.FLW_WEBHOOK_SECRET,PUBLIC_APP_URL:publicAppUrl})) {
+    throw fail("Flutterwave recurring checkout is disabled until merchant approval, payment-plan mapping, webhook secret and billing enforcement are configured.","FLW_SUBSCRIPTIONS_DISABLED",503);
+  }
+  if(!user?.id||!user?.email)throw fail("Authenticated customer identity is required.","BILLING_USER_REQUIRED",401);
+  const account=db.prepare("SELECT status FROM billing_accounts WHERE user_id=?").get(String(user.id));
+  const plan=db.prepare("SELECT * FROM billing_plans WHERE id=? AND active=1").get(planId);
+  if(!account||account.status!=="active"||!plan)throw fail("Active account and recurring plan are required.","BILLING_TARGET_NOT_FOUND",404);
+  if(!["month","year"].includes(plan.interval)||!Number.isSafeInteger(Number(plan.amount_minor))||
+    Number(plan.amount_minor)<=0||!Number.isSafeInteger(Number(plan.credits_per_period))||
+    Number(plan.credits_per_period)<=0||currencyExponent(plan.currency)===null) {
+    throw fail("Flutterwave recurring checkout requires a priced monthly or yearly plan with positive credits.","BILLING_PRODUCT_INVALID");
+  }
+  const envName=flutterwavePaymentPlanEnvName(plan.code);
+  const paymentPlanId=String(env[envName]||"");
+  if(!/^\d{1,18}$/.test(paymentPlanId))throw fail("The Flutterwave payment-plan ID for this plan is not configured.","FLW_PAYMENT_PLAN_NOT_CONFIGURED",503);
+  let base;
+  try{base=new URL(publicAppUrl);}catch{throw fail("A valid public application URL is required.","BILLING_REDIRECT_URL_INVALID",503);}
+  const local=["localhost","127.0.0.1"].includes(base.hostname);
+  if(base.protocol!=="https:"&&!(local&&env.NODE_ENV!=="production"))throw fail("Payment return URLs must use HTTPS.","BILLING_REDIRECT_URL_INVALID",503);
+  if(base.username||base.password||base.search||base.hash)throw fail("Public application URL must not contain credentials, query parameters or fragments.","BILLING_REDIRECT_URL_INVALID",503);
+  const id=randomUUID(),txRef="ev_"+id.replaceAll("-","");
+  const timestamp=now();
+  db.prepare(`INSERT INTO billing_flutterwave_subscription_checkouts
+    (id,user_id,plan_id,provider_payment_plan_id,tx_ref,status,created_at,updated_at)
+    VALUES(?,?,?,?,?,'pending',?,?)`).run(id,String(user.id),plan.id,Number(paymentPlanId),txRef,timestamp,timestamp);
+  const exponent=currencyExponent(plan.currency);
+  const amount=Number(plan.amount_minor)/(10**exponent);
+  let response;
+  try{
+    response=await fetchImpl("https://api.flutterwave.com/v3/payments",{
+      method:"POST",headers:{authorization:"Bearer "+secretKey,"content-type":"application/json",accept:"application/json"},
+      body:JSON.stringify({tx_ref:txRef,amount,currency:String(plan.currency).toUpperCase(),
+        redirect_url:new URL("/billing/return",base).toString(),
+        customer:{email:String(user.email).trim().toLowerCase()},
+        customizations:{title:"Executive Visuals",description:"Recurring "+plan.name+" subscription"},
+        payment_plan:Number(paymentPlanId),payment_options:"card",
+        meta:{subscription_checkout_id:id,plan_code:plan.code}}),
+      redirect:"error",signal:AbortSignal.timeout(15000)
+    });
+  }catch{
+    db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(),id);
+    throw fail("Flutterwave recurring checkout could not be created.","BILLING_CHECKOUT_CREATE_FAILED",502);
+  }
+  if(!response.ok){
+    db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(),id);
+    throw fail("Flutterwave rejected the recurring checkout request.","BILLING_CHECKOUT_CREATE_FAILED",502);
+  }
+  let body;try{body=await response.json();}catch{
+    db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(),id);
+    throw fail("Flutterwave returned an invalid checkout response.","BILLING_PROVIDER_RESPONSE_INVALID",502);
+  }
+  let link;try{link=new URL(body?.data?.link);}catch{
+    db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(),id);
+    throw fail("Flutterwave did not return a valid hosted checkout URL.","BILLING_PROVIDER_RESPONSE_INVALID",502);
+  }
+  if(body?.status!=="success"||link.protocol!=="https:"||
+    !(link.hostname==="flutterwave.com"||link.hostname.endsWith(".flutterwave.com"))){
+    db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(),id);
+    throw fail("Flutterwave returned an untrusted checkout destination.","BILLING_PROVIDER_RESPONSE_INVALID",502);
+  }
+  return {orderId:id,txRef,checkoutUrl:link.toString(),amountMinor:Number(plan.amount_minor),
+    currency:String(plan.currency).toUpperCase(),credits:Number(plan.credits_per_period),interval:plan.interval,paymentMethod:"card"};
+}
 
 export async function createFlutterwaveCheckout(db, {
   user,
