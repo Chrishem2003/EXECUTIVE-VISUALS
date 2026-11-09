@@ -137,6 +137,12 @@ select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000'
 reset role;
 set role service_role;
 
+select * from executive_visuals.grant_generation_credits(
+ '123e4567-e89b-42d3-a456-426614174000',100000,
+ 'cloud-video-workflow-credit-seed','Cloud video PostgreSQL integration seed',
+ '{"source":"disposable_ci_fixture"}'::jsonb
+);
+
 -- Workflow quote ledger: service-role-only immutable quote recording.
 do $workflow_quote_privileges$
 begin
@@ -223,6 +229,7 @@ select * from executive_visuals.approve_and_enqueue_video_workflow(
 do $workflow_quote_approval_result$
 declare result_row record; quote_row executive_visuals.video_workflow_quotes;
        reservation executive_visuals.video_generation_budget_reservations;
+       customer_reservation executive_visuals.billing_credit_reservations;
        approval executive_visuals.video_generation_budget_approvals;
        policy executive_visuals.video_generation_budget_policies;
 begin
@@ -230,6 +237,8 @@ begin
  select * into quote_row from executive_visuals.video_workflow_quotes
   where id='723e4567-e89b-42d3-a456-426614174000';
  select * into reservation from executive_visuals.video_generation_budget_reservations
+  where job_id=result_row.job_id;
+ select * into customer_reservation from executive_visuals.billing_credit_reservations
   where job_id=result_row.job_id;
  select * into approval from executive_visuals.video_generation_budget_approvals
   where id=reservation.approval_id;
@@ -244,6 +253,10 @@ begin
     or quote_row.state <> 'consumed'
     or reservation.state <> 'reserved'
     or reservation.reserved_amount <> 2.75
+    or customer_reservation.id is null
+    or customer_reservation.owner_id <> '123e4567-e89b-42d3-a456-426614174000'
+    or customer_reservation.reserved_credits <> quote_row.estimated_credits
+    or customer_reservation.state <> 'reserved'
     or approval.consumed_at is null
     or policy.reserved_amount <> 2.75 then
   raise exception 'workflow approval did not atomically consume quote, approve, reserve and enqueue';
@@ -275,7 +288,11 @@ begin
  if not replay_row.idempotent_replay
     or replay_row.job_id is distinct from first_row.job_id
     or replay_row.budget_reservation_id is distinct from first_row.budget_reservation_id
-    or replay_row.approval_id is distinct from first_row.approval_id then
+    or replay_row.approval_id is distinct from first_row.approval_id
+    or (select count(*) from executive_visuals.billing_credit_reservations
+        where job_id=first_row.job_id) <> 1
+    or (select count(*) from executive_visuals.billing_credit_ledger
+        where idempotency_key='credit-reserve:video-workflow:723e4567-e89b-42d3-a456-426614174000') <> 1 then
   raise exception 'workflow approval retry did not return the original job and reservation';
  end if;
 end
