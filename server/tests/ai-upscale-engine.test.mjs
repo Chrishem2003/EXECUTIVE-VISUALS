@@ -654,3 +654,24 @@ fs.symlinkSync(${JSON.stringify(input)}, out);
     await access(input);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test("AI upscaler rejects PNG containers with empty image-data chunks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-empty-idat-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "empty-idat.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2), out = args[args.indexOf("-o") + 1];
+function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}
+const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;
+fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",Buffer.alloc(0)),chunk("IEND",Buffer.alloc(0))]));
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
