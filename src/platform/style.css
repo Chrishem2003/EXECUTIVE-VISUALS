@@ -677,3 +677,145 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .asset-compare-links a{color:#c4b5fd;text-decoration:underline;text-underline-offset:2px}
 @media(max-width:600px){.asset-compare-stage{min-height:130px}}
 @media(prefers-reduced-motion:no-preference){.asset-compare-enhanced,.asset-compare-divider{transition:clip-path .06s linear,left .06s linear}}
+
+
+
+/* Executive Visuals 2026 studio polish: clearer hierarchy, readable controls and responsive workspace density. */
+:root{
+  color-scheme:dark;
+  font-size:16px;
+  --panel:#141925;
+  --line:#343047;
+  --muted:#b1a9c3;
+  --gold:#b8a0ff;
+  --purple-400:#b8a0ff;
+  --purple-500:#9670ff;
+  --purple-700:#7040dc;
+  --purple-glow:#9670ff38;
+}
+body{font-size:14px;line-height:1.55}
+.sidebar{width:272px;padding:26px 18px 20px}
+.main{margin-left:272px}
+.brand{gap:13px;padding:0 10px 25px}
+.brand-mark{width:44px;height:44px;border-radius:13px;font-size:15px}
+.brand b{font-size:13px}
+.brand small{font-size:9px}
+.workspace-label{padding:13px;margin-bottom:19px}
+.workspace-label b,.sidebar-foot b{font-size:12px}
+.workspace-label small,.sidebar-foot small{font-size:10px}
+.nav-group>small{font-size:10px}
+.nav-item{min-height:42px;padding:11px 12px;font-size:13px;gap:12px}
+.nav-item i{font-size:16px}
+.topbar{height:72px;padding:0 40px}
+.topbar>div{font-size:12px}
+.content{padding:42px 44px 76px;max-width:1600px}
+.page-head{margin-bottom:30px}
+.eyebrow{font-size:10px;letter-spacing:2.1px}
+.page-head h1{font-size:clamp(30px,3vw,36px);line-height:1.16;margin:9px 0}
+.page-head p{font-size:14px;line-height:1.7}
+.primary,.secondary,.light,.quiet,.danger{min-height:42px;padding:11px 17px;font-size:12px;border-radius:9px}
+.hero{min-height:310px;padding:38px 42px;border-radius:16px}
+.hero h2{font-size:clamp(34px,3vw,42px);line-height:1.14}
+.hero p{font-size:13px;line-height:1.8}
+.stats{gap:14px;margin:20px 0 38px}
+.stats>div{padding:18px;border-radius:12px}
+.stats small,.stats span{font-size:11px}
+.stats b{font-size:29px}
+.section-title{margin:34px 0 17px}
+.section-title h2{font-size:21px}
+.module-grid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:13px}
+.module{min-height:155px;padding:19px;border-radius:12px}
+.module i{font-size:21px}
+.module b{font-size:13px}
+.module small{font-size:11px;line-height:1.6}
+.module span{font-size:10px}
+.panel{padding:25px;margin-bottom:17px;border-radius:12px}
+.panel h2{font-size:21px;margin:8px 0 20px}
+.panel h3{font-size:15px}
+.panel p,.panel li{font-size:12px;line-height:1.75}
+.panel label{font-size:12px;margin-top:8px}
+.panel input,.panel textarea,.panel select{min-height:43px;padding:12px 13px;font-size:13px;border-radius:8px}
+.panel textarea{min-height:110px}
+.form-grid{gap:13px}
+.two-col{gap:17px}
+.plan{font-size:12px;line-height:1.8;padding:17px}
+.project-grid,.shot-grid,.asset-grid{gap:14px}
+.project,.shot,.asset{padding:18px;border-radius:11px}
+.project small,.project span,.shot small,.asset small{font-size:10px}
+.project b,.asset b{font-size:14px}
+.project p{font-size:12px;line-height:1.7;max-height:90px}
+.notice{padding:15px 17px;font-size:12px;border-radius:10px}
+.operation-grid,.engine-grid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.operation,.engine{padding:18px;border-radius:11px}
+.operation i{font-size:22px}
+.operation b,.engine b{font-size:12px}
+.operation small,.engine small{font-size:10px}
+.pill{font-size:10px;padding:8px 12px}
+.graph{padding:28px;gap:12px}
+.graph-node{flex-basis:165px;padding:14px}
+.graph-node>b{font-size:12px}
+.graph-node small{font-size:10px}
+.empty{padding:28px;font-size:12px;line-height:1.8}
+.ev-account-chip{padding:8px 12px}
+.ev-account-copy b{font-size:12px}
+.ev-account-copy small{font-size:10px}
+.ev-account-panel{padding:18px 20px}
+.ev-account-panel-main h3{font-size:15px}
+.ev-account-panel-main p,.ev-account-panel-main small{font-size:11px}
+.ev-member-identity b{font-size:12px}
+.ev-member-identity small,.ev-member-form small{font-size:10px}
+.ev-member-role{font-size:9px}
+.readiness-hero h2{font-size:clamp(23px,3vw,34px)}
+.readiness-hero p{font-size:13px}
+.readiness-metrics strong{font-size:25px}
+.readiness-metrics span{font-size:11px}
+.readiness-item{padding:16px;border-radius:11px}
+.readiness-item-top b{font-size:13px}
+.readiness-item p{font-size:11px;line-height:1.7}
+.readiness-item small,.readiness-item a,.readiness-links a{font-size:10px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid #c4b5fd;
+  outline-offset:3px;
+}
+button,.module,.operation,.engine{transition:background-color .16s ease,border-color .16s ease,transform .16s ease,box-shadow .16s ease}
+@media(max-width:1100px){
+  .sidebar{width:238px}
+  .main{margin-left:238px}
+  .content{padding:34px 28px 60px}
+  .topbar{padding:0 28px}
+  .module-grid{grid-template-columns:repeat(auto-fit,minmax(185px,1fr))}
+}
+@media(max-width:760px){
+  .sidebar{width:100%;height:auto;inset:0 0 auto;padding:10px 14px;background:#0e121af5;border-right:0;border-bottom:1px solid var(--line)}
+  .brand{padding:0;gap:9px}
+  .brand-mark{width:36px;height:36px}
+  .workspace-label,.sidebar-foot{display:none}
+  #nav{display:flex;gap:5px;overflow-x:auto;padding-top:9px}
+  .nav-group{display:contents}
+  .nav-group>small{display:none}
+  .nav-item{width:auto;min-width:max-content;min-height:38px;padding:8px 11px;font-size:11px}
+  .main{margin-left:0;padding-top:100px}
+  .topbar{height:54px;padding:0 17px}
+  .content{padding:24px 16px 48px}
+  .page-head{align-items:flex-start;flex-direction:column;gap:13px}
+  .page-head h1{font-size:29px}
+  .page-head p{font-size:13px}
+  .hero{min-height:unset;padding:25px 22px}
+  .hero h2{font-size:30px}
+  .hero-art{display:none}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .stats>div{padding:13px}
+  .stats b{font-size:24px}
+  .module-grid,.project-grid,.shot-grid,.asset-grid,.operation-grid,.engine-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .two-col{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .panel{padding:18px}
+}
+@media(max-width:420px){
+  .module-grid,.project-grid,.shot-grid,.asset-grid,.operation-grid,.engine-grid{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr 1fr}
+  .topbar>div{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
