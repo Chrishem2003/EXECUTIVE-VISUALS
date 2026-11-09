@@ -68,6 +68,8 @@ export function analyzeUpscalePixels({
   const flagged = boundaries.filter(item => item.flagged);
   const result = {
     status: flagged.length ? "needs_review" : "no_seam_anomaly_detected",
+    method: "pixel-gradient-seam-analysis",
+    algorithmVersion: "1.0.0",
     dimensions,
     seamAnalysis: {
       tileSize, boundariesChecked: boundaries.length, flaggedBoundaries: flagged.length,
@@ -153,6 +155,7 @@ export function createFfmpegImageDecoder({
       if (typeof path !== "string" || !path.trim()) throw fail("Image path is required.");
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink()) throw fail("Image must be a regular non-symlink file.", "AI_UPSCALE_INPUT_INVALID");
+      if (info.size < 1 || info.size > 250 * 1024 * 1024) throw fail("Image file is empty or exceeds the 250 MiB quality-analysis limit.", "AI_UPSCALE_QUALITY_LIMIT");
       const probe = await runBounded(ffprobePath, ["-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",path], { maxBytes: 64*1024, timeoutMs, signal });
       let parsed;
       try { parsed = JSON.parse(probe.stdout.toString("utf8")); } catch { throw fail("Image decoder returned invalid dimensions.", "AI_UPSCALE_DECODE_FAILED"); }
