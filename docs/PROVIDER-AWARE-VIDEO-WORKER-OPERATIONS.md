@@ -211,3 +211,25 @@ This exposes Runway's documented Model Router video-to-video path. It does not c
 ## Latest source-video validation checkpoint
 
 The provider-neutral contract now counts the source video toward the Runway Model Router's maximum of two video inputs. A source clip plus two additional references, or the same asset supplied as both source and reference, is rejected before queueing. The adapter independently enforces exactly one `source` role for `video-to-video`.
+
+
+## Immutable provider actual-cost ledger
+
+Cloud video completion now has a separate request-level cost record in
+`executive_visuals.video_generation_cost_ledger`. A PostgreSQL trigger writes
+the record in the same transaction that changes a video job to `succeeded`
+or `partial`, after the provider-budget reservation has been settled.
+
+Each row preserves the job, owner/project, provider/model, provider task ID,
+currency, approved reserved ceiling, verified actual amount, unused reserve,
+and provider evidence reference. A deterministic per-job idempotency key and
+unique job constraint prevent duplicate cost records. The ledger rejects
+updates and deletes; corrections must be represented by a separate
+reconciliation workflow rather than rewriting historical evidence.
+
+The disposable PostgreSQL integration suite verifies that successful
+Model Router completion creates exactly the expected cost record and that a
+subsequent mutation is rejected. This is provider-cost observability and
+reconciliation evidence, not customer-credit settlement. Customer-credit
+reservation/settlement is still not atomic with the cloud provider-budget
+transaction, and invoice ingestion is still a separate release gate.
