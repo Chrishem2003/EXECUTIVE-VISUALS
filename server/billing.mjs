@@ -445,7 +445,7 @@ export function settleBillingSpend(db, {
       db.prepare(`INSERT INTO billing_credit_ledger
         (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json,created_at)
         VALUES(?,?,?,?,?,?,?,?,?)`)
-        .run(adjustmentLedgerId,userId,delta>0?amount:-amount,eventType,description,
+        .run(adjustmentLedgerId,userId,delta,eventType,description,
           spend.reference_id,"billing-settlement:"+settleKey,
           safeJson({originalSpendId:spend.id,estimatedCredits:estimated,actualCredits:actual,evidence:JSON.parse(evidenceJson)}),
           new Date(now).toISOString());
