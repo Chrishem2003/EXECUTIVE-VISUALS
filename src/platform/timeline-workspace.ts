@@ -200,6 +200,8 @@ function paint(){const root=document.querySelector<HTMLElement>("#timeline-works
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
+ if(type==="undo"&&state.timeline&&history.undo.length){history.redo.push(JSON.parse(JSON.stringify(state.timeline)) as EditorialTimeline);state.timeline=history.undo.pop()!;state.message="Restoring previous timeline edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Undo could not be saved.";}paint();return;}
+ if(type==="redo"&&state.timeline&&history.redo.length){history.undo.push(JSON.parse(JSON.stringify(state.timeline)) as EditorialTimeline);state.timeline=history.redo.pop()!;state.message="Reapplying timeline edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Redo could not be saved.";}paint();return;}
  if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string}}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
  if(type==="render"){
   if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
@@ -215,10 +217,10 @@ async function runAction(action:HTMLElement){
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
-  const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
+  recordUndo();const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
   state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
- }else if(type==="trim")state.timeline=trimClip(state.timeline,trackId,clipId,12,12);
+ }else if(type==="trim"){recordUndo();state.timeline=trimClip(state.timeline,trackId,clipId,12,12);}
  else if(type==="move"){
   const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
   const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
@@ -234,7 +236,7 @@ async function runAction(action:HTMLElement){
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;if(!state.timeline)return;
  if(form.id==="tl-add-track"){
-  event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
+  event.preventDefault();recordUndo();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
   state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
@@ -248,7 +250,7 @@ document.addEventListener("submit",event=>{
   if(destination?.kind==="video"&&!asset.mediaType.startsWith("video/")&&!asset.mediaType.startsWith("image/")){alert("Video tracks require image or video assets.");return;}
   if(destination?.kind==="overlay"&&!asset.mediaType.startsWith("image/")){alert("Overlay tracks currently require still-image assets.");return;}
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
-  const sourceFps=sourceRate(asset,destination?.kind||"video");
+  recordUndo();const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
   try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
@@ -258,10 +260,11 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
   const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
-  const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
+  recordUndo();const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
   clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());
   clip.sourceRange={start:rational(sourceIn,sourceFps),duration:rational(duration/fps()*sourceFps,sourceFps)};
+  if(track.kind==="video")clip.metadata={...clip.metadata,timelineEffects:{brightness:Math.max(-0.5,Math.min(0.5,Number(data.get("effectBrightness"))||0)),contrast:Math.max(0.5,Math.min(2,Number(data.get("effectContrast"))||1)),saturation:Math.max(0,Math.min(2,Number(data.get("effectSaturation"))||1)),denoise:Math.max(0,Math.min(10,Number(data.get("effectDenoise"))||0)),sharpen:Math.max(0,Math.min(1,Number(data.get("effectSharpen"))||0))}};
   if(track.kind==="audio")clip.gainDb=Math.max(-60,Math.min(24,Number(data.get("gainDb"))||0));
   if(track.kind==="overlay")clip.metadata={...clip.metadata,x:Number(data.get("x"))||0,y:Number(data.get("y"))||0,width:Math.max(16,Number(data.get("width"))||16),height:Math.max(16,Number(data.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(data.get("opacity")??1)))};
   if(track.kind==="caption")clip.metadata={...clip.metadata,fontName:String(data.get("fontName")||"DejaVu Sans").slice(0,48),fontSize:Math.max(12,Math.min(96,Number(data.get("fontSize"))||32)),primaryColor:/^#[0-9a-f]{6}$/i.test(String(data.get("primaryColor")||""))?String(data.get("primaryColor")):"#FFFFFF",alignment:Math.max(1,Math.min(9,Number(data.get("alignment"))||2)),backgroundMode:data.get("backgroundMode")==="none"?"none":"box",backgroundColor:/^#[0-9a-f]{6}$/i.test(String(data.get("backgroundColor")||""))?String(data.get("backgroundColor")):"#000000",backgroundOpacity:Math.max(0,Math.min(1,Number(data.get("backgroundOpacity")??0.68))),outline:Math.max(0,Math.min(8,Number(data.get("outline")??2))),shadow:Math.max(0,Math.min(8,Number(data.get("shadow")??1))),marginV:Math.max(0,Math.min(240,Number(data.get("marginV"))||42))};
@@ -273,7 +276,7 @@ document.addEventListener("submit",event=>{
   state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-marker"){
-  event.preventDefault();const data=new FormData(form);
+  event.preventDefault();const data=new FormData(form);recordUndo();
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
