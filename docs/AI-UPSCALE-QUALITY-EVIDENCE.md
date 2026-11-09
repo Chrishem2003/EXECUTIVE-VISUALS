@@ -46,7 +46,18 @@ AI_UPSCALE_ENABLED=true REALESRGAN_NCNN_PATH=/absolute/path/realesrgan-ncnn-vulk
 The optional final argument selects the NCNN tile size: `128` is the default, `256` selects a larger explicit tile, and `0` selects the NCNN executable's automatic tile mode; if that attempt reports a recognized GPU-memory allocation failure, the worker retries with bounded smaller explicit tiles. For a controlled visual comparison, run the same pinned five fixtures and model into separate output directories at (for example) `128`, `256` and `0`. Review each report independently; do not combine records from different tile strategies into one five-fixture quality approval. Each report records the requested tile, actual tile, fallback flag and ordered attempts.
 ```
 
-Use `realesrgan-x4plus-anime` to benchmark the anime model separately. The runner validates the exact five-category manifest and resolves and hashes every fixture (including its size bound) before probing or self-testing the model, so a missing, oversized or unsafe later fixture cannot waste a GPU self-test or partial inference run. It rechecks each fixture immediately before inference, executes all five fixtures, checks exact output dimensions, hashes the executable, model files, inputs and outputs, and confirms those artifacts did not change during the run. It stores output images in a unique run folder and writes a separate JSON report. It rejects symlinked fixtures and unsafe paths.
+The benchmark and review pipeline supports these four NCNN/Vulkan model identifiers, each with an independent five-fixture benchmark and human approval:
+
+| Model | Intended content | Review emphasis |
+| --- | --- | --- |
+| `realesrgan-x4plus` | General photography and mixed imagery | Natural texture, faces, noise and invented detail |
+| `realesrnet-x4plus` | General restoration with a smoother MSE-oriented result | Over-smoothing, texture loss and edge fidelity |
+| `realesrgan-x4plus-anime` | Anime illustrations | Line continuity, flat-color boundaries and fine strokes |
+| `realesr-animevideov3` | Animation/video frames | Frame-to-frame consistency, line stability and flicker |
+
+These are upstream model names, not quality rankings. Choose the model by source content, and do not treat approval of one model as approval of another. The upstream NCNN executable exposes scale and tile options; this application validates requested output dimensions and records the actual tile path. NCNN's tiled crop-and-stitch processing can introduce block inconsistency, so reviewers must inspect tile boundaries as well as full-frame appearance. See the upstream [Real-ESRGAN usage and model notes](https://github.com/xinntao/Real-ESRGAN#portable-executable-files-ncnn).
+
+The runner validates the exact five-category manifest and resolves and hashes every fixture (including its size bound) before probing or self-testing the model, so a missing, oversized or unsafe later fixture cannot waste a GPU self-test or partial inference run. It rechecks each fixture immediately before inference, executes all five fixtures, checks exact output dimensions, hashes the executable, model files, inputs and outputs, and confirms those artifacts did not change during the run. It stores output images in a unique run folder and writes a separate JSON report. It rejects symlinked fixtures and unsafe paths.
 
 Every generated record records its requested tile size, final tile size, fallback flag and ordered tile attempts. This is required to reproduce the exact execution path and interpret tile-boundary artifacts during review. The current benchmark uses an explicit 128-pixel tile; automatic tile fallback is tested separately and is never silently substituted for an explicit tile selection.
 
