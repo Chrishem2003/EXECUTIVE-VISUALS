@@ -18,6 +18,7 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
   {codec_type:"video",width:outputWidth,height:outputHeight,avg_frame_rate:"2/1",r_frame_rate:"2/1",nb_read_frames:String(outputFrames),duration:"1.5",start_time:"0",pix_fmt:"yuv420p"},
   ...Array.from({length:outputAudio},()=>({codec_type:"audio",codec_name:"aac",start_time:"0"}))
  ];
+ const temporalMetadata=[40,70,41,72,42].map((saturation,index)=>"[Parsed_metadata] frame:"+index+" pts:"+(index*14062)+" pts_time:"+(index*0.125).toFixed(6)+"\\n[Parsed_metadata] lavfi.signalstats.YAVG=80\\n[Parsed_metadata] lavfi.signalstats.SATAVG="+saturation+"\\n[Parsed_metadata] lavfi.signalstats.UAVG=128\\n[Parsed_metadata] lavfi.signalstats.VAVG=128").join("\\n");
  const runCommand=async(binary,args)=>{
   if(binary==="ffprobe"&&args.includes("-count_frames")){
    const isOutput=args.at(-1)===outputPath;
@@ -30,6 +31,8 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
    for(let i=0;i<3;i++)await writeFile(join(dir,String(i).padStart(8,"0")+".png"),"frame");
    return {stdout:"",stderr:""};
   }
+  if(binary==="ffmpeg"&&args.some(value=>String(value).includes("gt(scene")) )return {stdout:"",stderr:""};
+  if(binary==="ffmpeg"&&args.some(value=>String(value).includes("signalstats")))return {stdout:"",stderr:temporalMetadata};
   if(binary==="ffmpeg"){
    await writeFile(args.at(-1),"rendered-video");
    if(mutateSourceOnAssembly)await writeFile(sourcePath,"mutated-source-bytes");
@@ -51,7 +54,7 @@ test("video AI upscaler enhances every frame, retains audio streams and verifies
  assert.deepEqual(result.outputDimensions,{width:128,height:128});
  assert.equal(result.audioStreams,1);
  assert.equal(result.audioHandling,"original-audio-streams-copied");
- assert.equal(result.temporalConsistency,"not-certified");
+ assert.equal(result.temporalConsistency,"not-certified");\n assert.equal(result.temporalQuality.status,"completed");\n assert.equal(result.temporalQuality.sampleCount,5);\n assert.ok(result.temporalQuality.findings.some(item=>item.code==="ALTERNATING_SATURATION_INSTABILITY"));
  assert.equal(result.qualityReviewRequired,true);
  assert.equal((await readFile(f.outputPath)).toString(),"rendered-video");
 });
