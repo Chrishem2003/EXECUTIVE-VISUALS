@@ -168,6 +168,40 @@ function imageHasAlpha(bytes) {
   return false;
 }
 
+function bitDepthFromHeader(bytes) {
+  if (bytes.length >= 25 &&
+      bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) &&
+      bytes.toString("ascii", 12, 16) === "IHDR") return bytes[24];
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    const sof = new Set([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf]);
+    let offset = 2;
+    while (offset + 4 <= bytes.length) {
+      if (bytes[offset] !== 0xff) { offset++; continue; }
+      while (bytes[offset] === 0xff) offset++;
+      const marker = bytes[offset++];
+      if (marker === 0xd9 || marker === 0xda) break;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 2 > bytes.length) break;
+      const segmentLength = bytes.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > bytes.length) break;
+      if (sof.has(marker) && segmentLength >= 7) return bytes[offset + 2];
+      offset += segmentLength;
+    }
+  }
+  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" &&
+      bytes.toString("ascii", 8, 12) === "WEBP") return 8;
+  return null;
+}
+
+async function readImageBitDepth(path) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bitDepthFromHeader(header.subarray(0, bytesRead));
+  } finally { await handle.close(); }
+}
+
 async function readImageHasAlpha(path) {
   const handle = await open(path, "r");
   try {
@@ -288,6 +322,8 @@ export function createRealEsrganAdapter({
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
     const inputDimensions = await readImageDimensions(input);
+    const sourceBitDepth = await readImageBitDepth(input);
+    if (sourceBitDepth !== null && sourceBitDepth > 8) throw fail("This NCNN/Vulkan adapter has not certified high-bit-depth input. Use an 8-bit source or a separately validated high-bit-depth inference path.", "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED");
     const sourceHasAlpha = await readImageHasAlpha(input);
     if (sourceHasAlpha && prepared.format === "jpg") throw fail("JPEG cannot preserve source transparency. Choose PNG or WebP output.", "AI_UPSCALE_ALPHA_JPEG_UNSUPPORTED");
     const projectedWidth = inputDimensions.width * prepared.scale;
@@ -303,6 +339,7 @@ export function createRealEsrganAdapter({
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
       const outputDimensions = await validateImageOutput(output, prepared.format);
+      const outputBitDepth = await readImageBitDepth(output);
       const outputHasAlpha = await readImageHasAlpha(output);
       if (sourceHasAlpha && !outputHasAlpha) throw fail("AI upscaling output lost source transparency; the derivative was rejected.", "AI_UPSCALE_ALPHA_LOST");
       if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
@@ -311,6 +348,8 @@ export function createRealEsrganAdapter({
       return {
         path: output, byteSize: info.size, inputDimensions, outputDimensions,
         sourceHasAlpha, outputHasAlpha, alphaPreserved: !sourceHasAlpha || outputHasAlpha,
+        ...(sourceBitDepth !== null ? { sourceBitDepth } : {}),
+        ...(outputBitDepth !== null ? { outputBitDepth } : {}),
         model: prepared.model, scale: prepared.scale, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
         tileAttempts: execution.attemptedTiles, format: prepared.format,
