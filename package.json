@@ -52,7 +52,8 @@
     "verify:upscale-evidence": "node server/scripts/verify-upscale-quality-evidence.mjs",
     "benchmark:upscale": "node server/scripts/run-upscale-benchmark.mjs",
     "verify:upscale-batch": "node --test server/tests/upscale-batch.test.mjs",
-    "verify:video-ai-upscale": "node --test server/tests/video-ai-upscale.test.mjs"
+    "verify:video-ai-upscale": "node --test server/tests/video-ai-upscale.test.mjs",
+    "assess:upscale-pair": "node server/scripts/assess-upscale-pair.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
