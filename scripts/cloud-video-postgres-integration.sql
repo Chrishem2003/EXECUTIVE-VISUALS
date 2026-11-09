@@ -839,8 +839,10 @@ select executive_visuals.finish_video_generation_job(
  'workflow-router-test-worker','succeeded',
  jsonb_build_object(
   'assetIds',jsonb_build_array('f23e4567-e89b-42d3-a456-426614174001'),
+  'provider','runway',
   'providerTaskId','router-task-pg-integration',
-  'model','model-router'
+  'model','model-router',
+  'costEvidenceReference','provider-receipt:router-task-pg-integration'
  ),null,2.25
 );
 
@@ -849,6 +851,7 @@ declare queued record; reservation executive_visuals.video_generation_budget_res
        policy executive_visuals.video_generation_budget_policies;
        submission executive_visuals.video_generation_submissions;
        job_row executive_visuals.jobs;
+       cost_row executive_visuals.video_generation_cost_ledger;
 begin
  select * into queued from workflow_approval_result;
  select * into reservation from executive_visuals.video_generation_budget_reservations
@@ -860,7 +863,14 @@ begin
  select * into submission from executive_visuals.video_generation_submissions
   where job_id=queued.job_id;
  select * into job_row from executive_visuals.jobs where id=queued.job_id;
+ select * into cost_row from executive_visuals.video_generation_cost_ledger where job_id=queued.job_id;
  if reservation.state <> 'settled' or reservation.actual_amount <> 2.25
+    or cost_row.job_id is null or cost_row.owner_id <> job_row.owner_id
+    or cost_row.provider <> 'runway' or cost_row.model <> 'model-router'
+    or cost_row.provider_task_id <> 'router-task-pg-integration'
+    or cost_row.currency <> 'USD' or cost_row.reserved_amount <> 4.5
+    or cost_row.actual_amount <> 2.25 or cost_row.unused_reservation <> 2.25
+    or cost_row.evidence_reference <> 'provider-receipt:router-task-pg-integration'
     or policy.reserved_amount <> 4.5 or policy.spent_amount <> 2.25
     or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
     or job_row.lease_owner is not null then
