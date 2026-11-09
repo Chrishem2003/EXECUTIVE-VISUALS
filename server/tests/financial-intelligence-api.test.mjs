@@ -434,3 +434,35 @@ test("subscription reconciliation queue denies support role before reading webho
   assert.equal(result.body.error.code,"SUBSCRIPTION_ADMIN_REQUIRED");
   assert.equal(queueRead,false);
 });
+
+
+test("provider readiness explains Flutterwave API version incompatibility without exposing credentials",async()=>{
+  const service=api(async()=>{throw new Error("readiness endpoint must not call provider or database when admin lookup is denied");});
+  // Admin role lookup is the only allowed request; provider credentials are never returned.
+  const adminService=api(async url=>{
+    if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+    throw new Error("Unexpected provider/database request");
+  });
+  const result=await adminService.handle({method:"GET",path:"/api/admin/billing/provider-readiness",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.equal(result.body.currentIntegrationApiVersion,"v4");
+  assert.equal(result.body.recurringPaymentPlansApiVersion,"v3");
+  assert.equal(result.body.recurringSubscriptionsAvailable,false);
+  assert.equal(result.body.liveRecurringChargesEnabled,false);
+  assert.equal(result.body.credentialsExposed,false);
+  assert.match(result.body.reason,/only one API version/i);
+  assert.equal(Object.hasOwn(result.body,"secretKey"),false);
+});
+
+test("provider readiness denies support users",async()=>{
+  let providerRead=false;
+  const service=api(async url=>{
+    if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+    providerRead=true;
+    throw new Error("Provider readiness must not be exposed");
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/billing/provider-readiness",ownerId:owner});
+  assert.equal(result.status,403);
+  assert.equal(result.body.error.code,"FINANCE_ADMIN_REQUIRED");
+  assert.equal(providerRead,false);
+});
