@@ -490,7 +490,7 @@ export function createRealEsrganAdapter({
       const after = await fingerprint(selected);
       if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
       executionFingerprints.set(selected, after);
-      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, threads: result.threads, tta: result.tta, gpu: result.gpu, inputDimensions: result.inputDimensions, outputDimensions: result.outputDimensions, outputBytes: result.byteSize, outputHasAlpha: result.outputHasAlpha, alphaPreserved: result.alphaPreserved, tile: result.tile, requestedTile: result.requestedTile, tileFallbackUsed: result.tileFallbackUsed, tileAttempts: result.tileAttempts };
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, threads: result.threads, tta: result.tta, gpu: result.gpu, inputDimensions: result.inputDimensions, outputDimensions: result.outputDimensions, outputBytes: result.byteSize, outputHasAlpha: result.outputHasAlpha, alphaPreserved: result.alphaPreserved, tile: result.tile, requestedTile: result.requestedTile, tileFallbackUsed: result.tileFallbackUsed, tileFallbackReason: result.tileFallbackReason, qualityAssessment: result.qualityAssessment, qualityReviewRequired: result.qualityReviewRequired, qualityReviewReasons: result.qualityReviewReasons, tileAttempts: result.tileAttempts };
     } catch (error) {
       executionFingerprints.delete(selected);
       throw error;
@@ -624,8 +624,14 @@ export function createRealEsrganAdapter({
         model: prepared.model, scale: prepared.scale, threads: prepared.threads, tta: prepared.tta, gpu: prepared.gpu, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
         tileFallbackReason: execution.fallbackUsed ? "gpu-memory-pressure" : null,
-        qualityReviewRequired: execution.fallbackUsed,
-        qualityReviewReasons: execution.fallbackUsed ? ["gpu-memory-tile-fallback"] : [],
+        // File integrity and dimensions do not establish perceptual quality.
+        // Keep every derivative pending visual review until a real assessor is integrated.
+        qualityAssessment: { status: "not_assessed", method: null },
+        qualityReviewRequired: true,
+        qualityReviewReasons: [
+          "perceptual-quality-not-assessed",
+          ...(execution.fallbackUsed ? ["gpu-memory-tile-fallback"] : [])
+        ],
         tileAttempts: execution.attemptedTiles, format: prepared.format,
         engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution"
       };
