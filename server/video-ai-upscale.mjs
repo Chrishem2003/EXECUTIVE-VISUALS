@@ -26,16 +26,21 @@ function parseProbe(stdout){
   let value;
   try{value=JSON.parse(stdout||"{}");}catch{throw fail("Video metadata could not be parsed.","VIDEO_AI_UPSCALE_PROBE_INVALID");}
   const streams=Array.isArray(value.streams)?value.streams:[];
-  const video=streams.find(item=>item.codec_type==="video");
+  const videoStreams=streams.filter(item=>item.codec_type==="video");
+  const video=videoStreams[0];
   if(!video)throw fail("The source has no readable video stream.","VIDEO_STREAM_MISSING");
+  if(videoStreams.length!==1)throw fail("Sources with multiple video streams or attached-picture streams are not supported; select a single-video master.","VIDEO_AI_UPSCALE_STREAMS_UNSUPPORTED");
   const audio=streams.filter(item=>item.codec_type==="audio");
+  const subtitles=streams.filter(item=>item.codec_type==="subtitle");
+  const unsupported=streams.filter(item=>!["video","audio","subtitle"].includes(item.codec_type));
+  if(unsupported.length)throw fail("The source contains unsupported ancillary streams; no stream will be silently discarded.","VIDEO_AI_UPSCALE_STREAMS_UNSUPPORTED");
   const frames=Number(video.nb_read_frames);
   const fps=rational(video.avg_frame_rate)||rational(video.r_frame_rate);
   const width=Number(video.width),height=Number(video.height);
   if(!Number.isSafeInteger(frames)||frames<1||!Number.isFinite(fps)||fps<=0||!Number.isInteger(width)||!Number.isInteger(height)||width<64||height<64){
     throw fail("Video frame count, dimensions or frame rate are unavailable.","VIDEO_AI_UPSCALE_PROBE_INVALID");
   }
-  return {raw:value,video,audio,frames,fps,width,height,duration:finite(video.duration)||finite(value.format?.duration),startTime:finite(video.start_time)||0};
+  return {raw:value,video,audio,subtitles,frames,fps,width,height,duration:finite(video.duration)||finite(value.format?.duration),startTime:finite(video.start_time)||0};
 }
 function parseFrameTimes(stdout){
   const times=String(stdout||"").split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(finite).filter(value=>value!==null);
@@ -144,8 +149,9 @@ export function createVideoAiUpscaleProcessor({
       progress(84);
       const fpsText=source.video.avg_frame_rate||source.video.r_frame_rate;
       const audioCodecSafe=source.audio.every(stream=>["aac","mp3","ac3","eac3","alac"].includes(String(stream.codec_name||"").toLowerCase()));
-      const args=["-hide_banner","-nostdin","-n","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
+      const args=["-hide_banner","-nostdin","-n","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
+      if(source.subtitles.length)args.push("-c:s","mov_text");
       args.push("-avoid_negative_ts","make_zero","-movflags","+faststart",outputPath);
       outputCreated=true;
       await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
@@ -155,6 +161,7 @@ export function createVideoAiUpscaleProcessor({
       if(output.frames!==source.frames)throw fail("Rendered video frame count changed during enhancement.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       if(output.width!==outputWidth||output.height!==outputHeight)throw fail("Rendered video dimensions do not match the requested upscale factor.","VIDEO_AI_UPSCALE_DIMENSIONS_MISMATCH");
       if(output.audio.length!==source.audio.length)throw fail("Rendered video did not preserve the source audio stream count.","VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
+      if(output.subtitles.length!==source.subtitles.length)throw fail("Rendered video did not preserve the source subtitle stream count.","VIDEO_AI_UPSCALE_SUBTITLE_STREAM_MISMATCH");
       let temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:"Temporal signal analysis has not completed."};
       try{
         const sceneResult=await run(runCommand,"ffmpeg",["-hide_banner","-i",outputPath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
@@ -177,8 +184,9 @@ export function createVideoAiUpscaleProcessor({
         path:outputPath,byteSize:outputInfo.size,inputBytes,sourceSha256,frameCount:source.frames,
         frameRate:{numerator:Number(String(fpsText).split("/")[0]),denominator:Number(String(fpsText).split("/")[1]||1)},
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
-        model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,
+        model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,subtitleStreams:source.subtitles.length,
         audioHandling:audioCodecSafe?"original-audio-streams-copied":"audio-transcoded-to-aac",
+        subtitleHandling:source.subtitles.length?"subtitles-transcoded-to-mov_text":"no-subtitles",
         frameProcessing:"sequential-image-model-inference",tileFallbackCount,tileFallbackFrames,temporalQuality,temporalConsistency:"not-certified",
         qualityReviewRequired:true,qualityReviewReasons:["temporal-consistency-not-certified","human-review-required"]
       };
