@@ -383,7 +383,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       });
       const result=await processor.process({
         sourcePath,outputPath,model:input.model||"realesrgan-x4plus",
-        scale:input.scale??2,tile:input.tile??0,expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
+        scale:input.scale??2,tile:input.tile??0,threads:input.threads||"1:2:2",tta:input.tta===true,gpu:"auto",expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
       });
       if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
       let c2paPreservation;
@@ -394,7 +394,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const hash=createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const baseName=source.original_name.replace(/\.[^.]+$/,"")||source.original_name;
-      const processing={engine:"realesrgan-ncnn-vulkan",method:"framewise-ai-super-resolution",model:result.model,scale:result.scale,tile:result.tile,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,frameProcessing:result.frameProcessing,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:result.qualityReviewReasons,humanReviewRequired:true};
+      const processing={engine:"realesrgan-ncnn-vulkan",method:"framewise-ai-super-resolution",model:result.model,scale:result.scale,tile:result.tile,threads:result.threads,tta:result.tta,tileFallbackCount:result.tileFallbackCount,tileFallbackFrames:result.tileFallbackFrames,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,frameProcessing:result.frameProcessing,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:result.qualityReviewReasons,humanReviewRequired:true};
       const outputAsset=addAsset(db,job,"derived/"+id+".mp4",baseName+"-ai-upscaled.mp4","video/mp4",fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
