@@ -111,24 +111,32 @@ test("payment retry policy retries transient failures only", () => {
   assert.throws(() => calculatePaymentRetryAt({ attemptNumber: 0 }), { code: "INVALID_RETRY_ATTEMPT" });
 });
 
-test("Flutterwave refund client sends idempotency headers and sandbox request", async () => {
-  let captured;
+test("Flutterwave refund client obtains OAuth token and sends idempotency headers to sandbox", async () => {
+  const captured=[];
   const result = await initiateFlutterwaveRefund({
     chargeId: "chg_test", amountMinor: 25000, currency: "UGX",
     reason: "Customer request", idempotencyKey: "refund-once",
-    traceId: "trace-once", secretKey: "test-key",
+    traceId: "trace-once", clientId: "test-client", clientSecret: "test-client-secret",
     fetchImpl: async (url, options) => {
-      captured = { url: String(url), options };
+      captured.push({ url: String(url), options });
+      if(String(url)==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token") {
+        return new Response(JSON.stringify({access_token:"test-access-token",expires_in:600}), {status:200,headers:{"content-type":"application/json"}});
+      }
       return new Response(JSON.stringify({
         message: "Refund Initiated",
         data: { id: "rfd_test", amount_refunded: 25000, status: "pending", charge_id: "chg_test" }
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
   });
-  assert.equal(captured.url, "https://developersandbox-api.flutterwave.com/refunds");
-  assert.equal(captured.options.headers["x-idempotency-key"], "refund-once");
-  assert.equal(captured.options.headers["x-trace-id"], "trace-once");
-  assert.deepEqual(JSON.parse(captured.options.body), {
+  assert.equal(captured.length,2);
+  assert.equal(captured[0].url,"https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token");
+  assert.equal(captured[0].options.headers["content-type"],"application/x-www-form-urlencoded");
+  assert.equal(String(captured[0].options.body).includes("grant_type=client_credentials"),true);
+  assert.equal(captured[1].url, "https://developersandbox-api.flutterwave.com/refunds");
+  assert.equal(captured[1].options.headers.authorization,"Bearer test-access-token");
+  assert.equal(captured[1].options.headers["x-idempotency-key"], "refund-once");
+  assert.equal(captured[1].options.headers["x-trace-id"], "trace-once");
+  assert.deepEqual(JSON.parse(captured[1].options.body), {
     amount: 25000, reason: "Customer request", charge_id: "chg_test"
   });
   assert.equal(result.providerRefundId, "rfd_test");
