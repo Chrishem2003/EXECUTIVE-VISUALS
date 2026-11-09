@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readdir, rm, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -149,10 +149,12 @@ export function createVideoAiUpscaleProcessor({
       progress(84);
       const fpsText=source.video.avg_frame_rate||source.video.r_frame_rate;
       const audioCodecSafe=source.audio.every(stream=>["aac","mp3","ac3","eac3","alac"].includes(String(stream.codec_name||"").toLowerCase()));
-      const args=["-hide_banner","-nostdin","-n","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
+      const args=["-hide_banner","-nostdin","-y","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
       if(source.subtitles.length)args.push("-c:s","mov_text");
       args.push("-avoid_negative_ts","make_zero","-movflags","+faststart",outputPath);
+      const outputHandle=await open(outputPath,"wx",0o600);
+      await outputHandle.close();
       outputCreated=true;
       await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
       progress(94);
