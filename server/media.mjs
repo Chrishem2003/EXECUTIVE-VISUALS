@@ -12,6 +12,7 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createUpscaleVisualQualityAssessor } from "./upscale-visual-quality.mjs";
 import { createLpipsPerceptualAssessor } from "./lpips-perceptual-assessor.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
@@ -375,7 +376,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const poll=setInterval(()=>{if(cancelled())controller.abort();},500);
     poll.unref?.();
     try{
+      const engine=String(input.engine||"realesrgan-framewise");
+      const flashVsrAdapter=engine==="flashvsr-v1.1-tiny-long"?createFlashVsrAdapter():null;
       const processor=createVideoAiUpscaleProcessor({
+        temporalUpscalerFactory:flashVsrAdapter?()=>flashVsrAdapter:null,
         runCommand:(binary,args,options={})=>run(binary,args,options.timeoutMs||30*60*1000,job.id,activeProcesses,()=>controller.signal.aborted,options.maxCaptureBytes||16000),
         upscalerFactory:aiUpscalerFactory,
         maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||300),
@@ -384,8 +388,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
       });
       const result=await processor.process({
-        sourcePath,outputPath,model:input.model||"realesrgan-x4plus",
-        scale:input.scale??2,tile:input.tile??0,threads:input.threads||"1:2:2",tta:input.tta===true,gpu:"auto",expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
+        sourcePath,outputPath,engine,model:engine==="flashvsr-v1.1-tiny-long"?"FlashVSR-v1.1-tiny-long":(input.model||"realesrgan-x4plus"),
+        scale:input.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2),tile:input.tile??0,threads:input.threads||"1:2:2",tta:input.tta===true,gpu:"auto",expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
       });
       if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
       let c2paPreservation;
@@ -396,7 +400,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const hash=createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const baseName=source.original_name.replace(/\.[^.]+$/,"")||source.original_name;
-      const processing={engine:"realesrgan-ncnn-vulkan",method:"framewise-ai-super-resolution",model:result.model,scale:result.scale,tile:result.tile,threads:result.threads,tta:result.tta,tileFallbackCount:result.tileFallbackCount,tileFallbackFrames:result.tileFallbackFrames,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,subtitleStreams:result.subtitleStreams,subtitleHandling:result.subtitleHandling,frameProcessing:result.frameProcessing,temporalQuality:result.temporalQuality,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:[...result.qualityReviewReasons,...(result.tileFallbackCount>0?["gpu-memory-tile-fallback"]:[]),...(result.temporalQuality?.status==="unavailable"?["temporal-qa-unavailable"]:[]),...(result.temporalQuality?.findings?.length?["temporal-instability-detected"]:[])],humanReviewRequired:true};
+      const processing={engine:result.engine==="flashvsr-v1.1-tiny-long"?"flashvsr-v1.1-tiny-long":"realesrgan-ncnn-vulkan",method:result.temporalModel?"temporal-video-super-resolution":"framewise-ai-super-resolution",model:result.model,temporalModel:result.temporalModel===true,temporalModelLicense:result.temporalModelLicense||null,scale:result.scale,tile:result.tile,threads:result.threads,tta:result.tta,tileFallbackCount:result.tileFallbackCount,tileFallbackFrames:result.tileFallbackFrames,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,subtitleStreams:result.subtitleStreams,subtitleHandling:result.subtitleHandling,frameProcessing:result.frameProcessing,temporalQuality:result.temporalQuality,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:[...result.qualityReviewReasons,...(result.tileFallbackCount>0?["gpu-memory-tile-fallback"]:[]),...(result.temporalQuality?.status==="unavailable"?["temporal-qa-unavailable"]:[]),...(result.temporalQuality?.findings?.length?["temporal-instability-detected"]:[])],humanReviewRequired:true};
       const outputAsset=addAsset(db,job,"derived/"+id+".mp4",baseName+"-ai-upscaled.mp4","video/mp4",fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
