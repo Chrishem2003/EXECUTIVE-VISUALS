@@ -170,16 +170,37 @@ export function createFfmpegImageDecoder({
   });
 }
 
-export function createUpscaleVisualQualityAssessor({ decoder = createFfmpegImageDecoder() } = {}) {
+export function createUpscaleVisualQualityAssessor({ decoder = createFfmpegImageDecoder(), lpipsAssessor = null } = {}) {
   if (!decoder || typeof decoder.decode !== "function") throw new TypeError("An image decoder with decode() is required.");
+  if (lpipsAssessor !== null && typeof lpipsAssessor.assess !== "function") throw new TypeError("The optional LPIPS assessor must provide assess().");
   return Object.freeze({
     async assess({ candidatePath, referencePath, tileSize = 256, signal } = {}) {
       const candidate = await decoder.decode(candidatePath, { signal });
       const reference = referencePath ? await decoder.decode(referencePath, { signal }) : null;
-      return analyzeUpscalePixels({
+      const report = analyzeUpscalePixels({
         rgb: candidate.rgb, width: candidate.width, height: candidate.height,
         referenceRgb: reference?.rgb, referenceWidth: reference?.width, referenceHeight: reference?.height, tileSize
       });
+      report.perceptualAssessment = { status: "not_run", method: "LPIPS", reason: "paired_reference_and_configured_assessor_required" };
+      if (reference && lpipsAssessor) {
+        try {
+          const result = await lpipsAssessor.assess({ candidatePath, referencePath, signal });
+          report.perceptualAssessment = {
+            status: "completed", method: "LPIPS", version: result.version,
+            network: result.network, device: result.device, distance: result.distance,
+            interpretation: "lower_is_more_perceptually_similar"
+          };
+          report.referenceMetrics.lpips = result.distance;
+          report.referenceMetrics.lpipsNetwork = result.network;
+          report.referenceMetrics.lpipsVersion = result.version;
+        } catch (error) {
+          report.perceptualAssessment = {
+            status: "unavailable", method: "LPIPS",
+            code: error?.code || "AI_UPSCALE_LPIPS_FAILED"
+          };
+        }
+      }
+      return report;
     }
   });
 }
