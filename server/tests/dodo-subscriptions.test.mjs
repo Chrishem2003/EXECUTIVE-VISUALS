@@ -191,6 +191,27 @@ test("Dodo activation, renewal and cancellation update the subscription and gran
     const cancelResult = processNextDodoWebhook(db, { env });
     assert.equal(cancelResult.status, "cancelled");
     assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id=?").get(local.id).status, "cancelled");
+    const cancelSync=db.prepare("SELECT action,metadata_json FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(cancelled.webhookId);
+    assert.equal(cancelSync.action,"status");
+    assert.equal(JSON.parse(cancelSync.metadata_json).targetStatus,"cancelled");
+
+    const paused=signedWebhook(subscriptionPayload(checkout.orderId,plan,{
+      type:"subscription.paused",status:"paused",timestamp:"2026-12-09T00:00:00.000Z"
+    }));
+    receiveDodoWebhook(db,paused);
+    const pauseResult=processNextDodoWebhook(db,{env});
+    assert.equal(pauseResult.status,"paused");
+    assert.equal(JSON.parse(db.prepare("SELECT metadata_json FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(paused.webhookId).metadata_json).targetStatus,"paused");
+
+    const pastDue=signedWebhook({...subscriptionPayload(checkout.orderId,plan,{
+      type:"subscription.past_due",status:"past_due",timestamp:"2026-12-10T00:00:00.000Z"
+    }),data:{...subscriptionPayload(checkout.orderId,plan).data,past_due_ends_at:"2026-12-17T00:00:00.000Z"}});
+    receiveDodoWebhook(db,pastDue);
+    const pastDueResult=processNextDodoWebhook(db,{env});
+    assert.equal(pastDueResult.status,"past_due");
+    const pastDueSync=JSON.parse(db.prepare("SELECT metadata_json FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(pastDue.webhookId).metadata_json);
+    assert.equal(pastDueSync.targetStatus,"past_due");
+    assert.equal(pastDueSync.graceUntil,"2026-12-17T00:00:00.000Z");
   } finally { db.close(); }
 });
 
