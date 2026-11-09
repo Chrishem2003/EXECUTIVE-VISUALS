@@ -16,19 +16,19 @@ function manifest() {
     }))
   };
 }
-function fakeAdapter({ mismatch = false } = {}) {
+function fakeAdapter({ mismatch = false, observed = {} } = {}) {
   return {
     probe: async () => ({ available: true, executionEnabled: true }),
-    selfTest: async () => ({ passed: true, executionVerified: true }),
-    execute: async ({ inputPath, outputPath, model, scale }) => {
+    selfTest: async ({ tile }) => { observed.selfTestTile = tile; return { passed: true, executionVerified: true }; },
+    execute: async ({ inputPath, outputPath, model, scale, tile }) => {
       const [width, height] = (await readFile(inputPath, "utf8")).split("x").map(Number);
       await writeFile(outputPath, Buffer.from("mock image derivative"));
       return {
         model,
-        requestedTile: 128,
-        tile: 128,
+        requestedTile: tile,
+        tile,
         tileFallbackUsed: false,
-        tileAttempts: [128],
+        tileAttempts: [tile],
         inputDimensions: { width, height },
         outputDimensions: { width: width * scale, height: height * scale + (mismatch ? 1 : 0) }
       };
@@ -81,6 +81,30 @@ test("runs local fixtures and writes execution-only evidence that still requires
   const runDirectory = outputEntries.find(entry => entry.isDirectory() && entry.name.startsWith("run-"));
   assert.ok(runDirectory);
   assert.equal((await readdir(join(env.output, runDirectory.name))).filter(name => name.endsWith(".png")).length, 5);
+});
+
+test("runs a reproducible benchmark with an operator-selected tile size", async t => {
+  const env = await setup(t);
+  const observed = {};
+  const result = await runUpscaleBenchmark({
+    model: "realesrgan-x4plus",
+    ...env,
+    tile: 256,
+    adapter: fakeAdapter({ observed })
+  });
+  assert.equal(observed.selfTestTile, 256);
+  assert.ok(result.records.every(record => record.requestedTile === 256 && record.tile === 256));
+  assert.ok(result.records.every(record => record.tileFallbackUsed === false && JSON.stringify(record.tileAttempts) === "[256]"));
+});
+
+test("rejects unsupported benchmark tile sizes before model probing", async t => {
+  const env = await setup(t);
+  let probeCalls = 0;
+  await assert.rejects(
+    runUpscaleBenchmark({ model: "realesrgan-x4plus", ...env, tile: 24, adapter: { probe: async () => { probeCalls++; } } }),
+    /Benchmark tile must be zero/
+  );
+  assert.equal(probeCalls, 0);
 });
 
 test("does not publish a benchmark report when any model output has incorrect dimensions", async t => {
