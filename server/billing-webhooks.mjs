@@ -246,7 +246,7 @@ export async function createFlutterwaveSubscriptionCheckout(db,{
     response=await fetchImpl("https://api.flutterwave.com/v3/payments",{
       method:"POST",headers:{authorization:"Bearer "+secretKey,"content-type":"application/json",accept:"application/json"},
       body:JSON.stringify({tx_ref:txRef,amount,currency:String(plan.currency).toUpperCase(),
-        redirect_url:new URL("/billing/return",base).toString(),
+        redirect_url:(()=>{const result=new URL("/billing/return",base);result.searchParams.set("provider","flutterwave_subscription");result.searchParams.set("order_id",id);return result.toString();})(),
         customer:{email:String(user.email).trim().toLowerCase()},
         customizations:{title:"Executive Visuals",description:"Recurring "+plan.name+" subscription"},
         payment_plan:Number(paymentPlanId),payment_options:"card",
