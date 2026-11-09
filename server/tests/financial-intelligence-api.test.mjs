@@ -283,3 +283,82 @@ test("customer invoice history is owner-scoped and never exposes private object 
   assert.ok(requestUrl.includes("owner_id=eq."+owner));
   assert.ok(requestUrl.includes("limit=10"));
 });
+
+
+test("subscription plan catalogue exposes only active public plans",async()=>{
+  let requestUrl="";
+  const service=api(async url=>{
+    requestUrl=String(url);
+    return json([{plan_code:"free",status:"active",is_public:true,billing_interval:"none",amount_minor:0,currency:"UGX",included_credits:0}]);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.equal(result.body.plans.length,1);
+  assert.ok(requestUrl.includes("status=eq.active"));
+  assert.ok(requestUrl.includes("is_public=eq.true"));
+});
+
+test("customer subscription endpoint is scoped to the authenticated owner",async()=>{
+  let requestUrl="";
+  const service=api(async url=>{
+    requestUrl=String(url);
+    return json([{id:"55555555-5555-4555-8555-555555555555",owner_id:owner,plan_code:"free",status:"active",entitlements_snapshot:{projects:3}}]);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/subscription",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.equal(result.body.subscription.plan_code,"free");
+  assert.ok(requestUrl.includes("owner_id=eq."+owner));
+  assert.ok(requestUrl.includes("status=in.(pending,trialing,active,past_due)"));
+});
+
+test("subscription grant requires a platform billing role before calling the grant RPC",async()=>{
+  let rpcCalled=false;
+  const service=api(async url=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"support"}]);
+    if(target.endsWith("/rpc/grant_customer_subscription"))rpcCalled=true;
+    throw new Error("unexpected request");
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/admin/subscriptions/grant",ownerId:owner,
+    body:{customerId:paymentId,planCode:"free",periodStart:"2026-11-10T00:00:00Z",periodEnd:"2026-12-10T00:00:00Z",reason:"Courtesy access"}
+  });
+  assert.equal(result.status,403);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_ADMIN_REQUIRED");
+  assert.equal(rpcCalled,false);
+});
+
+test("subscription grant calls audited server RPC with validated customer and period",async()=>{
+  let rpcBody=null;
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+    if(target.endsWith("/rpc/grant_customer_subscription")){
+      rpcBody=JSON.parse(options.body);
+      return json("66666666-6666-4666-8666-666666666666");
+    }
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/admin/subscriptions/grant",ownerId:owner,
+    body:{customerId:paymentId,planCode:"free",periodStart:"2026-11-10T00:00:00Z",periodEnd:"2026-12-10T00:00:00Z",reason:"Courtesy access"}
+  });
+  assert.equal(result.status,201);
+  assert.equal(result.body.subscription.status,"active");
+  assert.equal(rpcBody.p_actor_id,owner);
+  assert.equal(rpcBody.p_owner_id,paymentId);
+  assert.equal(rpcBody.p_plan_code,"free");
+  assert.equal(rpcBody.p_reason,"Courtesy access");
+});
+
+test("subscription grant rejects periods longer than 366 days",async()=>{
+  let calls=0;
+  const service=api(async()=>{calls++;return json([{role:"owner"}]);});
+  const result=await service.handle({
+    method:"POST",path:"/api/admin/subscriptions/grant",ownerId:owner,
+    body:{customerId:paymentId,planCode:"free",periodStart:"2026-11-10T00:00:00Z",periodEnd:"2028-01-01T00:00:00Z",reason:"Courtesy access"}
+  });
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_GRANT_INVALID");
+  assert.equal(calls,0);
+});
