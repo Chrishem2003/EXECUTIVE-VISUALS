@@ -60,7 +60,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.ai-video-upscale","timeline.render"]);
 function getVideoUpscaleWorkerLimits(){
   const limits={
-    maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),
+    maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||300),
     maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
     maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),
     maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
