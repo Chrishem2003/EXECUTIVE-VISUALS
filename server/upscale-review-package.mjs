@@ -11,6 +11,49 @@ const MAX_IMAGE = 250 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { code: "AI_UPSCALE_REVIEW_PACKAGE_INVALID" });
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
 
+const REVIEW_CHECKS = ["detailRetention", "edgeTextIntegrity", "artifactControl", "colorToneConsistency", "naturalAppearance"];
+const REVIEW_VALUES = new Set(["acceptable", "issue", "not_applicable"]);
+
+/**
+ * Validate an exported reviewer response against the immutable package manifest.
+ * This checks evidence integrity and reviewer protocol compliance; it does not
+ * certify visual quality or replace authorized human approval.
+ */
+export function validateUpscaleHumanReviewNotes(notes, reviewManifest) {
+  const errors = [];
+  const add = message => errors.push(message);
+  if (!notes || typeof notes !== "object" || Array.isArray(notes)) return { valid: false, errors: ["Review notes must be an object."] };
+  if (!reviewManifest || typeof reviewManifest !== "object" || !Array.isArray(reviewManifest.fixtures)) return { valid: false, errors: ["A valid review package manifest is required."] };
+  if (notes.schemaVersion !== 1) add("Unsupported review notes schema version.");
+  if (notes.reviewProtocol !== "ev-upscale-rubric-v1") add("Unsupported human review protocol.");
+  if (notes.model !== reviewManifest.model || !MODELS.has(notes.model)) add("Review model does not match the package manifest.");
+  if (notes.humanReviewRequired !== true || notes.qualityVerified !== false) add("Human review must remain required and qualityVerified must remain false.");
+  if (typeof notes.reviewer !== "string" || notes.reviewer.trim().length < 2 || notes.reviewer.trim().length > 120) add("Reviewer name must contain 2 to 120 characters.");
+  if (typeof notes.exportedAt !== "string" || !Number.isFinite(Date.parse(notes.exportedAt)) || !/^\\d{4}-\\d{2}-\\d{2}T/.test(notes.exportedAt)) add("Review export timestamp must be a valid ISO date-time.");
+  const expected = reviewManifest.fixtures;
+  if (expected.length !== 5 || !Array.isArray(notes.fixtures) || notes.fixtures.length !== expected.length) {
+    add("Review notes must contain exactly the five fixtures in the package manifest.");
+    return { valid: false, errors };
+  }
+  const expectedById = new Map(expected.map(item => [item.fixtureId, item]));
+  const seen = new Set();
+  for (const item of notes.fixtures) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) { add("Every fixture review must be an object."); continue; }
+    const source = expectedById.get(item.fixtureId);
+    if (!source || seen.has(item.fixtureId)) { add("Fixture IDs must match the manifest exactly and cannot repeat."); continue; }
+    seen.add(item.fixtureId);
+    if (item.fixtureCategory !== source.fixtureCategory || item.inputSha256 !== source.inputSha256 || item.outputSha256 !== source.outputSha256) add("Fixture category or source/output checksum does not match the package manifest for " + item.fixtureId + ".");
+    if (!["reviewed_pass", "reviewed_fail"].includes(item.decision)) add("Every fixture requires a Pass or Fail decision: " + item.fixtureId + ".");
+    if (typeof item.notes !== "string" || item.notes.trim().length < 20 || item.notes.length > 2000) add("Review notes must contain 20 to 2000 characters: " + item.fixtureId + ".");
+    if (!item.checks || typeof item.checks !== "object" || Array.isArray(item.checks)) { add("Every fixture requires all five rubric checks: " + item.fixtureId + "."); continue; }
+    if (Object.keys(item.checks).length !== REVIEW_CHECKS.length || REVIEW_CHECKS.some(key => !REVIEW_VALUES.has(item.checks[key]))) add("Every rubric item must be assessed: " + item.fixtureId + ".");
+    if (item.decision === "reviewed_pass" && REVIEW_CHECKS.some(key => item.checks[key] === "issue")) add("A fixture with a reported issue cannot pass: " + item.fixtureId + ".");
+  }
+  if (seen.size !== expected.length) add("One or more package fixtures are missing from the review notes.");
+  return { valid: errors.length === 0, errors };
+}
+
+
 async function readJson(path, label) {
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
@@ -155,7 +198,7 @@ function renderHtml(model, records) {
 <div class="compare"><img src="assets/${r.fixtureId}-source${r.sourceExtension}" alt="Original source"><div class="enhanced"><img src="assets/${r.fixtureId}-enhanced.png" alt="Enhanced output"></div><span class="divider"></span><span class="tag left">ORIGINAL</span><span class="tag right">ENHANCED</span></div>
 <label class="slider-label">Reveal enhanced <output>50%</output><input type="range" min="0" max="100" value="50" aria-label="Compare original and enhanced"></label>
 <dl><div><dt>Dimensions</dt><dd>${r.inputWidth} × ${r.inputHeight} → ${r.outputWidth} × ${r.outputHeight}</dd></div><div><dt>Scale / time</dt><dd>${r.scale}× · ${r.durationMs} ms</dd></div><div><dt>Source SHA-256</dt><dd>${r.inputSha256.slice(0,20)}…</dd></div><div><dt>Output SHA-256</dt><dd>${r.outputSha256.slice(0,20)}…</dd></div></dl>
-<fieldset><legend>Human visual assessment</legend><label>Decision<select data-decision><option value="pending">Not reviewed</option><option value="reviewed_pass">Pass</option><option value="reviewed_fail">Fail</option></select></label><label>Review notes<textarea data-notes rows="3" minlength="20" placeholder="Describe detail retention, edges/text, artifacts, noise and defects."></textarea></label></fieldset><fieldset class="rubric"><legend>Required quality rubric</legend>${[["detailRetention","Detail retention"],["edgeTextIntegrity","Edges and text integrity"],["artifactControl","Halos, ringing and artifacts"],["colorToneConsistency","Color and tonal consistency"],["naturalAppearance","Natural appearance"]].map(([key,label])=>`<label>${label}<select data-check="${key}"><option value="not_assessed">Not assessed</option><option value="acceptable">Acceptable</option><option value="issue">Issue found</option><option value="not_applicable">Not applicable</option></select></label>`).join("")}</fieldset></article>`).join("\n");
+<fieldset><legend>Human visual assessment</legend><label>Decision<select data-decision><option value="pending">Not reviewed</option><option value="reviewed_pass">Pass</option><option value="reviewed_fail">Fail</option></select></label><label>Review notes<textarea data-notes rows="3" minlength="20" maxlength="2000" placeholder="Describe detail retention, edges/text, artifacts, noise and defects."></textarea></label></fieldset><fieldset class="rubric"><legend>Required quality rubric</legend>${[["detailRetention","Detail retention"],["edgeTextIntegrity","Edges and text integrity"],["artifactControl","Halos, ringing and artifacts"],["colorToneConsistency","Color and tonal consistency"],["naturalAppearance","Natural appearance"]].map(([key,label])=>`<label>${label}<select data-check="${key}"><option value="not_assessed">Not assessed</option><option value="acceptable">Acceptable</option><option value="issue">Issue found</option><option value="not_applicable">Not applicable</option></select></label>`).join("")}</fieldset></article>`).join("\n");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Executive Visuals · AI Upscale Review</title><style>
 :root{color-scheme:dark;font:15px/1.5 system-ui,sans-serif;background:#0b0b12;color:#f3f0fb}*{box-sizing:border-box}body{margin:0 auto;padding:26px;max-width:1120px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.eyebrow{font-size:11px;letter-spacing:1.4px;color:#c4b5fd;font-weight:800}h1{font-size:clamp(24px,4vw,36px);margin:4px 0}h2{font-size:19px;margin:2px 0;text-transform:capitalize}.sub,.footer{color:#b8b2c7}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.reviewer-label{display:grid;gap:4px;font-size:11px;color:#c9c3d4}.reviewer-label input{background:#0e0c15;color:#f3f0fb;border:1px solid #4b435d;border-radius:6px;padding:9px;font:inherit}.reviewed-pass{font-size:10px;font-weight:800;color:#a7f3d0;border:1px solid #276749;border-radius:20px;padding:5px 9px}.reviewed-fail{font-size:10px;font-weight:800;color:#fca5a5;border:1px solid #7f1d1d;border-radius:20px;padding:5px 9px}button{background:#7556bc;color:white;border:1px solid #9c83df;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}.notice{margin:16px 0;padding:12px;border:1px solid #6b5734;background:#241f17;color:#f4d9a8;border-radius:8px}.fixture{border:1px solid #353044;background:#15131e;border-radius:12px;padding:16px;margin:16px 0}.fixture header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.pending{font-size:10px;font-weight:800;color:#f4d9a8;border:1px solid #6b5734;border-radius:20px;padding:5px 9px}.compare{--reveal:50%;position:relative;overflow:hidden;aspect-ratio:16/9;background:#08080d;border:1px solid #40394f;border-radius:8px}.compare>img,.enhanced img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}.enhanced{position:absolute;inset:0;overflow:hidden;clip-path:inset(0 calc(100% - var(--reveal)) 0 0)}.divider{position:absolute;top:0;bottom:0;left:var(--reveal);width:2px;background:white}.tag{position:absolute;top:9px;background:#09090dcc;padding:4px 8px;border-radius:5px;font-size:10px;font-weight:800}.left{left:9px}.right{right:9px}.slider-label{display:grid;grid-template-columns:1fr auto;gap:7px;margin:12px 0;color:#d4cde2}.slider-label input{grid-column:1/-1;width:100%;accent-color:#b49aff}.fixture dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.fixture dl div{padding:9px;background:#100e17;border-radius:7px;min-width:0}.fixture dt{font-size:10px;color:#aaa2bb;text-transform:uppercase}.fixture dd{margin:3px 0 0;font-size:12px;overflow-wrap:anywhere}.fixture fieldset{border:1px solid #40394f;border-radius:8px;padding:12px;display:grid;grid-template-columns:180px 1fr;gap:12px}.fixture fieldset.rubric{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}.fixture legend{color:#c4b5fd;font-size:12px;font-weight:800}.fixture fieldset label{display:grid;gap:5px;color:#c9c3d4;font-size:12px}.fixture select,.fixture textarea{width:100%;background:#0e0c15;color:#f3f0fb;border:1px solid #4b435d;border-radius:6px;padding:9px;font:inherit}.fixture textarea{resize:vertical}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #c4b5fd;outline-offset:3px}.footer{font-size:12px}@media(max-width:650px){body{padding:13px}.fixture{padding:11px}.fixture fieldset,.fixture dl{grid-template-columns:1fr}.compare{aspect-ratio:4/3}}
 </style></head><body><div class="top"><div><span class="eyebrow">EXECUTIVE VISUALS · HUMAN QUALITY GATE</span><h1>AI Upscale Review</h1><div class="sub">Model: <strong>${escapeHtml(model)}</strong> · Five source/output pairs · Execution evidence only</div></div><div class="actions"><label class="reviewer-label">Reviewer name<input id="reviewer" autocomplete="name" minlength="2" maxlength="120" placeholder="Your name"></label><button id="export">Export review notes JSON</button><button id="reset">Reset decisions</button></div></div>
