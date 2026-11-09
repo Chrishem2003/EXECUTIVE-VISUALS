@@ -825,20 +825,23 @@ export function createAppServer() {
           }
         }
         const batchId=randomUUID();
-        const createJobs=db.transaction(()=>{
-          const created=[];
+        const jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
           for(const item of normalized){
             const id=randomUUID();
             const input={sourceAssetId:item.sourceAssetId,model:item.model,scale:item.scale,tile:item.tile,format:item.format,batchId,batchIndex:item.index,batchTotal:normalized.length};
             db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json) VALUES(?,?,?,'media.ai-upscale','queued',?)")
               .run(id,user.id,projectId,json(input));
             addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-upscale",batchId,batchIndex:item.index,batchTotal:normalized.length});
-            created.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
           }
-          audit(db,user.id,"upscale.batch_queued","batch",batchId,{total:created.length,models},projectId);
-          return created;
-        });
-        const jobs=createJobs();
+          audit(db,user.id,"upscale.batch_queued","batch",batchId,{total:jobs.length,models},projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          try{db.exec("ROLLBACK");}catch{}
+          throw error;
+        }
         send(res,202,{batchId,status:"queued",total:jobs.length,jobs},cors);return;
       }
       if(path==="/api/jobs"&&req.method==="GET"){
