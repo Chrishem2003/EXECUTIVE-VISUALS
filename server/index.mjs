@@ -65,6 +65,21 @@ const aiUpscaleAdapter = createRealEsrganAdapter();
 const financialApiEnabled = process.env.BILLING_API_ENABLED === "true";
 if (financialApiEnabled && AUTH_MODE !== "supabase") throw new Error("Financial intelligence API requires verified Supabase authentication.");
 const financialApi = financialApiEnabled ? createFinancialIntelligenceApi() : null;
+const paymentReconciliationIntervalMinutes = Math.max(5,Math.min(1440,Number(process.env.PAYMENT_RECONCILIATION_INTERVAL_MINUTES)||60));
+let paymentReconciliationBusy=false;
+const paymentReconciliationTimer = financialApi && process.env.PAYMENT_RECONCILIATION_ENABLED !== "false"
+  ? setInterval(async()=>{
+      if(paymentReconciliationBusy)return;
+      paymentReconciliationBusy=true;
+      try{
+        const result=await financialApi.reconcilePendingRefunds({limit:100});
+        if(result.checked)process.stdout.write("Financial reconciliation checked "+result.checked+" pending refund(s).\\n");
+      }catch(error){
+        process.stderr.write("Financial reconciliation cycle failed: "+String(error.message||"unknown error")+"\\n");
+      }finally{paymentReconciliationBusy=false;}
+    },paymentReconciliationIntervalMinutes*60_000)
+  : null;
+paymentReconciliationTimer?.unref();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
