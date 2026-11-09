@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
+import { ensureCloudSubscriptionSyncSchema, enqueueCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 
 const now = () => new Date().toISOString();
 const json = value => JSON.stringify(value ?? {});
@@ -20,6 +21,7 @@ function currencyExponent(currency) {
 }
 
 export function ensureBillingWebhookSchema(db) {
+  ensureCloudSubscriptionSyncSchema(db);
   const columns = new Set(db.prepare("PRAGMA table_info(billing_provider_events)").all().map(row => row.name));
   if (!columns.has("payload_json")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'");
   if (!columns.has("attempts")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
@@ -134,14 +136,25 @@ export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash }
   const status = String(data?.status ?? "").toLowerCase();
   const amount = Number(data?.amount);
   const currency = String(data?.currency || "").toUpperCase();
-  if (!["charge.completed", "charge.failed"].includes(eventType) ||
-      !/^[0-9]{1,30}$/.test(transactionId) || !/^ev_[a-f0-9]{32}$/.test(txRef) ||
-      !["successful", "failed", "pending"].includes(status) ||
-      !Number.isFinite(amount) || amount < 0 || currencyExponent(currency) === null) {
+  const cancellation=eventType==="subscription.cancelled";
+  const customerEmail=String(data?.customer?.email||"").trim().toLowerCase();
+  const paymentPlanId=String(data?.plan?.id??data?.payment_plan??"");
+  if ((!cancellation&&![ "charge.completed", "charge.failed" ].includes(eventType)) ||
+      (!cancellation&&(!/^[0-9]{1,30}$/.test(transactionId)||!/^ev_[a-f0-9]{32}$/.test(txRef)||
+        !["successful","failed","pending"].includes(status)||!Number.isFinite(amount)||amount<0||currencyExponent(currency)===null)) ||
+      (cancellation&&(!customerEmail.includes("@")||!/^[0-9]{1,18}$/.test(paymentPlanId)))) {
     throw fail("Flutterwave webhook event fields are invalid or unsupported.", "BILLING_WEBHOOK_INVALID", 400);
   }
-  const eventId = eventType + ":" + transactionId + ":" + status;
-  const minimalPayload = { event: eventType, data: { id: transactionId, tx_ref: txRef, status, amount, currency } };
+  const eventId=cancellation
+    ? "subscription.cancelled:"+createHash("sha256").update(customerEmail+":"+paymentPlanId).digest("hex")
+    : eventType+":"+transactionId+":"+status;
+  const minimalPayload=cancellation
+    ? {event:eventType,data:{status:String(data.status||"deactivated"),currency,amount:Number(data.amount)||0,
+        customer:{email:customerEmail},plan:{id:paymentPlanId}}}
+    : {event:eventType,data:{id:transactionId,tx_ref:txRef,status,amount,currency,
+        customer:{email:customerEmail||null,id:String(data?.customer?.id||"")||null},
+        payment_plan:String(data?.payment_plan??data?.plan?.id??"")||null,
+        meta:data?.meta&&typeof data.meta==="object"?{subscription_checkout_id:String(data.meta.subscription_checkout_id||"")}:{}}};
   // Hash the normalized fields that affect settlement, not provider-added
   // transport metadata such as timestamps or customer profile details.
   const payloadHash = createHash("sha256").update(json(minimalPayload)).digest("hex");
@@ -362,8 +375,76 @@ export async function processNextFlutterwaveWebhook(db, {
   const payload = parse(event.payload_json);
   const data = payload.data || {};
   try {
+    if(payload.event==="subscription.cancelled"){
+      const email=String(data.customer?.email||"").toLowerCase();
+      const paymentPlanId=String(data.plan?.id||"");
+      const local=db.prepare(`SELECT s.*,p.code AS plan_code,a.email
+        FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id
+        JOIN billing_accounts a ON a.user_id=s.user_id
+        WHERE s.provider='flutterwave' AND lower(a.email)=? AND s.status IN ('active','past_due','trialing')
+        AND json_extract(s.metadata_json,'$.paymentPlanId')=? ORDER BY s.current_period_end DESC LIMIT 1`)
+        .get(email,paymentPlanId);
+      if(!local){markProcessed();return {processed:true,unmatched:true,eventId:event.event_id};}
+      const metadata=parse(local.metadata_json);
+      db.exec("BEGIN IMMEDIATE");
+      try{
+        db.prepare("UPDATE billing_subscriptions SET status='cancelled',cancel_at_period_end=0,metadata_json=?,updated_at=? WHERE id=?")
+          .run(json({...metadata,providerCancellationEvent:event.event_id}),now(),local.id);
+        enqueueCloudSubscriptionSync(db,{provider:"flutterwave",action:"status",providerEventId:event.event_id,
+          ownerId:local.user_id,planCode:local.plan_code,providerCustomerId:local.provider_customer_id||null,
+          providerSubscriptionId:local.provider_subscription_id,periodStart:local.current_period_start,
+          periodEnd:local.current_period_end,status:"active",
+          metadata:{targetStatus:"cancelled",cancelAtPeriodEnd:false,graceUntil:null}});
+        markProcessed();db.exec("COMMIT");
+      }catch(error){db.exec("ROLLBACK");throw error;}
+      return {processed:true,cancelled:true,eventId:event.event_id};
+    }
     const order = db.prepare("SELECT * FROM billing_payment_orders WHERE tx_ref=? AND provider='flutterwave'").get(data.tx_ref);
-    if (!order) throw fail("No pending billing order matches this payment reference.", "BILLING_ORDER_NOT_FOUND", 404);
+    if (!order) {
+      const recurring=db.prepare("SELECT c.*,p.code AS plan_code,p.name AS plan_name,p.amount_minor,p.currency,p.interval,p.credits_per_period,p.active AS plan_active,a.email AS account_email FROM billing_flutterwave_subscription_checkouts c JOIN billing_plans p ON p.id=c.plan_id JOIN billing_accounts a ON a.user_id=c.user_id WHERE c.tx_ref=? LIMIT 1").get(data.tx_ref);
+      if(!recurring)throw fail("No pending billing order matches this payment reference.","BILLING_ORDER_NOT_FOUND",404);
+      if(recurring.status==="active"){markProcessed();return {processed:true,duplicate:true,eventId:event.event_id};}
+      if(recurring.status!=="pending"||!recurring.plan_active)throw fail("Recurring checkout is no longer eligible for settlement.","BILLING_ORDER_NOT_PENDING",409);
+      if(payload.event==="charge.failed"||data.status==="failed"){markProcessed();return {processed:true,paid:false,retryableCheckout:true,eventId:event.event_id};}
+      if(payload.event!=="charge.completed"||data.status!=="successful")throw fail("Flutterwave recurring payment is not yet successful.","BILLING_PAYMENT_PENDING",409);
+      const verified=await verifyTransaction({transactionId:String(data.id)});
+      const exponent=currencyExponent(recurring.currency);
+      const paidMinor=Math.round(Number(verified?.amount)*(10**exponent));
+      if(String(verified?.id)!==String(data.id)||String(verified?.tx_ref)!==recurring.tx_ref||
+        String(verified?.status).toLowerCase()!=="successful"||String(verified?.currency).toUpperCase()!==String(recurring.currency).toUpperCase()||
+        !Number.isSafeInteger(paidMinor)||paidMinor<Number(recurring.amount_minor)){
+        throw fail("Verified Flutterwave recurring payment does not match the configured plan.","BILLING_PAYMENT_MISMATCH",409);
+      }
+      const timestamp=now(),periodStart=timestamp;
+      const periodEndDate=new Date(timestamp);
+      if(recurring.interval==="year")periodEndDate.setUTCFullYear(periodEndDate.getUTCFullYear()+1);
+      else periodEndDate.setUTCMonth(periodEndDate.getUTCMonth()+1);
+      const periodEnd=periodEndDate.toISOString();
+      const providerCustomerId=String(verified?.customer?.id||"")||null;
+      const providerSubscriptionId=String(verified?.subscription_id||"")||("flw-plan:"+recurring.provider_payment_plan_id+":"+recurring.user_id);
+      const localSubscriptionId=randomUUID();
+      db.exec("BEGIN IMMEDIATE");
+      try{
+        db.prepare(`INSERT INTO billing_subscriptions
+          (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+          VALUES(?,?,?,'active','flutterwave',?,?,?,?,?)`)
+          .run(localSubscriptionId,recurring.user_id,recurring.plan_id,providerCustomerId,providerSubscriptionId,
+            periodStart,periodEnd,json({paymentPlanId:String(recurring.provider_payment_plan_id),checkoutId:recurring.id,initialTransactionId:String(verified.id)}));
+        db.prepare(`INSERT OR IGNORE INTO billing_credit_ledger
+          (id,user_id,amount,event_type,description,reference_id,idempotency_key,expires_at,metadata_json)
+          VALUES(?,?,?,'subscription_grant',?,?,?,?,?)`)
+          .run(randomUUID(),recurring.user_id,Number(recurring.credits_per_period),"Flutterwave subscription credits",
+            localSubscriptionId,"flutterwave-subscription-period:"+providerSubscriptionId+":"+periodStart,periodEnd,
+            json({provider:"flutterwave",paymentId:String(verified.id),paymentPlanId:String(recurring.provider_payment_plan_id)}));
+        db.prepare("UPDATE billing_flutterwave_subscription_checkouts SET status='active',provider_customer_id=?,provider_subscription_id=?,updated_at=? WHERE id=?")
+          .run(providerCustomerId,providerSubscriptionId,timestamp,recurring.id);
+        enqueueCloudSubscriptionSync(db,{provider:"flutterwave",providerEventId:event.event_id,ownerId:recurring.user_id,
+          planCode:recurring.plan_code,providerCustomerId,providerSubscriptionId,periodStart,periodEnd,status:"active",
+          metadata:{paymentId:String(verified.id),paymentPlanId:String(recurring.provider_payment_plan_id),currency:recurring.currency}});
+        markProcessed(timestamp);db.exec("COMMIT");
+      }catch(error){db.exec("ROLLBACK");throw error;}
+      return {processed:true,paid:true,subscription:true,eventId:event.event_id,subscriptionId:localSubscriptionId};
+    }
     if (order.status === "paid") {
       markProcessed();
       return { processed: true, duplicate: true, eventId: event.event_id };
