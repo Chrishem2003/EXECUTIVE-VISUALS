@@ -109,6 +109,29 @@ test("cancellation prevents queued items from starting and marks in-flight work"
   assert.equal(result.status, "cancelled");
 });
 
+test("runs an injected visual assessor for each completed derivative", async () => {
+  const assessed = [];
+  const processor = createUpscaleBatchProcessor({
+    adapter: fakeAdapter(),
+    assessor: { async assess(input) { assessed.push(input); return { status: "needs_review", seamAnalysis: { flaggedBoundaries: 1 } }; } }
+  });
+  const result = await processor.process({ items: items(2) });
+  assert.equal(assessed.length, 2);
+  assert.equal(result.results[0].qualityAssessment.status, "needs_review");
+  assert.equal(result.qualityReviewRequired, true);
+});
+
+test("keeps the derivative but fails closed when automated assessment is unavailable", async () => {
+  const processor = createUpscaleBatchProcessor({
+    adapter: fakeAdapter(),
+    assessor: { async assess() { throw Object.assign(new Error("decoder offline"), { code: "AI_UPSCALE_DECODER_UNAVAILABLE" }); } }
+  });
+  const result = await processor.process({ items: items(1) });
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.results[0].qualityAssessment.status, "assessment_unavailable");
+  assert.equal(result.results[0].qualityReviewRequired, true);
+});
+
 test("batch orchestration keeps visual review mandatory even if an adapter clears the flag", async () => {
   const processor = createUpscaleBatchProcessor({
     adapter: { execute: async () => ({ qualityReviewRequired: false, path: "/workspace/result.png" }) }
