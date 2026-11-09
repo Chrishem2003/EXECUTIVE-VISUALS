@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, lstat, stat, open } from "node:fs/promises";
+import { access, lstat, stat, open, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -58,6 +58,41 @@ function run(binary, args, timeoutMs, signal) {
       ? finish()
       : finish(fail("AI upscaling process failed: " + stderr.slice(-1200), "AI_UPSCALE_PROCESS_FAILED")));
   });
+}
+
+const GPU_MEMORY_FAILURE = /out of memory|failed to allocate|allocation failed|vkAllocateMemory|VK_ERROR_OUT_OF_(?:DEVICE|HOST)_MEMORY|insufficient[^\\n]*memory|memory allocation/i;
+const FALLBACK_TILE_SIZES = Object.freeze([256, 192, 128, 96, 64, 32]);
+
+function isGpuMemoryFailure(error) {
+  return GPU_MEMORY_FAILURE.test(String(error?.message || ""));
+}
+
+/**
+ * Retry only recognized GPU-memory allocation failures. The NCNN CLI documents
+ * smaller tiles as the memory-pressure control; explicit operator tile choices
+ * remain authoritative and are never silently changed.
+ */
+async function runWithTileFallback(binary, args, timeoutMs, signal, outputPath, requestedTile) {
+  const candidates = requestedTile === 0 ? [0, ...FALLBACK_TILE_SIZES] : [requestedTile];
+  const attemptedTiles = [];
+  for (let index = 0; index < candidates.length; index++) {
+    const tile = candidates[index];
+    const attemptArgs = args.slice();
+    const tileIndex = attemptArgs.indexOf("-t");
+    if (tileIndex < 0 || tileIndex + 1 >= attemptArgs.length) {
+      throw fail("AI upscaling execution plan is missing its tile argument.", "AI_UPSCALE_INVALID_OPTIONS");
+    }
+    attemptArgs[tileIndex + 1] = String(tile);
+    attemptedTiles.push(tile);
+    try {
+      await run(binary, attemptArgs, timeoutMs, signal);
+      return { tile, attemptedTiles, fallbackUsed: tile !== requestedTile };
+    } catch (error) {
+      await unlink(outputPath).catch(() => {});
+      if (!isGpuMemoryFailure(error) || index === candidates.length - 1) throw error;
+    }
+  }
+  throw fail("AI upscaling exhausted its GPU-memory tile fallback strategy.", "AI_UPSCALE_PROCESS_FAILED");
 }
 
 const MAX_IMAGE_HEADER_BYTES = 1024 * 1024;
@@ -221,14 +256,25 @@ export function createRealEsrganAdapter({
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
-    await run(prepared.binary, prepared.args, timeoutMs, options.signal);
-    const info = await stat(output).catch(() => null);
-    if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    const outputDimensions = await validateImageOutput(output, prepared.format);
-    if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
-      throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
+    const execution = await runWithTileFallback(prepared.binary, prepared.args, timeoutMs, options.signal, output, prepared.tile);
+    try {
+      const info = await stat(output).catch(() => null);
+      if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
+      const outputDimensions = await validateImageOutput(output, prepared.format);
+      if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
+        throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
+      }
+      return {
+        path: output, byteSize: info.size, inputDimensions, outputDimensions,
+        model: prepared.model, scale: prepared.scale, tile: execution.tile,
+        requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
+        tileAttempts: execution.attemptedTiles, format: prepared.format,
+        engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution"
+      };
+    } catch (error) {
+      await unlink(output).catch(() => {});
+      throw error;
     }
-    return { path: output, byteSize: info.size, inputDimensions, outputDimensions, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });

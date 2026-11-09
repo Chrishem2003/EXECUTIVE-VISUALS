@@ -10,10 +10,10 @@ function reviewEvidenceValid(record) {
   const metrics = record?.metrics && typeof record.metrics === "object" && !Array.isArray(record.metrics) ? record.metrics : {};
   const normalizedMetricsValid = ["ssim", "lpips"].every(key => metrics[key] === undefined || (Number.isFinite(metrics[key]) && metrics[key] >= 0 && metrics[key] <= 1));
   return normalizedMetricsValid && record?.qualityReview === "reviewed_pass" &&
-    typeof record.reviewerId === "string" && record.reviewerId.trim().length >= 2 &&
-    typeof record.reviewedAt === "string" && Number.isFinite(Date.parse(record.reviewedAt)) &&
-    typeof record.reviewNotes === "string" && record.reviewNotes.trim().length >= 20 &&
-    typeof record.reviewArtifactSha256 === "string" && SHA256.test(record.reviewArtifactSha256);
+    typeof record.qualityReviewer === "string" && record.qualityReviewer.trim().length >= 2 &&
+    typeof record.qualityReviewedAt === "string" && Number.isFinite(Date.parse(record.qualityReviewedAt)) &&
+    typeof record.qualityReviewNotes === "string" && record.qualityReviewNotes.trim().length >= 20 &&
+    typeof record.qualityReviewArtifactSha256 === "string" && SHA256.test(record.qualityReviewArtifactSha256);
 }
 
 /**
@@ -70,7 +70,7 @@ export async function loadUpscaleQualityEvidence({ filePath = process.env.AI_UPS
     const summary = summarizeUpscaleBenchmarks(records);
     const reviewed = records.length > 0 && records.every(reviewEvidenceValid);
     const qualityVerified = summary.qualityVerified === true && reviewed;
-    const reviewedAt = records.map(record => Date.parse(record.reviewedAt)).filter(Number.isFinite);
+    const reviewedAt = records.map(record => Date.parse(record.qualityReviewedAt)).filter(Number.isFinite);
     const checkedAt = reviewedAt.length ? new Date(Math.max(...reviewedAt)).toISOString() : "";
     const fixtureId = qualityVerified
       ? sha256Hex(Buffer.from(records.map(record => record.fixtureId).sort().join("\\n")))

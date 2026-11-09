@@ -26,10 +26,10 @@ function recordsFor(model = "realesrgan-x4plus", overrides = {}) {
     executionStatus: "passed",
     qualityReview: "reviewed_pass",
     timestamp: "2026-11-09T00:00:00.000Z",
-    reviewerId: "reviewer-test",
-    reviewedAt: "2026-11-09T00:05:00.000Z",
-    reviewNotes: "Compared source and output; no visible artifacts or identity drift.",
-    reviewArtifactSha256: digest("e"),
+    qualityReviewer: "reviewer-test",
+    qualityReviewedAt: "2026-11-09T00:05:00.000Z",
+    qualityReviewNotes: "Compared source and output; no visible artifacts or identity drift.",
+    qualityReviewArtifactSha256: digest("e"),
     ...overrides
   }));
 }
@@ -73,7 +73,7 @@ test("rejects incomplete category coverage and missing reviewer evidence", async
   const path = join(directory, "benchmarks.json");
   try {
     const incomplete = recordsFor().slice(0, 4);
-    incomplete[0].reviewNotes = "short";
+    incomplete[0].qualityReviewNotes = "short";
     await writeFile(path, JSON.stringify({ records: incomplete }));
     const result = await loadUpscaleQualityEvidence({ filePath: path });
     assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);

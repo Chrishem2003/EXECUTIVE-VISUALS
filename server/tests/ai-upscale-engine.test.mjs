@@ -207,3 +207,120 @@ exit 0
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("AI upscaler retries recognized GPU-memory failures with smaller automatic tiles", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-vram-fallback-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "enhanced.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeader(8, 6));
+  const source = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const value = key => args[args.indexOf(key) + 1];
+const tile = Number(value("-t"));
+const input = fs.readFileSync(value("-i"));
+const output = value("-o");
+const scale = Number(value("-s"));
+const attemptsFile = ${JSON.stringify(attemptsFile)};
+const previous = fs.existsSync(attemptsFile) ? Number(fs.readFileSync(attemptsFile, "utf8")) : 0;
+fs.writeFileSync(attemptsFile, String(previous + 1));
+if (tile === 0 || tile === 256) {
+  fs.writeFileSync(output, "partial-output");
+  process.stderr.write("vkAllocateMemory failed: VK_ERROR_OUT_OF_DEVICE_MEMORY");
+  process.exit(2);
+}
+const png = Buffer.alloc(24);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png, 0);
+png.writeUInt32BE(13, 8);
+png.write("IHDR", 12, "ascii");
+png.writeUInt32BE(input.readUInt32BE(16) * scale, 16);
+png.writeUInt32BE(input.readUInt32BE(20) * scale, 20);
+fs.writeFileSync(output, png);
+`;
+  await writeFile(binary, source);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const result = await adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 0, format: "png" });
+    assert.equal(result.tile, 192);
+    assert.equal(result.requestedTile, 0);
+    assert.equal(result.tileFallbackUsed, true);
+    assert.deepEqual(result.tileAttempts, [0, 256, 192]);
+    assert.deepEqual(result.outputDimensions, { width: 16, height: 12 });
+    assert.equal(Number(await import("node:fs/promises").then(fs => fs.readFile(attemptsFile, "utf8"))), 3);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI upscaler never changes an explicit tile size and removes partial failed output", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-vram-explicit-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "partial.png");
+  await writeFile(input, pngHeader(4, 3));
+  await writeFile(binary, String.raw`#!/bin/sh
+while [ "$1" != "" ]; do
+  if [ "$1" = "-o" ]; then shift; printf 'partial' > "$1"; fi
+  if [ "$1" = "-t" ]; then shift; if [ "$1" != "128" ]; then exit 9; fi; fi
+  shift
+done
+echo "vkAllocateMemory failed" >&2
+exit 2
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 128, format: "png" }),
+      error => error.code === "AI_UPSCALE_PROCESS_FAILED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI upscaler does not retry non-memory process failures", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-no-retry-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "failed.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeader(4, 3));
+  await writeFile(binary, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const attemptsFile = ${JSON.stringify(attemptsFile)};
+const count = fs.existsSync(attemptsFile) ? Number(fs.readFileSync(attemptsFile, "utf8")) : 0;
+fs.writeFileSync(attemptsFile, String(count + 1));
+process.stderr.write("unsupported image format");
+process.exit(2);
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 0, format: "png" }),
+      error => error.code === "AI_UPSCALE_PROCESS_FAILED"
+    );
+    const { readFile, access } = await import("node:fs/promises");
+    assert.equal(await readFile(attemptsFile, "utf8"), "1");
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
