@@ -465,7 +465,7 @@ export function createRealEsrganAdapter({
     };
   }
 
-  async function selfTest({ inputPath, model = "realesrgan-x4plus", scale = 2, tile = 0, format = "png", signal } = {}) {
+  async function selfTest({ inputPath, model = "realesrgan-x4plus", scale = 2, tile = 0, format = "png", threads = "1:2:2", signal } = {}) {
     if (!enabled) throw fail("AI_UPSCALE_ENABLED must be explicitly enabled before a GPU self-test.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
     if (!(await regularFile(inputPath, "self-test image"))) throw fail("A readable test image is required for the inference self-test.", "AI_UPSCALE_INVALID_INPUT");
     const selected = String(model || "realesrgan-x4plus");
@@ -475,7 +475,7 @@ export function createRealEsrganAdapter({
     const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-selftest-"));
     try {
       const outputPath = join(directory, randomUUID() + "." + format);
-      const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, signal });
+      const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, threads, signal });
       const after = await fingerprint(selected);
       if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
       executionFingerprints.set(selected, after);
