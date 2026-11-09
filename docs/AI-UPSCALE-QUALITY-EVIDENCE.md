@@ -6,7 +6,7 @@ Executive Visuals separates three different claims:
 2. **Execution verified** — a model-specific self-test completed successfully on the worker.
 3. **Quality verified** — a complete, model-specific fixture benchmark passed human review.
 
-Only the third state makes the corresponding AI-upscale preset eligible for execution. A successful process exit, valid image header, or correct output dimensions is not proof of perceptual quality.
+All three states are required before the corresponding model preset becomes eligible for execution. The worker checks model installation, explicit enablement, the model-specific execution self-test and the model-specific reviewed benchmark both when rendering readiness and when accepting a job. A successful process exit, valid image header, or correct output dimensions is not proof of perceptual quality.
 
 ## Local evidence file
 
