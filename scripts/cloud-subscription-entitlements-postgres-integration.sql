@@ -38,7 +38,7 @@ begin
   update executive_visuals.billing_plans set credits_per_period=120
   where code='creator';
   select * into grant_one from executive_visuals.activate_generation_subscription(
-    '77777777-7777-4777-8777-777777777777','creator','manual',null,
+    '77777777-7777-4777-8777-777777777777','creator','dodo',null,
     'dodo-subscription-test-001',clock_timestamp(),
     clock_timestamp()+interval '30 days','active','{"test":true}'::jsonb
   );
@@ -56,14 +56,14 @@ begin
   from executive_visuals.billing_subscriptions where id=subscription;
   next_period_end:=next_period_start+interval '30 days';
   select * into grant_one from executive_visuals.activate_generation_subscription(
-    '77777777-7777-4777-8777-777777777777','creator','manual',null,
+    '77777777-7777-4777-8777-777777777777','creator','dodo',null,
     'dodo-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
   );
   if grant_one.subscription_id<>subscription or grant_one.replayed then
     raise exception 'subscription renewal did not advance the existing subscription';
   end if;
   select * into grant_two from executive_visuals.activate_generation_subscription(
-    '77777777-7777-4777-8777-777777777777','creator','manual',null,
+    '77777777-7777-4777-8777-777777777777','creator','dodo',null,
     'dodo-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
   );
   if grant_two.subscription_id<>subscription or not grant_two.replayed then
@@ -80,7 +80,7 @@ begin
 
   begin
     perform * from executive_visuals.activate_generation_subscription(
-      '77777777-7777-4777-8777-777777777777','creator','manual',null,
+      '77777777-7777-4777-8777-777777777777','creator','dodo',null,
       'dodo-subscription-test-001','2026-10-01T00:00:00Z','2026-11-01T00:00:00Z','active','{"test":true}'::jsonb
     );
     raise exception 'stale subscription renewal unexpectedly applied';
