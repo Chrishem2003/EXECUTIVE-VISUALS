@@ -127,6 +127,40 @@ test("provider amount or charge mismatch cannot finalize a refund",async()=>{
   assert.equal(finalized,0);
 });
 
+test("scheduled reconciliation retries an ambiguous refund with the same idempotency key",async()=>{
+  const refundKey="stable-refund-key-0001";
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,options});
+    if(target.includes("payment_refunds?select=id,owner_id")&&target.includes("status=in."))return json([{
+      id:refundId,owner_id:owner,payment_transaction_id:paymentId,provider_refund_id:null,
+      status:"requested",amount_minor:2500,currency:"USD",reason:"Customer request",idempotency_key:refundKey
+    }]);
+    if(target.includes("payment_transactions?select=id,provider_transaction_id")&&target.includes("provider_transaction_id,amount_minor,currency,status"))return json([{
+      id:paymentId,owner_id:owner,provider_transaction_id:"chg_verified",amount_minor:10000,currency:"USD",status:"successful"
+    }]);
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/refunds"&&options.method==="POST")return json({data:{id:"rfd_retry",status:"new",charge_id:"chg_verified",amount_refunded:25}});
+    if(target.includes("payment_refunds?id=eq."+refundId)&&options.method==="PATCH")return new Response(null,{status:204});
+    if(target.includes("payment_refunds?select=id,owner_id")&&target.includes("provider_refund_id=eq.rfd_retry"))return json([{
+      id:refundId,owner_id:owner,payment_transaction_id:paymentId,provider_refund_id:"rfd_retry",
+      amount_minor:2500,currency:"USD",status:"processing"
+    }]);
+    if(target.includes("payment_transactions?select=id,provider_transaction_id")&&target.includes("owner_id=eq."+owner))return json([{
+      id:paymentId,provider_transaction_id:"chg_verified",amount_minor:10000,currency:"USD"
+    }]);
+    if(target==="https://developersandbox-api.flutterwave.com/refunds/rfd_retry")return json({data:{id:"rfd_retry",charge_id:"chg_verified",amount_refunded:25,status:"pending"}});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.reconcilePendingRefunds();
+  assert.equal(result.checked,1);
+  assert.equal(result.results[0].status,"processing");
+  const refundPost=calls.find(call=>call.target==="https://developersandbox-api.flutterwave.com/refunds"&&call.options.method==="POST");
+  assert.ok(refundPost);
+  assert.equal(refundPost.options.headers["x-idempotency-key"],refundKey);
+  assert.deepEqual(JSON.parse(refundPost.options.body),{amount:25,reason:"Customer request",charge_id:"chg_verified"});
+});
+
 test("Flutterwave OAuth access token is cached and refreshed before expiry",async()=>{
   let calls=0,clock=1000;
   const getToken=createFlutterwaveAccessTokenProvider({
