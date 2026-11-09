@@ -113,3 +113,8 @@ test("video AI upscaler preserves text subtitle streams as mov_text",async t=>{
  assert.ok(f.capturedAssemblyArgs.includes("1:s?"));
  assert.ok(f.capturedAssemblyArgs.includes("mov_text"));
 });
+
+test("video AI upscaler rejects unsafe temporary-storage and output-pixel budgets",()=>{
+ assert.throws(()=>createVideoAiUpscaleProcessor({maxTempBytes:1024}),/temporary storage budget/);
+ assert.throws(()=>createVideoAiUpscaleProcessor({maxOutputPixels:100000001}),/output pixel budget/);
+});
