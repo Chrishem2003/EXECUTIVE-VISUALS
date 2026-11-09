@@ -77,7 +77,7 @@ begin
  if current_balance<>82 then raise exception 'settlement did not refund unused 12 credits'; end if;
  select * into r from executive_visuals.settle_generation_credit_reservation(
   (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),18,
-  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
  );
  if not r.replayed or r.balance<>82 or r.adjustment<>12 then
   raise exception 'identical settlement replay failed';
