@@ -231,11 +231,12 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/summary"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
         const from=String(query.from||"").slice(0,30),to=String(query.to||"").slice(0,30);
-        const dateFilter=from&&to&&/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)
-          ?"&created_at=gte."+from+"T00:00:00Z&created_at=lte."+to+"T23:59:59Z":"";
+        const validPeriod=from&&to&&/^\\d{4}-\\d{2}-\\d{2}$/.test(from)&&/^\\d{4}-\\d{2}-\\d{2}$/.test(to);
+        const paymentDateFilter=validPeriod?"&and=(created_at.gte."+from+"T00:00:00Z,created_at.lte."+to+"T23:59:59Z)":"";
+        const refundDateFilter=validPeriod?"&and=(requested_at.gte."+from+"T00:00:00Z,requested_at.lte."+to+"T23:59:59Z)":"";
         const [payments,refunds,disputes]=await Promise.all([
-          dbRequest("payment_transactions?select=amount_minor,currency,status,created_at,provider_fee_minor&order=created_at.desc&limit=1000"+dateFilter),
-          dbRequest("payment_refunds?select=amount_minor,currency,status,requested_at&order=requested_at.desc&limit=1000"),
+          dbRequest("payment_transactions?select=amount_minor,currency,status,created_at,provider_fee_minor&order=created_at.desc&limit=1000"+paymentDateFilter),
+          dbRequest("payment_refunds?select=amount_minor,currency,status,requested_at&order=requested_at.desc&limit=1000"+refundDateFilter),
           dbRequest("chargeback_cases?select=amount_minor,currency,status,response_due_at&status=in.(open,under_review)&limit=1000")
         ]);
         const paymentRows=Array.isArray(payments.data)?payments.data:[];
@@ -249,7 +250,7 @@ export function createFinancialIntelligenceApi({
           const sum=rows=>rows.reduce((total,row)=>total+Number(row.amount_minor||0),0);
           return {currency,grossRevenueMinor:sum(ps),refundsMinor:sum(rs),netRevenueMinor:sum(ps)-sum(rs),providerFeesMinor:sum(ps.map(row=>({amount_minor:row.provider_fee_minor||0}))),outstandingDisputesMinor:sum(ds),successfulPayments:ps.length,successfulRefunds:rs.length,outstandingDisputes:ds.length};
         });
-        return response(200,{period:from&&to?{from,to}:null,byCurrency,reconciliationRequired:true,source:"reconciled provider-backed transaction records"});
+        return response(200,{period:validPeriod?{from,to}:null,byCurrency,reconciliationRequired:true,sourceTruncated:paymentRows.length===1000||refundRows.length===1000||disputeRows.length===1000,sourceLimit:1000,source:"provider-backed transaction records"});
       }
       if(path==="/api/admin/finance/refunds"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
