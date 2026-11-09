@@ -147,3 +147,41 @@ test("reports a remote-only manifest as unavailable instead of absent",async()=>
   assert.ok(result.findings.includes("C2PA_REMOTE_MANIFEST_FETCH_DISABLED"));
  }finally{await f.cleanup();}
 });
+
+
+test("reports unsupported asset formats as unavailable rather than invalid", async () => {
+  const f = await fixture();
+  try {
+    for (const mediaType of ["application/pdf", "video/webm", "video/x-matroska", "audio/ogg"]) {
+      let sdkLoaded = false;
+      const result = await createC2paVerifier({
+        sdkLoader: async () => { sdkLoaded = true; return sdkFor(validStore); },
+        maxBytes: 1024
+      })({ filePath: f.filePath, mediaType, expectedSha256: f.sha256, expectedSize: f.size });
+      assert.equal(result.status, "validation_unavailable");
+      assert.equal(result.present, null);
+      assert.equal(result.valid, false);
+      assert.deepEqual(result.findings, ["C2PA_FORMAT_UNSUPPORTED"]);
+      assert.equal(sdkLoaded, false);
+    }
+  } finally { await f.cleanup(); }
+});
+
+test("normalizes MIME parameters before supported-format verification", async () => {
+  const f = await fixture();
+  try {
+    let receivedType = "";
+    const sdk = sdkFor(validStore);
+    sdk.Reader.fromAsset = async (asset, context) => {
+      receivedType = asset.mimeType;
+      assert.ok(context instanceof sdk.Context);
+      assert.equal(context.settings.verify.verifyAfterReading, true);
+      return { isEmbedded: () => true, json: () => validStore };
+    };
+    const result = await createC2paVerifier({ sdkLoader: async () => sdk, maxBytes: 1024 })({
+      filePath: f.filePath, mediaType: " VIDEO/MP4; codecs=avc1 ", expectedSha256: f.sha256
+    });
+    assert.equal(result.status, "valid_untrusted");
+    assert.equal(receivedType, "video/mp4");
+  } finally { await f.cleanup(); }
+});
