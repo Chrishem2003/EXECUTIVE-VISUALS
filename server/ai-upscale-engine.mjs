@@ -465,7 +465,7 @@ export function createRealEsrganAdapter({
     };
   }
 
-  async function selfTest({ inputPath, model = "realesrgan-x4plus", scale = 2, tile = 0, format = "png", threads = "1:2:2", signal } = {}) {
+  async function selfTest({ inputPath, model = "realesrgan-x4plus", scale = 2, tile = 0, format = "png", threads = "1:2:2", tta = false, signal } = {}) {
     if (!enabled) throw fail("AI_UPSCALE_ENABLED must be explicitly enabled before a GPU self-test.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
     if (!(await regularFile(inputPath, "self-test image"))) throw fail("A readable test image is required for the inference self-test.", "AI_UPSCALE_INVALID_INPUT");
     const selected = String(model || "realesrgan-x4plus");
@@ -475,18 +475,18 @@ export function createRealEsrganAdapter({
     const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-selftest-"));
     try {
       const outputPath = join(directory, randomUUID() + "." + format);
-      const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, threads, signal });
+      const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, threads, tta, signal });
       const after = await fingerprint(selected);
       if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
       executionFingerprints.set(selected, after);
-      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, threads: result.threads, inputDimensions: result.inputDimensions, outputDimensions: result.outputDimensions, outputBytes: result.byteSize, outputHasAlpha: result.outputHasAlpha, alphaPreserved: result.alphaPreserved, tile: result.tile, requestedTile: result.requestedTile, tileFallbackUsed: result.tileFallbackUsed, tileAttempts: result.tileAttempts };
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, threads: result.threads, tta: result.tta, inputDimensions: result.inputDimensions, outputDimensions: result.outputDimensions, outputBytes: result.byteSize, outputHasAlpha: result.outputHasAlpha, alphaPreserved: result.alphaPreserved, tile: result.tile, requestedTile: result.requestedTile, tileFallbackUsed: result.tileFallbackUsed, tileAttempts: result.tileAttempts };
     } catch (error) {
       executionFingerprints.delete(selected);
       throw error;
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => {}); }
   }
 
-  function plan({ inputPath, outputPath, model = "realesrgan-x4plus", scale = 4, tile = 0, format = "png", threads = "1:2:2" } = {}) {
+  function plan({ inputPath, outputPath, model = "realesrgan-x4plus", scale = 4, tile = 0, format = "png", threads = "1:2:2", tta = false } = {}) {
     if (!MODELS.has(model)) throw fail("The selected AI model is not allowlisted.", "AI_UPSCALE_INVALID_MODEL");
     if (!FORMATS.has(format)) throw fail("The requested output format is unsupported.", "AI_UPSCALE_INVALID_OPTIONS");
     const factor = boundedInteger(scale, 4, 2, 4, "Scale");
@@ -499,11 +499,12 @@ export function createRealEsrganAdapter({
         threads.split(":").reduce((sum, value) => sum + Number(value), 0) > 8) {
       throw fail("Thread configuration must be load:proc:save with each value 1-4 and a combined maximum of 8.", "AI_UPSCALE_INVALID_OPTIONS");
     }
+    if (typeof tta !== "boolean") throw fail("TTA must be a boolean.", "AI_UPSCALE_INVALID_OPTIONS");
     if (!inputPath || !outputPath || resolve(inputPath) === resolve(outputPath)) throw fail("Distinct input and output paths are required.", "AI_UPSCALE_INVALID_PATH");
     return {
       binary: binaryPath,
-      args: ["-i", resolve(inputPath), "-o", resolve(outputPath), "-n", model, "-s", String(factor), "-t", String(tileSize), "-j", threads, "-f", format],
-      model, scale: factor, tile: tileSize, threads, format
+      args: ["-i", resolve(inputPath), "-o", resolve(outputPath), "-n", model, "-s", String(factor), "-t", String(tileSize), "-j", threads, ...(tta ? ["-x"] : []), "-f", format],
+      model, scale: factor, tile: tileSize, threads, tta, format
     };
   }
 
@@ -549,7 +550,7 @@ export function createRealEsrganAdapter({
         sourceHasAlpha, outputHasAlpha, alphaPreserved: !sourceHasAlpha || outputHasAlpha,
         ...(sourceBitDepth !== null ? { sourceBitDepth } : {}),
         ...(outputBitDepth !== null ? { outputBitDepth } : {}),
-        model: prepared.model, scale: prepared.scale, threads: prepared.threads, tile: execution.tile,
+        model: prepared.model, scale: prepared.scale, threads: prepared.threads, tta: prepared.tta, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
         tileAttempts: execution.attemptedTiles, format: prepared.format,
         engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution"
