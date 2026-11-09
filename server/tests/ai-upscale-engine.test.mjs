@@ -36,6 +36,7 @@ const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
 const size = ${sizeExpression};
+${pngBytes.toString()}
 fs.writeFileSync(out,pngBytes(size,size));
 `;
   await writeFile(path, source);
@@ -100,6 +101,7 @@ test("AI upscaler rejects a source replaced during inference and removes its der
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
+${pngBytes.toString()}
 fs.writeFileSync(${JSON.stringify(input)}, "replacement bytes");
 fs.writeFileSync(out,pngBytes(2,2));
 `;
@@ -293,6 +295,7 @@ const tile = Number(value("-t"));
 const input = fs.readFileSync(value("-i"));
 const output = value("-o");
 const scale = Number(value("-s"));
+${pngBytes.toString()}
 const attemptsFile = ${JSON.stringify(attemptsFile)};
 const previous = fs.existsSync(attemptsFile) ? Number(fs.readFileSync(attemptsFile, "utf8")) : 0;
 fs.writeFileSync(attemptsFile, String(previous + 1));
