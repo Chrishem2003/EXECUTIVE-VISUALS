@@ -204,7 +204,7 @@ export async function runUpscaleBenchmark({
     };
     const reportHandle = await open(reportPath, "wx", 0o600);
     try {
-      await reportHandle.writeFile(JSON.stringify(report, null, 2) + "\\n", "utf8");
+      await reportHandle.writeFile(JSON.stringify(report, null, 2) + "\n", "utf8");
     } finally {
       await reportHandle.close();
     }
