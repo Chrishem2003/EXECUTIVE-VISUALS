@@ -118,7 +118,7 @@ declare
   new_id uuid;
 begin
   select role into actor_role from executive_visuals.platform_admins where user_id=p_actor_id;
-  if actor_role not in ('owner','platform_admin','billing_admin') then
+  if actor_role is null or actor_role not in ('owner','platform_admin','billing_admin') then
     raise exception 'Billing administrator role required' using errcode='42501';
   end if;
   if p_owner_id is null or p_plan_code is null or char_length(btrim(p_reason)) not between 3 and 500 then
