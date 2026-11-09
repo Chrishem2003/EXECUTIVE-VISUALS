@@ -70,3 +70,8 @@ Do not enable remote inference or incur provider charges to satisfy this gate. R
 ## Pre-inference output pixel budget
 
 The worker calculates projected output width, height and pixel count from the validated input header and requested scale before launching NCNN/Vulkan. Jobs that exceed the configured worker pixel budget (bounded by the adapter's 100-megapixel hard ceiling) are rejected before GPU allocation or model execution. This is distinct from the output-byte limit: the pixel budget protects inference memory pressure, while the byte limit protects disk and publication capacity. Smaller tiles can reduce per-tile GPU memory, but they do not make an arbitrarily large final raster safe to allocate.
+
+
+## High-bit-depth input gate
+
+The NCNN/Vulkan CLI contract lists JPEG, PNG and WebP input but does not certify preservation of 16-bit PNG sample precision. The upstream Python inference path separately documents 16-bit support; that capability must not be assumed for this distinct executable. Until a real 16-bit fixture round-trip is independently validated, the adapter rejects PNG inputs with a bit depth above 8 before launching the GPU process. Source and output sample depth are recorded in derivative processing metadata when readable from image headers. This is a fail-closed compatibility guard, not a claim that 16-bit imagery is unsupported by every Real-ESRGAN implementation.
