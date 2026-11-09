@@ -40,6 +40,7 @@ async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6,
   })));
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
+const { deflateSync } = require("node:zlib");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
