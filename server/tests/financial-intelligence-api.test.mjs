@@ -362,3 +362,75 @@ test("subscription grant rejects periods longer than 366 days",async()=>{
   assert.equal(result.body.error.code,"SUBSCRIPTION_GRANT_INVALID");
   assert.equal(calls,1); // role lookup only; invalid period never reaches grant RPC
 });
+
+
+test("verified Flutterwave subscription cancellation is retained for reconciliation, not blindly applied",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({
+    event:"subscription.cancelled",
+    data:{
+      status:"deactivated",
+      customer:{email:"customer@example.com"},
+      plan:{id:98765,name:"Creator monthly",status:"cancel"}
+    }
+  }));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+    if(target.includes("/payment_webhook_events?select=id"))return json([]);
+    if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave&event_key=eq."))return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.needsReview,true);
+  const patch=calls.find(call=>call.method==="PATCH");
+  assert.ok(patch);
+  assert.equal(JSON.parse(patch.body).processing_status,"needs_review");
+  assert.equal(calls.some(call=>call.target.includes("customer_subscriptions")||call.target.includes("rpc/")),false);
+});
+
+test("subscription reconciliation queue is admin-only and returns sanitized event details",async()=>{
+  let queueRead=false,requestUrl="";
+  const service=api(async url=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+    if(target.includes("/payment_webhook_events?")){
+      queueRead=true;requestUrl=target;
+      return json([{
+        id:"77777777-7777-4777-8777-777777777777",
+        event_type:"subscription.cancelled",
+        payload_hash:"a".repeat(64),
+        processing_status:"needs_review",
+        received_at:"2026-11-10T12:00:00Z",
+        payload:{data:{status:"deactivated",customer:{email:"customer@example.com"},plan:{id:98765}}}
+      }]);
+    }
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/subscriptions/reconciliation",ownerId:owner,query:{limit:"500"}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.events.length,1);
+  assert.equal(result.body.events[0].customerEmail,"customer@example.com");
+  assert.equal(result.body.events[0].providerPlanId,98765);
+  assert.equal(result.body.automatedEntitlementChanges,false);
+  assert.equal(Object.hasOwn(result.body.events[0],"payload"),false);
+  assert.ok(queueRead);
+  assert.ok(requestUrl.includes("processing_status=eq.needs_review"));
+  assert.ok(requestUrl.includes("limit=100"));
+});
+
+test("subscription reconciliation queue denies support role before reading webhook data",async()=>{
+  let queueRead=false;
+  const service=api(async url=>{
+    const target=String(url);
+    if(target.includes("/platform_admins?"))return json([{role:"support"}]);
+    if(target.includes("/payment_webhook_events?"))queueRead=true;
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/subscriptions/reconciliation",ownerId:owner});
+  assert.equal(result.status,403);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_ADMIN_REQUIRED");
+  assert.equal(queueRead,false);
+});
