@@ -159,6 +159,11 @@ test("Dodo activation, renewal and cancellation update the subscription and gran
     assert.equal(local.status, "active");
     assert.equal(local.provider_subscription_id, "sub_dodo_123");
     assert.equal(getDodoCheckoutStatus(db, { orderId: checkout.orderId, userId: "dodo-user" }).status, "active");
+    const activationSync=db.prepare("SELECT * FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(active.webhookId);
+    assert.equal(activationSync.owner_id,"dodo-user");
+    assert.equal(activationSync.plan_code,"creator");
+    assert.equal(activationSync.provider_subscription_id,"sub_dodo_123");
+    assert.equal(activationSync.status,"active");
 
     const renewed = signedWebhook(subscriptionPayload(checkout.orderId, plan, {
       type: "subscription.renewed",
@@ -172,6 +177,10 @@ test("Dodo activation, renewal and cancellation update the subscription and gran
     assert.equal(renewalResult.renewed, true);
     assert.equal(getBillingBalance(db, "dodo-user"), 200);
     assert.equal(db.prepare("SELECT current_period_end FROM billing_subscriptions WHERE id=?").get(local.id).current_period_end, "2027-01-07T00:00:00.000Z");
+    const renewalSync=db.prepare("SELECT period_start,period_end,metadata_json FROM cloud_subscription_sync_outbox WHERE provider_event_id=?").get(renewed.webhookId);
+    assert.equal(renewalSync.period_start,"2026-12-07T00:00:00.000Z");
+    assert.equal(renewalSync.period_end,"2027-01-07T00:00:00.000Z");
+    assert.equal(JSON.parse(renewalSync.metadata_json).paymentId,"pay_dodo_renewal_1");
 
     const cancelled = signedWebhook(subscriptionPayload(checkout.orderId, plan, {
       type: "subscription.cancelled",
