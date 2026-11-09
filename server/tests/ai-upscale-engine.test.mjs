@@ -357,3 +357,73 @@ fs.writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
 test("AI upscaler rejects output pixel budgets outside the safe worker ceiling", () => {
   assert.throws(() => createRealEsrganAdapter({ maxOutputPixels: 100_000_001 }), /pixel budget is invalid/);
 });
+
+
+function pngHeaderWithBitDepth(width, height, bitDepth, colorType = 2) {
+  const bytes = Buffer.alloc(26);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
+  bytes.writeUInt32BE(13,8);
+  bytes.write("IHDR",12,"ascii");
+  bytes.writeUInt32BE(width,16);
+  bytes.writeUInt32BE(height,20);
+  bytes[24] = bitDepth;
+  bytes[25] = colorType;
+  return bytes;
+}
+
+test("AI upscaler rejects 16-bit PNG before launching an uncertified 8-bit NCNN path", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-16bit-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source-16bit.png");
+  const output = join(directory, "must-not-run.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeaderWithBitDepth(8, 6, 16));
+  await writeFile(binary, `#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(attemptsFile));
+    await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("AI upscaler accepts 8-bit PNG input and reports source and output sample depth", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-8bit-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source-8bit.png");
+  const output = join(directory, "enhanced-8bit.png");
+  await writeFile(input, pngHeaderWithBitDepth(8, 6, 8));
+  const script = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+const scale = Number(args[args.indexOf("-s") + 1] || 2);
+const png = Buffer.alloc(26);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
+png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20);
+png[24]=8; png[25]=2;
+fs.writeFileSync(out,png);
+`;
+  await writeFile(binary, script);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const result = await adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" });
+    assert.equal(result.sourceBitDepth, 8);
+    assert.equal(result.outputBitDepth, 8);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
