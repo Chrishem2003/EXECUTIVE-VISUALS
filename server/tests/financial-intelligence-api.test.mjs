@@ -74,6 +74,7 @@ test("v4 webhook verifies provider refund before atomic credit settlement and de
   let duplicate=false,finalized=0,providerReads=0,dbWrites=0;
   const service=api(async(url,options={})=>{
     const target=String(url);
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
     if(target.includes("/payment_webhook_events?select=id"))return json(duplicate?[{id:"event-1"}]:[]);
     if(target.endsWith("/payment_webhook_events")&&options.method==="POST"){dbWrites++;return new Response(null,{status:201});}
     if(target.includes("payment_refunds?select=id,owner_id"))return json([{
@@ -111,6 +112,7 @@ test("provider amount or charge mismatch cannot finalize a refund",async()=>{
   let finalized=0;
   const service=api(async(url,options={})=>{
     const target=String(url);
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
     if(target.includes("/payment_webhook_events?select=id"))return json([]);
     if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
     if(target.includes("payment_refunds?select=id,owner_id"))return json([{id:refundId,owner_id:owner,payment_transaction_id:paymentId,provider_refund_id:"rfd_bad",amount_minor:2500,currency:"USD",status:"processing"}]);
