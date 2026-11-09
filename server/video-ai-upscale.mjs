@@ -106,7 +106,7 @@ export function createVideoAiUpscaleProcessor({
     let workspace=null,outputCreated=false;
     try{
       progress(3);
-      const probeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration,start_time,pix_fmt,bits_per_raw_sample,color_range,color_space,color_transfer,color_primaries","-show_entries","format=duration","-of","json",sourcePath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
+      const probeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration,start_time,pix_fmt,bits_per_raw_sample,color_range,color_space,color_transfer,color_primaries","-show_entries","format=duration","-of","json",sourcePath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
       const source=parseProbe(probeResult.stdout);
       if(source.frames>maxFrames)throw fail("Video exceeds the configured frame budget.","VIDEO_AI_UPSCALE_FRAME_LIMIT");
       if(source.duration!==null&&source.duration>maxDurationSeconds)throw fail("Video exceeds the configured duration budget.","VIDEO_AI_UPSCALE_DURATION_LIMIT");
