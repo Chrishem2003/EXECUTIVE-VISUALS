@@ -94,7 +94,7 @@ export function createFinancialIntelligenceApi({
       if(!result.ok)throw Object.assign(new Error("Flutterwave request failed (HTTP "+result.status+")."),{code:"PROVIDER_REQUEST_FAILED",status:502,providerStatus:result.status});
       return payload;
     }catch(err){
-      if(err?.name==="AbortError")throw Object.assign(new Error("Flutterwave request timed out; the refund may have been accepted. Reconciliation will retry with the same idempotency key."),{code:"PROVIDER_RESULT_UNCERTAIN",status:202});
+      if(err?.name==="AbortError")throw Object.assign(new Error("Flutterwave request timed out; the provider result is uncertain. Reconciliation must reuse the same idempotency key."),{code:"PROVIDER_RESULT_UNCERTAIN",status:202});
       throw err;
     }finally{clearTimeout(timer);}
   }
