@@ -136,3 +136,21 @@ test("summary fails closed for a non-array input", () => {
   assert.equal(summary.qualityVerified, false);
   assert.equal(summary.validRecordCount, 0);
 });
+
+
+test("rejects benchmark summaries that mix model versions or executable/model artifacts", () => {
+  const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
+  const approved = categories.map((fixtureCategory, index) => validRecord({ fixtureId: `consistent-${index}`, fixtureCategory, qualityReview: "reviewed_pass" }));
+  const mixedVersion = approved.map(record => ({ ...record }));
+  mixedVersion[4].modelVersion = "different-pinned-model-version";
+  const versionSummary = summarizeUpscaleBenchmarks(mixedVersion);
+  assert.equal(versionSummary.qualityVerified, false);
+  assert.equal(versionSummary.invalidRecords.length, 1);
+  assert.match(versionSummary.invalidRecords[0].issues.join(" "), /same model and pinned executable\/model artifacts/);
+
+  const mixedWeights = approved.map(record => ({ ...record }));
+  mixedWeights[3].modelFilesSha256 = digest("f");
+  const weightsSummary = summarizeUpscaleBenchmarks(mixedWeights);
+  assert.equal(weightsSummary.qualityVerified, false);
+  assert.equal(weightsSummary.invalidRecords.length, 1);
+});
