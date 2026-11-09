@@ -27,7 +27,7 @@ This is a controlled framewise baseline, **not** a temporally trained video-supe
 - Video processing is disabled unless `AI_VIDEO_UPSCALE_ENABLED=true` is explicitly set by an administrator. The existing `AI_UPSCALE_ENABLED`, installed model weights and successful model-specific execution self-test are also required.
 - Submit through `POST /api/jobs` with `jobType: media.ai-video-upscale`, an accessible `sourceAssetId`, an allowlisted model, and `scale: 2` or `4`. A worker must have FFmpeg, FFprobe and the configured NCNN/Vulkan executable/model files.
 - Defaults: maximum 1,800 frames, 600 seconds, 40 million output pixels, 2 GiB input, 4 GiB output, sequential GPU inference and a two-hour total job budget. Frame and duration ceilings can be adjusted with `AI_VIDEO_UPSCALE_MAX_FRAMES` and `AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS`; output pixels use `AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS`.
-- Only constant-frame-rate, 8-bit SDR YUV 4:2:0/4:2:2/4:4:4 sources are accepted. VFR, HDR and unsupported pixel formats fail closed rather than silently changing timing or color depth.
+- Only MP4 and QuickTime/MOV containers with constant-frame-rate, 8-bit SDR YUV 4:2:0/4:2:2/4:4:4 sources are accepted. VFR, HDR and unsupported pixel formats fail closed rather than silently changing timing or color depth.
 - Source media is never overwritten. Temporary extracted/enhanced frames are removed after success or failure. Partial output files are removed on cancellation, validation failure or provenance-publication failure.
 - The first release is an explicit worker/API capability. A UI control must not be shown as available until the server feature flag and worker readiness checks pass.
 
