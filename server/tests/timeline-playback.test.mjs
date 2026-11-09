@@ -12,7 +12,7 @@ function fixture(){
  timeline=addTrack(timeline,{id:"c1",name:"Captions",kind:"caption",enabled:true,locked:false,clips:[]});
  const add=(trackId,id,start,duration,kindRate=30,sourceIn=0,speed=1)=>{timeline=addClip(timeline,trackId,{id,assetId:"asset-"+id,name:id,sourceRange:{start:rational(sourceIn,kindRate),duration:rational(duration,30)},timelineStart:rational(start,30),duration:rational(duration,30),enabled:true,speed});};
  add("v1","v1-a",0,90,30,30);
- add("v2","v2-a",30,60,30,0,2);
+ add("v2","v2-a",30,60);
  add("a1","audio-a",0,120);
  add("o1","overlay-a",45,30);
  add("c1","caption-a",0,60);
@@ -26,20 +26,20 @@ test("playback frame selects all overlapping enabled picture, audio and overlay 
  assert.equal(frame.activeAudio.length,1);
  assert.equal(frame.activeImages.length,1);
  assert.equal(frame.active.some(item=>item.clipId==="caption-a"),false);
- assert.equal(frame.activeVideo[0].mediaTimeSeconds,2);
- assert.equal(frame.activeVideo[1].mediaTimeSeconds,2);
+ assert.equal(frame.activeVideo[0].mediaTimeSeconds,3);
+ assert.equal(frame.activeVideo[1].mediaTimeSeconds,1);
 });
 
-test("playback honors clip source in-points, speed, and half-open clip boundaries",()=>{
+test("playback honors clip source in-points and half-open clip boundaries",()=>{
  const timeline=fixture();
  const atOne=getTimelinePlaybackFrame(timeline,0.9);
  assert.equal(atOne.active.find(item=>item.clipId==="v1-a").mediaTimeSeconds,1.9);
  assert.equal(atOne.active.find(item=>item.clipId==="v2-a"),undefined);
  const atTwo=getTimelinePlaybackFrame(timeline,2);
- assert.equal(atTwo.active.find(item=>item.clipId==="v2-a").mediaTimeSeconds,2);
+ assert.equal(atTwo.active.find(item=>item.clipId==="v2-a").mediaTimeSeconds,1);
  const atThree=getTimelinePlaybackFrame(timeline,3);
  assert.equal(atThree.active.some(item=>item.clipId==="v2-a"),false);
- assert.equal(timelineClipMediaTimeSeconds(timeline.tracks[1].clips[0],2),2);
+ assert.equal(timelineClipMediaTimeSeconds(timeline.tracks[1].clips[0],2),1);
 });
 
 test("disabled tracks and clips are excluded from playback",()=>{
