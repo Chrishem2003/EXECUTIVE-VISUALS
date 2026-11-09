@@ -254,6 +254,19 @@ export function createFinancialIntelligenceApi({
     if(!billingEnabled)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
+      if(path==="/api/billing/credits"&&method==="GET"){
+        const result=await rpc("get_credit_balance",{p_owner_id:ownerId});
+        const balance=Array.isArray(result)?result[0]:result;
+        if(!balance||!Number.isSafeInteger(Number(balance.ledger_balance))||
+          !Number.isSafeInteger(Number(balance.reserved_credits))||
+          !Number.isSafeInteger(Number(balance.available_credits)))
+          throw Object.assign(new Error("Credit balance service returned an invalid result."),{code:"CREDIT_BALANCE_INVALID"});
+        return response(200,{credits:{
+          ledgerBalance:Number(balance.ledger_balance),
+          reserved:Number(balance.reserved_credits),
+          available:Number(balance.available_credits)
+        }});
+      }
       if(path==="/api/billing/products"&&method==="GET"){
         const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});
