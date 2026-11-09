@@ -51,7 +51,8 @@
     "verify:upscale-quality": "node --test server/tests/upscale-quality-evidence.test.mjs server/tests/upscale-benchmark-runner.test.mjs server/tests/upscale-visual-quality.test.mjs",
     "verify:upscale-evidence": "node server/scripts/verify-upscale-quality-evidence.mjs",
     "benchmark:upscale": "node server/scripts/run-upscale-benchmark.mjs",
-    "verify:upscale-batch": "node --test server/tests/upscale-batch.test.mjs"
+    "verify:upscale-batch": "node --test server/tests/upscale-batch.test.mjs",
+    "assess:upscale-pair": "node server/scripts/assess-upscale-pair.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
