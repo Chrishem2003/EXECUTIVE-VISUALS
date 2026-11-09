@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createVideoAiUpscaleProcessor } from "../video-ai-upscale.mjs";
 
-async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,outputAudio=1,sourceSubtitles=0,outputSubtitles=0,timestamps="0.000000\n0.500000\n1.000000\n",sourceTransfer="bt709",mutateSourceOnAssembly=false,temporalModel=false}={}){
+async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,outputAudio=1,sourceSubtitles=0,outputSubtitles=0,timestamps="0.000000\n0.500000\n1.000000\n",sourceTransfer="bt709",mutateSourceOnAssembly=false,temporalModel=false,temporalOutputBytes=null,maxTempBytes=8*1024*1024*1024}={}){
  const root=await mkdtemp(join(tmpdir(),"ev-video-upscale-test-"));
  t.after(()=>rm(root,{recursive:true,force:true}));
  const sourcePath=join(root,"source.mp4"),outputPath=join(root,"result.mp4");
@@ -48,8 +48,8 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
  };
  const observedOptions=[];
  const upscalerFactory=()=>({execute:async(options)=>{observedOptions.push({threads:options.threads,tta:options.tta,gpu:options.gpu});await writeFile(options.outputPath,"upscaled-frame");return {outputDimensions:{width:128,height:128},tileAttempts:[256],tileFallbackUsed:observedOptions.length===2};}});
- const temporalUpscalerFactory=temporalModel?()=>({execute:async({outputPath})=>{await writeFile(outputPath,"temporal-model-video");return {ok:true,model:"FlashVSR-v1.1-tiny-long",temporalModel:true,license:"Apache-2.0"};}}):null;
- const processor=createVideoAiUpscaleProcessor({runCommand,upscalerFactory,temporalUpscalerFactory,maxFrames:10,maxDurationSeconds:5,tempRoot:root});
+ const temporalUpscalerFactory=temporalModel?()=>({execute:async({outputPath})=>{await writeFile(outputPath,"temporal-model-video");if(temporalOutputBytes!==null)await truncate(outputPath,temporalOutputBytes);return {ok:true,model:"FlashVSR-v1.1-tiny-long",temporalModel:true,license:"Apache-2.0"};}}):null;
+ const processor=createVideoAiUpscaleProcessor({runCommand,upscalerFactory,temporalUpscalerFactory,maxFrames:10,maxDurationSeconds:5,maxTempBytes,tempRoot:root});
  return {root,sourcePath,outputPath,processor,observedOptions,get capturedAssemblyArgs(){return capturedAssemblyArgs;}};
 }
 
@@ -135,6 +135,13 @@ test("video AI upscaler routes FlashVSR output through temporal verification and
  assert.equal(result.audioStreams,1);
  assert.ok(f.capturedAssemblyArgs.includes("flashvsr-temporal-output.mp4"));
  assert.equal(result.temporalConsistency,"not-certified");
+});
+
+test("video AI upscaler rejects FlashVSR intermediates that exceed the temporary-storage budget",async t=>{
+ const budget=64*1024*1024;
+ const f=await fixture(t,{temporalModel:true,outputWidth:256,outputHeight:256,temporalOutputBytes:budget+1,maxTempBytes:budget});
+ await assert.rejects(f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,engine:"flashvsr-v1.1-tiny-long",model:"FlashVSR-v1.1-tiny-long",scale:4}),error=>error.code==="VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+ await assert.rejects(readFile(f.outputPath));
 });
 
 test("video AI upscaler enforces FlashVSR's 4x-only model contract",async t=>{
