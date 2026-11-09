@@ -132,35 +132,29 @@ export function createVideoAiUpscaleProcessor({
       const inputFrames=join(workspace,"input"),outputFrames=join(workspace,"enhanced");
       await mkdir(inputFrames);await mkdir(outputFrames);
       const inputPattern=join(inputFrames,"%08d.png");
+      await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-an","-sn","-dn","-vsync","0","-start_number","0",inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
+      const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
+      if(extracted.length!==source.frames)throw fail("Extracted frame count does not match the source video; no derivative was published.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
+      let remainingInputBytes=0;
+      for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
+      if(remainingInputBytes>maxTempBytes)throw fail("Extracted frames exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
       progress(12);
       const upscaler=upscalerFactory({timeoutMs:frameTimeoutMs,maxOutputBytes:250*1024*1024,maxOutputPixels});
       if(!upscaler||typeof upscaler.execute!=="function")throw fail("The configured AI image upscaler is unavailable.","AI_UPSCALE_ENGINE_UNAVAILABLE");
       const tileFallbackFrames=[];let tileFallbackCount=0,outputFrameBytes=0;
-      const chunkSize=30;
-      for(let chunkStart=0;chunkStart<source.frames;chunkStart+=chunkSize){
+      for(let index=0;index<extracted.length;index++){
         checkCancelled(signal);
         if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");
-        const chunkEnd=Math.min(source.frames,chunkStart+chunkSize),chunkCount=chunkEnd-chunkStart;
-        const selectFilter="select='between(n,"+chunkStart+","+(chunkEnd-1)+")'";
-        await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-vf",selectFilter,"-an","-sn","-dn","-vsync","0","-frames:v",String(chunkCount),"-start_number",String(chunkStart),inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
-        const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
-        if(extracted.length!==chunkCount)throw fail("Extracted frame chunk count does not match the source timestamps.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
-        let remainingInputBytes=0;
-        for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
-        if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
-        for(let offset=0;offset<extracted.length;offset++){
-          checkCancelled(signal);
-          const index=chunkStart+offset,inputFrame=join(inputFrames,extracted[offset]),outputFrame=join(outputFrames,extracted[offset]);
-          const inputFrameInfo=await stat(inputFrame);
-          const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
-          if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
-          const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
-          if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
-          await unlink(inputFrame);
-          remainingInputBytes-=inputFrameInfo.size;
-          if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
-          progress(12+Math.round(((index+1)/source.frames)*70));
-        }
+        const inputFrame=join(inputFrames,extracted[index]),outputFrame=join(outputFrames,extracted[index]);
+        const inputFrameInfo=await stat(inputFrame);
+        const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
+        if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
+        const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
+        if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+        await unlink(inputFrame);
+        remainingInputBytes-=inputFrameInfo.size;
+        if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
+        progress(12+Math.round(((index+1)/source.frames)*70));
       }
       const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
       if(enhanced.length!==source.frames)throw fail("Enhanced frame count does not match the source video.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
