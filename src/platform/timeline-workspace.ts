@@ -94,6 +94,8 @@ function syncPreviewAtFrame(frame:number){
  const active=new Map(playback.active.map(item=>[item.clipId,item]));
  const topVideo=playback.activeVideo[playback.activeVideo.length-1];
  const audioActive=playback.activeAudio.length>0;
+ const hasPicture=playback.active.some(item=>item.trackKind!=="audio"&&state.assets.some(asset=>asset.id===item.assetId&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/"))));
+ const placeholder=document.querySelector<HTMLElement>("#timeline-playback .timeline-preview-placeholder");if(placeholder)placeholder.style.display=hasPicture?"none":"grid";
  document.querySelectorAll<HTMLElement>("#timeline-playback [data-preview-media]").forEach(element=>{
   const clipId=element.dataset.previewClip||"",item=active.get(clipId),kind=element.dataset.previewKind||"";
   const isAudio=kind==="audio",isImage=kind==="image";
