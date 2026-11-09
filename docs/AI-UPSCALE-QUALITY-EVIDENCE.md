@@ -126,3 +126,10 @@ The local NCNN adapter starts with the requested tile setting. When the operator
 Every retry removes any partial output from the failed attempt before starting the next one. If a run succeeds, the actual tile, requested tile, fallback flag and ordered tile attempts are attached to the derivative's processing metadata. If output validation fails, the invalid output is removed and no derivative is published.
 
 Smaller tiles reduce peak GPU memory use but may introduce tile-boundary inconsistencies; inspect large flat areas, fine textures and high-contrast edges during visual review. This recovery behavior is an execution reliability aid, not a quality improvement or a substitute for human approval.
+
+
+## Structured reviewer rubric
+
+The standalone review page exports rubric decisions for each fixture under protocol `ev-upscale-rubric-v1`. Reviewers must assess detail retention, edge/text integrity, halos/ringing/artifacts, color/tonal consistency, and natural appearance. Each item must be marked acceptable, issue found, or not applicable before export. A fixture cannot be marked Pass when any rubric item is marked issue found; record a Fail and explain the defect instead. Notes must remain substantive (at least 20 characters) for every fixture.
+
+The rubric is a review aid, not an automated quality score. A reviewer must inspect the source/output pair at fit-to-screen and 100% zoom and consider category-specific risks such as facial identity, fine texture, small text, temporal flicker, and low-light noise. PSNR, SSIM, LPIPS and no-reference IQA scores may be useful supporting measurements, but no metric should override visible structural defects or the human decision. Recent super-resolution research reports that conventional metrics can disagree with human preferences, so the package deliberately keeps execution evidence, rubric responses and formal model approval separate.
