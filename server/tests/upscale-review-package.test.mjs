@@ -125,7 +125,7 @@ function validReviewFixture(fixture) {
 function validReviewPayload(manifest) {
  return {schemaVersion:1,reviewProtocol:"ev-upscale-rubric-v1",model:manifest.model,reviewer:"Quality Reviewer",exportedAt:"2026-11-09T12:00:00.000Z",humanReviewRequired:true,qualityVerified:false,fixtures:manifest.fixtures.map(validReviewFixture)};
 }
-function reviewManifest() {
+function reviewManifest(model="realesrgan-x4plus") {
  return {schemaVersion:1,model,modelVersion:"sha256:pinned",qualityVerified:false,humanReviewRequired:true,fixtures:categories.map(category=>({fixtureId:"fixture-"+category,fixtureCategory:category,inputSha256:"a".repeat(64),outputSha256:"b".repeat(64)}))};
 }
 
