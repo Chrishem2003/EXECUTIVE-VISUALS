@@ -70,3 +70,8 @@ Do not enable remote inference or incur provider charges to satisfy this gate. R
 ## Pre-inference output pixel budget
 
 The worker calculates projected output width, height and pixel count from the validated input header and requested scale before launching NCNN/Vulkan. Jobs that exceed the configured worker pixel budget (bounded by the adapter's 100-megapixel hard ceiling) are rejected before GPU allocation or model execution. This is distinct from the output-byte limit: the pixel budget protects inference memory pressure, while the byte limit protects disk and publication capacity. Smaller tiles can reduce per-tile GPU memory, but they do not make an arbitrarily large final raster safe to allocate.
+
+
+## Alpha-channel integrity gate
+
+The NCNN/Vulkan adapter inspects PNG color types and WebP alpha flags before inference. Transparent inputs cannot be exported to JPEG because JPEG has no alpha channel; such requests fail before launching the GPU process and direct the operator to PNG or WebP. After inference, the worker verifies that an alpha-bearing source still has an alpha-bearing output. If transparency is lost, the derivative is deleted and publication is rejected. The processing result records source/output alpha detection and the preservation decision. This validates channel presence, not pixel-perfect alpha matte fidelity; visual fixture review remains required.
