@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
 **Updated:** 9 November 2026  
-**Branch:** `main` (studio polish PR #266, upscaling evidence-integrity PR #268 and evidence-contract docs PR #269 merged; PR #268 CI passed)  
+**Branch:** `main` (studio polish PR #266, upscaling integrity PRs #268 and #271, evidence docs #269, video pricing docs #272 and reviewer validation #273 merged; quality CI passed)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
