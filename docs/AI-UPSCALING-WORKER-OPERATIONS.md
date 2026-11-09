@@ -4,7 +4,7 @@ The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option
 
 ## Automated image quality and seam review
 
-`server/upscale-visual-quality.mjs` exposes a bounded FFmpeg/FFprobe RGB decoder and a deterministic pixel analyzer. It checks configured tile-grid boundaries for persistent gradient discontinuities and, when an aligned reference is supplied, reports explicitly named global RGB SSIM and PSNR metrics. The paired global SSIM value is not presented as windowed benchmark SSIM. LPIPS is not computed by this module. Images are limited to 40 million pixels by default; decode output is byte-capped and subprocesses have time limits. The assessor can be injected into `createUpscaleBatchProcessor`; assessment failures are recorded as unavailable and never clear the mandatory human-review gate.
+`server/upscale-visual-quality.mjs` exposes a bounded FFmpeg/FFprobe RGB decoder and a deterministic pixel analyzer. It checks configured tile-grid boundaries for persistent gradient discontinuities and, when an aligned reference is supplied, reports explicitly named global RGB SSIM and PSNR metrics. The paired global SSIM value is not presented as windowed benchmark SSIM. LPIPS is not computed by this module. Images are limited to 40 million pixels by default; decode output is byte-capped and subprocesses have time limits. The same assessor is now invoked by the local `media.ai-upscale` worker after derivative generation and C2PA preservation, and can also be injected into `createUpscaleBatchProcessor`; assessment failures are recorded as unavailable and never clear the mandatory human-review gate. The worker records seam findings and explicit review reasons in derivative processing provenance.
 
 ## Batch image enhancement
 
