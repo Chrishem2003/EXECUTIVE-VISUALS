@@ -290,12 +290,14 @@ export function getFlutterwaveSubscriptionCheckoutStatus(db,{orderId,userId}={})
 
 export async function cancelFlutterwaveSubscription(db,{user,secretKey=process.env.FLW_SECRET_KEY,fetchImpl=fetch}={}){
   if(!user?.id||typeof secretKey!=="string"||secretKey.length<12)throw fail("Authenticated customer and Flutterwave credentials are required.","BILLING_PROVIDER_CONFIG_INVALID",503);
-  const local=db.prepare(`SELECT s.*,a.email,p.code AS plan_code
+  const localMatches=db.prepare(`SELECT s.*,a.email,p.code AS plan_code
     FROM billing_subscriptions s JOIN billing_accounts a ON a.user_id=s.user_id
     JOIN billing_plans p ON p.id=s.plan_id
     WHERE s.user_id=? AND s.provider='flutterwave' AND s.status IN ('active','past_due')
-    ORDER BY s.current_period_end DESC LIMIT 1`).get(String(user.id));
-  if(!local)throw fail("No cancellable Flutterwave subscription was found for this account.","BILLING_SUBSCRIPTION_NOT_FOUND",404);
+    ORDER BY s.current_period_end DESC`).all(String(user.id));
+  if(localMatches.length===0)throw fail("No cancellable Flutterwave subscription was found for this account.","BILLING_SUBSCRIPTION_NOT_FOUND",404);
+  if(localMatches.length!==1)throw fail("More than one active Flutterwave subscription exists for this account. Contact support so the correct provider subscription can be selected safely.","BILLING_SUBSCRIPTION_AMBIGUOUS",409);
+  const local=localMatches[0];
   const metadata=parse(local.metadata_json);
   const paymentPlanId=String(metadata.paymentPlanId||"");
   const initialTransactionId=String(metadata.initialTransactionId||"");
@@ -437,13 +439,14 @@ export async function processNextFlutterwaveWebhook(db, {
     if(payload.event==="subscription.cancelled"){
       const email=String(data.customer?.email||"").toLowerCase();
       const paymentPlanId=String(data.plan?.id||"");
-      const local=db.prepare(`SELECT s.*,p.code AS plan_code,a.email
+      const localMatches=db.prepare(`SELECT s.*,p.code AS plan_code,a.email
         FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id
         JOIN billing_accounts a ON a.user_id=s.user_id
         WHERE s.provider='flutterwave' AND lower(a.email)=? AND s.status IN ('active','past_due','trialing')
-        AND json_extract(s.metadata_json,'$.paymentPlanId')=? ORDER BY s.current_period_end DESC LIMIT 1`)
-        .get(email,paymentPlanId);
-      if(!local){markProcessed();return {processed:true,unmatched:true,eventId:event.event_id};}
+        AND json_extract(s.metadata_json,'$.paymentPlanId')=? ORDER BY s.current_period_end DESC`)
+        .all(email,paymentPlanId);
+      if(localMatches.length!==1){markProcessed();return {processed:true,unmatched:true,ambiguous:localMatches.length>1,eventId:event.event_id};}
+      const local=localMatches[0];
       const metadata=parse(local.metadata_json);
       db.exec("BEGIN IMMEDIATE");
       try{
