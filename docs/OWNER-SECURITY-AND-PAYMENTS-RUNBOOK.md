@@ -90,15 +90,33 @@ Treat prices, entitlements and credit grants as server-owned catalogue records. 
 
 Ugandan customers should see UGX pricing and the available approved card/mobile-money methods. International card acceptance and any additional currency must be confirmed against the merchant account's approved Flutterwave configuration.
 
-## 6. Recurring billing caveat
+## 6. Checkout and recurring billing architecture
 
-Flutterwave's published Payment Plans documentation describes recurring card billing and says the plan checkout is card-only. Uganda mobile money is suitable for one-off credit packs, but do not promise automatic recurring MTN/Airtel deductions from that product.
+Keep the current Flutterwave v4 integration consistent. Do not bolt the legacy v3 Standard Checkout API onto the existing v4 refund/auth client: Flutterwave documents v3 and v4 as separate API versions and the current integration is built around v4 OAuth.
 
-For a subscription-like experience, use one of:
-- card-based recurring billing only after Flutterwave confirms the supported v4 recurring/tokenization setup and required merchant approval; or
-- manual renewal/one-off MoMo payments with a clear expiry and grace period.
+### One-time purchases
+- Use the v4 Orchestrator flow for a single charge, with a server-generated unique reference and idempotency key.
+- For Uganda mobile money, collect the customer's email, name and phone, and use the v4 `mobile_money` payment method only after Flutterwave confirms UGX + the selected MTN/Airtel network is enabled for the merchant account.
+- For cards, use Flutterwave's v4 encrypted card data / supported authorization flow. Never send raw PAN, CVV, PIN or OTP through Executive Visuals application servers or logs.
+- Retrieve the charge from Flutterwave and compare its ID, reference, amount, currency and final status with the pending transaction before recording payment or granting any entitlement.
+- Webhook signature verification is necessary but not sufficient. Re-query the charge server-to-server before any fulfilment.
 
-Do not mix Flutterwave v3 Payment Plans with this v4 integration without a deliberate architecture/version decision. Flutterwave's documentation says v3 and v4 are separate API versions and should not be mixed in one integration.
+### Recurring subscriptions
+- Flutterwave v4 documents card tokenization / recurring charges using a stored payment-method ID and recurring flag. Store only provider-issued payment-method tokens/IDs and masked card metadata; never store card numbers or CVV.
+- Flutterwave also documents Credential-on-File as approval-gated. Ask Flutterwave support whether the account is eligible before implementing that option.
+- Mobile money is a one-off authorization flow; do not promise automatic MTN/Airtel recurring deductions unless Flutterwave explicitly confirms this for the Uganda merchant account.
+- Subscription renewal, grace period, failed-renewal retries, cancellation and entitlement expiry must be controlled by Executive Visuals' own subscription state machine and idempotent webhook/reconciliation handling.
+- Before recurring card charges are enabled, obtain explicit customer consent for amount, cadence, cancellation and stored payment method, and have the provider confirm account approval and applicable local requirements.
+
+Official v4 references:
+- General flow: https://developer.flutterwave.com/v4.0.0/docs/main-payment-flow
+- Orchestrator flow: https://developer.flutterwave.com/v4.0.0/docs/payment-orchestrator-flow
+- Uganda mobile money: https://developer.flutterwave.com/docs/uganda
+- Card payments and tokenization: https://developer.flutterwave.com/v4.0/docs/card
+- Webhooks: https://developer.flutterwave.com/v4.0/docs/webhooks
+
+### Settlement destination
+The merchant must complete KYC and be approved for live transactions. In the Flutterwave dashboard, configure settlement destination as the F4B wallet / payout balance rather than bank settlement. Keep the bank or eligible withdrawal beneficiary information available for later withdrawals if Flutterwave requests it. The dashboard controls the merchant settlement destination; Executive Visuals does not redirect merchant settlements.
 
 ## 7. Go-live acceptance gates
 
