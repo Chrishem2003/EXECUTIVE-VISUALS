@@ -114,7 +114,7 @@ function syncPreviewAtFrame(frame:number){
    media.muted=audioActive||item.clipId!==topVideo?.clipId;
    media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
   }
-  if(state.isPlaying&&media.paused)void media.play().catch(()=>{state.message="Browser playback was blocked. Press Play again after interacting with the preview.";});
+  if(state.isPlaying&&media.paused)void media.play().catch(()=>{state.message="Browser playback was blocked. Press Play again after interacting with the preview.";stopTimelinePlayback();paint();});
   if(!state.isPlaying&&!media.paused)media.pause();
  });
  const output=document.querySelector<HTMLElement>("#tl-preview-time");
