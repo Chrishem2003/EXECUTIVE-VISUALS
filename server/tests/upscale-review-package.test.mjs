@@ -126,6 +126,11 @@ test("accepts a complete human review export bound to all five package checksums
  const manifest=reviewManifest(),result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
  assert.deepEqual(result,{valid:true,errors:[]});
 });
+test("rejects duplicate fixture IDs in the review manifest",()=>{
+ const manifest=reviewManifest();manifest.fixtures[1].fixtureId=manifest.fixtures[0].fixtureId;
+ const result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/fixture IDs must be non-empty and unique/);
+});
 test("rejects a manifest with duplicate fixture categories",()=>{
  const manifest=reviewManifest();manifest.fixtures[1].fixtureCategory=manifest.fixtures[0].fixtureCategory;
  const result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
