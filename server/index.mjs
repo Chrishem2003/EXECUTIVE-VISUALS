@@ -860,6 +860,57 @@ export function createAppServer() {
         const rows=db.prepare("SELECT * FROM jobs WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
       }
+      if(path==="/api/jobs/video-batch"&&req.method==="POST"){
+        const body=await readJson(req,256*1024);
+        const projectId=String(body.projectId||"");
+        const items=Array.isArray(body.items)?body.items:[];
+        if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+        if(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")){fail(res,409,"MEDIA_ENGINE_MISSING","FFmpeg and FFprobe must both be available on the worker.");return;}
+        if(!projectId||!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Choose a project you own or can edit.");return;}
+        if(items.length<1||items.length>10){fail(res,400,"VIDEO_BATCH_LIMIT","A video batch must contain between 1 and 10 source videos.");return;}
+        const ids=items.map(item=>String(item?.sourceAssetId||""));
+        if(ids.some(id=>!id)||new Set(ids).size!==ids.length){fail(res,400,"VIDEO_BATCH_INVALID","Every batch item must have a unique sourceAssetId.");return;}
+        const readinessByModel=new Map(),normalized=[];
+        for(const item of items){
+          const sourceAssetId=String(item.sourceAssetId);
+          const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
+          if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))||source.project_id!==projectId){fail(res,400,"VIDEO_BATCH_SOURCE_INVALID","Every source must be an accessible MP4/MOV asset in the selected project.");return;}
+          if(item.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm source-media rights for every video in the batch.");return;}
+          const model=String(item.model||"realesrgan-x4plus"),scale=Number(item.scale??2),tile=Number(item.tile??0),threads=String(item.threads??"1:2:2");
+          if(![2,4].includes(scale)||!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)||! /^[1-4]:[1-4]:[1-4]$/.test(threads)||(item.tta!==undefined&&typeof item.tta!=="boolean")){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Each video item must use 2x/4x scale, a supported tile size, valid thread plan and boolean TTA setting.");return;}
+          if(!readinessByModel.has(model)){
+            const readiness=await aiUpscaleAdapter.probe(model);
+            readinessByModel.set(model,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+          }
+          if(!readinessByModel.get(model)){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","Every selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+          normalized.push({sourceAssetId,model,scale,tile,threads,tta:item.tta===true,rightsConfirmed:true});
+        }
+        const baseKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,160);
+        const batchId=randomUUID();
+        const inputs=normalized.map((item,index)=>({...item,batchId,batchIndex:index,batchTotal:normalized.length}));
+        if(baseKey){
+          const existing=inputs.map((input,index)=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,baseKey+":"+index));
+          if(existing.some(Boolean)){
+            const replay=existing.every((job,index)=>job&&job.job_type==="media.ai-video-upscale"&&job.project_id===projectId&&stableJson(parseJson(job.input_json))===stableJson(inputs[index]));
+            if(!replay){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different video batch.");return;}
+            send(res,200,{batchId:parseJson(existing[0].input_json).batchId,jobs:existing.map(recordJob),idempotentReplay:true},cors);return;
+          }
+        }
+        const jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          for(let index=0;index<inputs.length;index++){
+            const id=randomUUID(),input=inputs[index],key=baseKey?baseKey+":"+index:null;
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,'media.ai-video-upscale','queued',?,?)")
+              .run(id,user.id,projectId,stableJson(input),key);
+            addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-video-upscale",batchId,batchIndex:index,batchTotal:inputs.length});
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+          }
+          audit(db,user.id,"video_upscale.batch_queued","batch",batchId,{total:jobs.length,models:[...readinessByModel.keys()]},projectId);
+          db.exec("COMMIT");
+        }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
+        send(res,202,{batchId,jobs},cors);return;
+      }
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
