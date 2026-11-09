@@ -88,8 +88,8 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
     if(!current)return null;
     limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));
     offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
-    const rows=await request("timeline_revisions?select=timeline_id,revision,name,timeline,otio,created_at&timeline_id=eq."+encodeURIComponent(timelineId)+"&order=revision.desc&limit="+limit+"&offset="+offset);
-    return(Array.isArray(rows)?rows:[]).map(row=>({timelineId:row.timeline_id,revision:Number(row.revision),name:row.name,timeline:row.timeline,otio:row.otio||null,createdAt:row.created_at}));
+    const rows=await request("timeline_revisions?select=timeline_id,revision,name,created_at&timeline_id=eq."+encodeURIComponent(timelineId)+"&order=revision.desc&limit="+limit+"&offset="+offset);
+    return(Array.isArray(rows)?rows:[]).map(row=>({timelineId:row.timeline_id,revision:Number(row.revision),name:row.name,createdAt:row.created_at}));
   }
   async function getTimelineRevision({ownerId,timelineId,revision}={}){
     const current=await getTimeline({ownerId,timelineId});
