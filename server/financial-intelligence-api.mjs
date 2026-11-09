@@ -126,6 +126,35 @@ export function createFinancialIntelligenceApi({
     return {matched:true,status,refundId:refund.id,settlement:finalized};
   }
 
+  async function verifyAndFinalizePayment(providerChargeId){
+    if(!providerChargeId)throw Object.assign(new Error("Provider charge ID is required."),{code:"PAYMENT_PROVIDER_ID_MISSING"});
+    const providerPayload=await providerRequest("/charges/"+encodeURIComponent(providerChargeId));
+    const charge=providerPayload?.data||providerPayload;
+    if(String(charge?.id||"")!==String(providerChargeId))throw Object.assign(new Error("Flutterwave returned a mismatched charge ID."),{code:"PAYMENT_PROVIDER_ID_MISMATCH"});
+    const reference=String(charge?.reference||"");
+    if(!reference)throw Object.assign(new Error("Verified provider charge has no merchant reference."),{code:"PAYMENT_REFERENCE_MISSING"});
+    const rows=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata,description&provider=eq.flutterwave&tx_ref=eq."+encodeURIComponent(reference)+"&limit=1");
+    const payment=Array.isArray(rows.data)?rows.data[0]:null;
+    if(!payment)return {matched:false,status:"unmatched"};
+    if(payment.provider_transaction_id&&payment.provider_transaction_id!==providerChargeId)throw Object.assign(new Error("Charge is already linked to a different provider transaction."),{code:"PAYMENT_PROVIDER_ID_MISMATCH"});
+    if(String(charge.currency||"").toUpperCase()!==payment.currency)throw Object.assign(new Error("Provider charge currency does not match checkout."),{code:"PAYMENT_CURRENCY_MISMATCH"});
+    if(majorToMinor(charge.amount,payment.currency)!==Number(payment.amount_minor))throw Object.assign(new Error("Provider charge amount does not match checkout."),{code:"PAYMENT_AMOUNT_MISMATCH"});
+    const providerStatus=String(charge.status||"").toLowerCase();
+    if(providerStatus==="pending")return {matched:true,status:"pending",paymentId:payment.id};
+    if(providerStatus==="failed"||providerStatus==="voided"){
+      await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id)+"&status=eq.pending",{
+        method:"PATCH",body:{status:"failed",provider_transaction_id:providerChargeId,metadata:{...payment.metadata,provider_verification:charge},updated_at:new Date().toISOString()},prefer:"return=minimal"
+      });
+      return {matched:true,status:"failed",paymentId:payment.id};
+    }
+    if(providerStatus!=="succeeded")return {matched:true,status:"pending",paymentId:payment.id};
+    const settlement=await rpc("finalize_payment_purchase",{
+      p_payment_id:payment.id,p_provider_transaction_id:String(providerChargeId),
+      p_provider_payload:charge,p_verified_at:new Date().toISOString()
+    });
+    return {matched:true,status:"successful",paymentId:payment.id,settlement};
+  }
+
   async function handleWebhook({rawBody,signatureV4,signatureV3}={}){
     if(!Buffer.isBuffer(rawBody)||rawBody.length===0||rawBody.length>1024*1024)return response(400,{error:{code:"WEBHOOK_BODY_INVALID",message:"Webhook body is empty or too large."}});
     const verified=webhookVersion==="v3"
@@ -153,6 +182,15 @@ export function createFinancialIntelligenceApi({
     });
     if(inserted.status===409)return response(200,{received:true,duplicate:true});
     try{
+      if(/charge|payment/i.test(event)) {
+        const chargeId=String(data?.id||"");
+        if(!chargeId)return response(200,{received:true,ignored:true});
+        const result=await verifyAndFinalizePayment(chargeId);
+        await dbRequest("payment_webhook_events?provider=eq.flutterwave&event_key=eq."+eventKey,{
+          method:"PATCH",body:{processing_status:result.matched?"processed":"ignored",processed_at:new Date().toISOString()},prefer:"return=minimal"
+        });
+        return response(200,{received:true,result});
+      }
       if(!/refund/i.test(event)) {
         await dbRequest("payment_webhook_events?provider=eq.flutterwave&event_key=eq."+eventKey,{
           method:"PATCH",body:{processing_status:"ignored",processed_at:new Date().toISOString()},prefer:"return=minimal"
@@ -216,6 +254,69 @@ export function createFinancialIntelligenceApi({
     if(!billingEnabled)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
+      if(path==="/api/billing/products"&&method==="GET"){
+        const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
+        return response(200,{products:Array.isArray(result.data)?result.data:[]});
+      }
+      if(path==="/api/billing/checkout"&&method==="POST"){
+        const productCode=String(body.productCode||"").trim();
+        const network=String(body.network||"").toUpperCase();
+        const email=String(body.email||"").trim().toLowerCase();
+        const first=String(body.firstName||"").trim().slice(0,80);
+        const last=String(body.lastName||"").trim().slice(0,80);
+        const rawPhone=String(body.phoneNumber||"").replace(/[\s()+-]/g,"");
+        const key=String(idempotencyKey||"").trim();
+        const phone=rawPhone.startsWith("256")?rawPhone.slice(3):rawPhone.startsWith("0")?rawPhone.slice(1):rawPhone;
+        if(!/^[a-z0-9][a-z0-9_-]{2,59}$/.test(productCode)||!["MTN","AIRTEL"].includes(network)||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!first||!last||!/^7\d{8}$/.test(phone)||
+          key.length<8||key.length>180)
+          return error(400,"CHECKOUT_INPUT_INVALID","Provide a valid product, customer name and email, Ugandan mobile number, MTN/Airtel network and idempotency key.");
+        const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+        if(Array.isArray(prior.data)&&prior.data.length){
+          const row=prior.data[0];
+          return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
+        }
+        const productResult=await dbRequest("billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
+        const product=Array.isArray(productResult.data)?productResult.data[0]:null;
+        if(!product)return error(404,"BILLING_PRODUCT_UNAVAILABLE","This purchase option is not currently available.");
+        if(product.currency!=="UGX"||!Number.isSafeInteger(Number(product.amount_minor))||Number(product.amount_minor)<=0||
+          !Number.isSafeInteger(Number(product.credit_units))||Number(product.credit_units)<=0)
+          return error(503,"BILLING_PRODUCT_INVALID","This purchase option is not configured safely.");
+        const txRef="EV"+randomUUID().replaceAll("-","");
+        const createdRows=await dbRequest("payment_transactions",{
+          method:"POST",body:{
+            owner_id:ownerId,tx_ref:txRef,amount_minor:Number(product.amount_minor),currency:"UGX",
+            status:"pending",payment_method:"mobile_money",customer_email:email,
+            description:String(product.name).slice(0,250),
+            metadata:{product_code:product.product_code,credit_units:Number(product.credit_units),idempotency_key:key,mobile_money_network:network}
+          },prefer:"return=representation"
+        });
+        const payment=Array.isArray(createdRows.data)?createdRows.data[0]:null;
+        if(!payment?.id)throw Object.assign(new Error("Checkout reservation could not be created."),{code:"CHECKOUT_RESERVATION_FAILED"});
+        try{
+          const charge=await providerRequest("/orchestration/direct-charges",{
+            method:"POST",idempotencyKey:key,
+            body:{
+              amount:minorToMajor(Number(product.amount_minor),"UGX"),currency:"UGX",reference:txRef,
+              customer:{email,name:{first,last},phone:{country_code:"256",number:phone}},
+              payment_method:{type:"mobile_money",mobile_money:{country_code:"256",network,phone_number:phone}}
+            }
+          });
+          const providerCharge=charge?.data;
+          if(!providerCharge?.id)throw Object.assign(new Error("Flutterwave returned no charge ID."),{code:"PROVIDER_INVALID_RESPONSE"});
+          const nextAction=providerCharge.next_action||null;
+          const metadata={...payment.metadata,provider_charge_id:String(providerCharge.id),next_action:nextAction,checkout_started_at:new Date().toISOString()};
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id),{
+            method:"PATCH",body:{provider_transaction_id:String(providerCharge.id),metadata,updated_at:new Date().toISOString()},prefer:"return=minimal"
+          });
+          return response(202,{payment:{id:payment.id,reference:txRef,providerChargeId:String(providerCharge.id),status:String(providerCharge.status||"pending"),nextAction},message:"Payment initiated. Ask the customer to approve the prompt on their mobile-money phone. Credits are issued only after provider verification."});
+        }catch(err){
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id),{
+            method:"PATCH",body:{metadata:{...payment.metadata,checkout_error_code:err.code||"PROVIDER_RESULT_UNCERTAIN",checkout_result_uncertain:true},updated_at:new Date().toISOString()},prefer:"return=minimal"
+          }).catch(()=>{});
+          return response(err.status===202?202:502,{payment:{id:payment.id,reference:txRef,status:"pending"},error:{code:err.code||"CHECKOUT_RESULT_UNCERTAIN",message:"Payment initiation is not confirmed. Do not retry with a new reference; check this transaction's status first."}});
+        }
+      }
       if(path==="/api/billing/transactions"&&method==="GET"){
         const limit=Math.max(1,Math.min(SAFE_PAGE,Number(query.limit)||25));
         const offset=Math.max(0,Math.min(10000,Number(query.offset)||0));
@@ -311,5 +412,5 @@ export function createFinancialIntelligenceApi({
     }
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund,reconcilePendingRefunds};
+  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds};
 }
