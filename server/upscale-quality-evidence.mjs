@@ -6,12 +6,17 @@ import { sha256Hex, summarizeUpscaleBenchmarks } from "./upscale-benchmark.mjs";
 const MAX_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const MAX_REVIEW_ARTIFACT_BYTES = 25 * 1024 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/i;
+const RFC3339_TIMESTAMP = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
+
+function isExplicitTimestamp(value) {
+  return typeof value === "string" && RFC3339_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+}
 
 function reviewEvidenceValid(record) {
   const metrics = record?.metrics && typeof record.metrics === "object" && !Array.isArray(record.metrics) ? record.metrics : {};
   const normalizedMetricsValid = ["ssim", "lpips"].every(key => metrics[key] === undefined || (Number.isFinite(metrics[key]) && metrics[key] >= 0 && metrics[key] <= 1));
-  const benchmarkAt = Date.parse(record?.timestamp);
-  const reviewedAt = Date.parse(record?.qualityReviewedAt);
+  const benchmarkAt = isExplicitTimestamp(record?.timestamp) ? Date.parse(record.timestamp) : NaN;
+  const reviewedAt = isExplicitTimestamp(record?.qualityReviewedAt) ? Date.parse(record.qualityReviewedAt) : NaN;
   const reviewTimeValid = Number.isFinite(benchmarkAt) && Number.isFinite(reviewedAt) &&
     reviewedAt >= benchmarkAt && reviewedAt <= Date.now() + 5 * 60 * 1000;
   return normalizedMetricsValid && reviewTimeValid && record?.qualityReview === "reviewed_pass" &&
