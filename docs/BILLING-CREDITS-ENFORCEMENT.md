@@ -180,11 +180,31 @@ replays, release, ledger immutability, and customer-credit reservation within
 the workflow approval/enqueue transaction. Both the Quality and Google Drive
 PostgreSQL integration workflows exercise the migration chain.
 
-**Remaining integration gate:** the provider worker must call the cloud
-settlement/release RPCs with authoritative task receipts or invoice evidence
-for every terminal path. The current cloud migration establishes the durable
-accounting contract and atomic enqueue gate; it does not silently treat local
-SQLite billing as cloud settlement. Plan catalogue synchronization,
-subscription lifecycle webhooks, payment-provider settlement and production
-cutover remain separate approval-gated work. No payment collection or
-production billing flag is enabled.
+**Provider-worker settlement — implemented for successful workflow jobs, staging-only:**
+
+- The hosted cloud worker now calls the job-scoped
+  `settle_generation_credits_for_job` RPC after the provider's authoritative
+  task-cost resolver returns and before private output ingestion is marked
+  complete.
+- The resolver must return an integer `actualCredits` alongside the verified
+  provider-currency amount and evidence reference. USD cost is not silently
+  converted into customer credits; no conversion is guessed.
+- The RPC verifies the job owner, job type, provider identity and existing
+  customer-credit reservation before settling. It delegates to the immutable,
+  idempotent reservation settlement function.
+- Settlement evidence is bound to provider, provider task ID and the resolver's
+  evidence reference. A lost response can be retried with the same evidence;
+  conflicting retries are rejected.
+- If the actual credit amount is absent, the settlement service is unavailable,
+  or the RPC result is ambiguous, the worker quarantines the completed provider
+  task for reconciliation. It does not mark the job as an ordinary failure or
+  repeat a paid provider POST.
+- The provider-specific cost resolver must supply `actualCredits` from
+  authoritative provider usage/billing evidence before workflow-quoted video
+  jobs can pass this gate. The existing task-USD resolver alone is insufficient.
+
+**Still outstanding:** verified no-charge release for pre-dispatch cancellation,
+provider-failed/cancelled task reconciliation, subscription entitlement and
+plan synchronization in the cloud schema, payment-provider sandbox lifecycle,
+renewal/cancellation webhooks, and production cutover. The current change does
+not activate payment collection, live subscriptions, or production billing.
