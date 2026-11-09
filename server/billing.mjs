@@ -440,7 +440,6 @@ export function settleBillingSpend(db, {
     let adjustmentLedgerId=null;
     if(delta!==0) {
       adjustmentLedgerId=randomUUID();
-      const amount=delta>0?delta:-delta;
       const eventType=delta>0?"generation_refund":"generation_spend";
       const description=delta>0?"Provider usage settlement refund":"Provider usage settlement additional charge";
       db.prepare(`INSERT INTO billing_credit_ledger
