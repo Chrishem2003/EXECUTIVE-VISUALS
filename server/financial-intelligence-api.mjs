@@ -106,7 +106,7 @@ export function createFinancialIntelligenceApi({
     const refund=Array.isArray(rows.data)?rows.data[0]:null;
     if(!refund)return {matched:false};
     const payments=await dbRequest(
-      "payment_transactions?select=id,provider_transaction_id,amount_minor,currency& id=eq."+encodeURIComponent(refund.payment_transaction_id)+"&owner_id=eq."+encodeURIComponent(refund.owner_id)+"&limit=1".replace("& ","&")
+      "payment_transactions?select=id,provider_transaction_id,amount_minor,currency&id=eq."+encodeURIComponent(refund.payment_transaction_id)+"&owner_id=eq."+encodeURIComponent(refund.owner_id)+"&limit=1"
     );
     const payment=Array.isArray(payments.data)?payments.data[0]:null;
     if(!payment||!payment.provider_transaction_id)throw Object.assign(new Error("Refund is not linked to a verified provider charge."),{code:"REFUND_CHARGE_LINK_MISSING"});
