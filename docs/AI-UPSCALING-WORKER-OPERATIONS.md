@@ -2,6 +2,10 @@
 
 The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option to control image-load, processing, and image-save worker counts.
 
+## Automated image quality and seam review
+
+`server/upscale-visual-quality.mjs` exposes a bounded FFmpeg/FFprobe RGB decoder and a deterministic pixel analyzer. It checks configured tile-grid boundaries for persistent gradient discontinuities and, when an aligned reference is supplied, reports explicitly named global RGB SSIM and PSNR metrics. The paired global SSIM value is not presented as windowed benchmark SSIM. LPIPS is not computed by this module. Images are limited to 40 million pixels by default; decode output is byte-capped and subprocesses have time limits. The assessor can be injected into `createUpscaleBatchProcessor`; assessment failures are recorded as unavailable and never clear the mandatory human-review gate.
+
 ## Batch image enhancement
 
 Use `createUpscaleBatchProcessor({ adapter, defaultConcurrency })` from `server/upscale-batch.mjs` to process 1–100 independent assets through the existing single-image adapter. The processor caps concurrency at four (default one), rejects duplicate output paths and any output that would overwrite an input in the same batch, preserves per-item source/output digests and quality-review state, isolates item failures, supports cancellation, and reports progress. It does not bypass adapter validation or mark perceptual quality as passed.
