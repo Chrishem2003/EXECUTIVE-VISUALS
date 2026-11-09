@@ -368,7 +368,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
   if (job.job_type === "media.ai-video-upscale") {
-    if (!source.media_type.startsWith("video/")) throw Object.assign(new Error("Video AI super-resolution requires a video source asset."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+    if (!["video/mp4","video/quicktime"].includes(source.media_type)) throw Object.assign(new Error("Video AI super-resolution requires an MP4 or QuickTime/MOV source asset."), { code:"UNSUPPORTED_MEDIA_TYPE" });
     const outputPath=join(outputDir,id+".mp4");
     const controller=new AbortController();
     const poll=setInterval(()=>{if(cancelled())controller.abort();},500);
@@ -393,7 +393,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const fileStat=await stat(outputPath);
       const hash=createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
-      const baseName=source.original_name.replace(/\\.[^.]+$/,"")||source.original_name;
+      const baseName=source.original_name.replace(/\.[^.]+$/,"")||source.original_name;
       const processing={engine:"realesrgan-ncnn-vulkan",method:"framewise-ai-super-resolution",model:result.model,scale:result.scale,tile:result.tile,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,frameProcessing:result.frameProcessing,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:result.qualityReviewReasons,humanReviewRequired:true};
       const outputAsset=addAsset(db,job,"derived/"+id+".mp4",baseName+"-ai-upscaled.mp4","video/mp4",fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
