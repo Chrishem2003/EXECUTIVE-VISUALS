@@ -32,9 +32,9 @@ test("billing endpoints fail closed when billing is disabled",async()=>{
 });
 
 test("customer transaction history is scoped to the authenticated owner",async()=>{
-  let requestUrl="";
-  const service=api(async(url)=>{
-    requestUrl=String(url);
+  let requestUrl="",requestHeaders={};
+  const service=api(async(url,options={})=>{
+    requestUrl=String(url);requestHeaders=options.headers||{};
     return json([{id:paymentId,status:"successful",amount_minor:10000,currency:"UGX"}]);
   });
   const result=await service.handle({method:"GET",path:"/api/billing/transactions",ownerId:owner,query:{limit:"10",offset:"0"}});
@@ -42,7 +42,7 @@ test("customer transaction history is scoped to the authenticated owner",async()
   assert.equal(result.body.transactions.length,1);
   assert.ok(requestUrl.includes("owner_id=eq."+owner));
   assert.ok(requestUrl.includes("limit=10"));
-  assert.ok(requestUrl.includes("accept-profile"));
+  assert.equal(requestHeaders["accept-profile"],"executive_visuals");
 });
 
 test("refund initiation requires billing admin authorization",async()=>{
