@@ -1,8 +1,9 @@
 import { randomUUID, createHash } from "node:crypto";
 import {
   verifyFlutterwaveWebhook, verifyFlutterwaveV3Webhook, hashWebhookPayload,
-  parseRefundStatus, getCurrencyDecimals, minorToMajor, initiateFlutterwaveRefund
+  parseRefundStatus, getCurrencyDecimals, minorToMajor
 } from "./payment-intelligence.mjs";
+import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -23,7 +24,8 @@ function majorToMinor(value,currency){
 export function createFinancialIntelligenceApi({
   supabaseUrl=process.env.SUPABASE_URL,
   serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
-  flutterwaveSecretKey=process.env.FLW_SECRET_KEY,
+  flutterwaveClientId=process.env.FLW_CLIENT_ID,
+  flutterwaveClientSecret=process.env.FLW_CLIENT_SECRET,
   webhookSecretHash=process.env.FLW_SECRET_HASH,
   webhookVersion=process.env.FLW_WEBHOOK_VERSION||"v4",
   flutterwaveBaseUrl=process.env.FLW_API_BASE_URL||"https://developersandbox-api.flutterwave.com",
@@ -37,7 +39,10 @@ export function createFinancialIntelligenceApi({
   const parsedBase=new URL(flutterwaveBaseUrl);
   if(parsedBase.protocol!=="https:"&&!["localhost","127.0.0.1","::1"].includes(parsedBase.hostname))throw new Error("Flutterwave API must use HTTPS.");
   const isSandbox=parsedBase.hostname==="developersandbox-api.flutterwave.com";
-  if(!isSandbox&&!allowLive)throw new Error("Live Flutterwave API requires explicit FLW_ALLOW_LIVE=true.");
+  const isLive=parsedBase.hostname==="f4bexperience.flutterwave.com";
+  if(!isSandbox&&!isLive)throw new Error("Flutterwave v4 API base URL must be the documented sandbox or production host.");
+  if(isLive&&!allowLive)throw new Error("Live Flutterwave API requires explicit FLW_ALLOW_LIVE=true.");
+  const getAccessToken=createFlutterwaveAccessTokenProvider({clientId:flutterwaveClientId,clientSecret:flutterwaveClientSecret,fetchImpl});
   const base=new URL(supabaseUrl).origin;
 
   async function dbRequest(path,{method="GET",body=null,prefer="return=representation",allowConflict=false}={}){
@@ -74,9 +79,9 @@ export function createFinancialIntelligenceApi({
   }
 
   async function providerRequest(path,{method="GET",body=null,idempotencyKey=null}={}){
-    if(!flutterwaveSecretKey)throw Object.assign(new Error("Flutterwave secret key is not configured."),{code:"PAYMENT_PROVIDER_NOT_CONFIGURED",status:503});
+    const accessToken=await getAccessToken();
     const traceId=randomUUID();
-    const headers={authorization:"Bearer "+flutterwaveSecretKey,"content-type":"application/json","x-trace-id":traceId};
+    const headers={authorization:"Bearer "+accessToken,"content-type":"application/json","x-trace-id":traceId};
     if(idempotencyKey)headers["x-idempotency-key"]=idempotencyKey;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
     try{
