@@ -881,6 +881,8 @@ begin
 end
 $workflow_router_settlement_assertion$;
 
+reset role;
+
 do $workflow_router_cost_ledger_immutable$
 begin
  begin
@@ -894,6 +896,4 @@ begin
  end;
 end
 $workflow_router_cost_ledger_immutable$;
-
-reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
