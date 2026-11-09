@@ -793,5 +793,81 @@ begin
 end
 $aleph2_minimum_duration$;
 
+
+-- Model Router workflow settlement: reconcile the reserved ceiling to verified
+-- provider spend and preserve the budget ledger after durable completion.
+do $workflow_router_job_lease$
+declare queued record;
+begin
+ select * into queued from workflow_approval_result;
+ update executive_visuals.jobs
+ set status='processing',lease_owner='workflow-router-test-worker',
+     lease_expires_at=clock_timestamp()+interval '5 minutes',
+     lease_heartbeat_at=clock_timestamp()
+ where id=queued.job_id and status='queued';
+ if not found then raise exception 'workflow Model Router job could not be leased'; end if;
+end
+$workflow_router_job_lease$;
+
+select * from executive_visuals.prepare_video_generation_submission(
+ (select job_id from workflow_approval_result),
+ '123e4567-e89b-42d3-a456-426614174000',
+ 'runway','model-router',repeat('e',64)
+);
+select executive_visuals.begin_video_generation_submission(
+ (select job_id from workflow_approval_result),'workflow-router-test-worker'
+);
+select executive_visuals.record_video_generation_submission(
+ (select job_id from workflow_approval_result),
+ 'workflow-router-test-worker','router-task-pg-integration',
+ '{"route":"integration-test"}'::jsonb
+);
+
+insert into executive_visuals.assets(
+ id,owner_id,project_id,original_name,media_type,byte_size,sha256,
+ storage_bucket,object_path
+) values (
+ 'f23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'workflow-router-output.mp4','video/mp4',1,repeat('a',64),
+ 'executive-visuals-media','workflow-router/integration-output.mp4'
+);
+
+select executive_visuals.finish_video_generation_job(
+ (select job_id from workflow_approval_result),
+ 'workflow-router-test-worker','succeeded',
+ jsonb_build_object(
+  'assetIds',jsonb_build_array('f23e4567-e89b-42d3-a456-426614174001'),
+  'providerTaskId','router-task-pg-integration',
+  'model','model-router'
+ ),null,2.25
+);
+
+do $workflow_router_settlement_assertion$
+declare queued record; reservation executive_visuals.video_generation_budget_reservations;
+       policy executive_visuals.video_generation_budget_policies;
+       submission executive_visuals.video_generation_submissions;
+       job_row executive_visuals.jobs;
+begin
+ select * into queued from workflow_approval_result;
+ select * into reservation from executive_visuals.video_generation_budget_reservations
+  where job_id=queued.job_id;
+ select * into policy from executive_visuals.video_generation_budget_policies
+  where owner_id='123e4567-e89b-42d3-a456-426614174000'
+   and project_id='323e4567-e89b-42d3-a456-426614174000'
+   and provider='runway' and model='model-router';
+ select * into submission from executive_visuals.video_generation_submissions
+  where job_id=queued.job_id;
+ select * into job_row from executive_visuals.jobs where id=queued.job_id;
+ if reservation.state <> 'settled' or reservation.actual_amount <> 2.25
+    or policy.reserved_amount <> 0 or policy.spent_amount <> 2.25
+    or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
+    or job_row.lease_owner is not null then
+  raise exception 'Model Router workflow settlement did not reconcile reservation, spend and durable job state';
+ end if;
+end
+$workflow_router_settlement_assertion$;
+
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
