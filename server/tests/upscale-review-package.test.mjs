@@ -58,3 +58,26 @@ test("rejects a non-PNG enhanced output even when its checksum matches the repor
  await writeFile(e.reportPath,JSON.stringify(report));
  await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/complete PNG|valid PNG/);
 });
+
+test("rejects PNG data with an invalid IHDR CRC even when its file checksum matches",async t=>{
+ const e=await setup(t),output=Buffer.from(pngBytes(20,16)),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ output[29]^=0xff;
+ await writeFile(join(e.run,"fixture-portrait.png"),output);
+ report.records[0].outputSha256=hash(output);
+ await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid chunk checksum/);
+});
+test("rejects PNG files truncated before IEND",async t=>{
+ const e=await setup(t),valid=pngBytes(20,16),output=valid.subarray(0,valid.length-12),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ await writeFile(join(e.run,"fixture-portrait.png"),output);
+ report.records[0].outputSha256=hash(output);
+ await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/truncated chunk|incomplete/);
+});
+test("rejects PNG files with bytes after IEND",async t=>{
+ const e=await setup(t),output=Buffer.concat([pngBytes(20,16),Buffer.from("trailing")]),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ await writeFile(join(e.run,"fixture-portrait.png"),output);
+ report.records[0].outputSha256=hash(output);
+ await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/trailing bytes/);
+});
