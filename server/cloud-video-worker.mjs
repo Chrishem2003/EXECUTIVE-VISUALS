@@ -82,7 +82,8 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      costEvidenceReference: output.costEvidenceReference
+      costEvidenceReference: output.costEvidenceReference,
+      customerCreditSettlement: output.customerCreditSettlement || null
     };
     const finished = await enqueue.finish({
       jobId: job.id, workerId, status: "succeeded",
