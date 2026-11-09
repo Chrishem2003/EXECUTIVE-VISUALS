@@ -864,7 +864,7 @@ begin
     or policy.reserved_amount <> 0 or policy.spent_amount <> 2.25
     or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
     or job_row.lease_owner is not null then
-  raise exception 'Model Router workflow settlement did not reconcile reservation, spend and durable job state';
+  raise exception 'Model Router settlement mismatch: reservation state %, actual %, policy reserved %, spent %, submission state %, job status %, lease %', reservation.state, reservation.actual_amount, policy.reserved_amount, policy.spent_amount, submission.state, job_row.status, job_row.lease_owner;
  end if;
 end
 $workflow_router_settlement_assertion$;
