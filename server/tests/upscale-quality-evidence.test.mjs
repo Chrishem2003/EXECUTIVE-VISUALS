@@ -105,6 +105,34 @@ test("rejects review timestamps that predate the benchmark execution", async () 
   }
 });
 
+test("rejects ambiguous or timezone-free benchmark timestamps", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-review-ambiguous-time-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    const records = recordsFor();
+    records[0].timestamp = "2026-11-09";
+    await writeEvidence(directory, path, records);
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects numeric timestamps even when Date.parse coerces them", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-review-numeric-time-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    const records = recordsFor();
+    records[0].timestamp = 1;
+    await writeEvidence(directory, path, records);
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("rejects implausibly future-dated quality reviews", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-upscale-review-future-"));
   const path = join(directory, "benchmarks.json");
