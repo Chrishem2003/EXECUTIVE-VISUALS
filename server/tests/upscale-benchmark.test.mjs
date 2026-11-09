@@ -24,6 +24,7 @@ const validRecord = overrides => ({
   qualityReviewer: "qa-reviewer-01",
   qualityReviewedAt: "2026-11-03T00:00:00.000Z",
   qualityReviewNotes: "Compared source and output at native and 100 percent zoom; no unacceptable artifacts found.",
+  qualityReviewArtifactPath: "reviews/benchmark-review.txt",
   qualityReviewArtifactSha256: digest("e"),
   metrics: { psnr: 31.2, ssim: 0.91 },
   ...overrides
