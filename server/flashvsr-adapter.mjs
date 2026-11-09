@@ -48,7 +48,7 @@ export function createFlashVsrAdapter({
       const result=await run(["--probe"],{timeoutMs:120_000,maxCaptureBytes:256_000});
       const report=parseLastJson(result.stdout);
       const available=report.available===true;
-      return {available,executionEnabled:enabled,executionVerified:selfTestPassed,model:report.model||"FlashVSR-v1.1-tiny-long",license:report.license||"Apache-2.0",runtime:report.runtime||null,checks:report.checks||null,reason:report.reason||(!available?"Python dependencies, CUDA/bfloat16 support or model weights are not ready.":null),ready:available&&enabled&&selfTestPassed};
+      return {available,executionEnabled:enabled,executionVerified:selfTestPassed,model:report.model||"FlashVSR-v1.1-tiny-long",license:report.license||"Apache-2.0",runtime:report.runtime||null,checks:report.checks||null,reason:report.reason||(!available?"Python dependencies, CUDA/bfloat16 support or model weights are not ready.":!enabled?"FLASHVSR_ENABLED is not true.":!selfTestPassed?"FLASHVSR_SELF_TEST_PASSED is not true.":null),ready:available&&enabled&&selfTestPassed};
     }catch(error){return {available:false,executionEnabled:enabled,executionVerified:selfTestPassed,reason:error instanceof Error?error.message:"FlashVSR readiness check failed.",model:"FlashVSR-v1.1-tiny-long"};}
   }
   async function execute({inputPath,outputPath,scale=4,signal,onProgress=()=>{}}={}){
