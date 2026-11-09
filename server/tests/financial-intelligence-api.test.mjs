@@ -239,3 +239,25 @@ test("payment webhook verifies Flutterwave charge and atomically fulfils once",a
   assert.equal(result.body.result.status,"successful");
   assert.equal(grants,1);
 });
+
+
+test("credit balance endpoint returns server-computed owner balance only",async()=>{
+  let rpcBody=null,requestUrl="";
+  const service=api(async(url,options={})=>{
+    requestUrl=String(url);
+    rpcBody=JSON.parse(options.body||"{}");
+    return json({ledger_balance:1200,reserved_credits:200,available_credits:1000});
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body.credits,{ledgerBalance:1200,reserved:200,available:1000});
+  assert.ok(requestUrl.endsWith("/rpc/get_credit_balance"));
+  assert.deepEqual(rpcBody,{p_owner_id:owner});
+});
+
+test("credit balance endpoint fails closed on malformed database values",async()=>{
+  const service=api(async()=>json({ledger_balance:"not-a-number",reserved_credits:0,available_credits:0}));
+  const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
+  assert.equal(result.status,502);
+  assert.equal(result.body.error.code,"CREDIT_BALANCE_INVALID");
+});
