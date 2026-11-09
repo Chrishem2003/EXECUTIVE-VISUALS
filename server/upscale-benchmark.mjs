@@ -75,6 +75,9 @@ export function validateUpscaleBenchmarkRecord(record) {
       }
     }
   }
+  if (record.requestedTile !== undefined && record.requestedTile !== 0 && record.tileFallbackUsed === true) {
+    issues.push("tile fallback is only permitted when requestedTile is automatic (zero)");
+  }
   if (record.requestedTile !== undefined && record.tile !== undefined && record.tileFallbackUsed === false && record.tile !== record.requestedTile) {
     issues.push("tile must match requestedTile when tileFallbackUsed is false");
   }
