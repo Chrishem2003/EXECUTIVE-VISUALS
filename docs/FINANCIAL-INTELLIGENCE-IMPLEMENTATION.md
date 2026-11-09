@@ -213,3 +213,15 @@ Added `supabase/migrations/20261110170000_credit_reservation_accounting.sql` and
 ### Integration gate
 
 This batch establishes the accounting primitives only. It does **not** yet reserve or settle credits in the cloud generation/timeline worker or local generation pipeline. Do not activate credit packs or advertise purchased credits as usable until job creation, provider submission, terminal success/failure, retry/recovery and cancellation are wired to these RPCs. The new migration remains unapplied; no staging or production database was changed.
+
+
+## Batch 4 — customer invoice history API
+
+- Adds authenticated `GET /api/billing/invoices` with bounded pagination and owner scoping.
+- Returns invoice number, currency, amount, issue date and immutable invoice snapshot for a customer billing-history view.
+- Exposes only a boolean `pdfAvailable`; private object-storage paths are never returned to the customer.
+- Adds tests for owner scoping, pagination and private-path non-disclosure.
+
+### Invoice PDF gate
+
+The invoice snapshot is now retrievable, but downloadable PDF generation and private signed-download URLs are not yet implemented. Do not expose storage object paths or mark PDF downloads available until a private bucket, ownership checks, content-type validation and short-lived signed URLs are in place.
