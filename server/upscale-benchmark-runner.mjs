@@ -165,6 +165,8 @@ export async function runUpscaleBenchmark({
           result.outputDimensions?.height !== result.inputDimensions?.height * fixture.scale) {
         throw fail("Benchmark output failed model or exact-dimension verification.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
       }
+      const inputSha256After = await sha256File(fixture.inputPath, "Input fixture", MAX_FIXTURE_BYTES);
+      if (inputSha256After !== inputSha256) throw fail("Input fixture changed during benchmark execution.");
       const outputSha256 = await sha256File(outputPath, "Upscale output", MAX_FIXTURE_BYTES);
       records.push({
         fixtureId: fixture.fixtureId,
@@ -185,6 +187,15 @@ export async function runUpscaleBenchmark({
         qualityReview: "not_reviewed",
         timestamp: new Date().toISOString()
       });
+    }
+
+    const [binarySha256After, paramSha256After, binSha256After] = await Promise.all([
+      sha256File(resolve(binaryPath), "NCNN executable", MAX_MODEL_ARTIFACT_BYTES),
+      sha256File(modelParam, "Model parameter file", MAX_MODEL_ARTIFACT_BYTES),
+      sha256File(modelBin, "Model weights file", MAX_MODEL_ARTIFACT_BYTES)
+    ]);
+    if (binarySha256After !== binarySha256 || paramSha256After !== paramSha256 || binSha256After !== binSha256) {
+      throw fail("The NCNN executable or model files changed during benchmark execution.");
     }
 
     const summary = summarizeUpscaleBenchmarks(records);
