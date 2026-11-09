@@ -870,6 +870,11 @@ export function createAppServer() {
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
         }
+        if(type==="media.ai-upscale"&&body.referenceAssetId){
+          const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
+          const reference=getAccessibleAsset(db,user.id,String(body.referenceAssetId),true);
+          if(!source||!reference||!String(reference.media_type||"").startsWith("image/")||reference.id===source.id||reference.project_id!==source.project_id){fail(res,400,"AI_UPSCALE_LPIPS_REFERENCE_INVALID","A paired reference must be a distinct accessible image asset in the same project as the source.");return;}
+        }
         if(type==="media.ai-video-upscale"){
           if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
           const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??2);
