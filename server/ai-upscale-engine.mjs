@@ -500,12 +500,13 @@ export function createRealEsrganAdapter({
       throw fail("Thread configuration must be load:proc:save with each value 1-4 and a combined maximum of 8.", "AI_UPSCALE_INVALID_OPTIONS");
     }
     if (typeof tta !== "boolean") throw fail("TTA must be a boolean.", "AI_UPSCALE_INVALID_OPTIONS");
-    if (typeof gpu !== "string" || !/^(?:auto|(?:0|[1-9][0-9]?))$/.test(gpu) || (gpu !== "auto" && Number(gpu) > 31)) throw fail("GPU selection must be auto or a device index from 0 to 31.", "AI_UPSCALE_INVALID_OPTIONS");
+    const gpuId = gpu === "auto" ? "auto" : Number.isInteger(gpu) ? String(gpu) : typeof gpu === "string" && /^(?:0|[1-9][0-9]?)$/.test(gpu) ? gpu : null;
+    if (gpuId === null || (gpuId !== "auto" && Number(gpuId) > 31)) throw fail("GPU selection must be auto or a device index from 0 to 31.", "AI_UPSCALE_INVALID_OPTIONS");
     if (!inputPath || !outputPath || resolve(inputPath) === resolve(outputPath)) throw fail("Distinct input and output paths are required.", "AI_UPSCALE_INVALID_PATH");
     return {
       binary: binaryPath,
-      args: ["-i", resolve(inputPath), "-o", resolve(outputPath), "-n", model, "-s", String(factor), "-t", String(tileSize), "-g", gpu, "-j", threads, ...(tta ? ["-x"] : []), "-f", format],
-      model, scale: factor, tile: tileSize, gpu, threads, tta, format
+      args: ["-i", resolve(inputPath), "-o", resolve(outputPath), "-n", model, "-s", String(factor), "-t", String(tileSize), "-g", gpuId, "-j", threads, ...(tta ? ["-x"] : []), "-f", format],
+      model, scale: factor, tile: tileSize, gpu: gpuId, threads, tta, format
     };
   }
 
