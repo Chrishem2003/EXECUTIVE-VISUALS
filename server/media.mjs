@@ -380,7 +380,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         upscalerFactory:aiUpscalerFactory,
         maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),
         maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
-        maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000)
+        maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),\n        maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
       });
       const result=await processor.process({
         sourcePath,outputPath,model:input.model||"realesrgan-x4plus",
