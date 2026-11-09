@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
-import { createUpscaleReviewPackage } from "../upscale-review-package.mjs";
+import { createUpscaleReviewPackage, validateUpscaleHumanReviewNotes } from "../upscale-review-package.mjs";
 const categories=["portrait","fine_texture","text","animation","low_light_noisy"];
 const hash=b=>createHash("sha256").update(b).digest("hex");
 function pngChunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const checksum=(crc^0xffffffff)>>>0;const length=Buffer.alloc(4);length.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE(checksum);return Buffer.concat([length,body,tail]);}
@@ -111,3 +111,39 @@ test("rejects PNG files with bytes after IEND",async t=>{
  await writeFile(e.reportPath,JSON.stringify(report));
  await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/trailing bytes/);
 });
+
+function validReviewFixture(fixture) {
+ return {fixtureId:fixture.fixtureId,fixtureCategory:fixture.fixtureCategory,inputSha256:fixture.inputSha256,outputSha256:fixture.outputSha256,decision:"reviewed_pass",notes:"Reviewed at fit-to-screen and 100% zoom; no visible defects.",checks:{detailRetention:"acceptable",edgeTextIntegrity:"acceptable",artifactControl:"acceptable",colorToneConsistency:"acceptable",naturalAppearance:"acceptable"}};
+}
+function validReviewPayload(manifest) {
+ return {schemaVersion:1,reviewProtocol:"ev-upscale-rubric-v1",model:manifest.model,reviewer:"Quality Reviewer",exportedAt:"2026-11-09T12:00:00.000Z",humanReviewRequired:true,qualityVerified:false,fixtures:manifest.fixtures.map(validReviewFixture)};
+}
+function reviewManifest() {
+ return {schemaVersion:1,model:"realesrgan-x4plus",qualityVerified:false,humanReviewRequired:true,fixtures:categories.map(category=>({fixtureId:"fixture-"+category,fixtureCategory:category,inputSha256:"a".repeat(64),outputSha256:"b".repeat(64)}))};
+}
+
+test("accepts a complete human review export bound to all five package checksums",()=>{
+ const manifest=reviewManifest(),result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
+ assert.deepEqual(result,{valid:true,errors:[]});
+});
+test("rejects human review exports whose fixture checksum differs from the package",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].outputSha256="c".repeat(64);
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/checksum does not match/);
+});
+test("rejects a Pass decision when any rubric item reports an issue",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].checks.edgeTextIntegrity="issue";
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/cannot pass/);
+});
+test("rejects review exports that claim quality verification",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.qualityVerified=true;
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/qualityVerified must remain false/);
+});
+test("rejects missing rubric decisions and duplicate fixture entries",()=>{
+ const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.fixtures[0].checks.detailRetention="not_assessed";notes.fixtures[1]=notes.fixtures[0];
+ const result=validateUpscaleHumanReviewNotes(notes,manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/rubric item must be assessed|cannot repeat/);
+});
+
