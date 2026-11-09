@@ -22,7 +22,6 @@ function runProcess(binary,args,{signal,timeoutMs=30*60*1000,maxCaptureBytes=2_0
       stopError=error;
       sendSignal("SIGTERM");
       killTimer=setTimeout(()=>{sendSignal("SIGKILL");finish(stopError);},killGraceMs);
-      killTimer.unref?.();
     };
     const abort=()=>stop(Object.assign(new Error("FlashVSR inference was cancelled."),{code:"JOB_CANCELLED"}));
     const timer=setTimeout(()=>stop(Object.assign(new Error("FlashVSR inference exceeded its execution time budget."),{code:"FLASHVSR_TIMEOUT"})),timeoutMs);
