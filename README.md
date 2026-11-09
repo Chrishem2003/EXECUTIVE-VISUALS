@@ -32,6 +32,8 @@ Visual quality is not marked verified until representative portrait, fine-textur
 
 AI upscaling remains fail-closed unless the executable, allowlisted model weights and explicit worker enablement are configured. No paid inference provider is enabled by default.
 
+The Enhancement Lab exposes a read-only, per-model readiness summary for the general-purpose and anime presets, separating installation, execution self-tests and reviewed quality evidence. Presets remain disabled until the server confirms the model-specific quality gate; the panel does not run inference or incur provider charges. The Asset Library exposes the actual 2×/3×/4× actions only when that same server-side gate passes, and stores each result as a separate derivative with source lineage.
+
 ## Runtime milestone
 The application now includes a local API service with:
 - Local account registration and sign-in for development.
