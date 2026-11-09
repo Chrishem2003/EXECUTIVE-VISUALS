@@ -56,13 +56,15 @@ Every generated record deliberately has `qualityReview: "not_reviewed"`. Compare
 
 Every record must include the benchmark fields validated by `server/upscale-benchmark.mjs`, including pinned model/version, executable and model-file SHA-256 hashes, source/output hashes, integer dimensions, exact scale, duration, execution status and timestamp. Successful outputs must exactly match the declared 2×, 3× or 4× dimensions.
 
-Every passing review must additionally include:
+Within each model's five-fixture benchmark summary, every record must use the same `model`, `modelVersion`, `binarySha256` and `modelFilesSha256`. A benchmark that mixes model versions, executable builds or model weights is invalid even when each fixture record is otherwise valid. Re-run all five fixtures against one pinned artifact set rather than combining records from different runs.
+
+Every passing review must additionally include the exact field names enforced by `server/upscale-benchmark.mjs`:
 
 - `qualityReview: "reviewed_pass"`
-- `reviewerId`: stable reviewer identifier
-- `reviewedAt`: ISO-8601 timestamp
-- `reviewNotes`: substantive notes of at least 20 characters
-- `reviewArtifactSha256`: SHA-256 digest of the review artifact
+- `qualityReviewer`: stable reviewer identifier
+- `qualityReviewedAt`: ISO-8601 timestamp
+- `qualityReviewNotes`: substantive notes of at least 20 characters
+- `qualityReviewArtifactSha256`: SHA-256 digest of the review artifact
 
 Optional SSIM and LPIPS values must be normalized to the 0–1 range. Do not invent metric values when no suitable reference exists. A review artifact should document the source/output comparison and the checks performed.
 
