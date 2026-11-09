@@ -486,6 +486,35 @@ export function createRealEsrganAdapter({
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => {}); }
   }
 
+  function recommendModel(contentType = "photograph") {
+    const profiles = {
+      photograph: {
+        model: "realesrgan-x4plus",
+        scale: 4,
+        reason: "General-purpose photographic restoration and detail recovery."
+      },
+      natural_detail: {
+        model: "realesrnet-x4plus",
+        scale: 4,
+        reason: "Natural-image restoration where conservative detail reconstruction is preferred."
+      },
+      anime: {
+        model: "realesrgan-x4plus-anime",
+        scale: 4,
+        reason: "Anime and illustrated artwork."
+      },
+      animation_video: {
+        model: "realesr-animevideov3",
+        scale: 2,
+        reason: "Animation/video-frame enhancement using the dedicated AnimeVideo-v3 model."
+      }
+    };
+    if (typeof contentType !== "string" || !Object.hasOwn(profiles, contentType)) {
+      throw fail("Unsupported content type. Choose photograph, natural_detail, anime or animation_video.", "AI_UPSCALE_INVALID_CONTENT_TYPE");
+    }
+    return Object.freeze({ contentType, ...profiles[contentType] });
+  }
+
   function plan({ inputPath, outputPath, model = "realesrgan-x4plus", scale = 4, tile = 0, format = "png", threads = "1:2:2", tta = false, gpu = "auto" } = {}) {
     if (!MODELS.has(model)) throw fail("The selected AI model is not allowlisted.", "AI_UPSCALE_INVALID_MODEL");
     if (!FORMATS.has(format)) throw fail("The requested output format is unsupported.", "AI_UPSCALE_INVALID_OPTIONS");
@@ -561,5 +590,5 @@ export function createRealEsrganAdapter({
     }
   }
 
-  return Object.freeze({ probe, plan, execute, selfTest });
+  return Object.freeze({ probe, plan, execute, selfTest, recommendModel });
 }
