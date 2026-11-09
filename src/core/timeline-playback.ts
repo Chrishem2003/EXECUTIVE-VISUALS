@@ -110,3 +110,9 @@ export function selectTimelinePreviewAsset<T extends TimelinePreviewAssetRef>(
   const proxy=authorizedAssets.find(asset=>asset.id===proxyId&&asset.mediaType.startsWith("video/")&&asset.derivativeOf===source.id);
   return proxy||source;
 }
+
+/** Signed preview URLs must be renewed before their storage token expires. */
+export function isTimelinePreviewUrlFresh(expiresAtMs:number,nowMs=Date.now(),minimumValidityMs=30_000):boolean {
+  return Number.isFinite(expiresAtMs)&&Number.isFinite(nowMs)&&Number.isFinite(minimumValidityMs)&&
+    minimumValidityMs>=0&&expiresAtMs>nowMs+minimumValidityMs;
+}
