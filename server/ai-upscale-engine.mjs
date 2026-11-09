@@ -253,8 +253,10 @@ export function createRealEsrganAdapter({
   async function fingerprint(model) {
     const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
     try {
-      const metadata = await Promise.all(files.map(path => stat(path)));
-      return metadata.map(item => item.size + ":" + item.mtimeMs).join("|");
+      // Include inode/device and nanosecond ctime as well as size/mtime. This
+      // detects same-size replacements and content edits even when mtime is restored.
+      const metadata = await Promise.all(files.map(path => stat(path, { bigint: true })));
+      return metadata.map(item => [item.dev, item.ino, item.size, item.mtimeNs, item.ctimeNs].join(":")).join("|");
     } catch { return null; }
   }
 
