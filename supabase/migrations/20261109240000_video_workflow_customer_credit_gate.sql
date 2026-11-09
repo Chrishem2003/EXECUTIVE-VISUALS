@@ -31,6 +31,7 @@ declare
   reservation_id uuid;
   consumed_approval_id uuid;
   reservation_amount numeric;
+  credit_reservation record;
 begin
   if p_quote_id is null or p_approval_id is null or p_owner_id is null or p_project_id is null
      or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
