@@ -40,7 +40,7 @@ declare
   credit_units bigint;
   invoice_id uuid;
   invoice_no text;
-  was_granted boolean := false;
+  grant_rows integer := 0;
 begin
   if p_payment_id is null or nullif(p_provider_transaction_id,'') is null
      or jsonb_typeof(coalesce(p_provider_payload,'{}'::jsonb)) <> 'object' then
@@ -98,7 +98,7 @@ begin
      jsonb_build_object('product_code',payment_row.metadata->>'product_code','provider_transaction_id',p_provider_transaction_id))
   on conflict(owner_id,idempotency_key) do nothing;
 
-  get diagnostics was_granted = row_count;
+  get diagnostics grant_rows = row_count;
 
   invoice_no := 'EV-' || to_char(p_verified_at at time zone 'UTC','YYYYMMDD') || '-' || upper(substr(replace(payment_row.id::text,'-',''),1,10));
   insert into executive_visuals.billing_invoices
@@ -128,7 +128,7 @@ begin
 
   return jsonb_build_object(
     'payment_id',payment_row.id,'status','successful',
-    'credit_units',credit_units,'credit_grant_inserted',was_granted,
+    'credit_units',credit_units,'credit_grant_inserted',(grant_rows = 1),
     'invoice_number',invoice_no
   );
 end;
