@@ -65,7 +65,7 @@ test("v4 webhook rejects invalid signatures before writing event records",async(
   const rawBody=Buffer.from('{"event":"refund.updated","data":{"id":"rfd_test","status":"succeeded"}}');
   const result=await service.handleWebhook({rawBody,signatureV4:"invalid"});
   assert.equal(result.status,401);
-  assert.equal(calls,1); // one role lookup; the invalid period never reaches the grant RPC
+  assert.equal(calls,0);
 });
 
 test("v4 webhook verifies provider refund before atomic credit settlement and deduplicates repeats",async()=>{
