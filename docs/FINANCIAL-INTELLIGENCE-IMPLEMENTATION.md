@@ -132,7 +132,7 @@ Added on `feat/financial-intelligence-api-integration`:
 
 - `server/flutterwave-auth.mjs`: OAuth client-credentials token provider with concurrent-request coalescing and a one-minute refresh buffer.
 - `server/financial-intelligence-api.mjs`: owner-scoped customer transaction/refund reads, billing-admin role checks, admin financial summary, refund initiation, provider verification, pending-refund reconciliation and webhook idempotency.
-- `server/index.mjs`: authenticated route mounting and a public raw-body webhook endpoint at `POST /api/webhooks/flutterwave`. Financial routes are only mounted when `BILLING_API_ENABLED=true`; enabling them also requires `AUTH_MODE=supabase`.
+- `server/index.mjs`: authenticated route mounting, a public raw-body webhook endpoint at `POST /api/webhooks/flutterwave`, and a bounded in-process reconciliation schedule. Financial routes are only mounted when `BILLING_API_ENABLED=true`; enabling them also requires `AUTH_MODE=supabase`.
 - `supabase/migrations/20261110130000_financial_refund_atomicity.sql`: row-locked refund reservation RPC and provider-confirmed settlement RPC. The settlement RPC inserts immutable compensating ledger entries in the same database transaction and is executable only by `service_role`.
 - `server/tests/financial-intelligence-api.test.mjs`: tests owner scoping, admin authorization, invalid signatures, duplicate webhook deliveries, provider verification mismatches and OAuth token caching.
 
@@ -143,6 +143,7 @@ Added on `feat/financial-intelligence-api-integration`:
 - `POST /api/admin/finance/refunds` (billing admin only; requires `Idempotency-Key`)
 - `GET /api/admin/finance/summary` (owner/platform/billing admin only)
 - `POST /api/admin/finance/reconcile` (owner/platform/billing admin only)
+- Scheduled reconciliation runs every 60 minutes by default when billing is enabled; configure `PAYMENT_RECONCILIATION_INTERVAL_MINUTES` (5–1440) or disable with `PAYMENT_RECONCILIATION_ENABLED=false`.
 - `POST /api/webhooks/flutterwave` (public, raw-body signature verified)
 
 ### Refund safety sequence
