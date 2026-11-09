@@ -143,14 +143,15 @@ export async function runUpscaleBenchmark({
 
   const outputRoot = resolve(outputDirectory);
   await mkdir(outputRoot, { recursive: true });
-  const generatedOutputs = [];
+  const runDirectory = join(outputRoot, "run-" + randomUUID());
+  await mkdir(runDirectory, { recursive: false });
   const records = [];
+  let reportPath = null;
   try {
     for (const fixture of fixtures) {
       const inputSha256 = await sha256File(fixture.inputPath, "Input fixture", MAX_FIXTURE_BYTES);
-      const outputPath = join(outputRoot, fixture.fixtureId + ".png");
+      const outputPath = join(runDirectory, fixture.fixtureId + ".png");
       const started = performance.now();
-      generatedOutputs.push(outputPath);
       const result = await adapter.execute({
         inputPath: fixture.inputPath,
         outputPath,
@@ -190,7 +191,7 @@ export async function runUpscaleBenchmark({
     if (summary.invalidRecords.length || summary.execution.passed !== fixtures.length) {
       throw fail("The generated benchmark records did not pass structural validation.");
     }
-    const reportPath = join(outputRoot, "upscale-benchmark-" + model + "-" + randomUUID() + ".json");
+    reportPath = join(outputRoot, "upscale-benchmark-" + model + "-" + randomUUID() + ".json");
     const report = {
       schemaVersion: 1,
       model,
@@ -209,7 +210,8 @@ export async function runUpscaleBenchmark({
     }
     return { reportPath, records, summary, executionSelfTest: selfTest };
   } catch (error) {
-    await Promise.all(generatedOutputs.map(path => rm(path, { force: true }).catch(() => {})));
+    await rm(runDirectory, { recursive: true, force: true }).catch(() => {});
+    if (reportPath) await rm(reportPath, { force: true }).catch(() => {});
     throw error;
   }
 }
