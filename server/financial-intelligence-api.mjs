@@ -182,7 +182,7 @@ export function createFinancialIntelligenceApi({
     });
     if(inserted.status===409)return response(200,{received:true,duplicate:true});
     try{
-      if(/^(charge\\.|payment\\.)/i.test(event)) {
+      if(/^(charge\.|payment\.)/i.test(event)) {
         const chargeId=String(data?.id||"");
         if(!chargeId)return response(200,{received:true,ignored:true});
         const result=await verifyAndFinalizePayment(chargeId);
