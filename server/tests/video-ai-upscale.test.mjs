@@ -124,7 +124,7 @@ test("video AI upscaler rejects unsafe temporary-storage and output-pixel budget
 
 
 test("video AI upscaler routes FlashVSR output through temporal verification and source-stream remux",async t=>{
- const f=await fixture(t,{temporalModel:true});
+ const f=await fixture(t,{temporalModel:true,outputWidth:256,outputHeight:256});
  const result=await f.processor.process({sourcePath:f.sourcePath,outputPath:f.outputPath,engine:"flashvsr-v1.1-tiny-long",model:"FlashVSR-v1.1-tiny-long",scale:4});
  assert.equal(result.engine,"flashvsr-v1.1-tiny-long");
  assert.equal(result.temporalModel,true);
