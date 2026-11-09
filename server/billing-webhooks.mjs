@@ -430,7 +430,7 @@ export async function processNextFlutterwaveWebhook(db, {
       else periodEndDate.setUTCMonth(periodEndDate.getUTCMonth()+1);
       const periodEnd=periodEndDate.toISOString();
       const providerCustomerId=String(verified?.customer?.id||"")||null;
-      const providerSubscriptionId=String(verified?.subscription_id||"")||("flw-plan:"+recurring.provider_payment_plan_id+":"+recurring.user_id);
+      const providerSubscriptionId=String(verified?.subscription_id||"")||("flw-plan:"+recurring.provider_payment_plan_id+":"+recurring.user_id+":"+recurring.id);
       const localSubscriptionId=randomUUID();
       db.exec("BEGIN IMMEDIATE");
       try{
