@@ -143,6 +143,14 @@ select * from executive_visuals.grant_generation_credits(
  '{"source":"disposable_ci_fixture"}'::jsonb
 );
 
+-- The workflow owner must hold a plan that explicitly entitles video generation.
+select * from executive_visuals.activate_generation_subscription(
+ '123e4567-e89b-42d3-a456-426614174000','creator','manual',null,
+ 'cloud-video-workflow-test-subscription',
+ clock_timestamp(),clock_timestamp()+interval '30 days','active',
+ '{"source":"disposable_ci_fixture"}'::jsonb
+);
+
 -- Workflow quote ledger: service-role-only immutable quote recording.
 do $workflow_quote_privileges$
 begin
