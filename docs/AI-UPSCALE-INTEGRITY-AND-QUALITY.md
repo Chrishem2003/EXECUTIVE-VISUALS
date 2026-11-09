@@ -66,3 +66,7 @@ Do not claim that AI upscaling is production-quality merely because:
 ## Deployment boundary
 
 Do not enable remote inference or incur provider charges to satisfy this gate. Run local/isolated tests first. Keep AI upscaling disabled on production workers until executable/model availability, worker capacity, source/derivative storage, provenance, cancellation, and quality review have all been verified.
+
+## Pre-inference output pixel budget
+
+The worker calculates projected output width, height and pixel count from the validated input header and requested scale before launching NCNN/Vulkan. Jobs that exceed the configured worker pixel budget (bounded by the adapter's 100-megapixel hard ceiling) are rejected before GPU allocation or model execution. This is distinct from the output-byte limit: the pixel budget protects inference memory pressure, while the byte limit protects disk and publication capacity. Smaller tiles can reduce per-tile GPU memory, but they do not make an arbitrarily large final raster safe to allocate.
