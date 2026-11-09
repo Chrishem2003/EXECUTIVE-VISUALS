@@ -121,7 +121,7 @@ begin
   if actor_role is null or actor_role not in ('owner','platform_admin','billing_admin') then
     raise exception 'Billing administrator role required' using errcode='42501';
   end if;
-  if p_owner_id is null or p_plan_code is null or char_length(btrim(p_reason)) not between 3 and 500 then
+  if p_owner_id is null or p_plan_code is null or p_reason is null or char_length(btrim(p_reason)) not between 3 and 500 then
     raise exception 'Invalid subscription grant input' using errcode='22023';
   end if;
   if p_period_start is null or p_period_end is null or p_period_end<=p_period_start or p_period_end>p_period_start+interval '366 days' then
