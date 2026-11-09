@@ -6,7 +6,7 @@ import { sha256Hex, summarizeUpscaleBenchmarks } from "./upscale-benchmark.mjs";
 const MAX_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const MAX_REVIEW_ARTIFACT_BYTES = 25 * 1024 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/i;
-const RFC3339_TIMESTAMP = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
+const RFC3339_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function isExplicitTimestamp(value) {
   return typeof value === "string" && RFC3339_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
