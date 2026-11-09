@@ -20,7 +20,7 @@ begin
     select 1 from executive_visuals.projects p
     where p.id = new.project_id and p.owner_id = new.owner_id
   ) then
-    raise exception 'VIDEO_BUDGET_APPROVAL_PROJECT_OWNER_INVALID';
+    raise exception 'VIDEO_BUDGET_APPROVAL_PROJECT_OWNER_INVALID' using errcode = '42501';
   end if;
   new.created_at := clock_timestamp();
   new.consumed_at := null;
