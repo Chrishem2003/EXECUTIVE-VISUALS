@@ -306,6 +306,25 @@ test("Flutterwave subscription cancellation updates local and cloud lifecycle wi
   db.close();
 });
 
+test("ambiguous Flutterwave cancellation webhook never cancels an arbitrary local subscription",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const start=new Date().toISOString(),end=new Date(Date.now()+30*86400000).toISOString();
+  for(const id of ["flw-webhook-a","flw-webhook-b"])db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES(?, 'user-pay-1',?,'active','flutterwave','9988',?,?,?,?)`)
+    .run(id,plan.id,id,start,end,JSON.stringify({paymentPlanId:"87654"}));
+  receiveFlutterwaveWebhook(db,signedPayload({event:"subscription.cancelled",data:{
+    status:"deactivated",customer:{email:"pay@example.test"},plan:{id:87654}
+  }}));
+  const result=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("not a charge");}});
+  assert.equal(result.unmatched,true);
+  assert.equal(result.ambiguous,true);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_subscriptions WHERE provider='flutterwave' AND status='active'").get().n,2);
+  db.close();
+});
+
 test("Flutterwave checkout rejects untrusted provider URLs and fails the order closed", async () => {
   const { db, plan } = setup();
   await assert.rejects(() => createFlutterwaveCheckout(db, {
@@ -402,6 +421,23 @@ test("customer cancellation resolves exactly one owned Flutterwave subscription 
   assert.match(calls[1].url,/subscriptions\/3210\/cancel$/);
   assert.equal(db.prepare("SELECT status FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().status,"active");
   assert.ok(JSON.parse(db.prepare("SELECT metadata_json FROM billing_subscriptions WHERE id='flw-customer-cancel'").get().metadata_json).cancellationRequestedAt);
+  db.close();
+});
+
+test("customer cancellation refuses multiple active local subscriptions before provider calls",async()=>{
+  const {db}=setup();
+  const plan=saveBillingPlan(db,{code:"creator-monthly",name:"Creator Monthly",amountMinor:25000,
+    currency:"UGX",interval:"month",creditsPerPeriod:800});
+  const start=new Date().toISOString(),end=new Date(Date.now()+30*86400000).toISOString();
+  for(const id of ["flw-local-a","flw-local-b"])db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES(?, 'user-pay-1',?,'active','flutterwave','9988',?,?,?,?)`)
+    .run(id,plan.id,id,start,end,JSON.stringify({paymentPlanId:"87654",initialTransactionId:"7654321"}));
+  let providerCalled=false;
+  await assert.rejects(()=>cancelFlutterwaveSubscription(db,{user:{id:"user-pay-1"},secretKey:"flw-test-secret-key",
+    fetchImpl:async()=>{providerCalled=true;throw new Error("must not call provider");}}),
+    error=>error.code==="BILLING_SUBSCRIPTION_AMBIGUOUS");
+  assert.equal(providerCalled,false);
   db.close();
 });
 
