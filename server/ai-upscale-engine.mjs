@@ -144,6 +144,25 @@ function dimensionsFromHeader(bytes) {
   return { width, height };
 }
 
+function bitDepthFromHeader(bytes) {
+  if (bytes.length >= 25 &&
+      bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) &&
+      bytes.toString("ascii", 12, 16) === "IHDR") return bytes[24];
+  // JPEG and WebP inputs handled by this adapter use 8-bit samples.
+  if ((bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+      (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP")) return 8;
+  return null;
+}
+
+async function readImageBitDepth(path) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bitDepthFromHeader(header.subarray(0, bytesRead));
+  } finally { await handle.close(); }
+}
+
 async function readImageDimensions(path) {
   const handle = await open(path, "r");
   try {
@@ -255,6 +274,8 @@ export function createRealEsrganAdapter({
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
     const inputDimensions = await readImageDimensions(input);
+    const sourceBitDepth = await readImageBitDepth(input);
+    if (sourceBitDepth !== null && sourceBitDepth > 8) throw fail("This NCNN/Vulkan adapter has not certified high-bit-depth input. Use an 8-bit source or a separately validated high-bit-depth inference path.", "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED");
     const projectedWidth = inputDimensions.width * prepared.scale;
     const projectedHeight = inputDimensions.height * prepared.scale;
     if (projectedWidth > MAX_IMAGE_DIMENSION || projectedHeight > MAX_IMAGE_DIMENSION || projectedWidth * projectedHeight > maxOutputPixels) {
@@ -268,11 +289,14 @@ export function createRealEsrganAdapter({
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
       const outputDimensions = await validateImageOutput(output, prepared.format);
+      const outputBitDepth = await readImageBitDepth(output);
       if (outputDimensions.width !== inputDimensions.width * prepared.scale || outputDimensions.height !== inputDimensions.height * prepared.scale) {
         throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
       }
       return {
         path: output, byteSize: info.size, inputDimensions, outputDimensions,
+        ...(sourceBitDepth !== null ? { sourceBitDepth } : {}),
+        ...(outputBitDepth !== null ? { outputBitDepth } : {}),
         model: prepared.model, scale: prepared.scale, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
         tileAttempts: execution.attemptedTiles, format: prepared.format,
