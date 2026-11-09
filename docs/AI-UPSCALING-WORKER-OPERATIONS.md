@@ -42,6 +42,7 @@ LPIPS is a learned perceptual distance, not a no-reference artifact detector. Lo
 - Select the Python executable with `AI_UPSCALE_LPIPS_PYTHON` if `python3` is not the correct runtime.
 - Run `npm run assess:upscale-pair -- <candidate-image> <same-resolution-reference-image> [alex|vgg|squeeze] [auto|cpu|cuda]` to produce a paired report. `alex` is the default forward metric; `vgg` and `squeeze` are selectable alternatives.
 - Do not resize the low-resolution source and call it ground truth. Use a genuine aligned high-resolution reference from a benchmark dataset or a controlled capture. The command returns LPIPS alongside seam/PSNR/global-SSIM diagnostics; it never clears human review.
+- The still-image `media.ai-upscale` job accepts an optional `referenceAssetId` for a distinct image asset in the same project. The API validates ownership and project boundaries; when `AI_UPSCALE_LPIPS_ENABLED=true`, the worker adds LPIPS to the paired PSNR/global-SSIM/seam report. Without the flag, it can still record the paired pixel metrics but does not launch Python.
 
 The Python process is launched without a shell, with bounded execution time and output, and offline flags. It rejects symlinked files, mismatched dimensions, unsupported sizes, non-finite scores and worker responses that claim downloads are enabled. This is an opt-in local assessment path; the production worker does not silently install Python dependencies, fetch model weights, or invent a reference image.
 
