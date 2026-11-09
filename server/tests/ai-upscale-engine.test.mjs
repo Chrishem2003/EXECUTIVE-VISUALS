@@ -65,6 +65,13 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "0:2:2" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:4:4" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", tta: "true" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "-1" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "32" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  const selectedGpu = adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "2" });
+  assert.equal(selectedGpu.gpu, "2");
+  assert.ok(selectedGpu.args.includes("-g"));
+  assert.equal(selectedGpu.args[selectedGpu.args.indexOf("-g") + 1], "2");
+  assert.equal(adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png" }).gpu, "auto");
   const qualityPlan = adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", tta: true });
   assert.equal(qualityPlan.tta, true);
   assert.ok(qualityPlan.args.includes("-x"));
@@ -102,6 +109,7 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
     assert.ok(result.byteSize >= 24);
     assert.equal(result.model, model);
     assert.equal(result.threads, "1:2:2");
+    assert.equal(result.gpu, "auto");
     assert.equal(result.tta, false);
     await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model }), error => error.code === "AI_UPSCALE_OUTPUT_EXISTS");
   } finally { await rm(directory, { recursive: true, force: true }); }
