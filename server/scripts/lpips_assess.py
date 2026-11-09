@@ -18,11 +18,11 @@ def main():
     parser.add_argument("--reference", required=True)
     parser.add_argument("--net", choices=("alex", "vgg", "squeeze"), default="alex")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--max-pixels", type=int, default=40000000)
+    parser.add_argument("--max-pixels", type=int, default=8294400)
     parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
 
-    if args.max_pixels < 1 or args.max_pixels > 40000000 or args.threads < 1 or args.threads > 8:
+    if args.max_pixels < 1 or args.max_pixels > 16000000 or args.threads < 1 or args.threads > 8:
         fail("Resource limits are outside the supported range.")
 
     candidate_path = Path(args.candidate)
