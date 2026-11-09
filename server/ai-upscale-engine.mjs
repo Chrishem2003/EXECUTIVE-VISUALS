@@ -515,6 +515,20 @@ export function createRealEsrganAdapter({
     return Object.freeze({ contentType, ...profiles[contentType] });
   }
 
+  function planForContent({ contentType = "photograph", ...options } = {}) {
+    const recommendation = recommendModel(contentType);
+    const selected = {
+      ...options,
+      model: options.model ?? recommendation.model,
+      scale: options.scale ?? recommendation.scale
+    };
+    return Object.freeze({
+      ...plan(selected),
+      contentType: recommendation.contentType,
+      recommendationReason: recommendation.reason
+    });
+  }
+
   function plan({ inputPath, outputPath, model = "realesrgan-x4plus", scale = 4, tile = 0, format = "png", threads = "1:2:2", tta = false, gpu = "auto" } = {}) {
     if (!MODELS.has(model)) throw fail("The selected AI model is not allowlisted.", "AI_UPSCALE_INVALID_MODEL");
     if (!FORMATS.has(format)) throw fail("The requested output format is unsupported.", "AI_UPSCALE_INVALID_OPTIONS");
@@ -534,6 +548,20 @@ export function createRealEsrganAdapter({
       binary: binaryPath,
       args: ["-i", resolve(inputPath), "-o", resolve(outputPath), "-n", model, "-s", String(factor), "-t", String(tileSize), "-g", gpuId, "-j", threads, ...(tta ? ["-x"] : []), "-f", format],
       model, scale: factor, tile: tileSize, gpu: gpuId, threads, tta, format
+    };
+  }
+
+  async function executeForContent({ contentType = "photograph", ...options } = {}) {
+    const recommendation = recommendModel(contentType);
+    const result = await execute({
+      ...options,
+      model: options.model ?? recommendation.model,
+      scale: options.scale ?? recommendation.scale
+    });
+    return {
+      ...result,
+      contentType: recommendation.contentType,
+      recommendationReason: recommendation.reason
     };
   }
 
@@ -590,5 +618,5 @@ export function createRealEsrganAdapter({
     }
   }
 
-  return Object.freeze({ probe, plan, execute, selfTest, recommendModel });
+  return Object.freeze({ probe, plan, execute, selfTest, recommendModel, planForContent, executeForContent });
 }
