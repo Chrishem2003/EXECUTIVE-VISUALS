@@ -77,9 +77,11 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109230000_cloud_customer_credit_reservations.sql
       - name: Bind customer credit reservation to video workflow enqueue
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109240000_video_workflow_customer_credit_gate.sql
+      - name: Apply job-scoped customer credit settlement migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109250000_cloud_customer_credit_job_settlement.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Verify cloud customer credit reservations and settlement
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-customer-credits-postgres-integration.sql
       - name: Apply Gemini Omni interaction ownership and retention migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
