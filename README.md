@@ -117,3 +117,8 @@ Project collaboration in the Runtime Console now includes a visible member list,
 
 
 The in-app **Release readiness** workspace provides the current merged/in-progress/blocked inventory. See [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md) and [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md) for detailed dependencies and infrastructure requirements.
+
+
+### AI upscaling worker memory recovery
+
+When NCNN tile size is left on automatic, recognized GPU-memory allocation failures trigger bounded retries with smaller tiles (256 → 192 → 128 → 96 → 64 → 32). Explicit tile settings are preserved. Failed partial outputs are removed, and successful fallback attempts are recorded in derivative processing metadata for review. See [AI upscale quality evidence and benchmark operations](docs/AI-UPSCALE-QUALITY-EVIDENCE.md).
