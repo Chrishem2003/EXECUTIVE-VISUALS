@@ -594,7 +594,7 @@ const billingAccount=touchBillingAccount(db,user);
         send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
       }
 
-      const flutterwaveSubscriptionOrderMatch=path.match(/^\\/api\\/billing\\/flutterwave-subscription-orders\\/([0-9a-f-]{36})$/i);
+      const flutterwaveSubscriptionOrderMatch=path.match(/^\/api\/billing\/flutterwave-subscription-orders\/([0-9a-f-]{36})$/i);
       if(flutterwaveSubscriptionOrderMatch&&req.method==="GET"){
         const order=getFlutterwaveSubscriptionCheckoutStatus(db,{orderId:flutterwaveSubscriptionOrderMatch[1],userId:user.id});
         send(res,200,{order},cors);return;
