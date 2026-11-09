@@ -42,6 +42,8 @@ Run this only on an isolated local worker with the NCNN/Vulkan executable and mo
 
 ```sh
 AI_UPSCALE_ENABLED=true REALESRGAN_NCNN_PATH=/absolute/path/realesrgan-ncnn-vulkan REALESRGAN_MODEL_DIR=/absolute/path/models npm run benchmark:upscale -- realesrgan-x4plus ./benchmark-fixtures.json ./benchmark-output
+
+The optional final argument selects the NCNN tile size: `128` is the default, `256` selects a larger explicit tile, and `0` requests untiled inference with bounded automatic fallback on recognized GPU-memory errors. For a controlled visual comparison, run the same pinned five fixtures and model into separate output directories at (for example) `128`, `256` and `0`. Review each report independently; do not combine records from different tile strategies into one five-fixture quality approval. Each report records the requested tile, actual tile, fallback flag and ordered attempts.
 ```
 
 Use `realesrgan-x4plus-anime` to benchmark the anime model separately. The runner validates the exact five-category manifest and resolves and hashes every fixture (including its size bound) before probing or self-testing the model, so a missing, oversized or unsafe later fixture cannot waste a GPU self-test or partial inference run. It rechecks each fixture immediately before inference, executes all five fixtures, checks exact output dimensions, hashes the executable, model files, inputs and outputs, and confirms those artifacts did not change during the run. It stores output images in a unique run folder and writes a separate JSON report. It rejects symlinked fixtures and unsafe paths.
