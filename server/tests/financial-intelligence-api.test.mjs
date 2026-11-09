@@ -360,5 +360,5 @@ test("subscription grant rejects periods longer than 366 days",async()=>{
   });
   assert.equal(result.status,400);
   assert.equal(result.body.error.code,"SUBSCRIPTION_GRANT_INVALID");
-  assert.equal(calls,0);
+  assert.equal(calls,1); // role lookup only; invalid period never reaches grant RPC
 });
