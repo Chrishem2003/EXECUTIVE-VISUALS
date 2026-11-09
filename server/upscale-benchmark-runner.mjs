@@ -112,7 +112,9 @@ export async function runUpscaleBenchmark({
   const fixtureRoot = dirname(await realpath(manifestFile));
   const fixtures = [];
   for (const fixture of manifest.fixtures) {
-    fixtures.push({ ...fixture, inputPath: await resolveFixturePath(fixtureRoot, fixture.path) });
+    const inputPath = await resolveFixturePath(fixtureRoot, fixture.path);
+    const inputSha256 = await sha256File(inputPath, "Input fixture", MAX_FIXTURE_BYTES);
+    fixtures.push({ ...fixture, inputPath, inputSha256 });
   }
 
   if (!binaryPath || !modelDirectory) throw fail("Configure the local NCNN executable and model directory before running a benchmark.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
@@ -149,7 +151,9 @@ export async function runUpscaleBenchmark({
   let reportPath = null;
   try {
     for (const fixture of fixtures) {
-      const inputSha256 = await sha256File(fixture.inputPath, "Input fixture", MAX_FIXTURE_BYTES);
+      const inputSha256 = fixture.inputSha256;
+      const inputSha256BeforeExecution = await sha256File(fixture.inputPath, "Input fixture", MAX_FIXTURE_BYTES);
+      if (inputSha256BeforeExecution !== inputSha256) throw fail("Input fixture changed after benchmark preflight and before execution.");
       const outputPath = join(runDirectory, fixture.fixtureId + ".png");
       const started = performance.now();
       const result = await adapter.execute({
