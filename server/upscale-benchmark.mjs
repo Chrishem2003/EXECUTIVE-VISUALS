@@ -73,6 +73,16 @@ export function validateUpscaleBenchmarkRecord(record) {
       if (record.tileFallbackUsed === true && record.tileAttempts.length < 2) {
         issues.push("tileFallbackUsed requires at least two recorded tile attempts");
       }
+      if (record.requestedTile === 0) {
+        const allowedAutomaticAttempts = [0, 256, 192, 128, 96, 64, 32];
+        const expectedAttempts = allowedAutomaticAttempts.slice(0, record.tileAttempts.length);
+        if (record.tileAttempts.some((value, index) => value !== expectedAttempts[index]) ||
+            record.tileAttempts.length > allowedAutomaticAttempts.length) {
+          issues.push("automatic tile attempts must follow the documented bounded fallback sequence");
+        }
+      } else if (record.requestedTile !== undefined && record.tileAttempts.length !== 1) {
+        issues.push("explicit tile requests must contain exactly one attempt");
+      }
     }
   }
   if (record.requestedTile !== undefined && record.requestedTile !== 0 && record.tileFallbackUsed === true) {
