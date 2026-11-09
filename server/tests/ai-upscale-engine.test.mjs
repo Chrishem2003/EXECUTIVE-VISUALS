@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
-function pngBytes(width, height) {
+function pngBytes(width, height, colorType = 6) {
   const { deflateSync } = require("node:zlib");
   function chunk(type, data) {
     const name = Buffer.from(type), body = Buffer.concat([name, data]); let crc = 0xffffffff;
@@ -14,8 +14,9 @@ function pngBytes(width, height) {
     const tail = Buffer.alloc(4); tail.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
     return Buffer.concat([length, body, tail]);
   }
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
-  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.alloc(height * (1 + width * 4)))), chunk("IEND", Buffer.alloc(0))]);
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = colorType;
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.alloc(height * (1 + width * bytesPerPixel)))), chunk("IEND", Buffer.alloc(0))]);
 }
 
 function pngHeader(width, height) {
@@ -28,16 +29,20 @@ function pngHeader(width, height) {
   return bytes;
 }
 
-async function writeFakeEngine(path, fixedDimension = null) {
+async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null) {
   const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
+  const dimensionsExpression = JSON.stringify(sourceDimensions);
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
 const size = ${sizeExpression};
+const sourceDimensions = ${dimensionsExpression};
+const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
+const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
 ${pngBytes.toString()}
-fs.writeFileSync(out,pngBytes(size,size));
+fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
 `;
   await writeFile(path, source);
   await chmod(path, 0o755);
@@ -468,7 +473,7 @@ test("AI upscaler rejects and removes an output that loses source alpha transpar
   const input = join(directory, "transparent.png");
   const output = join(directory, "opaque.png");
   await writeFile(input, pngHeaderWithColorType(8, 6, 6));
-  await writeFakeEngine(binary);
+  await writeFakeEngine(binary, null, 2, [8, 6]);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   try {
@@ -494,11 +499,8 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-const png = Buffer.alloc(26);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20); png[25]=6;
-fs.writeFileSync(out,png);
+${pngBytes.toString()}
+fs.writeFileSync(out,pngBytes(8*scale,6*scale,6));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
@@ -563,12 +565,8 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-const png = Buffer.alloc(26);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20);
-png[24]=8; png[25]=2;
-fs.writeFileSync(out,png);
+${pngBytes.toString()}
+fs.writeFileSync(out,pngBytes(8*scale,6*scale,2));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
