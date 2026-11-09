@@ -188,9 +188,12 @@ test("reviewed quality requires a non-trivial reviewer identifier", () => {
 });
 
 test("validates deterministic tile settings and fallback attempts", () => {
-  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tile: 256, tileFallbackUsed: true, tileAttempts: [0, 256] })).valid, true);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tile: 256, tileFallbackUsed: true, tileAttempts: [128, 256] })).valid, true);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tile: 24 })).valid, false);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tileAttempts: [0, 24] })).valid, false);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 128, tile: 256, tileFallbackUsed: false, tileAttempts: [128, 256] })).valid, false);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 0, tile: 256, tileFallbackUsed: true, tileAttempts: [0, 256] })).valid, true);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 128, tile: 256, tileFallbackUsed: true, tileAttempts: [256] })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 128, tile: 256, tileFallbackUsed: true, tileAttempts: [128] })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 128, tile: 128, tileFallbackUsed: false, tileAttempts: [256, 128] })).valid, false);
 });
