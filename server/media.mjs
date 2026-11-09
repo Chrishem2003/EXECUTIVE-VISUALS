@@ -156,6 +156,14 @@ export function validateMediaOutputProbe(metadata, mediaType) {
   return {streamCount:streams.length,durationSeconds:Number.isFinite(duration)?duration:null,validatedStreamType:expected};
 }
 
+export function buildProxyVideoArgs({sourcePath,outputPath,input={}}={}) {
+  const widthValue=Number(input.proxyWidth??960),crfValue=Number(input.proxyCrf??28);
+  const width=Number.isFinite(widthValue)?Math.max(320,Math.min(1920,Math.round(widthValue))):960;
+  const crf=Number.isFinite(crfValue)?Math.max(18,Math.min(35,Math.round(crfValue))):28;
+  if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath)throw new Error("Proxy source and output paths are required.");
+  return ["-hide_banner","-y","-i",sourcePath,"-vf","scale='min("+width+",iw)':-2","-c:v","libx264","-preset","veryfast","-crf",String(crf),"-maxrate","2M","-bufsize","4M","-c:a","aac","-b:a","128k","-movflags","+faststart",outputPath];
+}
+
 export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}={}) {
   const allowed = {
     "media.denoise":["luma","chroma"],
@@ -165,7 +173,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
     "media.interpolate":["fps"],
     "media.audio-clean":["noiseFloor","targetLufs"],
     "media.transcode":["container","videoCodec","audioCodec","preset"],
-    "media.proxy":["container","videoCodec","audioCodec","preset"],
+    "media.proxy":["container","videoCodec","audioCodec","preset","proxyWidth","proxyCrf","proxyProfile"],
     "media.audio_extract":[],
     "media.thumbnail":["seconds"]
   };
@@ -187,7 +195,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
       jobType==="media.color"?"deterministic-color-adjustment":
       jobType==="media.audio-clean"?"classical-audio-filtering":
       jobType==="media.audio_extract"?"audio-stream-extraction":
-      jobType==="media.thumbnail"?"frame-extraction":"deterministic-transcoding",
+      jobType==="media.thumbnail"?"frame-extraction":jobType==="media.proxy"?"editing-proxy-transcode":"deterministic-transcoding",
     sourceAssetId:typeof sourceAsset.id==="string"?sourceAsset.id:null,
     sourceSha256:typeof sourceAsset.sha256==="string"?sourceAsset.sha256:null,
     parameters,
@@ -453,15 +461,17 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     ext = container; mime = MIME_BY_EXT[ext] || "application/octet-stream";
     outputName = source.original_name.replace(/\.[^.]+$/, "")+(job.job_type === "media.proxy" ? "-proxy" : "-transcoded")+"."+ext;
     const outputPath = join(outputDir,id+"."+ext);
-    args = ["-hide_banner","-y","-i",sourcePath];
-    if (job.job_type === "media.proxy") args.push("-vf","scale='min(1280,iw)':-2");
-    if (["mp3","wav"].includes(ext)) args.push("-vn");
-    if (videoCodec !== "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v",videoCodec,"-preset",preset);
-    else if (videoCodec === "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v","copy");
-    if (["mp3","wav"].includes(ext)) args.push("-c:a",ext==="mp3"?"libmp3lame":"pcm_s16le");
-    else if (audioCodec !== "copy") args.push("-c:a",audioCodec);
-    else args.push("-c:a","copy");
-    args.push(outputPath);
+    if(job.job_type==="media.proxy") args=buildProxyVideoArgs({sourcePath,outputPath,input});
+    else {
+      args = ["-hide_banner","-y","-i",sourcePath];
+      if (["mp3","wav"].includes(ext)) args.push("-vn");
+      if (videoCodec !== "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v",videoCodec,"-preset",preset);
+      else if (videoCodec === "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v","copy");
+      if (["mp3","wav"].includes(ext)) args.push("-c:a",ext==="mp3"?"libmp3lame":"pcm_s16le");
+      else if (audioCodec !== "copy") args.push("-c:a",audioCodec);
+      else args.push("-c:a","copy");
+      args.push(outputPath);
+    }
   }
   const outputPath = join(outputDir,id+"."+ext);
   onProgress(35);
