@@ -107,6 +107,37 @@ test("AI upscaler reports execution checks separately from unverified inference 
 });
 
 
+test("AI upscale self-test becomes stale when model bytes change even if size and mtime are preserved", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-selftest-fingerprint-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "fixture.png");
+  const weights = join(directory, model + ".bin");
+  await writeFile(input, pngHeader(1, 1));
+  await writeFakeEngine(binary);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(weights, "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const selfTest = await adapter.selfTest({ inputPath: input, model, scale: 2 });
+    assert.equal(selfTest.executionVerified, true);
+    assert.equal((await adapter.probe(model)).executionVerified, true);
+
+    const { stat, utimes } = await import("node:fs/promises");
+    const before = await stat(weights);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    await writeFile(weights, "WEIGHTS"); // Same byte length, different content.
+    await utimes(weights, before.atime, before.mtime); // Restore mtime deliberately.
+    const after = await stat(weights);
+    assert.equal(after.size, before.size);
+    assert.equal(after.mtimeMs, before.mtimeMs);
+    assert.notEqual(after.ctimeMs, before.ctimeMs);
+    assert.equal((await adapter.probe(model)).executionVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler rejects an executable that exits successfully but emits a corrupt image", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-corrupt-"));
   const binary = join(directory, "engine");
