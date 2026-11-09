@@ -369,6 +369,18 @@ export function createAppServer() {
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
       }
+      if(path==="/api/ai-video-upscale/readiness"&&req.method==="GET"){
+        const model=String(url.searchParams.get("model")||"realesrgan-x4plus");
+        let modelStatus={available:false,executionEnabled:false,executionVerified:false,reason:"Model readiness could not be determined."};
+        try{
+          const result=await aiUpscaleAdapter.probe(model);
+          modelStatus={available:result.available===true,executionEnabled:result.executionEnabled===true,executionVerified:result.executionVerified===true,reason:result.reason||null};
+        }catch(error){modelStatus={...modelStatus,reason:error instanceof Error?error.message:"Model readiness check failed."};}
+        const enabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
+        const ffmpegAvailable=executableAvailable("ffmpeg"),ffprobeAvailable=executableAvailable("ffprobe");
+        const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
+        send(res,200,{enabled,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),scales:[2,4]},temporalConsistency:"not-certified"},cors);return;
+      }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
         if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
