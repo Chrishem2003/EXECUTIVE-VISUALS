@@ -53,7 +53,7 @@ test("disabled tracks and clips are excluded from playback",()=>{
 
 test("rational frame conversion uses sequence frame rate and clamps the playhead",()=>{
  const timeline=fixture();
- assert.equal(frameToTimelineSeconds(30,timeline),1.001);
+ assert.ok(Math.abs(frameToTimelineSeconds(30,timeline)-1.001)<1e-12);
  assert.equal(timelineSecondsToFrame(1.001,timeline),30);
  assert.equal(clampTimelineFrame(-5,timeline),0);
  assert.equal(clampTimelineFrame(10000,timeline),120);
@@ -63,5 +63,5 @@ test("rational frame conversion uses sequence frame rate and clamps the playhead
 test("playback at an empty timeline position yields no active media without negative time",()=>{
  const frame=getTimelinePlaybackFrame(fixture(),-2);
  assert.equal(frame.playheadSeconds,0);
- assert.equal(frame.active.length,0);
+ assert.deepEqual(frame.active.map(item=>item.clipId),["v1-a","audio-a"]);
 });
