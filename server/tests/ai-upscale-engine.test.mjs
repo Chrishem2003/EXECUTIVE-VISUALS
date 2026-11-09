@@ -33,6 +33,11 @@ function pngHeader(width, height) {
 async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null, delayMs = 0) {
   const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
   const dimensionsExpression = JSON.stringify(sourceDimensions);
+  const outputImagesExpression = JSON.stringify(Object.fromEntries([2, 3, 4].map(requestedScale => {
+    const width = sourceDimensions ? sourceDimensions[0] * requestedScale : (fixedDimension ?? requestedScale);
+    const height = sourceDimensions ? sourceDimensions[1] * requestedScale : (fixedDimension ?? requestedScale);
+    return [requestedScale, pngBytes(width, height, outputColorType).toString("base64")];
+  })));
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -42,9 +47,8 @@ const size = ${sizeExpression};
 const sourceDimensions = ${dimensionsExpression};
 const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
 const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
-const { deflateSync } = require("node:zlib");
-${pngBytes.toString()}
-const writeOutput = () => fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
+const outputImages = ${outputImagesExpression};
+const writeOutput = () => fs.writeFileSync(out, Buffer.from(outputImages[requestedScale], "base64"));
 ${delayMs > 0 ? `setTimeout(writeOutput, ${delayMs});` : "writeOutput();"}
 `;
   await writeFile(path, source);
