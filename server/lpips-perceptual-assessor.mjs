@@ -85,7 +85,7 @@ export function createLpipsPerceptualAssessor({
       try { result = JSON.parse(output); }
       catch { throw fail("LPIPS worker returned invalid JSON.", "AI_UPSCALE_LPIPS_PROTOCOL"); }
       if (result?.ok !== true || result.metric !== "LPIPS" || result.version !== "0.1" ||
-          result.network !== network || !Number.isFinite(result.distance) || result.distance < 0 ||
+          result.network !== network || !["cpu", "cuda"].includes(result.device) || !Number.isFinite(result.distance) || result.distance < 0 ||
           !Number.isInteger(result.width) || !Number.isInteger(result.height) ||
           result.width < 64 || result.height < 64 || result.width * result.height > maxPixels ||
           result.modelDownloadsAllowed !== false) {
