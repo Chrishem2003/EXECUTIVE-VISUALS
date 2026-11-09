@@ -125,7 +125,7 @@ test("preflights every fixture's size and checksum before probing or self-testin
   assert.equal(probeCalls, 0);
   assert.equal(selfTestCalls, 0);
   assert.equal(executeCalls, 0);
-  assert.deepEqual(await readdir(env.output), []);
+  await assert.rejects(readdir(env.output), { code: "ENOENT" });
 });
 
 test("rejects a missing later fixture before the model self-test starts", async t => {
