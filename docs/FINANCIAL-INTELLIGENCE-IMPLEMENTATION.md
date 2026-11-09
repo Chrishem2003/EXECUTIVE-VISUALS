@@ -225,3 +225,22 @@ This batch establishes the accounting primitives only. It does **not** yet reser
 ### Invoice PDF gate
 
 The invoice snapshot is now retrievable, but downloadable PDF generation and private signed-download URLs are not yet implemented. Do not expose storage object paths or mark PDF downloads available until a private bucket, ownership checks, content-type validation and short-lived signed URLs are in place.
+
+
+## Batch 5 — cloud timeline render credit lifecycle
+
+Added `supabase/migrations/20261110180000_atomic_job_credit_finalization.sql` and integrated server-quoted reservations into cloud timeline render submission.
+
+- Optional server-side `CLOUD_TIMELINE_CREDITS_PER_SECOND` policy. It defaults to `0` (disabled); clients cannot supply or override the rate.
+- Render duration is derived from the maximum timeline clip end-time across tracks, using validated rational timeline timing. Credits are rounded up from duration × server-configured rate.
+- A reservation is created before a render job is made claimable. Insufficient or unavailable credits fail closed; no job is queued.
+- If job creation is definitely rejected by the database, the reservation is released. On timeout/network/5xx uncertainty, the reservation stays held to avoid accidentally rendering for free; it must be reconciled against the durable job record.
+- Adds a one-reservation-per-job uniqueness constraint.
+- Replaces the cloud `finish_job` RPC so successful completion debits the reservation exactly once in the same database transaction as the terminal job update; failed, cancelled or partial jobs release it in that same transaction.
+- The worker's existing finish call automatically uses this lifecycle; no worker code needs to be trusted with credit amounts or ledger writes.
+- Existing idempotent render replay returns the existing job without reserving a second time.
+- Billing remains disabled when the server rate is zero. No prices/rates are invented or activated by this change.
+
+### Batch 5 validation gate
+
+Node tests cover server-side quoting, reservation-before-queue ordering, empty-timeline rejection and fail-closed reservation responses. The new PostgreSQL migration still requires review and execution in isolated staging, including concurrency tests for two simultaneous renders competing for the same balance, success/failure/cancel finalization, and worker lease expiry/recovery. Do not enable `CLOUD_TIMELINE_CREDITS_PER_SECOND` until those database tests pass and the credit-pack catalogue/pricing is approved.
