@@ -17,7 +17,7 @@ function pngBytes(width, height, colorType = 6) {
   }
   const bytesPerPixel = colorType === 6 ? 4 : 3;
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = colorType;
-  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.alloc(height * (1 + width * bytesPerPixel)))), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", require("node:zlib").deflateSync(Buffer.alloc(height * (1 + width * bytesPerPixel)))), chunk("IEND", Buffer.alloc(0))]);
 }
 
 function pngHeader(width, height) {
