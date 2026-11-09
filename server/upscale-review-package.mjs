@@ -6,7 +6,7 @@ import { validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
 import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, summarizeUpscaleBenchmarks, validateUpscaleBenchmarkRecord } from "./upscale-benchmark.mjs";
 
 
-const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime"]);
+const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]);
 const MAX_JSON = 4 * 1024 * 1024;
 const MAX_IMAGE = 250 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { code: "AI_UPSCALE_REVIEW_PACKAGE_INVALID" });
