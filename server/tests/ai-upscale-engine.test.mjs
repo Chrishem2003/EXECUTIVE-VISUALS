@@ -427,3 +427,32 @@ fs.writeFileSync(out,png);
     assert.equal(result.outputBitDepth, 8);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test("AI upscaler rejects 12-bit JPEG based on SOF precision before GPU execution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-12bit-jpeg-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source-12bit.jpg");
+  const output = join(directory, "must-not-run.png");
+  const attemptsFile = join(directory, "attempts.txt");
+  const jpeg = Buffer.from([
+    0xff,0xd8, 0xff,0xc0, 0x00,0x0b, 0x0c, 0x00,0x06, 0x00,0x08, 0x01, 0x01,0x11,0x00
+  ]);
+  await writeFile(input, jpeg);
+  await writeFile(binary, `#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(attemptsFile));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
