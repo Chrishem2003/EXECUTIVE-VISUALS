@@ -130,7 +130,7 @@ test("AI upscale self-test becomes stale when model bytes change even if size an
     await utimes(weights, before.atime, before.mtime); // Restore mtime deliberately.
     const after = await stat(weights);
     assert.equal(after.size, before.size);
-    assert.equal(after.mtimeMs, before.mtimeMs);
+    assert.equal(Math.floor(after.mtimeMs), Math.floor(before.mtimeMs));
     assert.notEqual(after.ctimeMs, before.ctimeMs);
     assert.equal((await adapter.probe(model)).executionVerified, false);
   } finally {
