@@ -1,0 +1,33 @@
+name: Financial intelligence tests
+
+on:
+  push:
+    branches:
+      - feat/financial-intelligence-api-integration
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financial-intelligence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  financial-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check financial modules
+        run: |
+          node --check server/financial-intelligence-api.mjs
+          node --check server/flutterwave-auth.mjs
+          node --check server/payment-intelligence.mjs
+      - name: Run financial intelligence tests
+        run: node --test server/tests/financial-intelligence-api.test.mjs
