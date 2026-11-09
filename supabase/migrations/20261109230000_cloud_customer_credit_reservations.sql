@@ -83,7 +83,7 @@ declare
   new_id uuid;
   current_balance bigint;
 begin
-  if p_owner_id is null or p_amount <= 0 or p_amount > 1000000000
+  if p_owner_id is null or p_amount is null or p_amount <= 0 or p_amount > 1000000000
      or p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 200
      or p_evidence is null or jsonb_typeof(p_evidence) <> 'object' then
     raise exception 'BILLING_CREDIT_GRANT_ARGUMENTS_INVALID';
@@ -138,7 +138,7 @@ declare
   current_balance bigint;
   new_reservation_id uuid;
 begin
-  if p_owner_id is null or p_job_id is null or p_credits <= 0 or p_credits > 100000000
+  if p_owner_id is null or p_job_id is null or p_credits is null or p_credits <= 0 or p_credits > 100000000
      or p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 200 then
     raise exception 'BILLING_CREDIT_RESERVATION_ARGUMENTS_INVALID';
   end if;
@@ -285,7 +285,7 @@ begin
   where owner_id=reservation.owner_id;
   select coalesce(sum(l.amount),0) into current_balance
   from executive_visuals.billing_credit_ledger l where l.owner_id=reservation.owner_id;
-  return query select current_balance,true;
+  return query select current_balance,false;
 end;
 $release_generation_credit_reservation$;
 
