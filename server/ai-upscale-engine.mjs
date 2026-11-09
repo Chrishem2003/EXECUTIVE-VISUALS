@@ -3,7 +3,8 @@ import { access, lstat, stat, open, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { mkdtemp, rm } from "node:fs/promises";
 
@@ -27,6 +28,16 @@ async function regularFile(path, label) {
     await access(path, constants.R_OK);
     return true;
   } catch { return false; }
+}
+
+async function sha256RegularFile(path, label) {
+  return new Promise((resolvePromise, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+    stream.on("data", chunk => hash.update(chunk));
+    stream.once("error", () => reject(fail(label + " could not be hashed.", "AI_UPSCALE_FILE_HASH_FAILED")));
+    stream.once("end", () => resolvePromise(hash.digest("hex")));
+  });
 }
 
 async function fingerprintRegularFile(path, label) {
@@ -574,6 +585,7 @@ export function createRealEsrganAdapter({
     // Pin source identity and metadata across header inspection and inference so
     // the derivative cannot silently be attributed to bytes that were replaced mid-job.
     const inputFingerprintBefore = await fingerprintRegularFile(input, "AI upscale input");
+    const sourceSha256 = await sha256RegularFile(input, "AI upscale input");
     const inputDimensions = await readImageDimensions(input);
     const sourceBitDepth = await readImageBitDepth(input);
     if (sourceBitDepth !== null && sourceBitDepth > 8) throw fail("This NCNN/Vulkan adapter has not certified high-bit-depth input. Use an 8-bit source or a separately validated high-bit-depth inference path.", "AI_UPSCALE_BIT_DEPTH_UNSUPPORTED");
@@ -590,12 +602,14 @@ export function createRealEsrganAdapter({
     const execution = await runWithTileFallback(prepared.binary, prepared.args, timeoutMs, options.signal, output, prepared.tile);
     try {
       const inputFingerprintAfter = await fingerprintRegularFile(input, "AI upscale input");
-      if (inputFingerprintAfter !== inputFingerprintBefore) {
+      const sourceSha256After = await sha256RegularFile(input, "AI upscale input");
+      if (inputFingerprintAfter !== inputFingerprintBefore || sourceSha256After !== sourceSha256) {
         throw fail("AI upscale source changed during inference; the derivative was rejected.", "AI_UPSCALE_INPUT_CHANGED");
       }
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
       const outputDimensions = await validateImageOutput(output, prepared.format, maxOutputBytes);
+      const outputSha256 = await sha256RegularFile(output, "AI upscale output");
       const outputBitDepth = await readImageBitDepth(output);
       const outputHasAlpha = await readImageHasAlpha(output);
       if (sourceHasAlpha && !outputHasAlpha) throw fail("AI upscaling output lost source transparency; the derivative was rejected.", "AI_UPSCALE_ALPHA_LOST");
@@ -603,7 +617,7 @@ export function createRealEsrganAdapter({
         throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
       }
       return {
-        path: output, byteSize: info.size, inputDimensions, outputDimensions,
+        path: output, byteSize: info.size, sourceSha256, outputSha256, inputDimensions, outputDimensions,
         sourceHasAlpha, outputHasAlpha, alphaPreserved: !sourceHasAlpha || outputHasAlpha,
         ...(sourceBitDepth !== null ? { sourceBitDepth } : {}),
         ...(outputBitDepth !== null ? { outputBitDepth } : {}),
