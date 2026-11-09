@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { chmod, copyFile, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
-import { summarizeUpscaleBenchmarks, validateUpscaleBenchmarkRecord } from "./upscale-benchmark.mjs";
+import { validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
+import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, summarizeUpscaleBenchmarks, validateUpscaleBenchmarkRecord } from "./upscale-benchmark.mjs";
+
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime"]);
 const MAX_JSON = 4 * 1024 * 1024;
