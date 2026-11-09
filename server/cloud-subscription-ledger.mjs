@@ -1,6 +1,7 @@
 const SCHEMA = "executive_visuals";
 const activateRpc = "activate_generation_subscription";
 const grantRpc = "grant_subscription_period_credits";
+const statusRpc = "sync_generation_subscription_status";
 
 function baseUrl(value) {
   let url;
@@ -67,6 +68,28 @@ export function createCloudSubscriptionLedger({
       });
       if(typeof row.subscription_id!=="string"||typeof row.replayed!=="boolean") throw new Error("Cloud subscription activation returned an invalid receipt.");
       return Object.freeze({subscriptionId:row.subscription_id,replayed:row.replayed});
+    },
+    async syncSubscriptionStatus({
+      provider,providerSubscriptionId,status,planCode=null,cancelAtPeriodEnd=false,
+      graceUntil=null,metadata={}
+    }={}) {
+      if(!["dodo","flutterwave"].includes(provider)||typeof providerSubscriptionId!=="string"||
+        !providerSubscriptionId.trim()||providerSubscriptionId.length>200||
+        !["trialing","active","past_due","paused","cancelled","expired"].includes(status)||
+        (planCode!==null&&(typeof planCode!=="string"||!/^[a-z][a-z0-9_-]{1,40}$/.test(planCode)))||
+        typeof cancelAtPeriodEnd!=="boolean"||
+        (graceUntil!==null&&!validDate(graceUntil))||!metadata||typeof metadata!=="object"||Array.isArray(metadata)) {
+        throw new Error("Cloud subscription status update requires a valid provider identity and lifecycle state.");
+      }
+      const row=await rpc(statusRpc,{
+        p_provider:provider,p_provider_subscription_id:providerSubscriptionId,p_status:status,
+        p_plan_code:planCode,p_cancel_at_period_end:cancelAtPeriodEnd,
+        p_grace_until:graceUntil,p_metadata:metadata
+      });
+      if(typeof row.subscription_id!=="string"||typeof row.replayed!=="boolean") {
+        throw new Error("Cloud subscription status update returned an invalid receipt.");
+      }
+      return Object.freeze({subscriptionId:row.subscription_id,replayed:row.replayed,status:row.status});
     },
     async grantPeriodCredits({subscriptionId,periodStart}={}) {
       if(typeof subscriptionId!=="string"||!subscriptionId.trim()||!validDate(periodStart)) throw new Error("A subscription ID and valid billing period start are required.");
