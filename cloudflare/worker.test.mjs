@@ -194,3 +194,39 @@ test("D1 Worker exposes authenticated revisioned workspace documents", async t =
   DB.close();
 });
 
+
+
+test("D1 daily quota exhaustion is reported as temporary unavailability, not a missing migration", async () => {
+  const DB = {
+    prepare() {
+      return { bind() { return { async first() { throw new Error("Your account has exceeded D1's free tier daily row read limit."); } }; } };
+    }
+  };
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/health"), { DB });
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "D1_UNAVAILABLE");
+  assert.notEqual(payload.error.code, "D1_MIGRATION_REQUIRED");
+});
+
+test("D1 daily read/write quota errors are surfaced as bounded 503 responses", async t => {
+  for (const quota of ["row read", "row write"]) {
+    const DB = makeD1();
+    const originalPrepare = DB.prepare.bind(DB);
+    DB.prepare = sql => {
+      if (sql.includes("sqlite_master")) return originalPrepare(sql);
+      throw new Error(`Your account has exceeded D1's free tier daily ${quota} limit.`);
+    };
+    t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+      user: { id: userId, email: "editor@example.test" }, authMode: "supabase"
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+      headers: { authorization: "Bearer staging-test-token" }
+    }), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+    assert.equal(response.status, 503, quota);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "D1_QUOTA_EXCEEDED", quota);
+    assert.match(payload.error.message, /UTC daily reset/);
+    DB.close();
+  }
+});
