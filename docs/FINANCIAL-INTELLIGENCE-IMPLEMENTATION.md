@@ -261,7 +261,7 @@ Added `supabase/migrations/20261110190000_subscription_entitlement_foundation.sq
 
 ### Flutterwave recurring-payment boundary
 
-Flutterwave documents Payment Plans and recurring charge notifications. The subscription email is bound to the provider subscription and cannot simply be changed in place; failed recurring charges are retried by Flutterwave and repeated failures can cancel the subscription. Uganda one-time mobile-money documentation covers MTN/Airtel authorization, but it does not establish that recurring mobile-money debits are supported for this merchant. Do not promise automatic MoMo renewals. The recurring payment adapter remains a later sandbox-only integration after the merchant's enabled methods and recurring eligibility are confirmed.
+Flutterwave's Payment Plans guide explicitly says that adding a payment plan fixes the payment method to **card**; it also says subscriptions are bound to the customer's email, and failed recurring charges are retried three more times at 30-minute intervals before repeated failures can cancel the subscription. Uganda one-time mobile-money documentation covers MTN/Airtel authorization, but it does not establish recurring MoMo. Therefore the initial recurring subscription design is card-only where enabled on the approved merchant account; MTN/Airtel MoMo remains one-time checkout unless Flutterwave confirms otherwise in writing. The recurring adapter remains a later sandbox-only integration.
 
 ### Batch 6 validation gate
 
