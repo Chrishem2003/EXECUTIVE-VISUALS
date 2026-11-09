@@ -68,6 +68,7 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "-1" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "32" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   const selectedGpu = adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: "2" });
+  assert.equal(adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", gpu: 2 }).gpu, "2");
   assert.equal(selectedGpu.gpu, "2");
   assert.ok(selectedGpu.args.includes("-g"));
   assert.equal(selectedGpu.args[selectedGpu.args.indexOf("-g") + 1], "2");
