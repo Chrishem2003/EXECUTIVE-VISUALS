@@ -10,6 +10,7 @@ import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createUpscaleVisualQualityAssessor } from "./upscale-visual-quality.mjs";
+import { createLpipsPerceptualAssessor } from "./lpips-perceptual-assessor.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 
@@ -421,14 +422,28 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
       catch(error){await unlink(outputPath).catch(()=>{});throw error;}
       let qualityAssessment;
+      let referenceAsset=null,referencePath=null;
       try {
+        if(input.referenceAssetId){
+          referenceAsset=getAccessibleAsset(db,job.owner_id,String(input.referenceAssetId),true);
+          if(!referenceAsset||!referenceAsset.media_type.startsWith("image/")||referenceAsset.project_id!==source.project_id||referenceAsset.id===source.id)throw Object.assign(new Error("LPIPS reference must be a distinct accessible image in the same project as the source."),{code:"AI_UPSCALE_LPIPS_REFERENCE_INVALID"});
+          referencePath=join(mediaRoot,referenceAsset.storage_path);
+        }
+        const lpipsEnabled=process.env.AI_UPSCALE_LPIPS_ENABLED==="true"&&Boolean(referencePath);
+        const lpipsAssessor=lpipsEnabled?createLpipsPerceptualAssessor({
+          network:process.env.AI_UPSCALE_LPIPS_NETWORK||"alex",
+          device:process.env.AI_UPSCALE_LPIPS_DEVICE||"auto",
+          maxPixels:Number(process.env.AI_UPSCALE_LPIPS_MAX_PIXELS||8294400),
+          threads:Number(process.env.AI_UPSCALE_LPIPS_THREADS||1)
+        }):null;
         const assessor = qualityAssessorFactory({
           ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
           ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
-          maxPixels: Number(process.env.AI_UPSCALE_QUALITY_MAX_PIXELS || 40000000)
+          maxPixels: Number(process.env.AI_UPSCALE_QUALITY_MAX_PIXELS || 40000000),
+          ...(lpipsAssessor?{lpipsAssessor}:{})
         });
         qualityAssessment = await assessor.assess({
-          candidatePath: outputPath,
+          candidatePath: outputPath,referencePath,
           tileSize: result.tile > 0 ? result.tile : 256,
           signal: controller.signal
         });
@@ -444,7 +459,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,qualityAssessment,qualityReviewRequired:true,qualityReviewReasons:[...(result.qualityReviewReasons||[]),...(qualityAssessment.status==="needs_review"?["tile-seam-anomaly-detected"]:[]),...(qualityAssessment.status==="assessment_unavailable"?["automated-quality-assessment-unavailable"]:[]),"human-review-required"],...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,...(referenceAsset?{referenceAssetId:referenceAsset.id}:{}),qualityAssessment,qualityReviewRequired:true,qualityReviewReasons:[...(result.qualityReviewReasons||[]),...(qualityAssessment.status==="needs_review"?["tile-seam-anomaly-detected"]:[]),...(qualityAssessment.status==="assessment_unavailable"?["automated-quality-assessment-unavailable"]:[]),"human-review-required"],...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
