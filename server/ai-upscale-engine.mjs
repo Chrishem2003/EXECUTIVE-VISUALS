@@ -94,7 +94,10 @@ async function runWithTileFallback(binary, args, timeoutMs, signal, outputPath, 
     const remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) {
       await unlink(outputPath).catch(() => {});
-      throw fail("AI upscaling job exceeded its total time limit across tile retries.", "AI_UPSCALE_TIMEOUT");
+      throw Object.assign(
+        fail("AI upscaling job exceeded its total time limit across tile retries.", "AI_UPSCALE_TIMEOUT"),
+        { requestedTile, attemptedTiles: [...attemptedTiles], tileFallbackUsed: attemptedTiles.some(value => value !== requestedTile) }
+      );
     }
     const tile = candidates[index];
     const attemptArgs = args.slice();
@@ -109,7 +112,13 @@ async function runWithTileFallback(binary, args, timeoutMs, signal, outputPath, 
       return { tile, attemptedTiles, fallbackUsed: tile !== requestedTile };
     } catch (error) {
       await unlink(outputPath).catch(() => {});
-      if (!isGpuMemoryFailure(error) || index === candidates.length - 1) throw error;
+      if (!isGpuMemoryFailure(error) || index === candidates.length - 1) {
+        throw Object.assign(error, {
+          requestedTile,
+          attemptedTiles: [...attemptedTiles],
+          tileFallbackUsed: attemptedTiles.some(value => value !== requestedTile)
+        });
+      }
     }
   }
   throw fail("AI upscaling exhausted its GPU-memory tile fallback strategy.", "AI_UPSCALE_PROCESS_FAILED");
