@@ -13,6 +13,10 @@ The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option
 
 Keep the default for memory-constrained GPUs. Increasing worker counts can improve throughput for some batches but can also increase memory pressure; benchmark on the target worker before changing defaults.
 
+## Test-time augmentation (TTA)
+
+The adapter exposes the NCNN CLI `-x` option as an explicit boolean. It is disabled by default because TTA can increase processing time. Enable it only for a quality-oriented job after benchmarking the latency and output on representative assets. The selected setting is included in execution and self-test diagnostics; enabling the flag is not itself a quality certification.
+
 ## Tile fallback
 
 Tile size `0` requests the NCNN engine's automatic selection. If a recognized GPU allocation failure occurs, the adapter retries with progressively smaller explicit tiles. All attempts share one overall job deadline. An explicitly selected nonzero tile is never silently changed.
