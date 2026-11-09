@@ -4,10 +4,10 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
 function pngBytes(width, height, colorType = 6) {
-  const { deflateSync } = require("node:zlib");
   function chunk(type, data) {
     const name = Buffer.from(type), body = Buffer.concat([name, data]); let crc = 0xffffffff;
     for (const byte of body) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
