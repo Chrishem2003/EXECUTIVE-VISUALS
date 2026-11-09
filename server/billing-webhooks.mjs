@@ -288,6 +288,44 @@ export function getFlutterwaveSubscriptionCheckoutStatus(db,{orderId,userId}={})
     planName:row.plan_name,interval:row.interval};
 }
 
+export async function cancelFlutterwaveSubscription(db,{user,secretKey=process.env.FLW_SECRET_KEY,fetchImpl=fetch}={}){
+  if(!user?.id||typeof secretKey!=="string"||secretKey.length<12)throw fail("Authenticated customer and Flutterwave credentials are required.","BILLING_PROVIDER_CONFIG_INVALID",503);
+  const local=db.prepare(`SELECT s.*,a.email,p.code AS plan_code
+    FROM billing_subscriptions s JOIN billing_accounts a ON a.user_id=s.user_id
+    JOIN billing_plans p ON p.id=s.plan_id
+    WHERE s.user_id=? AND s.provider='flutterwave' AND s.status IN ('active','past_due')
+    ORDER BY s.current_period_end DESC LIMIT 1`).get(String(user.id));
+  if(!local)throw fail("No cancellable Flutterwave subscription was found for this account.","BILLING_SUBSCRIPTION_NOT_FOUND",404);
+  const metadata=parse(local.metadata_json);
+  const paymentPlanId=String(metadata.paymentPlanId||"");
+  const initialTransactionId=String(metadata.initialTransactionId||"");
+  if(!/^\\d{1,18}$/.test(paymentPlanId)||!/^[0-9]{1,30}$/.test(initialTransactionId))
+    throw fail("This subscription is missing the verified provider references needed for safe cancellation.","BILLING_SUBSCRIPTION_REFERENCE_MISSING",409);
+  const query=new URLSearchParams({email:String(local.email).trim().toLowerCase(),plan:paymentPlanId,transaction_id:initialTransactionId,status:"active",page:"1"});
+  const headers={authorization:"Bearer "+secretKey,accept:"application/json"};
+  let listResponse;
+  try{listResponse=await fetchImpl("https://api.flutterwave.com/v3/subscriptions?"+query.toString(),{method:"GET",headers,redirect:"error",signal:AbortSignal.timeout(15000)});}
+  catch{throw fail("Flutterwave subscription lookup failed. No local subscription state was changed.","BILLING_PROVIDER_LOOKUP_FAILED",502);}
+  if(!listResponse.ok)throw fail("Flutterwave subscription lookup was rejected. No local subscription state was changed.","BILLING_PROVIDER_LOOKUP_FAILED",502);
+  let listBody;try{listBody=await listResponse.json();}catch{throw fail("Flutterwave returned an invalid subscription lookup response.","BILLING_PROVIDER_RESPONSE_INVALID",502);}
+  const matches=Array.isArray(listBody?.data)?listBody.data.filter(item=>
+    String(item?.plan?.id??item?.plan_id??"")===paymentPlanId&&
+    String(item?.transaction_id??item?.initial_transaction_id??"")===initialTransactionId&&
+    String(item?.customer?.email??item?.email??"").trim().toLowerCase()===String(local.email).trim().toLowerCase()):[];
+  if(listBody?.status!=="success"||matches.length!==1||!/^[0-9]{1,18}$/.test(String(matches[0]?.id||"")))
+    throw fail("Flutterwave did not return exactly one subscription matching this account, plan and initial payment. Contact support before retrying.","BILLING_SUBSCRIPTION_MATCH_AMBIGUOUS",409);
+  const providerId=String(matches[0].id);
+  let cancelResponse;
+  try{cancelResponse=await fetchImpl("https://api.flutterwave.com/v3/subscriptions/"+encodeURIComponent(providerId)+"/cancel",{method:"PUT",headers,redirect:"error",signal:AbortSignal.timeout(15000)});}
+  catch{throw fail("Flutterwave cancellation request could not be completed. Check subscription status before retrying.","BILLING_PROVIDER_CANCEL_FAILED",502);}
+  if(!cancelResponse.ok)throw fail("Flutterwave rejected the cancellation request. The local subscription remains unchanged.","BILLING_PROVIDER_CANCEL_FAILED",502);
+  let cancelBody;try{cancelBody=await cancelResponse.json();}catch{throw fail("Flutterwave returned an invalid cancellation response.","BILLING_PROVIDER_RESPONSE_INVALID",502);}
+  if(cancelBody?.status!=="success")throw fail("Flutterwave did not confirm the cancellation request.","BILLING_PROVIDER_CANCEL_FAILED",502);
+  db.prepare("UPDATE billing_subscriptions SET metadata_json=?,updated_at=? WHERE id=? AND user_id=?")
+    .run(json({...metadata,cancellationRequestedAt:now(),providerCancellationId:providerId}),now(),local.id,String(user.id));
+  return {requested:true,provider:"flutterwave",status:"awaiting_webhook",message:"Cancellation was requested from Flutterwave. Access and subscription state will update after the provider cancellation webhook is verified."};
+}
+
 export async function createFlutterwaveCheckout(db, {
   user,
   planId,
