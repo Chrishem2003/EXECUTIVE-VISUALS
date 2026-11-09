@@ -94,6 +94,19 @@ test("rejects non-normalized LPIPS metrics even when reviewer fields are present
   }
 });
 
+test("rejects evidence files that exceed the bounded read size", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-oversized-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    await writeFile(path, Buffer.alloc(4 * 1024 * 1024 + 1, 0x20));
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.deepEqual(result.models, {});
+    assert.match(result.reason, /4 MiB/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("fails closed for invalid JSON and symlink evidence paths", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-upscale-invalid-"));
   const path = join(directory, "benchmarks.json");
@@ -106,7 +119,10 @@ test("fails closed for invalid JSON and symlink evidence paths", async () => {
     await symlink(path, link);
     const linked = await loadUpscaleQualityEvidence({ filePath: link });
     assert.deepEqual(linked.models, {});
-    assert.match(linked.reason, /non-symlink/);
+    assert.match(linked.reason, /symlink/);
+    const directoryPath = await loadUpscaleQualityEvidence({ filePath: directory });
+    assert.deepEqual(directoryPath.models, {});
+    assert.match(directoryPath.reason, /regular non-symlink/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
