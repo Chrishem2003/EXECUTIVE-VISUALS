@@ -95,3 +95,34 @@ The local NCNN adapter starts with the requested tile setting. When the operator
 Every retry removes any partial output from the failed attempt before starting the next one. If a run succeeds, the actual tile, requested tile, fallback flag and ordered tile attempts are attached to the derivative's processing metadata. If output validation fails, the invalid output is removed and no derivative is published.
 
 Smaller tiles reduce peak GPU memory use but may introduce tile-boundary inconsistencies; inspect large flat areas, fine textures and high-contrast edges during visual review. This recovery behavior is an execution reliability aid, not a quality improvement or a substitute for human approval.
+
+## Preparing a human visual-review package
+
+After a five-fixture execution benchmark succeeds, create an offline review folder with the exact source/output files whose SHA-256 digests appear in the report:
+
+```sh
+npm run review:upscale -- ./benchmark-output/upscale-benchmark-realesrgan-x4plus-REPORT.json ./benchmark-fixtures.json ./benchmark-output/run-RUN_ID ./upscale-review
+```
+
+The output folder must not already exist. The generator validates the report, five-category manifest, pinned model artifacts, source/output hashes, safe regular files and size limits before copying the images. It creates a standalone `review.html` with an interactive reveal slider, per-fixture decisions and notes, plus an exportable review-notes JSON and checksum manifest. Copied assets are re-hashed after copying. The package always reports `qualityVerified: false`; it cannot update the private evidence file or approve a model. An authorized reviewer must inspect all images, validate and hash the review artifact, then update the private evidence file through the established process.
+
+## Model isolation
+
+Evidence is grouped and evaluated independently by model. A passing general-purpose model review does not approve the anime model, and vice versa. Each model needs its own complete five-category fixture set and review artifacts.
+
+The API exposes only each model's readiness state and a short reason. It does not return reviewer notes, evidence-file paths, source media, or the evidence document.
+
+## Fail-closed behavior
+
+The model remains unavailable when the file is missing, malformed, oversized, symlinked, incomplete, invalid, or contains an unreviewed/rejected record. Presets remain visible but disabled in the Asset Library with the relevant blocker. The authenticated job-creation API independently enforces the same per-model evidence gate, so direct API requests cannot bypass the disabled UI.
+
+This evidence file does not install model weights, enable `AI_UPSCALE_ENABLED`, run inference, or authorize remote AI spending. Production workers must remain disabled until the worker executable, model files, execution self-test, benchmark evidence, derivative storage, cancellation, provenance and capacity have all been independently verified.
+
+
+## GPU-memory recovery and tile provenance
+
+The local NCNN adapter starts with the requested tile setting. When the operator leaves tile size at automatic (`0`), the worker retries only recognized GPU-memory allocation failures with progressively smaller tiles: 256, 192, 128, 96, 64, then 32. It does not retry generic process failures. Explicit non-zero tile selections are never silently changed.
+
+Every retry removes any partial output from the failed attempt before starting the next one. If a run succeeds, the actual tile, requested tile, fallback flag and ordered tile attempts are attached to the derivative's processing metadata. If output validation fails, the invalid output is removed and no derivative is published.
+
+Smaller tiles reduce peak GPU memory use but may introduce tile-boundary inconsistencies; inspect large flat areas, fine textures and high-contrast edges during visual review. This recovery behavior is an execution reliability aid, not a quality improvement or a substitute for human approval.
