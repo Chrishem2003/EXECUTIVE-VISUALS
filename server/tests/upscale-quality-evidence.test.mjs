@@ -90,6 +90,35 @@ test("rejects incomplete category coverage and missing reviewer evidence", async
   }
 });
 
+test("rejects review timestamps that predate the benchmark execution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-review-before-run-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    const records = recordsFor();
+    records[0].timestamp = "2026-11-09T00:10:00.000Z";
+    records[0].qualityReviewedAt = "2026-11-09T00:05:00.000Z";
+    await writeEvidence(directory, path, records);
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects implausibly future-dated quality reviews", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-upscale-review-future-"));
+  const path = join(directory, "benchmarks.json");
+  try {
+    const records = recordsFor();
+    records[0].qualityReviewedAt = "2099-01-01T00:00:00.000Z";
+    await writeEvidence(directory, path, records);
+    const result = await loadUpscaleQualityEvidence({ filePath: path });
+    assert.equal(result.models["realesrgan-x4plus"].qualityVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("rejects non-normalized LPIPS metrics even when reviewer fields are present", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-upscale-metric-range-"));
   const path = join(directory, "benchmarks.json");
