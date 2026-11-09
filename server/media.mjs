@@ -9,6 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createUpscaleVisualQualityAssessor } from "./upscale-visual-quality.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
@@ -346,7 +347,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter, qualityAssessorFactory=createUpscaleVisualQualityAssessor }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
@@ -383,12 +384,31 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       let c2paPreservation;
       try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
       catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+      let qualityAssessment;
+      try {
+        const assessor = qualityAssessorFactory({
+          ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
+          ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
+          maxPixels: Number(process.env.AI_UPSCALE_QUALITY_MAX_PIXELS || 40000000)
+        });
+        qualityAssessment = await assessor.assess({
+          candidatePath: outputPath,
+          tileSize: result.tile > 0 ? result.tile : 256,
+          signal: controller.signal
+        });
+      } catch (error) {
+        qualityAssessment = {
+          status: "assessment_unavailable",
+          method: "ffmpeg-pixel-analysis",
+          code: error?.code || "AI_UPSCALE_QUALITY_FAILED"
+        };
+      }
       const fileStat = await stat(outputPath);
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,qualityAssessment,qualityReviewRequired:true,qualityReviewReasons:[...(result.qualityReviewReasons||[]),...(qualityAssessment.status==="needs_review"?["tile-seam-anomaly-detected"]:[]),...(qualityAssessment.status==="assessment_unavailable"?["automated-quality-assessment-unavailable"]:[]),"human-review-required"],...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
