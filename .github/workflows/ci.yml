@@ -40,6 +40,11 @@ jobs:
           npx cargo-cp-artifact -a cdylib c2pa-node "$GITHUB_WORKSPACE/node_modules/@contentauth/c2pa-node/dist/index.node" -- cargo build --message-format=json-render-diagnostics --release --manifest-path="$GITHUB_WORKSPACE/c2pa-js/packages/c2pa-node/Cargo.toml"
         env:
           C2PA_LIBRARY_PATH: ${{ github.workspace }}/node_modules/@contentauth/c2pa-node/dist/index.node
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Syntax-check the isolated FlashVSR inference bridge
+        run: python -m py_compile server/scripts/flashvsr-infer.py
       - run: npm run typecheck
       - run: npm run build
       - name: Verify framewise video AI upscaling safety and output invariants
