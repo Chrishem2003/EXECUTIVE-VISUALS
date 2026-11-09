@@ -38,6 +38,8 @@ Successful and failed jobs expose the requested tile, attempted tiles, effective
 
 ## Output and quality gates
 
+Every accepted derivative includes streaming SHA-256 digests for both the original source (`sourceSha256`) and generated output (`outputSha256`). The source digest is recomputed after inference and compared before accepting the derivative; a changed source causes rejection and cleanup. Store these digests with the asset lineage record and use them for integrity verification, not as a substitute for perceptual quality review.
+
 The adapter validates image structure, dimensions, output byte/pixel budgets, alpha preservation, source identity, and output scale before accepting a derivative. Failed outputs are removed.
 
 An execution self-test proves that the configured executable produced a structurally valid derivative. It does **not** prove perceptual quality. `inferenceVerified` remains false until representative model/worker inference has been benchmarked and image quality has been reviewed separately.
