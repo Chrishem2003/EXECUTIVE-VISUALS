@@ -778,6 +778,8 @@ export function createAppServer() {
           const model=String(body.model||"realesrgan-x4plus");
           const evidence=await loadUpscaleQualityEvidence();
           if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
+          const readiness=await aiUpscaleAdapter.probe(model);
+          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
         }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){
