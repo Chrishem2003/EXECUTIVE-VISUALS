@@ -10,6 +10,12 @@ The Asset Library now exposes a batch-selection workflow for original image asse
 
 The authenticated API also accepts `POST /api/jobs/batch` with an `items` array of 1–100 unique `{ sourceAssetId, model?, scale?, tile?, format? }` records and optional batch-level defaults (`model`, `scale`, `tile`, `format`, `projectId`). It validates image ownership/editor access, keeps every source within one project/private-workspace boundary, validates each model/options set, verifies each model's reviewed benchmark evidence and worker readiness, then atomically queues one ordinary `media.ai-upscale` job per item. The response includes a `batchId` and individually trackable jobs. This is queue fan-out, not a single GPU process: worker capacity and existing queue leases continue to control actual inference concurrency.
 
+## Video temporal signal QA
+
+The media QA worker now samples FFmpeg `signalstats` metadata at 8 fps and retains frame-average luma, saturation and U/V chroma values. It reports repeated alternating luma, saturation and chroma changes, while excluding samples around detected scene cuts. This is a low-cost screening signal for coarse exposure/color pumping; it is not optical-flow compensated, does not compare local regions, and cannot certify high-frequency flicker or temporal perceptual quality. The sample rate and findings are exposed in the media quality report. An unavailable FFmpeg check remains explicitly unknown rather than a clean result.
+
+Do not describe this signal analysis as video-frame enhancement. The current AI upscaler still operates on image assets; a production video-frame enhancement path must separately prove frame-count/timestamp preservation, audio synchronization, model execution, color-range preservation, and temporal consistency before release.
+
 ## Batch image enhancement
 
 Use `createUpscaleBatchProcessor({ adapter, defaultConcurrency })` from `server/upscale-batch.mjs` to process 1–100 independent assets through the existing single-image adapter. The processor caps concurrency at four (default one), rejects duplicate output paths and any output that would overwrite an input in the same batch, preserves per-item source/output digests and quality-review state, isolates item failures, supports cancellation, and reports progress. It does not bypass adapter validation or mark perceptual quality as passed.
