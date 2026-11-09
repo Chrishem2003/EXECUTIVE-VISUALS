@@ -61,6 +61,11 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", model: "../../bad" }), error => error.code === "AI_UPSCALE_INVALID_MODEL");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", scale: 5 }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/a.png" }), error => error.code === "AI_UPSCALE_INVALID_PATH");
+  assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:99:2" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:4:4" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  const tuned = adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:3:2" });
+  assert.equal(tuned.threads, "1:3:2");
+  assert.deepEqual(tuned.args.slice(-4), ["-j", "1:3:2", "-f", "png"]);
 });
 
 test("AI upscale model names match the supported NCNN model catalog", () => {
@@ -90,6 +95,7 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
     assert.equal(result.method, "ai-super-resolution");
     assert.ok(result.byteSize >= 24);
     assert.equal(result.model, model);
+    assert.equal(result.threads, "1:2:2");
     await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model }), error => error.code === "AI_UPSCALE_OUTPUT_EXISTS");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
