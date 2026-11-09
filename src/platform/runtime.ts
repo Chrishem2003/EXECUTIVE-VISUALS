@@ -346,7 +346,7 @@ document.addEventListener("click",event=>{
   if(!model){alert("No verified enhancement model is available.");return;}
   batchButton.setAttribute("disabled","true");
   void apiRequest("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({projectId:state.projectId||undefined,model,scale,format:"png",tile:0,items:selected.map(sourceAssetId=>({sourceAssetId}))})})
-   .then(async result=>{await refresh();paint();alert("Batch queued. Each image has its own job and shared batch ID.");})
+   .then(async()=>{await refresh();paint();alert("Batch queued. Each image has its own job and shared batch ID.");})
    .catch(error=>{batchButton.removeAttribute("disabled");alert(error instanceof Error?error.message:"Batch submission failed.");});
   return;
  }
