@@ -1,0 +1,144 @@
+-- Disposable PostgreSQL integration tests for atomic customer credit accounting.
+\set ON_ERROR_STOP on
+
+insert into executive_visuals.billing_credit_accounts(owner_id)
+values('11111111-1111-4111-8111-111111111111') on conflict(owner_id) do nothing;
+
+select * from executive_visuals.grant_generation_credits(
+ '11111111-1111-4111-8111-111111111111',100,'integration-credit-grant-001',
+ 'Postgres integration seed','{"source":"ci_fixture"}'::jsonb
+) \gset grant_
+
+do $credit_grant_replay$
+declare r record;
+begin
+ select * into r from executive_visuals.grant_generation_credits(
+  '11111111-1111-4111-8111-111111111111',100,'integration-credit-grant-001',
+  'Replay','{"source":"ci_fixture"}'::jsonb
+ );
+ if not r.replayed or r.balance<>100 then raise exception 'credit grant idempotency failed'; end if;
+end
+$credit_grant_replay$;
+
+insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input)
+values(
+ '44444444-4444-4444-8444-444444444444',
+ '11111111-1111-4111-8111-111111111111',
+ '22222222-2222-4222-8222-222222222222',
+ 'video.generate','queued','{}'::jsonb
+);
+
+select * from executive_visuals.reserve_generation_credits(
+ '11111111-1111-4111-8111-111111111111',
+ '44444444-4444-4444-8444-444444444444',30,'integration-credit-reserve-001'
+) \gset reserve_
+
+do $credit_reservation_assertions$
+declare r record; current_balance bigint;
+begin
+ select coalesce(sum(amount),0) into current_balance
+ from executive_visuals.billing_credit_ledger
+ where owner_id='11111111-1111-4111-8111-111111111111';
+ if current_balance<>70 then raise exception 'reservation did not debit 30 credits'; end if;
+ select * into r from executive_visuals.reserve_generation_credits(
+  '11111111-1111-4111-8111-111111111111',
+  '44444444-4444-4444-8444-444444444444',30,'integration-credit-reserve-001'
+ );
+ if not r.replayed or r.balance<>70 then raise exception 'reservation replay was not idempotent'; end if;
+ begin
+  perform * from executive_visuals.reserve_generation_credits(
+   '11111111-1111-4111-8111-111111111111',
+   '44444444-4444-4444-8444-444444444444',31,'integration-credit-reserve-001'
+  );
+  raise exception 'conflicting reservation replay unexpectedly succeeded';
+ exception when others then
+  if sqlerrm='conflicting reservation replay unexpectedly succeeded' then raise; end if;
+  if sqlerrm<>'BILLING_CREDIT_IDEMPOTENCY_CONFLICT' then raise; end if;
+ end;
+end
+$credit_reservation_assertions$;
+
+select * from executive_visuals.settle_generation_credit_reservation(
+ :'reserve_reservation_id'::uuid,18,
+ '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
+) \gset settlement_
+
+do $credit_settlement_assertions$
+declare r record; current_balance bigint;
+begin
+ select coalesce(sum(amount),0) into current_balance
+ from executive_visuals.billing_credit_ledger
+ where owner_id='11111111-1111-4111-8111-111111111111';
+ if current_balance<>82 then raise exception 'settlement did not refund unused 12 credits'; end if;
+ select * into r from executive_visuals.settle_generation_credit_reservation(
+  :'reserve_reservation_id'::uuid,18,
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
+ );
+ if not r.replayed or r.balance<>82 or r.adjustment<>12 then
+  raise exception 'identical settlement replay failed';
+ end if;
+ begin
+  perform * from executive_visuals.settle_generation_credit_reservation(
+   :'reserve_reservation_id'::uuid,19,
+   '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001"}'::jsonb
+  );
+  raise exception 'conflicting settlement unexpectedly succeeded';
+ exception when others then
+  if sqlerrm='conflicting settlement unexpectedly succeeded' then raise; end if;
+  if sqlerrm<>'BILLING_CREDIT_SETTLEMENT_CONFLICT' then raise; end if;
+ end;
+end
+$credit_settlement_assertions$;
+
+insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input)
+values(
+ '55555555-5555-4555-8555-555555555555',
+ '11111111-1111-4111-8111-111111111111',
+ '22222222-2222-4222-8222-222222222222',
+ 'video.generate','queued','{}'::jsonb
+);
+select * from executive_visuals.reserve_generation_credits(
+ '11111111-1111-4111-8111-111111111111',
+ '55555555-5555-4555-8555-555555555555',20,'integration-credit-reserve-release'
+) \gset release_
+
+do $credit_release_assertions$
+declare r record;
+begin
+ select * into r from executive_visuals.release_generation_credit_reservation(
+  :'release_reservation_id'::uuid,'Provider submission was cancelled before dispatch'
+ );
+ if r.balance<>82 then raise exception 'reservation release did not restore credits'; end if;
+end
+$credit_release_assertions$;
+
+do $credit_ledger_immutable$
+begin
+ begin
+  update executive_visuals.billing_credit_ledger
+  set description='tampered'
+  where id=:'grant_ledger_id'::uuid;
+  raise exception 'credit ledger unexpectedly allowed mutation';
+ exception when others then
+  if sqlerrm='credit ledger unexpectedly allowed mutation' then raise; end if;
+  if sqlerrm<>'BILLING_CREDIT_LEDGER_IS_APPEND_ONLY' then raise; end if;
+ end;
+end
+$credit_ledger_immutable$;
+
+do $credit_insufficient_balance$
+begin
+ begin
+  perform * from executive_visuals.reserve_generation_credits(
+   '11111111-1111-4111-8111-111111111111',
+   '55555555-5555-4555-8555-555555555555',1000,'integration-credit-insufficient'
+  );
+  raise exception 'insufficient customer balance unexpectedly accepted';
+ exception when others then
+  if sqlerrm='insufficient customer balance unexpectedly accepted' then raise; end if;
+  if sqlerrm<>'BILLING_INSUFFICIENT_CREDITS' then raise; end if;
+ end;
+end
+$credit_insufficient_balance$;
+
+select 'cloud customer credit integration passed' as result;
