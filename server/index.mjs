@@ -878,8 +878,9 @@ export function createAppServer() {
           if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible MP4 or QuickTime video asset for provenance-preserving AI upscaling.");return;}
           if(source.project_id&&source.project_id!==String(body.projectId||"")){fail(res,400,"PROJECT_MISMATCH","The source video must belong to the selected project.");return;}
           if(body.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm that you own or are authorized to process this source video.");return;}
-          const tile=Number(body.tile??0);
+          const tile=Number(body.tile??0),threads=String(body.threads??"1:2:2");
           if(!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Tile size must be automatic (0) or an integer from 32 to 512.");return;}
+          if(!/^[1-4]:[1-4]:[1-4]$/.test(threads)||body.tta!==undefined&&typeof body.tta!=="boolean"){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Thread settings must use load:process:save values from 1 to 4 and TTA must be boolean.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
         }
