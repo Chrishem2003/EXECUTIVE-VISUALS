@@ -219,8 +219,11 @@ checkout; it is not presented as a recurring payment method. Merchant
 dashboard configuration and sandbox/live provider verification are still
 required before enabling this path in production.
 
-**Renewal reconciliation remains a follow-on gate:** the current batch verifies
-and activates the initial recurring charge and mirrors cancellation. A
-separate renewal reconciliation path must be validated against actual
-Flutterwave recurring-charge payloads before claiming automatic recurring
-credit renewal is production-ready.
+Verified recurring renewal charges are reconciled separately from the initial
+checkout. Renewal settlement requires a successful server-side transaction
+verification and an unambiguous match using the provider payment-plan ID and
+customer email, or a unique provider customer identity. The billing period
+advances from the later of the existing period end or the verified processing
+time; a transaction-specific idempotency key prevents duplicate period-credit
+grants. Events that cannot be matched unambiguously remain retryable for
+operator investigation rather than granting credits.
