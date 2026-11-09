@@ -364,7 +364,13 @@ setTimeout(() => {
     const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 1000, enabled: true });
     await assert.rejects(
       adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, tile: 0, format: "png" }),
-      error => error.code === "AI_UPSCALE_TIMEOUT"
+      error => {
+        assert.equal(error.code, "AI_UPSCALE_TIMEOUT");
+        assert.equal(error.requestedTile, 0);
+        assert.deepEqual(error.attemptedTiles, [0, 256]);
+        assert.equal(error.tileFallbackUsed, true);
+        return true;
+      }
     );
     const { readFile, access } = await import("node:fs/promises");
     assert.equal(await readFile(attemptsFile, "utf8"), "0,256,");
