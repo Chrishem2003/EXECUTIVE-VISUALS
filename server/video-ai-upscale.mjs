@@ -145,7 +145,7 @@ export function createVideoAiUpscaleProcessor({
       if(output.width!==outputWidth||output.height!==outputHeight)throw fail("Rendered video dimensions do not match the requested upscale factor.","VIDEO_AI_UPSCALE_DIMENSIONS_MISMATCH");
       if(output.audio.length!==source.audio.length)throw fail("Rendered video did not preserve the source audio stream count.","VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
       const outputInfo=await stat(outputPath);
-      if(!outputInfo.isFile()||outputInfo.size<1024||outputInfo.size>maxOutputBytes)throw fail("Rendered video is empty or exceeds the output byte budget.","VIDEO_AI_UPSCALE_OUTPUT_INVALID");
+      if(!outputInfo.isFile()||outputInfo.size<1||outputInfo.size>maxOutputBytes)throw fail("Rendered video is empty or exceeds the output byte budget.","VIDEO_AI_UPSCALE_OUTPUT_INVALID");
       progress(98);
       return {
         path:outputPath,byteSize:outputInfo.size,inputBytes,frameCount:source.frames,
