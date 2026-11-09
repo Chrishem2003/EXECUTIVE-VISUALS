@@ -5,6 +5,19 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
+function pngBytes(width, height) {
+  const { deflateSync } = require("node:zlib");
+  function chunk(type, data) {
+    const name = Buffer.from(type), body = Buffer.concat([name, data]); let crc = 0xffffffff;
+    for (const byte of body) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4); tail.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, tail]);
+  }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.alloc(height * (1 + width * 4)))), chunk("IEND", Buffer.alloc(0))]);
+}
+
 function pngHeader(width, height) {
   const bytes = Buffer.alloc(24);
   Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
@@ -23,13 +36,7 @@ const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
 const size = ${sizeExpression};
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8);
-png.write("IHDR",12,"ascii");
-png.writeUInt32BE(size,16);
-png.writeUInt32BE(size,20);
-fs.writeFileSync(out,png);
+fs.writeFileSync(out,pngBytes(size,size));
 `;
   await writeFile(path, source);
   await chmod(path, 0o755);
@@ -94,11 +101,7 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 fs.writeFileSync(${JSON.stringify(input)}, "replacement bytes");
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(2,16); png.writeUInt32BE(2,20);
-fs.writeFileSync(out,png);
+fs.writeFileSync(out,pngBytes(2,2));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
@@ -298,13 +301,7 @@ if (tile === 0 || tile === 256) {
   process.stderr.write("vkAllocateMemory failed: VK_ERROR_OUT_OF_DEVICE_MEMORY");
   process.exit(2);
 }
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png, 0);
-png.writeUInt32BE(13, 8);
-png.write("IHDR", 12, "ascii");
-png.writeUInt32BE(input.readUInt32BE(16) * scale, 16);
-png.writeUInt32BE(input.readUInt32BE(20) * scale, 20);
-fs.writeFileSync(output, png);
+fs.writeFileSync(output, pngBytes(input.readUInt32BE(16) * scale, input.readUInt32BE(20) * scale));
 `;
   await writeFile(binary, source);
   await chmod(binary, 0o755);
@@ -608,5 +605,27 @@ require("node:fs").writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
     );
     const { access } = await import("node:fs/promises");
     await assert.rejects(access(attemptsFile));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("AI upscaler rejects a checksum-invalid PNG output even when its dimensions look correct", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-bad-png-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "corrupt.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), zlib = require("node:zlib");
+const out = process.argv[process.argv.indexOf("-o") + 1];
+function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}
+const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;
+const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",zlib.deflateSync(Buffer.alloc(18))),chunk("IEND",Buffer.alloc(0))]);png[png.length-5]^=0xff;fs.writeFileSync(out,png);
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
