@@ -152,9 +152,9 @@ export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash }
     ? {event:eventType,data:{status:String(data.status||"deactivated"),currency,amount:Number(data.amount)||0,
         customer:{email:customerEmail},plan:{id:paymentPlanId}}}
     : {event:eventType,data:{id:transactionId,tx_ref:txRef,status,amount,currency,
-        customer:{email:customerEmail||null,id:String(data?.customer?.id||"")||null},
-        payment_plan:String(data?.payment_plan??data?.plan?.id??"")||null,
-        meta:data?.meta&&typeof data.meta==="object"?{subscription_checkout_id:String(data.meta.subscription_checkout_id||"")}:{}}};
+        ...(customerEmail||data?.customer?.id?{customer:{...(customerEmail?{email:customerEmail}:{}),...(data?.customer?.id?{id:String(data.customer.id)}:{})}}:{}),
+        ...(data?.payment_plan||data?.plan?.id?{payment_plan:String(data.payment_plan??data.plan.id)}:{}),
+        ...(data?.meta&&typeof data.meta==="object"?{meta:{subscription_checkout_id:String(data.meta.subscription_checkout_id||"")}}:{})}};
   // Hash the normalized fields that affect settlement, not provider-added
   // transport metadata such as timestamps or customer profile details.
   const payloadHash = createHash("sha256").update(json(minimalPayload)).digest("hex");
