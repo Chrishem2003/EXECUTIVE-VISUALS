@@ -48,6 +48,22 @@ begin
   if not found or payment_row.status <> 'successful' then
     raise exception 'Payment is not refundable' using errcode = 'P0002';
   end if;
+
+  -- Recheck the idempotency key after acquiring the payment row lock. This
+  -- serializes concurrent requests using the same key and returns the original
+  -- reservation instead of attempting a duplicate insert.
+  select * into existing_row
+  from payment_refunds
+  where owner_id = p_owner_id and idempotency_key = p_idempotency_key;
+  if found then
+    if existing_row.payment_transaction_id <> p_payment_transaction_id
+       or existing_row.amount_minor <> p_amount_minor
+       or existing_row.currency <> p_currency then
+      raise exception 'Idempotency key conflict' using errcode = '23505';
+    end if;
+    return existing_row.id;
+  end if;
+
   if payment_row.currency <> p_currency then
     raise exception 'Refund currency mismatch' using errcode = '22023';
   end if;
