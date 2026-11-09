@@ -122,3 +122,4 @@ The in-app **Release readiness** workspace provides the current merged/in-progre
 ### AI upscaling worker memory recovery
 
 When NCNN tile size is left on automatic, recognized GPU-memory allocation failures trigger bounded retries with smaller tiles (256 → 192 → 128 → 96 → 64 → 32). Explicit tile settings are preserved. Failed partial outputs are removed, and successful fallback attempts are recorded in derivative processing metadata for review. See [AI upscale quality evidence and benchmark operations](docs/AI-UPSCALE-QUALITY-EVIDENCE.md).
+AI upscaling also checks projected output dimensions and pixel count before starting inference. Requests above the bounded worker pixel budget are rejected before launching the GPU process; this complements, rather than replaces, the existing output-byte limit.
