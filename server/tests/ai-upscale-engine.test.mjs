@@ -357,3 +357,93 @@ fs.writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
 test("AI upscaler rejects output pixel budgets outside the safe worker ceiling", () => {
   assert.throws(() => createRealEsrganAdapter({ maxOutputPixels: 100_000_001 }), /pixel budget is invalid/);
 });
+
+
+function pngHeaderWithColorType(width, height, colorType = 6) {
+  const bytes = Buffer.alloc(26);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
+  bytes.writeUInt32BE(13,8);
+  bytes.write("IHDR",12,"ascii");
+  bytes.writeUInt32BE(width,16);
+  bytes.writeUInt32BE(height,20);
+  bytes[25] = colorType;
+  return bytes;
+}
+
+test("AI upscaler rejects JPEG output for transparent sources before invoking the engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-alpha-jpeg-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "transparent.png");
+  const output = join(directory, "must-not-run.jpg");
+  const attemptsFile = join(directory, "attempts.txt");
+  await writeFile(input, pngHeaderWithColorType(8, 6, 6));
+  await writeFile(binary, `#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "jpg" }),
+      error => error.code === "AI_UPSCALE_ALPHA_JPEG_UNSUPPORTED"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(attemptsFile));
+    await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("AI upscaler rejects and removes an output that loses source alpha transparency", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-alpha-loss-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "transparent.png");
+  const output = join(directory, "opaque.png");
+  await writeFile(input, pngHeaderWithColorType(8, 6, 6));
+  await writeFakeEngine(binary);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_ALPHA_LOST"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("AI upscaler reports transparency preservation when alpha-bearing output is retained", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-alpha-preserved-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "transparent.png");
+  const output = join(directory, "transparent-enhanced.png");
+  await writeFile(input, pngHeaderWithColorType(8, 6, 6));
+  const script = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+const scale = Number(args[args.indexOf("-s") + 1] || 2);
+const png = Buffer.alloc(26);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
+png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20); png[25]=6;
+fs.writeFileSync(out,png);
+`;
+  await writeFile(binary, script);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const result = await adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" });
+    assert.equal(result.sourceHasAlpha, true);
+    assert.equal(result.outputHasAlpha, true);
+    assert.equal(result.alphaPreserved, true);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
