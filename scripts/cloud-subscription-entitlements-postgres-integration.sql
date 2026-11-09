@@ -6,8 +6,8 @@ declare
   grant_two record;
   balance_before bigint;
 begin
-  insert into auth.users(id,email) values
-    ('77777777-7777-4777-8777-777777777777','subscription-test@example.invalid')
+  insert into auth.users(id) values
+    ('77777777-7777-4777-8777-777777777777')
   on conflict(id) do nothing;
   insert into executive_visuals.billing_credit_accounts(owner_id)
   values('77777777-7777-4777-8777-777777777777') on conflict do nothing;
