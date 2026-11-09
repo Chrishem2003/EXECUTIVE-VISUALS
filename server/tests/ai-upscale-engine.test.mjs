@@ -464,6 +464,9 @@ fs.writeFileSync(output, pngBytes(input.readUInt32BE(16) * scale, input.readUInt
     assert.equal(result.requestedTile, 0);
     assert.equal(result.tileFallbackUsed, true);
     assert.deepEqual(result.tileAttempts, [0, 256, 192]);
+    assert.equal(result.tileFallbackReason, "gpu-memory-pressure");
+    assert.equal(result.qualityReviewRequired, true);
+    assert.deepEqual(result.qualityReviewReasons, ["gpu-memory-tile-fallback"]);
     assert.deepEqual(result.outputDimensions, { width: 16, height: 12 });
     assert.equal(Number(await import("node:fs/promises").then(fs => fs.readFile(attemptsFile, "utf8"))), 3);
   } finally {
