@@ -174,7 +174,7 @@ test("rejects impossible calendar dates in review timestamps",()=>{
 test("rejects review exports with an invalid ISO timestamp",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.exportedAt="not-a-date";
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
- assert.equal(result.valid,false);assert.match(result.errors.join(" "),/valid ISO date-time/);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/complete ISO date-time with timezone/);
 });
 test("rejects review exports that claim quality verification",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);notes.qualityVerified=true;
