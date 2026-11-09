@@ -138,3 +138,13 @@ The rubric is a review aid, not an automated quality score. A reviewer must insp
 ## Server-side review export validation
 
 The review package module exposes `validateUpscaleHumanReviewNotes(notes, reviewManifest)` for trusted server-side verification before an exported browser review is considered for the private evidence record. It requires the exact five manifest fixtures, matching categories and SHA-256 source/output checksums, a supported model and protocol, reviewer identity, timestamp, substantive notes, all five rubric decisions, and consistency between Pass decisions and issue flags. It rejects any attempt to set `qualityVerified: true`; successful validation only establishes that the submitted review is structurally complete and bound to the package assets. It does not independently prove that the reviewer inspected the images or certify quality. Authorization, durable reviewer identity, artifact hashing, and an approved evidence-record update remain separate controls.
+
+
+## Metric interpretation and perceptual benchmarking
+
+Keep restoration fidelity and perceptual preference as separate evaluation tracks. PSNR and SSIM can describe reference fidelity; LPIPS and other learned perceptual metrics provide complementary signals, but none is a universal quality verdict. The CVPR 2026 super-resolution evaluation study reports that common metrics can correlate weakly or negatively with human preference in some settings and proposes a relative quality comparison framework. The NTIRE 2026 x4 challenge likewise separates restoration and perceptual tracks rather than collapsing them into one score. For Executive Visuals, preserve the raw metric values, reference/registration context, model and artifact identity, and reviewer decision independently. Do not label a derived composite or RQI score as validated until its implementation, calibration data, and human-agreement tests are present.
+
+Research references:
+- CVPR 2026, *Bridging the Perception Gap in Image Super-Resolution Evaluation*: https://openaccess.thecvf.com/content/CVPR2026/html/Su_Bridging_the_Perception_Gap_in_Image_Super-Resolution_Evaluation_CVPR_2026_paper.html
+- NTIRE 2026 x4 super-resolution challenge: https://arxiv.org/abs/2604.14558
+- SR-Prominence artifact evaluation dataset/protocol: https://arxiv.org/abs/2605.14847
