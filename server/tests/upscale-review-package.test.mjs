@@ -67,6 +67,15 @@ test("rejects PNG data with an invalid IHDR CRC even when its file checksum matc
  await writeFile(e.reportPath,JSON.stringify(report));
  await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid chunk checksum/);
 });
+test("rejects PNG files with a corrupted IDAT CRC even when the file checksum matches",async t=>{
+ const e=await setup(t),output=Buffer.from(pngBytes(20,16)),report=JSON.parse(await readFile(e.reportPath,"utf8"));
+ const idatLength=output.readUInt32BE(33),idatCrcOffset=33+8+idatLength;
+ output[idatCrcOffset]^=0xff;
+ await writeFile(join(e.run,"fixture-portrait.png"),output);
+ report.records[0].outputSha256=hash(output);
+ await writeFile(e.reportPath,JSON.stringify(report));
+ await assert.rejects(createUpscaleReviewPackage({...e,runDirectory:e.run}),/invalid chunk checksum/);
+});
 test("rejects PNG files truncated before IEND",async t=>{
  const e=await setup(t),valid=pngBytes(20,16),output=valid.subarray(0,valid.length-12),report=JSON.parse(await readFile(e.reportPath,"utf8"));
  await writeFile(join(e.run,"fixture-portrait.png"),output);
