@@ -106,7 +106,7 @@ export function createVideoAiUpscaleProcessor({
     let workspace=null,outputCreated=false;
     try{
       progress(3);
-      const probeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration,start_time,pix_fmt,bits_per_raw_sample,color_range,color_space,color_transfer,color_primaries","-show_entries","format=duration","-of","json",sourcePath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
+      const probeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration,start_time,pix_fmt,bits_per_raw_sample,color_range,color_space,color_transfer,color_primaries,sample_rate,channels","-show_entries","format=duration","-of","json",sourcePath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
       const source=parseProbe(probeResult.stdout);
       if(source.frames>maxFrames)throw fail("Video exceeds the configured frame budget.","VIDEO_AI_UPSCALE_FRAME_LIMIT");
       if(source.duration!==null&&source.duration>maxDurationSeconds)throw fail("Video exceeds the configured duration budget.","VIDEO_AI_UPSCALE_DURATION_LIMIT");
@@ -156,12 +156,18 @@ export function createVideoAiUpscaleProcessor({
       outputCreated=true;
       await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
       progress(94);
-      const outputProbeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,width,height,avg_frame_rate,nb_read_frames,codec_name","-show_entries","format=duration","-of","json",outputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
+      const outputProbeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames,pix_fmt,sample_rate,channels","-show_entries","format=duration","-of","json",outputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
       const output=parseProbe(outputProbeResult.stdout);
       if(output.frames!==source.frames)throw fail("Rendered video frame count changed during enhancement.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       if(output.width!==outputWidth||output.height!==outputHeight)throw fail("Rendered video dimensions do not match the requested upscale factor.","VIDEO_AI_UPSCALE_DIMENSIONS_MISMATCH");
       if(output.audio.length!==source.audio.length)throw fail("Rendered video did not preserve the source audio stream count.","VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
       if(output.subtitles.length!==source.subtitles.length)throw fail("Rendered video did not preserve the source subtitle stream count.","VIDEO_AI_UPSCALE_SUBTITLE_STREAM_MISMATCH");
+      if(output.video.codec_name!=="h264"||output.video.pix_fmt!==outputPixelFormat||Math.abs(output.fps-source.fps)>0.0001)throw fail("Rendered video codec, pixel format or frame rate failed verification.","VIDEO_AI_UPSCALE_OUTPUT_PROFILE_MISMATCH");
+      for(let index=0;index<source.audio.length;index++){
+        const expectedCodec=audioCodecSafe?source.audio[index].codec_name:"aac",actual=output.audio[index];
+        if(actual.codec_name!==expectedCodec||(source.audio[index].channels&&Number(actual.channels)!==Number(source.audio[index].channels)))throw fail("Rendered audio codec or channel layout failed verification.","VIDEO_AI_UPSCALE_AUDIO_PROFILE_MISMATCH");
+      }
+      if(output.subtitles.some(stream=>stream.codec_name!=="mov_text"))throw fail("Rendered subtitle codec is not MP4-compatible mov_text.","VIDEO_AI_UPSCALE_SUBTITLE_PROFILE_MISMATCH");
       let temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:"Temporal signal analysis has not completed."};
       try{
         const sceneResult=await run(runCommand,"ffmpeg",["-hide_banner","-i",outputPath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
