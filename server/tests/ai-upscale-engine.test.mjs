@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -30,7 +30,7 @@ function pngHeader(width, height) {
   return bytes;
 }
 
-async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null) {
+async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null, delayMs = 0) {
   const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
   const dimensionsExpression = JSON.stringify(sourceDimensions);
   const source = `#!/usr/bin/env node
@@ -42,8 +42,10 @@ const size = ${sizeExpression};
 const sourceDimensions = ${dimensionsExpression};
 const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
 const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
+const { deflateSync } = require("node:zlib");
 ${pngBytes.toString()}
-fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
+const writeOutput = () => fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
+${delayMs > 0 ? `setTimeout(writeOutput, ${delayMs});` : "writeOutput();"}
 `;
   await writeFile(path, source);
   await chmod(path, 0o755);
@@ -138,6 +140,33 @@ test("AI upscale model names match the supported NCNN model catalog", () => {
     () => adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model: "realesrgan-x2plus" }),
     error => error.code === "AI_UPSCALE_INVALID_MODEL"
   );
+});
+
+test("AI upscaler rejects and removes a derivative when source bytes change during inference", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-source-mutation-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus-anime";
+  const input = join(directory, "source.png");
+  const output = join(directory, "mutated-source-output.png");
+  await writeFile(input, pngHeader(1, 1));
+  await writeFakeEngine(binary, null, 6, [1, 1], 180);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const execution = adapter.executeForContent({
+      contentType: "anime",
+      inputPath: input,
+      outputPath: output,
+      tile: 128
+    });
+    await new Promise(resolve => setTimeout(resolve, 35));
+    await writeFile(input, Buffer.concat([pngHeader(1, 1), Buffer.from("changed-during-inference")]));
+    await assert.rejects(execution, error => error.code === "AI_UPSCALE_INPUT_CHANGED");
+    await assert.rejects(() => readFile(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("AI upscaler executes an explicit content preset and returns recommendation provenance", async () => {
