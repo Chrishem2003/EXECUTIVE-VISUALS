@@ -355,6 +355,18 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2paPreserver,c2paSigner,c2paSignerMode});
     return result;
   }
+  if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
+  if (!executableAvailable("ffprobe") && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
+  const input = parseJson(job.input_json);
+  const source = getAccessibleAsset(db, job.owner_id, input.sourceAssetId, true);
+  if (!source) throw Object.assign(new Error("Source asset does not exist or is not accessible."), { code:"SOURCE_ASSET_NOT_FOUND" });
+  const sourcePath = join(mediaRoot, source.storage_path);
+  const id = randomUUID();
+  const outputDir = join(mediaRoot, "derived");
+  await mkdir(outputDir, { recursive:true });
+  const cancelled = () => db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status === "cancelled";
+  const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
+  emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
   if (job.job_type === "media.ai-video-upscale") {
     if (!source.media_type.startsWith("video/")) throw Object.assign(new Error("Video AI super-resolution requires a video source asset."), { code:"UNSUPPORTED_MEDIA_TYPE" });
     const outputPath=join(outputDir,id+".mp4");
@@ -389,18 +401,6 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       return {outputAsset,processing,c2paPreservation};
     }finally{clearInterval(poll);}
   }
-  if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
-  if (!executableAvailable("ffprobe") && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
-  const input = parseJson(job.input_json);
-  const source = getAccessibleAsset(db, job.owner_id, input.sourceAssetId, true);
-  if (!source) throw Object.assign(new Error("Source asset does not exist or is not accessible."), { code:"SOURCE_ASSET_NOT_FOUND" });
-  const sourcePath = join(mediaRoot, source.storage_path);
-  const id = randomUUID();
-  const outputDir = join(mediaRoot, "derived");
-  await mkdir(outputDir, { recursive:true });
-  const cancelled = () => db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status === "cancelled";
-  const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
-  emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
   if (job.job_type === "media.ai-upscale") {
     if (!source.media_type.startsWith("image/")) throw Object.assign(new Error("AI super-resolution currently accepts still images only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
     const format = String(input.format || "png");
