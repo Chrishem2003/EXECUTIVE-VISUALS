@@ -71,7 +71,10 @@ test("runs local fixtures and writes execution-only evidence that still requires
   const report = JSON.parse(await readFile(result.reportPath, "utf8"));
   assert.equal(report.qualityReviewRequired, true);
   assert.equal(report.records.length, 5);
-  assert.equal((await readdir(env.output)).filter(name => name.endsWith(".png")).length, 5);
+  const outputEntries = await readdir(env.output, { withFileTypes: true });
+  const runDirectory = outputEntries.find(entry => entry.isDirectory() && entry.name.startsWith("run-"));
+  assert.ok(runDirectory);
+  assert.equal((await readdir(join(env.output, runDirectory.name))).filter(name => name.endsWith(".png")).length, 5);
 });
 
 test("does not publish a benchmark report when any model output has incorrect dimensions", async t => {
