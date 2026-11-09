@@ -201,7 +201,7 @@ payment plans automatically.
 
 Required environment gates:
 
-- `FLW_SUBSCRIPTIONS_ENABLED=true`
+- `FLW_SUBSCRIPTIONS_ENABLED=true` and `FLW_MERCHANT_APPROVED=true`
 - `FLW_SECRET_KEY` and `FLW_WEBHOOK_SECRET`
 - `PUBLIC_APP_URL`
 - `BILLING_ENFORCEMENT_ENABLED=true` or `CREDITS_ENABLED=true`
