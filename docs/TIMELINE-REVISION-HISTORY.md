@@ -29,3 +29,7 @@ Cloud timeline revision history stores immutable snapshots of each timeline revi
 - The UI only exposes history in cloud mode.
 - The revision list is limited to the newest 50 by default; the API supports bounded pagination.
 - Revision history is not a substitute for backups or disaster recovery.
+
+## Validation
+
+Run `npm run verify:timeline`, `npm run verify:cloud-queue`, and `npm run typecheck` before review. The migration itself remains unapplied until separately approved for staging.
