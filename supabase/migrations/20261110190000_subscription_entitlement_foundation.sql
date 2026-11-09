@@ -99,7 +99,6 @@ create policy ev_subscription_events_owner_read
   on executive_visuals.subscription_events for select to authenticated
   using (owner_id=(select auth.uid()));
 
-revoke all on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) from public,anon,authenticated;
 create or replace function executive_visuals.grant_customer_subscription(
   p_actor_id uuid,
   p_owner_id uuid,
@@ -158,4 +157,4 @@ begin
   return new_id;
 end;
 $$;
-grant execute on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) to service_role;
+revoke all on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) from public,anon,authenticated;\ngrant execute on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) to service_role;
