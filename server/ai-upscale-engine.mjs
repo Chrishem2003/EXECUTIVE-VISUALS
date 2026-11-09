@@ -623,6 +623,9 @@ export function createRealEsrganAdapter({
         ...(outputBitDepth !== null ? { outputBitDepth } : {}),
         model: prepared.model, scale: prepared.scale, threads: prepared.threads, tta: prepared.tta, gpu: prepared.gpu, tile: execution.tile,
         requestedTile: prepared.tile, tileFallbackUsed: execution.fallbackUsed,
+        tileFallbackReason: execution.fallbackUsed ? "gpu-memory-pressure" : null,
+        qualityReviewRequired: execution.fallbackUsed,
+        qualityReviewReasons: execution.fallbackUsed ? ["gpu-memory-tile-fallback"] : [],
         tileAttempts: execution.attemptedTiles, format: prepared.format,
         engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution"
       };
