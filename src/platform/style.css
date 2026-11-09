@@ -819,3 +819,8 @@ button,.module,.operation,.engine{transition:background-color .16s ease,border-c
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+.timeline-effect-stack{grid-column:1/-1;margin:10px 0 2px;padding:14px;border:1px solid rgba(167,139,250,.32);border-radius:9px;background:rgba(124,58,237,.07)}
+.timeline-effect-stack .eyebrow{color:#c4b5fd}
+.timeline-effect-stack p{margin:0 0 10px;font-size:11px;line-height:1.6}
+.timeline-toolbar button:disabled{opacity:.38;cursor:not-allowed;transform:none}
