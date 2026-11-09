@@ -215,7 +215,60 @@ async function runAction(action:HTMLElement){
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
  }
- if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
+ if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;} 
+ if(type==="media-job-check"&&state.mediaJobId){
+  try{
+   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>("/api/jobs/"+state.mediaJobId);
+   state.message="Media job "+result.job.status+" · "+Number(result.job.progress||0)+"%";
+   if(result.job.status==="succeeded"){
+    const output=result.job.output?.outputAsset;if(!output?.id)throw new Error("The completed media job did not return an output asset.");
+    const kind=state.mediaJobType,clipId=state.mediaClipId;await refresh();
+    if(kind==="media.proxy"){
+     const track=state.timeline?.tracks.find(item=>item.clips.some(clip=>clip.id===clipId)),clip=track?.clips.find(item=>item.id===clipId);
+     if(!clip)throw new Error("The source clip is no longer in the selected timeline. The proxy remains in your asset library.");
+     clip.metadata={...clip.metadata,proxyAssetId:output.id,proxyAssetName:output.name||"Editing proxy",proxyAssetSha256:output.sha256||"",proxyProfile:"timeline-preview-960p"};
+     await persist();
+     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+     if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);
+     state.proxyPreviewUrl=URL.createObjectURL(blob);
+     state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
+    }else{
+     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+     if(state.previewFrameUrl)URL.revokeObjectURL(state.previewFrameUrl);
+     state.previewFrameUrl=URL.createObjectURL(blob);
+     state.message="Source frame extracted and loaded into the clip preview.";
+    }
+    state.mediaJobId="";state.mediaJobType="";
+   }else if(result.job.status==="failed"||result.job.status==="cancelled"){
+    state.message=result.job.error?.message||("Media job "+result.job.status+".");state.mediaJobId="";state.mediaJobType="";
+   }
+  }catch(error){state.message=error instanceof Error?error.message:"Could not check media job.";}
+  paint();return;
+ }
+ if(type==="preview-proxy"){
+  const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===action.dataset.clip);
+  const proxyId=typeof clip?.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
+  if(!proxyId){state.message="Generate a proxy before previewing this clip.";paint();return;}
+  try{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded.";}
+  paint();return;
+ }
+ if(type==="generate-proxy"||type==="generate-frame-preview"){
+  if(state.mode!=="local"){state.message="Proxy and frame-preview jobs are currently available in the local media worker only.";paint();return;}
+  const clipId=action.dataset.clip||"",clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+  if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a video clip with an accessible source asset.";paint();return;}
+  try{
+   const jobType=type==="generate-proxy"?"media.proxy":"media.thumbnail";
+   const frameInput=document.querySelector<HTMLInputElement>("#tl-preview-source-frame");
+   const sourceFrame=Math.max(0,Math.min(100000000,Number(frameInput?.value??clip.sourceRange.start.value)||0));
+   const seconds=sourceFrame/sourceRate(asset,"video");
+   const body=jobType==="media.proxy"?{jobType,sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{jobType,sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined,seconds};
+   const queued=await apiRequest<{job:{id:string;status:string}}>("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify(body)});
+   state.mediaJobId=queued.job.id;state.mediaJobType=jobType;state.mediaClipId=clipId;state.message=(jobType==="media.proxy"?"960p editing proxy":"Frame preview")+" queued. Use Check media job to attach or load the output.";
+   window.dispatchEvent(new Event("ev:jobs-updated"));
+  }catch(error){state.message=error instanceof Error?error.message:"Media job could not be queued.";}
+  paint();return;
+ }
+
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
