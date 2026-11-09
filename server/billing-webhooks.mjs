@@ -217,7 +217,7 @@ export async function createFlutterwaveSubscriptionCheckout(db,{
   }
   const envName=flutterwavePaymentPlanEnvName(plan.code);
   const paymentPlanId=String(env[envName]||"");
-  if(!/^\d{1,18}$/.test(paymentPlanId))throw fail("The Flutterwave payment-plan ID for this plan is not configured.","FLW_PAYMENT_PLAN_NOT_CONFIGURED",503);
+  if(!/^\d{1,18}$/.test(paymentPlanId)||!Number.isSafeInteger(Number(paymentPlanId))||Number(paymentPlanId)<=0)throw fail("The Flutterwave payment-plan ID for this plan is not configured or is outside the safe numeric range.","FLW_PAYMENT_PLAN_NOT_CONFIGURED",503);
   let base;
   try{base=new URL(publicAppUrl);}catch{throw fail("A valid public application URL is required.","BILLING_REDIRECT_URL_INVALID",503);}
   const local=["localhost","127.0.0.1"].includes(base.hostname);
@@ -265,6 +265,15 @@ export async function createFlutterwaveSubscriptionCheckout(db,{
   }
   return {orderId:id,txRef,checkoutUrl:link.toString(),amountMinor:Number(plan.amount_minor),
     currency:String(plan.currency).toUpperCase(),credits:Number(plan.credits_per_period),interval:plan.interval,paymentMethod:"card"};
+}
+
+export function getFlutterwaveSubscriptionCheckoutStatus(db,{orderId,userId}={}) {
+  const row=db.prepare(`SELECT c.id,c.status,c.tx_ref,c.created_at,p.name AS plan_name,p.interval
+    FROM billing_flutterwave_subscription_checkouts c JOIN billing_plans p ON p.id=c.plan_id
+    WHERE c.id=? AND c.user_id=? LIMIT 1`).get(orderId,userId);
+  if(!row)throw fail("Flutterwave subscription checkout not found.","BILLING_ORDER_NOT_FOUND",404);
+  return {orderId:row.id,status:row.status,txRef:row.tx_ref,createdAt:row.created_at,
+    planName:row.plan_name,interval:row.interval};
 }
 
 export async function createFlutterwaveCheckout(db, {
