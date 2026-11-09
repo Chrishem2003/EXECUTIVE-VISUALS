@@ -313,7 +313,7 @@ function paint(){const root=document.querySelector<HTMLElement>("#timeline-works
 async function runAction(action:HTMLElement){
 
  const type=action.dataset.tlAction||"";
- if(type==="preview-load"){state.previewLoading=true;paint();try{await loadTimelinePreview();}catch(error){state.message=error instanceof Error?error.message:"Preview media could not be loaded.";}paint();return;}
+ if(type==="preview-load"){releaseTimelinePreview();state.previewLoading=true;paint();try{await loadTimelinePreview();}catch(error){state.message=error instanceof Error?error.message:"Preview media could not be loaded.";}paint();return;}
  if(type==="preview-play"){try{await startTimelinePlayback();}catch(error){state.message=error instanceof Error?error.message:"Playback could not start.";}paint();return;}
  if(type==="preview-pause"){stopTimelinePlayback();syncPreviewAtFrame(state.playheadFrame);paint();return;}
  if(type==="preview-step-back"){stepTimelineFrame(-1);paint();return;}
