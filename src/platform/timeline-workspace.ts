@@ -79,9 +79,15 @@ async function previewUrlForAsset(asset:Asset):Promise<string>{
  const cached=state.previewAssetUrls[asset.id];
  if(state.mode==="cloud"){
   if(cached&&isTimelinePreviewUrlFresh(state.previewAssetUrlExpiresAt[asset.id]||0))return cached;
-  const renewed=await signedCloudPreviewUrl(asset);
-  state.previewAssetUrls[asset.id]=renewed;
-  return renewed;
+  try{
+   const renewed=await signedCloudPreviewUrl(asset);
+   state.previewAssetUrls[asset.id]=renewed;
+   return renewed;
+  }catch(error){
+   delete state.previewAssetUrls[asset.id];
+   delete state.previewAssetUrlExpiresAt[asset.id];
+   throw error;
+  }
  }
  if(cached)return cached;
  const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(asset.id)+"/file");
@@ -111,7 +117,7 @@ async function loadTimelinePreview(){
    catch(error){
     if(asset.id===source.id)throw error;
     state.previewUnavailableAssetIds.push(asset.id);fallbacks++;
-    if(!state.previewAssetUrls[source.id])state.previewAssetUrls[source.id]=await previewUrlForAsset(source);
+    await previewUrlForAsset(source);
    }
   }
   state.previewDiagnostics={...state.previewDiagnostics,droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:required.size,proxyCount,proxyFallbacks:fallbacks};
