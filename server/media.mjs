@@ -433,6 +433,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
 
   let ext, args, outputName, mime;
   if (job.job_type === "media.thumbnail") {
+    if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Frame extraction requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const seconds = Math.max(0, Math.min(3600, Number(input.seconds ?? 1) || 0));
     ext = "jpg"; outputName = source.original_name.replace(/\.[^.]+$/, "")+"-frame-"+seconds+"s.jpg"; mime = "image/jpeg";
     args = ["-hide_banner","-y","-ss",String(seconds),"-i",sourcePath,"-frames:v","1","-q:v","2",join(outputDir,id+"."+ext)];
@@ -448,6 +449,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-"+job.job_type.split(".")[1]+".mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else {
+    if(job.job_type==="media.proxy"&&!source.media_type.startsWith("video/"))throw Object.assign(new Error("Editing proxies require a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const container = String(input.container || (job.job_type === "media.proxy" ? "mp4" : "mp4")).toLowerCase();
     if (!CONTAINERS.has(container) || ["mp3","wav"].includes(container) && job.job_type !== "media.transcode") {
       throw Object.assign(new Error("Unsupported output container."), { code:"INVALID_MEDIA_OPTIONS" });
