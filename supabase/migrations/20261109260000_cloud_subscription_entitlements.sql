@@ -124,9 +124,9 @@ declare
   existing executive_visuals.billing_subscriptions;
   new_id uuid;
 begin
-  if p_owner_id is null or p_plan_code is null or p_provider not in ('manual','flutterwave','dodo')
+  if p_owner_id is null or p_plan_code is null or p_provider is null or p_provider not in ('manual','flutterwave','dodo')
      or p_period_start is null or p_period_end is null or p_period_end<=p_period_start
-     or p_status not in ('trialing','active','past_due')
+     or p_status is null or p_status not in ('trialing','active','past_due')
      or p_metadata is null or jsonb_typeof(p_metadata)<>'object'
      or (p_provider<>'manual' and coalesce(p_provider_subscription_id,'')='')
      or char_length(coalesce(p_provider_customer_id,''))>200
@@ -289,10 +289,10 @@ begin
   select exists(
     select 1 from executive_visuals.billing_subscriptions s
     join executive_visuals.billing_plans p on p.code=s.plan_code
-    where s.owner_id=p_owner_id and s.status in ('trialing','active')
-      and s.current_period_end>clock_timestamp() and p.active=true
+    where s.owner_id=p_owner_id and p.active=true
       and coalesce((p.entitlements->>'video_generation')::boolean,false)=true
-      and s.cancel_at_period_end=false
+      and ((s.status in ('trialing','active') and s.current_period_end>clock_timestamp())
+        or (s.status='past_due' and coalesce(s.grace_until,s.current_period_end)>clock_timestamp()))
   ) into allowed;
   if job_type='video.generate' and not allowed then
     raise exception 'BILLING_PLAN_VIDEO_GENERATION_NOT_ENTITLED';
