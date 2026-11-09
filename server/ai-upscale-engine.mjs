@@ -323,8 +323,9 @@ async function validatePngFile(path, maxBytes) {
         width = ihdr.readUInt32BE(0); height = ihdr.readUInt32BE(4);
         bitDepth = ihdr[8]; colorType = ihdr[9]; ihdrInterlace = ihdr[12];
         const depths = ({0:[1,2,4,8,16],2:[8,16],3:[1,2,4,8],4:[8,16],6:[8,16]})[colorType] || [];
-        if (!width || !height || width > 0x7fffffff || height > 0x7fffffff ||
-            !depths.includes(bitDepth) || ihdr[10] !== 0 || ihdr[11] !== 0 || ![0,1].includes(ihdr[12])) {
+        if (!width || !height || width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION ||
+            width * height > MAX_IMAGE_PIXELS || !depths.includes(bitDepth) ||
+            ihdr[10] !== 0 || ihdr[11] !== 0 || ![0,1].includes(ihdr[12])) {
           throw fail("AI upscaling PNG has invalid dimensions or IHDR fields.", "AI_UPSCALE_OUTPUT_INVALID");
         }
       }
