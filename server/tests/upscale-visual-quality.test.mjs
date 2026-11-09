@@ -13,6 +13,8 @@ test("reports deterministic clean result for a uniform image", () => {
   assert.equal(report.seamAnalysis.boundariesChecked, 2);
   assert.equal(report.seamAnalysis.flaggedBoundaries, 0);
   assert.equal(report.status, "no_seam_anomaly_detected");
+  assert.equal(report.method, "pixel-gradient-seam-analysis");
+  assert.equal(report.algorithmVersion, "1.0.0");
 });
 
 test("detects strong artificial vertical and horizontal tile-boundary discontinuities", () => {
