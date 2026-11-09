@@ -222,7 +222,7 @@ async function runAction(action:HTMLElement){
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
   state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
  }else if(type==="trim"){recordUndo();state.timeline=trimClip(state.timeline,trackId,clipId,12,12);}
- else if(type==="move"){
+ else if(type==="move"){recordUndo();
   const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
   const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
   const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
