@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseSceneChangeTimes, parseTemporalLumaSamples, buildTemporalLumaFindings, buildTemporalColorFindings } from "./media-signal-analysis.mjs";
 
 const fail=(message,code="VIDEO_AI_UPSCALE_INVALID")=>Object.assign(new Error(message),{code});
 const rational=value=>{
@@ -154,6 +155,19 @@ export function createVideoAiUpscaleProcessor({
       if(output.frames!==source.frames)throw fail("Rendered video frame count changed during enhancement.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       if(output.width!==outputWidth||output.height!==outputHeight)throw fail("Rendered video dimensions do not match the requested upscale factor.","VIDEO_AI_UPSCALE_DIMENSIONS_MISMATCH");
       if(output.audio.length!==source.audio.length)throw fail("Rendered video did not preserve the source audio stream count.","VIDEO_AI_UPSCALE_AUDIO_STREAM_MISMATCH");
+      let temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:"Temporal signal analysis has not completed."};
+      try{
+        const sceneResult=await run(runCommand,"ffmpeg",["-hide_banner","-i",outputPath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
+        const sceneChanges=parseSceneChangeTimes(sceneResult.stderr);
+        const temporalResult=await run(runCommand,"ffmpeg",["-hide_banner","-i",outputPath,"-map","0:v:0","-vf","fps=8,signalstats,metadata=mode=print","-an","-f","null","-"],{timeoutMs:10*60*1000,signal,maxCaptureBytes:8_000_000});
+        const samples=parseTemporalLumaSamples(temporalResult.stderr);
+        if(samples.length<2)throw fail("FFmpeg returned too few temporal signal samples.","VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE");
+        const findings=[...buildTemporalLumaFindings({samples,sceneChanges}),...buildTemporalColorFindings({samples,sceneChanges})];
+        temporalQuality={status:"completed",sampleRateFps:8,sampleCount:samples.length,sceneChangeCount:sceneChanges.length,findings,limitations:["Global frame-average luma and chroma are coarse screening signals, not motion-compensated temporal perceptual metrics.","This framewise image-model pipeline does not certify temporal consistency."]};
+      }catch(error){
+        if(signal?.aborted||error?.code==="JOB_CANCELLED")throw error;
+        temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:error?.code||"VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE"};
+      }
       const outputInfo=await stat(outputPath);
       if(!outputInfo.isFile()||outputInfo.size<1||outputInfo.size>maxOutputBytes)throw fail("Rendered video is empty or exceeds the output byte budget.","VIDEO_AI_UPSCALE_OUTPUT_INVALID");
       const sourceInfoAfter=await lstat(sourcePath).catch(()=>null);
@@ -165,7 +179,7 @@ export function createVideoAiUpscaleProcessor({
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
         model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,
         audioHandling:audioCodecSafe?"original-audio-streams-copied":"audio-transcoded-to-aac",
-        frameProcessing:"sequential-image-model-inference",tileFallbackCount,tileFallbackFrames,temporalConsistency:"not-certified",
+        frameProcessing:"sequential-image-model-inference",tileFallbackCount,tileFallbackFrames,temporalQuality,temporalConsistency:"not-certified",
         qualityReviewRequired:true,qualityReviewReasons:["temporal-consistency-not-certified","human-review-required"]
       };
     }catch(error){
