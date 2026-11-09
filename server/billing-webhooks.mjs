@@ -323,7 +323,7 @@ export async function cancelFlutterwaveSubscription(db,{user,secretKey=process.e
   if(cancelBody?.status!=="success")throw fail("Flutterwave did not confirm the cancellation request.","BILLING_PROVIDER_CANCEL_FAILED",502);
   db.prepare("UPDATE billing_subscriptions SET metadata_json=?,updated_at=? WHERE id=? AND user_id=?")
     .run(json({...metadata,cancellationRequestedAt:now(),providerCancellationId:providerId}),now(),local.id,String(user.id));
-  return {requested:true,provider:"flutterwave",status:"awaiting_webhook",message:"Cancellation was requested from Flutterwave. Access and subscription state will update after the provider cancellation webhook is verified."};
+  return {requested:true,provider:"flutterwave",subscriptionId:local.id,status:"awaiting_webhook",message:"Cancellation was requested from Flutterwave. Access and subscription state will update after the provider cancellation webhook is verified."};
 }
 
 export async function createFlutterwaveCheckout(db, {
