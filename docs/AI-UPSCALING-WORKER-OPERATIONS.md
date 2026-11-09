@@ -16,6 +16,21 @@ The media QA worker now samples FFmpeg `signalstats` metadata at 8 fps and retai
 
 Do not describe this signal analysis as video-frame enhancement. The current AI upscaler still operates on image assets; a production video-frame enhancement path must separately prove frame-count/timestamp preservation, audio synchronization, model execution, color-range preservation, and temporal consistency before release.
 
+## Video AI upscaling (framewise baseline)
+
+`server/video-ai-upscale.mjs` adds an opt-in `media.ai-video-upscale` job. It probes the source, checks every frame timestamp, rejects variable-frame-rate, HDR and unsupported high-bit-depth inputs, extracts lossless PNG frames, runs the existing NCNN/Real-ESRGAN image adapter sequentially on each frame, and reassembles an H.264 MP4. It verifies the exact frame count, output dimensions, audio stream count and output byte budget before the asset is published. The original audio streams are copied when MP4-compatible; other audio codecs are transcoded to AAC. Content Credentials preservation and source-asset lineage are applied by the media worker.
+
+This is a controlled framewise baseline, **not** a temporally trained video-super-resolution model. Independent image inference can flicker or change detail between adjacent frames. The result records `temporalConsistency: not-certified` and `qualityReviewRequired: true`; no automated approval is possible. A later temporal model adapter must use neighboring-frame alignment/propagation or an equivalent temporal architecture and pass sequence-level benchmark and human review before it can be presented as temporal-consistent enhancement.
+
+### Enablement and limits
+
+- Video processing is disabled unless `AI_VIDEO_UPSCALE_ENABLED=true` is explicitly set by an administrator. The existing `AI_UPSCALE_ENABLED`, installed model weights and successful model-specific execution self-test are also required.
+- Submit through `POST /api/jobs` with `jobType: media.ai-video-upscale`, an accessible `sourceAssetId`, an allowlisted model, and `scale: 2` or `4`. A worker must have FFmpeg, FFprobe and the configured NCNN/Vulkan executable/model files.
+- Defaults: maximum 1,800 frames, 600 seconds, 40 million output pixels, 2 GiB input, 4 GiB output, sequential GPU inference and a two-hour total job budget. Frame and duration ceilings can be adjusted with `AI_VIDEO_UPSCALE_MAX_FRAMES` and `AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS`; output pixels use `AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS`.
+- Only constant-frame-rate, 8-bit SDR YUV 4:2:0/4:2:2/4:4:4 sources are accepted. VFR, HDR and unsupported pixel formats fail closed rather than silently changing timing or color depth.
+- Source media is never overwritten. Temporary extracted/enhanced frames are removed after success or failure. Partial output files are removed on cancellation, validation failure or provenance-publication failure.
+- The first release is an explicit worker/API capability. A UI control must not be shown as available until the server feature flag and worker readiness checks pass.
+
 ## Batch image enhancement
 
 Use `createUpscaleBatchProcessor({ adapter, defaultConcurrency })` from `server/upscale-batch.mjs` to process 1–100 independent assets through the existing single-image adapter. The processor caps concurrency at four (default one), rejects duplicate output paths and any output that would overwrite an input in the same batch, preserves per-item source/output digests and quality-review state, isolates item failures, supports cancellation, and reports progress. It does not bypass adapter validation or mark perceptual quality as passed.
