@@ -45,7 +45,7 @@ async function setup(t) {
   const manifestPath = join(root, "manifest.json");
   await writeFile(manifestPath, JSON.stringify(manifest()));
   t.after(() => rm(root, { recursive: true, force: true }));
-  return { root, manifestPath, output, binaryPath: join(root, "realesrgan-ncnn-vulkan"), modelDirectory: models };
+  return { root, manifestPath, output, outputDirectory: output, binaryPath: join(root, "realesrgan-ncnn-vulkan"), modelDirectory: models };
 }
 
 test("requires exactly one fixture from every required visual category", () => {
