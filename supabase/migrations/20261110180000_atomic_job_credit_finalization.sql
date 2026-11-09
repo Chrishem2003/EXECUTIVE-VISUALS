@@ -99,7 +99,7 @@ begin
     'job.' || p_status,
     jsonb_build_object('status', p_status,
       'creditReservationStatus',case when reservation_row.id is null then 'none'
-        when p_status='succeeded' then 'settled' else 'released' end)
+        else reservation_row.status end)
   );
   return true;
 end;
