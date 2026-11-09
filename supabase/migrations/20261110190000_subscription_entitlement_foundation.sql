@@ -165,4 +165,5 @@ begin
   return new_id;
 end;
 $$;
-revoke all on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) from public,anon,authenticated;\ngrant execute on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) to service_role;
+revoke all on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) from public,anon,authenticated;
+grant execute on function executive_visuals.grant_customer_subscription(uuid,uuid,text,timestamptz,timestamptz,text) to service_role;
