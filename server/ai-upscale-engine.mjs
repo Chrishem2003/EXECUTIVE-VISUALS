@@ -257,11 +257,11 @@ async function readExact(handle, length, position) {
   return buffer;
 }
 async function validatePngFile(path, maxBytes) {
-  const before = await lstat(path, { bigint: true }).catch(() => null);
+  const before = await lstat(path).catch(() => null);
   if (!before?.isFile() || before.isSymbolicLink()) throw fail("AI upscaling output must be a regular, non-symlink PNG file.", "AI_UPSCALE_OUTPUT_INVALID");
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
-    const info = await handle.stat({ bigint: true });
+    const info = await handle.stat();
     if (!info.isFile() || info.isSymbolicLink() || info.dev !== before.dev || info.ino !== before.ino ||
         info.size !== before.size || info.size < 57 || info.size > maxBytes) {
       throw fail("AI upscaling PNG output changed during validation or is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
