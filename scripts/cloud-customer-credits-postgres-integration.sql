@@ -1,11 +1,16 @@
 -- Disposable PostgreSQL integration tests for atomic customer credit accounting.
 \set ON_ERROR_STOP on
 
+insert into auth.users(id) values('66666666-6666-4666-8666-666666666666') on conflict(id) do nothing;
+insert into executive_visuals.projects(id,owner_id,name)
+values('77777777-7777-4777-8777-777777777777','66666666-6666-4666-8666-666666666666','Customer credit integration')
+on conflict(id) do nothing;
+
 insert into executive_visuals.billing_credit_accounts(owner_id)
-values('123e4567-e89b-42d3-a456-426614174000') on conflict(owner_id) do nothing;
+values('66666666-6666-4666-8666-666666666666') on conflict(owner_id) do nothing;
 
 select * from executive_visuals.grant_generation_credits(
- '123e4567-e89b-42d3-a456-426614174000',100,'integration-credit-grant-001',
+ '66666666-6666-4666-8666-666666666666',100,'integration-credit-grant-001',
  'Postgres integration seed','{"source":"ci_fixture"}'::jsonb
 ) \gset grant_
 
@@ -13,7 +18,7 @@ do $credit_grant_replay$
 declare r record;
 begin
  select * into r from executive_visuals.grant_generation_credits(
-  '123e4567-e89b-42d3-a456-426614174000',100,'integration-credit-grant-001',
+  '66666666-6666-4666-8666-666666666666',100,'integration-credit-grant-001',
   'Replay','{"source":"ci_fixture"}'::jsonb
  );
  if not r.replayed or r.balance<>100 then raise exception 'credit grant idempotency failed'; end if;
@@ -23,13 +28,13 @@ $credit_grant_replay$;
 insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input)
 values(
  '44444444-4444-4444-8444-444444444444',
- '123e4567-e89b-42d3-a456-426614174000',
- '323e4567-e89b-42d3-a456-426614174000',
+ '66666666-6666-4666-8666-666666666666',
+ '77777777-7777-4777-8777-777777777777',
  'video.generate','queued','{}'::jsonb
 );
 
 select * from executive_visuals.reserve_generation_credits(
- '123e4567-e89b-42d3-a456-426614174000',
+ '66666666-6666-4666-8666-666666666666',
  '44444444-4444-4444-8444-444444444444',30,'integration-credit-reserve-001'
 ) \gset reserve_
 
@@ -38,16 +43,16 @@ declare r record; current_balance bigint;
 begin
  select coalesce(sum(amount),0) into current_balance
  from executive_visuals.billing_credit_ledger
- where owner_id='123e4567-e89b-42d3-a456-426614174000';
+ where owner_id='66666666-6666-4666-8666-666666666666';
  if current_balance<>70 then raise exception 'reservation did not debit 30 credits'; end if;
  select * into r from executive_visuals.reserve_generation_credits(
-  '123e4567-e89b-42d3-a456-426614174000',
+  '66666666-6666-4666-8666-666666666666',
   '44444444-4444-4444-8444-444444444444',30,'integration-credit-reserve-001'
  );
  if not r.replayed or r.balance<>70 then raise exception 'reservation replay was not idempotent'; end if;
  begin
   perform * from executive_visuals.reserve_generation_credits(
-   '123e4567-e89b-42d3-a456-426614174000',
+   '66666666-6666-4666-8666-666666666666',
    '44444444-4444-4444-8444-444444444444',31,'integration-credit-reserve-001'
   );
   raise exception 'conflicting reservation replay unexpectedly succeeded';
@@ -68,7 +73,7 @@ declare r record; current_balance bigint;
 begin
  select coalesce(sum(amount),0) into current_balance
  from executive_visuals.billing_credit_ledger
- where owner_id='123e4567-e89b-42d3-a456-426614174000';
+ where owner_id='66666666-6666-4666-8666-666666666666';
  if current_balance<>82 then raise exception 'settlement did not refund unused 12 credits'; end if;
  select * into r from executive_visuals.settle_generation_credit_reservation(
   (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),18,
@@ -93,12 +98,12 @@ $credit_settlement_assertions$;
 insert into executive_visuals.jobs(id,owner_id,project_id,job_type,status,input)
 values(
  '55555555-5555-4555-8555-555555555555',
- '123e4567-e89b-42d3-a456-426614174000',
- '323e4567-e89b-42d3-a456-426614174000',
+ '66666666-6666-4666-8666-666666666666',
+ '77777777-7777-4777-8777-777777777777',
  'video.generate','queued','{}'::jsonb
 );
 select * from executive_visuals.reserve_generation_credits(
- '123e4567-e89b-42d3-a456-426614174000',
+ '66666666-6666-4666-8666-666666666666',
  '55555555-5555-4555-8555-555555555555',20,'integration-credit-reserve-release'
 ) \gset release_
 
@@ -130,7 +135,7 @@ do $credit_insufficient_balance$
 begin
  begin
   perform * from executive_visuals.reserve_generation_credits(
-   '123e4567-e89b-42d3-a456-426614174000',
+   '66666666-6666-4666-8666-666666666666',
    '55555555-5555-4555-8555-555555555555',1000,'integration-credit-insufficient'
   );
   raise exception 'insufficient customer balance unexpectedly accepted';
