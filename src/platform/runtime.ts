@@ -76,6 +76,20 @@ function renderC2paInspection(assetId:string){
   '<small class="c2pa-trust-note">Asset SHA-256 verified · '+esc(result.assetSha256.slice(0,20))+'…</small>'+
   '<p class="c2pa-trust-note">'+esc(inspection.notice||"Signature validity, signer trust, identity, rights clearance and factual accuracy are separate checks.")+'</p></section>';
 }
+export function renderAiUpscaleReadiness():string{
+ const provider=state.providers.find(item=>item.id==="ai-upscale");
+ const models=provider?.availableModels||[];
+ const modelCards=models.map(model=>{
+  const readiness=model.readiness||"unverified";
+  const label=readiness==="ready"?"QUALITY VERIFIED":readiness==="quality_review_required"?"QUALITY REVIEW REQUIRED":readiness==="unavailable"?"NOT INSTALLED":readiness==="disabled"?"DISABLED":"EXECUTION UNVERIFIED";
+  const stateClass=readiness==="ready"?"is-ready":"is-locked";
+  const execution=model.executionVerified?"Execution self-test passed":"Execution self-test not verified";
+  const quality=model.qualityVerified?"Five-category visual review verified":"Independent five-category human review required";
+  return '<article class="ai-upscale-model"><div class="ai-upscale-model-head"><strong>'+esc(model.label||model.id)+'</strong><span class="ai-upscale-state '+stateClass+'" role="status">'+label+'</span></div><p>'+esc(model.reason||"No model-specific readiness explanation was returned.")+'</p><div class="ai-upscale-footnote">'+esc(execution)+' · '+esc(quality)+'</div></article>';
+ }).join("");
+ const explanation=provider?.reason||"The worker has not reported AI super-resolution readiness yet. Refresh runtime status after the worker is connected.";
+ return '<section class="ai-upscale-controls" aria-label="AI super-resolution model readiness"><div class="ai-upscale-heading"><div><small class="ai-upscale-label">NEURAL IMAGE RESTORATION</small><strong>Real-ESRGAN model readiness</strong></div><span class="ai-upscale-original">SOURCE PRESERVED</span></div>'+(models.length?'<div class="ai-upscale-model-grid">'+modelCards+'</div>':'<p class="ai-upscale-footnote">No model readiness records are available. '+esc(explanation)+'</p>')+'<p class="ai-upscale-footnote">A model is unlocked only after its own installation, execution self-test and complete five-category human-reviewed quality evidence pass. This panel reports readiness; it does not submit inference or incur provider charges.</p></section>';
+}
 function renderAiUpscaleControls(assetId:string):string{
  const provider=state.providers.find(item=>item.id==="ai-upscale");
  const models=provider?.availableModels||[];
