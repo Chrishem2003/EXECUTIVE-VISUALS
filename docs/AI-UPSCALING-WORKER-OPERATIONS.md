@@ -105,3 +105,8 @@ An execution self-test proves that the configured executable produced a structur
 This adapter targets the NCNN/Vulkan CLI. Do not pass Python-only Real-ESRGAN options such as `--fp32`, `--outscale`, or GFPGAN flags to this executable. The NCNN CLI's documented options include `-t` tile size, `-j` worker counts, `-x` TTA, and `-f` output format.
 
 Reference: https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan
+
+
+## Temporal video model adapter
+
+The separate FlashVSR v1.1 temporal model adapter and its opt-in requirements are documented in [FLASHVSR-TEMPORAL-ENGINE.md](./FLASHVSR-TEMPORAL-ENGINE.md). The existing framewise Real-ESRGAN path remains the default. FlashVSR requires a dedicated CUDA worker, pre-provisioned upstream code and weights, `FLASHVSR_ENABLED=true`, and an operator-recorded successful inference self-test. It is not enabled on the Render Free deployment and is not a production-ready capability until the target GPU passes staging benchmarks and human review.
