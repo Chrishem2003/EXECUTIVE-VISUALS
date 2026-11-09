@@ -287,3 +287,27 @@ Flutterwave's documented Payment Plans API is the v3 API, authenticated with a s
 ### Batch 7 validation gate
 
 New tests cover signed cancellation callback retention, absence of automatic entitlement mutation, admin-only queue access and payload sanitization. The migration remains unapplied. Validate the revised migration in isolated staging before merging or deploying.
+
+
+## Batch 8 — Flutterwave API-version compatibility gate
+
+Research against the current Flutterwave developer documentation uncovered a critical integration constraint: Flutterwave explicitly states that a merchant can use **only one API version at a time**. Payment Plans and subscriptions are documented on V3, while this repository's existing checkout/refund adapter uses V4 OAuth. A V3 payment-plan request cannot safely be bolted onto the current V4 integration using the same merchant account.
+
+Implemented:
+- Added admin-only `GET /api/admin/billing/provider-readiness`.
+- The endpoint reports the current V4 integration, V3 recurring-plan API requirement, the one-version restriction, card-only recurring constraint, and migration requirement.
+- It never returns API keys, OAuth secrets, webhook hashes or provider credentials.
+- It is denied to support users and makes no provider calls.
+- Recurring checkout, plan creation, cancellation and renewal remain disabled; no V3 request is sent from the V4 runtime.
+
+### Architecture decision required before recurring subscriptions
+
+Choose one complete merchant API version:
+1. Keep V4 for current one-time card/mobile-money checkout, refunds and reconciliation; defer Flutterwave-native recurring subscriptions until a V4-compatible recurring product is confirmed by Flutterwave.
+2. Migrate the complete Flutterwave adapter, checkout, refunds, verification and webhooks to V3 before using V3 Payment Plans. This is a coordinated provider migration, not a second API client.
+
+Do not switch the live merchant or credentials automatically. Confirm the merchant account's enabled products, Uganda settlement/currency support, sandbox availability and migration impact with Flutterwave first. Keep one-time MoMo checkout separate; recurring Payment Plans are card-only.
+
+### Batch 8 validation gate
+
+Tests verify that the readiness endpoint reports the version conflict, does not expose credentials, and denies support-role access. No provider calls, live charges, API-version switch, migration or deployment occurred.
