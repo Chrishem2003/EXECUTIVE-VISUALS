@@ -20,7 +20,7 @@ async function fixture(t,{outputFrames=3,outputWidth=128,outputHeight=128,output
   ...Array.from({length:outputAudio},()=>({codec_type:"audio",codec_name:"aac",start_time:"0",sample_rate:"48000",channels:2})),
   ...Array.from({length:outputSubtitles},()=>({codec_type:"subtitle",codec_name:"mov_text"}))
  ];
- const temporalMetadata=[40,70,41,72,42].map((saturation,index)=>"[Parsed_metadata] frame:"+index+" pts:"+(index*14062)+" pts_time:"+(index*0.125).toFixed(6)+"\\n[Parsed_metadata] lavfi.signalstats.YAVG=80\\n[Parsed_metadata] lavfi.signalstats.SATAVG="+saturation+"\\n[Parsed_metadata] lavfi.signalstats.UAVG=128\\n[Parsed_metadata] lavfi.signalstats.VAVG=128").join("\\n");
+ const temporalMetadata=[40,70,41,72,42].map((saturation,index)=>"[Parsed_metadata] frame:"+index+" pts:"+(index*14062)+" pts_time:"+(index*0.125).toFixed(6)+"\n[Parsed_metadata] lavfi.signalstats.YAVG=80\n[Parsed_metadata] lavfi.signalstats.SATAVG="+saturation+"\n[Parsed_metadata] lavfi.signalstats.UAVG=128\n[Parsed_metadata] lavfi.signalstats.VAVG=128").join("\n");
  let capturedAssemblyArgs=[];
  const runCommand=async(binary,args)=>{
   if(binary==="ffprobe"&&args.includes("-count_frames")){
