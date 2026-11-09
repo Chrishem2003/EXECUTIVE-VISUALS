@@ -174,3 +174,10 @@ test("rejects multiple distinct fixtures for the same required category", () => 
   assert.equal(summary.invalidRecords.length, 1);
   assert.match(summary.invalidRecords[0].issues.join(" "), /exactly one fixture record/);
 });
+
+
+test("reviewed quality requires a non-trivial reviewer identifier", () => {
+  const result = validateUpscaleBenchmarkRecord(validRecord({ qualityReview: "reviewed_pass", qualityReviewer: "a" }));
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("qualityReviewer must contain at least 2 characters")));
+});

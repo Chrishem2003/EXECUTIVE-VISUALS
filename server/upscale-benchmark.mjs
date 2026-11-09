@@ -30,7 +30,7 @@ export function validateUpscaleBenchmarkRecord(record) {
   if (!QUALITY_STATES.has(record.qualityReview)) issues.push("qualityReview is invalid");
   if (!record.timestamp || !Number.isFinite(Date.parse(record.timestamp))) issues.push("timestamp must be a valid date");
   if (record.qualityReview === "reviewed_pass" || record.qualityReview === "reviewed_fail") {
-    if (typeof record.qualityReviewer !== "string" || !record.qualityReviewer.trim()) issues.push("qualityReviewer is required for reviewed records");
+    if (typeof record.qualityReviewer !== "string" || record.qualityReviewer.trim().length < 2) issues.push("qualityReviewer must contain at least 2 characters for reviewed records");
     if (!record.qualityReviewedAt || !Number.isFinite(Date.parse(record.qualityReviewedAt))) issues.push("qualityReviewedAt must be a valid date for reviewed records");
     if (typeof record.qualityReviewNotes !== "string" || record.qualityReviewNotes.trim().length < 20) issues.push("qualityReviewNotes must contain at least 20 characters");
     if (typeof record.qualityReviewArtifactSha256 !== "string" || !SHA256.test(record.qualityReviewArtifactSha256)) issues.push("qualityReviewArtifactSha256 must be a SHA-256 digest");
