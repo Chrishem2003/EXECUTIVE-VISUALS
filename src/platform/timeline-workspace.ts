@@ -139,6 +139,7 @@ export function renderTimelineWorkspace(){
  '<div class="notice">Master rendering supports synchronized audio, image overlays, captions and per-clip non-destructive color, denoise and sharpen effects. Interactive playback preview, transitions, animated overlays and video-on-video compositing remain separate milestones.</div></div>';
 }
 async function refresh(){
+ history.timelineId="";history.undo=[];history.redo=[];
  if(state.mode==="cloud"){
   const projects=await apiRequest<{projects:CloudProject[]}>("/api/cloud/projects");
   state.cloudProjects=projects.projects||[];
@@ -287,7 +288,7 @@ document.addEventListener("change",event=>{
  if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
+  if(saved){history.timelineId=saved.id;history.undo=[];history.redo=[];if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
