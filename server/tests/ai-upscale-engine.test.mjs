@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
 function pngBytes(width, height, colorType = 6) {
@@ -164,6 +165,10 @@ test("AI upscaler executes an explicit content preset and returns recommendation
     assert.deepEqual(result.inputDimensions, { width: 1, height: 1 });
     assert.deepEqual(result.outputDimensions, { width: 4, height: 4 });
     assert.equal(result.method, "ai-super-resolution");
+    assert.equal(result.sourceSha256, createHash("sha256").update(pngHeader(1, 1)).digest("hex"));
+    assert.equal(result.outputSha256, createHash("sha256").update(pngBytes(4, 4)).digest("hex"));
+    assert.match(result.sourceSha256, /^[a-f0-9]{64}$/);
+    assert.match(result.outputSha256, /^[a-f0-9]{64}$/);
     await assert.rejects(adapter.executeForContent({
       contentType: "medical_scan",
       inputPath: input,
