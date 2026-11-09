@@ -92,6 +92,9 @@ export function createVideoAiUpscaleProcessor({
   if(!Number.isInteger(maxFrames)||maxFrames<1||maxFrames>18000)throw new TypeError("Video frame limit must be between 1 and 18,000.");
   if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>3600)throw new TypeError("Video duration limit is invalid.");
   if(!Number.isSafeInteger(maxTempBytes)||maxTempBytes<64*1024*1024||maxTempBytes>32*1024*1024*1024)throw new TypeError("Video temporary storage budget must be between 64 MiB and 32 GiB.");
+  if(!Number.isSafeInteger(maxOutputPixels)||maxOutputPixels<1||maxOutputPixels>100_000_000)throw new TypeError("Video output pixel budget must be between 1 and 100 million pixels.");
+  if(!Number.isSafeInteger(maxInputBytes)||maxInputBytes<1||!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1)throw new TypeError("Video byte budgets must be positive safe integers.");
+  if(!Number.isSafeInteger(frameTimeoutMs)||frameTimeoutMs<1000||!Number.isSafeInteger(jobTimeoutMs)||jobTimeoutMs<1000)throw new TypeError("Video execution time budgets are invalid.");
   async function process({
     sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,threads="1:2:2",tta=false,gpu="auto",expectedSourceSha256=null,signal,onProgress=()=>{}
   }={}){
