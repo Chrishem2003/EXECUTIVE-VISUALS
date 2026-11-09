@@ -78,3 +78,16 @@ Read-only account audit on 9 November 2026 observed the existing `executive-visu
 **Metadata caveat:** the Cloudflare database-list response reported `num_tables: 0` during this audit, while a direct read-only query against `sqlite_master` confirmed the seven application tables, migration ledger and indexes. Use the direct schema/migration query as the acceptance evidence; do not treat the list-response `num_tables` field as authoritative until its discrepancy is explained.
 
 Free-plan quotas are ceilings, not a capacity guarantee. Add application-level request/body bounds, bounded pagination, index-backed queries and a visible quota/error state before inviting external testers. Avoid automatic retries that can multiply reads or writes after quota errors.
+
+
+### Quota exhaustion and bounded-query behavior (reviewed 9 November 2026)
+
+Cloudflare's current Free-plan documentation makes the daily D1 row quotas enforced limits, not advisory targets. Since 1 September 2026, queries fail when the account exceeds its daily row-read or row-write allowance; the stored data is not deleted, and query access resumes after the UTC-midnight reset. The application must not silently upgrade, enqueue unbounded retries, or interpret quota errors as empty result sets.
+
+- Workers Free daily request exhaustion returns Cloudflare error 1027. For this isolated staging Worker, surface a clear unavailable/limit response and retain fail-closed behavior for protected API routes.
+- D1 Free permits at most 50 D1 query subrequests per Worker invocation; use a much smaller application budget, bounded page sizes, indexed tenant filters and explicit query-count tests.
+- Keep row reads/writes visible in operational checks using D1 query metadata/analytics. A filtered query over an unindexed tenant or timestamp column can consume the read quota through a table scan.
+- Maximum D1 row/string/BLOB size is 2,000,000 bytes; the workspace-document API's 256 KB limit remains intentionally lower. Never put media payloads in D1.
+- On a quota-limit error, return a distinct retry-after-reset/unavailable signal; do not automatically retry in a tight loop. A retry after UTC midnight must be initiated by a bounded client/operator action.
+
+Authoritative references (reviewed 9 November 2026): [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), [D1 pricing and free allowances](https://developers.cloudflare.com/d1/platform/pricing/), and [D1 free-tier daily limit enforcement](https://developers.cloudflare.com/changelog/post/2026-09-01-d1-free-tier-limit-enforcement/).
