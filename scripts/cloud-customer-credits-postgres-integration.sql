@@ -86,7 +86,7 @@ begin
   '44444444-4444-4444-8444-444444444444',
   '66666666-6666-4666-8666-666666666666',
   'runway',18,
-  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
  );
  if not r.replayed or r.balance<>82 or r.adjustment<>12 then
   raise exception 'job-scoped provider credit settlement replay failed';
