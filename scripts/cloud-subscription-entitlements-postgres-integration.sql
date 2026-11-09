@@ -5,6 +5,8 @@ declare
   grant_one record;
   grant_two record;
   balance_before bigint;
+  next_period_start timestamptz;
+  next_period_end timestamptz;
 begin
   insert into auth.users(id) values
     ('77777777-7777-4777-8777-777777777777')
@@ -50,6 +52,43 @@ begin
   );
   if not grant_two.replayed or grant_two.balance<>120 then raise exception 'subscription period grant replay was not idempotent'; end if;
 
+  select current_period_end into next_period_start
+  from executive_visuals.billing_subscriptions where id=subscription;
+  next_period_end:=next_period_start+interval '30 days';
+  select * into grant_one from executive_visuals.activate_generation_subscription(
+    '77777777-7777-4777-8777-777777777777','creator','manual',null,
+    'manual-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
+  );
+  if grant_one.subscription_id<>subscription or grant_one.replayed then
+    raise exception 'subscription renewal did not advance the existing subscription';
+  end if;
+  select * into grant_two from executive_visuals.activate_generation_subscription(
+    '77777777-7777-4777-8777-777777777777','creator','manual',null,
+    'manual-subscription-test-001',next_period_start,next_period_end,'active','{"test":true,"renewal":1}'::jsonb
+  );
+  if grant_two.subscription_id<>subscription or not grant_two.replayed then
+    raise exception 'subscription renewal replay was not idempotent';
+  end if;
+  select * into grant_one from executive_visuals.grant_subscription_period_credits(subscription,next_period_start);
+  if grant_one.replayed or grant_one.balance<>240 then
+    raise exception 'renewed subscription period did not receive its credit allocation';
+  end if;
+  select * into grant_two from executive_visuals.grant_subscription_period_credits(subscription,next_period_start);
+  if not grant_two.replayed or grant_two.balance<>240 then
+    raise exception 'renewed subscription period credit replay was not idempotent';
+  end if;
+
+  begin
+    perform * from executive_visuals.activate_generation_subscription(
+      '77777777-7777-4777-8777-777777777777','creator','manual',null,
+      'manual-subscription-test-001','2026-10-01T00:00:00Z','2026-11-01T00:00:00Z','active','{"test":true}'::jsonb
+    );
+    raise exception 'stale subscription renewal unexpectedly applied';
+  exception when others then
+    if sqlerrm='stale subscription renewal unexpectedly applied' then raise; end if;
+    if sqlerrm<>'BILLING_SUBSCRIPTION_PERIOD_STALE' then raise; end if;
+  end;
+
   insert into executive_visuals.jobs(id,owner_id,job_type,status,input)
   values('88888888-8888-4888-8888-888888888888',
     '77777777-7777-4777-8777-777777777777','video.generate','queued','{"provider":"runway"}'::jsonb)
@@ -72,7 +111,7 @@ begin
     '77777777-7777-4777-8777-777777777777',
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',15,'scheduled-cancellation-access'
   );
-  if grant_one.reservation_id is null or grant_one.balance<>90 then
+  if grant_one.reservation_id is null or grant_one.balance<>210 then
     raise exception 'scheduled cancellation removed access before period end';
   end if;
 
