@@ -174,6 +174,38 @@ export function createFinancialIntelligenceApi({
     }
   }
 
+  async function reconcilePendingRefunds({limit=100}={}){
+    const boundedLimit=Math.max(1,Math.min(100,Number(limit)||100));
+    const pending=await dbRequest("payment_refunds?select=id,owner_id,payment_transaction_id,provider_refund_id,status,amount_minor,currency,reason,idempotency_key&status=in.(requested,processing)&order=requested_at.asc&limit="+boundedLimit);
+    const results=[];
+    for(const refund of Array.isArray(pending.data)?pending.data:[]){
+      try{
+        let providerRefundId=refund.provider_refund_id;
+        if(!providerRefundId&&refund.status==="requested"){
+          const paymentResult=await dbRequest("payment_transactions?select=id,provider_transaction_id,amount_minor,currency,status&id=eq."+encodeURIComponent(refund.payment_transaction_id)+"&owner_id=eq."+encodeURIComponent(refund.owner_id)+"&limit=1");
+          const payment=Array.isArray(paymentResult.data)?paymentResult.data[0]:null;
+          if(!payment||payment.status!=="successful"||!payment.provider_transaction_id){
+            results.push({refundId:refund.id,status:"awaiting_verified_charge"});continue;
+          }
+          const created=await providerRequest("/refunds",{
+            method:"POST",idempotencyKey:refund.idempotency_key,
+            body:{amount:minorToMajor(Number(refund.amount_minor),refund.currency),reason:refund.reason,charge_id:payment.provider_transaction_id}
+          });
+          providerRefundId=String(created?.data?.id||"");
+          if(!providerRefundId)throw new Error("Flutterwave did not return a refund ID during reconciliation.");
+          await dbRequest("payment_refunds?id=eq."+encodeURIComponent(refund.id),{
+            method:"PATCH",body:{provider_refund_id:providerRefundId,status:"processing",provider_payload:created.data,updated_at:new Date().toISOString()},prefer:"return=minimal"
+          });
+        }
+        if(!providerRefundId){results.push({refundId:refund.id,status:"awaiting_provider_reference"});continue;}
+        results.push({refundId:refund.id,...await verifyAndFinalizeRefund(providerRefundId)});
+      }catch(err){
+        results.push({refundId:refund.id,status:"verification_error",code:err.code||"REFUND_VERIFY_FAILED"});
+      }
+    }
+    return {checked:results.length,results};
+  }
+
   async function requireAdmin(ownerId){
     const result=await dbRequest("platform_admins?select=role&user_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
     const role=Array.isArray(result.data)?result.data[0]?.role:null;
@@ -268,14 +300,8 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/reconcile"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
-        const pending=await dbRequest("payment_refunds?select=id,provider_refund_id,status&status=in.(requested,processing)&order=requested_at.asc&limit=100");
-        const results=[];
-        for(const refund of Array.isArray(pending.data)?pending.data:[]){
-          if(!refund.provider_refund_id){results.push({refundId:refund.id,status:"awaiting_provider_reference"});continue;}
-          try{results.push({refundId:refund.id,...await verifyAndFinalizeRefund(refund.provider_refund_id)});}
-          catch(err){results.push({refundId:refund.id,status:"verification_error",code:err.code||"REFUND_VERIFY_FAILED"});}
-        }
-        return response(200,{checked:results.length,results});
+        const result=await reconcilePendingRefunds({limit:100});
+        return response(200,result);
       }
       return null;
     }catch(err){
@@ -284,5 +310,5 @@ export function createFinancialIntelligenceApi({
     }
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund};
+  return {handle,handleWebhook,verifyAndFinalizeRefund,reconcilePendingRefunds};
 }
