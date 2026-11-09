@@ -71,18 +71,33 @@ async function readPngDimensions(path) {
     const signature = await readExact(handle, 8, 0);
     if (!signature.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) throw fail("Enhanced output must have a valid PNG signature.");
     let offset = 8, width = 0, height = 0, chunkIndex = 0, hasIdat = false, hasIend = false;
+    let idatEnded = false, hasPlte = false, colorType = -1, bitDepth = 0;
+    const knownCritical = new Set(["IHDR", "PLTE", "IDAT", "IEND"]);
     while (offset < info.size) {
       if (info.size - offset < 12) throw fail("Enhanced output PNG has a truncated chunk.");
       const chunkHeader = await readExact(handle, 8, offset);
       const length = chunkHeader.readUInt32BE(0);
-      const type = chunkHeader.toString("ascii", 4, 8);
-      if (length > info.size - offset - 12) throw fail("Enhanced output PNG chunk exceeds the file boundary.");
+      const typeBytes = chunkHeader.subarray(4, 8);
+      const type = typeBytes.toString("ascii");
+      if (length > 0x7fffffff || length > info.size - offset - 12) throw fail("Enhanced output PNG chunk exceeds the file boundary.");
+      if (![...typeBytes].every(byte => (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a)) ||
+          (typeBytes[2] & 0x20) !== 0) throw fail("Enhanced output PNG contains an invalid chunk type.");
       if (chunkIndex === 0 && (type !== "IHDR" || length !== 13)) throw fail("Enhanced output PNG must begin with a valid IHDR chunk.");
       if (chunkIndex > 0 && type === "IHDR") throw fail("Enhanced output PNG contains a duplicate IHDR chunk.");
-      if (type === "IEND" && (length !== 0 || !hasIdat)) throw fail("Enhanced output PNG is missing image data or has an invalid IEND chunk.");
       if (hasIend) throw fail("Enhanced output PNG contains data after IEND.");
+      if (hasIdat && type !== "IDAT") idatEnded = true;
+      if (type === "IDAT" && idatEnded) throw fail("Enhanced output PNG IDAT chunks must be consecutive.");
+      if (type === "PLTE") {
+        if (hasPlte || hasIdat || colorType === 0 || colorType === 4 || length < 3 || length > 768 || length % 3 !== 0) {
+          throw fail("Enhanced output PNG contains an invalid or misplaced PLTE chunk.");
+        }
+        if (colorType === 3 && length / 3 > 2 ** bitDepth) throw fail("Enhanced output PNG palette exceeds its indexed bit depth.");
+        hasPlte = true;
+      }
+      if (type === "IEND" && (length !== 0 || !hasIdat)) throw fail("Enhanced output PNG is missing image data or has an invalid IEND chunk.");
+      if ((typeBytes[0] & 0x20) === 0 && !knownCritical.has(type)) throw fail("Enhanced output PNG contains an unsupported critical chunk.");
 
-      let crc = updatePngCrc(0xffffffff, chunkHeader.subarray(4, 8));
+      let crc = updatePngCrc(0xffffffff, typeBytes);
       let dataOffset = offset + 8, remaining = length;
       const ihdr = type === "IHDR" ? Buffer.alloc(13) : null;
       let copied = 0;
@@ -99,7 +114,8 @@ async function readPngDimensions(path) {
       if (type === "IHDR") {
         width = ihdr.readUInt32BE(0);
         height = ihdr.readUInt32BE(4);
-        const bitDepth = ihdr[8], colorType = ihdr[9], compression = ihdr[10], filter = ihdr[11], interlace = ihdr[12];
+        bitDepth = ihdr[8]; colorType = ihdr[9];
+        const compression = ihdr[10], filter = ihdr[11], interlace = ihdr[12];
         const validDepths = ({0:[1,2,4,8,16],2:[8,16],3:[1,2,4,8],4:[8,16],6:[8,16]})[colorType] || [];
         if (!width || !height || width > 0x7fffffff || height > 0x7fffffff ||
             !validDepths.includes(bitDepth) || compression !== 0 || filter !== 0 || ![0,1].includes(interlace)) {
@@ -108,6 +124,7 @@ async function readPngDimensions(path) {
       }
       if (type === "IDAT") hasIdat = true;
       if (type === "IEND") {
+        if (colorType === 3 && !hasPlte) throw fail("Enhanced output indexed PNG is missing its required PLTE chunk.");
         hasIend = true;
         if (dataOffset + 4 !== info.size) throw fail("Enhanced output PNG contains trailing bytes after IEND.");
       }
