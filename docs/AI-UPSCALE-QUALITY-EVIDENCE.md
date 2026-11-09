@@ -64,7 +64,10 @@ Every passing review must additionally include the exact field names enforced by
 - `qualityReviewer`: stable reviewer identifier
 - `qualityReviewedAt`: ISO-8601 timestamp
 - `qualityReviewNotes`: substantive notes of at least 20 characters
-- `qualityReviewArtifactSha256`: SHA-256 digest of the review artifact
+- `qualityReviewArtifactPath`: relative path to the actual review report/artifact, stored beside the evidence JSON
+- `qualityReviewArtifactSha256`: SHA-256 digest of the artifact bytes
+
+The evidence loader opens each referenced artifact as a regular non-symlink file beneath the evidence directory, enforces a 25 MiB limit, and recomputes its SHA-256. Missing files, traversal paths, symlinks, oversized artifacts or changed bytes invalidate the model review. A digest-shaped string alone is not accepted as proof that a review artifact exists.
 
 Optional SSIM and LPIPS values must be normalized to the 0–1 range. Do not invent metric values when no suitable reference exists. A review artifact should document the source/output comparison and the checks performed.
 
