@@ -125,12 +125,13 @@ test("AI upscale self-test becomes stale when model bytes change even if size an
 
     const { stat, utimes } = await import("node:fs/promises");
     const before = await stat(weights);
+    const preservedMtimeSecond = Math.floor(before.mtimeMs / 1000);
     await new Promise(resolve => setTimeout(resolve, 15));
     await writeFile(weights, "WEIGHTS"); // Same byte length, different content.
-    await utimes(weights, before.atime, before.mtime); // Restore mtime deliberately.
+    await utimes(weights, before.atime, preservedMtimeSecond); // Restore a known, exact timestamp.
     const after = await stat(weights);
     assert.equal(after.size, before.size);
-    assert.equal(Math.floor(after.mtimeMs), Math.floor(before.mtimeMs));
+    assert.equal(Math.floor(after.mtimeMs / 1000), preservedMtimeSecond);
     assert.notEqual(after.ctimeMs, before.ctimeMs);
     assert.equal((await adapter.probe(model)).executionVerified, false);
   } finally {
