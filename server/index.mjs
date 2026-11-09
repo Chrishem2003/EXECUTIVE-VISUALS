@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
@@ -74,6 +75,7 @@ function getVideoUpscaleWorkerLimits(){
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
+const flashVsrAdapter = createFlashVsrAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
@@ -383,17 +385,24 @@ export function createAppServer() {
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
       }
       if(path==="/api/ai-video-upscale/readiness"&&req.method==="GET"){
+        const engine=String(url.searchParams.get("engine")||"realesrgan-framewise");
+        const enabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
+        const ffmpegAvailable=executableAvailable("ffmpeg"),ffprobeAvailable=executableAvailable("ffprobe");
+        const {limits,valid:limitsValid}=getVideoUpscaleWorkerLimits();
+        if(engine==="flashvsr-v1.1-tiny-long"){
+          const modelStatus=await flashVsrAdapter.probe();
+          const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
+          send(res,200,{enabled,engine,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&limitsValid&&modelReady,ffmpegAvailable,ffprobeAvailable,model:"FlashVSR-v1.1-tiny-long",modelReady,modelStatus,limits:{...limits,scales:[4]},limitsValid,temporalConsistency:"temporal-model-used-not-certified"},cors);return;
+        }
+        if(engine!=="realesrgan-framewise"){fail(res,400,"VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED","Choose a supported video enhancement engine.");return;}
         const model=String(url.searchParams.get("model")||"realesrgan-x4plus");
         let modelStatus={available:false,executionEnabled:false,executionVerified:false,reason:"Model readiness could not be determined."};
         try{
           const result=await aiUpscaleAdapter.probe(model);
           modelStatus={available:result.available===true,executionEnabled:result.executionEnabled===true,executionVerified:result.executionVerified===true,reason:result.reason||null};
         }catch(error){modelStatus={...modelStatus,reason:error instanceof Error?error.message:"Model readiness check failed."};}
-        const enabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
-        const ffmpegAvailable=executableAvailable("ffmpeg"),ffprobeAvailable=executableAvailable("ffprobe");
         const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
-        const {limits,valid:limitsValid}=getVideoUpscaleWorkerLimits();
-        send(res,200,{enabled,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady&&limitsValid,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{...limits,scales:[2,4]},limitsValid,temporalConsistency:"not-certified"},cors);return;
+        send(res,200,{enabled,engine,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady&&limitsValid,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{...limits,scales:[2,4]},limitsValid,temporalConsistency:"not-certified"},cors);return;
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
@@ -951,8 +960,10 @@ export function createAppServer() {
         if(type==="media.ai-video-upscale"){
           if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
           if(!getVideoUpscaleWorkerLimits().valid){fail(res,409,"VIDEO_AI_UPSCALE_LIMITS_INVALID","Video AI worker limits are invalid; correct the frame, duration, pixel or temporary-storage configuration.");return;}
-          const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??2);
-          if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
+          const engine=String(body.engine||"realesrgan-framewise");
+          const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2));
+          if(!["realesrgan-framewise","flashvsr-v1.1-tiny-long"].includes(engine)){fail(res,400,"VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED","Choose a supported video enhancement engine.");return;}
+          if(engine==="flashvsr-v1.1-tiny-long"&&scale!==4||engine!=="flashvsr-v1.1-tiny-long"&&![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","FlashVSR requires 4x; framewise video enhancement supports 2x or 4x.");return;}
           const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
           if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible MP4 or QuickTime video asset for provenance-preserving AI upscaling.");return;}
           if(source.project_id&&source.project_id!==String(body.projectId||"")){fail(res,400,"PROJECT_MISMATCH","The source video must belong to the selected project.");return;}
@@ -960,8 +971,13 @@ export function createAppServer() {
           const tile=Number(body.tile??0),threads=String(body.threads??"1:2:2");
           if(!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Tile size must be automatic (0) or an integer from 32 to 512.");return;}
           if(!/^[1-4]:[1-4]:[1-4]$/.test(threads)||body.tta!==undefined&&typeof body.tta!=="boolean"){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Thread settings must use load:process:save values from 1 to 4 and TTA must be boolean.");return;}
-          const readiness=await aiUpscaleAdapter.probe(model);
-          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
+          if(engine==="flashvsr-v1.1-tiny-long"){
+            const readiness=await flashVsrAdapter.probe();
+            if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"FLASHVSR_NOT_READY",readiness.reason||"FlashVSR requires installed v1.1 weights, a compatible local CUDA runtime, explicit enablement and a successful model self-test.");return;}
+          }else{
+            const readiness=await aiUpscaleAdapter.probe(model);
+            if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
+          }
         }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){
