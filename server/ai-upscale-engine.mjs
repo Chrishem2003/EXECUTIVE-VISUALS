@@ -470,7 +470,7 @@ export function createRealEsrganAdapter({
       const after = await fingerprint(selected);
       if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
       executionFingerprints.set(selected, after);
-      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, inputDimensions: result.inputDimensions, outputDimensions: result.outputDimensions, outputBytes: result.byteSize, outputHasAlpha: result.outputHasAlpha, alphaPreserved: result.alphaPreserved, tile: result.tile, requestedTile: result.requestedTile, tileFallbackUsed: result.tileFallbackUsed, tileAttempts: result.tileAttempts };
     } catch (error) {
       executionFingerprints.delete(selected);
       throw error;
