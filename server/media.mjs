@@ -10,6 +10,7 @@ import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
+import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
@@ -251,8 +252,10 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
     if(asset.media_type.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",file);
     else if(asset.media_type.startsWith("video/"))args.push("-ss",sourceStart.toFixed(6),"-t",duration.toFixed(6),"-i",file);
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    const filter=`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`;
-    segments.push({label,filter});
+    const effect=buildTimelineClipEffects(clip.metadata||{});
+    const filterParts=["trim=duration="+duration.toFixed(6),"setpts=PTS-STARTPTS",...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+    const filter="[${inputIndex}:v]"+filterParts.join(",")+"[${label}]";
+    segments.push({label,filter,effectsEnabled:effect.enabled});
     inputIndex++;cursor=start+duration;
     onProgress(Math.min(70,10+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
