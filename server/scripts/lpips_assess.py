@@ -40,6 +40,7 @@ def main():
         import numpy as np
         import torch
         import lpips
+        import torchvision.models._api as torchvision_api
         from PIL import Image
     except Exception as exc:
         fail("LPIPS dependencies are unavailable: " + str(exc))
@@ -61,6 +62,7 @@ def main():
             raise RuntimeError("Required pretrained weights are not present in the local cache: " + filename)
         return original_loader(url, *positional, **kwargs)
     torch.hub.load_state_dict_from_url = cached_only
+    torchvision_api.load_state_dict_from_url = cached_only
 
     try:
         with Image.open(candidate_path) as image:
