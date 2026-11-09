@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, open, readdir, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readdir, rm, stat, unlink } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -152,7 +152,7 @@ export function createVideoAiUpscaleProcessor({
         if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
         const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
         if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
-        await (await import("node:fs/promises")).unlink(inputFrame);
+        await unlink(inputFrame);
         remainingInputBytes-=inputFrameInfo.size;
         if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
         progress(12+Math.round(((index+1)/source.frames)*70));
