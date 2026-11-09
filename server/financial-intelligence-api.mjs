@@ -191,6 +191,19 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{received:true,result});
       }
+      if(/^subscription\\./i.test(event)) {
+        // Flutterwave's cancellation example does not guarantee a stable local
+        // subscription ID. Preserve the signed callback for reconciliation;
+        // never revoke access based on an ambiguous email/plan-only payload.
+        await dbRequest("payment_webhook_events?provider=eq.flutterwave&event_key=eq."+eventKey,{
+          method:"PATCH",body:{
+            processing_status:"needs_review",
+            error_message:"Verified subscription lifecycle event requires provider-to-customer reconciliation.",
+            processed_at:new Date().toISOString()
+          },prefer:"return=minimal"
+        });
+        return response(200,{received:true,needsReview:true,message:"Verified subscription event queued for administrator reconciliation."});
+      }
       if(!/refund/i.test(event)) {
         await dbRequest("payment_webhook_events?provider=eq.flutterwave&event_key=eq."+eventKey,{
           method:"PATCH",body:{processing_status:"ignored",processed_at:new Date().toISOString()},prefer:"return=minimal"
@@ -383,6 +396,20 @@ export function createFinancialIntelligenceApi({
         const offset=Math.max(0,Math.min(10000,Number(query.offset)||0));
         const result=await dbRequest("payment_refunds?select=id,payment_transaction_id,amount_minor,currency,status,reason,requested_at,completed_at&owner_id=eq."+encodeURIComponent(ownerId)+"&order=requested_at.desc&limit="+limit+"&offset="+offset);
         return response(200,{refunds:Array.isArray(result.data)?result.data:[],limit,offset});
+      }
+      if(path==="/api/admin/subscriptions/reconciliation"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
+        const limit=Math.max(1,Math.min(100,Number(query.limit)||25));
+        const result=await dbRequest("payment_webhook_events?select=id,event_type,payload_hash,processing_status,payload,received_at&provider=eq.flutterwave&event_type=eq.subscription.cancelled&processing_status=eq.needs_review&order=received_at.asc&limit="+limit);
+        const events=(Array.isArray(result.data)?result.data:[]).map(row=>({
+          id:row.id,eventType:row.event_type,payloadHash:row.payload_hash,
+          receivedAt:row.received_at,
+          customerEmail:String(row.payload?.data?.customer?.email||"").slice(0,254),
+          providerPlanId:row.payload?.data?.plan?.id??null,
+          providerStatus:String(row.payload?.data?.status||"").slice(0,40),
+          reviewRequired:true
+        }));
+        return response(200,{events,limit,automatedEntitlementChanges:false});
       }
       if(path==="/api/admin/finance/summary"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
