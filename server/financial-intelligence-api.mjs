@@ -182,7 +182,7 @@ export function createFinancialIntelligenceApi({
     });
     if(inserted.status===409)return response(200,{received:true,duplicate:true});
     try{
-      if(/charge|payment/i.test(event)) {
+      if(/^(charge\\.|payment\\.)/i.test(event)) {
         const chargeId=String(data?.id||"");
         if(!chargeId)return response(200,{received:true,ignored:true});
         const result=await verifyAndFinalizePayment(chargeId);
@@ -274,6 +274,8 @@ export function createFinancialIntelligenceApi({
         const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
         if(Array.isArray(prior.data)&&prior.data.length){
           const row=prior.data[0];
+          if(row.metadata?.product_code!==productCode||row.metadata?.mobile_money_network!==network)
+            return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to a different checkout request.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
         const productResult=await dbRequest("billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq."+encodeURIComponent(productCode)+"&active=eq.true&limit=1");
