@@ -20,6 +20,8 @@ This workstream covers:
 
 The adapter targets Flutterwave API v4:
 
+- Authenticate API calls with OAuth 2.0 client credentials (`FLW_CLIENT_ID` + `FLW_CLIENT_SECRET`) through Flutterwave’s token endpoint; access tokens expire and are cached server-side.
+- Sandbox base URL: `https://developersandbox-api.flutterwave.com`; production v4 base URL: `https://f4bexperience.flutterwave.com` (requires explicit `FLW_ALLOW_LIVE=true`).
 - Create refund: `POST /refunds`, with `charge_id`, `amount`, and `reason`.
 - Include a unique `X-Idempotency-Key` and `X-Trace-Id` for each refund request.
 - Partial refunds are supported; multiple partial refunds may be made until the total equals the original charge.
@@ -122,3 +124,49 @@ The repository's existing `verify:server` script discovers this test through its
 - Do not expose Flutterwave secret keys, webhook secrets, service-role keys or private evidence URLs to browser code.
 - Do not claim financial dashboard figures are authoritative until reconciliation against provider records is passing.
 - Do not merge or deploy this branch to production without review, staging tests and explicit approval.
+
+
+## Batch 2 — authenticated API integration
+
+Added on `feat/financial-intelligence-api-integration`:
+
+- `server/flutterwave-auth.mjs`: OAuth client-credentials token provider with concurrent-request coalescing and a one-minute refresh buffer.
+- `server/financial-intelligence-api.mjs`: owner-scoped customer transaction/refund reads, billing-admin role checks, admin financial summary, refund initiation, provider verification, pending-refund reconciliation and webhook idempotency.
+- `server/index.mjs`: authenticated route mounting and a public raw-body webhook endpoint at `POST /api/webhooks/flutterwave`. Financial routes are only mounted when `BILLING_API_ENABLED=true`; enabling them also requires `AUTH_MODE=supabase`.
+- `supabase/migrations/20261110130000_financial_refund_atomicity.sql`: row-locked refund reservation RPC and provider-confirmed settlement RPC. The settlement RPC inserts immutable compensating ledger entries in the same database transaction and is executable only by `service_role`.
+- `server/tests/financial-intelligence-api.test.mjs`: tests owner scoping, admin authorization, invalid signatures, duplicate webhook deliveries, provider verification mismatches and OAuth token caching.
+
+### Routes added
+
+- `GET /api/billing/transactions`
+- `GET /api/billing/refunds`
+- `POST /api/admin/finance/refunds` (billing admin only; requires `Idempotency-Key`)
+- `GET /api/admin/finance/summary` (owner/platform/billing admin only)
+- `POST /api/admin/finance/reconcile` (owner/platform/billing admin only)
+- `POST /api/webhooks/flutterwave` (public, raw-body signature verified)
+
+### Refund safety sequence
+
+1. A billing admin selects a successful payment and requests a refund.
+2. The database locks the payment row and atomically reserves the requested amount. Pending and successful refunds count against the remaining refundable amount.
+3. The server calls Flutterwave using OAuth and the same idempotency key.
+4. The refund remains `processing` until a webhook or reconciliation check retrieves the refund from Flutterwave.
+5. The server verifies provider refund ID, original charge ID, amount and terminal status.
+6. The settlement RPC marks the refund successful and calculates the cumulative proportional credit reversal. The credit ledger entry is inserted atomically and idempotently.
+7. Failed provider refunds release the reservation; ambiguous network outcomes keep the reservation in place until reconciled.
+
+### Configuration
+
+- `BILLING_API_ENABLED=false` by default.
+- `FLW_REFUNDS_ENABLED=false` by default.
+- `FLW_ALLOW_LIVE=false` by default.
+- Configure `FLW_CLIENT_ID`, `FLW_CLIENT_SECRET` and `FLW_SECRET_HASH` only in server-side environment settings.
+- Configure the Flutterwave dashboard webhook URL as `/api/webhooks/flutterwave` and select the matching v4 webhook mode.
+
+### Remaining gates
+
+- Apply both financial migrations only to the isolated Executive Visuals Supabase project after review.
+- Verify the existing checkout writes verified charge IDs into `payment_transactions.provider_transaction_id` and grants credits with `credit_ledger.entry_type='purchase_grant'`. No refund or credit reversal can work safely without those source records.
+- Confirm the deployed Supabase project uses the `executive_visuals` schema and the same Auth user IDs as the app.
+- The admin summary is an API response, not yet the finished visual dashboard. Customer invoice PDF generation, dispute evidence upload and notification delivery remain subsequent batches.
+- No migration has been applied and no live provider request has been made.
