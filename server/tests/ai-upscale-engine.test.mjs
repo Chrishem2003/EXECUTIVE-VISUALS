@@ -792,7 +792,7 @@ fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chun
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filter", "trailing-zlib-data"]) {
+for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filter", "trailing-zlib-data", "oversized-width", "oversized-pixel-count"]) {
   test("AI upscaler rejects invalid PNG IDAT datastream: " + invalidData, async () => {
     const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-invalid-idat-"));
     const binary = join(directory, "engine"), model = "realesrgan-x4plus";
@@ -802,7 +802,7 @@ for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filt
     const script =
       "const fs=require('node:fs'),zlib=require('node:zlib'),args=process.argv.slice(2),out=args[args.indexOf('-o')+1];\n" +
       "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\n" +
-      "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\n" +
+      "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(" + (invalidData === "oversized-width" ? "32769" : invalidData === "oversized-pixel-count" ? "10001" : "2") + ",0);ihdr.writeUInt32BE(" + (invalidData === "oversized-pixel-count" ? "10000" : "2") + ",4);ihdr[8]=8;ihdr[9]=6;\n" +
       "const raw=" + (invalidData === "short-scanlines" ? "Buffer.alloc(17)" : "Buffer.alloc(18)") + ";\n" +
       "if(" + JSON.stringify(invalidData) + " === 'invalid-filter') raw[0]=5;\n" +
       "const payload=" + (invalidData === "not-a-zlib-stream" ? "Buffer.from('not-a-zlib-stream')" : invalidData === "trailing-zlib-data" ? "Buffer.concat([zlib.deflateSync(raw),Buffer.from('tail')])" : "zlib.deflateSync(raw)") + ";\n" +
