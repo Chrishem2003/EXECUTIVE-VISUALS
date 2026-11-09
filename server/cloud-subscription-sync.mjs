@@ -42,7 +42,7 @@ export function enqueueCloudSubscriptionSync(db,{
   if(!["dodo","flutterwave"].includes(provider)||!["activate","status"].includes(action)||!providerEventId||!ownerId||
     !/^[a-z][a-z0-9_-]{1,40}$/.test(String(planCode||""))||!providerSubscriptionId||
     !Number.isFinite(Date.parse(periodStart))||!Number.isFinite(Date.parse(periodEnd))||
-    Date.parse(periodEnd)<=Date.parse(periodStart)||!["active","trialing","past_due"].includes(status)){
+    (action==="activate"&&Date.parse(periodEnd)<=Date.parse(periodStart))||!["active","trialing","past_due"].includes(status)){
     throw fail("Cloud subscription sync event is incomplete or invalid.","CLOUD_SUBSCRIPTION_SYNC_INVALID");
   }
   const id=randomUUID();
