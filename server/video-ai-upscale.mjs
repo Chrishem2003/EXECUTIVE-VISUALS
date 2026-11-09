@@ -154,8 +154,8 @@ export function createVideoAiUpscaleProcessor({
       if(source.subtitles.length)args.push("-c:s","mov_text");
       args.push("-avoid_negative_ts","make_zero","-movflags","+faststart",outputPath);
       const outputHandle=await open(outputPath,"wx",0o600);
-      await outputHandle.close();
       outputCreated=true;
+      await outputHandle.close();
       await run(runCommand,"ffmpeg",args,{timeoutMs:30*60*1000,signal,maxCaptureBytes:256_000});
       progress(94);
       const outputProbeResult=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames,pix_fmt,sample_rate,channels","-show_entries","format=duration","-of","json",outputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
