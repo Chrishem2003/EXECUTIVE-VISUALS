@@ -30,7 +30,7 @@ values(
  '44444444-4444-4444-8444-444444444444',
  '66666666-6666-4666-8666-666666666666',
  '77777777-7777-4777-8777-777777777777',
- 'video.generate','queued','{}'::jsonb
+ 'video.generate','queued','{"provider":"runway","workflowQuoteId":"88888888-8888-4888-8888-888888888888"}'::jsonb
 );
 
 select * from executive_visuals.reserve_generation_credits(
@@ -65,7 +65,7 @@ $credit_reservation_assertions$;
 
 select * from executive_visuals.settle_generation_credit_reservation(
  (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),18,
- '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001"}'::jsonb
+ '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","providerTaskId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
 ) \gset settlement_
 
 do $credit_settlement_assertions$
@@ -82,6 +82,27 @@ begin
  if not r.replayed or r.balance<>82 or r.adjustment<>12 then
   raise exception 'identical settlement replay failed';
  end if;
+ select * into r from executive_visuals.settle_generation_credits_for_job(
+  '44444444-4444-4444-8444-444444444444',
+  '66666666-6666-4666-8666-666666666666',
+  'runway',18,
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
+ );
+ if not r.replayed or r.balance<>82 or r.adjustment<>12 then
+  raise exception 'job-scoped provider credit settlement replay failed';
+ end if;
+ begin
+  perform * from executive_visuals.settle_generation_credits_for_job(
+   '44444444-4444-4444-8444-444444444444',
+   '66666666-6666-4666-8666-666666666666',
+   'fal',18,
+   '{"provider":"fal","evidenceType":"provider_task_receipt","evidenceId":"task-credit-001","evidenceReference":"provider-invoice:task-credit-001"}'::jsonb
+  );
+  raise exception 'provider mismatch unexpectedly settled customer credits';
+ exception when others then
+  if sqlerrm='provider mismatch unexpectedly settled customer credits' then raise; end if;
+  if sqlerrm<>'BILLING_CREDIT_PROVIDER_MISMATCH' then raise; end if;
+ end;
  begin
   perform * from executive_visuals.settle_generation_credit_reservation(
    (select id from executive_visuals.billing_credit_reservations where idempotency_key='integration-credit-reserve-001'),19,
