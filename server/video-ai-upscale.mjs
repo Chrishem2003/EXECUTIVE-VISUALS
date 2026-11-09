@@ -147,7 +147,7 @@ export function createVideoAiUpscaleProcessor({
       const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
       if(enhanced.length!==source.frames)throw fail("Enhanced frame count does not match the source video.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       progress(84);
-      const fpsText=source.video.avg_frame_rate||source.video.r_frame_rate;
+      const fpsText=rational(source.video.avg_frame_rate)?source.video.avg_frame_rate:source.video.r_frame_rate;
       const audioCodecSafe=source.audio.every(stream=>["aac","mp3","ac3","eac3","alac"].includes(String(stream.codec_name||"").toLowerCase()));
       const args=["-hide_banner","-nostdin","-y","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
