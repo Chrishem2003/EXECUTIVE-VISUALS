@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 
 const CURRENCY_DECIMALS = Object.freeze({
   UGX: 0, KES: 2, NGN: 2, GHS: 2, ZAR: 2, USD: 2, EUR: 2, GBP: 2
@@ -152,11 +153,15 @@ export function calculatePaymentRetryAt({
 /** Server-side Flutterwave v4 refund request. Never expose the secret key to clients. */
 export async function initiateFlutterwaveRefund({
   chargeId, amountMinor, currency, reason, idempotencyKey, traceId,
-  secretKey = process.env.FLW_SECRET_KEY,
+  clientId = process.env.FLW_CLIENT_ID,
+  clientSecret = process.env.FLW_CLIENT_SECRET,
   baseUrl = process.env.FLW_API_BASE_URL || "https://developersandbox-api.flutterwave.com",
   fetchImpl = fetch
 }) {
-  if (!secretKey) throw Object.assign(new Error("Flutterwave secret key is not configured."), { code: "PAYMENT_PROVIDER_NOT_CONFIGURED" });
+  const parsedBase = new URL(baseUrl);
+  if (!["developersandbox-api.flutterwave.com","f4bexperience.flutterwave.com"].includes(parsedBase.hostname)) throw Object.assign(new Error("Unsupported Flutterwave v4 API host."), { code: "INVALID_PROVIDER_BASE_URL" });
+  const getAccessToken = createFlutterwaveAccessTokenProvider({ clientId, clientSecret, fetchImpl });
+  const accessToken = await getAccessToken();
   if (!chargeId || !idempotencyKey || !traceId || !reason) {
     throw Object.assign(new Error("Charge, reason, idempotency key and trace ID are required."), { code: "INVALID_REFUND_REQUEST" });
   }
@@ -164,7 +169,7 @@ export async function initiateFlutterwaveRefund({
   const response = await fetchImpl(new URL("/refunds", baseUrl), {
     method: "POST",
     headers: {
-      authorization: `Bearer ${secretKey}`,
+      authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
       "x-idempotency-key": idempotencyKey,
       "x-trace-id": traceId
