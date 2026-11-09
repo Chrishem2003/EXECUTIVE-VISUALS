@@ -357,8 +357,14 @@ async function validatePngFile(path, maxBytes) {
     }
     let decoded;
     try {
-      decoded = inflateSync(Buffer.concat(idatParts, idatBytes), { maxOutputLength: expectedBytes + 1 });
-    } catch {
+      const compressed = Buffer.concat(idatParts, idatBytes);
+      const inflated = inflateSync(compressed, { maxOutputLength: expectedBytes + 1, info: true });
+      decoded = inflated.buffer;
+      if (inflated.engine.bytesWritten !== compressed.length) {
+        throw fail("AI upscaling PNG image data contains trailing bytes after its zlib stream.", "AI_UPSCALE_OUTPUT_INVALID");
+      }
+    } catch (error) {
+      if (error.code === "AI_UPSCALE_OUTPUT_INVALID") throw error;
       throw fail("AI upscaling PNG image data is not a valid bounded zlib/DEFLATE stream.", "AI_UPSCALE_OUTPUT_INVALID");
     }
     if (decoded.length !== expectedBytes) {
