@@ -11,15 +11,16 @@ const parseLastJson = value => {
 function runProcess(binary,args,{signal,timeoutMs=30*60*1000,maxCaptureBytes=2_000_000,cwd,spawnImpl=spawn}={}){
   return new Promise((resolvePromise,reject)=>{
     if(signal?.aborted)return reject(Object.assign(new Error("FlashVSR inference was cancelled."),{code:"JOB_CANCELLED"}));
-    const child=spawnImpl(binary,args,{cwd,windowsHide:true,shell:false,stdio:["ignore","pipe","pipe"]});
+    const child=spawnImpl(binary,args,{cwd,windowsHide:true,shell:false,detached:process.platform!=="win32",stdio:["ignore","pipe","pipe"]});
     let stdout="",stderr="",settled=false;
     const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener("abort",abort);error?reject(error):resolvePromise(value);};
-    const abort=()=>{child.kill("SIGTERM");finish(Object.assign(new Error("FlashVSR inference was cancelled."),{code:"JOB_CANCELLED"}));};
-    const timer=setTimeout(()=>{child.kill("SIGTERM");finish(Object.assign(new Error("FlashVSR inference exceeded its execution time budget."),{code:"FLASHVSR_TIMEOUT"}));},timeoutMs);
+    const terminate=()=>{try{if(process.platform!=="win32"&&child.pid)process.kill(-child.pid,"SIGTERM");else child.kill("SIGTERM");}catch{try{child.kill("SIGTERM");}catch{}}};
+    const abort=()=>{terminate();finish(Object.assign(new Error("FlashVSR inference was cancelled."),{code:"JOB_CANCELLED"}));};
+    const timer=setTimeout(()=>{terminate();finish(Object.assign(new Error("FlashVSR inference exceeded its execution time budget."),{code:"FLASHVSR_TIMEOUT"}));},timeoutMs);
     timer.unref?.();
     signal?.addEventListener("abort",abort,{once:true});
-    child.stdout?.on("data",chunk=>{stdout+=chunk.toString();if(stdout.length>maxCaptureBytes){child.kill("SIGTERM");finish(Object.assign(new Error("FlashVSR output exceeded the capture budget."),{code:"FLASHVSR_OUTPUT_LIMIT"}));}});
-    child.stderr?.on("data",chunk=>{stderr+=chunk.toString();if(stderr.length>maxCaptureBytes){child.kill("SIGTERM");finish(Object.assign(new Error("FlashVSR diagnostics exceeded the capture budget."),{code:"FLASHVSR_OUTPUT_LIMIT"}));}});
+    child.stdout?.on("data",chunk=>{stdout+=chunk.toString();if(stdout.length>maxCaptureBytes){terminate();finish(Object.assign(new Error("FlashVSR output exceeded the capture budget."),{code:"FLASHVSR_OUTPUT_LIMIT"}));}});
+    child.stderr?.on("data",chunk=>{stderr+=chunk.toString();if(stderr.length>maxCaptureBytes){terminate();finish(Object.assign(new Error("FlashVSR diagnostics exceeded the capture budget."),{code:"FLASHVSR_OUTPUT_LIMIT"}));}});
     child.once("error",error=>finish(Object.assign(new Error("FlashVSR Python runtime could not be started: "+error.message),{code:"FLASHVSR_RUNTIME_UNAVAILABLE"})));
     child.once("close",(code,signalName)=>code===0?finish(null,{stdout,stderr}):finish(Object.assign(new Error("FlashVSR process failed ("+(code??signalName)+"): "+stderr.slice(-1200)),{code:"FLASHVSR_INFERENCE_FAILED"})));
   });
