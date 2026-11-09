@@ -50,6 +50,12 @@ function safeApiOrigin(value) {
 }
 
 function errorResponse(error) {
+  if (isD1QuotaError(error)) {
+    return json({ error: {
+      code: "D1_QUOTA_EXCEEDED",
+      message: "The staging database daily quota has been reached. Access will resume after the UTC daily reset; stored data is unchanged."
+    } }, 503);
+  }
   const status = error?.status || (error?.code === "D1_PROJECT_NOT_FOUND" ? 404
     : error?.code === "D1_PROJECT_ACCESS_DENIED" ? 403
     : error?.code === "D1_PROJECT_REVISION_CONFLICT" ? 409
@@ -108,12 +114,14 @@ async function authenticate(request, env) {
 }
 
 async function requireSchema(db) {
-  try {
-    const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ev_users' LIMIT 1").bind().first();
-    return Boolean(row);
-  } catch {
-    return false;
-  }
+  const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ev_users' LIMIT 1").bind().first();
+  return Boolean(row);
+}
+
+function isD1QuotaError(error) {
+  const messages = [error?.message, error?.cause?.message, error?.cause?.cause?.message]
+    .filter(value => typeof value === "string");
+  return messages.some(message => /exceeded D1's free tier daily row (?:read|write) limit/i.test(message));
 }
 
 async function d1Api(request, env, url) {
