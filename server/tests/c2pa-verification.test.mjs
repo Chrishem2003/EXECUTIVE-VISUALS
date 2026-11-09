@@ -174,7 +174,9 @@ test("normalizes MIME parameters before supported-format verification", async ()
     const sdk = sdkFor(validStore);
     sdk.Reader.fromAsset = async (asset, context) => {
       receivedType = asset.mimeType;
-      return sdkFor(validStore).Reader.fromAsset(asset, context);
+      assert.ok(context instanceof sdk.Context);
+      assert.equal(context.settings.verify.verifyAfterReading, true);
+      return { isEmbedded: () => true, json: () => validStore };
     };
     const result = await createC2paVerifier({ sdkLoader: async () => sdk, maxBytes: 1024 })({
       filePath: f.filePath, mediaType: " VIDEO/MP4; codecs=avc1 ", expectedSha256: f.sha256
