@@ -9,7 +9,7 @@ No model code, checkpoints, Python packages, CUDA toolkit, or GPU capacity is do
 ## Upstream and license
 
 - Upstream: https://github.com/OpenImagingLab/FlashVSR
-- Code license: Apache-2.0
+- Code and v1.1 checkpoint repository declare Apache-2.0: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1
 - Model weights: use the upstream FlashVSR v1.1 checkpoint distribution and retain its accompanying model card/terms. The bridge does not redistribute weights.
 - Selected entry point: \`examples/WanVSR/infer_flashvsr_v1.1_tiny_long_video.py\`
 - The bridge imports upstream pipeline classes/functions at runtime; it does not copy or patch upstream implementation files.
