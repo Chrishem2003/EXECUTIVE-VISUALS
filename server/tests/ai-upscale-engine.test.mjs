@@ -84,6 +84,31 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.deepEqual(tuned.args.slice(-4), ["-j", "1:3:2", "-f", "png"]);
 });
 
+test("AI upscaler builds content-aware execution plans with explicit safe overrides", () => {
+  const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
+  const anime = adapter.planForContent({
+    contentType: "anime",
+    inputPath: "/tmp/source.png",
+    outputPath: "/tmp/anime.png"
+  });
+  assert.equal(anime.model, "realesrgan-x4plus-anime");
+  assert.equal(anime.scale, 4);
+  assert.equal(anime.contentType, "anime");
+  assert.match(anime.recommendationReason, /Anime/);
+  assert.equal(anime.args[anime.args.indexOf("-n") + 1], "realesrgan-x4plus-anime");
+  const overridden = adapter.planForContent({
+    contentType: "photograph",
+    inputPath: "/tmp/source.png",
+    outputPath: "/tmp/custom.png",
+    scale: 2,
+    model: "realesrnet-x4plus"
+  });
+  assert.equal(overridden.model, "realesrnet-x4plus");
+  assert.equal(overridden.scale, 2);
+  assert.throws(() => adapter.planForContent({ contentType: "medical_scan", inputPath: "/tmp/a.png", outputPath: "/tmp/b.png" }), error => error.code === "AI_UPSCALE_INVALID_CONTENT_TYPE");
+  assert.throws(() => adapter.planForContent({ contentType: "anime", inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", model: "untrusted-model" }), error => error.code === "AI_UPSCALE_INVALID_MODEL");
+});
+
 test("AI upscaler recommends an allowlisted model by explicitly selected content type", () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
   assert.deepEqual(adapter.recommendModel("photograph"), {
