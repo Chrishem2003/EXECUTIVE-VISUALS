@@ -191,3 +191,33 @@ This is a queue/approval bridge, not a claim of end-to-end workflow execution. T
 The local API can now link an active, locally owned project to the cloud workspace using the exact same UUID. The server verifies ownership in the local SQLite project store before forwarding the ID; callers cannot link a project they merely view or edit. The cloud repository validates the UUID, refuses IDs owned by another account or archived cloud projects, and makes repeated same-owner linking idempotent without overwriting cloud metadata. This gives later workflow-node bridge calls, cloud assets and timelines a stable project scope across the local and cloud services.
 
 This is identity alignment only. It does not yet synchronize local project settings/documents, memberships, asset bytes or workflow run records to cloud storage.
+
+
+## Model Router quote-bound enqueue correction (2026-11-09)
+
+The follow-up migration `20261109200000_model_router_budget_enqueue_owner_gate.sql`
+corrects a mismatch in the earlier approval path: the generic direct-provider
+enqueue RPC did not admit the `runway/model-router` identity. The workflow
+approval RPC now performs its own quote-bound transaction for that adapter:
+it locks the project quote and owner-scoped policy, checks the persisted dry-run
+estimate and approved ceiling, enforces rolling request and spend limits,
+creates one durable job and reservation, updates policy totals, consumes the
+approval and quote, and writes job/audit events. Exact retries return the
+original job and reservation.
+
+The approval trigger now permits this service-role-only RPC while preserving
+owner checks for direct authenticated approval inserts. Model Router is priced
+from its persisted non-billable quote rather than the generic direct-provider
+per-second floor. Both disposable PostgreSQL CI workflows apply this correction.
+
+**Current permission boundary:** cloud workflow quote and paid approval are
+project-owner-only. The API previously advertised editor access even though the
+quote ledger and budget policy are owner-scoped. The API now resolves the
+actual project owner and rejects editor quote/approval attempts before provider
+preflight or any database write. Editors can still prepare collaborative work;
+delegated spending requires a separate actor-versus-budget-owner schema and
+approval design. This is an explicit release gate, not a claimed capability.
+
+Provider execution remains disabled unless all independent server-side flags,
+credentials, worker readiness and project budget policy are explicitly enabled.
+No shared staging or production migration was applied.
