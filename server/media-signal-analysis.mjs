@@ -62,3 +62,50 @@ export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
   return {status:"unavailable",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)};
  }
 }
+
+
+export function parseTemporalLumaSamples(stderr=""){
+ const samples=[];
+ for(const block of String(stderr||"").split(/(?=frame:\s*\d+\s+pts:)/g)){
+  const frame=block.match(/frame:\s*(\d+)\s+pts:\s*(-?\d+)\s+pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const luma=block.match(/lavfi\.signalstats\.YAVG\s*=\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  if(!frame||!luma)continue;
+  const sample={frame:Number(frame[1]),pts:Number(frame[2]),timeSeconds:Number(frame[3]),meanLuma:Number(luma[1])};
+  if(Object.values(sample).every(Number.isFinite)&&sample.meanLuma>=0&&sample.meanLuma<=255)samples.push(sample);
+ }
+ return samples.sort((a,b)=>a.timeSeconds-b.timeSeconds||a.frame-b.frame);
+}
+
+export function buildTemporalLumaFindings({samples=[],sceneChanges=[],minJump=65,minAlternatingDelta=30,minAlternatingTransitions=3,sceneCutExclusionSeconds=0.75}={}){
+ const ordered=(Array.isArray(samples)?samples:[]).filter(sample=>sample&&Number.isFinite(sample.timeSeconds)&&Number.isFinite(sample.meanLuma)&&sample.meanLuma>=0&&sample.meanLuma<=255).sort((a,b)=>a.timeSeconds-b.timeSeconds);
+ const cuts=(Array.isArray(sceneChanges)?sceneChanges:[]).filter(Number.isFinite);
+ const deltas=[];
+ for(let i=1;i<ordered.length;i++){
+  const previous=ordered[i-1],current=ordered[i],elapsed=current.timeSeconds-previous.timeSeconds;
+  if(elapsed<=0||elapsed>2)continue;
+  const midpoint=(previous.timeSeconds+current.timeSeconds)/2;
+  if(cuts.some(cut=>Math.abs(cut-midpoint)<=sceneCutExclusionSeconds))continue;
+  deltas.push({index:i-1,startSeconds:previous.timeSeconds,endSeconds:current.timeSeconds,delta:current.meanLuma-previous.meanLuma});
+ }
+ const findings=[],covered=new Set();
+ for(let i=0;i<deltas.length;){
+  const first=deltas[i];
+  if(Math.abs(first.delta)<minAlternatingDelta){i++;continue;}
+  let j=i+1,lastSign=Math.sign(first.delta),transitions=1,maxDelta=Math.abs(first.delta);
+  while(j<deltas.length){
+   const current=deltas[j],previous=deltas[j-1];
+   if(current.index!==previous.index+1||Math.abs(current.delta)<minAlternatingDelta||Math.sign(current.delta)===lastSign)break;
+   transitions++;lastSign=Math.sign(current.delta);maxDelta=Math.max(maxDelta,Math.abs(current.delta));j++;
+  }
+  if(transitions>=minAlternatingTransitions){
+   for(let k=i;k<j;k++)covered.add(deltas[k].index);
+   findings.push({code:"ALTERNATING_LUMINANCE_INSTABILITY",severity:"warning",startSeconds:first.startSeconds,endSeconds:deltas[j-1].endSeconds,transitions,maxDelta,message:"Repeated alternating frame-average brightness changes were detected; inspect this interval for exposure pumping or visible flicker."});
+   i=j;
+  }else i++;
+ }
+ for(const item of deltas){
+  if(covered.has(item.index)||Math.abs(item.delta)<minJump)continue;
+  findings.push({code:"ABRUPT_LUMINANCE_CHANGE",severity:"warning",startSeconds:item.startSeconds,endSeconds:item.endSeconds,delta:item.delta,message:"A large frame-average brightness change was detected; confirm that it is an intentional lighting or exposure transition."});
+ }
+ return findings.sort((a,b)=>a.startSeconds-b.startSeconds);
+}

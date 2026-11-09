@@ -12,7 +12,7 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
-import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
+import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -400,7 +400,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
-    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review."]};
+    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],temporalLumaSamples:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Temporal luma samples are a 2 fps coarse exposure-stability signal, not a high-frequency flicker or perceptual-quality certification."]};
     if(streams.some(stream=>stream.codec_type==="video")){
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
@@ -408,6 +408,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(motion.status==="completed"){signalAnalysis.freezes=parseFreezeEvents(motion.result.stderr);signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.result.stderr);signalAnalysis.performed.push("freeze-detect","scene-change");}
       else signalAnalysis.unavailable.push({check:"freeze-and-scene-change",reason:motion.reason});
+      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      if(temporal.status==="completed"){signalAnalysis.temporalLumaSamples=parseTemporalLumaSamples(temporal.result.stderr);signalAnalysis.performed.push("temporal-luma-2fps");}
+      else signalAnalysis.unavailable.push({check:"temporal-luma",reason:temporal.reason});
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});

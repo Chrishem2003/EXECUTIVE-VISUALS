@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,parseTemporalLumaSamples,buildTemporalLumaFindings,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -53,4 +53,33 @@ test("parses freeze intervals and scene-change timestamps from FFmpeg diagnostic
 test("flags sustained freeze intervals for human review",()=>{
  const findings=buildMediaSignalFindings({freezes:[{startSeconds:2,endSeconds:5,durationSeconds:3}]});
  assert.ok(findings.some(item=>item.code==="FROZEN_VIDEO_INTERVAL"&&item.severity==="warning"));
+});
+
+
+test("parses frame-average luma samples from FFmpeg signalstats metadata",()=>{
+ const stderr="[Parsed_metadata_2] frame:0 pts:0 pts_time:0.000\\n[Parsed_metadata_2] lavfi.signalstats.YAVG=48.5\\n[Parsed_metadata_2] frame:1 pts:45000 pts_time:0.500\\n[Parsed_metadata_2] lavfi.signalstats.YAVG=52.0";
+ assert.deepEqual(parseTemporalLumaSamples(stderr),[
+  {frame:0,pts:0,timeSeconds:0,meanLuma:48.5},
+  {frame:1,pts:45000,timeSeconds:0.5,meanLuma:52}
+ ]);
+});
+
+test("flags repeated alternating brightness changes but not stable scenes",()=>{
+ const samples=[40,95,42,98,41].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}));
+ const findings=buildTemporalLumaFindings({samples});
+ assert.equal(findings.length,1);
+ assert.equal(findings[0].code,"ALTERNATING_LUMINANCE_INSTABILITY");
+ assert.equal(findings[0].transitions,4);
+ assert.equal(buildTemporalLumaFindings({samples:[40,43,41,44,42].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}))}).length,0);
+});
+
+test("excludes brightness jumps adjacent to detected scene cuts",()=>{
+ const samples=[40,45,140,145].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}));
+ assert.equal(buildTemporalLumaFindings({samples,sceneChanges:[0.75]}).length,0);
+});
+
+test("flags a single abrupt brightness change for human review",()=>{
+ const samples=[30,35,120,125].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}));
+ const findings=buildTemporalLumaFindings({samples});
+ assert.ok(findings.some(item=>item.code==="ABRUPT_LUMINANCE_CHANGE"));
 });

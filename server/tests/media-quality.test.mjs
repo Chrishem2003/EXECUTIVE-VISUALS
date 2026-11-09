@@ -77,3 +77,13 @@ test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
 import { captionStyle } from "../media.mjs";
 test("caption styles render readable background panels and configurable typography",()=>{const style=captionStyle({fontSize:38,primaryColor:"#F2E8D5",backgroundColor:"#101820",backgroundOpacity:0.7,backgroundMode:"box",outline:2,shadow:1,alignment:2,marginV:54});assert.match(style,/FontSize=38/);assert.match(style,/BorderStyle=3/);assert.match(style,/BackColour=&H4D201810/i);assert.match(style,/Alignment=2/);});
 test("caption panels can be disabled without losing text styling",()=>{const style=captionStyle({backgroundMode:"none",fontSize:30});assert.match(style,/BorderStyle=1/);assert.match(style,/FontSize=30/);});
+
+
+test("includes coarse temporal luminance instability in the media quality report",()=>{
+ const samples=[40,95,42,98,41].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}));
+ const report=buildMediaQualityReport({format:{duration:"2"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"30/1"}],signalAnalysis:{temporalLumaSamples:samples}});
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="ALTERNATING_LUMINANCE_INSTABILITY"));
+ assert.equal(report.signalAnalysis.temporalLumaSampleCount,5);
+ assert.ok(report.limitations.some(item=>item.includes("2 fps")));
+});

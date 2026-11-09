@@ -80,3 +80,8 @@ The NCNN/Vulkan adapter inspects PNG color types and WebP alpha flags before inf
 ## High-bit-depth input gate
 
 The NCNN/Vulkan CLI contract lists JPEG, PNG and WebP input but does not certify preservation of 16-bit PNG or 12-bit JPEG sample precision. The upstream Python inference path separately documents 16-bit support; that capability must not be assumed for this distinct executable. Until real high-bit-depth fixture round-trips are independently validated, the adapter rejects PNG and JPEG inputs with a bit depth above 8 before launching the GPU process. Source and output sample depth are recorded in derivative processing metadata when readable from image headers. This is a fail-closed compatibility guard, not a claim that high-bit-depth imagery is unsupported by every Real-ESRGAN implementation.
+
+
+## Coarse temporal exposure-stability check
+
+Video probing optionally samples frame-average luma at 2 fps using FFmpeg signalstats metadata. The media-quality report flags repeated alternating frame-average brightness changes and large isolated jumps for human inspection. Detected scene-change timestamps are used to suppress likely intentional edit transitions. This is a coarse exposure-instability heuristic: it is not a high-frequency flicker detector, does not measure local regions or color-channel stability, and cannot certify perceptual quality. If the FFmpeg filter is unavailable, the check is recorded as unavailable rather than passed.
