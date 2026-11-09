@@ -71,6 +71,16 @@ The evidence loader opens each referenced artifact as a regular non-symlink file
 
 Optional SSIM and LPIPS values must be normalized to the 0–1 range. Do not invent metric values when no suitable reference exists. A review artifact should document the source/output comparison and the checks performed.
 
+## Preparing a human visual-review package
+
+After a five-fixture execution benchmark succeeds, create an offline review folder with the exact source/output files whose SHA-256 digests appear in the report:
+
+```sh
+npm run review:upscale -- ./benchmark-output/upscale-benchmark-realesrgan-x4plus-REPORT.json ./benchmark-fixtures.json ./benchmark-output/run-RUN_ID ./upscale-review
+```
+
+The output folder must not already exist. The generator validates the report, five-category manifest, pinned model artifacts, source/output hashes, safe regular files and size limits before copying the images. It creates a standalone `review.html` with an interactive reveal slider, per-fixture decisions and notes, plus an exportable review-notes JSON and checksum manifest. Copied assets are re-hashed after copying. The package always reports `qualityVerified: false`; it cannot update the private evidence file or approve a model. An authorized reviewer must inspect all images, validate and hash the review artifact, then update the private evidence file through the established process.
+
 ## Model isolation
 
 Evidence is grouped and evaluated independently by model. A passing general-purpose model review does not approve the anime model, and vice versa. Each model needs its own complete five-category fixture set and review artifacts.
