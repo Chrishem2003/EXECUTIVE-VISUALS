@@ -17,7 +17,7 @@ test("cloud timeline revision listing returns authorized metadata without loadin
  assert.equal(revisions.length,2);
  assert.equal(revisions[0].revision,3);
  assert.equal("timeline" in revisions[0],false);
- assert.match(calls[1],/select=timeline_id%2Crevision%2Cname%2Ccreated_at/);
+ assert.match(calls[1],/select=timeline_id,revision,name,created_at/);
 });
 
 test("cloud timeline revision retrieval returns the immutable saved document",async()=>{
