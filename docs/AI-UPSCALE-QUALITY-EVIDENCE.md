@@ -77,3 +77,12 @@ The API exposes only each model's readiness state and a short reason. It does no
 The model remains unavailable when the file is missing, malformed, oversized, symlinked, incomplete, invalid, or contains an unreviewed/rejected record. Presets remain visible but disabled in the Asset Library with the relevant blocker. The authenticated job-creation API independently enforces the same per-model evidence gate, so direct API requests cannot bypass the disabled UI.
 
 This evidence file does not install model weights, enable `AI_UPSCALE_ENABLED`, run inference, or authorize remote AI spending. Production workers must remain disabled until the worker executable, model files, execution self-test, benchmark evidence, derivative storage, cancellation, provenance and capacity have all been independently verified.
+
+
+## GPU-memory recovery and tile provenance
+
+The local NCNN adapter starts with the requested tile setting. When the operator leaves tile size at automatic (`0`), the worker retries only recognized GPU-memory allocation failures with progressively smaller tiles: 256, 192, 128, 96, 64, then 32. It does not retry generic process failures. Explicit non-zero tile selections are never silently changed.
+
+Every retry removes any partial output from the failed attempt before starting the next one. If a run succeeds, the actual tile, requested tile, fallback flag and ordered tile attempts are attached to the derivative's processing metadata. If output validation fails, the invalid output is removed and no derivative is published.
+
+Smaller tiles reduce peak GPU memory use but may introduce tile-boundary inconsistencies; inspect large flat areas, fine textures and high-contrast edges during visual review. This recovery behavior is an execution reliability aid, not a quality improvement or a substitute for human approval.
