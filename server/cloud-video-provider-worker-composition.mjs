@@ -1,6 +1,7 @@
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
+import { createCloudCustomerCreditLedger } from "./cloud-customer-credit-ledger.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import {
   createFfprobeVideoOutputValidator,
@@ -73,6 +74,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const clientOptions = { url, serviceRoleKey, fetchImpl, timeoutMs };
   const queue = createCloudQueue(clientOptions);
   const ledger = createCloudVideoSubmissionLedger(clientOptions);
+  const customerCredits = createCloudCustomerCreditLedger(clientOptions);
   const privateAssets = createCloudAssetService({
     ...clientOptions,
     storageTimeoutMs: Math.min(timeoutMs, 30000),
@@ -219,6 +221,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
     queue,
     enqueue,
     ledger,
+    customerCredits,
     adapters,
     deferSeconds
   });
