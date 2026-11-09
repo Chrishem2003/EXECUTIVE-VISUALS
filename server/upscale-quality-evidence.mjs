@@ -6,7 +6,9 @@ const MAX_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/i;
 
 function reviewEvidenceValid(record) {
-  return record?.qualityReview === "reviewed_pass" &&
+  const metrics = record?.metrics && typeof record.metrics === "object" && !Array.isArray(record.metrics) ? record.metrics : {};
+  const normalizedMetricsValid = ["ssim", "lpips"].every(key => metrics[key] === undefined || (Number.isFinite(metrics[key]) && metrics[key] >= 0 && metrics[key] <= 1));
+  return normalizedMetricsValid && record?.qualityReview === "reviewed_pass" &&
     typeof record.reviewerId === "string" && record.reviewerId.trim().length >= 2 &&
     typeof record.reviewedAt === "string" && Number.isFinite(Date.parse(record.reviewedAt)) &&
     typeof record.reviewNotes === "string" && record.reviewNotes.trim().length >= 20 &&
