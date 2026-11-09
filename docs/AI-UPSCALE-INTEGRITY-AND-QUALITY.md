@@ -75,3 +75,8 @@ The worker calculates projected output width, height and pixel count from the va
 ## Alpha-channel integrity gate
 
 The NCNN/Vulkan adapter inspects PNG color types and WebP alpha flags before inference. Transparent inputs cannot be exported to JPEG because JPEG has no alpha channel; such requests fail before launching the GPU process and direct the operator to PNG or WebP. After inference, the worker verifies that an alpha-bearing source still has an alpha-bearing output. If transparency is lost, the derivative is deleted and publication is rejected. The processing result records source/output alpha detection and the preservation decision. This validates channel presence, not pixel-perfect alpha matte fidelity; visual fixture review remains required.
+
+
+## High-bit-depth input gate
+
+The NCNN/Vulkan CLI contract lists JPEG, PNG and WebP input but does not certify preservation of 16-bit PNG or 12-bit JPEG sample precision. The upstream Python inference path separately documents 16-bit support; that capability must not be assumed for this distinct executable. Until real high-bit-depth fixture round-trips are independently validated, the adapter rejects PNG and JPEG inputs with a bit depth above 8 before launching the GPU process. Source and output sample depth are recorded in derivative processing metadata when readable from image headers. This is a fail-closed compatibility guard, not a claim that high-bit-depth imagery is unsupported by every Real-ESRGAN implementation.
