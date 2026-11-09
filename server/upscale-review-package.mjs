@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
-import { copyFile, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
 import { summarizeUpscaleBenchmarks, validateUpscaleBenchmarkRecord } from "./upscale-benchmark.mjs";
@@ -92,12 +92,12 @@ export async function createUpscaleReviewPackage({ reportPath, manifestPath, run
     prepared.push({...record,sourcePath:source.path,outputPath,sourceExtension:source.extension,sourceBytes:sourceHash.bytes,outputBytes:outputHash.bytes});
   }
   if (await lstat(outRoot).then(()=>true).catch(e=>e.code==="ENOENT"?false:Promise.reject(e))) throw fail("Output directory already exists; existing files are never overwritten.");
-  await mkdir(outRoot,{recursive:false});
+  await mkdir(outRoot,{recursive:false,mode:0o700});
   try {
-    const assets=join(outRoot,"assets");await mkdir(assets);
+    const assets=join(outRoot,"assets");await mkdir(assets,{mode:0o700});
     for (const r of prepared) {
       const sourceDest=join(assets,r.fixtureId+"-source"+r.sourceExtension),outputDest=join(assets,r.fixtureId+"-enhanced.png");
-      await copyFile(r.sourcePath,sourceDest,constants.COPYFILE_EXCL);await copyFile(r.outputPath,outputDest,constants.COPYFILE_EXCL);
+      await copyFile(r.sourcePath,sourceDest,constants.COPYFILE_EXCL);await copyFile(r.outputPath,outputDest,constants.COPYFILE_EXCL);await chmod(sourceDest,0o600);await chmod(outputDest,0o600);
       const [sourceCopied,outputCopied]=await Promise.all([fingerprint(sourceDest),fingerprint(outputDest)]);
       if (sourceCopied.sha256!==r.inputSha256 || outputCopied.sha256!==r.outputSha256) throw fail("Copied review asset failed checksum verification for "+r.fixtureId+".");
     }
