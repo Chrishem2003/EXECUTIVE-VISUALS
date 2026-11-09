@@ -142,11 +142,26 @@ begin
     where s.provider=p_provider and s.provider_subscription_id=p_provider_subscription_id
     for update;
     if existing.id is not null then
-      if existing.owner_id<>p_owner_id or existing.plan_code<>p_plan_code
-         or existing.current_period_start<>p_period_start or existing.current_period_end<>p_period_end then
+      if existing.owner_id<>p_owner_id or existing.plan_code<>p_plan_code then
         raise exception 'BILLING_SUBSCRIPTION_IDEMPOTENCY_CONFLICT';
       end if;
-      return query select existing.id,true;
+      if p_period_start<existing.current_period_start then
+        raise exception 'BILLING_SUBSCRIPTION_PERIOD_STALE';
+      end if;
+      if p_period_start=existing.current_period_start then
+        if existing.current_period_end<>p_period_end then
+          raise exception 'BILLING_SUBSCRIPTION_IDEMPOTENCY_CONFLICT';
+        end if;
+        return query select existing.id,true;
+        return;
+      end if;
+      update executive_visuals.billing_subscriptions
+      set current_period_start=p_period_start,current_period_end=p_period_end,
+          status=p_status,cancel_at_period_end=false,grace_until=null,
+          provider_customer_id=coalesce(p_provider_customer_id,provider_customer_id),
+          metadata=p_metadata,updated_at=clock_timestamp()
+      where id=existing.id;
+      return query select existing.id,false;
       return;
     end if;
   end if;
