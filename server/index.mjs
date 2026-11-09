@@ -85,7 +85,8 @@ const SECURITY_HEADERS = {
   "cross-origin-resource-policy":"same-origin",
   "permissions-policy":"camera=(), microphone=(), geolocation=()"
 };
-const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const CLOUD_MEDIA_ORIGIN = (()=>{try{const value=new URL(process.env.SUPABASE_URL||"");return value.protocol==="https:"&&!value.username&&!value.password?value.origin:"";}catch{return "";}})();
+const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: "+CLOUD_MEDIA_ORIGIN+"; media-src 'self' blob: "+CLOUD_MEDIA_ORIGIN+"; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readJson = async (req,limit=1024*1024) => {
