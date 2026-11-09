@@ -38,6 +38,8 @@ Successful and failed jobs expose the requested tile, attempted tiles, effective
 
 ## Output and quality gates
 
+Automatic tile fallback is treated as a quality-review trigger, not as proof of a bad image: successful results include `tileFallbackReason`, `qualityReviewRequired`, and `qualityReviewReasons`. When the worker had to reduce an automatic tile size because of GPU-memory pressure, downstream review should inspect tile boundaries and fine detail before approval. Explicit operator tile choices are never silently changed.
+
 Every accepted derivative includes streaming SHA-256 digests for both the original source (`sourceSha256`) and generated output (`outputSha256`). The source digest is recomputed after inference and compared before accepting the derivative; a changed source causes rejection and cleanup. Store these digests with the asset lineage record and use them for integrity verification, not as a substitute for perceptual quality review.
 
 The adapter validates image structure, dimensions, output byte/pixel budgets, alpha preservation, source identity, and output scale before accepting a derivative. Failed outputs are removed.
