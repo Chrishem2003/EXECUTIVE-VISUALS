@@ -65,6 +65,18 @@ export function ensureBillingSchema(db) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS billing_ledger_user_idx ON billing_credit_ledger(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS billing_credit_settlements (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES billing_accounts(user_id) ON DELETE CASCADE,
+      spend_ledger_id TEXT NOT NULL UNIQUE REFERENCES billing_credit_ledger(id),
+      settlement_key TEXT NOT NULL UNIQUE,
+      estimated_credits INTEGER NOT NULL CHECK(estimated_credits > 0),
+      actual_credits INTEGER NOT NULL CHECK(actual_credits >= 0),
+      adjustment_ledger_id TEXT REFERENCES billing_credit_ledger(id),
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS billing_settlements_user_created_idx ON billing_credit_settlements(user_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS billing_daily_refills (
       user_id TEXT NOT NULL REFERENCES billing_accounts(user_id) ON DELETE CASCADE,
       refill_day TEXT NOT NULL,
