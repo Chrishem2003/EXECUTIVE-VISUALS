@@ -29,7 +29,7 @@ function parseProbe(stdout){
   return {raw:value,video,audio,frames,fps,width,height,duration:finite(video.duration)||finite(value.format?.duration),startTime:finite(video.start_time)||0};
 }
 function parseFrameTimes(stdout){
-  const times=String(stdout||"").split(/\\r?\\n/).map(line=>line.trim()).filter(Boolean).map(finite).filter(value=>value!==null);
+  const times=String(stdout||"").split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(finite).filter(value=>value!==null);
   return times;
 }
 function assertConstantFrameRate(times,fps,frameCount){
