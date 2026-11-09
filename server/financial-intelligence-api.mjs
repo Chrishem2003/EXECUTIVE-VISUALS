@@ -397,6 +397,21 @@ export function createFinancialIntelligenceApi({
         const result=await dbRequest("payment_refunds?select=id,payment_transaction_id,amount_minor,currency,status,reason,requested_at,completed_at&owner_id=eq."+encodeURIComponent(ownerId)+"&order=requested_at.desc&limit="+limit+"&offset="+offset);
         return response(200,{refunds:Array.isArray(result.data)?result.data:[],limit,offset});
       }
+      if(path==="/api/admin/billing/provider-readiness"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
+        return response(200,{
+          provider:"flutterwave",
+          currentIntegrationApiVersion:"v4",
+          recurringPaymentPlansApiVersion:"v3",
+          recurringSubscriptionsAvailable:false,
+          reason:"Flutterwave documents that a merchant can use only one API version at a time. The current integration uses v4; payment plans are documented on v3.",
+          migrationRequired:"Do not call v3 payment-plan endpoints from this v4 integration. Select and migrate the complete merchant integration to one API version before enabling recurring subscriptions.",
+          cardOnlyRecurring:true,
+          oneTimeMobileMoneySeparate:true,
+          liveRecurringChargesEnabled:false,
+          credentialsExposed:false
+        });
+      }
       if(path==="/api/admin/subscriptions/reconciliation"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
         const limit=Math.max(1,Math.min(100,Number(query.limit)||25));
