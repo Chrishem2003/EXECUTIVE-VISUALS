@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
@@ -57,10 +58,24 @@ const EXTENSIONS = {
   "audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg",
   "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
-const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
+const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.ai-video-upscale","timeline.render"]);
+function getVideoUpscaleWorkerLimits(){
+  const limits={
+    maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||300),
+    maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
+    maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),
+    maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
+  };
+  const valid=Number.isInteger(limits.maxFrames)&&limits.maxFrames>=1&&limits.maxFrames<=18000&&
+    Number.isFinite(limits.maxDurationSeconds)&&limits.maxDurationSeconds>0&&limits.maxDurationSeconds<=3600&&
+    Number.isSafeInteger(limits.maxOutputPixels)&&limits.maxOutputPixels>=1&&limits.maxOutputPixels<=100000000&&
+    Number.isSafeInteger(limits.maxTempBytes)&&limits.maxTempBytes>=64*1024*1024&&limits.maxTempBytes<=32*1024*1024*1024;
+  return {limits,valid};
+}
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
+const flashVsrAdapter = createFlashVsrAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
@@ -291,8 +306,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":path==="/api/jobs/video-batch"&&req.method==="POST"?"/video-upscale-batch":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/video-upscale-batch"?3:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -368,6 +383,26 @@ export function createAppServer() {
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
+      }
+      if(path==="/api/ai-video-upscale/readiness"&&req.method==="GET"){
+        const engine=String(url.searchParams.get("engine")||"realesrgan-framewise");
+        const enabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
+        const ffmpegAvailable=executableAvailable("ffmpeg"),ffprobeAvailable=executableAvailable("ffprobe");
+        const {limits,valid:limitsValid}=getVideoUpscaleWorkerLimits();
+        if(engine==="flashvsr-v1.1-tiny-long"){
+          const modelStatus=await flashVsrAdapter.probe();
+          const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
+          send(res,200,{enabled,engine,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&limitsValid&&modelReady,ffmpegAvailable,ffprobeAvailable,model:"FlashVSR-v1.1-tiny-long",modelReady,modelStatus,limits:{...limits,scales:[4]},limitsValid,temporalConsistency:"temporal-model-used-not-certified"},cors);return;
+        }
+        if(engine!=="realesrgan-framewise"){fail(res,400,"VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED","Choose a supported video enhancement engine.");return;}
+        const model=String(url.searchParams.get("model")||"realesrgan-x4plus");
+        let modelStatus={available:false,executionEnabled:false,executionVerified:false,reason:"Model readiness could not be determined."};
+        try{
+          const result=await aiUpscaleAdapter.probe(model);
+          modelStatus={available:result.available===true,executionEnabled:result.executionEnabled===true,executionVerified:result.executionVerified===true,reason:result.reason||null};
+        }catch(error){modelStatus={...modelStatus,reason:error instanceof Error?error.message:"Model readiness check failed."};}
+        const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
+        send(res,200,{enabled,engine,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady&&limitsValid,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{...limits,scales:[2,4]},limitsValid,temporalConsistency:"not-certified"},cors);return;
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
@@ -767,9 +802,151 @@ export function createAppServer() {
           send(res,200,{ok:true,revision:workflow.revision+1,graphHash},cors);return;
         }
       }
+      if(path==="/api/jobs/batch"&&req.method==="POST"){
+        const body=await readJson(req);
+        const items=body.items;
+        if(!Array.isArray(items)||items.length<1||items.length>100){
+          fail(res,400,"INVALID_BATCH","Batch must contain between 1 and 100 image assets.");return;
+        }
+        let projectId=body.projectId||null;
+        if(projectId&&!canWriteProject(db,user.id,projectId)){
+          fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;
+        }
+        const normalized=[];
+        const seenAssets=new Set();
+        for(const [index,item] of items.entries()){
+          if(!item||typeof item!=="object"||Array.isArray(item)){
+            fail(res,400,"INVALID_BATCH_ITEM","Every batch item must be an object.");return;
+          }
+          const sourceAssetId=String(item.sourceAssetId||"");
+          if(!sourceAssetId||seenAssets.has(sourceAssetId)){
+            fail(res,400,"INVALID_BATCH_ITEM","Each batch item needs a unique sourceAssetId.");return;
+          }
+          seenAssets.add(sourceAssetId);
+          const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
+          if(!source||!String(source.media_type||"").startsWith("image/")){
+            fail(res,404,"SOURCE_ASSET_NOT_FOUND","Every source must be an accessible image.");return;
+          }
+          const sourceProjectId=source.project_id||null;
+          if(index===0&&!body.projectId)projectId=sourceProjectId;
+          if(sourceProjectId!==projectId){
+            fail(res,400,"PROJECT_MISMATCH","All batch images must belong to the same selected project or private workspace.");return;
+          }
+          const model=String(item.model||body.model||"realesrgan-x4plus");
+          try{
+            aiUpscaleAdapter.plan({
+              inputPath:"/tmp/executive-visuals-batch-input",
+              outputPath:"/tmp/executive-visuals-batch-output",
+              model,scale:item.scale??body.scale??4,tile:item.tile??body.tile??0,
+              format:item.format||body.format||"png"
+            });
+          }catch(error){
+            fail(res,400,error.code||"INVALID_MEDIA_OPTIONS",error.message);return;
+          }
+          normalized.push({
+            sourceAssetId,model,scale:item.scale??body.scale??4,tile:item.tile??body.tile??0,
+            format:item.format||body.format||"png",index
+          });
+        }
+        const evidence=await loadUpscaleQualityEvidence();
+        const models=[...new Set(normalized.map(item=>item.model))];
+        for(const model of models){
+          if(evidence.models[model]?.qualityVerified!==true){
+            fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","Every selected model must pass its model-specific five-category human-reviewed benchmark before batch submission.");return;
+          }
+          const readiness=await aiUpscaleAdapter.probe(model);
+          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){
+            fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","Every selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;
+          }
+        }
+        const batchId=randomUUID();
+        const jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          for(const item of normalized){
+            const id=randomUUID();
+            const input={sourceAssetId:item.sourceAssetId,model:item.model,scale:item.scale,tile:item.tile,format:item.format,batchId,batchIndex:item.index,batchTotal:normalized.length};
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json) VALUES(?,?,?,'media.ai-upscale','queued',?)")
+              .run(id,user.id,projectId,json(input));
+            addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-upscale",batchId,batchIndex:item.index,batchTotal:normalized.length});
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+          }
+          audit(db,user.id,"upscale.batch_queued","batch",batchId,{total:jobs.length,models},projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          try{db.exec("ROLLBACK");}catch{}
+          throw error;
+        }
+        send(res,202,{batchId,status:"queued",total:jobs.length,jobs},cors);return;
+      }
       if(path==="/api/jobs"&&req.method==="GET"){
         const rows=db.prepare("SELECT * FROM jobs WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
+      }
+      if(path==="/api/jobs/video-batch"&&req.method==="POST"){
+        const body=await readJson(req,256*1024);
+        const projectId=String(body.projectId||"");
+        const items=Array.isArray(body.items)?body.items:[];
+        if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+        if(!getVideoUpscaleWorkerLimits().valid){fail(res,409,"VIDEO_AI_UPSCALE_LIMITS_INVALID","Video AI worker limits are invalid; correct the frame, duration, pixel or temporary-storage configuration.");return;}
+        if(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")){fail(res,409,"MEDIA_ENGINE_MISSING","FFmpeg and FFprobe must both be available on the worker.");return;}
+        if(!projectId||!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Choose a project you own or can edit.");return;}
+        if(items.length<1||items.length>10){fail(res,400,"VIDEO_BATCH_LIMIT","A video batch must contain between 1 and 10 source videos.");return;}
+        const ids=items.map(item=>String(item?.sourceAssetId||""));
+        if(ids.some(id=>!id)||new Set(ids).size!==ids.length){fail(res,400,"VIDEO_BATCH_INVALID","Every batch item must have a unique sourceAssetId.");return;}
+        const readinessByModel=new Map(),normalized=[];
+        for(const item of items){
+          const sourceAssetId=String(item.sourceAssetId);
+          const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
+          if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))||source.project_id!==projectId){fail(res,400,"VIDEO_BATCH_SOURCE_INVALID","Every source must be an accessible MP4/MOV asset in the selected project.");return;}
+          if(item.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm source-media rights for every video in the batch.");return;}
+          const engine=String(item.engine||"realesrgan-framewise"),model=engine==="flashvsr-v1.1-tiny-long"?"FlashVSR-v1.1-tiny-long":String(item.model||"realesrgan-x4plus"),scale=Number(item.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2)),tile=Number(item.tile??0),threads=String(item.threads??"1:2:2");
+          if(!["realesrgan-framewise","flashvsr-v1.1-tiny-long"].includes(engine)||engine==="flashvsr-v1.1-tiny-long"&&scale!==4||engine!=="flashvsr-v1.1-tiny-long"&&![2,4].includes(scale)||!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)||! /^[1-4]:[1-4]:[1-4]$/.test(threads)||(item.tta!==undefined&&typeof item.tta!=="boolean")){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Each video item must use a supported engine and scale, tile size, thread plan and boolean TTA setting.");return;}
+          const readinessKey=engine+":"+model;
+          if(!readinessByModel.has(readinessKey)){
+            if(engine==="flashvsr-v1.1-tiny-long"){
+              const readiness=await flashVsrAdapter.probe();
+              readinessByModel.set(readinessKey,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+            }else{
+              const readiness=await aiUpscaleAdapter.probe(model);
+              readinessByModel.set(readinessKey,Boolean(readiness.available&&readiness.executionEnabled&&readiness.executionVerified));
+            }
+          }
+          if(!readinessByModel.get(readinessKey)){fail(res,409,engine==="flashvsr-v1.1-tiny-long"?"FLASHVSR_NOT_READY":"AI_UPSCALE_MODEL_NOT_READY","Every selected engine must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+          normalized.push({sourceAssetId,engine,model,scale,tile,threads,tta:item.tta===true,rightsConfirmed:true});
+        }
+        const baseKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,160);
+        const batchId=randomUUID();
+        const inputs=normalized.map((item,index)=>({...item,batchId,batchIndex:index,batchTotal:normalized.length}));
+        if(baseKey){
+          const existing=inputs.map((input,index)=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,baseKey+":"+index));
+          if(existing.some(Boolean)){
+            const priorBatchId=existing[0]?String(parseJson(existing[0].input_json).batchId||""):"";
+            const replay=Boolean(priorBatchId)&&existing.every((job,index)=>{
+              if(!job||job.job_type!=="media.ai-video-upscale"||job.project_id!==projectId)return false;
+              const prior=parseJson(job.input_json),current=inputs[index];
+              const {batchId:priorId,batchIndex:priorIndex,batchTotal:priorTotal,...priorItem}=prior;
+              const {batchId:currentId,batchIndex:currentIndex,batchTotal:currentTotal,...currentItem}=current;
+              return priorId===priorBatchId&&priorIndex===index&&priorTotal===inputs.length&&stableJson(priorItem)===stableJson(currentItem);
+            });
+            if(!replay){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different video batch.");return;}
+            send(res,200,{batchId:priorBatchId,jobs:existing.map(recordJob),idempotentReplay:true},cors);return;
+          }
+        }
+        const jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          for(let index=0;index<inputs.length;index++){
+            const id=randomUUID(),input=inputs[index],key=baseKey?baseKey+":"+index:null;
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,'media.ai-video-upscale','queued',?,?)")
+              .run(id,user.id,projectId,stableJson(input),key);
+            addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-video-upscale",batchId,batchIndex:index,batchTotal:inputs.length});
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+          }
+          audit(db,user.id,"video_upscale.batch_queued","batch",batchId,{total:jobs.length,models:[...readinessByModel.keys()]},projectId);
+          db.exec("COMMIT");
+        }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
+        send(res,202,{batchId,jobs},cors);return;
       }
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
@@ -780,6 +957,33 @@ export function createAppServer() {
           if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+        }
+        if(type==="media.ai-upscale"&&body.referenceAssetId){
+          const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
+          const reference=getAccessibleAsset(db,user.id,String(body.referenceAssetId),true);
+          if(!source||!reference||!String(reference.media_type||"").startsWith("image/")||reference.id===source.id||reference.project_id!==source.project_id){fail(res,400,"AI_UPSCALE_LPIPS_REFERENCE_INVALID","A paired reference must be a distinct accessible image asset in the same project as the source.");return;}
+        }
+        if(type==="media.ai-video-upscale"){
+          if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+          if(!getVideoUpscaleWorkerLimits().valid){fail(res,409,"VIDEO_AI_UPSCALE_LIMITS_INVALID","Video AI worker limits are invalid; correct the frame, duration, pixel or temporary-storage configuration.");return;}
+          const engine=String(body.engine||"realesrgan-framewise");
+          const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2));
+          if(!["realesrgan-framewise","flashvsr-v1.1-tiny-long"].includes(engine)){fail(res,400,"VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED","Choose a supported video enhancement engine.");return;}
+          if(engine==="flashvsr-v1.1-tiny-long"&&scale!==4||engine!=="flashvsr-v1.1-tiny-long"&&![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","FlashVSR requires 4x; framewise video enhancement supports 2x or 4x.");return;}
+          const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
+          if(!source||!["video/mp4","video/quicktime"].includes(String(source.media_type||""))){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible MP4 or QuickTime video asset for provenance-preserving AI upscaling.");return;}
+          if(source.project_id&&source.project_id!==String(body.projectId||"")){fail(res,400,"PROJECT_MISMATCH","The source video must belong to the selected project.");return;}
+          if(body.rightsConfirmed!==true){fail(res,400,"MEDIA_RIGHTS_ATTESTATION_REQUIRED","Confirm that you own or are authorized to process this source video.");return;}
+          const tile=Number(body.tile??0),threads=String(body.threads??"1:2:2");
+          if(!Number.isInteger(tile)||tile<0||tile>512||(tile>0&&tile<32)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Tile size must be automatic (0) or an integer from 32 to 512.");return;}
+          if(!/^[1-4]:[1-4]:[1-4]$/.test(threads)||body.tta!==undefined&&typeof body.tta!=="boolean"){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Thread settings must use load:process:save values from 1 to 4 and TTA must be boolean.");return;}
+          if(engine==="flashvsr-v1.1-tiny-long"){
+            const readiness=await flashVsrAdapter.probe();
+            if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"FLASHVSR_NOT_READY",readiness.reason||"FlashVSR requires installed v1.1 weights, a compatible local CUDA runtime, explicit enablement and a successful model self-test.");return;}
+          }else{
+            const readiness=await aiUpscaleAdapter.probe(model);
+            if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected image model must have installed weights, explicit worker enablement and a successful execution self-test before video-frame inference.");return;}
+          }
         }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){

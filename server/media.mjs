@@ -9,12 +9,16 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createUpscaleVisualQualityAssessor } from "./upscale-visual-quality.mjs";
+import { createLpipsPerceptualAssessor } from "./lpips-perceptual-assessor.mjs";
+import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.ai-video-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -346,7 +350,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter, qualityAssessorFactory=createUpscaleVisualQualityAssessor }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
@@ -365,6 +369,45 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const cancelled = () => db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status === "cancelled";
   const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
+  if (job.job_type === "media.ai-video-upscale") {
+    if (!["video/mp4","video/quicktime"].includes(source.media_type)) throw Object.assign(new Error("Video AI super-resolution requires an MP4 or QuickTime/MOV source asset."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+    const outputPath=join(outputDir,id+".mp4");
+    const controller=new AbortController();
+    const poll=setInterval(()=>{if(cancelled())controller.abort();},500);
+    poll.unref?.();
+    try{
+      const engine=String(input.engine||"realesrgan-framewise");
+      const flashVsrAdapter=engine==="flashvsr-v1.1-tiny-long"?createFlashVsrAdapter():null;
+      const processor=createVideoAiUpscaleProcessor({
+        temporalUpscalerFactory:flashVsrAdapter?()=>flashVsrAdapter:null,
+        runCommand:(binary,args,options={})=>run(binary,args,options.timeoutMs||30*60*1000,job.id,activeProcesses,()=>controller.signal.aborted,options.maxCaptureBytes||16000),
+        upscalerFactory:aiUpscalerFactory,
+        maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||300),
+        maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
+        maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),
+        maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
+      });
+      const result=await processor.process({
+        sourcePath,outputPath,engine,model:engine==="flashvsr-v1.1-tiny-long"?"FlashVSR-v1.1-tiny-long":(input.model||"realesrgan-x4plus"),
+        scale:input.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2),tile:input.tile??0,threads:input.threads||"1:2:2",tta:input.tta===true,gpu:"auto",expectedSourceSha256:source.sha256,signal:controller.signal,onProgress
+      });
+      if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+      let c2paPreservation;
+      try{
+        c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:"video/mp4",expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});
+      }catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+      const fileStat=await stat(outputPath);
+      const hash=createHash("sha256");
+      await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
+      const baseName=source.original_name.replace(/\.[^.]+$/,"")||source.original_name;
+      const processing={engine:result.engine==="flashvsr-v1.1-tiny-long"?"flashvsr-v1.1-tiny-long":"realesrgan-ncnn-vulkan",method:result.temporalModel?"temporal-video-super-resolution":"framewise-ai-super-resolution",model:result.model,temporalModel:result.temporalModel===true,temporalModelLicense:result.temporalModelLicense||null,scale:result.scale,tile:result.tile,threads:result.threads,tta:result.tta,tileFallbackCount:result.tileFallbackCount,tileFallbackFrames:result.tileFallbackFrames,frameCount:result.frameCount,frameRate:result.frameRate,inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,audioStreams:result.audioStreams,audioHandling:result.audioHandling,subtitleStreams:result.subtitleStreams,subtitleHandling:result.subtitleHandling,frameProcessing:result.frameProcessing,temporalQuality:result.temporalQuality,temporalConsistency:result.temporalConsistency,qualityReviewRequired:true,qualityReviewReasons:[...result.qualityReviewReasons,...(result.tileFallbackCount>0?["gpu-memory-tile-fallback"]:[]),...(result.temporalQuality?.status==="unavailable"?["temporal-qa-unavailable"]:[]),...(result.temporalQuality?.findings?.length?["temporal-instability-detected"]:[])],humanReviewRequired:true};
+      const outputAsset=addAsset(db,job,"derived/"+id+".mp4",baseName+"-ai-upscaled.mp4","video/mp4",fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
+      emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
+      onProgress(100);
+      return {outputAsset,processing,c2paPreservation};
+    }catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+    finally{clearInterval(poll);}
+  }
   if (job.job_type === "media.ai-upscale") {
     if (!source.media_type.startsWith("image/")) throw Object.assign(new Error("AI super-resolution currently accepts still images only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
     const format = String(input.format || "png");
@@ -383,12 +426,45 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       let c2paPreservation;
       try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
       catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+      let qualityAssessment;
+      let referenceAsset=null,referencePath=null;
+      try {
+        if(input.referenceAssetId){
+          const candidateReference=getAccessibleAsset(db,job.owner_id,String(input.referenceAssetId),true);
+          if(!candidateReference||!candidateReference.media_type.startsWith("image/")||candidateReference.project_id!==source.project_id||candidateReference.id===source.id)throw Object.assign(new Error("LPIPS reference must be a distinct accessible image in the same project as the source."),{code:"AI_UPSCALE_LPIPS_REFERENCE_INVALID"});
+          referenceAsset=candidateReference;referencePath=join(mediaRoot,referenceAsset.storage_path);
+        }
+        const lpipsEnabled=process.env.AI_UPSCALE_LPIPS_ENABLED==="true"&&Boolean(referencePath);
+        const lpipsAssessor=lpipsEnabled?createLpipsPerceptualAssessor({
+          network:process.env.AI_UPSCALE_LPIPS_NETWORK||"alex",
+          device:process.env.AI_UPSCALE_LPIPS_DEVICE||"auto",
+          maxPixels:Number(process.env.AI_UPSCALE_LPIPS_MAX_PIXELS||8294400),
+          threads:Number(process.env.AI_UPSCALE_LPIPS_THREADS||1)
+        }):null;
+        const assessor = qualityAssessorFactory({
+          ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
+          ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
+          maxPixels: Number(process.env.AI_UPSCALE_QUALITY_MAX_PIXELS || 40000000),
+          ...(lpipsAssessor?{lpipsAssessor}:{})
+        });
+        qualityAssessment = await assessor.assess({
+          candidatePath: outputPath,referencePath,
+          tileSize: result.tile > 0 ? result.tile : 256,
+          signal: controller.signal
+        });
+      } catch (error) {
+        qualityAssessment = {
+          status: "assessment_unavailable",
+          method: "ffmpeg-pixel-analysis",
+          code: error?.code || "AI_UPSCALE_QUALITY_FAILED"
+        };
+      }
       const fileStat = await stat(outputPath);
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,...(referenceAsset?{referenceAssetId:referenceAsset.id}:{}),qualityAssessment,qualityReviewRequired:true,qualityReviewReasons:[...(result.qualityReviewReasons||[]),...(qualityAssessment.status==="needs_review"?["tile-seam-anomaly-detected"]:[]),...(qualityAssessment.status==="assessment_unavailable"?["automated-quality-assessment-unavailable"]:[]),...(qualityAssessment.perceptualAssessment?.status==="unavailable"?["lpips-assessment-unavailable"]:[]),"human-review-required"],...(result.tileFallbackUsed?{tileFallbackUsed:true,requestedTile:result.requestedTile,tileAttempts:result.tileAttempts}:{}),...(result.inputDimensions?{inputDimensions:result.inputDimensions}:{}),...(result.outputDimensions?{outputDimensions:result.outputDimensions}:{}),...(typeof result.sourceHasAlpha==="boolean"?{sourceHasAlpha:result.sourceHasAlpha}:{}),...(typeof result.outputHasAlpha==="boolean"?{outputHasAlpha:result.outputHasAlpha}:{}),...(typeof result.alphaPreserved==="boolean"?{alphaPreserved:result.alphaPreserved}:{}),...(Number.isInteger(result.sourceBitDepth)?{sourceBitDepth:result.sourceBitDepth}:{}),...(Number.isInteger(result.outputBitDepth)?{outputBitDepth:result.outputBitDepth}:{})};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
@@ -400,7 +476,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
-    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],temporalLumaSamples:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Temporal luma samples are a 2 fps coarse exposure-stability signal, not a high-frequency flicker or perceptual-quality certification."]};
+    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],temporalLumaSamples:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Temporal luma and chroma samples are 8 fps global frame-average signals, not motion-compensated or local-region temporal-quality certification."]};
     if(streams.some(stream=>stream.codec_type==="video")){
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
@@ -408,8 +484,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(motion.status==="completed"){signalAnalysis.freezes=parseFreezeEvents(motion.result.stderr);signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.result.stderr);signalAnalysis.performed.push("freeze-detect","scene-change");}
       else signalAnalysis.unavailable.push({check:"freeze-and-scene-change",reason:motion.reason});
-      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
-      if(temporal.status==="completed"){signalAnalysis.temporalLumaSamples=parseTemporalLumaSamples(temporal.result.stderr);signalAnalysis.performed.push("temporal-luma-2fps");}
+      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=8,signalstats,metadata=mode=print","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,8_000_000),{isCancelled:cancelled});
+      if(temporal.status==="completed"){signalAnalysis.temporalLumaSamples=parseTemporalLumaSamples(temporal.result.stderr);signalAnalysis.performed.push("temporal-signalstats-8fps");}
       else signalAnalysis.unavailable.push({check:"temporal-luma",reason:temporal.reason});
     }
     if(streams.some(stream=>stream.codec_type==="audio")){

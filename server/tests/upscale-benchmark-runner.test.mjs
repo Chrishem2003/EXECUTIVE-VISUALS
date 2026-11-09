@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runUpscaleBenchmark, validateUpscaleFixtureManifest } from "../upscale-benchmark-runner.mjs";
+import { runUpscaleBenchmark, validateUpscaleFixtureManifest, SUPPORTED_UPSCALE_BENCHMARK_MODELS } from "../upscale-benchmark-runner.mjs";
 
 const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
 function manifest() {
@@ -51,6 +51,15 @@ async function setup(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   return { root, manifestPath, output, outputDirectory: output, binaryPath: join(root, "realesrgan-ncnn-vulkan"), modelDirectory: models };
 }
+
+test("benchmark registry covers every supported inference model", () => {
+  assert.deepEqual(SUPPORTED_UPSCALE_BENCHMARK_MODELS, [
+    "realesrgan-x4plus",
+    "realesrgan-x4plus-anime",
+    "realesr-animevideov3",
+    "realesrnet-x4plus"
+  ]);
+});
 
 test("requires exactly one fixture from every required visual category", () => {
   const valid = manifest();
