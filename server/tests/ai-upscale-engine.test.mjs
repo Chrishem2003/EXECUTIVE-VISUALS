@@ -711,7 +711,7 @@ const compressed=zlib.deflateSync(Buffer.alloc(18)),splitAt=compressed.length-2;
 fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",compressed.subarray(0,splitAt)),chunk("IDAT",compressed.subarray(splitAt)),chunk("IEND",Buffer.alloc(0))]));
 `;
   await writeFile(engineScript, generator);
-  const launcher = "#!/bin/sh\\nexec node " + JSON.stringify(engineScript) + " \\"$@\\"\\n";
+  const launcher = "#!/bin/sh\nexec node " + JSON.stringify(engineScript) + " \"$@\"\n";
   await writeFile(binary, launcher); await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
   try {
