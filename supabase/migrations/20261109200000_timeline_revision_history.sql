@@ -60,3 +60,7 @@ select id, owner_id, project_id, revision, name, timeline, otio, coalesce(update
 from executive_visuals.timelines
 where archived_at is null
 on conflict (timeline_id, revision) do nothing;
+
+revoke all on table executive_visuals.timeline_revisions from public, anon;
+grant select on table executive_visuals.timeline_revisions to authenticated, service_role;
+revoke insert, update, delete on table executive_visuals.timeline_revisions from authenticated;
