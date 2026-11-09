@@ -584,3 +584,23 @@ button:disabled{opacity:.55;cursor:not-allowed}
   font-size:10px;
   line-height:1.6;
 }
+
+
+/* Keep unavailable AI-upscale actions visible, legible and explicitly non-interactive. */
+.ai-upscale-presets button:disabled{
+  cursor:not-allowed;
+  opacity:.48;
+  border-color:#3c3948;
+  color:#aaa3b7;
+  background:#191b24;
+  box-shadow:none;
+  transform:none;
+}
+.ai-upscale-controls>small+small{
+  display:block;
+  margin-top:2px;
+}
+.ai-upscale-controls>small:last-child{
+  padding-top:8px;
+  border-top:1px solid #343047;
+}
