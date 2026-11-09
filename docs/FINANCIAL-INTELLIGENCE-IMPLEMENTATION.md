@@ -171,3 +171,28 @@ Added on `feat/financial-intelligence-api-integration`:
 - Confirm the deployed Supabase project uses the `executive_visuals` schema and the same Auth user IDs as the app.
 - The admin summary is an API response, not yet the finished visual dashboard. Customer invoice PDF generation, dispute evidence upload and notification delivery remain subsequent batches.
 - No migration has been applied and no live provider request has been made.
+
+
+## Batch 2 — Uganda UGX mobile-money checkout (development branch)
+
+Added `supabase/migrations/20261110150000_flutterwave_ugx_checkout.sql` and extended the financial API with:
+
+- Server-owned `billing_products` catalogue. No products are seeded or activated and no prices are invented.
+- Authenticated `GET /api/billing/products` endpoint exposing only active catalogue entries.
+- Authenticated `POST /api/billing/checkout` endpoint for Uganda UGX credit-pack purchases using MTN or Airtel mobile money.
+- Product price and credit quantity are read from the server-side catalogue; client-supplied price/credits are ignored.
+- Unique checkout reference and caller idempotency key; key reuse with a different SKU/network is rejected.
+- Flutterwave v4 Orchestrator direct-charge integration using server-side OAuth credentials, trace ID and idempotency header.
+- Raw-body signed `charge.*` webhook processing, provider-side `GET /charges/{id}` verification, and strict charge ID/reference/amount/currency checks.
+- Atomic purchase settlement RPC creates an immutable `purchase_grant` ledger entry, invoice snapshot and receipt notification outbox record in one database transaction.
+- Duplicate purchase fulfilment is idempotent. Customer value is not granted from redirects or webhook payloads alone.
+- Added automated tests for mobile-money checkout request construction and verified charge webhook settlement.
+
+### Current limitations / explicit gates
+
+- This batch is a backend foundation; customer-facing checkout UI and downloadable invoice PDF delivery are not yet implemented.
+- The ledger records credit grants, but integration with the existing generation-credit reservation/usage gate must be completed before purchased credits can be consumed in production.
+- The catalogue is empty by default. An owner-controlled product-management workflow and approved pricing must be added before any checkout can be offered.
+- Only Uganda UGX mobile-money MTN/Airtel is in this batch. Card checkout, subscriptions, renewals, chargeback evidence workflows and failed-payment recovery are subsequent batches.
+- The new SQL migration has not been applied to any Supabase project. Billing remains disabled by default. No merchant account, API key, live payment, refund or production deployment was configured.
+- CI status has not yet reported checks for the latest branch commit; tests are added but not reported as passed.
