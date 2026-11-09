@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, selectTimelinePreviewAsset, timelineDurationSeconds } from "../core/timeline-playback";
 
 type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -57,10 +57,7 @@ function clipInspector(){
  return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR · '+esc(track.kind.toUpperCase())+'</div><form id="tl-clip-inspector" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'"><div class="form-grid"><div><label>Clip name</label><input name="name" value="'+esc(clip.name)+'" required></div><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+start+'"></div><div><label>Duration (frames)</label><input name="duration" type="number" min="1" value="'+duration+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="'+sourceIn+'"></div>'+specific+'</div><div class="eyebrow" style="margin-top:16px">CREATIVE INTENT LINK</div><div class="form-grid"><div><label>Story beat</label><input name="storyBeat" maxlength="120" value="'+esc(trace.storyBeat)+'" placeholder="Opening hook / Proof / Payoff"></div><div><label>Audience promise served</label><input name="audiencePromise" maxlength="300" value="'+esc(trace.audiencePromise)+'" placeholder="What did we promise viewers?"></div><div class="full"><label>Why this shot exists</label><textarea name="purpose" maxlength="500" rows="2" placeholder="What information, emotion or transition does it contribute?">'+esc(trace.purpose)+'</textarea></div><div><label>Proof / source reference</label><input name="proofReference" maxlength="300" value="'+esc(trace.proofReference)+'" placeholder="Evidence ID, source or approved claim"></div><div><label>Creative decision note</label><input name="decisionNote" maxlength="500" value="'+esc(trace.decisionNote)+'" placeholder="Why this take, framing or edit was chosen"></div></div>'+(decisions.length?'<div class="eyebrow" style="margin-top:16px">CREATIVE DECISION HISTORY · '+decisions.length+'</div><div class="timeline-quality-list">'+decisions.slice().reverse().slice(0,8).map(item=>'<article class="timeline-quality-item info"><b>r'+item.sequence+' · '+esc(item.summary)+'</b><p>'+esc(item.recordedAt)+'</p></article>').join("")+'</div>':'')+'<button class="secondary">Save clip properties and intent</button></form>'+timelineMediaTools(track,clip,sourceIn,proxyAssetId,String(metadata.proxyAssetName||""))+'</div>';
 }
 function previewAssetForClip(clip:TimelineTrack["clips"][number],source:Asset){
- const proxyId=typeof clip.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
- if(!proxyId)return source;
- const proxy=state.assets.find(asset=>asset.id===proxyId&&asset.mediaType.startsWith("video/")&&asset.derivativeOf===source.id);
- return proxy||source;
+ return selectTimelinePreviewAsset(clip,source,state.assets);
 }
 function updatePreviewDiagnostics(){
  const output=document.querySelector<HTMLElement>("#tl-preview-diagnostics");
@@ -144,6 +141,13 @@ function syncPreviewAtFrame(frame:number){
  if(output)output.textContent=formatPlaybackTime(state.playheadFrame);
  const slider=document.querySelector<HTMLInputElement>("#tl-preview-seek");
  if(slider&&document.activeElement!==slider)slider.value=String(Math.round(state.playheadFrame));
+ let dropped=0,total=0;
+ document.querySelectorAll<HTMLVideoElement>("#timeline-playback video[data-preview-media]").forEach(video=>{
+  const quality=video.getVideoPlaybackQuality?.();
+  if(quality){dropped+=quality.droppedVideoFrames;total+=quality.totalVideoFrames;}
+  else{const legacy=video as HTMLVideoElement&{webkitDroppedFrameCount?:number;webkitDecodedFrameCount?:number};dropped+=Number(legacy.webkitDroppedFrameCount||0);total+=Number(legacy.webkitDecodedFrameCount||0);}
+ });
+ state.previewDiagnostics.droppedFrames=dropped;state.previewDiagnostics.totalFrames=total;updatePreviewDiagnostics();
 }
 function formatPlaybackTime(frame:number){
  const rate=fps(),seconds=Math.floor(Math.max(0,frame)/rate),ff=Math.floor(Math.max(0,frame)%rate);
@@ -498,6 +502,18 @@ document.addEventListener("change",event=>{
   if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
  }
 });
+function isTimelinePreviewMediaEvent(event:Event){
+ const target=event.target;
+ return target instanceof HTMLMediaElement&&Boolean(target.closest("#timeline-playback"));
+}
+document.addEventListener("waiting",event=>{
+ if(!isTimelinePreviewMediaEvent(event))return;
+ state.previewDiagnostics.stalls++;updatePreviewDiagnostics();
+},true);
+document.addEventListener("error",event=>{
+ if(!isTimelinePreviewMediaEvent(event))return;
+ state.previewDiagnostics.errors++;updatePreviewDiagnostics();
+},true);
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="tl-preview-seek"&&state.timeline&&state.previewLoaded){
