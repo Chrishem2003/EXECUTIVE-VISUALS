@@ -129,6 +129,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
     const projectId=String(body.projectId||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const quoteProject=await service.projects.get({ownerId,projectId});
+    if(!quoteProject)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    if(quoteProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"The project owner must create and approve paid video workflow quotes. Editors can prepare the workflow, but cannot authorize project spending."}});
     try{
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
@@ -188,6 +191,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(body.confirmed!==true)return response(403,{error:{code:"VIDEO_WORKFLOW_APPROVAL_CONFIRMATION_REQUIRED",message:"Explicit confirmation is required before approving and queueing video generation."}});
     const projectId=String(body.projectId||""),quoteId=String(body.quoteId||""),requestId=String(body.requestId||"");
     if(!safeId(projectId)||!safeId(quoteId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const approvalProject=await service.projects.get({ownerId,projectId});
+    if(!approvalProject)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    if(approvalProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"Only the project owner can authorize this paid video workflow. No budget reservation or job was created."}});
     const approvedMaxAmount=body.approvedMaxAmount;
     if(typeof approvedMaxAmount!=="number"||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||approvedMaxAmount>1000000||
        Math.abs(approvedMaxAmount*1000000-Math.round(approvedMaxAmount*1000000))>0.0001){
