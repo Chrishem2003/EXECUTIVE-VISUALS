@@ -266,3 +266,24 @@ Flutterwave's Payment Plans guide explicitly says that adding a payment plan fix
 ### Batch 6 validation gate
 
 Added API tests for public plan filtering, customer ownership scope, support-role denial, audited grant RPC arguments and period limits. The migration has not been applied to staging or production. Before release, run it on an isolated Supabase staging project, test missing/unauthorized admin roles, overlapping concurrent grants, subscription expiry and RLS under real authenticated sessions. Do not grant paid entitlements or enable recurring collection until payment settlement, renewal, cancellation, failed-payment grace and reconciliation are implemented and verified.
+
+
+## Batch 7 — subscription webhook reconciliation safety
+
+Updated `server/financial-intelligence-api.mjs`, its API tests, and the subscription migration.
+
+- Flutterwave `subscription.*` callbacks are no longer silently classified as unrelated events.
+- A signature-verified subscription callback is persisted in the existing webhook inbox with `processing_status=needs_review`.
+- Added an admin-only `GET /api/admin/subscriptions/reconciliation` queue for verified `subscription.cancelled` events. It caps results at 100 and returns only a sanitized customer email, provider plan ID, status, event hash and received time.
+- The queue is restricted to owner/platform_admin/billing_admin; support users cannot read it.
+- The callback is acknowledged with HTTP 200 after durable inbox persistence to avoid pointless provider retries.
+- **No entitlement is automatically revoked or restored from an ambiguous cancellation payload.** Flutterwave's documented cancellation sample contains customer email and plan information but does not guarantee a stable local subscription ID. The event therefore requires provider-to-customer reconciliation before access changes.
+- Corrected the SQL statement separator in the Batch 6 migration and expanded the webhook event status constraint to include `needs_review`.
+
+### Batch 7 provider boundary
+
+Flutterwave's documented Payment Plans API is the v3 API, authenticated with a secret key, while the existing financial payment/refund adapter in this branch uses the v4 OAuth API. These are separate provider surfaces and must not be mixed. Payment-plan checkout fixes the payment method to card; subscription identifiers can be queried from the v3 subscriptions endpoint. Do not activate recurring plans until a dedicated v3 sandbox adapter, first-payment-to-subscription linking, renewal verification, cancellation reconciliation and merchant eligibility checks are completed.
+
+### Batch 7 validation gate
+
+New tests cover signed cancellation callback retention, absence of automatic entitlement mutation, admin-only queue access and payload sanitization. The migration remains unapplied. Validate the revised migration in isolated staging before merging or deploying.
