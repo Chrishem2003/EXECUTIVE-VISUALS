@@ -793,7 +793,7 @@ fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chun
 });
 
 for (const invalidData of ["not-a-zlib-stream", "short-scanlines", "invalid-filter", "trailing-zlib-data", "oversized-width", "oversized-pixel-count"]) {
-  test("AI upscaler rejects invalid PNG IDAT datastream: " + invalidData, async () => {
+  test("AI upscaler rejects invalid PNG output: " + invalidData, async () => {
     const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-invalid-idat-"));
     const binary = join(directory, "engine"), model = "realesrgan-x4plus";
     const input = join(directory, "source.png"), output = join(directory, "invalid-idat.png");
