@@ -126,3 +126,6 @@ AI upscaling also checks projected output dimensions and pixel count before star
 
 
 AI upscale integrity now detects alpha-bearing PNG/WebP sources, rejects JPEG output for transparent sources before inference, and rejects/deletes derivatives when the output drops transparency. Channel-presence validation does not claim pixel-perfect matte fidelity; quality review remains required.
+
+
+The NCNN/Vulkan adapter rejects high-bit-depth PNG and JPEG sources until that execution path has passed independent precision-preservation tests. Source/output sample depth is recorded in derivative provenance when available. The Python Real-ESRGAN implementation's documented 16-bit capability is not assumed to apply to the separate NCNN executable.
