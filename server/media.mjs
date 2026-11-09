@@ -254,7 +254,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const effect=buildTimelineClipEffects(clip.metadata||{});
     const filterParts=["trim=duration="+duration.toFixed(6),"setpts=PTS-STARTPTS",...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
-    const filter="[${inputIndex}:v]"+filterParts.join(",")+"[${label}]";
+    const filter="["+inputIndex+":v]"+filterParts.join(",")+"["+label+"]";
     segments.push({label,filter,effectsEnabled:effect.enabled});
     inputIndex++;cursor=start+duration;
     onProgress(Math.min(70,10+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
