@@ -78,7 +78,7 @@ export function createCloudSubscriptionLedger({
         !["trialing","active","past_due","paused","cancelled","expired"].includes(status)||
         (planCode!==null&&(typeof planCode!=="string"||!/^[a-z][a-z0-9_-]{1,40}$/.test(planCode)))||
         typeof cancelAtPeriodEnd!=="boolean"||
-        (graceUntil!==null&&!validDate(graceUntil))||!metadata||typeof metadata!=="object"||Array.isArray(metadata)) {
+        (graceUntil!==null&&(!validDate(graceUntil)||status!=="past_due"))||!metadata||typeof metadata!=="object"||Array.isArray(metadata)) {
         throw new Error("Cloud subscription status update requires a valid provider identity and lifecycle state.");
       }
       const row=await rpc(statusRpc,{
