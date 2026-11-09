@@ -34,7 +34,8 @@ These are browser-side diagnostics, not a substitute for measured render-worker 
 
 ## Security and limits
 
-- Signed cloud media URLs expire after one hour.
+- Signed cloud media URLs are cached only until they enter a 30-second renewal window; the client requests a fresh URL before expiry rather than treating a stale URL as valid for the lifetime of the editing session.
+- Local blob previews remain cached until the preview session is released.
 - The client validates HTTPS, the signed-storage path shape, asset identity and the returned expiry bound before using a URL.
 - CSP only permits media and image requests to the configured Supabase origin.
 - No service-role key is sent to the browser.
