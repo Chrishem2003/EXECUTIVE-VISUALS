@@ -797,7 +797,7 @@ test("AI upscaler rejects a PNG with a corrupted IHDR CRC", async () => {
     "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\n" +
     "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\n" +
     "const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(Buffer.alloc(18))),chunk('IEND',Buffer.alloc(0))]);\n" +
-    "const marker=png.indexOf(Buffer.from("+JSON.stringify(chunkType)+"));if(marker<0)process.exit(3);const length=png.readUInt32BE(marker-4);png[marker+4+length]^=0xff;fs.writeFileSync(out,png);\n";
+    "const marker=png.indexOf(Buffer.from("+JSON.stringify("IHDR")+"));if(marker<0)process.exit(3);const length=png.readUInt32BE(marker-4);png[marker+4+length]^=0xff;fs.writeFileSync(out,png);\n";
   await writeFile(engineScript, generator);
   const launcher = "#!/bin/sh\nexec node " + JSON.stringify(engineScript) + " \"$@\"\n";
   await writeFile(binary, launcher); await chmod(binary, 0o755);
@@ -821,7 +821,7 @@ test("AI upscaler rejects a PNG with a corrupted IDAT CRC", async () => {
     "function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}\n" +
     "const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;\n" +
     "const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(Buffer.alloc(18))),chunk('IEND',Buffer.alloc(0))]);\n" +
-    "const marker=png.indexOf(Buffer.from("+JSON.stringify(chunkType)+"));if(marker<0)process.exit(3);const length=png.readUInt32BE(marker-4);png[marker+4+length]^=0xff;fs.writeFileSync(out,png);\n";
+    "const marker=png.indexOf(Buffer.from("+JSON.stringify("IDAT")+"));if(marker<0)process.exit(3);const length=png.readUInt32BE(marker-4);png[marker+4+length]^=0xff;fs.writeFileSync(out,png);\n";
   await writeFile(engineScript, generator);
   const launcher = "#!/bin/sh\nexec node " + JSON.stringify(engineScript) + " \"$@\"\n";
   await writeFile(binary, launcher); await chmod(binary, 0o755);
