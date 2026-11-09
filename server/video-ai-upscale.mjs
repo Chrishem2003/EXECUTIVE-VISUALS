@@ -82,6 +82,7 @@ export function createVideoAiUpscaleProcessor({
   maxDurationSeconds=600,
   maxInputBytes=2*1024*1024*1024,
   maxOutputBytes=4*1024*1024*1024,
+  maxTempBytes=8*1024*1024*1024,
   maxOutputPixels=40_000_000,
   frameTimeoutMs=30*60*1000,
   jobTimeoutMs=2*60*60*1000,
@@ -90,6 +91,7 @@ export function createVideoAiUpscaleProcessor({
   if(typeof runCommand!=="function"||typeof upscalerFactory!=="function")throw new TypeError("Video AI upscaling requires process and image-upscaler adapters.");
   if(!Number.isInteger(maxFrames)||maxFrames<1||maxFrames>18000)throw new TypeError("Video frame limit must be between 1 and 18,000.");
   if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>3600)throw new TypeError("Video duration limit is invalid.");
+  if(!Number.isSafeInteger(maxTempBytes)||maxTempBytes<64*1024*1024||maxTempBytes>32*1024*1024*1024)throw new TypeError("Video temporary storage budget must be between 64 MiB and 32 GiB.");
   async function process({
     sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,threads="1:2:2",tta=false,gpu="auto",expectedSourceSha256=null,signal,onProgress=()=>{}
   }={}){
@@ -130,17 +132,25 @@ export function createVideoAiUpscaleProcessor({
       await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-an","-sn","-dn","-vsync","0","-start_number","0",inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
       const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
       if(extracted.length!==source.frames)throw fail("Extracted frame count does not match the source video; no derivative was published.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
+      let remainingInputBytes=0;
+      for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
+      if(remainingInputBytes>maxTempBytes)throw fail("Extracted frames exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
       progress(12);
       const upscaler=upscalerFactory({timeoutMs:frameTimeoutMs,maxOutputBytes:250*1024*1024,maxOutputPixels});
       if(!upscaler||typeof upscaler.execute!=="function")throw fail("The configured AI image upscaler is unavailable.","AI_UPSCALE_ENGINE_UNAVAILABLE");
-      const tileFallbackFrames=[];let tileFallbackCount=0;
+      const tileFallbackFrames=[];let tileFallbackCount=0,outputFrameBytes=0;
       for(let index=0;index<extracted.length;index++){
         checkCancelled(signal);
         if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");
         const inputFrame=join(inputFrames,extracted[index]);
         const outputFrame=join(outputFrames,extracted[index]);
+        const inputFrameInfo=await stat(inputFrame);
         const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
         if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
+        const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
+        if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+        await (await import("node:fs/promises")).unlink(inputFrame);
+        remainingInputBytes-=inputFrameInfo.size;
         if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
         progress(12+Math.round(((index+1)/source.frames)*70));
       }
