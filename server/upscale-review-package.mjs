@@ -37,6 +37,26 @@ async function fingerprint(path) {
   return { sha256: digest.digest("hex"), bytes };
 }
 
+async function readPngDimensions(path) {
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size < 33) throw fail("Enhanced output must be a complete PNG image.");
+    const header = Buffer.alloc(33);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    if (bytesRead !== header.length || !header.subarray(0, 8).equals(signature) ||
+        header.readUInt32BE(8) !== 13 || header.toString("ascii", 12, 16) !== "IHDR") {
+      throw fail("Enhanced output must have a valid PNG signature and IHDR header.");
+    }
+    const width = header.readUInt32BE(16), height = header.readUInt32BE(20);
+    if (!width || !height || width !== Math.floor(width) || height !== Math.floor(height)) {
+      throw fail("Enhanced output PNG dimensions are invalid.");
+    }
+    return { width, height };
+  } finally { await handle.close().catch(() => {}); }
+}
+
 async function resolveFixture(root, path) {
   if (typeof path !== "string" || !path.trim() || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw fail("Fixture path must remain relative to the manifest directory.");
   const candidate = resolve(root, path);
@@ -87,8 +107,9 @@ export async function createUpscaleReviewPackage({ reportPath, manifestPath, run
     const fixture=fixtures.get(record.fixtureId);
     if (!fixture || fixture.fixtureCategory!==record.fixtureCategory) throw fail("Report fixture IDs/categories must match the manifest.");
     const source=await resolveFixture(root,fixture.path),outputPath=join(runRoot,record.fixtureId+".png");
-    const [sourceHash,outputHash]=await Promise.all([fingerprint(source.path),fingerprint(outputPath)]);
+    const [sourceHash,outputHash,outputDimensions]=await Promise.all([fingerprint(source.path),fingerprint(outputPath),readPngDimensions(outputPath)]);
     if (sourceHash.sha256!==record.inputSha256 || outputHash.sha256!==record.outputSha256) throw fail("Source or output checksum mismatch for "+record.fixtureId+".");
+    if (outputDimensions.width!==record.outputWidth || outputDimensions.height!==record.outputHeight) throw fail("Enhanced PNG dimensions do not match the benchmark record for "+record.fixtureId+".");
     prepared.push({...record,sourcePath:source.path,outputPath,sourceExtension:source.extension,sourceBytes:sourceHash.bytes,outputBytes:outputHash.bytes});
   }
   if (await lstat(outRoot).then(()=>true).catch(e=>e.code==="ENOENT"?false:Promise.reject(e))) throw fail("Output directory already exists; existing files are never overwritten.");
