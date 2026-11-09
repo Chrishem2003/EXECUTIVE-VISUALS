@@ -126,6 +126,16 @@ test("accepts a complete human review export bound to all five package checksums
  const manifest=reviewManifest(),result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
  assert.deepEqual(result,{valid:true,errors:[]});
 });
+test("rejects a manifest with duplicate fixture categories",()=>{
+ const manifest=reviewManifest();manifest.fixtures[1].fixtureCategory=manifest.fixtures[0].fixtureCategory;
+ const result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/each required fixture category exactly once/);
+});
+test("rejects a manifest with an unsupported schema version",()=>{
+ const manifest=reviewManifest();manifest.schemaVersion=2;
+ const result=validateUpscaleHumanReviewNotes(validReviewPayload(manifest),manifest);
+ assert.equal(result.valid,false);assert.match(result.errors.join(" "),/schema, model or model version is invalid/);
+});
 test("rejects malformed SHA-256 values even when notes match the manifest",()=>{
  const manifest=reviewManifest(),notes=validReviewPayload(manifest);manifest.fixtures[0].outputSha256="not-a-sha256";notes.fixtures[0].outputSha256="not-a-sha256";
  const result=validateUpscaleHumanReviewNotes(notes,manifest);
