@@ -543,24 +543,42 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       } catch (error) { db.exec("ROLLBACK"); throw error; }
       return { processed: true, renewed: true, eventId: event.event_id };
     }
+    let plan = db.prepare("SELECT * FROM billing_plans WHERE id=? AND active=1").get(local.plan_id);
     if (type === "subscription.plan_changed") {
-      const newPlan = findPlanForDodoProduct(db, data.product_id, env);
-      if (!newPlan || String(data.currency).toUpperCase() !== String(newPlan.currency).toUpperCase() ||
-          Number(data.recurring_pre_tax_amount) !== Number(newPlan.amount_minor)) {
+      plan = findPlanForDodoProduct(db, data.product_id, env);
+      if (!plan || String(data.currency).toUpperCase() !== String(plan.currency).toUpperCase() ||
+          Number(data.recurring_pre_tax_amount) !== Number(plan.amount_minor)) {
         throw fail("Dodo plan change does not match a configured local plan.", "DODO_PLAN_CHANGE_MISMATCH", 409);
       }
-      db.prepare("UPDATE billing_subscriptions SET plan_id=?,status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
-        .run(newPlan.id, status, data.next_billing_date || local.current_period_end, data.cancel_at_next_billing_date === true ? 1 : 0,
-          safeJson({ ...currentMetadata, productId: data.product_id, lastProviderTimestamp: eventTime,
-            pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
-    } else {
-      db.prepare("UPDATE billing_subscriptions SET status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
-        .run(status, data.next_billing_date || local.current_period_end, data.cancel_at_next_billing_date === true ? 1 : 0,
-          safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime,
-            pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     }
-    markProcessed();
-    return { processed: true, status, eventId: event.event_id };
+    if (!plan) throw fail("Local subscription plan is unavailable for lifecycle synchronization.", "DODO_SUBSCRIPTION_PLAN_NOT_FOUND", 409);
+    const cancelAtPeriodEnd=data.cancel_at_next_billing_date===true;
+    const graceUntil=status==="past_due"?(data.past_due_ends_at||currentMetadata.pastDueEndsAt||null):null;
+    const nextMetadata={...currentMetadata,productId:data.product_id||currentMetadata.productId,
+      lastProviderTimestamp:eventTime,pastDueEndsAt:graceUntil};
+    db.exec("BEGIN IMMEDIATE");
+    try{
+      if(type==="subscription.plan_changed"){
+        db.prepare("UPDATE billing_subscriptions SET plan_id=?,status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+          .run(plan.id,status,data.next_billing_date||local.current_period_end,cancelAtPeriodEnd?1:0,
+            safeJson(nextMetadata),now(),local.id);
+      }else{
+        db.prepare("UPDATE billing_subscriptions SET status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+          .run(status,data.next_billing_date||local.current_period_end,cancelAtPeriodEnd?1:0,
+            safeJson(nextMetadata),now(),local.id);
+      }
+      enqueueCloudSubscriptionSync(db,{
+        provider:"dodo",action:"status",providerEventId:event.event_id,ownerId:local.user_id,
+        planCode:plan.code,providerCustomerId:local.provider_customer_id||null,
+        providerSubscriptionId:subscriptionId,
+        periodStart:local.current_period_start,periodEnd:data.next_billing_date||local.current_period_end,
+        status:"active",metadata:{targetStatus:status,cancelAtPeriodEnd,graceUntil,
+          productId:data.product_id||currentMetadata.productId}
+      });
+      markProcessed();
+      db.exec("COMMIT");
+    }catch(error){db.exec("ROLLBACK");throw error;}
+    return { processed: true, status, cloudSyncQueued:true, eventId: event.event_id };
   } catch (error) {
     db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
       WHERE id=? AND lease_owner=?`)
