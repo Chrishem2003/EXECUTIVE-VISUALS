@@ -3,7 +3,8 @@ import { lstat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const fail = (message, code = "AI_UPSCALE_LPIPS_FAILED") => Object.assign(new Error(message), { code });
-const DEFAULT_MAX_PIXELS = 40_000_000;
+const DEFAULT_MAX_PIXELS = 8_294_400;
+const HARD_MAX_PIXELS = 16_000_000;
 
 async function validateImageFile(path, label) {
   if (typeof path !== "string" || !path.trim()) throw fail(label + " image path is required.", "AI_UPSCALE_LPIPS_INVALID");
@@ -63,7 +64,7 @@ export function createLpipsPerceptualAssessor({
   if (typeof pythonPath !== "string" || !pythonPath.trim()) throw new TypeError("A Python executable is required.");
   if (!["alex", "vgg", "squeeze"].includes(network)) throw new TypeError("LPIPS network must be alex, vgg or squeeze.");
   if (!["auto", "cpu", "cuda"].includes(device)) throw new TypeError("LPIPS device must be auto, cpu or cuda.");
-  if (!Number.isInteger(maxPixels) || maxPixels < 1 || maxPixels > DEFAULT_MAX_PIXELS) throw new TypeError("LPIPS pixel limit exceeds the supported safety budget.");
+  if (!Number.isInteger(maxPixels) || maxPixels < 1 || maxPixels > HARD_MAX_PIXELS) throw new TypeError("LPIPS pixel limit exceeds the supported safety budget.");
   if (!Number.isInteger(threads) || threads < 1 || threads > 8) throw new TypeError("LPIPS thread count must be from 1 to 8.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300_000) throw new TypeError("LPIPS timeout must be from 1 to 300 seconds.");
 
