@@ -143,6 +143,11 @@ test("AI upscaler reports execution checks separately from unverified inference 
     assert.equal(result.passed, true);
     assert.equal(result.executionVerified, true);
     assert.equal(result.inferenceVerified, false);
+    assert.deepEqual(result.inputDimensions, { width: 1, height: 1 });
+    assert.deepEqual(result.outputDimensions, { width: 2, height: 2 });
+    assert.equal(result.tileFallbackUsed, false);
+    assert.deepEqual(result.tileAttempts, [0]);
+    assert.equal(result.alphaPreserved, true);
     const after = await adapter.probe(model);
     assert.equal(after.executionVerified, true);
     assert.equal(after.inferenceVerified, false);
