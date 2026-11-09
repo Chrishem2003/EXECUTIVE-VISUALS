@@ -9,7 +9,7 @@ test("timeline proxy uses a bounded 960p H.264/AAC profile with fast-start metad
 
 test("timeline proxy clamps dimensions and quality values before building FFmpeg arguments",()=>{
  const args=buildProxyVideoArgs({sourcePath:"source.mov",outputPath:"proxy.mp4",input:{proxyWidth:9000,proxyCrf:-10}});
- assert.ok(args.includes("1920"));
+ assert.ok(args.some(value=>value.includes("1920")));
  assert.ok(args.includes("18"));
  assert.equal(args.some(value=>value.includes("drawtext")||value.includes(";")),false);
 });
