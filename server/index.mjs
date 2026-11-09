@@ -774,6 +774,11 @@ export function createAppServer() {
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
+        if(type==="media.ai-upscale"){
+          const model=String(body.model||"realesrgan-x4plus");
+          const evidence=await loadUpscaleQualityEvidence();
+          if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
+        }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){
           const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(body.timelineId||""));
