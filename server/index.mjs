@@ -891,9 +891,16 @@ export function createAppServer() {
         if(baseKey){
           const existing=inputs.map((input,index)=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,baseKey+":"+index));
           if(existing.some(Boolean)){
-            const replay=existing.every((job,index)=>job&&job.job_type==="media.ai-video-upscale"&&job.project_id===projectId&&stableJson(parseJson(job.input_json))===stableJson(inputs[index]));
+            const priorBatchId=existing[0]?String(parseJson(existing[0].input_json).batchId||""):"";
+            const replay=Boolean(priorBatchId)&&existing.every((job,index)=>{
+              if(!job||job.job_type!=="media.ai-video-upscale"||job.project_id!==projectId)return false;
+              const prior=parseJson(job.input_json),current=inputs[index];
+              const {batchId:priorId,batchIndex:priorIndex,batchTotal:priorTotal,...priorItem}=prior;
+              const {batchId:currentId,batchIndex:currentIndex,batchTotal:currentTotal,...currentItem}=current;
+              return priorId===priorBatchId&&priorIndex===index&&priorTotal===inputs.length&&stableJson(priorItem)===stableJson(currentItem);
+            });
             if(!replay){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different video batch.");return;}
-            send(res,200,{batchId:parseJson(existing[0].input_json).batchId,jobs:existing.map(recordJob),idempotentReplay:true},cors);return;
+            send(res,200,{batchId:priorBatchId,jobs:existing.map(recordJob),idempotentReplay:true},cors);return;
           }
         }
         const jobs=[];
