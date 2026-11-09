@@ -64,17 +64,23 @@ def main():
 
     try:
         with Image.open(candidate_path) as image:
+            candidate_size = image.size
+            if candidate_size[0] < 64 or candidate_size[1] < 64 or candidate_size[0] * candidate_size[1] > args.max_pixels:
+                fail("Candidate dimensions are below LPIPS minimum or exceed the pixel budget.")
             candidate = image.convert("RGB")
         with Image.open(reference_path) as image:
+            reference_size = image.size
+            if reference_size[0] < 64 or reference_size[1] < 64 or reference_size[0] * reference_size[1] > args.max_pixels:
+                fail("Reference dimensions are below LPIPS minimum or exceed the pixel budget.")
+            if candidate_size != reference_size:
+                fail("Candidate and reference dimensions must match exactly; resize only through an explicit benchmark preprocessing step.")
             reference = image.convert("RGB")
+    except SystemExit:
+        raise
     except Exception as exc:
         fail("Could not decode candidate/reference image: " + str(exc))
 
-    if candidate.size != reference.size:
-        fail("Candidate and reference dimensions must match exactly; resize only through an explicit benchmark preprocessing step.")
-    width, height = candidate.size
-    if width < 64 or height < 64 or width * height > args.max_pixels:
-        fail("Image dimensions are below LPIPS minimum or exceed the pixel budget.")
+    width, height = candidate_size
 
     try:
         torch.set_num_threads(args.threads)
