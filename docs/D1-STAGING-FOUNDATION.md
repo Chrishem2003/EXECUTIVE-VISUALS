@@ -88,6 +88,8 @@ Cloudflare's current Free-plan documentation makes the daily D1 row quotas enfor
 - D1 Free permits at most 50 D1 query subrequests per Worker invocation; use a much smaller application budget, bounded page sizes, indexed tenant filters and explicit query-count tests.
 - Keep row reads/writes visible in operational checks using D1 query metadata/analytics. A filtered query over an unindexed tenant or timestamp column can consume the read quota through a table scan.
 - Maximum D1 row/string/BLOB size is 2,000,000 bytes; the workspace-document API's 256 KB limit remains intentionally lower. Never put media payloads in D1.
+- D1 query results are limited to 50 MB (effective 4 November 2026). Keep API responses far below this ceiling with bounded pagination and narrow projections; workspace documents remain capped at 256 KB.
+- A Worker can open at most six simultaneous D1 connections per invocation. A D1 `batch()` counts as one query against the per-invocation query-call limit, while each statement still has its own SQL/result limits; prefer bounded batches over parallel unbounded queries.
 - On a quota-limit error, return a distinct retry-after-reset/unavailable signal; do not automatically retry in a tight loop. A retry after UTC midnight must be initiated by a bounded client/operator action.
 
 Authoritative references (reviewed 9 November 2026): [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), [D1 pricing and free allowances](https://developers.cloudflare.com/d1/platform/pricing/), and [D1 free-tier daily limit enforcement](https://developers.cloudflare.com/changelog/post/2026-09-01-d1-free-tier-limit-enforcement/).
