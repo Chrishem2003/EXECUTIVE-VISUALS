@@ -100,9 +100,13 @@ export async function runUpscaleBenchmark({
   outputDirectory,
   adapter = createRealEsrganAdapter(),
   binaryPath = process.env.REALESRGAN_NCNN_PATH || "",
-  modelDirectory = process.env.REALESRGAN_MODEL_DIR || ""
+  modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
+  tile = 128
 } = {}) {
   if (!ALLOWED_MODELS.has(model)) throw fail("Select an allowlisted Real-ESRGAN model.");
+  if (!Number.isInteger(tile) || (tile !== 0 && (tile < 32 || tile > 512))) {
+    throw fail("Benchmark tile must be zero (automatic) or an integer from 32 to 512.");
+  }
   if (typeof manifestPath !== "string" || !manifestPath.trim()) throw fail("A benchmark manifest path is required.");
   if (typeof outputDirectory !== "string" || !outputDirectory.trim()) throw fail("An output directory is required.");
 
@@ -136,7 +140,7 @@ export async function runUpscaleBenchmark({
     inputPath: fixtures[0].inputPath,
     model,
     scale: fixtures[0].scale,
-    tile: 128,
+    tile,
     format: "png"
   });
   if (selfTest?.passed !== true || selfTest?.executionVerified !== true) {
@@ -161,7 +165,7 @@ export async function runUpscaleBenchmark({
         outputPath,
         model,
         scale: fixture.scale,
-        tile: 128,
+        tile,
         format: "png"
       });
       if (result.model !== model ||
@@ -187,6 +191,10 @@ export async function runUpscaleBenchmark({
         outputHeight: result.outputDimensions.height,
         scale: fixture.scale,
         durationMs: Math.max(1, Math.round(performance.now() - started)),
+        requestedTile: result.requestedTile,
+        tile: result.tile,
+        tileFallbackUsed: result.tileFallbackUsed,
+        tileAttempts: result.tileAttempts,
         executionStatus: "passed",
         qualityReview: "not_reviewed",
         timestamp: new Date().toISOString()

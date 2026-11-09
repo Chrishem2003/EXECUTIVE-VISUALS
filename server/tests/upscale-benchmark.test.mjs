@@ -26,6 +26,10 @@ const validRecord = overrides => ({
   qualityReviewNotes: "Compared source and output at native and 100 percent zoom; no unacceptable artifacts found.",
   qualityReviewArtifactPath: "reviews/benchmark-review.txt",
   qualityReviewArtifactSha256: digest("e"),
+  requestedTile: 128,
+  tile: 128,
+  tileFallbackUsed: false,
+  tileAttempts: [128],
   metrics: { psnr: 31.2, ssim: 0.91 },
   ...overrides
 });
@@ -181,4 +185,12 @@ test("reviewed quality requires a non-trivial reviewer identifier", () => {
   const result = validateUpscaleBenchmarkRecord(validRecord({ qualityReview: "reviewed_pass", qualityReviewer: "a" }));
   assert.equal(result.valid, false);
   assert.ok(result.issues.some(issue => issue.includes("qualityReviewer must contain at least 2 characters")));
+});
+
+test("validates deterministic tile settings and fallback attempts", () => {
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tile: 256, tileFallbackUsed: true, tileAttempts: [0, 256] })).valid, true);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tile: 24 })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ tileAttempts: [0, 24] })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 128, tile: 256, tileFallbackUsed: false, tileAttempts: [128, 256] })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ requestedTile: 0, tile: 256, tileFallbackUsed: true, tileAttempts: [0, 256] })).valid, true);
 });

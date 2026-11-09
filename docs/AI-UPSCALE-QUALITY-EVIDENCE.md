@@ -42,9 +42,13 @@ Run this only on an isolated local worker with the NCNN/Vulkan executable and mo
 
 ```sh
 AI_UPSCALE_ENABLED=true REALESRGAN_NCNN_PATH=/absolute/path/realesrgan-ncnn-vulkan REALESRGAN_MODEL_DIR=/absolute/path/models npm run benchmark:upscale -- realesrgan-x4plus ./benchmark-fixtures.json ./benchmark-output
+
+The optional final argument selects the NCNN tile size: `128` is the default, `256` selects a larger explicit tile, and `0` selects the NCNN executable's automatic tile mode; if that attempt reports a recognized GPU-memory allocation failure, the worker retries with bounded smaller explicit tiles. For a controlled visual comparison, run the same pinned five fixtures and model into separate output directories at (for example) `128`, `256` and `0`. Review each report independently; do not combine records from different tile strategies into one five-fixture quality approval. Each report records the requested tile, actual tile, fallback flag and ordered attempts.
 ```
 
 Use `realesrgan-x4plus-anime` to benchmark the anime model separately. The runner validates the exact five-category manifest and resolves and hashes every fixture (including its size bound) before probing or self-testing the model, so a missing, oversized or unsafe later fixture cannot waste a GPU self-test or partial inference run. It rechecks each fixture immediately before inference, executes all five fixtures, checks exact output dimensions, hashes the executable, model files, inputs and outputs, and confirms those artifacts did not change during the run. It stores output images in a unique run folder and writes a separate JSON report. It rejects symlinked fixtures and unsafe paths.
+
+Every generated record records its requested tile size, final tile size, fallback flag and ordered tile attempts. This is required to reproduce the exact execution path and interpret tile-boundary artifacts during review. The current benchmark uses an explicit 128-pixel tile; automatic tile fallback is tested separately and is never silently substituted for an explicit tile selection.
 
 Every generated record deliberately has `qualityReview: "not_reviewed"`. Compare each source/output pair at native and enlarged viewing scales, record visible artifacts, text/edge integrity, detail retention, noise behavior and temporal consistency where relevant, then add the required human-review fields and review-artifact digest. Only after a genuine review may the records be copied into the configured evidence file. A successful benchmark command is not permission to enable production inference. Each model must have a distinct, complete set of records covering all five categories:
 

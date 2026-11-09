@@ -53,6 +53,23 @@ export function validateUpscaleBenchmarkRecord(record) {
       }
     }
   }
+  const validTile = value => Number.isInteger(value) && (value === 0 || (value >= 32 && value <= 512));
+  if (record.requestedTile !== undefined && !validTile(record.requestedTile)) issues.push("requestedTile must be zero or an integer from 32 to 512");
+  if (record.tile !== undefined && !validTile(record.tile)) issues.push("tile must be zero or an integer from 32 to 512");
+  if (record.tileFallbackUsed !== undefined && typeof record.tileFallbackUsed !== "boolean") issues.push("tileFallbackUsed must be a boolean");
+  if (record.tileAttempts !== undefined) {
+    if (!Array.isArray(record.tileAttempts) || record.tileAttempts.length < 1 || record.tileAttempts.some(value => !validTile(value))) {
+      issues.push("tileAttempts must contain one or more valid tile sizes");
+    } else if (record.tile !== undefined && record.tileAttempts[record.tileAttempts.length - 1] !== record.tile) {
+      issues.push("tile must match the final tileAttempts entry");
+    }
+  }
+  if (record.requestedTile !== undefined && record.tile !== undefined && record.tileFallbackUsed === false && record.tile !== record.requestedTile) {
+    issues.push("tile must match requestedTile when tileFallbackUsed is false");
+  }
+  if (record.requestedTile !== undefined && record.tile !== undefined && record.tileFallbackUsed === true && record.tile === record.requestedTile) {
+    issues.push("tileFallbackUsed cannot be true when the final tile matches requestedTile");
+  }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
   if (record.executionStatus === "passed" && record.outputHeight < record.inputHeight) issues.push("passed output height is smaller than input height");
   if (record.executionStatus === "passed" && Number.isFinite(record.inputWidth) && Number.isFinite(record.inputHeight) &&
