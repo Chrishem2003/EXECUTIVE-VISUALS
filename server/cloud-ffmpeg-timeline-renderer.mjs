@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
+import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
@@ -53,7 +54,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
-   segments.push({label,filter:`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});
+   const effect=buildTimelineClipEffects(clip.metadata||{});
+   const filters=["trim=duration="+duration.toFixed(6),"setpts=PTS-STARTPTS",...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+   segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
@@ -112,7 +115,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,effectClips:segments.filter(item=>item.effectsEnabled).length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
