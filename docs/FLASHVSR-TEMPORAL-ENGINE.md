@@ -66,7 +66,7 @@ The authenticated batch API revalidates the selected engine and readiness for ev
 
 ## Quality and release gates
 
-A temporal architecture is not by itself a quality certificate. Every derivative remains subject to human review. The existing post-render signal checks are coarse luma/chroma and scene-cut-aware screening, not motion-compensated perceptual metrics.
+FlashVSR is generative: it can invent plausible high-frequency detail rather than recover the exact lost original signal. This can alter faces, fine textures, text, graphics, animation and intentionally soft backgrounds. It must not be used as a fidelity-preserving enhancement without task-specific validation. A temporal architecture is not by itself a quality certificate. Every derivative remains subject to human review. The existing post-render signal checks are coarse luma/chroma and scene-cut-aware screening, not motion-compensated perceptual metrics.
 
 Before enabling for users, run a controlled staging benchmark covering:
 - Static detail, fine texture, fast motion, camera pans, occlusion and scene cuts.
