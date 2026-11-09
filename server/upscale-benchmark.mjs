@@ -60,8 +60,19 @@ export function validateUpscaleBenchmarkRecord(record) {
   if (record.tileAttempts !== undefined) {
     if (!Array.isArray(record.tileAttempts) || record.tileAttempts.length < 1 || record.tileAttempts.some(value => !validTile(value))) {
       issues.push("tileAttempts must contain one or more valid tile sizes");
-    } else if (record.tile !== undefined && record.tileAttempts[record.tileAttempts.length - 1] !== record.tile) {
-      issues.push("tile must match the final tileAttempts entry");
+    } else {
+      if (record.tile !== undefined && record.tileAttempts[record.tileAttempts.length - 1] !== record.tile) {
+        issues.push("tile must match the final tileAttempts entry");
+      }
+      if (record.requestedTile !== undefined && record.tileAttempts[0] !== record.requestedTile) {
+        issues.push("tileAttempts must begin with requestedTile");
+      }
+      if (record.tileFallbackUsed === false && record.tileAttempts.length !== 1) {
+        issues.push("tileFallbackUsed must be true when multiple tile attempts are recorded");
+      }
+      if (record.tileFallbackUsed === true && record.tileAttempts.length < 2) {
+        issues.push("tileFallbackUsed requires at least two recorded tile attempts");
+      }
     }
   }
   if (record.requestedTile !== undefined && record.tile !== undefined && record.tileFallbackUsed === false && record.tile !== record.requestedTile) {
