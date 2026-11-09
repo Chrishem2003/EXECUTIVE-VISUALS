@@ -22,7 +22,7 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
-import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout, createFlutterwaveSubscriptionCheckout, flutterwavePaymentPlanEnvName, flutterwaveRecurringCheckoutEnabled } from "./billing-webhooks.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout, createFlutterwaveSubscriptionCheckout, getFlutterwaveSubscriptionCheckoutStatus, flutterwavePaymentPlanEnvName, flutterwaveRecurringCheckoutEnabled } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
 import { processNextCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
@@ -594,6 +594,11 @@ const billingAccount=touchBillingAccount(db,user);
         send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
       }
 
+      const flutterwaveSubscriptionOrderMatch=path.match(/^\\/api\\/billing\\/flutterwave-subscription-orders\\/([0-9a-f-]{36})$/i);
+      if(flutterwaveSubscriptionOrderMatch&&req.method==="GET"){
+        const order=getFlutterwaveSubscriptionCheckoutStatus(db,{orderId:flutterwaveSubscriptionOrderMatch[1],userId:user.id});
+        send(res,200,{order},cors);return;
+      }
       if(path==="/api/billing/flutterwave-subscription-checkout"&&req.method==="POST"){
         if(!flutterwaveRecurringCheckoutEnabled()){
           fail(res,503,"FLW_SUBSCRIPTIONS_DISABLED","Flutterwave recurring checkout is disabled until recurring billing, merchant approval, webhook verification and payment-plan configuration are enabled.");return;
