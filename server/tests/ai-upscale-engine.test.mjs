@@ -93,6 +93,13 @@ test("AI upscaler recommends an allowlisted model by explicitly selected content
   assert.equal(adapter.recommendModel("natural_detail").model, "realesrnet-x4plus");
   assert.equal(adapter.recommendModel("anime").model, "realesrgan-x4plus-anime");
   assert.equal(adapter.recommendModel("animation_video").model, "realesr-animevideov3");
+  for (const contentType of ["photograph", "natural_detail", "anime", "animation_video"]) {
+    const profile = adapter.recommendModel(contentType);
+    const plan = adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model: profile.model, scale: profile.scale });
+    assert.equal(plan.model, profile.model);
+    assert.equal(plan.scale, profile.scale);
+  }
+  assert.equal(adapter.recommendModel("animation_video").scale, 2);
   assert.throws(() => adapter.recommendModel("medical_scan"), error => error.code === "AI_UPSCALE_INVALID_CONTENT_TYPE");
 });
 
