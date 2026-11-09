@@ -67,6 +67,7 @@ export function summarizeUpscaleBenchmarks(records) {
   const validRecords = [];
   const invalidRecords = [];
   const seenFixtureIds = new Set();
+  const seenFixtureCategories = new Set();
   const identityKeys = ["model", "modelVersion", "binarySha256", "modelFilesSha256"];
   let benchmarkIdentity = null;
   for (const record of records) {
@@ -74,7 +75,13 @@ export function summarizeUpscaleBenchmarks(records) {
     const duplicate = typeof record?.fixtureId === "string" && seenFixtureIds.has(record.fixtureId);
     if (typeof record?.fixtureId === "string") seenFixtureIds.add(record.fixtureId);
     if (duplicate) validation.issues.push("fixtureId must be unique within a benchmark summary");
-    if (validation.valid && !duplicate) {
+    const duplicateCategory = typeof record?.fixtureCategory === "string" &&
+      FIXTURE_CATEGORIES.has(record.fixtureCategory) && seenFixtureCategories.has(record.fixtureCategory);
+    if (typeof record?.fixtureCategory === "string" && FIXTURE_CATEGORIES.has(record.fixtureCategory)) {
+      seenFixtureCategories.add(record.fixtureCategory);
+    }
+    if (duplicateCategory) validation.issues.push("exactly one fixture record is allowed per required category in a benchmark summary");
+    if (validation.valid && !duplicate && !duplicateCategory) {
       const identity = Object.fromEntries(identityKeys.map(key => [key, key.endsWith("Sha256") ? record[key].toLowerCase() : record[key]]));
       if (benchmarkIdentity === null) benchmarkIdentity = identity;
       else if (identityKeys.some(key => identity[key] !== benchmarkIdentity[key])) {
@@ -82,7 +89,7 @@ export function summarizeUpscaleBenchmarks(records) {
         validation.issues.push("all records in a benchmark summary must use the same model and pinned executable/model artifacts");
       }
     }
-    if (validation.valid && !duplicate) validRecords.push(record);
+    if (validation.valid && !duplicate && !duplicateCategory) validRecords.push(record);
     else invalidRecords.push({ fixtureId: record?.fixtureId || null, issues: validation.issues });
   }
   const executionPassed = validRecords.filter(record => record.executionStatus === "passed").length;
