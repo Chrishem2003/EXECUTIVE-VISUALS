@@ -2,6 +2,10 @@
 
 The Real-ESRGAN NCNN/Vulkan adapter uses the upstream `-j load:proc:save` option to control image-load, processing, and image-save worker counts.
 
+## GPU device selection
+
+The adapter exposes the NCNN CLI `-g` option as `gpu`. The default `auto` lets NCNN select the Vulkan device. An explicit device index from `0` through `31` can be selected for hosts with multiple Vulkan devices. The chosen value is included in execution and self-test diagnostics. The adapter does not probe device capabilities or guarantee that a selected index is present; deployment validation must confirm that the configured worker can initialize that device.
+
 ## Safe thread tuning
 
 - Default: `1:2:2` (conservative worker profile).
