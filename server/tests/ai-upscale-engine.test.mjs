@@ -280,6 +280,9 @@ test("AI upscaler reports execution checks separately from unverified inference 
     assert.equal(result.passed, true);
     assert.equal(result.executionVerified, true);
     assert.equal(result.inferenceVerified, false);
+    assert.equal(result.qualityAssessment.status, "not_assessed");
+    assert.equal(result.qualityReviewRequired, true);
+    assert.ok(result.qualityReviewReasons.includes("perceptual-quality-not-assessed"));
     assert.deepEqual(result.inputDimensions, { width: 1, height: 1 });
     assert.deepEqual(result.outputDimensions, { width: 2, height: 2 });
     assert.equal(result.tileFallbackUsed, false);
@@ -465,8 +468,9 @@ fs.writeFileSync(output, pngBytes(input.readUInt32BE(16) * scale, input.readUInt
     assert.equal(result.tileFallbackUsed, true);
     assert.deepEqual(result.tileAttempts, [0, 256, 192]);
     assert.equal(result.tileFallbackReason, "gpu-memory-pressure");
+    assert.deepEqual(result.qualityAssessment, { status: "not_assessed", method: null });
     assert.equal(result.qualityReviewRequired, true);
-    assert.deepEqual(result.qualityReviewReasons, ["gpu-memory-tile-fallback"]);
+    assert.deepEqual(result.qualityReviewReasons, ["perceptual-quality-not-assessed", "gpu-memory-tile-fallback"]);
     assert.deepEqual(result.outputDimensions, { width: 16, height: 12 });
     assert.equal(Number(await import("node:fs/promises").then(fs => fs.readFile(attemptsFile, "utf8"))), 3);
   } finally {
