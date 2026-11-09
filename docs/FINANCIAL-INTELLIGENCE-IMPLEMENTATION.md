@@ -244,3 +244,25 @@ Added `supabase/migrations/20261110180000_atomic_job_credit_finalization.sql` an
 ### Batch 5 validation gate
 
 Node tests cover server-side quoting, reservation-before-queue ordering, empty-timeline rejection and fail-closed reservation responses. The new PostgreSQL migration still requires review and execution in isolated staging, including concurrency tests for two simultaneous renders competing for the same balance, success/failure/cancel finalization, and worker lease expiry/recovery. Do not enable `CLOUD_TIMELINE_CREDITS_PER_SECOND` until those database tests pass and the credit-pack catalogue/pricing is approved.
+
+
+## Batch 6 — subscription plans and entitlement foundation
+
+Added `supabase/migrations/20261110190000_subscription_entitlement_foundation.sql`.
+
+- Adds versioned `subscription_plans`, customer `customer_subscriptions`, and append-only `subscription_events`.
+- Entitlements are copied into each subscription as an immutable snapshot, so later plan edits do not silently change existing customer access.
+- Seeds only a non-billable public Free plan (3 projects, 512 MiB storage, one seat, basic timeline editor; no paid AI generation).
+- No Creator/Studio/Enterprise prices, included credit amounts, or recurring charges are invented or activated.
+- Adds RLS owner-read policies for customer subscriptions/events and public-active plan catalogue reads. Client writes are revoked; all changes flow through the server.
+- Adds `grant_customer_subscription` RPC. It verifies the actor has an owner/platform_admin/billing_admin role, serializes grants per customer, rejects overlapping current subscriptions, validates a maximum 366-day period, snapshots plan entitlements and writes an audit event.
+- Adds authenticated `GET /api/billing/plans`, `GET /api/billing/subscription`, and owner-gated `POST /api/admin/subscriptions/grant`.
+- Support role cannot grant entitlements. The RPC explicitly rejects a missing admin record as well as a disallowed role.
+
+### Flutterwave recurring-payment boundary
+
+Flutterwave documents Payment Plans and recurring charge notifications. The subscription email is bound to the provider subscription and cannot simply be changed in place; failed recurring charges are retried by Flutterwave and repeated failures can cancel the subscription. Uganda one-time mobile-money documentation covers MTN/Airtel authorization, but it does not establish that recurring mobile-money debits are supported for this merchant. Do not promise automatic MoMo renewals. The recurring payment adapter remains a later sandbox-only integration after the merchant's enabled methods and recurring eligibility are confirmed.
+
+### Batch 6 validation gate
+
+Added API tests for public plan filtering, customer ownership scope, support-role denial, audited grant RPC arguments and period limits. The migration has not been applied to staging or production. Before release, run it on an isolated Supabase staging project, test missing/unauthorized admin roles, overlapping concurrent grants, subscription expiry and RLS under real authenticated sessions. Do not grant paid entitlements or enable recurring collection until payment settlement, renewal, cancellation, failed-payment grace and reconciliation are implemented and verified.
