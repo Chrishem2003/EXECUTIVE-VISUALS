@@ -24,7 +24,7 @@ This batch adds a local-media program monitor and shared sequence transport. It 
 
 ## Accuracy and constraints
 
-The transport clock is frame-indexed, but HTML media seeking is best-effort. The HTMLMediaElement currentTime value has browser-dependent update cadence; requestVideoFrameCallback can observe presented video frames but does not guarantee that callback work is perfectly synchronized with the compositor. This implementation therefore does not claim frame-accurate source seeking or professional-grade real-time compositing.
+The transport clock is frame-indexed, but HTML media seeking is best-effort. Browser element volume supports attenuation; positive gain above unity is capped in this preview, so the final renderer remains authoritative for gain staging and the finished mix. The HTMLMediaElement currentTime value has browser-dependent update cadence; requestVideoFrameCallback can observe presented video frames but does not guarantee that callback work is perfectly synchronized with the compositor. This implementation therefore does not claim frame-accurate source seeking or professional-grade real-time compositing.
 
 Cloud preview, caption rendering, transitions, effects, proxies as default preview sources, video-on-video finishing and measured dropped-frame telemetry remain separate follow-up work.
 
