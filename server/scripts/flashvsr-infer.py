@@ -51,6 +51,7 @@ def probe(repo_root, model_dir):
         import imageio
         import einops
         sys.path.insert(0, str(wan))
+        sys.path.insert(0, str(root))
         import diffsynth
         from utils.TCDecoder import build_tcdecoder
         runtime["dependencies"] = True
@@ -129,6 +130,7 @@ def main():
         original_cwd = Path.cwd()
         os.chdir(wan)
         sys.path.insert(0, str(wan))
+        sys.path.insert(0, str(root))
         try:
             upstream = wan / "infer_flashvsr_v1.1_tiny_long_video.py"
             spec = importlib.util.spec_from_file_location("ev_upstream_flashvsr", upstream)
