@@ -1,4 +1,5 @@
 import { billingEnforcementEnabled } from "./billing.mjs";
+import { ensureCloudSubscriptionSyncSchema, enqueueCloudSubscriptionSync } from "./cloud-subscription-sync.mjs";
 import { createHash, createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 
 const now = () => new Date().toISOString();
@@ -32,6 +33,7 @@ export function dodoCustomerPortalEnabled(env = process.env) {
 }
 
 export function ensureDodoSubscriptionSchema(db) {
+  ensureCloudSubscriptionSyncSchema(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS billing_dodo_checkout_sessions (
       id TEXT PRIMARY KEY,
@@ -494,6 +496,12 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           description: "Dodo subscription activation credits"
         });
         db.prepare("UPDATE billing_dodo_checkout_sessions SET status='active',updated_at=? WHERE id=?").run(now(), checkout.id);
+        enqueueCloudSubscriptionSync(db,{
+          provider:"dodo",providerEventId:event.event_id,ownerId:checkout.user_id,
+          planCode:plan.code,providerCustomerId:data.customer_id||null,
+          providerSubscriptionId:subscriptionId,periodStart,periodEnd,status:"active",
+          metadata:{paymentId:data.payment_id||null,productId:data.product_id,amountMinor:Number(data.recurring_pre_tax_amount),currency:String(data.currency||"").toUpperCase()}
+        });
         markProcessed();
         db.exec("COMMIT");
       } catch (error) { db.exec("ROLLBACK"); throw error; }
@@ -522,6 +530,13 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           userId: local.user_id, plan, subscriptionId, paymentId: data.payment_id,
           paymentAmountMinor:data.recurring_pre_tax_amount,currency:data.currency,periodEnd: data.next_billing_date, idempotencyKey: "dodo-subscription-renewal:" + subscriptionId + ":" + data.payment_id,
           description: "Dodo subscription renewal credits"
+        });
+        enqueueCloudSubscriptionSync(db,{
+          provider:"dodo",providerEventId:event.event_id,ownerId:local.user_id,
+          planCode:plan.code,providerCustomerId:local.provider_customer_id||null,
+          providerSubscriptionId:subscriptionId,
+          periodStart:data.previous_billing_date||now(),periodEnd:data.next_billing_date,status:"active",
+          metadata:{paymentId:data.payment_id,productId:data.product_id,amountMinor:Number(data.recurring_pre_tax_amount),currency:String(data.currency||"").toUpperCase()}
         });
         markProcessed();
         db.exec("COMMIT");
