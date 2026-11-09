@@ -22,13 +22,14 @@ Provision these components on an isolated GPU worker, not on the web/API process
 
 1. A clean Python 3.11 environment compatible with the upstream pinned dependencies.
 2. A checkout of the official FlashVSR repository.
-3. The official Block-Sparse Attention backend installed in that same environment.
-4. The FlashVSR v1.1 model files in \`examples/WanVSR/FlashVSR-v1.1/\`:
+3. From that checkout, install the upstream package and pinned requirements with \`pip install -e .\` and \`pip install -r requirements.txt\`.
+4. The official Block-Sparse Attention backend installed in that same environment, following the upstream build instructions. This is a separate dependency and is not installed by this application.
+5. The FlashVSR v1.1 model files in \`examples/WanVSR/FlashVSR-v1.1/\`:
    - \`diffusion_pytorch_model_streaming_dmd.safetensors\`
    - \`LQ_proj_in.ckpt\`
    - \`TCDecoder.ckpt\`
    - \`Wan2.1_VAE.pth\`
-5. FFmpeg and FFprobe available to the worker.
+6. FFmpeg and FFprobe available to the worker.
 
 Set the following server environment variables only after provisioning:
 
