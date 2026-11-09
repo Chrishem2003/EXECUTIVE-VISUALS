@@ -328,19 +328,24 @@ async function validatePngFile(path, maxBytes) {
 
 async function validateImageOutput(path, format, maxBytes) {
   if (format === "png") return validatePngFile(path, maxBytes);
-  const handle = await open(path, "r");
+  const before = await lstat(path).catch(() => null);
+  if (!before?.isFile() || before.isSymbolicLink()) throw fail("AI upscaling output must be a regular, non-symlink image file.", "AI_UPSCALE_OUTPUT_INVALID");
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.isSymbolicLink() || info.dev !== before.dev || info.ino !== before.ino ||
+        info.size !== before.size || info.size < 24 || info.size > maxBytes) {
+      throw fail("AI upscaling image changed during validation or is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
     const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
     const bytes = header.subarray(0, bytesRead);
-    const valid = format === "png"
-      ? bytes.length >= 24 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR"
-      : format === "jpg"
-        ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-        : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
+    const valid = format === "jpg"
+      ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
     if (!valid) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
     return dimensionsFromHeader(bytes);
-  } finally { await handle.close(); }
+  } finally { await handle.close().catch(() => {}); }
 }
 
 export function createRealEsrganAdapter({
