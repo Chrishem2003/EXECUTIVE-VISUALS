@@ -156,10 +156,12 @@ export async function initiateFlutterwaveRefund({
   clientId = process.env.FLW_CLIENT_ID,
   clientSecret = process.env.FLW_CLIENT_SECRET,
   baseUrl = process.env.FLW_API_BASE_URL || "https://developersandbox-api.flutterwave.com",
+  allowLive = process.env.FLW_ALLOW_LIVE === "true",
   fetchImpl = fetch
 }) {
   const parsedBase = new URL(baseUrl);
   if (!["developersandbox-api.flutterwave.com","f4bexperience.flutterwave.com"].includes(parsedBase.hostname)) throw Object.assign(new Error("Unsupported Flutterwave v4 API host."), { code: "INVALID_PROVIDER_BASE_URL" });
+  if (parsedBase.hostname === "f4bexperience.flutterwave.com" && !allowLive) throw Object.assign(new Error("Live Flutterwave requests require explicit FLW_ALLOW_LIVE=true."), { code: "LIVE_PROVIDER_DISABLED" });
   const getAccessToken = createFlutterwaveAccessTokenProvider({ clientId, clientSecret, fetchImpl });
   const accessToken = await getAccessToken();
   if (!chargeId || !idempotencyKey || !traceId || !reason) {
