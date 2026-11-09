@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { chmod, copyFile, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
+import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, validateUpscaleFixtureManifest } from "./upscale-benchmark-runner.mjs";
 import { summarizeUpscaleBenchmarks, validateUpscaleBenchmarkRecord } from "./upscale-benchmark.mjs";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime"]);
@@ -23,7 +23,19 @@ export function validateUpscaleHumanReviewNotes(notes, reviewManifest) {
   const errors = [];
   const add = message => errors.push(message);
   if (!notes || typeof notes !== "object" || Array.isArray(notes)) return { valid: false, errors: ["Review notes must be an object."] };
-  if (!reviewManifest || typeof reviewManifest !== "object" || !Array.isArray(reviewManifest.fixtures)) return { valid: false, errors: ["A valid review package manifest is required."] };
+  if (!reviewManifest || typeof reviewManifest !== "object" || Array.isArray(reviewManifest) || !Array.isArray(reviewManifest.fixtures)) return { valid: false, errors: ["A valid review package manifest is required."] };
+  if (reviewManifest.schemaVersion !== 1 || !MODELS.has(reviewManifest.model) || typeof reviewManifest.modelVersion !== "string" || !reviewManifest.modelVersion.trim()) add("Review package manifest schema, model or model version is invalid.");
+  const manifestIds = new Set();
+  const manifestCategories = new Set();
+  for (const fixture of reviewManifest.fixtures) {
+    if (!fixture || typeof fixture !== "object" || Array.isArray(fixture)) { add("Every manifest fixture must be an object."); continue; }
+    if (typeof fixture.fixtureId !== "string" || !fixture.fixtureId.trim() || manifestIds.has(fixture.fixtureId)) add("Manifest fixture IDs must be non-empty and unique.");
+    else manifestIds.add(fixture.fixtureId);
+    if (!REQUIRED_UPSCALE_FIXTURE_CATEGORIES.includes(fixture.fixtureCategory) || manifestCategories.has(fixture.fixtureCategory)) add("Manifest must contain each required fixture category exactly once.");
+    else manifestCategories.add(fixture.fixtureCategory);
+    if (typeof fixture.inputSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(fixture.inputSha256) || typeof fixture.outputSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(fixture.outputSha256)) add("Manifest fixture source/output checksums must be valid SHA-256 digests.");
+  }
+  if (manifestCategories.size !== REQUIRED_UPSCALE_FIXTURE_CATEGORIES.length) add("Review package manifest is missing one or more required fixture categories.");
   if (notes.schemaVersion !== 1) add("Unsupported review notes schema version.");
   if (notes.reviewProtocol !== "ev-upscale-rubric-v1") add("Unsupported human review protocol.");
   if (notes.model !== reviewManifest.model || !MODELS.has(notes.model)) add("Review model does not match the package manifest.");
