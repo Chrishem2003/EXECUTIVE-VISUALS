@@ -879,5 +879,19 @@ begin
 end
 $workflow_router_settlement_assertion$;
 
+do $workflow_router_cost_ledger_immutable$
+begin
+ begin
+  update executive_visuals.video_generation_cost_ledger
+  set evidence_reference='tampered'
+  where job_id=(select job_id from workflow_approval_result);
+  raise exception 'provider cost ledger unexpectedly allowed mutation';
+ exception when others then
+  if sqlerrm = 'provider cost ledger unexpectedly allowed mutation' then raise; end if;
+  if sqlerrm <> 'VIDEO_COST_LEDGER_IS_APPEND_ONLY' then raise; end if;
+ end;
+end
+$workflow_router_cost_ledger_immutable$;
+
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
