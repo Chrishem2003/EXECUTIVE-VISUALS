@@ -151,7 +151,7 @@ export function createVideoAiUpscaleProcessor({
         await mkdir(inputFrames);await mkdir(outputFrames);
         const inputPattern=join(inputFrames,"%08d.png");
         await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-an","-sn","-dn","-vsync","0","-start_number","0",inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
-        const extracted=(await readdir(inputFrames)).filter(name=>/^\\d{8}\\.png$/.test(name)).sort();
+        const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
         if(extracted.length!==source.frames)throw fail("Extracted frame count does not match the source video; no derivative was published.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
         let remainingInputBytes=0;
         for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
@@ -174,7 +174,7 @@ export function createVideoAiUpscaleProcessor({
           if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
           progress(12+Math.round(((index+1)/source.frames)*70));
         }
-        const enhanced=(await readdir(outputFrames)).filter(name=>/^\\d{8}\\.png$/.test(name)).sort();
+        const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
         if(enhanced.length!==source.frames)throw fail("Enhanced frame count does not match the source video.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       }
       progress(84);
