@@ -335,7 +335,22 @@ test("AI upscaler enforces one total timeout budget across automatic tile retrie
   const input = join(directory, "source.png"), output = join(directory, "timed-out.png");
   const attemptsFile = join(directory, "attempts.txt");
   await writeFile(input, pngHeader(1, 1));
-  const source = "#!/usr/bin/env node\nconst fs = require(\"node:fs\");\nconst args = process.argv.slice(2);\nconst value = key => args[args.indexOf(key) + 1];\nconst tile = Number(value(\"-t\"));\nconst output = value(\"-o\");\nconst attemptsFile = \"/tmp/attempts-placeholder\";\nfs.appendFileSync(attemptsFile, String(tile) + \",\");\nsetTimeout(() => {\n  if (tile === 0) {\n    process.stderr.write(\"CUDA out of memory\");\n    process.exit(2);\n  }\n  fs.writeFileSync(output, \"completed output\");\n}, 600);\n".replace("/tmp/attempts-placeholder", JSON.stringify(attemptsFile));
+  const source = `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const value = key => args[args.indexOf(key) + 1];
+const tile = Number(value("-t"));
+const output = value("-o");
+const attemptsFile = ${JSON.stringify(attemptsFile)};
+fs.appendFileSync(attemptsFile, String(tile) + ",");
+setTimeout(() => {
+  if (tile === 0) {
+    process.stderr.write("CUDA out of memory");
+    process.exit(2);
+  }
+  fs.writeFileSync(output, "completed output");
+}, 600);
+`;
   await writeFile(binary, source);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
