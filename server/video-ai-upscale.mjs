@@ -223,7 +223,7 @@ export function createVideoAiUpscaleProcessor({
         path:outputPath,byteSize:outputInfo.size,inputBytes,sourceSha256,frameCount:source.frames,
         frameRate:{numerator:Number(String(fpsText).split("/")[0]),denominator:Number(String(fpsText).split("/")[1]||1)},
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
-        model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,subtitleStreams:source.subtitles.length,
+        scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,subtitleStreams:source.subtitles.length,
         audioHandling:audioCodecSafe?"original-audio-streams-copied":"audio-transcoded-to-aac",
         subtitleHandling:source.subtitles.length?"subtitles-transcoded-to-mov_text":"no-subtitles",
         engine,model:temporalResult?.model||model,frameProcessing:temporalResult?"temporal-video-model-inference":"sequential-image-model-inference",temporalModel:temporalResult?.temporalModel===true,temporalModelLicense:temporalResult?.license||null,tileFallbackCount,tileFallbackFrames,temporalQuality,temporalConsistency:"not-certified",
