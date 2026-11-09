@@ -309,8 +309,8 @@ export async function cancelFlutterwaveSubscription(db,{user,secretKey=process.e
   if(!listResponse.ok)throw fail("Flutterwave subscription lookup was rejected. No local subscription state was changed.","BILLING_PROVIDER_LOOKUP_FAILED",502);
   let listBody;try{listBody=await listResponse.json();}catch{throw fail("Flutterwave returned an invalid subscription lookup response.","BILLING_PROVIDER_RESPONSE_INVALID",502);}
   const matches=Array.isArray(listBody?.data)?listBody.data.filter(item=>
-    String(item?.plan?.id??item?.plan_id??"")===paymentPlanId&&
-    String(item?.transaction_id??item?.initial_transaction_id??"")===initialTransactionId&&
+    String(item?.plan?.id??item?.plan_id??item?.plan??"")===paymentPlanId&&
+    (item?.transaction_id==null&&item?.initial_transaction_id==null||String(item?.transaction_id??item?.initial_transaction_id)===initialTransactionId)&&
     String(item?.customer?.email??item?.email??"").trim().toLowerCase()===String(local.email).trim().toLowerCase()):[];
   if(listBody?.status!=="success"||matches.length!==1||!/^[0-9]{1,18}$/.test(String(matches[0]?.id||"")))
     throw fail("Flutterwave did not return exactly one subscription matching this account, plan and initial payment. Contact support before retrying.","BILLING_SUBSCRIPTION_MATCH_AMBIGUOUS",409);
