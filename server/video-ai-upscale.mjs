@@ -78,7 +78,7 @@ function colorArgs(source){
 export function createVideoAiUpscaleProcessor({
   runCommand,
   upscalerFactory,
-  maxFrames=1800,
+  maxFrames=300,
   maxDurationSeconds=600,
   maxInputBytes=2*1024*1024*1024,
   maxOutputBytes=4*1024*1024*1024,
