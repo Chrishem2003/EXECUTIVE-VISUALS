@@ -187,6 +187,10 @@ export async function runUpscaleBenchmark({
         outputHeight: result.outputDimensions.height,
         scale: fixture.scale,
         durationMs: Math.max(1, Math.round(performance.now() - started)),
+        requestedTile: result.requestedTile,
+        tile: result.tile,
+        tileFallbackUsed: result.tileFallbackUsed,
+        tileAttempts: result.tileAttempts,
         executionStatus: "passed",
         qualityReview: "not_reviewed",
         timestamp: new Date().toISOString()
