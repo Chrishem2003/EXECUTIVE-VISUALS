@@ -58,6 +58,19 @@ const EXTENSIONS = {
   "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.ai-video-upscale","timeline.render"]);
+function getVideoUpscaleWorkerLimits(){
+  const limits={
+    maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),
+    maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),
+    maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),
+    maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592)
+  };
+  const valid=Number.isInteger(limits.maxFrames)&&limits.maxFrames>=1&&limits.maxFrames<=18000&&
+    Number.isFinite(limits.maxDurationSeconds)&&limits.maxDurationSeconds>0&&limits.maxDurationSeconds<=3600&&
+    Number.isSafeInteger(limits.maxOutputPixels)&&limits.maxOutputPixels>=1&&limits.maxOutputPixels<=100000000&&
+    Number.isSafeInteger(limits.maxTempBytes)&&limits.maxTempBytes>=64*1024*1024&&limits.maxTempBytes<=32*1024*1024*1024;
+  return {limits,valid};
+}
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -379,7 +392,8 @@ export function createAppServer() {
         const enabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
         const ffmpegAvailable=executableAvailable("ffmpeg"),ffprobeAvailable=executableAvailable("ffprobe");
         const modelReady=modelStatus.available&&modelStatus.executionEnabled&&modelStatus.executionVerified;
-        send(res,200,{enabled,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{maxFrames:Number(process.env.AI_VIDEO_UPSCALE_MAX_FRAMES||1800),maxDurationSeconds:Number(process.env.AI_VIDEO_UPSCALE_MAX_DURATION_SECONDS||600),maxOutputPixels:Number(process.env.AI_VIDEO_UPSCALE_MAX_OUTPUT_PIXELS||40000000),maxTempBytes:Number(process.env.AI_VIDEO_UPSCALE_MAX_TEMP_BYTES||8589934592),scales:[2,4]},temporalConsistency:"not-certified"},cors);return;
+        const {limits,valid:limitsValid}=getVideoUpscaleWorkerLimits();
+        send(res,200,{enabled,ready:enabled&&ffmpegAvailable&&ffprobeAvailable&&modelReady&&limitsValid,ffmpegAvailable,ffprobeAvailable,model,modelReady,modelStatus,limits:{...limits,scales:[2,4]},limitsValid,temporalConsistency:"not-certified"},cors);return;
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
@@ -865,6 +879,7 @@ export function createAppServer() {
         const projectId=String(body.projectId||"");
         const items=Array.isArray(body.items)?body.items:[];
         if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+        if(!getVideoUpscaleWorkerLimits().valid){fail(res,409,"VIDEO_AI_UPSCALE_LIMITS_INVALID","Video AI worker limits are invalid; correct the frame, duration, pixel or temporary-storage configuration.");return;}
         if(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")){fail(res,409,"MEDIA_ENGINE_MISSING","FFmpeg and FFprobe must both be available on the worker.");return;}
         if(!projectId||!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Choose a project you own or can edit.");return;}
         if(items.length<1||items.length>10){fail(res,400,"VIDEO_BATCH_LIMIT","A video batch must contain between 1 and 10 source videos.");return;}
@@ -935,6 +950,7 @@ export function createAppServer() {
         }
         if(type==="media.ai-video-upscale"){
           if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){fail(res,409,"AI_VIDEO_UPSCALE_DISABLED","Video AI upscaling is disabled until an administrator explicitly enables the worker feature flag.");return;}
+          if(!getVideoUpscaleWorkerLimits().valid){fail(res,409,"VIDEO_AI_UPSCALE_LIMITS_INVALID","Video AI worker limits are invalid; correct the frame, duration, pixel or temporary-storage configuration.");return;}
           const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??2);
           if(![2,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Video AI upscaling supports only 2x or 4x scale.");return;}
           const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
