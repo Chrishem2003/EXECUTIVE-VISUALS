@@ -108,6 +108,6 @@ The development branch now contains the first subscription foundation:
 - Owner/billing-admin-only manual grant API backed by an audited SQL RPC.
 - No automatic Flutterwave recurring charge, cancellation, renewal or failed-payment state machine is activated yet.
 
-Flutterwave's Payment Plans documentation describes recurring subscriptions and charge lifecycle webhooks. Its Uganda one-time MoMo guide documents MTN and Airtel payment authorization; it does not prove recurring MoMo eligibility. Confirm recurring method availability with the approved merchant account before offering subscriptions. See the official references below.
+Flutterwave's Payment Plans documentation explicitly says that attaching a plan fixes the payment method to card. It also documents email-bound subscriptions, three additional retry attempts at 30-minute intervals, and cancellation after repeated failures. Uganda's MTN/Airtel MoMo guide describes one-time authorization, not recurring MoMo. The first recurring integration should therefore be card-only where enabled on the approved merchant account; do not market MoMo auto-renewal without written provider confirmation. See the official references below.
 
 **Release gate:** execute the new migration and API tests in isolated staging; then implement provider-backed subscription lifecycle events and verify renewal/cancellation/recovery. Do not expose paid plans until the merchant's recurring method, settlement and unit economics are verified.
