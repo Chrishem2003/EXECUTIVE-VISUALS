@@ -142,6 +142,9 @@ export function createVideoAiUpscaleProcessor({
         temporalOutputPath=join(workspace,"flashvsr-temporal-output.mp4");
         progress(12);
         temporalResult=await temporalUpscaler.execute({inputPath:sourcePath,outputPath:temporalOutputPath,scale:Number(scale),signal,onProgress:value=>progress(12+Math.round(value*.68))});
+        const temporalInfo=await lstat(temporalOutputPath).catch(()=>null);
+        if(!temporalInfo?.isFile()||temporalInfo.isSymbolicLink()||temporalInfo.size<1)throw fail("FlashVSR temporal intermediate is not a regular non-empty file.","FLASHVSR_OUTPUT_INVALID");
+        if(temporalInfo.size>maxTempBytes)throw fail("FlashVSR temporal intermediate exceeds the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
         const temporalProbe=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,pix_fmt","-of","json",temporalOutputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
         const temporalVideo=parseProbe(temporalProbe.stdout);
         if(temporalVideo.frames!==source.frames||temporalVideo.width!==outputWidth||temporalVideo.height!==outputHeight||Math.abs(temporalVideo.fps-source.fps)>0.0001)throw fail("Temporal model output did not preserve exact source frame count, 4x dimensions and frame rate.","FLASHVSR_OUTPUT_PROFILE_MISMATCH");
