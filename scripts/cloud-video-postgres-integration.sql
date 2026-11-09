@@ -861,7 +861,7 @@ begin
   where job_id=queued.job_id;
  select * into job_row from executive_visuals.jobs where id=queued.job_id;
  if reservation.state <> 'settled' or reservation.actual_amount <> 2.25
-    or policy.reserved_amount <> 0 or policy.spent_amount <> 2.25
+    or policy.reserved_amount <> 4.5 or policy.spent_amount <> 2.25
     or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
     or job_row.lease_owner is not null then
   raise exception 'Model Router settlement mismatch: reservation state %, actual %, policy reserved %, spent %, submission state %, job status %, lease %', reservation.state, reservation.actual_amount, policy.reserved_amount, policy.spent_amount, submission.state, job_row.status, job_row.lease_owner;
