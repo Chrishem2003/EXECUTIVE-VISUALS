@@ -1,4 +1,5 @@
-import { lstat, readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
+import { constants } from "node:fs";
 import { resolve } from "node:path";
 import { sha256Hex, summarizeUpscaleBenchmarks } from "./upscale-benchmark.mjs";
 
@@ -26,25 +27,38 @@ export async function loadUpscaleQualityEvidence({ filePath = process.env.AI_UPS
   }
 
   const path = resolve(filePath);
-  let info;
+  let handle;
   try {
-    info = await lstat(path);
+    // O_NOFOLLOW prevents a symlink swap between validation and opening on supported hosts.
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   } catch {
-    return { configured: true, models: {}, reason: "The configured local benchmark evidence file is unavailable." };
-  }
-  if (!info.isFile() || info.isSymbolicLink()) {
-    return { configured: true, models: {}, reason: "The benchmark evidence path must be a regular non-symlink file." };
-  }
-  if (info.size < 2 || info.size > MAX_EVIDENCE_BYTES) {
-    return { configured: true, models: {}, reason: "The benchmark evidence file is empty or exceeds the 4 MiB safety limit." };
+    return { configured: true, models: {}, reason: "The configured benchmark evidence file is unavailable or is a symlink." };
   }
 
   let payload;
   try {
-    payload = JSON.parse(await readFile(path, "utf8"));
+    const info = await handle.stat();
+    if (!info.isFile()) {
+      return { configured: true, models: {}, reason: "The benchmark evidence path must be a regular non-symlink file." };
+    }
+    if (info.size < 2 || info.size > MAX_EVIDENCE_BYTES) {
+      return { configured: true, models: {}, reason: "The benchmark evidence file is empty or exceeds the 4 MiB safety limit." };
+    }
+    const bytes = await handle.readFile();
+    if (bytes.length < 2 || bytes.length > MAX_EVIDENCE_BYTES) {
+      return { configured: true, models: {}, reason: "The benchmark evidence file changed size or exceeds the 4 MiB safety limit." };
+    }
+    try {
+      payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    } catch {
+      return { configured: true, models: {}, reason: "The benchmark evidence file is not valid UTF-8 JSON." };
+    }
   } catch {
-    return { configured: true, models: {}, reason: "The benchmark evidence file is not valid JSON." };
+    return { configured: true, models: {}, reason: "The configured benchmark evidence file could not be read safely." };
+  } finally {
+    await handle.close().catch(() => {});
   }
+
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Array.isArray(payload.records)) {
     return { configured: true, models: {}, reason: "The benchmark evidence file must contain a records array." };
   }
