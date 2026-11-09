@@ -602,7 +602,7 @@ const billingAccount=touchBillingAccount(db,user);
       if(path==="/api/billing/flutterwave-subscription-cancel"&&req.method==="POST"){
         if(!flutterwaveRecurringCheckoutEnabled()){fail(res,503,"FLW_SUBSCRIPTIONS_DISABLED","Flutterwave recurring subscription management is disabled.");return;}
         const result=await cancelFlutterwaveSubscription(db,{user,secretKey:process.env.FLW_SECRET_KEY});
-        audit(db,user.id,"billing.subscription.cancel_requested",{provider:"flutterwave"});
+        audit(db,user.id,"billing.subscription.cancel_requested","subscription",result.subscriptionId||"current",{provider:"flutterwave",status:result.status});
         send(res,200,{cancellation:result},cors);return;
       }
       if(path==="/api/billing/flutterwave-subscription-checkout"&&req.method==="POST"){
