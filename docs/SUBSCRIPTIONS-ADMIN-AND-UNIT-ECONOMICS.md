@@ -163,3 +163,28 @@ past-due and plan-change state synchronization, Flutterwave recurring
 subscription events, payment sandbox verification and production activation
 remain separate gates. This does not enable checkout or live payment
 collection by itself.
+
+
+## Provider subscription lifecycle synchronization
+
+A separate service-role-only PostgreSQL RPC now mirrors verified Dodo lifecycle
+events without invoking the period-credit grant operation. The durable outbox
+supports distinct `activate` and `status` actions, so cancellation, pause,
+past-due, recovery, expiry and plan changes cannot accidentally allocate a
+second period of credits.
+
+- Dodo lifecycle updates and their outbox records commit in the same local
+  transaction as the local subscription state change.
+- The cloud status RPC updates lifecycle state, optional plan mapping,
+  scheduled-cancellation state and past-due grace deadline.
+- Provider event IDs are retained in cloud metadata; exact status-event retries
+  return an idempotent receipt.
+- A scheduled cancellation can remain active through the current paid period;
+  an immediate cancellation, pause or expiry removes generation entitlement
+  according to the cloud reservation policy.
+- PostgreSQL integration coverage checks pause, past-due grace, recovery and
+  duplicate status-event handling.
+
+Flutterwave recurring subscription lifecycle integration and live provider
+sandbox verification remain separate work. This migration is not applied to
+production by this PR.
