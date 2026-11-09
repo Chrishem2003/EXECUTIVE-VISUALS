@@ -191,7 +191,7 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{received:true,result});
       }
-      if(/^subscription\\./i.test(event)) {
+      if(/^subscription\./i.test(event)) {
         // Flutterwave's cancellation example does not guarantee a stable local
         // subscription ID. Preserve the signed callback for reconciliation;
         // never revoke access based on an ambiguous email/plan-only payload.
