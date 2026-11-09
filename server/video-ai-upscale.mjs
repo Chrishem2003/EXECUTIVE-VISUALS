@@ -7,7 +7,7 @@ const rational=value=>{
   const [a,b]=String(value||"").split("/").map(Number);
   return Number.isFinite(a)&&Number.isFinite(b)&&b>0?a/b:null;
 };
-const finite=value=>Number.isFinite(Number(value))?Number(value):null;
+const finite=value=>value===null||value===undefined||String(value).trim()===""?null:Number.isFinite(Number(value))?Number(value):null;
 const checkCancelled=signal=>{if(signal?.aborted)throw fail("Video AI upscaling was cancelled.","JOB_CANCELLED");};
 const run=async(runCommand,binary,args,options={})=>{
   checkCancelled(options.signal);
@@ -29,7 +29,7 @@ function parseProbe(stdout){
   return {raw:value,video,audio,frames,fps,width,height,duration:finite(video.duration)||finite(value.format?.duration),startTime:finite(video.start_time)||0};
 }
 function parseFrameTimes(stdout){
-  const times=String(stdout||"").split(/\r?\n/).map(line=>finite(line.trim())).filter(value=>value!==null);
+  const times=String(stdout||"").split(/\\r?\\n/).map(line=>line.trim()).filter(Boolean).map(finite).filter(value=>value!==null);
   return times;
 }
 function assertConstantFrameRate(times,fps,frameCount){
