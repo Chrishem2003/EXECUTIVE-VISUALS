@@ -210,9 +210,9 @@ Added `supabase/migrations/20261110170000_credit_reservation_accounting.sql` and
 - All reservation tables and RPCs are service-role only. No client can invoke reserve, settle or release directly.
 - Adds authenticated `GET /api/billing/credits` and tests for owner scoping and malformed balance data.
 
-### Integration gate
+### Integration gate (historical note; superseded by Batch 5)
 
-This batch establishes the accounting primitives only. It does **not** yet reserve or settle credits in the cloud generation/timeline worker or local generation pipeline. Do not activate credit packs or advertise purchased credits as usable until job creation, provider submission, terminal success/failure, retry/recovery and cancellation are wired to these RPCs. The new migration remains unapplied; no staging or production database was changed.
+This batch originally established accounting primitives only. Batch 5 subsequently wired server-quoted credit reservations to cloud timeline render submission and atomic terminal settlement/release. Local generation pipelines and other provider-specific generation paths still require their own billing integration. The credit migrations remain unapplied; no staging or production database was changed.
 
 
 ## Batch 4 — customer invoice history API
