@@ -10,6 +10,10 @@ The adapter exposes the NCNN CLI `-g` option as `gpu`. The default `auto` lets N
 
 The adapter exposes `recommendModel(contentType)` as an explicit preset helper. Supported content types are `photograph`, `natural_detail`, `anime`, and `animation_video`. It returns an allowlisted NCNN model, a suggested scale, and a rationale. This is operator-selected guidance, not automatic image classification; the caller must pass the returned model to `plan` or `execute` and may override it after review. The helper does not claim that one model is universally best for a particular asset.
 
+## Content-aware execution entry points
+
+Use `planForContent({ contentType, ...options })` to build a validated NCNN plan from an explicit content preset. Use `executeForContent({ contentType, ...options })` to run the same flow and return the selected content type and recommendation rationale with the derivative metadata. Supported presets are `photograph`, `natural_detail`, `anime`, and `animation_video`. Explicit `model` and `scale` options override the preset after the standard allowlist and range validation. No automatic classification is performed.
+
 ## Safe thread tuning
 
 - Default: `1:2:2` (conservative worker profile).
