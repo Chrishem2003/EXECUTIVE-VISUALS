@@ -69,6 +69,14 @@ export function createUpscaleBatchProcessor({
     const results = new Array(batch.length);
     let cursor = 0;
     let completed = 0;
+    const reportProgress = (item, status) => {
+      completed++;
+      if (typeof onProgress === "function") {
+        try {
+          onProgress(Object.freeze({ completed, total: batch.length, itemId: item.id, status }));
+        } catch { /* Progress observers cannot change processing outcomes. */ }
+      }
+    };
 
     async function worker() {
       while (true) {
@@ -77,6 +85,7 @@ export function createUpscaleBatchProcessor({
         const item = batch[index];
         if (signal?.aborted) {
           results[index] = { id: item.id, status: "cancelled", code: "JOB_CANCELLED" };
+          reportProgress(item, "cancelled");
           continue;
         }
         try {
@@ -97,7 +106,8 @@ export function createUpscaleBatchProcessor({
             model: result.model ?? item.options.model ?? null,
             scale: result.scale ?? item.options.scale ?? null,
             qualityAssessment: result.qualityAssessment ?? { status: "not_assessed", method: null },
-            qualityReviewRequired: result.qualityReviewRequired !== false
+            // No trusted perceptual assessor is connected yet; keep the review gate closed.
+            qualityReviewRequired: true
           };
         } catch (error) {
           results[index] = {
@@ -107,17 +117,7 @@ export function createUpscaleBatchProcessor({
             error: String(error?.message || "AI upscaling failed.").slice(0, 500)
           };
         } finally {
-          completed++;
-          if (typeof onProgress === "function") {
-            try {
-              onProgress(Object.freeze({
-                completed,
-                total: batch.length,
-                itemId: item.id,
-                status: results[index].status
-              }));
-            } catch { /* Progress observers cannot change processing outcomes. */ }
-          }
+          reportProgress(item, results[index].status);
         }
       }
     }
