@@ -212,7 +212,7 @@ test("Flutterwave recurring checkout uses a configured payment plan and card-onl
   const checkout=await createFlutterwaveSubscriptionCheckout(db,{
     user:{id:"user-pay-1",email:"pay@example.test"},planId:plan.id,
     secretKey:"flw-test-secret-key",publicAppUrl:"https://executive.example.com",
-    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
+    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_MERCHANT_APPROVED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
       BILLING_ENFORCEMENT_ENABLED:"true",FLW_PAYMENT_PLAN_ID_CREATOR_MONTHLY:"87654"},
     fetchImpl:async(url,options)=>{
       request={url:String(url),body:JSON.parse(options.body)};
@@ -236,7 +236,7 @@ test("verified Flutterwave recurring first payment activates one subscription an
   const checkout=await createFlutterwaveSubscriptionCheckout(db,{
     user:{id:"user-pay-1",email:"pay@example.test"},planId:plan.id,secretKey:"flw-test-secret-key",
     publicAppUrl:"https://executive.example.com",
-    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
+    env:{FLW_SUBSCRIPTIONS_ENABLED:"true",FLW_MERCHANT_APPROVED:"true",FLW_WEBHOOK_SECRET:"test-webhook-secret-with-at-least-24-chars",
       BILLING_ENFORCEMENT_ENABLED:"true",FLW_PAYMENT_PLAN_ID_CREATOR_MONTHLY:"87654"},
     fetchImpl:async()=>new Response(JSON.stringify({status:"success",data:{link:"https://checkout.flutterwave.com/pay/session"}}),{status:200})
   });
