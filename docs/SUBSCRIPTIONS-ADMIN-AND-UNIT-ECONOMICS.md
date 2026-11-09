@@ -137,3 +137,29 @@ secret redaction.
 verification in sandbox, renewal event ordering, cancellation/past-due
 reconciliation, plan pricing and credit allocation approval, and production
 migration/deployment. No live payment collection is enabled.
+
+
+## Verified Dodo → cloud subscription synchronization
+
+Verified Dodo subscription activation and renewal events now enqueue a durable
+local outbox record in the same SQLite transaction as the local subscription
+and credit-ledger update. A separate worker mirrors that record to the
+Supabase `executive_visuals` schema using the service-role-only subscription
+activation and period-credit RPCs.
+
+- The outbox is unique by provider + webhook event ID.
+- It stores only the owner, mapped plan code, provider subscription/customer
+  IDs, billing period, verified event ID and bounded reconciliation metadata.
+- Activation and period-credit grant are separate idempotent calls. If the
+  worker stops after activation, retry safely replays activation before
+  granting the period credits.
+- Failed cloud synchronization is retained with an attempt count and a
+  retryable error code; the Dodo webhook is not reprocessed or double-credited.
+- The worker runs only when both Supabase URL and service-role credentials are
+  configured. No credentials are committed.
+
+Current scope is Dodo activation and renewal. Provider cancellation, pause,
+past-due and plan-change state synchronization, Flutterwave recurring
+subscription events, payment sandbox verification and production activation
+remain separate gates. This does not enable checkout or live payment
+collection by itself.
