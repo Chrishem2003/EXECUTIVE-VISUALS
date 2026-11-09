@@ -1,0 +1,51 @@
+# AI Upscale Quality Evidence
+
+Executive Visuals separates three different claims:
+
+1. **Configured** — the NCNN/Vulkan executable and selected model files are readable.
+2. **Execution verified** — a model-specific self-test completed successfully on the worker.
+3. **Quality verified** — a complete, model-specific fixture benchmark passed human review.
+
+Only the third state makes the corresponding AI-upscale preset eligible for execution. A successful process exit, valid image header, or correct output dimensions is not proof of perceptual quality.
+
+## Local evidence file
+
+The worker reads an operator-managed JSON file from the local filesystem when `GET /api/providers` is requested. Configure the server-side environment variable:
+
+```text
+AI_UPSCALE_QUALITY_EVIDENCE_PATH=/absolute/private/path/upscale-quality-evidence.json
+```
+
+The path must refer to a regular, non-symlink file no larger than 4 MiB. The file is read-only; the application does not write review evidence. Do not commit real review artifacts, private source media, or customer assets to Git.
+
+The JSON document has one top-level `records` array. Each model must have a distinct, complete set of records covering all five categories:
+
+- `portrait`
+- `fine_texture`
+- `text`
+- `animation`
+- `low_light_noisy`
+
+Every record must include the benchmark fields validated by `server/upscale-benchmark.mjs`, including pinned model/version, executable and model-file SHA-256 hashes, source/output hashes, integer dimensions, exact scale, duration, execution status and timestamp. Successful outputs must exactly match the declared 2×, 3× or 4× dimensions.
+
+Every passing review must additionally include:
+
+- `qualityReview: "reviewed_pass"`
+- `reviewerId`: stable reviewer identifier
+- `reviewedAt`: ISO-8601 timestamp
+- `reviewNotes`: substantive notes of at least 20 characters
+- `reviewArtifactSha256`: SHA-256 digest of the review artifact
+
+Optional SSIM and LPIPS values must be normalized to the 0–1 range. Do not invent metric values when no suitable reference exists. A review artifact should document the source/output comparison and the checks performed.
+
+## Model isolation
+
+Evidence is grouped and evaluated independently by model. A passing general-purpose model review does not approve the anime model, and vice versa. Each model needs its own complete five-category fixture set and review artifacts.
+
+The API exposes only each model's readiness state and a short reason. It does not return reviewer notes, evidence-file paths, source media, or the evidence document.
+
+## Fail-closed behavior
+
+The model remains unavailable when the file is missing, malformed, oversized, symlinked, incomplete, invalid, or contains an unreviewed/rejected record. Presets remain visible but disabled in the Asset Library with the relevant blocker.
+
+This evidence file does not install model weights, enable `AI_UPSCALE_ENABLED`, run inference, or authorize remote AI spending. Production workers must remain disabled until the worker executable, model files, execution self-test, benchmark evidence, derivative storage, cancellation, provenance and capacity have all been independently verified.
