@@ -62,6 +62,7 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", scale: 5 }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/a.png" }), error => error.code === "AI_UPSCALE_INVALID_PATH");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:99:2" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
+  assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "0:2:2" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:4:4" }), error => error.code === "AI_UPSCALE_INVALID_OPTIONS");
   const tuned = adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/b.png", threads: "1:3:2" });
   assert.equal(tuned.threads, "1:3:2");
