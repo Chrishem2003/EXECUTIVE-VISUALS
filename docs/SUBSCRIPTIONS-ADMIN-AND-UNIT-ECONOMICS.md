@@ -1,6 +1,6 @@
 # Executive Visuals — subscriptions, admin and sustainable unit economics
 
-**Status:** Product architecture and implementation backlog, not a live billing integration.  
+**Status:** Architecture plus a development-branch subscription/entitlement foundation. Not a live recurring billing integration.  
 **Budget constraint:** $0/month infrastructure budget. No paid services, plans, payment accounts or provider credits are activated by this document.
 
 ## Commercial product model
@@ -95,3 +95,19 @@ No merchant account, payment plan, payment API key or live transaction is create
 - Flutterwave Uganda pricing: https://flutterwave.com/ug/pricing
 - Pesapal recurring payments: https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/recurringpayments
 - Stripe country availability: https://stripe.com/global
+
+
+## Implementation checkpoint — 2026-11-10
+
+The development branch now contains the first subscription foundation:
+
+- Versioned plan catalogue and immutable entitlement snapshots.
+- Customer subscription state and subscription event audit trail.
+- One public non-billable Free plan only; paid plan prices and credit allowances remain unset.
+- Owner-scoped subscription and plan read APIs.
+- Owner/billing-admin-only manual grant API backed by an audited SQL RPC.
+- No automatic Flutterwave recurring charge, cancellation, renewal or failed-payment state machine is activated yet.
+
+Flutterwave's Payment Plans documentation describes recurring subscriptions and charge lifecycle webhooks. Its Uganda one-time MoMo guide documents MTN and Airtel payment authorization; it does not prove recurring MoMo eligibility. Confirm recurring method availability with the approved merchant account before offering subscriptions. See the official references below.
+
+**Release gate:** execute the new migration and API tests in isolated staging; then implement provider-backed subscription lifecycle events and verify renewal/cancellation/recovery. Do not expose paid plans until the merchant's recurring method, settlement and unit economics are verified.
