@@ -78,6 +78,7 @@ export function summarizeUpscaleBenchmarks(records) {
       const identity = Object.fromEntries(identityKeys.map(key => [key, key.endsWith("Sha256") ? record[key].toLowerCase() : record[key]]));
       if (benchmarkIdentity === null) benchmarkIdentity = identity;
       else if (identityKeys.some(key => identity[key] !== benchmarkIdentity[key])) {
+        validation.valid = false;
         validation.issues.push("all records in a benchmark summary must use the same model and pinned executable/model artifacts");
       }
     }
