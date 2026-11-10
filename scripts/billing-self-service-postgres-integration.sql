@@ -113,7 +113,7 @@ update executive_visuals.customer_subscriptions
  set status='active',current_period_start=now()-interval '1 day',current_period_end=now()+interval '29 days'
  where owner_id='11111111-1111-4111-8111-111111111111' and plan_code='pro-yearly';
 
-do $
+do $$
 declare
  dashboard jsonb;
  mrr bigint;
@@ -170,6 +170,6 @@ begin
   raise exception 'Financial audit update unexpectedly succeeded';
  exception when sqlstate '42501' then null;
  end;
-end $;
+end $$;
 
 reset role;
