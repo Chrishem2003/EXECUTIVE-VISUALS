@@ -25,7 +25,7 @@ export function normalizeGenAiUsage(input={}){
  const inputTokens=safeNumber(firstDefined(usage.billable_input_tokens,usage.input_tokens,usage.prompt_tokens,attrs["gen_ai.usage.input_tokens"],input.inputTokens),"Input token usage",{integer:true});
  const outputTokens=safeNumber(firstDefined(usage.billable_output_tokens,usage.output_tokens,usage.completion_tokens,attrs["gen_ai.usage.output_tokens"],input.outputTokens),"Output token usage",{integer:true});
  const operationRaw=String(firstDefined(attrs["gen_ai.operation.name"],input.operation,"other")).toLowerCase();
- const operationMap={chat:"text",text_completion:"text",generate_content:"video",embeddings:"embedding",image_generation:"image"};
+ const operationMap={chat:"text",text_completion:"text",generate_content:"other",embeddings:"embedding",image_generation:"image"};
  const operation=operationMap[operationRaw]||operationRaw;
  if(!provider||provider.length>80||!requestedModel||requestedModel.length>160||!OPERATIONS.has(operation))
   throw Object.assign(new Error("Provider, requested model or operation is missing or invalid."),{code:"AI_USAGE_IDENTITY_INVALID"});
