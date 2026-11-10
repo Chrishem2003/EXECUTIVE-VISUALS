@@ -1,0 +1,63 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { openDatabase } from "../db.mjs";
+import { createControlRemediationApi } from "../control-remediation-api.mjs";
+
+const owner="123e4567-e89b-42d3-a456-426614174000";
+const editor="223e4567-e89b-42d3-a456-426614174000";
+const reviewer="323e4567-e89b-42d3-a456-426614174000";
+const outsider="523e4567-e89b-42d3-a456-426614174000";
+const project="423e4567-e89b-42d3-a456-426614174000";
+function setup(){
+ const db=openDatabase(":memory:");
+ for(const [id,email] of [[owner,"owner@example.test"],[editor,"editor@example.test"],[reviewer,"reviewer@example.test"],[outsider,"outsider@example.test"]])db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run(id,email);
+ db.prepare("INSERT INTO projects(id,owner_id,name) VALUES(?,?,?)").run(project,owner,"Finance assurance");
+ db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?)").run(project,editor,"editor",owner);
+ db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?)").run(project,reviewer,"reviewer",owner);
+ return {db,api:createControlRemediationApi({db})};
+}
+const createBody={projectId:project,findingId:"bank-reconciliation-gap",controlId:"CTRL-REC-01",title:"Resolve unmatched bank settlements",severity:"high",ownerId:editor,reviewerId:reviewer,dueAt:"2026-12-01T00:00:00.000Z",actionPlan:"Reconcile bank statement against the settlement ledger."};
+test("persistent register creates project-scoped actions with independent owner and reviewer",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
+ assert.equal(result.status,201);
+ assert.equal(result.body.action.ownerId,editor);
+ assert.equal(result.body.action.reviewerId,reviewer);
+ assert.equal(result.body.action.status,"open");
+ assert.equal(result.body.action.revision,1);
+ const list=await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:reviewer,query:{projectId:project}});
+ assert.equal(list.status,200);assert.equal(list.body.total,1);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:outsider,query:{projectId:project}})).status,404);
+ f.db.close();
+});
+test("evidence, owner transition and independent reviewer verification persist with audit history",async()=>{
+ const f=setup();
+ const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
+ const id=created.body.action.id;
+ const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Bank reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z",sha256:"a".repeat(64)}});
+ assert.equal(evidence.status,201);assert.equal(evidence.body.action.evidence.length,1);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"pending_review"}})).status,200);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"verified"}})).status,403);
+ const verified=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:reviewer,body:{to:"verified",note:"Evidence independently reviewed."}});
+ assert.equal(verified.status,200);assert.equal(verified.body.action.status,"verified");
+ assert.equal(verified.body.action.verifiedBy,reviewer);
+ assert.equal(verified.body.action.history.length,5);
+ f.db.close();
+});
+test("optimistic revision, duplicate findings and invalid evidence fail safely",async()=>{
+ const f=setup();
+ const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
+ const id=created.body.action.id;
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody})).status,409);
+ assert.equal((await f.api.handle({method:"PATCH",path:"/api/finance/remediations/"+id,ownerId:owner,body:{expectedRevision:9,actionPlan:"stale"}})).status,409);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:outsider,body:{label:"No access",kind:"other",capturedAt:"2026-11-10"}})).status,404);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Bad hash",kind:"other",capturedAt:"2026-11-10",sha256:"bad"}})).status,400);
+ f.db.close();
+});
+test("API ignores unrelated routes and rejects malformed owner identities",async()=>{
+ const f=setup();
+ assert.equal(await f.api.handle({method:"GET",path:"/api/other",ownerId:owner}),null);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:"not-a-user"})).status,401);
+ f.db.close();
+});
