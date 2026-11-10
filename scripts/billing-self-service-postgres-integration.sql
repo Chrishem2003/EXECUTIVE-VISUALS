@@ -410,12 +410,12 @@ begin
  );
  original_id:=(direct_cost->>'id')::uuid;
  replay:=executive_visuals.record_financial_service_cost(
-  v_owner,month_start,v_owner,'ai_inference','provider_usage_export','UGX',1000,
+  v_owner,month_start,v_customer,'ai_inference','provider_usage_export','UGX',1000,
   'batch20-model-invoice','Attributed model inference cost','batch20-direct-cost-0001',null
  );
  if replay->>'idempotentReplay'<>'true' then raise exception 'Cost evidence replay was not idempotent'; end if;
  perform executive_visuals.record_financial_service_cost(
-  v_owner,month_start,v_owner,'ai_inference','provider_invoice','UGX',-200,
+  v_owner,month_start,v_customer,'ai_inference','provider_invoice','UGX',-200,
   'batch20-provider-credit','Partial provider credit reversal','batch20-direct-reversal-0001',original_id
  );
  perform executive_visuals.record_financial_service_cost(
@@ -424,7 +424,7 @@ begin
  );
  begin
   perform executive_visuals.record_financial_service_cost(
-   v_owner,month_start,v_owner,'ai_inference','provider_invoice','UGX',-900,
+   v_owner,month_start,v_customer,'ai_inference','provider_invoice','UGX',-900,
    'batch20-over-credit','Invalid excess provider credit','batch20-direct-reversal-over-0001',original_id
   );
   raise exception 'Excess cost reversal unexpectedly succeeded';
