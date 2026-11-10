@@ -12,6 +12,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "verify:capabilities": "node scripts/verify-capability-atlas.mjs",
+    "verify:workload-economics": "node --test server/tests/ai-workload-economics.test.mjs",
     "verify:media-operations": "node scripts/verify-media-operations.mjs",
     "verify:recipes": "node --test server/tests/enhancement-recipes.test.mjs",
     "verify:media-quality": "node --test server/tests/media-quality.test.mjs",
