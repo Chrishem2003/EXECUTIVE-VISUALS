@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [ev-release-validation, main]
 
 permissions:
   contents: read
