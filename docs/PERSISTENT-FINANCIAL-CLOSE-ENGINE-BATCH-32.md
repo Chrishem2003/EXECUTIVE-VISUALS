@@ -77,7 +77,7 @@ The server prepares the versioned canonical audit event, then calls one PostgreS
 - This engine manages close workflow state; it does not create or post journal entries, execute payments, alter invoices, or certify financial statements.
 - Evidence references are recorded but source-file bytes are not fetched or cryptographically re-hashed by this workflow.
 - Period locking is an application-level close control, not a lock on every underlying revenue, payment or cost source table.
-- Task and period changes require a finance administrator in the current API; finer-grained preparer/reviewer product roles and delegated authority are future work.
+- Task and period changes require a finance administrator in the current API. The current HTTP route derives both the account owner and actor from the authenticated user; although the database RPC supports distinct actors, cross-member actor scope is not yet exposed. Consequently this batch is an administrator-only single-account workflow, not yet a multi-user delegated close. Batch 33 should add finance-team membership, preparer/reviewer/controller roles and actor-scoped account authorization before wider team rollout.
 - Final approval is distinct from the submitter; the task workflow supports multiple ordered reviewers.
 - A close readiness assessment remains a separate evidence/reconciliation assessment. This engine does not silently infer reconciliation completion from a task status.
 
