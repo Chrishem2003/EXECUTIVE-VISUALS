@@ -60,7 +60,7 @@ begin
   select distinct se.owner_id,cs.currency
   from subscription_events se
   join customer_subscriptions cs on cs.id=se.subscription_id
-  where se.event_type in('cancelled','expired')
+  where se.event_type in('cancelled','expired') and cs.amount_minor>0
    and se.created_at>=now()-interval '180 days'
  ), churn_stats as(
   select cs.currency,count(distinct ce.owner_id)::integer cancellation_customers
@@ -124,10 +124,10 @@ begin
    coalesce(l.realized_revenue_minor,0) realized_revenue_minor,
    coalesce(h.high_health_customers,0) high_health_customers,
    coalesce(w.winback_candidates,0) winback_candidates,
-   case when coalesce(ac.activation_customers,0)+coalesce(ch.cancellation_customers,0)=0 then null
+   case when coalesce(ac.activation_customers,0)=0 then null
     else least(0.5,greatest(0,1-power(
      greatest(0.0001,1.0*coalesce(ch.cancellation_customers,0)/
-      greatest(1,coalesce(ac.activation_customers,0)+coalesce(ch.cancellation_customers,0))),1.0/6.0)))
+      greatest(1,coalesce(ac.activation_customers,0))),1.0/6.0)))
    end monthly_churn_rate
   from currency_set cur
   left join active_stats a on a.currency=cur.currency
@@ -160,9 +160,9 @@ begin
    'renewalMrr30dMinor',renewal_mrr_30d_minor,'pastDueSubscribers',past_due_subscribers,
    'cancellationCustomers180d',cancellation_customers,'activationCustomers180d',activation_customers,
    'observedMonthlyChurnPct',case when monthly_churn_rate is null then null else round(monthly_churn_rate*100,2) end,
-   'churnConfidence',case when activation_customers+cancellation_customers>=100 then 'moderate'
-    when activation_customers+cancellation_customers>=20 then 'low' else 'insufficient_data' end,
-   'churnSampleSize',activation_customers+cancellation_customers,
+   'churnConfidence',case when activation_customers>=100 then 'moderate'
+    when activation_customers>=20 then 'low' else 'insufficient_data' end,
+   'churnSampleSize',activation_customers,
    'payingCustomers',paying_customers,'averageRealizedLtvMinor',average_realized_ltv_minor,
    'realizedRevenueMinor',realized_revenue_minor,
    'predictedLtvMinor',case when monthly_churn_rate is not null and paying_customers>=10
