@@ -68,7 +68,7 @@ function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attemp
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
   .run(status,attempt,json(input),output===null?null:json(output),error===null?null:json(error),["completed","failed","blocked","skipped"].includes(status)?now():null,runId,nodeId);
 }
-export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{}}){
+export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},onResourceMeasurement=null}){
  const input=parseJson(job.input_json),runId=String(input.runId||"");
  const run=db.prepare("SELECT * FROM workflow_runs WHERE id=?").get(runId);
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
@@ -352,7 +352,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const result=await executeMediaJob({
       db,
       job:{...job,id:job.id,job_type:mediaType,input_json:json(mediaInput)},
-      mediaRoot,activeProcesses,
+      mediaRoot,activeProcesses,onResourceMeasurement,
       onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))
     });
     if(result.outputAsset){
