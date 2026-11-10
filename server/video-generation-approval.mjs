@@ -21,6 +21,7 @@ export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}=
  if(!quote||quote.available!==true||quote.estimated!==true||typeof quote.currency!=="string"||!quote.currency.trim()||!Number.isFinite(quote.amount)||quote.amount<0)throw Object.assign(new Error("A current verified production quote is required."),{code:"VIDEO_APPROVAL_PRICE_UNVERIFIED"});
  if(!budget||typeof budget!=="object"||budget.currency!==quote.currency||!Number.isFinite(budget.amount)||budget.amount<0)throw Object.assign(new Error("Budget ceiling must use the quote currency and be a non-negative amount."),{code:"VIDEO_APPROVAL_INVALID_BUDGET"});
  const quoteMicros=micros(quote.amount),ceilingMicros=micros(budget.amount);
+ if(!Number.isSafeInteger(quoteMicros)||!Number.isSafeInteger(ceilingMicros))throw Object.assign(new Error("Quote and budget amounts must fit within safe micro-unit precision."),{code:"VIDEO_APPROVAL_INVALID_BUDGET"});
  if(ceilingMicros<quoteMicros)throw Object.assign(new Error("The verified quote exceeds the approved budget ceiling."),{code:"VIDEO_APPROVAL_BUDGET_EXCEEDED"});
  const snapshot=canonical(shots);
  const requestHash=createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
