@@ -4,7 +4,7 @@ import {assessFinancialCloseReadiness} from "../financial-close-readiness.mjs";
 
 const hash="a".repeat(64);
 const evidence=[{evidenceId:"bank-rec",sha256:hash,sourceType:"bank_statement",sourceReference:"statement-2026-10",period:"2026-10",recordedAt:"2026-11-01T10:00:00Z",recordedBy:"finance-preparer"}];
-const completeTask={taskId:"cash-close",title:"Cash reconciliation",ownerId:"preparer-1",reviewerId:"reviewer-1",status:"completed",dueAt:"2026-11-03T17:00:00Z",completedAt:"2026-11-02T12:00:00Z",evidenceRefs:["bank-rec"],approval:{approvedBy:"reviewer-1",approvedAt:"2026-11-02T14:00:00Z",decision:"approved"}};
+const completeTask={taskId:"cash-close",title:"Cash reconciliation",ownerId:"preparer-1",reviewerId:"reviewer-1",status:"completed",dueAt:"2026-11-03T17:00:00Z",completedAt:"2026-11-02T12:00:00Z",evidenceRefs:["bank-rec"],approval:{preparedBy:"preparer-1",approvedBy:"reviewer-1",approvedAt:"2026-11-02T14:00:00Z",decision:"approved"}};
 const completeRecon={reconciliationId:"cash-ledger",status:"approved",currency:"UGX",varianceMinor:0,preparedBy:"preparer-1",reviewedBy:"reviewer-1",evidenceRefs:["bank-rec"]};
 
 test("a fully evidenced, independently reviewed period is eligible for human sign-off only",()=>{
@@ -39,7 +39,7 @@ test("self-approved tasks cannot qualify for human sign-off",()=>{
 });
 
 test("evidence must be present and carry a valid SHA-256 reference",()=>{
- assert.throws(()=>assessFinancialCloseReadiness({period:"2026-10",tasks:[completeTask],reconciliations:[],evidence:[]}),{code:"FINANCIAL_CLOSE_EVIDENCE_MISSING"});
+ const missing=assessFinancialCloseReadiness({period:"2026-10",tasks:[{...completeTask,evidenceRefs:[]}],reconciliations:[],evidence:[]});\n assert.equal(missing.status,"blocked");\n assert.ok(missing.tasks[0].issues.includes("missing_evidence"));
  assert.throws(()=>assessFinancialCloseReadiness({period:"2026-10",tasks:[],reconciliations:[],evidence:[{...evidence[0],sha256:"bad"}]}),{code:"FINANCIAL_CLOSE_EVIDENCE_HASH_INVALID"});
 });
 
