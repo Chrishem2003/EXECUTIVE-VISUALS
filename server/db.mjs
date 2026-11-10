@@ -143,6 +143,23 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS job_events_job_idx ON job_events(job_id, id);
+    CREATE TABLE IF NOT EXISTS video_generation_approvals (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      quoted_amount_micros INTEGER NOT NULL CHECK(quoted_amount_micros >= 0),
+      budget_ceiling_micros INTEGER NOT NULL CHECK(budget_ceiling_micros >= quoted_amount_micros),
+      status TEXT NOT NULL CHECK(status IN ('approved_pending_submission','withdrawn','consumed')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(owner_id,idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS video_generation_approvals_owner_idx ON video_generation_approvals(owner_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS video_generation_approvals_project_idx ON video_generation_approvals(project_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS model_usage_events (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
