@@ -69,6 +69,12 @@ begin
  if jsonb_array_length(v_base->'weekly')<>13 or jsonb_array_length(v_base->'monthly')<>6 then
   raise exception 'Weekly/monthly rolling forecast periods missing: %',v_base;
  end if;
+ select monthly_row.value into v_horizon from jsonb_array_elements(v_base->'monthly') as monthly_row(value)
+  where (monthly_row.value->>'periodStart')::date<=current_date+30 and (monthly_row.value->>'periodEnd')::date>=current_date+30;
+ if (v_horizon->>'projectedClosingMinor')::bigint<>750000 then raise exception 'First monthly period failed to reconcile dated cash items: %',v_horizon; end if;
+ select monthly_row.value into v_horizon from jsonb_array_elements(v_base->'monthly') as monthly_row(value)
+  where (monthly_row.value->>'periodStart')::date<=current_date+60 and (monthly_row.value->>'periodEnd')::date>=current_date+60;
+ if (v_horizon->>'projectedClosingMinor')::bigint<>-450000 then raise exception 'Second monthly period failed to reconcile cumulative cash: %',v_horizon; end if;
  if jsonb_array_length(v_report->'items')<>3 then raise exception 'Expected three scheduled cashflow items: %',v_report->'items'; end if;
 end $batch40$;
 reset role;
