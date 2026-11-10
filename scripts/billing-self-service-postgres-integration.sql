@@ -35,7 +35,7 @@ begin
   end if;
 
   begin
-    perform executive_visuals.manage_customer_subscription(owner_id,sub_id,'cancel_immediately',null,'Race guard test');
+    perform executive_visuals.manage_customer_subscription(v_owner_id,sub_id,'cancel_immediately',null,'Race guard test');
     raise exception 'Pending subscription payment should block cancellation';
   exception when sqlstate '55000' then
     null;
@@ -77,7 +77,7 @@ begin
     jsonb_build_object('status','succeeded','amount',240000,'currency','UGX','reference','EVR-SQL-RENEWAL-01'),
     now()
   );
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=owner_id)<>21000 then
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id)<>21000 then
     raise exception 'Renewal did not grant scheduled plan credits exactly once';
   end if;
 
@@ -91,7 +91,7 @@ begin
   end if;
 
   reservation := executive_visuals.reserve_subscription_purchase(
-    owner_id,'creator-monthly','customer@example.com','AIRTEL','sql-integration-key-02','EVS-SQL-FAILED-01'
+    v_owner_id,'creator-monthly','customer@example.com','AIRTEL','sql-integration-key-02','EVS-SQL-FAILED-01'
   );
   sub_id := (reservation->>'subscriptionId')::uuid;
   payment_id := (reservation->>'paymentId')::uuid;
