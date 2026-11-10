@@ -372,7 +372,7 @@ begin
  end if;
 end $$;
 
-do $
+do $batch19$
 declare
  snap jsonb; replay jsonb; spend jsonb; attr jsonb; report jsonb; month_start date:=date_trunc('month',now())::date; row_data jsonb;
 begin
@@ -386,6 +386,14 @@ begin
  select item into row_data from jsonb_array_elements(report->'acquisition') item where item->>'periodMonth'=month_start::text and item->>'currency'='UGX' and item->>'channel'='paid_search';
  if row_data is null or (row_data->>'spendMinor')::bigint<>120000 or (row_data->>'attributedNewCustomers')::integer<1 or (row_data->>'cacMinor')::bigint<>120000 then raise exception 'Acquisition CAC did not reconcile: %',report->'acquisition'; end if;
  if jsonb_array_length(report->'retention')<>0 then raise exception 'Retention comparison must wait for a second real monthly snapshot'; end if;
-end $;
-
+ -- Controlled prior-month fixture verifies the formulas after the no-backfill assertion.
+ insert into executive_visuals.subscription_revenue_snapshots(snapshot_month,owner_id,cohort_month,currency,mrr_minor,subscription_status)
+ select (month_start-interval '1 month')::date,owner_id,cohort_month,currency,mrr_minor,subscription_status
+ from executive_visuals.subscription_revenue_snapshots
+ where snapshot_month=month_start and mrr_minor>0;
+ report:=executive_visuals.financial_revenue_retention_overview('11111111-1111-4111-8111-111111111111');
+if not exists(select 1 from jsonb_array_elements(report->'retention') item where (item->>'grrPct')::numeric=100 and (item->>'nrrPct')::numeric=100) then
+  raise exception 'GRR/NRR cohort calculations did not reconcile for equal opening and ending MRR: %',report->'retention';
+ end if;
+end $batch19$;
 reset role;
