@@ -22,6 +22,11 @@ test("rejects unverified pricing, currency mismatch and budget overrun",()=>{
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"EUR",amount:2},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:1},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED");
 });
+test("rejects amounts that cannot be represented safely in integer micro-units",()=>{
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
+ const hugeQuote={...preflight,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:Number.MAX_VALUE}}};
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight:hugeQuote,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
+});
 test("rejects oversized or empty approval plans",()=>{
  assert.throws(()=>buildVideoGenerationApproval({shots:[],preflight,budget:{currency:"USD",amount:2},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_SHOTS");
  assert.throws(()=>buildVideoGenerationApproval({shots:Array(13).fill(shots[0]),preflight,budget:{currency:"USD",amount:2},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_SHOTS");
