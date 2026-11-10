@@ -799,11 +799,17 @@ export function createFinancialIntelligenceApi({
           try{
             const sid=String(summary?.id||"");
             if(!sid)continue;
-            const detailPayload=await providerRequest("/settlements/"+encodeURIComponent(sid));
-            const detail=detailPayload?.data||detailPayload;
-            const charges=Array.isArray(detail?.charges)?detail.charges:[];
+            const firstDetail=await providerRequest("/settlements/"+encodeURIComponent(sid)+"?page=1&size=50");
+            const detail=firstDetail?.data||firstDetail;
+            const charges=Array.isArray(detail?.charges)?[...detail.charges]:[];
             const declared=Number(detail?.charge_count||summary?.charge_count||0);
-            const complete=declared===charges.length;
+            const chargePages=Math.max(1,Math.min(100,Number(firstDetail?.meta?.page_info?.total_pages)||1));
+            for(let chargePage=2;chargePage<=chargePages&&chargePage<=20;chargePage++){
+              const nextPage=await providerRequest("/settlements/"+encodeURIComponent(sid)+"?page="+chargePage+"&size=50");
+              const nextDetail=nextPage?.data||nextPage;
+              if(Array.isArray(nextDetail?.charges))charges.push(...nextDetail.charges);
+            }
+            const complete=declared===charges.length&&chargePages<=20;
             let expectedGross=null,expectedFees=null;
             if(complete){
               const ids=charges.map(c=>String(c?.id||"")).filter(Boolean);
