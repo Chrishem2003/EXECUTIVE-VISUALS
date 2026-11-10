@@ -5,6 +5,7 @@ import {
 } from "./payment-intelligence.mjs";
 import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
+import { normalizeWorkloadTelemetry } from "./ai-workload-telemetry.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
@@ -853,6 +854,32 @@ export function createFinancialIntelligenceApi({
           p_idempotency_key:request.idempotencyKey});
         return response(200,{recommendation:result||{decisionStatus:"insufficient_evidence",decisionMode:"shadow_only",executionChanged:false,candidates:[]}});
       }
+      if(path==="/api/admin/finance/workload-telemetry"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        let event;
+        try{event=normalizeWorkloadTelemetry(body);}catch(err){return error(400,err.code||"WORKLOAD_TELEMETRY_INVALID",err.message||"Workload telemetry is invalid.");}
+        const result=await rpc("record_ai_workload_telemetry_event",{
+          p_actor_id:ownerId,p_occurred_at:event.occurredAt,p_owner_id:event.ownerId,
+          p_project_id:event.projectId,p_job_id:event.jobId,p_operation_id:event.operationId,
+          p_provider:event.provider,p_model:event.model,p_operation:event.operation,
+          p_evidence_source:event.source,p_resolution_tier:event.resolutionTier,
+          p_currency:event.currency,p_provider_cost_minor:event.providerCostMinor,
+          p_dimensions:event.dimensions,p_resource_type:event.resourceType,
+          p_resource_unit:event.resourceUnit,p_resource_quantity:event.resourceQuantity,
+          p_evidence_reference:event.evidenceReference,p_idempotency_key:event.idempotencyKey
+        });
+        return response(201,{telemetry:result});
+      }
+      if(path==="/api/admin/finance/workload-telemetry"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const month=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        const limit=Number(query.limit||100);
+        if(!/^\\d{4}-\\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
+          !Number.isSafeInteger(limit)||limit<1||limit>500)
+          return error(400,"WORKLOAD_TELEMETRY_FILTER_INVALID","Provide a month start date and a limit from 1 to 500.");
+        const result=await rpc("ai_workload_telemetry_overview",{p_actor_id:ownerId,p_period_month:month,p_limit:limit});
+        return response(200,{telemetry:result||{periodMonth:month,totals:{},byProviderModelOperation:[]}});
+      }
       if(path==="/api/admin/finance/ai-usage"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         let event;
@@ -1579,6 +1606,35 @@ export function createFinancialIntelligenceApi({
     }
   }
 
+  async function recordWorkerWorkloadTelemetry({job,measurement}={}){
+    if(!resourceCostMeteringEnabled)return {recorded:false,reason:"resource_cost_metering_disabled"};
+    if(!UUID.test(String(financialSystemActorId||"")))return {recorded:false,reason:"financial_system_actor_not_configured"};
+    if(!job||!measurement)return {recorded:false,reason:"resource_measurement_missing"};
+    const measuredAt=String(measurement.measuredAt||new Date().toISOString());
+    const stableIdentity=[job.id,measurement.measurementId||"",measurement.resourceType||"",measurement.quantity??"",measurement.unit||"",measuredAt].join("|");
+    const idempotencyKey="worker-workload:"+hashText(stableIdentity).slice(0,64);
+    const operationMap={"media.probe":"other","media.thumbnail":"image","media.transcode":"video","media.audio_extract":"audio","media.audio-clean":"audio","media.proxy":"video","media.denoise":"audio","media.color":"video","media.resize":"image","media.interpolate":"video","media.upscale":"upscale","media.ai-upscale":"upscale","timeline.render":"render","workflow.execute":"other"};
+    const event=normalizeWorkloadTelemetry({
+      occurredAt:measuredAt,provider:"executive-visuals-worker",model:job.job_type,
+      operation:operationMap[job.job_type]||"other",source:"worker_measurement",
+      operationId:job.id,ownerId:job.owner_id,projectId:job.project_id,jobId:job.id,
+      dimensions:measurement.dimensions||{},resourceType:measurement.resourceType,
+      resourceUnit:measurement.unit,resourceQuantity:measurement.quantity,
+      idempotencyKey
+    });
+    const result=await rpc("record_ai_workload_telemetry_event",{
+      p_actor_id:financialSystemActorId,p_occurred_at:event.occurredAt,p_owner_id:event.ownerId,
+      p_project_id:event.projectId,p_job_id:event.jobId,p_operation_id:event.operationId,
+      p_provider:event.provider,p_model:event.model,p_operation:event.operation,
+      p_evidence_source:event.source,p_resolution_tier:event.resolutionTier,
+      p_currency:event.currency,p_provider_cost_minor:event.providerCostMinor,
+      p_dimensions:event.dimensions,p_resource_type:event.resourceType,
+      p_resource_unit:event.resourceUnit,p_resource_quantity:event.resourceQuantity,
+      p_evidence_reference:event.evidenceReference,p_idempotency_key:event.idempotencyKey
+    });
+    return {recorded:true,result};
+  }
+
   async function recordWorkerResourceUsage({job,measurement}={}){
     if(!resourceCostMeteringEnabled)return {recorded:false,reason:"resource_cost_metering_disabled"};
     if(!UUID.test(String(financialSystemActorId||"")))return {recorded:false,reason:"financial_system_actor_not_configured"};
@@ -1602,5 +1658,5 @@ export function createFinancialIntelligenceApi({
     return {recorded:true,result};
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,recordWorkerResourceUsage,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
+  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,recordWorkerResourceUsage,recordWorkerWorkloadTelemetry,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
 }
