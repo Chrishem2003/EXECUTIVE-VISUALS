@@ -21,6 +21,7 @@ function amount(value,label){
  return n;
 }
 function normalizedReference(value){return text(value,"reference",180).toUpperCase().replace(/[\s-]+/g,"");}
+function validDay(value,label){const v=text(value,label,10);if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(v)||!Number.isFinite(Date.parse(v+"T00:00:00.000Z"))||new Date(v+"T00:00:00.000Z").toISOString().slice(0,10)!==v)fail("FINANCIAL_RECON_DATE_INVALID",label+" must be a real ISO calendar date.");return v;}
 function key(...values){return values.map(v=>String(v).toLowerCase()).join("\u001f");}
 function countBy(items,fn){const m=new Map();for(const item of items){const k=fn(item);m.set(k,(m.get(k)||0)+1);}return m;}
 function totals(items,field,currencyField){
@@ -61,7 +62,7 @@ export function reconcileProviderInvoiceLines(input={}){
   reference:normalizedReference(u.invoiceLineReference),currency:currency(u.currency),
   model:text(u.model||u.requestedModel,"usage model",160).toLowerCase(),
   operation:text(u.operation,"usage operation",32).toLowerCase(),
-  usagePeriod:text(u.usagePeriod,"usage period",10),
+  usagePeriod:validDay(u.usagePeriod,"usage period"),
   providerCostMinor:u.providerCostMinor==null?null:amount(u.providerCostMinor,"usage provider cost"),
   status:String(u.status||"unknown").toLowerCase()
  }));
@@ -69,7 +70,7 @@ export function reconcileProviderInvoiceLines(input={}){
  for(const u of usage){const k=key(u.provider,u.reference,u.currency);if(!index.has(k))index.set(k,[]);index.get(k).push(u);}
  const consumed=new Set(),out=[];
  for(let i=0;i<invoiceLines.length;i++){
-  const l=invoiceLines[i],provider=text(l.provider,"invoice provider",80).toLowerCase(),reference=normalizedReference(l.lineReference||l.providerLineReference),curr=currency(l.currency),model=text(l.model,"invoice model",160).toLowerCase(),operation=text(l.operation,"invoice operation",32).toLowerCase(),period=text(l.usagePeriod,"invoice usage period",10),amountMinor=amount(l.amountMinor,"invoice line amount");
+  const l=invoiceLines[i],provider=text(l.provider,"invoice provider",80).toLowerCase(),reference=normalizedReference(l.lineReference||l.providerLineReference),curr=currency(l.currency),model=text(l.model,"invoice model",160).toLowerCase(),operation=text(l.operation,"invoice operation",32).toLowerCase(),period=validDay(l.usagePeriod,"invoice usage period"),amountMinor=amount(l.amountMinor,"invoice line amount");
   const candidates=index.get(key(provider,reference,curr))||[];
   if(candidates.length>1){out.push({index:i,status:"duplicate",provider,reference,currency:curr,amountMinor,candidateUsageIds:candidates.map(x=>x.id),reason:"More than one usage event shares this provider line reference and currency."});continue;}
   if(candidates.length===0){out.push({index:i,status:"unmatched",provider,reference,currency:curr,amountMinor,reason:"No provider usage event has the same provider, line reference and currency."});continue;}
