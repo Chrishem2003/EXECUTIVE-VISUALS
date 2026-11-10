@@ -65,7 +65,7 @@ test("Batch 45 SQL uses observed contribution, exact campaign attribution and di
  assert.match(migration,/from financial_service_cost_events/);
  assert.match(migration,/from customer_acquisition_spend_events/);
  assert.match(migration,/from customer_acquisition_attributions/);
- assert.match(migration,/next\.snapshot_month=\(prior\.snapshot_month\+interval '1 month'\)::date/);
+ assert.match(migration,/following\.snapshot_month=\(prior\.snapshot_month\+interval '1 month'\)::date/);
  assert.match(migration,/power\(b\.retention_rate::numeric,g\.n::numeric\)/);
  assert.match(migration,/discountRateBps/);
  assert.match(migration,/attributionCoverage/);
