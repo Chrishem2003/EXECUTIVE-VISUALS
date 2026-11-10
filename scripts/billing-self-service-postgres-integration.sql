@@ -120,6 +120,8 @@ declare
  arr bigint;
  audit_id uuid;
  settlement jsonb;
+ dispute_id uuid;
+ evidence jsonb;
 begin
  dashboard:=executive_visuals.admin_financial_command_centre(
   '11111111-1111-4111-8111-111111111111',now()-interval '30 days',now(),50
@@ -160,6 +162,30 @@ begin
  perform executive_visuals.resolve_financial_reconciliation_exception(
   '11111111-1111-4111-8111-111111111111',audit_id,'resolved','Resolved after confirming test settlement discrepancy'
  );
+
+ insert into executive_visuals.chargeback_cases(owner_id,provider_case_id,amount_minor,currency,reason,status,response_due_at)
+ values('11111111-1111-4111-8111-111111111111','cb_batch13_test',265000,'UGX','Integration dispute','open',now()+interval '2 days')
+ returning id into dispute_id;
+ evidence:=executive_visuals.upsert_financial_dispute_evidence(
+  '11111111-1111-4111-8111-111111111111',dispute_id,'payment_receipt','uploaded',
+  'private-disputes/cb_batch13_test/receipt.pdf','Provider receipt attached','Attach verified provider receipt'
+ );
+ if evidence->>'status'<>'uploaded' or evidence->>'owner_id'<>'11111111-1111-4111-8111-111111111111' then
+  raise exception 'Dispute evidence was not stored against the correct customer';
+ end if;
+ begin
+  perform executive_visuals.upsert_financial_dispute_evidence(
+   '11111111-1111-4111-8111-111111111111',dispute_id,'service_delivery','uploaded',
+   'https://unsafe.example/evidence.pdf','Unsafe URL','Reject external evidence URLs'
+  );
+  raise exception 'External evidence URL unexpectedly accepted';
+ exception when sqlstate '22023' then null;
+ end;
+ evidence:=executive_visuals.upsert_financial_dispute_evidence(
+  '11111111-1111-4111-8111-111111111111',dispute_id,'payment_receipt','verified',
+  'private-disputes/cb_batch13_test/receipt.pdf','Provider receipt checked','Verify receipt against provider transaction'
+ );
+ if evidence->>'status'<>'verified' then raise exception 'Evidence verification status was not saved'; end if;
 
  audit_id:=executive_visuals.write_financial_admin_audit(
   '11111111-1111-4111-8111-111111111111','finance.test.audit','integration_test','batch-12',
