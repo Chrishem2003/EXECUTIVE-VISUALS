@@ -146,8 +146,8 @@ begin
  profiles as (
   select p.owner_id,p.currency,max(p.customer_email) email,
    (select s.status from customer_subscriptions s where s.owner_id=p.owner_id and s.currency=p.currency order by s.created_at desc limit 1) subscription_status,
-   (select s.plan_code from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) plan_code,
-   (select s.current_period_end from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) period_end,
+   (select s.plan_code from customer_subscriptions s where s.owner_id=p.owner_id and s.currency=p.currency order by s.created_at desc limit 1) plan_code,
+   (select s.current_period_end from customer_subscriptions s where s.owner_id=p.owner_id and s.currency=p.currency order by s.created_at desc limit 1) period_end,
    count(distinct p.id) payment_count,
    coalesce(sum(p.amount_minor) filter(where p.status='successful'),0) gross_paid_minor,
    coalesce((select sum(r.amount_minor) from payment_refunds r where r.owner_id=p.owner_id and r.currency=p.currency and r.status='succeeded'),0) refunded_minor
