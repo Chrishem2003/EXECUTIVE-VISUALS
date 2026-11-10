@@ -112,7 +112,7 @@ create or replace function executive_visuals.financial_scenario_baseline(
  p_actor_id uuid,p_period_month date
 ) returns jsonb language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
-as $
+as $$
 declare v_result jsonb;
 begin
  if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
@@ -172,7 +172,7 @@ begin
    'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
    'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
   ));
-end $;
+end $$;
 
 revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
 revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
