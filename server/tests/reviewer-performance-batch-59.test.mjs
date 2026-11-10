@@ -32,7 +32,7 @@ test("reviewer performance reports scoped workload and measured assigned-reviewe
  f.db.prepare("UPDATE control_remediation_actions SET status='pending_review' WHERE id=?").run(pendingId);
  f.db.prepare("INSERT INTO control_remediation_history(action_id,actor_id,event_type,from_status,to_status,created_at) VALUES(?,?,?,?,?,?)").run(pendingId,editor,"status_transition","in_progress","pending_review","2026-11-10T09:00:00.000Z");
 
- const result=await f.api.handle({method:"GET",path:"/api/finance/remediations/reviewer-performance",ownerId});
+ const result=await f.api.handle({method:"GET",path:"/api/finance/remediations/reviewer-performance",ownerId:owner});
  assert.equal(result.status,200);
  assert.equal(result.body.totals.assigned,2);
  assert.equal(result.body.totals.awaitingReview,1);
@@ -59,7 +59,7 @@ test("reviewer performance excludes archived and inaccessible projects and retur
  assert.equal(outsiderResult.status,200);
  assert.equal(outsiderResult.body.totals.assigned,0);
  f.db.prepare("UPDATE projects SET archived_at=? WHERE id=?").run("2026-11-10T00:00:00.000Z",project);
- const archived=await f.api.handle({method:"GET",path:"/api/finance/remediations/reviewer-performance",ownerId});
+ const archived=await f.api.handle({method:"GET",path:"/api/finance/remediations/reviewer-performance",ownerId:owner});
  assert.equal(archived.body.totals.assigned,0);
  f.db.close();
 });
