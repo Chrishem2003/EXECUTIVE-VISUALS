@@ -298,9 +298,32 @@ export function createFinancialIntelligenceApi({
         return response(200,{plans:Array.isArray(result.data)?result.data:[]});
       }
       if(path==="/api/billing/subscription"&&method==="GET"){
-        const result=await dbRequest("customer_subscriptions?select=id,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
+        const result=await dbRequest("customer_subscriptions?select=id,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
+      }
+      if(path==="/api/billing/subscription/manage"&&method==="POST"){
+        const subscriptionId=String(body.subscriptionId||"");
+        const action=String(body.action||"");
+        const planCode=String(body.planCode||"").trim().toLowerCase();
+        const allowed=["cancel_at_period_end","cancel_immediately","resume","schedule_plan_change","cancel_plan_change"];
+        if(!UUID.test(subscriptionId)||!allowed.includes(action)||
+          (action==="schedule_plan_change"&&!/^[a-z][a-z0-9_-]{1,63}$/.test(planCode)))
+          return error(400,"SUBSCRIPTION_MANAGEMENT_INPUT_INVALID","Provide a valid subscription and supported management action.");
+        const result=await rpc("manage_customer_subscription",{
+          p_owner_id:ownerId,p_subscription_id:subscriptionId,p_action:action,
+          p_plan_code:action==="schedule_plan_change"?planCode:null,
+          p_reason:"Customer self-service"
+        });
+        return response(200,{subscription:result,message:"Subscription settings updated. Plan changes and cancellations take effect at the stated date; no automatic charge or refund was initiated."});
+      }
+      if(path==="/api/billing/subscription/events"&&method==="GET"){
+        const subscriptionId=String(query.subscriptionId||"");
+        if(!UUID.test(subscriptionId))return error(400,"SUBSCRIPTION_ID_INVALID","A valid subscription ID is required.");
+        const owned=await dbRequest("customer_subscriptions?select=id&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        if(!Array.isArray(owned.data)||!owned.data.length)return error(404,"SUBSCRIPTION_NOT_FOUND","Subscription not found.");
+        const events=await dbRequest("subscription_events?select=id,event_type,source,reason,event_data,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&subscription_id=eq."+encodeURIComponent(subscriptionId)+"&order=created_at.desc&limit=100");
+        return response(200,{events:Array.isArray(events.data)?events.data:[]});
       }
       if(path==="/api/admin/subscriptions/grant"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
@@ -361,19 +384,20 @@ export function createFinancialIntelligenceApi({
         const pending=await dbRequest("payment_transactions?select=id,tx_ref&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.pending&metadata->>payment_purpose=eq.subscription_renewal&metadata->>subscription_id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
         if(Array.isArray(pending.data)&&pending.data.length)
           return error(409,"SUBSCRIPTION_RENEWAL_ALREADY_PENDING","A renewal payment is already awaiting confirmation. Complete or reconcile it before starting another.");
-        const subscriptionResult=await dbRequest("customer_subscriptions?select=id,owner_id,status,billing_interval,amount_minor,currency,current_period_end,customer_email&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        const subscriptionResult=await dbRequest("customer_subscriptions?select=id,owner_id,status,billing_interval,amount_minor,currency,current_period_end,customer_email,cancel_at_period_end,scheduled_plan_code,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
         const subscription=Array.isArray(subscriptionResult.data)?subscriptionResult.data[0]:null;
         if(!subscription)return error(404,"SUBSCRIPTION_NOT_FOUND","Subscription not found.");
-        if(!["active","past_due"].includes(subscription.status)||!["monthly","yearly"].includes(subscription.billing_interval)||
-          subscription.currency!=="UGX"||!Number.isSafeInteger(Number(subscription.amount_minor))||Number(subscription.amount_minor)<=0)
+        if(!["active","past_due"].includes(subscription.status)||subscription.cancel_at_period_end||
+          !["monthly","yearly"].includes(subscription.billing_interval)||
+          subscription.currency!=="UGX"||!Number.isSafeInteger(Number(subscription.scheduled_amount_minor??subscription.amount_minor))||Number(subscription.scheduled_amount_minor??subscription.amount_minor)<=0)
           return error(409,"SUBSCRIPTION_NOT_RENEWABLE","Only an active or past-due UGX subscription with a configured monthly or yearly price can be renewed.");
         const txRef="EVR"+randomUUID().replaceAll("-","");
         const created=await dbRequest("payment_transactions",{
           method:"POST",body:{
-            owner_id:ownerId,tx_ref:txRef,amount_minor:Number(subscription.amount_minor),currency:"UGX",
+            owner_id:ownerId,tx_ref:txRef,amount_minor:Number(subscription.scheduled_amount_minor??subscription.amount_minor),currency:"UGX",
             status:"pending",payment_method:"mobile_money",customer_email:email,
             description:"Subscription renewal",
-            metadata:{payment_purpose:"subscription_renewal",subscription_id:subscription.id,idempotency_key:key,mobile_money_network:network,billing_interval:subscription.billing_interval}
+            metadata:{payment_purpose:"subscription_renewal",subscription_id:subscription.id,idempotency_key:key,mobile_money_network:network,billing_interval:subscription.scheduled_billing_interval||subscription.billing_interval,scheduled_plan_code:subscription.scheduled_plan_code||null}
           },prefer:"return=representation"
         });
         const payment=Array.isArray(created.data)?created.data[0]:null;
@@ -382,7 +406,7 @@ export function createFinancialIntelligenceApi({
           const charge=await providerRequest("/orchestration/direct-charges",{
             method:"POST",idempotencyKey:key,
             body:{
-              amount:minorToMajor(Number(subscription.amount_minor),"UGX"),currency:"UGX",reference:txRef,
+              amount:minorToMajor(Number(subscription.scheduled_amount_minor??subscription.amount_minor),"UGX"),currency:"UGX",reference:txRef,
               customer:{email,name:{first,last},phone:{country_code:"256",number:phone}},
               payment_method:{type:"mobile_money",mobile_money:{country_code:"256",network,phone_number:phone}}
             }
