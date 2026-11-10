@@ -161,7 +161,7 @@ begin
  end if;
  v_decision:=p_payload->>'decision';
  v_note:=nullif(btrim(p_payload->>'note'),'');
- if v_decision not in('approved','exception') then
+ if v_decision is null or v_decision not in('approved','exception') then
   raise exception using errcode='22023',message='financial_reconciliation_decision_invalid';
  end if;
  if v_decision='approved' and v_reconciliation.variance_minor<>0 then
