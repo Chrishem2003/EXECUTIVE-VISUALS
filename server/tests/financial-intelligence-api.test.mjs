@@ -1456,7 +1456,7 @@ test("financial close readiness is admin-only, read-only and requires independen
 
 test("financial audit ledger enforces admin access, idempotent append and independent chain verification",async()=>{
  const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized audit requests must not reach ledger storage.");});
- const forbidden=await denied.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
+ const forbidden=await denied.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{subjectOwnerId:"33333333-3333-4333-8333-333333333333",eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
  assert.equal(forbidden.status,403);
  let appended=null;
  const service=api(async(url,options={})=>{
@@ -1472,13 +1472,14 @@ test("financial audit ledger enforces admin access, idempotent append and indepe
  assert.equal(created.status,201);
  assert.equal(created.body.event.sequence,1);
  assert.ok(/^[a-f0-9]{64}$/.test(created.body.event.eventHash));
- assert.equal(appended.p_event_envelope.ownerId,owner);
+ assert.equal(appended.p_event_envelope.ownerId,"33333333-3333-4333-8333-333333333333");
+ assert.equal(appended.p_event_envelope.actorId,owner);
  assert.equal(appended.p_event_envelope.eventType,"close_period.created");
  assert.equal(appended.p_event_envelope.sequence,1);
- const history=await service.handle({method:"GET",path:"/api/admin/finance/audit/events",ownerId:owner});
+ const history=await service.handle({method:"GET",path:"/api/admin/finance/audit/events",ownerId:owner,query:{ownerId:"33333333-3333-4333-8333-333333333333"}});
  assert.equal(history.status,200);
  assert.equal(history.body.head.sequence,0);
- const verified=await service.handle({method:"GET",path:"/api/admin/finance/audit/verify",ownerId:owner});
+ const verified=await service.handle({method:"GET",path:"/api/admin/finance/audit/verify",ownerId:owner,query:{ownerId:"33333333-3333-4333-8333-333333333333"}});
  assert.equal(verified.status,200);
  assert.equal(verified.body.verification.valid,true);
  assert.equal(verified.body.verification.complete,true);
