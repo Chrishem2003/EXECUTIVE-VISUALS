@@ -62,8 +62,8 @@ export function createControlRemediationApi({db}={}){
    if(!findingId||!controlId||!title||!dueAt||!["critical","high","medium","low","unknown"].includes(severity))return error(400,"INVALID_REMEDIATION","Finding, control, title, supported severity and due date are required.");
    const assignedOwnerId=text(body.ownerId,64)||null,reviewerId=text(body.reviewerId,64)||null;
    for(const id of [assignedOwnerId,reviewerId])if(id&&!UUID.test(id))return error(400,"INVALID_ASSIGNMENT","Assignment must reference a valid account.");
-   if(assignedOwnerId&&!member(ownerId,projectId,assignedOwnerId))return error(400,"INVALID_OWNER","Assigned owner must have access to this project.");
-   if(reviewerId&&(!member(ownerId,projectId,reviewerId)||reviewerId===assignedOwnerId))return error(400,"INVALID_REVIEWER","Reviewer must be a different project member.");
+   if(assignedOwnerId){const assignedAccess=member(ownerId,projectId,assignedOwnerId);if(!assignedAccess||!["owner","editor"].includes(assignedAccess.access_role))return error(400,"INVALID_OWNER","Assigned owner must have owner or editor access to this project.");}
+   if(reviewerId){const reviewerAccess=member(ownerId,projectId,reviewerId);if(!reviewerAccess||!["owner","reviewer"].includes(reviewerAccess.access_role)||reviewerId===assignedOwnerId)return error(400,"INVALID_REVIEWER","Reviewer must be a distinct project owner or reviewer.");}
    const id=randomUUID(),status=assignedOwnerId?"open":"unassigned";
    try{
     db.exec("BEGIN IMMEDIATE");
@@ -91,11 +91,12 @@ export function createControlRemediationApi({db}={}){
    const nextReviewer=body.reviewerId===undefined?row.reviewer_id:text(body.reviewerId,64)||null;
    const dueAt=body.dueAt===undefined?row.due_at:date(body.dueAt);
    const actionPlan=body.actionPlan===undefined?row.action_plan:text(body.actionPlan,4000);
-   if(nextOwner&&!member(ownerId,row.project_id,nextOwner))return error(400,"INVALID_OWNER","Assigned owner must have project access.");
-   if(nextReviewer&&(!member(ownerId,row.project_id,nextReviewer)||nextReviewer===nextOwner))return error(400,"INVALID_REVIEWER","Reviewer must be a different project member.");
+   if(nextOwner){const assignedAccess=member(ownerId,row.project_id,nextOwner);if(!assignedAccess||!["owner","editor"].includes(assignedAccess.access_role))return error(400,"INVALID_OWNER","Assigned owner must have owner or editor access to this project.");}
+   if(nextReviewer){const reviewerAccess=member(ownerId,row.project_id,nextReviewer);if(!reviewerAccess||!["owner","reviewer"].includes(reviewerAccess.access_role)||nextReviewer===nextOwner)return error(400,"INVALID_REVIEWER","Reviewer must be a distinct project owner or reviewer.");}
+   if(!nextOwner&&["in_progress","pending_review","verified"].includes(row.status))return error(409,"OWNER_REQUIRED","Reassign the remediation before removing its owner.");
    if(!dueAt)return error(400,"INVALID_DUE_DATE","Due date is invalid.");
-   const result=db.prepare("UPDATE control_remediation_actions SET assigned_owner_id=?,reviewer_id=?,due_at=?,action_plan=?,status=CASE WHEN status='unassigned' AND ? IS NOT NULL THEN 'open' ELSE status END,revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND revision=?")
-    .run(nextOwner,nextReviewer,dueAt,actionPlan,nextOwner,id,expected);
+   const result=db.prepare("UPDATE control_remediation_actions SET assigned_owner_id=?,reviewer_id=?,due_at=?,action_plan=?,status=CASE WHEN status='unassigned' AND ? IS NOT NULL THEN 'open' WHEN ? IS NULL AND status='open' THEN 'unassigned' ELSE status END,revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND revision=?")
+    .run(nextOwner,nextReviewer,dueAt,actionPlan,nextOwner,nextOwner,id,expected);
    if(!result.changes)return error(409,"REVISION_CONFLICT","Reload the remediation record before updating it.");
    appendHistory(id,ownerId,"details_updated",row.status,null,"Assignments, due date or action plan updated.");
    audit(db,ownerId,"control_remediation.updated","control_remediation",id,{revision:expected+1},row.project_id);
