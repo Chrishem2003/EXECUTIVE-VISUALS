@@ -670,8 +670,14 @@ export function createAppServer() {
            send(res,200,{assetId:asset.id,verification,notice:"C2PA validity and signer trust are separate from application provenance, identity, rights clearance and factual accuracy."},cors);return;
          }
          if(assetMatch[2]==="file"&&req.method==="GET"){
-          const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
-          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
+          const file=resolve(MEDIA_ROOT,asset.storage_path),mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+          if(!file.startsWith(mediaPrefix)||!existsSync(file)||!statSync(file).isFile()){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+          res.once("finish",()=>{
+            if(res.statusCode!==200)return;
+            audit(db,user.id,"asset.downloaded","asset",asset.id,{mediaType:asset.media_type,size:Number(asset.byte_size),sha256:asset.sha256},asset.project_id);
+            controlRemediationApi.recordEvidenceDownload({ownerId:user.id,assetId:asset.id});
+          });
+          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,"cache-control":"private, no-store",...SECURITY_HEADERS,...cors});
           createReadStream(file).pipe(res);return;
         }
         if(req.method==="DELETE"){
