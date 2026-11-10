@@ -66,7 +66,7 @@ export function createControlRemediationApi({db}={}){
  async function handle({method,path,ownerId,body={},query={}}){
   if(!path.startsWith("/api/finance/remediations"))return null;
   if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified account is required.");
-  const exportMatch=path.match(/^\\/api\\/finance\\/remediations\\/([0-9a-f-]{36})\\/audit-export$/i);
+  const exportMatch=path.match(/^\/api\/finance\/remediations\/([0-9a-f-]{36})\/audit-export$/i);
   if(exportMatch&&method==="GET"){
    const [,id]=exportMatch,row=actionFor(ownerId,id);
    if(!row)return error(404,"NOT_FOUND","Remediation record not found.");
