@@ -18,7 +18,25 @@ do $$ declare n integer; begin select count(*) into n from executive_visuals.tim
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',false);
 do $$ declare n integer; begin select count(*) into n from executive_visuals.timeline_revisions where timeline_id='30000000-0000-4000-8000-000000000001'; if n<>0 then raise exception 'Unrelated user can read private timeline revisions.'; end if; end $$;
 reset role;
-do $$ begin
+
+-- Moving a timeline must move access to its entire revision history.
+update executive_visuals.timelines
+set project_id='20000000-0000-4000-8000-000000000002'
+where id='30000000-0000-4000-8000-000000000001';
+set role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',false);
+do $ declare n integer; begin
+ select count(*) into n from executive_visuals.timeline_revisions where timeline_id='30000000-0000-4000-8000-000000000001';
+ if n<>0 then raise exception 'Former project member retained access after timeline move.'; end if;
+end $;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000004',false);
+do $ declare n integer; begin
+ select count(*) into n from executive_visuals.timeline_revisions where timeline_id='30000000-0000-4000-8000-000000000001';
+ if n<>2 then raise exception 'Current project member cannot read timeline history after move.'; end if;
+end $;
+reset role;
+
+do $ begin
  if has_table_privilege('service_role','executive_visuals.timeline_revisions','INSERT')
  or has_table_privilege('service_role','executive_visuals.timeline_revisions','UPDATE')
  or has_table_privilege('service_role','executive_visuals.timeline_revisions','DELETE')

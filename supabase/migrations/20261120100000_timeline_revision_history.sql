@@ -18,17 +18,26 @@ create index if not exists ev_timeline_revisions_project_created
 
 alter table executive_visuals.timeline_revisions enable row level security;
 
+-- Authorization follows the timeline's CURRENT owner/project membership, not the
+-- snapshot's historical project_id. Moving a timeline or revoking membership
+-- therefore removes access to every older snapshot through RLS as well.
 create policy ev_timeline_revisions_read
   on executive_visuals.timeline_revisions for select to authenticated
   using (
-    owner_id=(select auth.uid())
-    or exists (
-      select 1 from executive_visuals.projects p
-      where p.id=timeline_revisions.project_id and p.owner_id=(select auth.uid())
-    )
-    or exists (
-      select 1 from executive_visuals.project_members m
-      where m.project_id=timeline_revisions.project_id and m.member_id=(select auth.uid())
+    exists (
+      select 1 from executive_visuals.timelines t
+      where t.id=timeline_revisions.timeline_id
+        and (
+          t.owner_id=(select auth.uid())
+          or exists (
+            select 1 from executive_visuals.projects p
+            where p.id=t.project_id and p.owner_id=(select auth.uid())
+          )
+          or exists (
+            select 1 from executive_visuals.project_members m
+            where m.project_id=t.project_id and m.member_id=(select auth.uid())
+          )
+        )
     )
   );
 
