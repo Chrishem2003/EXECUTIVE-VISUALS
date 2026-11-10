@@ -10,7 +10,7 @@ insert into auth.users(id) values
 on conflict(id) do nothing;
 
 create or replace function pg_temp.canonical_financial_json(p_value jsonb)
-returns text language plpgsql immutable as $
+returns text language plpgsql immutable as $canon$
 declare v_result text;
 begin
  case jsonb_typeof(p_value)
@@ -24,7 +24,7 @@ begin
    return v_result;
   else return p_value::text;
  end case;
-end $;
+end $canon$;
 
 create or replace function pg_temp.run_financial_close_command(
  p_owner uuid,p_actor uuid,p_command text,p_payload jsonb,p_key text
