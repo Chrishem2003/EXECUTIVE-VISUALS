@@ -208,7 +208,7 @@ begin
   raise exception 'Invalid anomaly report parameters' using errcode='22023';
  end if;
  with daily as(
-  select occurred_at::date day,provider,requested_model,currency,
+  select occurred_at::date as event_day,provider,requested_model,currency,
    sum(cost_minor) filter(where cost_minor is not null)::numeric spend_minor,
    count(*) events,count(*) filter(where status='failed') failed_events,
    count(*) filter(where cost_basis='unpriced') unpriced_events
@@ -230,7 +230,7 @@ begin
    select avg(prev.spend_minor) baseline,count(*) observations
    from daily prev
    where prev.provider=d.provider and prev.requested_model=d.requested_model
-    and prev.currency=d.currency and prev.day<d.day and prev.day>=d.day-30
+    and prev.currency=d.currency and prev.event_day<d.event_day and prev.event_day>=d.event_day-30
     and prev.spend_minor is not null and prev.spend_minor>0
   ) b
  ), unpriced as(
@@ -251,10 +251,10 @@ begin
  )
  select jsonb_build_object('periodMonth',p_period_month,'generatedAt',now(),
   'spendAnomalies',coalesce((
-   select jsonb_agg(jsonb_build_object('type',anomaly_type,'day',day,'provider',provider,
+   select jsonb_agg(jsonb_build_object('type',anomaly_type,'day',event_day,'provider',provider,
     'model',requested_model,'currency',currency,'spendMinor',spend_minor,
     'baselineMinor',round(baseline),'baselineDays',observations,'events',events,'failedEvents',failed_events)
-    order by day desc) from anomalies where anomaly_type is not null
+    order by event_day desc) from anomalies where anomaly_type is not null
   ),'[]'::jsonb),
   'unpricedUsage',coalesce((select jsonb_agg(to_jsonb(unpriced)) from unpriced),'[]'::jsonb),
   'invoiceExceptions',coalesce((select jsonb_agg(to_jsonb(invoice)) from invoice),'[]'::jsonb),
