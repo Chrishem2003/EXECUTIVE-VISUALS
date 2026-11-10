@@ -8,6 +8,23 @@ insert into auth.users(id) values
  ('55555555-5555-4555-8555-555555555555')
 on conflict(id) do nothing;
 
+create or replace function pg_temp.canonical_financial_json(p_value jsonb)
+returns text language plpgsql immutable as $
+declare v_result text;
+begin
+ case jsonb_typeof(p_value)
+  when 'object' then
+   select '{'||coalesce(string_agg(to_jsonb(key)::text||':'||pg_temp.canonical_financial_json(value),',' order by key),'')||'}'
+    into v_result from jsonb_each(p_value);
+   return v_result;
+  when 'array' then
+   select '['||coalesce(string_agg(pg_temp.canonical_financial_json(value),',' order by ordinality),'')||']'
+    into v_result from jsonb_array_elements(p_value) with ordinality as item(value,ordinality);
+   return v_result;
+  else return p_value::text;
+ end case;
+end $;
+
 create or replace function pg_temp.run_financial_close_command(
  p_owner uuid,p_actor uuid,p_command text,p_payload jsonb,p_key text
 ) returns jsonb language plpgsql as $$
@@ -35,7 +52,7 @@ begin
   'eventType',v_type,'occurredAt',to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   'payload',p_payload,'idempotencyKey',p_key,'previousHash',v_head->>'headHash'
  );
- v_canonical:=replace(replace(v_event::text,', ',','),': ',':');
+ v_canonical:=pg_temp.canonical_financial_json(v_event);
  v_hash:=encode(digest(convert_to(v_canonical,'UTF8'),'sha256'),'hex');
  return executive_visuals.execute_financial_close_command(
   p_owner,p_actor,p_command,p_payload,v_event,v_canonical,v_hash
