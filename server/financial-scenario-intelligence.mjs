@@ -83,7 +83,7 @@ function project(input, adjustment = {}) {
     npv += operatingContribution / Math.pow(1 + discount, month);
     rows.push({ month, revenueMinor: roundMinor(revenue), variableCostMinor: roundMinor(variable), fixedCostMinor: roundMinor(fixed), collectedRevenueMinor: roundMinor(collected), operatingContributionMinor: roundMinor(operatingContribution), capexMinor: input.monthlyCapexMinor, netCashFlowMinor: roundMinor(netCashFlow), closingCashMinor: roundMinor(cash) });
   }
-  const contributionMargin = input.monthlyRevenueMinor > 0 ? 1 - input.monthlyVariableCostMinor / input.monthlyRevenueMinor * (1 + a.variableCostRateChangeBps / BPS) : 0;
+  const contributionMargin = input.monthlyRevenueMinor > 0 ? 1 - input.monthlyVariableCostMinor / input.monthlyRevenueMinor * (1 + (a.variableCostRateChangeBps + (adjustment.variableCostRateChangeBps || 0)) / BPS) : 0;
   const breakEvenRevenue = contributionMargin > 0 ? input.monthlyFixedCostMinor / contributionMargin : null;
   const first = rows[0] || null;
   return {
@@ -95,7 +95,7 @@ function project(input, adjustment = {}) {
     breakEvenRevenueMinor: breakEvenRevenue === null ? null : roundMinor(breakEvenRevenue),
     breakEvenGapMinor: breakEvenRevenue === null || !first ? null : roundMinor(first.revenueMinor - breakEvenRevenue),
     breakEvenStatus: breakEvenRevenue === null ? "unavailable_non_positive_contribution_margin" : first.revenueMinor >= breakEvenRevenue ? "above_break_even" : "below_break_even",
-    monthsToPositiveCash: rows.find(row => row.closingCashMinor > 0)?.month ?? null, rows
+    monthsToPositiveCash: input.openingCashMinor > 0 ? 0 : rows.find(row => row.closingCashMinor > 0)?.month ?? null, rows
   };
 }
 function confidenceFor(a) {
