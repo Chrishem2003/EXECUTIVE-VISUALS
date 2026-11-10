@@ -26,6 +26,7 @@ on:
       - feat/persistent-provider-rate-cards-batch-35
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
+      - feat/revenue-movement-cohort-intelligence-batch-39
   pull_request:
 
 permissions:
@@ -147,5 +148,11 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113110000_subscription_customer_economics_batch_37.sql
       - name: Verify Batch 37 subscription customer economics and evidence boundaries
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-customer-economics-postgres-integration.sql
+      - name: Apply Batch 39 revenue movement and cohort intelligence
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113120000_revenue_movement_cohort_intelligence_batch_39.sql
+      - name: Verify Batch 39 revenue movement and observed cohort curves
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/revenue-movement-cohorts-postgres-integration.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 39 revenue movement and cohort API
+        run: node --test server/tests/revenue-movement-cohorts.test.mjs
