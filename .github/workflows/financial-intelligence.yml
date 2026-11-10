@@ -6,6 +6,7 @@ on:
       - feat/financial-intelligence-api-integration
       - feat/predictive-workload-economics-batch-27
       - feat/automated-financial-reconciliation-batch-28
+      - feat/continuous-financial-close-batch-29
   pull_request:
 
 permissions:
