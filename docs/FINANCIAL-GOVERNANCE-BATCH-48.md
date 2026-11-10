@@ -42,7 +42,7 @@ Missing data remains explicitly unavailable/not assessed. A missing alert source
 
 ## Adjacent baseline repair
 
-The full billing CI migration sequence exposed an incomplete validation condition in the existing Batch 46 scenario-snapshot migration. The migration was repaired to validate the ISO currency code, deterministic model version, JSON payload shapes, SHA-256 digests and idempotency-key length before inserting immutable snapshots. This is a test-discovered baseline repair; the migration still requires the disposable PostgreSQL integration run to complete successfully.
+The full billing CI migration sequence exposed an incomplete validation condition in the existing Batch 46 scenario-snapshot migration. The migration was repaired to validate the ISO currency code, deterministic model version, JSON payload shapes, SHA-256 digests and idempotency-key length before inserting immutable snapshots. Orphaned duplicate SQL fragments following the original grant statements were removed after the disposable PostgreSQL run exposed a second syntax error. This is a test-discovered baseline repair; the migration still requires the disposable PostgreSQL integration run to complete successfully.
 
 ## Verification
 
