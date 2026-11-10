@@ -719,3 +719,68 @@ test("subscription event history verifies ownership before reading events",async
   assert.equal(result.body.events.length,1);
   assert.ok(calls[0].includes("owner_id=eq."+owner));
 });
+
+
+test("initial subscription checkout reserves server-priced plan and initiates customer-authorized MoMo",async()=>{
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",headers:options.headers,body:options.body});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
+      return json({access_token:"provider-test-token",expires_in:600});
+    if(target.endsWith("/rpc/reserve_subscription_purchase"))
+      return json({paymentId,paymentIdempotentReplay:false,subscriptionId:"44444444-4444-4444-8444-444444444444",txRef:"EVScheckout",amountMinor:25000,currency:"UGX",status:"pending",idempotentReplay:false});
+    if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"){
+      const payload=JSON.parse(options.body);
+      assert.equal(payload.amount,25000);
+      assert.equal(payload.currency,"UGX");
+      assert.equal(payload.payment_method.mobile_money.network,"MTN");
+      assert.equal(options.headers["x-idempotency-key"],"subscription-checkout-key");
+      return json({data:{id:"chg_initial_sub",status:"pending",next_action:{type:"payment_instruction"}}});
+    }
+    if(target.includes("/payment_transactions?id=eq."+paymentId)&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"POST",path:"/api/billing/subscription/checkout",ownerId:owner,
+    idempotencyKey:"subscription-checkout-key",
+    body:{planCode:"creator-monthly",network:"MTN",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}});
+  assert.equal(result.status,202);
+  assert.equal(result.body.payment.subscriptionId,"44444444-4444-4444-8444-444444444444");
+  assert.equal(result.body.payment.providerChargeId,"chg_initial_sub");
+  assert.ok(calls.some(x=>x.target.endsWith("/rpc/reserve_subscription_purchase")));
+});
+
+test("initial subscription checkout rejects invalid plan input before reservation",async()=>{
+  const service=api(async()=>{throw new Error("provider and database must not be called");});
+  const result=await service.handle({method:"POST",path:"/api/billing/subscription/checkout",ownerId:owner,
+    idempotencyKey:"subscription-checkout-key",
+    body:{planCode:"../admin",network:"MTN",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_CHECKOUT_INPUT_INVALID");
+});
+
+test("verified initial subscription payment activates the pending plan through the atomic RPC",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({event:"charge.completed",data:{id:"chg_initial_verified",status:"succeeded"}}));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+    if(target.includes("/payment_webhook_events?select=id,processing_status"))return json([]);
+    if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/charges/chg_initial_verified")return json({data:{
+      id:"chg_initial_verified",reference:"EVSverified",currency:"UGX",amount:25000,status:"succeeded"
+    }});
+    if(target.includes("/payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata,description"))return json([{
+      id:paymentId,owner_id:owner,provider_transaction_id:"chg_initial_verified",tx_ref:"EVSverified",
+      amount_minor:25000,currency:"UGX",status:"pending",
+      metadata:{payment_purpose:"subscription_purchase",subscription_id:"44444444-4444-4444-8444-444444444444"}
+    }]);
+    if(target.endsWith("/rpc/finalize_subscription_purchase"))return json({status:"active",subscriptionId:"44444444-4444-4444-8444-444444444444"});
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave&event_key=eq.")&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.result.subscriptionActivated,true);
+  assert.ok(calls.some(x=>x.target.endsWith("/rpc/finalize_subscription_purchase")));
+});
