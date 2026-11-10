@@ -414,15 +414,15 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
       else signalAnalysis.unavailable.push({check:"black-frame",reason:check.reason});
-      const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(motion.status==="completed"){signalAnalysis.freezes=parseFreezeEvents(motion.result.stderr);signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.result.stderr);signalAnalysis.performed.push("freeze-detect","scene-change");}
       else signalAnalysis.unavailable.push({check:"freeze-and-scene-change",reason:motion.reason});
-      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(temporal.status==="completed"){signalAnalysis.temporalLumaSamples=parseTemporalLumaSamples(temporal.result.stderr);signalAnalysis.performed.push("temporal-luma-2fps");}
       else signalAnalysis.unavailable.push({check:"temporal-luma",reason:temporal.reason});
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
-      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(check.status==="completed"){
         signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
         signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
