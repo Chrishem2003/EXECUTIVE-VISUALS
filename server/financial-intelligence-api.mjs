@@ -686,6 +686,68 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("expire_due_subscriptions",{p_limit:Math.max(1,Math.min(500,Number(body.limit)||100))});
         return response(200,{...result,action:"expired_only_after_grace_deadline",providerChargesInitiated:false});
       }
+      if(path==="/api/customer-success/experiments/assign"&&method==="POST"){
+        const experimentKey=String(body.experimentKey||"");
+        if(!/^[a-z0-9][a-z0-9_-]{2,59}$/.test(experimentKey))
+          return error(400,"GROWTH_EXPERIMENT_KEY_INVALID","Provide a valid experiment key.");
+        const assignment=await rpc("customer_growth_assign_experiment",{p_owner_id:ownerId,p_experiment_key:experimentKey});
+        return response(200,{assignment:assignment||{assigned:false,reason:"experiment_not_active"}});
+      }
+      if(path==="/api/admin/customer-success/growth"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const result=await rpc("customer_growth_admin_overview",{});
+        return response(200,{growth:result||{cohorts:[],renewalWatchlist:[],cancellationReasons:[],experiments:[]}});
+      }
+      if(path==="/api/admin/customer-success/experiments"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const experimentKey=String(body.experimentKey||"").trim();
+        const name=String(body.name||"").trim();
+        const hypothesis=String(body.hypothesis||"").trim();
+        const primaryMetric=String(body.primaryMetric||"");
+        const variants=Array.isArray(body.variants)?body.variants:[];
+        const allowedMetrics=["activation_rate","first_renewal_rate","paid_retention","net_revenue_retention","render_completion_rate","workflow_completion_rate","winback_conversion"];
+        if(!/^[a-z0-9][a-z0-9_-]{2,59}$/.test(experimentKey)||name.length<3||name.length>120||
+          hypothesis.length<10||hypothesis.length>1000||!allowedMetrics.includes(primaryMetric)||
+          variants.length<2||variants.length>4||variants.some(v=>!v||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(String(v.key||""))||String(v.label||"").length<1||String(v.label||"").length>80))
+          return error(400,"GROWTH_EXPERIMENT_INVALID","Experiment details, metric and 2–4 valid variants are required.");
+        const result=await rpc("customer_growth_create_experiment",{
+          p_admin_id:ownerId,p_experiment_key:experimentKey,p_name:name,p_hypothesis:hypothesis,
+          p_primary_metric:primaryMetric,p_variants:variants,
+          p_starts_at:body.startsAt||null,p_ends_at:body.endsAt||null
+        });
+        return response(201,{experiment:result});
+      }
+      if(path==="/api/admin/customer-success/experiments"&&method==="PATCH"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const experimentId=String(body.experimentId||""),status=String(body.status||"");
+        if(!UUID.test(experimentId)||!["draft","running","paused","completed"].includes(status))
+          return error(400,"GROWTH_EXPERIMENT_STATUS_INVALID","A valid experiment ID and status are required.");
+        const result=await rpc("customer_growth_set_experiment_status",{p_admin_id:ownerId,p_experiment_id:experimentId,p_status:status});
+        return response(200,{experiment:result});
+      }
+      if(path==="/api/admin/customer-success/interventions"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const result=await dbRequest("customer_success_interventions?select=id,owner_id,intervention_type,status,reason,outcome,created_at,updated_at,resolved_at&order=created_at.desc&limit=100");
+        return response(200,{interventions:Array.isArray(result.data)?result.data:[]});
+      }
+      if(path==="/api/admin/customer-success/interventions"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const customerId=String(body.ownerId||""),type=String(body.type||""),reason=String(body.reason||"").trim();
+        if(!UUID.test(customerId)||!["onboarding_help","first_value_nudge","usage_guidance","renewal_checkin","payment_recovery","winback"].includes(type)||reason.length<3||reason.length>500)
+          return error(400,"CUSTOMER_INTERVENTION_INVALID","A customer, supported intervention type and reason are required.");
+        const result=await rpc("customer_growth_record_intervention",{p_admin_id:ownerId,p_owner_id:customerId,p_type:type,p_reason:reason});
+        return response(201,{intervention:result});
+      }
+      if(path==="/api/admin/customer-success/interventions"&&method==="PATCH"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const interventionId=String(body.interventionId||""),status=String(body.status||""),outcome=body.outcome==null?null:String(body.outcome);
+        const allowedOutcomes=["renewed","reactivated","expanded","engaged","no_change","declined","unreachable","not_applicable"];
+        if(!UUID.test(interventionId)||!["approved","dismissed","completed"].includes(status)||
+          (status==="completed"&&!allowedOutcomes.includes(String(outcome)))||(status!=="completed"&&outcome!==null))
+          return error(400,"CUSTOMER_INTERVENTION_UPDATE_INVALID","A valid intervention ID, status and completion outcome are required.");
+        const result=await rpc("customer_growth_update_intervention",{p_admin_id:ownerId,p_intervention_id:interventionId,p_status:status,p_outcome:outcome});
+        return response(200,{intervention:result});
+      }
       if(path==="/api/admin/customer-success/overview"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
         const result=await rpc("customer_success_admin_overview",{});
