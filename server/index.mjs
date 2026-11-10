@@ -273,6 +273,15 @@ async function processNextJob() {
   const job=current;
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
   let leaseLost=false;
+  const resourceMeasurements=[];
+  const flushResourceMeasurements=async()=>{
+    if(!financialApi||process.env.RESOURCE_COST_METERING_ENABLED!=="true"||!resourceMeasurements.length)return;
+    const pending=resourceMeasurements.splice(0,resourceMeasurements.length);
+    for(const measurement of pending){
+      try{await financialApi.recordWorkerResourceUsage({job,measurement});}
+      catch(error){process.stderr.write("Resource cost telemetry could not be recorded for job "+job.id+": "+String(error.message||error)+"\\n");}
+    }
+  };
   const heartbeat=setInterval(()=>{
     if(!renewJobLease(db,job.id,WORKER_ID)){
       leaseLost=true;
@@ -285,6 +294,7 @@ async function processNextJob() {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      onResourceMeasurement:value=>{if(value&&typeof value==="object")resourceMeasurements.push(value);},
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
@@ -317,6 +327,7 @@ async function processNextJob() {
       .run(status,json(details),now(),retry?null:now(),availableAt,job.id,WORKER_ID,now());
     if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,workflowBlocked?"job.blocked":retry?"job.retry_scheduled":"job.failed",details);
   } finally {
+    await flushResourceMeasurements();
     clearInterval(heartbeat);
   }
 }
