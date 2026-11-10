@@ -15,7 +15,7 @@ test("overview exposes aggregate operating metrics and configured runtime bounda
  assert.equal(result.users,3);assert.equal(result.jobsByStatus.queued,2);assert.equal(result.usage30d.estimatedCostMicros,890000);assert.equal(result.runtime.persistentDataRequired,true);
 });
 test("admin directory and execution feeds return bounded, redacted operational fields",()=>{
- const db=fakeDb();const users=listAdminOperationUsers(db,{query:"a@",limit:500});const jobs=listAdminOperationJobs(db,{limit:10});const audit=listAdminOperationAudit(db,{limit:10});
+ const db=fakeDb();const users=listAdminOperationUsers(db,{query:"a@",limit:500});const jobs=listAdminOperationJobs(db,{limit:10});const audit=listAdminOperationAudit(db,{limit:10});listAdminOperationJobs(db,{limit:null});
  assert.equal(users[0].email,"a@example.com");assert.equal(users[0].usage30d,4);assert.equal(jobs[0].jobType,"video.generate");assert.equal(audit[0].eventType,"project.created");
- assert.equal(db.calls[0].args[4],200);
+ assert.equal(db.calls[0].args[4],200);assert.equal(db.calls[3].args[0],100);
 });
