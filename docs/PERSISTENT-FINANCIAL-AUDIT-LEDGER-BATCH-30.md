@@ -26,7 +26,7 @@ Each event includes a UUID, owner and actor IDs, contiguous sequence, UTC timest
 - \`GET /api/admin/finance/audit/events\`: retrieve a bounded page of ordered events and the current chain head.
 - \`GET /api/admin/finance/audit/verify\`: verify the chain from genesis through the stored head, with a 5,000-event verification cap.
 
-All routes require the existing authenticated owner identity and administrator authorization. The API uses the existing server-side Supabase service-role client. No service-role credentials are exposed to the browser.
+All routes require the existing authenticated administrator identity and administrator authorization. Append accepts optional `subjectOwnerId` to write into a customer/account-scoped ledger while preserving the authenticated administrator as `actorId`. Read and verify routes accept optional `ownerId` to select that ledger. The API uses the existing server-side Supabase service-role client. No service-role credentials are exposed to the browser.
 
 ## Persistence and integrity
 
@@ -45,7 +45,7 @@ The verifier checks contiguous sequence, owner scope, previous-hash linkage, eve
 
 A hash chain alone cannot prove that an operator with full database control did not replace the entire chain and recompute it. This batch does not yet publish checkpoints to independent WORM storage, a timestamp authority or a separately controlled witness. External checkpoint anchoring, key custody, retention automation and offline audit bundle signing remain future work.
 
-The ledger records event payload metadata only. It does not upload or persist evidence files, validate their source bytes, authenticate external provider records, sign a financial close, lock periods or post journals. Actor identity is taken from the authenticated administrator session; the database stores the actor reference but does not independently attest to the identity provider.
+The ledger records event payload metadata only. The initial workbench records events under the authenticated administrator by default; customer-scoped event capture requires an explicitly supplied `subjectOwnerId` and the actor remains the authenticated administrator. It does not upload or persist evidence files, validate their source bytes, authenticate external provider records, sign a financial close, lock periods or post journals. Actor identity is taken from the authenticated administrator session; the database stores the actor reference but does not independently attest to the identity provider.
 
 ## Safety
 
