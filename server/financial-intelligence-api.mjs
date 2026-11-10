@@ -713,7 +713,7 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const month=String(body.periodMonth||"");
         const periodMonth=month||new Date().toISOString().slice(0,7)+"-01";
-        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+        if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
           return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
@@ -749,7 +749,7 @@ export function createFinancialIntelligenceApi({
         const currency=String(body.currency||"").trim().toUpperCase();
         const periodStart=String(body.periodStart||""),periodEnd=String(body.periodEnd||"");
         const totalMinor=Number(body.totalMinor);
-        const validDay=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validDay=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!invoiceReference||invoiceReference.length>180||
           !/^[A-Z]{3}$/.test(currency)||!validDay(periodStart)||!validDay(periodEnd)||periodEnd<periodStart||
           !Number.isSafeInteger(totalMinor)||totalMinor<0)
@@ -766,7 +766,7 @@ export function createFinancialIntelligenceApi({
             const operation=String(line.operation||"");
             if(!lineReference||lineReference.length>180||!model||model.length>160||
               !["text","image","video","render","upscale","audio","embedding","other"].includes(operation)||
-              !Number.isSafeInteger(amount)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(usagePeriod)||
+              !Number.isSafeInteger(amount)||!/^\d{4}-\d{2}-\d{2}$/.test(usagePeriod)||
               !Number.isFinite(Date.parse(usagePeriod+"T00:00:00Z"))||new Date(usagePeriod+"T00:00:00Z").toISOString().slice(0,10)!==usagePeriod)
               throw Object.assign(new Error("Invoice line "+(index+1)+" is invalid."),{code:"AI_INVOICE_LINE_INVALID"});
             return {provider,currency,lineReference,model,operation,amountMinor:amount,usagePeriod,
@@ -790,7 +790,7 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/ai-cost-anomalies"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const periodMonth=String(body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
-        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+        if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
           return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
         const result=await rpc("ai_cost_anomaly_report",{p_actor_id:ownerId,p_period_month:periodMonth,
           p_min_cost_minor:100,p_spike_multiplier:2,p_failed_ratio:0.25});
