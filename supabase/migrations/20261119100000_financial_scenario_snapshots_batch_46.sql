@@ -136,7 +136,7 @@ begin
   order by currency,as_of_date desc,created_at desc
  ), revenue as(
   select currency,sum(mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
-   jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','id',id,'periodMonth',snapshot_month)
+   jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',owner_id,'currency',currency,'periodMonth',snapshot_month)
     order by snapshot_month desc) evidence
   from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
   group by currency
