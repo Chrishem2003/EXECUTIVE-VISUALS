@@ -58,3 +58,11 @@ test("evidence manifest digest is stable regardless of source object key orderin
  const b=assessFinancialCloseReadiness(reordered);
  assert.equal(a.evidenceManifestSha256,b.evidenceManifestSha256);
 });
+
+
+test("preparer and reviewer attestations must match their assigned identities",()=>{
+ const result=assessFinancialCloseReadiness({period:"2026-10",asOf:"2026-11-04",evidence,tasks:[{...completeTask,approval:{preparedBy:"someone-else",approvedBy:"another-reviewer",approvedAt:"2026-11-02T14:00:00Z",decision:"approved"}}],reconciliations:[completeRecon]});
+ assert.equal(result.status,"blocked");
+ assert.ok(result.blockers.some(x=>x.issue==="preparer_attestation_mismatch"));
+ assert.ok(result.blockers.some(x=>x.issue==="reviewer_approval_mismatch"));
+});
