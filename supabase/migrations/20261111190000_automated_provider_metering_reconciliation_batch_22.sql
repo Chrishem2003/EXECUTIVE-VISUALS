@@ -111,7 +111,8 @@ begin
  for v_line in select * from ai_provider_invoice_lines where import_id=p_import_id order by id loop
   select array_agg(id),count(*) into v_candidates,v_count from ai_usage_cost_events
    where provider=v_line.provider and requested_model=v_line.model and currency=v_line.currency
-    and invoice_line_reference=v_line.provider_line_reference;
+    and invoice_line_reference=v_line.provider_line_reference
+    and not exists(select 1 from ai_provider_invoice_reconciliation_events prior where prior.usage_event_id=ai_usage_cost_events.id);
   if coalesce(v_count,0)=0 then v_status:='unmatched';
   elsif v_count>1 then v_status:='ambiguous';
   else
@@ -183,9 +184,16 @@ begin
   where period_month=p_period_month and cost_basis='unpriced'
   group by provider,requested_model
  ), invoice as(
-  select provider,invoice_reference,currency,total_minor,reconciliation_status
-  from ai_provider_invoice_imports where period_start<p_period_month+interval '1 month'
-   and period_end>=p_period_month and reconciliation_status in('variance','review_required')
+  select i.provider,i.invoice_reference,i.currency,i.total_minor,i.reconciliation_status,
+   count(r.id) filter(where r.match_status='unmatched')::integer unmatched_lines,
+   count(r.id) filter(where r.match_status='ambiguous')::integer ambiguous_lines,
+   count(r.id) filter(where r.match_status='variance')::integer variance_lines
+  from ai_provider_invoice_imports i
+  left join ai_provider_invoice_reconciliation_events r on r.invoice_import_id=i.id
+  where i.period_start<p_period_month+interval '1 month' and i.period_end>=p_period_month
+  group by i.id,i.provider,i.invoice_reference,i.currency,i.total_minor,i.reconciliation_status
+  having i.reconciliation_status in('variance','review_required')
+   or count(r.id) filter(where r.match_status<>'matched')>0
  )
  select jsonb_build_object('periodMonth',p_period_month,'generatedAt',now(),
   'spendAnomalies',coalesce((select jsonb_agg(jsonb_build_object('type',anomaly_type,'day',day,'provider',provider,
