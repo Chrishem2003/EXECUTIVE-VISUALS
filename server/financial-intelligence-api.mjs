@@ -878,7 +878,7 @@ export function createFinancialIntelligenceApi({
         const effectiveFrom=String(body.effectiveFrom||"");
         const effectiveTo=body.effectiveTo==null||body.effectiveTo===""?null:String(body.effectiveTo);
         const idempotency=String(body.idempotencyKey||"").trim();
-        const validDay=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validMonthStart=value=>/^\d{4}-\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!["global","customer"].includes(scopeType)||(scopeType==="global"&&attributedOwner!==null)||
           (scopeType==="customer"&&!UUID.test(attributedOwner||""))||!/^[A-Z]{3}$/.test(currency)||
           (margin===null&&contribution===null)||(margin!==null&&(!Number.isFinite(margin)||margin<0||margin>100))||
