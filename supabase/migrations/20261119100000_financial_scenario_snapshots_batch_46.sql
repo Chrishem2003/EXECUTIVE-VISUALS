@@ -146,7 +146,7 @@ begin
     order by created_at desc) evidence
   from executive_visuals.financial_service_cost_events where period_month=p_period_month
   group by currency
- ), rows as(
+ ), baseline_rows as(
   select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
    ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
    co.direct_service_cost_minor,co.event_count direct_cost_event_count,
@@ -163,7 +163,7 @@ begin
   'monthlyDirectServiceCostMinor',direct_service_cost_minor,
   'directCostEventCount',coalesce(direct_cost_event_count,0),
   'evidenceReferences',evidence_references
- ) order by currency),'[]'::jsonb) into v_result from rows;
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
  return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
   'limitations',jsonb_build_array(
    'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
