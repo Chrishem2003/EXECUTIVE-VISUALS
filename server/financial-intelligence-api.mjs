@@ -700,6 +700,7 @@ export function createFinancialIntelligenceApi({
         });
         const refundId=typeof reservation==="string"?reservation:reservation?.id;
         if(!UUID.test(String(refundId||"")))throw new Error("Refund reservation RPC did not return a valid refund ID.");
+        await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.refund.initiate",p_resource_type:"payment_refund",p_resource_id:String(refundId),p_reason:reason,p_request_id:randomUUID(),p_metadata:{paymentTransactionId:payment.id,amountMinor, currency:payment.currency}});
         const refundResult=await dbRequest("payment_refunds?select=id,status,provider_refund_id&id=eq."+encodeURIComponent(refundId)+"&limit=1");
         const refund=Array.isArray(refundResult.data)?refundResult.data[0]:null;
         if(!refund)throw new Error("Reserved refund record could not be retrieved.");
