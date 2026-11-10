@@ -820,7 +820,7 @@ export function createFinancialIntelligenceApi({
         const currency=String(body.currency||"").trim().toUpperCase();
         const periodStart=String(body.periodStart||""),periodEnd=String(body.periodEnd||"");
         const totalMinor=Number(body.totalMinor);
-        const validMonthStart=value=>/^\d{4}-\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validDay=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!invoiceReference||invoiceReference.length>180||
           !/^[A-Z]{3}$/.test(currency)||!validDay(periodStart)||!validDay(periodEnd)||periodEnd<periodStart||
           !Number.isSafeInteger(totalMinor)||totalMinor<0)
