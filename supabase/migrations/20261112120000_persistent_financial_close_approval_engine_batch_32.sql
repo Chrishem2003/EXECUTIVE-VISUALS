@@ -116,9 +116,9 @@ begin
   when 'lock_period' then 'close_period.locked'
   when 'reopen_period' then 'close_period.reopened'
   else null end;
- if v_expected_event is null or p_event_envelope->>'eventType'<>v_expected_event
-  or p_event_envelope->>'ownerId'<>p_owner_id::text
-  or p_event_envelope->>'actorId'<>p_actor_id::text
+ if v_expected_event is null or p_event_envelope->>'eventType' is distinct from v_expected_event
+  or p_event_envelope->>'ownerId' is distinct from p_owner_id::text
+  or p_event_envelope->>'actorId' is distinct from p_actor_id::text
   or p_event_envelope->'payload'<>p_payload then
   raise exception using errcode='22023',message='financial_close_command_event_mismatch';
  end if;
