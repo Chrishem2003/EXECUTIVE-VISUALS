@@ -284,7 +284,7 @@ export function compileCreativeStoryboard(
     const shotDurations=allocateStoryboardDuration(sceneDuration,Array(shotCount).fill(1));
     const shots=shotDurations.map((duration,shotIndex)=>{
       globalSequence++;
-      const role=STORY_ROLES[Math.min(shotIndex,STORY_ROLES.length-1)];
+      const sceneRoles:CreativeStoryboardShot["role"][]=["establish","action","detail","proof","payoff","transition"];\n      const role=shotIndex===0?sceneRoles[index]:STORY_ROLES[Math.min(shotIndex+1,STORY_ROLES.length-1)];
       const visual=plan.visualGrammar[shotIndex%Math.max(1,plan.visualGrammar.length)]||"Maintain a coherent visual language.";
       const sound=plan.soundIdentity[shotIndex%Math.max(1,plan.soundIdentity.length)]||"Use intentional, restrained sound design.";
       const action=shotIndex===0?purpose:
