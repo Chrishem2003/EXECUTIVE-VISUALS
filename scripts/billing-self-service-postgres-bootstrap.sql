@@ -122,3 +122,6 @@ create table executive_visuals.credit_ledger(
  created_at timestamptz not null default now(),
  unique(owner_id,idempotency_key)
 );
+
+grant all privileges on all tables in schema executive_visuals to service_role;
+grant all privileges on all sequences in schema executive_visuals to service_role;
