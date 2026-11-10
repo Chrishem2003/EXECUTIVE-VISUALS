@@ -56,6 +56,22 @@ grant select,insert on executive_visuals.subscription_revenue_snapshots to servi
 grant select,insert on executive_visuals.customer_acquisition_spend_events to service_role;
 grant select,insert on executive_visuals.customer_acquisition_attributions to service_role;
 
+create or replace function executive_visuals.reject_revenue_intelligence_mutation()
+returns trigger language plpgsql security definer
+set search_path=pg_catalog,executive_visuals as $
+begin
+ raise exception 'Revenue intelligence evidence is append-only' using errcode='55000';
+end $;
+create trigger subscription_revenue_snapshots_immutable
+ before update or delete on executive_visuals.subscription_revenue_snapshots
+ for each row execute function executive_visuals.reject_revenue_intelligence_mutation();
+create trigger customer_acquisition_spend_immutable
+ before update or delete on executive_visuals.customer_acquisition_spend_events
+ for each row execute function executive_visuals.reject_revenue_intelligence_mutation();
+create trigger customer_acquisition_attributions_immutable
+ before update or delete on executive_visuals.customer_acquisition_attributions
+ for each row execute function executive_visuals.reject_revenue_intelligence_mutation();
+
 create or replace function executive_visuals.capture_subscription_revenue_snapshot(
  p_actor_id uuid,p_snapshot_month date default date_trunc('month',now())::date
 ) returns jsonb
@@ -114,6 +130,9 @@ begin
  on conflict(snapshot_month,owner_id,currency) do nothing;
  get diagnostics v_inserted=row_count;
  select count(*) into v_count from subscription_revenue_snapshots where snapshot_month=v_month;
+ perform write_financial_admin_audit(p_actor_id,'revenue.snapshot.captured','subscription_revenue_snapshot',v_month::text,
+  'Capture current-month customer subscription revenue evidence',null,
+  jsonb_build_object('snapshotMonth',v_month,'capturedCustomers',v_count,'insertedCustomers',v_inserted));
  return jsonb_build_object('snapshotMonth',v_month,'capturedCustomers',v_count,'insertedCustomers',v_inserted,'alreadyCaptured',false);
 end $$;
 
@@ -149,6 +168,10 @@ begin
    raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
   end if;
   v_id:=v_existing.id;
+ else
+  perform write_financial_admin_audit(p_actor_id,'acquisition.spend.recorded','customer_acquisition_spend',v_id::text,
+   'Record acquisition campaign spend',p_idempotency_key,
+   jsonb_build_object('periodMonth',p_period_month,'channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'amountMinor',p_amount_minor));
  end if;
  return jsonb_build_object('id',v_id,'periodMonth',p_period_month,'channel',p_channel,'currency',p_currency,'amountMinor',p_amount_minor,'idempotentReplay',v_existing.id is not null);
 end $$;
@@ -160,7 +183,7 @@ create or replace function executive_visuals.record_customer_acquisition_attribu
 language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 as $$
-declare v_existing customer_acquisition_attributions%rowtype;
+declare v_existing customer_acquisition_attributions%rowtype; v_inserted_owner uuid;
 begin
  if p_actor_id is null or not exists(select 1 from platform_admins
   where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
@@ -177,13 +200,18 @@ begin
  end if;
  insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
  values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
- on conflict(owner_id) do nothing;
+ on conflict(owner_id) do nothing returning owner_id into v_inserted_owner;
  select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
  if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
   or v_existing.currency<>p_currency then
   raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
  end if;
- return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_existing.created_at<now()-interval '1 second');
+ if v_inserted_owner is not null then
+  perform write_financial_admin_audit(p_actor_id,'acquisition.attribution.recorded','customer_acquisition_attribution',p_owner_id::text,
+   'Record first-touch acquisition attribution',null,
+   jsonb_build_object('channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'sourceType',p_source_type));
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_inserted_owner is null);
 end $$;
 
 create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
