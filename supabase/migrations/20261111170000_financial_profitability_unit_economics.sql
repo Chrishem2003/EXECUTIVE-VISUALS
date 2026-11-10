@@ -179,7 +179,7 @@ begin
    count(*) filter(where prior.mrr_minor>0)::integer opening_customers,
    count(*) filter(where prior.mrr_minor>0 and coalesce(cur_snap.mrr_minor,0)=0)::integer churned_customers,
    case when count(*) filter(where prior.mrr_minor>0)>0
-    then (count(*) filter(where prior.mrr_minor>0 and coalesce(current.mrr_minor,0)=0))::numeric/
+    then (count(*) filter(where prior.mrr_minor>0 and coalesce(cur_snap.mrr_minor,0)=0))::numeric/
      count(*) filter(where prior.mrr_minor>0) else null end monthly_logo_churn
   from (select distinct currency from customer_base) cur
   left join lateral(
