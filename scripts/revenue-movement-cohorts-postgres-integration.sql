@@ -28,7 +28,7 @@ begin
  if (v_report->'comparison'->>'available')::boolean is not true then
   raise exception 'Batch 39 monthly comparison should be available: %',v_report->'comparison';
  end if;
- select value into v_bridge from jsonb_array_elements(v_report->'movement') value where value->>'currency'='UGX';
+ select movement_row.value into v_bridge from jsonb_array_elements(v_report->'movement') as movement_row(value) where movement_row.value->>'currency'='UGX';
  if v_bridge is null then raise exception 'UGX movement bridge missing: %',v_report; end if;
  if (v_bridge->>'openingMrrMinor')::bigint<>110000
   or (v_bridge->>'newMrrMinor')::bigint<>40000
@@ -39,18 +39,18 @@ begin
   or (v_bridge->>'reconciliationDeltaMinor')::bigint<>0 then
   raise exception 'MRR movement bridge does not reconcile: %',v_bridge;
  end if;
- select value into v_prior_cohort from jsonb_array_elements(v_report->'cohorts') value
-  where value->>'currency'='UGX' and value->>'cohortMonth'=(date_trunc('month',now())-interval '1 month')::date::text
-   and value->>'snapshotMonth'=date_trunc('month',now())::date::text;
+ select cohort_row.value into v_prior_cohort from jsonb_array_elements(v_report->'cohorts') as cohort_row(value)
+  where cohort_row.value->>'currency'='UGX' and cohort_row.value->>'cohortMonth'=(date_trunc('month',now())-interval '1 month')::date::text
+   and cohort_row.value->>'snapshotMonth'=date_trunc('month',now())::date::text;
  if v_prior_cohort is null or (v_prior_cohort->>'baselineCustomers')::integer<>2
   or (v_prior_cohort->>'activeCustomers')::integer<>1
   or (v_prior_cohort->>'logoRetentionPct')::numeric<>50
   or (v_prior_cohort->>'revenueRetentionPct')::numeric<>90.91 then
   raise exception 'Observed prior cohort retention curve mismatch: %',v_prior_cohort;
  end if;
- select value into v_new_cohort from jsonb_array_elements(v_report->'cohorts') value
-  where value->>'currency'='UGX' and value->>'cohortMonth'=date_trunc('month',now())::date::text
-   and value->>'snapshotMonth'=date_trunc('month',now())::date::text;
+ select cohort_row.value into v_new_cohort from jsonb_array_elements(v_report->'cohorts') as cohort_row(value)
+  where cohort_row.value->>'currency'='UGX' and cohort_row.value->>'cohortMonth'=date_trunc('month',now())::date::text
+   and cohort_row.value->>'snapshotMonth'=date_trunc('month',now())::date::text;
  if v_new_cohort is null or (v_new_cohort->>'logoRetentionPct')::numeric<>100 then
   raise exception 'New cohort first-observed baseline mismatch: %',v_new_cohort;
  end if;
