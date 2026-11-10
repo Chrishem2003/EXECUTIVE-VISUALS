@@ -96,14 +96,16 @@ begin
  end if;
 
  with first_paid as(
-  select owner_id,min(created_at) first_paid_at
-  from subscription_events where event_type='activated'
-  group by owner_id
+  select se.owner_id,min(se.created_at) first_paid_at
+  from subscription_events se join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and cs.amount_minor>0
+  group by se.owner_id
  ), fallback_paid as(
   select cs.owner_id,min(cs.created_at) first_paid_at
   from customer_subscriptions cs
   where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
-   and not exists(select 1 from first_paid f where f.owner_id=cs.owner_id)
+   and not exists(select 1 from subscription_events se join customer_subscriptions paid on paid.id=se.subscription_id
+    where se.owner_id=cs.owner_id and se.event_type='activated' and paid.amount_minor>0)
   group by cs.owner_id
  ), paid_owners as(
   select owner_id,first_paid_at from first_paid
@@ -164,7 +166,7 @@ begin
   select * into v_existing from customer_acquisition_spend_events where idempotency_key=p_idempotency_key;
   if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
    or v_existing.currency<>p_currency or v_existing.channel<>p_channel
-   or v_existing.period_month<>p_period_month then
+   or v_existing.period_month<>p_period_month or v_existing.campaign<>coalesce(p_campaign,'') or v_existing.description<>p_description then
    raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
   end if;
   v_id:=v_existing.id;
@@ -230,7 +232,7 @@ begin
   select distinct snapshot_month from subscription_revenue_snapshots
   order by snapshot_month desc limit 2
  ), month_pair as(
-  select max(snapshot_month) current_month,min(snapshot_month) prior_month from months
+  select case when count(*)>=2 then min(snapshot_month) end prior_month,max(snapshot_month) current_month from months
  ), retention as(
   select p.prior_month,p.current_month,b.currency,b.cohort_month,
    count(*)::integer opening_customers,
@@ -245,14 +247,16 @@ begin
   where p.prior_month is not null and p.current_month is not null and b.mrr_minor>0
   group by p.prior_month,p.current_month,b.currency,b.cohort_month
  ), first_paid_for_cac as(
-  select owner_id,min(created_at) first_paid_at
-  from subscription_events where event_type='activated'
-  group by owner_id
+  select se.owner_id,min(se.created_at) first_paid_at
+  from subscription_events se join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and cs.amount_minor>0
+  group by se.owner_id
   union all
   select cs.owner_id,min(cs.created_at) first_paid_at
   from customer_subscriptions cs
   where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
-   and not exists(select 1 from subscription_events se where se.owner_id=cs.owner_id and se.event_type='activated')
+   and not exists(select 1 from subscription_events se join customer_subscriptions paid on paid.id=se.subscription_id
+    where se.owner_id=cs.owner_id and se.event_type='activated' and paid.amount_minor>0)
   group by cs.owner_id
  ), acquisition as(
   select s.period_month,s.currency,s.channel,
