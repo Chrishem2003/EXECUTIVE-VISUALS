@@ -26,5 +26,9 @@ jobs:
         run: npm run verify:control-remediation
       - name: Check remediation API syntax
         run: node --check server/control-remediation-api.mjs
+      - name: Verify offline remediation audit export integrity
+        run: npm run verify:remediation-audit-export
+      - name: Check audit export verifier syntax
+        run: node --check scripts/verify-remediation-audit-export.mjs
       - name: Type-check Financial Command Centre integration
         run: npm run typecheck
