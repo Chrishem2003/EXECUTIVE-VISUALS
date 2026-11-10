@@ -983,9 +983,9 @@ test("predictive revenue overview is finance-admin only and preserves scenario s
    currencies:[{currency:"UGX",activeSubscribers:20,currentMrrMinor:500000,currentArrMinor:6000000,
     observedMonthlyChurnPct:2.1,churnConfidence:"low",churnSampleSize:25,
     averageRealizedLtvMinor:125000,predictedLtvMinor:450000,cacAvailability:"not_instrumented",
-    forecast:[{days:30,base:{endMrrMinor:489500,revenueAtRiskMinor:10500},
-      conservative:{endMrrMinor:484250,revenueAtRiskMinor:15750},
-      upside:{endMrrMinor:492125,revenueAtRiskMinor:7875}}]}],
+    forecast:[{days:30,base:{endMrrMinor:489500,mrrAtRiskMinor:10500},
+      conservative:{endMrrMinor:484250,mrrAtRiskMinor:15750},
+      upside:{endMrrMinor:492125,mrrAtRiskMinor:7875}}]}],
    limitations:["CAC and acquisition-channel attribution are unavailable."]
   });
   throw new Error("Unexpected request: "+target);
