@@ -242,7 +242,10 @@ test("executive assurance summary is access-scoped and reports portfolio exposur
  const personalBody={...createBody,findingId:"assurance-personal"};delete personalBody.projectId;delete personalBody.ownerId;delete personalBody.reviewerId;
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:personalBody})).status,201);
  const archivedProject="b23e4567-e89b-42d3-a456-426614174000";
- f.db.prepare("INSERT INTO projects(id,owner_id,name,archived_at) VALUES(?,?,?,?,?)".replace(",?)",",?)")).run(archivedProject,owner,"Archived project","2026-11-10T00:00:00.000Z");
+ f.db.prepare("INSERT INTO projects(id,owner_id,name) VALUES(?,?,?)").run(archivedProject,owner,"Archived project");
+ const archivedAction=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,projectId:archivedProject,ownerId:owner,reviewerId:undefined,findingId:"assurance-archived"}});
+ assert.equal(archivedAction.status,201);
+ f.db.prepare("UPDATE projects SET archived_at=? WHERE id=?").run("2026-11-10T00:00:00.000Z",archivedProject);
  const ownerView=await f.api.handle({method:"GET",path:"/api/finance/remediations/assurance",ownerId:owner});
  assert.equal(ownerView.status,200);
  assert.equal(ownerView.body.totals.total,3);
