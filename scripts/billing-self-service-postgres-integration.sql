@@ -452,3 +452,53 @@ begin
  end if;
 end $batch20$;
 reset role;
+
+
+do $batch22$
+declare
+ v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
+ v_customer constant uuid:='22222222-2222-4222-8222-222222222222';
+ v_month date:=date_trunc('month',now())::date;
+ v_import jsonb; v_duplicate jsonb; v_reconciled jsonb; v_replay jsonb; v_anomalies jsonb; v_usage jsonb; v_unpriced jsonb;
+begin
+ v_usage:=executive_visuals.record_ai_usage_cost_event(
+  v_actor,now(),v_customer,null,null,'batch22-video-job-001','runway','gen-4','gen-4',
+  'video','succeeded',0,0,0,10,0,'UGX',500,'line-b22-001','batch22-trace-001','batch22-ai-usage-0001'
+ );
+ if v_usage->>'costBasis'<>'provider_reported' or (v_usage->>'costMinor')::bigint<>500 then
+  raise exception 'Provider-reported usage cost was not preserved: %',v_usage;
+ end if;
+ v_unpriced:=executive_visuals.record_ai_usage_cost_event(
+  v_actor,now(),v_customer,null,null,'batch22-image-job-001','unknownprovider','unknown-image-model',null,
+  'image','failed',0,0,1,0,0,null,null,'','batch22-trace-002','batch22-ai-usage-0002'
+ );
+ if v_unpriced->>'costBasis'<>'unpriced' or v_unpriced->>'costMinor' is not null then
+  raise exception 'Unknown provider pricing must remain explicitly unpriced: %',v_unpriced;
+ end if;
+ v_import:=executive_visuals.import_ai_provider_invoice(
+  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month-1 day')::date,
+  500,repeat('a',64),
+  jsonb_build_array(jsonb_build_object('lineReference','line-b22-001','provider','runway',
+   'currency','UGX','model','gen-4','operation','video','amountMinor',500,'usagePeriod',v_month::text))
+ );
+ if v_import->>'duplicate'<>'false' or v_import->>'reconciliationStatus'<>'pending' then
+  raise exception 'Invoice import did not create pending evidence: %',v_import;
+ end if;
+ v_duplicate:=executive_visuals.import_ai_provider_invoice(
+  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month-1 day')::date,
+  500,repeat('a',64),
+  jsonb_build_array(jsonb_build_object('lineReference','line-b22-001','provider','runway',
+   'currency','UGX','model','gen-4','operation','video','amountMinor',500,'usagePeriod',v_month::text))
+ );
+ if v_duplicate->>'duplicate'<>'true' then raise exception 'Invoice import was not idempotent: %',v_duplicate; end if;
+ v_reconciled:=executive_visuals.reconcile_ai_provider_invoice(v_actor,(v_import->>'importId')::uuid);
+ if (v_reconciled->>'matched')::integer<>1 or (v_reconciled->>'unmatched')::integer<>0 then
+  raise exception 'Exact invoice line did not reconcile to its usage event: %',v_reconciled;
+ end if;
+ v_replay:=executive_visuals.reconcile_ai_provider_invoice(v_actor,(v_import->>'importId')::uuid);
+ if v_replay->>'idempotentReplay'<>'true' then raise exception 'Invoice reconciliation replay was not idempotent: %',v_replay; end if;
+ v_anomalies:=executive_visuals.ai_cost_anomaly_report(v_actor,v_month,100,2,0.25);
+ if jsonb_array_length(v_anomalies->'unpricedUsage')<1 then
+  raise exception 'Cost anomaly report must expose unpriced provider/model usage: %',v_anomalies;
+ end if;
+end $batch22$;
