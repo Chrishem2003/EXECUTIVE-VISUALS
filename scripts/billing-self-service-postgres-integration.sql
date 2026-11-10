@@ -497,6 +497,27 @@ begin
  end if;
  v_replay:=executive_visuals.reconcile_ai_provider_invoice(v_actor,(v_import->>'importId')::uuid);
  if v_replay->>'idempotentReplay'<>'true' then raise exception 'Invoice reconciliation replay was not idempotent: %',v_replay; end if;
+
+ insert into executive_visuals.ai_model_price_catalog(
+  provider,model,currency,video_second_minor,effective_from,source_type,source_reference,recorded_by
+ ) values('test-provider','test-video-model','USD',25,now()-interval '1 day',
+  'admin_verified','batch22-rate-card-test',v_actor);
+ v_unpriced:=executive_visuals.record_ai_usage_cost_event(
+  v_actor,now(),v_customer,null,null,'batch22-currencyless-usage','test-provider','test-video-model',null,
+  'video','succeeded',0,0,0,4,0,null,null,'','batch22-trace-003','batch22-ai-usage-0003'
+ );
+ if v_unpriced->>'costBasis'<>'unpriced' then
+  raise exception 'Rate cards must not infer a currency when none is supplied: %',v_unpriced;
+ end if;
+ v_usage:=executive_visuals.record_ai_usage_cost_event(
+  v_actor,now(),v_customer,null,null,'batch22-priced-usage','test-provider','test-video-model',null,
+  'video','succeeded',0,0,0,4,0,'USD',null,'','batch22-trace-004','batch22-ai-usage-0004'
+ );
+ if v_usage->>'costBasis'<>'catalog_estimate' or (v_usage->>'costMinor')::bigint<>100
+  or v_usage->>'currency'<>'USD' then
+  raise exception 'Effective-dated model rate card did not calculate expected cost: %',v_usage;
+ end if;
+
  v_anomalies:=executive_visuals.ai_cost_anomaly_report(v_actor,v_month,100,2,0.25);
  if jsonb_array_length(v_anomalies->'unpricedUsage')<1 then
   raise exception 'Cost anomaly report must expose unpriced provider/model usage: %',v_anomalies;
