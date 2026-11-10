@@ -1,7 +1,7 @@
 name: Remediation workbench checks
 on:
   push:
-    branches: [feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58, feat/reviewer-performance-intelligence-batch-59]
+    branches: [ev-release-validation, feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58, feat/reviewer-performance-intelligence-batch-59]
   pull_request:
     branches: [main, feat/remediation-workbench-batch-51-clean, feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58, feat/reviewer-performance-intelligence-batch-59]
 concurrency:
