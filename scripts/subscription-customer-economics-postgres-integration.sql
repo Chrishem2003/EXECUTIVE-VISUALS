@@ -68,8 +68,8 @@ begin
   v_actor,'customer',v_owner,'UGX',85,60000,v_month,null,'batch37-customer-margin-policy'
  );
  v_report:=executive_visuals.subscription_customer_economics_report(v_actor,v_month,50);
- select value into v_customer from jsonb_array_elements(v_report->'customers') value
- where value->>'ownerId'=v_owner::text;
+ select customer.value into v_customer from jsonb_array_elements(v_report->'customers') as customer(value)
+ where customer.value->>'ownerId'=v_owner::text;
  if v_customer is null then raise exception 'Batch 37 customer row missing: %',v_report; end if;
  if (v_customer->>'mrrMinor')::bigint<>100000
   or (v_customer->>'directCostMinor')::bigint<>20000
