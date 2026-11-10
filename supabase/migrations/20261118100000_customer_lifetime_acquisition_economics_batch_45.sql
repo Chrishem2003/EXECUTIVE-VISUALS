@@ -38,6 +38,7 @@ begin
    count(*)::integer observed_months,min(snapshot_month) first_observed_month,
    max(snapshot_month) last_observed_month
   from monthly_customer
+  where snapshot_month>=cohort_month
   group by owner_id,currency
  ), spend_campaign as(
   select period_month,currency,channel,campaign,sum(amount_minor)::bigint spend_minor
@@ -121,13 +122,13 @@ begin
  ), cumulative as(
   select m.owner_id,m.currency,m.snapshot_month,m.contribution_minor,
    sum(m.contribution_minor) over(partition by m.owner_id,m.currency order by m.snapshot_month rows unbounded preceding)::bigint cumulative_contribution_minor
-  from monthly_customer m
+  from monthly_customer m where m.snapshot_month>=m.cohort_month
  ), actual_payback as(
   select c.owner_id,c.currency,min(c.snapshot_month) filter(where c.cumulative_contribution_minor>=a.cac_minor) actual_payback_month
   from cumulative c join customer_cac a on a.owner_id=c.owner_id and a.currency=c.currency
    and c.snapshot_month>=a.acquisition_month
   where a.cac_minor is not null
-  group by c.owner_id,c.currency
+  group by c.owner_id,c.currency,a.cac_minor
  ), campaign_history as(
   select * from campaign_rows where period_month<=p_period_month
  ), currency_totals as(
@@ -170,6 +171,11 @@ begin
    'predictedLifetimeContributionMinor',l.predicted_lifetime_contribution_minor,
    'cacMinor',l.cac_minor,'realizedAfterCacMinor',l.realized_contribution_to_date_minor-coalesce(l.cac_minor,0),
    'predictedAfterCacMinor',case when l.predicted_lifetime_contribution_minor is null then null else l.predicted_lifetime_contribution_minor-coalesce(l.cac_minor,0) end,
+   'ltvCacRatio',case when l.cac_minor>0 and l.predicted_lifetime_contribution_minor is not null then round(l.predicted_lifetime_contribution_minor::numeric/l.cac_minor,2) else null end,
+   'growthQuality',case when l.cac_minor is null then 'insufficient_acquisition_evidence'
+    when l.predicted_lifetime_contribution_minor is null then 'insufficient_lifetime_evidence'
+    when l.predicted_lifetime_contribution_minor<l.cac_minor then 'value_below_acquisition_cost'
+    when l.predicted_lifetime_contribution_minor/l.cac_minor>=3 then 'strong_unit_economics' else 'monitor_unit_economics' end,
    'modeledPaybackMonths',l.modeled_payback_months,
    'actualPaybackMonth',ap.actual_payback_month,
    'actualPaybackMonths',case when ap.actual_payback_month is null then null
