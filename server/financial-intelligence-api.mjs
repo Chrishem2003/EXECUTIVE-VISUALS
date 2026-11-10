@@ -994,8 +994,9 @@ export function createFinancialIntelligenceApi({
           subscriptions:"customer_subscriptions?select=id,owner_id,plan_code,status,billing_interval,amount_minor,currency,current_period_start,current_period_end,created_at&order=created_at.desc&limit="+limit,
           chargebacks:"chargeback_cases?select=id,owner_id,provider_case_id,amount_minor,currency,status,stage,response_due_at,created_at&order=created_at.desc&limit="+limit,
           settlements:"flutterwave_settlement_records?select=provider_settlement_id,currency,gross_amount_minor,net_amount_minor,fee_amount_minor,refund_amount_minor,chargeback_amount_minor,provider_status,destination,due_at,settled_at,last_reconciled_at&order=last_reconciled_at.desc&limit="+limit
+,          costs:"financial_service_cost_events?select=id,period_month,owner_id,cost_category,source_type,currency,amount_minor,entry_type,reverses_event_id,source_reference,description,recorded_by,created_at&order=period_month.desc,created_at.desc&limit="+limit
         };
-        if(!allowed[kind])return error(400,"EXPORT_KIND_INVALID","Choose payments, refunds, subscriptions, chargebacks or settlements.");
+        if(!allowed[kind])return error(400,"EXPORT_KIND_INVALID","Choose payments, refunds, subscriptions, chargebacks, settlements or costs.");
         const data=await dbRequest(allowed[kind]);
         await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.export."+kind,p_resource_type:"financial_report",p_resource_id:kind,p_reason:"Administrator requested financial data export",p_request_id:randomUUID(),p_metadata:{rowCount:Array.isArray(data.data)?data.data.length:0}});
         return response(200,{kind,generatedAt:new Date().toISOString(),rows:Array.isArray(data.data)?data.data:[],truncated:Array.isArray(data.data)&&data.data.length===limit});
