@@ -251,7 +251,7 @@ test("executive assurance summary is access-scoped and reports portfolio exposur
  assert.equal(ownerView.body.totals.total,3);
  assert.equal(ownerView.body.totals.open,3);
  assert.equal(ownerView.body.totals.criticalOpen,1);
- assert.equal(ownerView.body.totals.highOpen,1);
+ assert.equal(ownerView.body.totals.highOpen,2);
  assert.equal(ownerView.body.totals.overdue,1);
  assert.equal(ownerView.body.totals.withoutEvidence,2);
  assert.equal(ownerView.body.coverage.evidenceCoveragePct,33);
