@@ -31,6 +31,7 @@ jobs:
         run: npm run typecheck
       - name: Check financial API syntax
         run: |
+          node --check server/index.mjs
           node --check server/financial-intelligence-api.mjs
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
