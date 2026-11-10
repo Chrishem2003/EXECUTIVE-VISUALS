@@ -110,11 +110,15 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111210000_unified_profitability_margin_protection_batch_24.sql
       - name: Apply Verified Cost Reconciliation & Profitability Trends Batch 25 migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111220000_verified_cost_reconciliation_profitability_trends_batch_25.sql
+      - name: Apply Measured Shared-Cost Allocation Batch 26 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_measured_shared_cost_allocation_batch_26.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
       - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-cost-reconciliation-postgres-integration.sql
+      - name: Verify Batch 26 measured shared-cost allocation and fully loaded profitability
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/measured-shared-cost-allocation-postgres-integration.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs
