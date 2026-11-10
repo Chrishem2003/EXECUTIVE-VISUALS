@@ -191,6 +191,15 @@ begin
   if not found or approval.status not in ('approved_pending_submission','processing') then
     raise exception 'VIDEO_APPROVAL_NOT_EXECUTABLE';
   end if;
+  if not exists(select 1 from executive_visuals.projects p
+    where p.id=approval.project_id and p.archived_at is null
+      and (p.owner_id=p_owner_id or exists(
+        select 1 from executive_visuals.project_members pm
+        where pm.project_id=p.id and pm.member_id=p_owner_id
+          and pm.role in ('editor')
+      ))) then
+    raise exception 'VIDEO_APPROVAL_PROJECT_SCOPE_INVALID';
+  end if;
   if approval.request_hash<>p_request_hash or approval.currency<>p_currency then
     raise exception 'VIDEO_APPROVAL_SNAPSHOT_MISMATCH';
   end if;
