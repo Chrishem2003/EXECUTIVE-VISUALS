@@ -23,15 +23,25 @@ export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}=
  const quoteMicros=micros(quote.amount),ceilingMicros=micros(budget.amount);
  if(!Number.isSafeInteger(quoteMicros)||!Number.isSafeInteger(ceilingMicros))throw Object.assign(new Error("Quote and budget amounts must fit within safe micro-unit precision."),{code:"VIDEO_APPROVAL_INVALID_BUDGET"});
  if(ceilingMicros<quoteMicros)throw Object.assign(new Error("The verified quote exceeds the approved budget ceiling."),{code:"VIDEO_APPROVAL_BUDGET_EXCEEDED"});
- const snapshot=canonical(shots);
- const requestHash=createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+ const quoteShots=Array.isArray(quote.shots)?quote.shots:[];
+ if(quoteShots.length!==shots.length)throw Object.assign(new Error("The verified production quote must contain an independently priced record for every approved shot."),{code:"VIDEO_APPROVAL_SHOT_PRICING_MISSING"});
+ const snapshot=canonical(shots.map((shot,index)=>{
+  const shotQuote=quoteShots[index];
+  if(!shotQuote||shotQuote.shotId!==shot.id||shotQuote.currency!==quote.currency||!Number.isFinite(shotQuote.amount)||shotQuote.amount<0)
+   throw Object.assign(new Error("Every approved shot must match its own verified quote."),{code:"VIDEO_APPROVAL_SHOT_PRICING_MISMATCH"});
+  const amountMicros=micros(shotQuote.amount);
+  if(!Number.isSafeInteger(amountMicros))throw Object.assign(new Error("A shot quote exceeds safe micro-unit precision."),{code:"VIDEO_APPROVAL_SHOT_PRICING_INVALID"});
+  return {...shot,estimatedCostMicros:amountMicros,estimatedCost:{currency:shotQuote.currency,amount:shotQuote.amount,pricing:canonical(shotQuote.pricing)}};
+ }));
+ const canonicalQuote=canonical(quote);
+ const requestHash=createHash("sha256").update(JSON.stringify({shots:snapshot,quote:canonicalQuote})).digest("hex");
  return Object.freeze({
   requestHash,
   shotCount:shots.length,
   currency:quote.currency,
   quotedAmountMicros:quoteMicros,
   budgetCeilingMicros:ceilingMicros,
-  snapshotJson:JSON.stringify({shots:snapshot,quote:canonical(quote)}),
+  snapshotJson:JSON.stringify({shots:snapshot,quote:canonicalQuote}),
   status:"approved_pending_submission",
   requestsSubmitted:false
  });
