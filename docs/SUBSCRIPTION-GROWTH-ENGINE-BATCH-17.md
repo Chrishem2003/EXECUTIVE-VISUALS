@@ -6,7 +6,7 @@ Move from customer-health scoring to measured subscription-retention operations.
 
 ## Paid cohorts
 
-- Cohort entry: customer's first paid subscription record (created_at on the earliest paid subscription).
+- Cohort entry: the earliest verified subscription activation event. Existing paid subscriptions without an activation event fall back to the earliest paid subscription record.
 - Current retention: customers in that original cohort whose latest subscription status is currently active or past_due, divided by original paid cohort size.
 - Cohort age: whole calendar months since the first-paid month.
 - The dashboard explicitly labels this as a current status snapshot, not a historical month-by-month survival curve. It does not invent past states that the available event history cannot prove.
