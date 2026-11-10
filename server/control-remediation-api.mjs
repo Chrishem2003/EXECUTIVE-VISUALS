@@ -109,7 +109,7 @@ export function createControlRemediationApi({db}={}){
    if(!access(ownerId,row.project_id,true)||row.status==="verified")return error(403,"EVIDENCE_WRITE_FORBIDDEN","Only authorized project editors can add evidence to an unverified action.");
    const asset=db.prepare("SELECT id,owner_id,project_id,original_name,media_type,byte_size,sha256 FROM assets WHERE id=? AND deleted_at IS NULL").get(assetId);
    if(!asset||asset.owner_id!==ownerId||asset.project_id!==(row.project_id||null))return error(404,"EVIDENCE_ASSET_NOT_FOUND","Upload the evidence to this account or shared project before attaching it.");
-   const allowedExtensions={"application/pdf":[".pdf"],"text/plain":[".txt"],"application/json":[".json"],"image/png":[".png"],"image/jpeg":[".jpg",".jpeg"]};
+   const allowedExtensions={"application/pdf":[".pdf"],"image/png":[".png"],"image/jpeg":[".jpg",".jpeg"]};
    const allowed=allowedExtensions[asset.media_type],filename=String(asset.original_name||"").toLowerCase();
    if(!allowed||!allowed.some(ext=>filename.endsWith(ext))||!Number.isSafeInteger(Number(asset.byte_size))||Number(asset.byte_size)<1||Number(asset.byte_size)>10*1024*1024||!/^[a-f0-9]{64}$/i.test(String(asset.sha256||"")))return error(415,"UNSUPPORTED_EVIDENCE_FILE","Evidence must be a PDF, TXT, JSON, PNG or JPEG file no larger than 10 MB with a verified stored SHA-256.");
    const evidenceId=randomUUID();
