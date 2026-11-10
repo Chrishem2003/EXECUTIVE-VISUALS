@@ -118,3 +118,8 @@ Flutterwave's Payment Plans documentation explicitly says that attaching a plan 
 Flutterwave's current developer homepage states that a merchant can use only one API version at a time. Executive Visuals currently integrates V4 OAuth for checkout/refunds, while Flutterwave Payment Plans are documented under V3 and are card-only. Do not mix V3 Payment Plans calls into the V4 runtime.
 
 Before recurring subscriptions can be implemented, either obtain written confirmation of a V4-compatible recurring product or plan a complete V4-to-V3 migration of checkout, verification, refunds, webhook verification and reconciliation. This is not authorized as an automatic switch. The admin-only provider-readiness endpoint exposes this blocker without revealing credentials. Recurring billing remains disabled.
+
+
+## Batch 9 — manual mobile-money renewal
+
+Executive Visuals now has a development-only customer-initiated renewal flow using the existing V4 charge integration. Customers can initiate MTN/Airtel UGX renewal payments for their active or past-due monthly/yearly subscription. Prices are loaded from the server-side subscription record. The subscription period changes only after a signed webhook triggers a server-side V4 charge verification and the atomic renewal RPC validates the reference, amount, currency, owner and plan. This is not automatic recurring billing; no card credentials are stored and no background debit is attempted. The isolated staging migration must be applied and tested before activation.
