@@ -565,7 +565,7 @@ function financeWorkspace(){
  '<section class="panel scenario-intelligence"><div class="eyebrow">SCENARIO INTELLIGENCE · BATCH 46</div><h2>Model decisions before committing capital</h2><p>Build a deterministic monthly model from explicit assumptions, compare downside/base/upside outcomes and preserve an immutable, hash-linked snapshot. Amounts below are integer minor units in the selected currency. The model does not post transactions or execute funding decisions.</p><div class="form-grid">
 <label>Scenario name<input id="finance-scenario-name" maxlength="100" value="November operating plan"></label>
 <label>Currency (ISO 4217)<input id="finance-scenario-currency" maxlength="3" value="UGX"></label>
-<label>Reporting month<input id="finance-scenario-month" type="month" value="'+new Date().toISOString().slice(0,7)+'"></label>
+<label>Reporting month<input id="finance-scenario-month" type="month" value="${new Date().toISOString().slice(0,7)}"></label>
 <label>Opening cash · minor units<input id="finance-scenario-opening" type="number" min="0" step="1" value="0"></label>
 <label>Monthly revenue · minor units<input id="finance-scenario-revenue" type="number" min="0" step="1" value="0"></label>
 <label>Monthly variable costs · minor units<input id="finance-scenario-variable" type="number" min="0" step="1" value="0"></label>
