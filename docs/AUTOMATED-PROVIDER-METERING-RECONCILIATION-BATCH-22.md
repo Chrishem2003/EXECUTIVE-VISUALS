@@ -24,13 +24,14 @@ All routes require a finance administrator role. Invoice imports are evidence ca
 ## Accounting and matching rules
 1. Provider usage cost and invoice line amount must agree exactly in currency and minor units before a match is recorded.
 2. A match requires an exact provider invoice line reference, provider, model, currency and amount.
-3. Multiple candidates are ambiguous; missing candidates are unmatched; amount disagreement is variance.
-4. A usage event can be matched to at most one invoice line.
-5. Reconciliation evidence is append-only. Repeated reconciliation returns the existing evidence.
-6. Invoice header/line total differences remain explicit variance.
-7. Catalog estimates are not promoted to invoice-confirmed costs.
-8. Unknown pricing remains unpriced; anomaly reports surface it without inventing an amount.
-9. Anomaly detection is advisory. It does not change customer bills, provider routing or model settings.
+3. Customer, project and job attribution comes from the matched trusted usage event, never from invoice CSV-supplied owner IDs.
+4. Multiple candidates are ambiguous; missing candidates are unmatched; amount disagreement is variance.
+5. A usage event can be matched to at most one invoice line.
+6. Reconciliation evidence is append-only. Repeated reconciliation returns the existing evidence.
+7. Invoice header/line total differences remain explicit variance.
+8. Catalog estimates are not promoted to invoice-confirmed costs.
+9. Unknown pricing or missing currency remains unpriced; anomaly reports surface it without inventing an amount.
+10. Anomaly detection is advisory. It does not change customer bills, provider routing or model settings.
 
 ## Deliberate integration gates
 This batch does not yet download invoices directly from provider accounts, enable provider-specific webhook credentials, instrument every existing generation/render adapter, allocate shared GPU/FFmpeg costs, deliver external alert notifications, or automatically route work to a different model. Those require provider-specific account access, exact adapter call sites, measured resource telemetry, approved thresholds and staged acceptance tests.
