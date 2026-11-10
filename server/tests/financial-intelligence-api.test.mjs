@@ -1514,3 +1514,50 @@ test("financial audit export is administrator-only and marks unsigned bundles ho
  assert.equal(result.body.bundle.verification.valid,true);
  assert.equal(result.body.bundle.eventCount,0);
 });
+
+
+test("persistent financial close commands are admin-only and atomically pair domain commands with audit envelopes",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized close commands must not reach storage.");});
+ const forbidden=await denied.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"create_period",idempotencyKey:"close-period-2026-11",payload:{}}});
+ assert.equal(forbidden.status,403);
+
+ let commandCall=null;
+ const service=api(async(url,options={})=>{
+  const u=String(url);
+  if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(u.endsWith("/rpc/get_financial_audit_head"))return json({sequence:7,headHash:"a".repeat(64)});
+  if(u.endsWith("/rpc/execute_financial_close_command")){commandCall=JSON.parse(options.body);return json({duplicate:false,period:{id:"44444444-4444-4444-8444-444444444444",status:"open"}});}
+  if(u.endsWith("/rpc/get_financial_close_overview"))return json({periods:[{status:"open"}],tasks:[],approvals:[]});
+  throw new Error("Unexpected close workflow request: "+u);
+ });
+ const payload={periodStart:"2026-11-01",periodEnd:"2026-11-30",currency:"UGX",approvalStages:[
+  {stageKey:"finance_manager",reviewerId:"55555555-5555-4555-8555-555555555555"},
+  {stageKey:"controller",reviewerId:"66666666-6666-4666-8666-666666666666"}
+ ]};
+ const created=await service.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"create_period",idempotencyKey:"close-period-2026-11",payload}});
+ assert.equal(created.status,201);
+ assert.equal(commandCall.p_command,"create_period");
+ assert.equal(commandCall.p_event_envelope.eventType,"close_period.created");
+ assert.equal(commandCall.p_event_envelope.ownerId,owner);
+ assert.equal(commandCall.p_event_envelope.actorId,owner);
+ assert.deepEqual(commandCall.p_event_envelope.payload,payload);
+ assert.equal(commandCall.p_event_envelope.sequence,8);
+ assert.equal(commandCall.p_event_envelope.previousHash,"a".repeat(64));
+ assert.match(commandCall.p_event_hash,/^[a-f0-9]{64}$/);
+ const overview=await service.handle({method:"GET",path:"/api/admin/finance/close",ownerId:owner});
+ assert.equal(overview.status,200);
+ assert.equal(overview.body.close.periods[0].status,"open");
+});
+
+test("financial close API rejects unsupported commands, malformed payloads and missing idempotency",async()=>{
+ const service=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);throw new Error("Invalid close commands must fail before database access.");});
+ const unsupported=await service.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"post_journal",idempotencyKey:"close-invalid-command",payload:{}}});
+ assert.equal(unsupported.status,400);
+ assert.equal(unsupported.body.error.code,"FINANCIAL_CLOSE_COMMAND_INVALID");
+ const malformed=await service.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"create_period",idempotencyKey:"close-invalid-payload",payload:[]}});
+ assert.equal(malformed.status,400);
+ assert.equal(malformed.body.error.code,"FINANCIAL_CLOSE_PAYLOAD_INVALID");
+ const missing=await service.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"create_period",payload:{}}});
+ assert.equal(missing.status,400);
+ assert.equal(missing.body.error.code,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID");
+});
