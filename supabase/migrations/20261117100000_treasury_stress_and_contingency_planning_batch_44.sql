@@ -107,13 +107,13 @@ returns jsonb language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 as $$
 declare v_scenario financial_liquidity_stress_scenarios%rowtype;v_forecast jsonb;v_base jsonb;v_policy jsonb;
- v_weekly jsonb;v_result jsonb;v_run_id uuid;v_opening bigint;v_floor bigint;v_shock bigint;
+ v_weekly jsonb;v_result jsonb;v_run_id uuid;v_opening bigint;v_floor bigint;v_shock bigint;v_lowest bigint;v_negative date;v_floor_breach date;
 begin
  if p_actor_id is null or not exists(select 1 from platform_admins where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  select * into v_scenario from financial_liquidity_stress_scenarios where id=p_scenario_id;
- if not found then raise exception 'Treasury stress scenario not found' using errcode='P0002'); end if;
+ if not found then raise exception 'Treasury stress scenario not found' using errcode='P0002'; end if;
  v_forecast:=financial_cashflow_forecast_overview(p_actor_id);
  select value into v_base from jsonb_array_elements(coalesce(v_forecast->'scenarios','[]'::jsonb))
   where value->>'currency'=v_scenario.currency and value->>'scenario'='base' limit 1;
@@ -139,15 +139,13 @@ begin
   'stressedInflowsMinor',stressed_inflows,'stressedOutflowsMinor',stressed_outflows,'projectedClosingMinor',closing,
   'belowMinimumCashFloor',case when v_floor is null then null else closing<v_floor end,'negativeCash',closing<0) order by week),
   min(closing),min(week_end) filter(where closing<0),min(week_end) filter(where v_floor is not null and closing<v_floor)
- into v_weekly, v_result, v_shock, v_opening from balances;
+ into v_weekly, v_lowest, v_negative, v_floor_breach from balances;
  -- Recalculate summary values independently from the immutable weekly result.
  v_result:=jsonb_build_object('scenarioId',v_scenario.id,'scenarioName',v_scenario.name,'currency',v_scenario.currency,
   'baselineOpeningAvailableCashMinor',v_base->>'openingAvailableCashMinor','immediateCashShockMinor',v_scenario.immediate_cash_shock_minor,
   'inflowReductionBps',v_scenario.inflow_reduction_bps,'outflowIncreaseBps',v_scenario.outflow_increase_bps,
   'minimumCashFloorMinor',v_floor,'weekly',coalesce(v_weekly,'[]'::jsonb),
-  'lowestProjectedCashMinor',(select min((x->>'projectedClosingMinor')::bigint) from jsonb_array_elements(coalesce(v_weekly,'[]'::jsonb)) x),
-  'firstNegativeCashDate',(select min((x->>'weekEnd')::date) from jsonb_array_elements(coalesce(v_weekly,'[]'::jsonb)) x where (x->>'negativeCash')::boolean),
-  'firstFloorBreachDate',(select min((x->>'weekEnd')::date) from jsonb_array_elements(coalesce(v_weekly,'[]'::jsonb)) x where coalesce((x->>'belowMinimumCashFloor')::boolean,false)),
+  'lowestProjectedCashMinor',v_lowest,'firstNegativeCashDate',v_negative,'firstFloorBreachDate',v_floor_breach,
   'contingencyOptions',coalesce((select jsonb_agg(jsonb_build_object('title',o.title,'category',o.category,
    'estimatedCapacityMinor',o.estimated_capacity_minor,'leadTimeHours',o.lead_time_hours,'availabilityStatus',o.availability_status,
    'sourceReference',o.source_reference,'rationale',o.rationale) order by case o.availability_status when 'validated' then 1 when 'conditional' then 2 else 3 end,o.lead_time_hours)
@@ -156,10 +154,9 @@ begin
    'Cash shocks are applied at the start of the horizon; weekly receipt and payment assumptions are stressed uniformly.',
    'Contingency capacities are user-entered gross estimates, not committed or immediately available cash. Unverified and conditional options must not be treated as funding.',
    'No facility drawdown, asset sale, supplier deferral, payment or transfer is executed. Management approval and legal/operational readiness are required.'));
+ v_result:=v_result||jsonb_build_object('runAt',now());
  insert into financial_liquidity_stress_runs(scenario_id,actor_id,result) values(p_scenario_id,p_actor_id,v_result) returning id into v_run_id;
- v_result:=v_result||jsonb_build_object('runId',v_run_id,'runAt',now());
- update financial_liquidity_stress_runs set result=v_result where id=v_run_id;
- return v_result;
+ return v_result||jsonb_build_object('runId',v_run_id);
 end $$;
 
 create or replace function executive_visuals.financial_liquidity_stress_overview(p_actor_id uuid)
