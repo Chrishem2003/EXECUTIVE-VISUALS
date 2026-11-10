@@ -149,7 +149,6 @@ begin
  ), rows as(
   select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
    ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
-   coalesce(r.evidence,'[]'::jsonb)||coalesce((select jsonb_agg(x) from jsonb_array_elements(coalesce(r.evidence,'[]'::jsonb)) x),'[]'::jsonb) revenue_evidence,
    co.direct_service_cost_minor,co.event_count direct_cost_event_count,
    coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
     where ca.id is not null),'[]'::jsonb)
