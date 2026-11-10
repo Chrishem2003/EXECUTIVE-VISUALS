@@ -40,6 +40,8 @@ export function assessFinancialCloseReadiness(input={}){
   if(!reviewer)issues.push("independent_reviewer_missing");\n  if(status!=="waived"&&evidenceRefs.length===0)issues.push("missing_evidence");
   if(reviewer&&reviewer===owner)issues.push("preparer_reviewer_conflict");
   if(status==="completed"&&!completedAt)issues.push("completion_timestamp_missing");\n  if(status==="completed"&&!approval?.preparedBy)issues.push("preparer_attestation_missing");
+  if(approval?.preparedBy&&approval.preparedBy!==owner)issues.push("preparer_attestation_mismatch");
+  if(approvedBy&&reviewer&&approvedBy!==reviewer)issues.push("reviewer_approval_mismatch");
   if(status==="completed"&&(!approvedBy||!approvedAt||decision!=="approved"))issues.push("independent_approval_missing");
   if(approvedBy&&approvedBy===owner)issues.push("self_approval_prohibited");
   if(status==="blocked")issues.push("task_blocked");
