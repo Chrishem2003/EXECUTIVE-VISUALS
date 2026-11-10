@@ -489,7 +489,7 @@ test("customer-initiated subscription renewal uses V4 MTN checkout and idempoten
     throw new Error("Unexpected request: "+target);
   });
   const result=await service.handle({
-    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId,
+    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId:owner,
     idempotencyKey:"renewal-key-0001",
     body:{subscriptionId:"44444444-4444-4444-8444-444444444444",network:"MTN",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}
   });
@@ -516,7 +516,7 @@ test("subscription renewal checkout rejects a second pending attempt before char
     throw new Error("Unexpected request: "+target);
   });
   const result=await service.handle({
-    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId,
+    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId:owner,
     idempotencyKey:"renewal-key-0002",
     body:{subscriptionId:"44444444-4444-4444-8444-444444444444",network:"AIRTEL",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}
   });
