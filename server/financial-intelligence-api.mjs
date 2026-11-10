@@ -768,7 +768,7 @@ export function createFinancialIntelligenceApi({
           !["tokens_per_million","image","video_second","render_second","request","frame","minute","character_block","mixed"].includes(billingUnit)||
           !validTimestamp(effectiveFrom)||(effectiveTo&&(!validTimestamp(effectiveTo)||Date.parse(effectiveTo)<=Date.parse(effectiveFrom)))||
           !["provider_pricing","provider_contract","admin_verified"].includes(sourceType)||
-          sourceReference.length<3||sourceReference.length>240||(sourceUrl&&!/^https:\/\//.test(sourceUrl))||
+          sourceReference.length<3||sourceReference.length>240||sourceUrl.length>1000||(sourceUrl&&!/^https:\/\//.test(sourceUrl))||
           (sourceFingerprint&&!/^[a-f0-9]{64}$/.test(sourceFingerprint))||
           !["source_linked","contract_attested","admin_attested"].includes(verificationStatus)||
           !dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||JSON.stringify(dimensions).length>12000||
