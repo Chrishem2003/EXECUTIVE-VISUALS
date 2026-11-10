@@ -39,7 +39,7 @@ test("subscription economics calls the period-scoped report and returns its evid
   if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
   if(target.endsWith("/rpc/subscription_customer_economics_report")){
    rpc=JSON.parse(options.body);
-   return json({periodMonth:"2026-11-01",customers:[{ownerId:owner,mrrMinor:12000,directCostMinor:5000,contributionMinor:7000,grossMarginPct:58.33,creditsConsumed:300}],byCurrency:[{currency:"UGX",paidCustomers:1}],limitations:["MRR is not cash collected."]});
+   return json({periodMonth:"2026-11-01",customers:[{ownerId:owner,mrrMinor:12000,directCostMinor:5000,contributionMinor:7000,grossMarginPct:58.33,cashCollectedMinor:12000,refundedMinor:2000,netCashCollectedMinor:10000,creditsConsumed:300}],byCurrency:[{currency:"UGX",paidCustomers:1}],limitations:["MRR is not cash collected."]});
   }
   throw new Error("Unexpected request: "+target);
  });
@@ -49,5 +49,6 @@ test("subscription economics calls the period-scoped report and returns its evid
  assert.equal(rpc.p_period_month,"2026-11-01");
  assert.equal(rpc.p_limit,50);
  assert.equal(result.body.economics.customers[0].grossMarginPct,58.33);
+ assert.equal(result.body.economics.customers[0].netCashCollectedMinor,10000);
  assert.equal(result.body.economics.limitations[0],"MRR is not cash collected.");
 });
