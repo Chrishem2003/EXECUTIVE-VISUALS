@@ -3,7 +3,7 @@ export function isPlatformAdministrator(user,env=process.env){
  const allowed=new Set(String(env[ADMIN_EMAILS_ENV]||env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean));
  return Boolean(user?.email&&allowed.has(String(user.email).trim().toLowerCase()));
 }
-const boundedLimit=value=>Math.max(1,Math.min(200,Number.isFinite(Number(value))?Math.trunc(Number(value)):100));
+const boundedLimit=value=>{const parsed=value===null||value===undefined||value===""?100:Number(value);return Math.max(1,Math.min(200,Number.isFinite(parsed)?Math.trunc(parsed):100));};
 export function getAdminOperationsOverview(db,{authMode="unknown",dataPersistence="unknown",persistentDataRequired=false,now=Date.now()}={}){
  const counts=db.prepare("SELECT (SELECT COUNT(*) FROM users) AS users,(SELECT COUNT(*) FROM projects) AS projects,(SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL) AS assets,(SELECT COUNT(*) FROM jobs) AS jobs").get();
  const jobs=db.prepare("SELECT status,COUNT(*) AS count FROM jobs GROUP BY status").all();
