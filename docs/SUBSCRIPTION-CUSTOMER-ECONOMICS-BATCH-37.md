@@ -12,6 +12,7 @@ Expose customer-level subscription economics by joining the existing monthly sub
 ## Customer metrics
 - Plan code/version, billing interval and included credit allowance from the subscription period overlapping the report month.
 - Monthly recurring revenue (MRR) from the immutable subscription revenue snapshot.
+- Successful subscription cash receipts, completed refunds and net cash movement from verified payment records, reported separately from MRR.
 - Direct customer costs from the same-month, same-currency immutable service-cost ledger.
 - Provider-invoice/provider-usage-export costs separated from other direct costs.
 - Contribution and direct gross margin; negative/low-margin customer flags.
