@@ -1,9 +1,9 @@
 name: Remediation workbench checks
 on:
   push:
-    branches: [feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58]
+    branches: [feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58, feat/reviewer-performance-intelligence-batch-59]
   pull_request:
-    branches: [feat/remediation-workbench-batch-51-clean, feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/executive-assurance-risk-intelligence-batch-57]
+    branches: [feat/remediation-workbench-batch-51-clean, feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58, feat/reviewer-performance-intelligence-batch-59]
 concurrency:
   group: remediation-workbench-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,6 +22,8 @@ jobs:
           C2PA_LIBRARY_PATH: ${{ github.workspace }}/node_modules/@contentauth/c2pa-node/dist/index.node
       - name: Verify persistent remediation API and role boundaries
         run: npm run verify:control-remediation-api
+      - name: Verify reviewer workload and turnaround analytics
+        run: npm run verify:reviewer-performance
       - name: Verify remediation assessment and state transitions
         run: npm run verify:control-remediation
       - name: Check remediation API syntax
