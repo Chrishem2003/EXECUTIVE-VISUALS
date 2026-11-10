@@ -84,7 +84,7 @@ begin
   from financial_cashflow_actuals a
   where a.actor_id=p_actor_id and exists(select 1 from expected e where e.id=a.cashflow_item_id)
   group by a.cashflow_item_id
- ), rows as(
+ ), reconciliation_rows as(
   select e.*,coalesce(a.actual_amount_minor,0)::bigint actual_amount_minor,a.latest_actual_date,
    coalesce(a.actual_count,0) actual_count,coalesce(a.evidence,'[]'::jsonb) actual_evidence,
    (coalesce(a.actual_amount_minor,0)-e.forecast_amount_minor) amount_delta_minor,
@@ -103,14 +103,14 @@ begin
    'actualCount',r.actual_count,'settlementStatus',case when r.actual_count=0 then 'not_recorded'
     when r.actual_amount_minor<r.forecast_amount_minor then 'partial' when r.actual_amount_minor=r.forecast_amount_minor then 'settled' else 'over_settled' end,
    'confidenceBps',r.confidence_bps,'status',r.status,'sourceType',r.source_type,'sourceReference',r.source_reference,
-   'description',r.description,'actualEvidence',r.actual_evidence) order by r.expected_date,r.currency,r.id) from rows r),'[]'::jsonb),
+   'description',r.description,'actualEvidence',r.actual_evidence) order by r.expected_date,r.currency,r.id) from reconciliation_rows r),'[]'::jsonb),
   'currencies',coalesce((select jsonb_agg(jsonb_build_object('currency',c.currency,'forecastAmountMinor',c.forecast_minor,
    'actualAmountMinor',c.actual_minor,'amountDeltaMinor',c.actual_minor-c.forecast_minor,
    'favorableVarianceMinor',c.favorable_minor,'remainingForecastMinor',c.remaining_minor,'itemCount',c.item_count,
    'reconciledItemCount',c.reconciled_count) order by c.currency)
    from(select r.currency,sum(r.forecast_amount_minor)::bigint forecast_minor,sum(r.actual_amount_minor)::bigint actual_minor,
     sum(r.favorable_variance_minor)::bigint favorable_minor,sum(r.remaining_forecast_minor)::bigint remaining_minor,
-    count(*)::integer item_count,count(*) filter(where r.actual_count>0)::integer reconciled_count from rows r group by r.currency)c),'[]'::jsonb),
+    count(*)::integer item_count,count(*) filter(where r.actual_count>0)::integer reconciled_count from reconciliation_rows r group by r.currency)c),'[]'::jsonb),
   'limitations',jsonb_build_array(
    'Actual movements are manually recorded from evidence; no bank feed, payment initiation or automatic settlement matching is implied.',
    'Actuals are linked explicitly to a planned or committed cashflow item. Unmatched bank movements are not silently allocated.',
