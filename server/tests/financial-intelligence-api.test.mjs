@@ -1328,3 +1328,57 @@ test("shared-cost allocation run API validates month, currency and category befo
  assert.equal(rpcBody.p_cost_category,"ai_inference");
  assert.equal(valid.body.run.allocatedMinor,1001);
 });
+
+
+test("predictive workload estimates are admin-only, currency-safe and explicitly forecasts",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized workload estimate must not reach another service.");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/workload-estimates",ownerId:owner,body:{}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Workload estimate must be computed locally, not persisted.");
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/workload-estimates",ownerId:owner,body:{
+  rateCard:{provider:"provider-a",model:"model-a",currency:"UGX",version:"v1",imageMinorPerImage:100},
+  workload:{operation:"image",currency:"USD",imageCount:2}
+ }});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"WORKLOAD_CURRENCY_MISMATCH");
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/workload-estimates",ownerId:owner,body:{
+  rateCard:{provider:"provider-a",model:"model-a",currency:"UGX",version:"v1",imageMinorPerImage:100},
+  workload:{operation:"image",currency:"UGX",imageCount:2,successfulOutputs:1},
+  pricing:{targetMarginBps:6000,paymentFeeBps:300,supportReserveBps:500}
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.estimate.estimateType,"forecast_not_actual");
+ assert.equal(result.body.estimate.costRange.baseMinor,200);
+ assert.ok(result.body.estimate.pricing.minimumPriceMinor>200);
+});
+
+test("model economics comparison is admin-only and returns shadow recommendations without routing",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized comparison must not reach calculation.");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/model-economics-comparison",ownerId:owner,body:{}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  throw new Error("Comparison must not call provider APIs or persist routing.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/model-economics-comparison",ownerId:owner,body:{
+  workload:{operation:"image",currency:"UGX",imageCount:1},
+  rateCards:[
+   {rateCard:{provider:"provider-a",model:"model-a",currency:"UGX",version:"v1",imageMinorPerImage:50},samples:30,qualityScore:.95,p95LatencyMs:200,evaluationVersion:"eval-1"},
+   {rateCard:{provider:"provider-b",model:"model-b",currency:"UGX",version:"v1",imageMinorPerImage:25},samples:4,qualityScore:.99,p95LatencyMs:100,evaluationVersion:"eval-1"}
+  ],
+  limits:{maxCostMinor:1000,maxLatencyMs:1000,minQualityScore:.9}
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.comparison.mode,"shadow_only");
+ assert.equal(result.body.comparison.automaticRouting,false);
+ assert.equal(result.body.comparison.recommended.provider,"provider-a");
+});
