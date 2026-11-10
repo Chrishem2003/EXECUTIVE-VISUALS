@@ -540,3 +540,43 @@ begin
   raise exception 'Cost anomaly report did not detect a spend spike against five observed baseline days: %',v_anomalies;
  end if;
 end $batch22$;
+
+do $batch24$
+declare
+ v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
+ v_customer constant uuid:='22222222-2222-4222-8222-222222222222';
+ v_policy jsonb;v_duplicate jsonb;v_evaluation jsonb;v_replay jsonb;v_listing jsonb;
+ v_month date:=date_trunc('month',now())::date;
+ v_policy_id uuid;
+begin
+ v_policy:=executive_visuals.add_financial_margin_policy(
+  v_actor,'customer',v_customer,'UGX',99.99,null,v_month,null,'batch24-margin-policy-0001'
+ );
+ v_policy_id:=(v_policy->>'policyId')::uuid;
+ v_duplicate:=executive_visuals.add_financial_margin_policy(
+  v_actor,'customer',v_customer,'UGX',99.99,null,v_month,null,'batch24-margin-policy-0001'
+ );
+ if v_duplicate->>'duplicate'<>'true' or v_duplicate->>'policyId'<>v_policy_id::text then
+  raise exception 'Margin policy creation must be idempotent: %',v_duplicate;
+ end if;
+ v_evaluation:=executive_visuals.evaluate_financial_margin_alerts(v_actor);
+ if (v_evaluation->>'evaluatedCustomers')::integer<1
+  or (v_evaluation->>'policiesApplied')::integer<1
+  or (v_evaluation->>'alertsCreated')::integer<1 then
+  raise exception 'Low-margin customer did not create a margin protection alert: %',v_evaluation;
+ end if;
+ v_replay:=executive_visuals.evaluate_financial_margin_alerts(v_actor);
+ if (v_replay->>'alertsCreated')::integer<>0 then
+  raise exception 'Repeated margin evaluation must not create duplicate alerts: %',v_replay;
+ end if;
+ v_listing:=executive_visuals.list_financial_margin_alerts(v_actor,25);
+ if (v_listing->>'count')::integer<1
+  or not exists(select 1 from jsonb_array_elements(v_listing->'alerts') item
+   where item->>'ownerId'=v_customer::text and item->>'notificationStatus'='pending') then
+  raise exception 'Margin alert list/outbox did not retain the in-app notification: %',v_listing;
+ end if;
+ if exists(select 1 from financial_margin_notification_outbox where delivery_status='sent') then
+  raise exception 'Margin alert evaluation must not claim external notification delivery';
+ end if;
+end $batch24$;
+
