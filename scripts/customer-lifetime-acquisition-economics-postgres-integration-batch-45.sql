@@ -39,39 +39,39 @@ begin
  v_report:=executive_visuals.customer_lifetime_acquisition_economics_report(v_actor,v_month,100,36);
  select value into v_customer from jsonb_array_elements(v_report->'customers') where value->>'ownerId'=v_owner::text;
  if v_customer is null then raise exception 'Batch 45 customer lifetime row missing: %',v_report; end if;
- if (v_customer->>'realizedContributionToDateMinor')::bigint<>180000 then
+ if (v_customer->>'realizedContributionToDateMinor')::bigint is distinct from 180000 then
   raise exception 'Realized contribution must sum actual monthly snapshots and direct costs from the paid cohort: %',v_customer;
  end if;
- if (v_customer->>'cacMinor')::bigint<>50000 then
+ if (v_customer->>'cacMinor')::bigint is distinct from 50000 then
   raise exception 'Campaign CAC must use same-month spend divided by attributed paid customers: %',v_customer;
  end if;
- if (v_customer->>'predictedLifetimeContributionMinor')::bigint<=180000 then
+ if coalesce((v_customer->>'predictedLifetimeContributionMinor')::bigint,0)<=180000 then
   raise exception 'Predicted lifetime contribution must include discounted retained future contribution: %',v_customer;
  end if;
- if (v_customer->>'ltvCacRatio')::numeric<=3 then
+ if coalesce((v_customer->>'ltvCacRatio')::numeric,0)<=3 then
   raise exception 'Retention-adjusted LTV:CAC ratio was not calculated from contribution and CAC: %',v_customer;
  end if;
- if v_customer->>'actualPaybackMonth'<>v_prior_month::text then
+ if v_customer->>'actualPaybackMonth' is distinct from v_prior_month::text then
   raise exception 'Actual payback must be based on the first observed cumulative contribution recovery month: %',v_customer;
  end if;
- if v_customer->>'forecastConfidence'<>'low' then
+ if v_customer->>'forecastConfidence' is distinct from 'low' then
   raise exception 'A single observed retention interval must remain low confidence: %',v_customer;
  end if;
- if v_customer->>'growthQuality'<>'strong_unit_economics' then
+ if v_customer->>'growthQuality' is distinct from 'strong_unit_economics' then
   raise exception 'Growth quality classification did not follow the modeled LTV:CAC evidence: %',v_customer;
  end if;
 
  select value into v_campaign from jsonb_array_elements(v_report->'campaigns')
   where value->>'campaign'='batch45-q4-launch' and value->>'currency'='UGX';
- if v_campaign is null or (v_campaign->>'spendMinor')::bigint<>50000
-  or (v_campaign->>'attributedNewPaidCustomers')::integer<>1
-  or (v_campaign->>'cacMinor')::bigint<>50000
-  or v_campaign->>'attributionCoverage'<>'measured' then
+ if v_campaign is null or (v_campaign->>'spendMinor')::bigint is distinct from 50000
+  or (v_campaign->>'attributedNewPaidCustomers')::integer is distinct from 1
+  or (v_campaign->>'cacMinor')::bigint is distinct from 50000
+  or v_campaign->>'attributionCoverage' is distinct from 'measured' then
   raise exception 'Campaign-level spend, attribution and CAC do not reconcile: %',v_campaign;
  end if;
  select value into v_channel from jsonb_array_elements(v_report->'channels')
   where value->>'channel'='search_ads' and value->>'currency'='UGX';
- if v_channel is null or (v_channel->>'cacMinor')::bigint<>50000 then
+ if v_channel is null or (v_channel->>'cacMinor')::bigint is distinct from 50000 then
   raise exception 'Channel CAC does not reconcile to campaign evidence: %',v_channel;
  end if;
  if (select count(*) from executive_visuals.subscription_revenue_snapshots
