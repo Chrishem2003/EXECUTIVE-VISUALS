@@ -10,6 +10,7 @@ import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workl
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
+import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -40,6 +41,7 @@ export function createFinancialIntelligenceApi({
   allowLive=process.env.FLW_ALLOW_LIVE==="true",
   paymentGracePeriodHours=Number(process.env.PAYMENT_GRACE_PERIOD_HOURS||72),
   financialSystemActorId=process.env.FINANCIAL_SYSTEM_ACTOR_ID,
+  financialAuditSigningPrivateKey=process.env.FINANCIAL_AUDIT_SIGNING_PRIVATE_KEY||null,
   resourceCostMeteringEnabled=process.env.RESOURCE_COST_METERING_ENABLED==="true",
   resourceCostCurrency=process.env.RESOURCE_COST_CURRENCY||null,
   fetchImpl=globalThis.fetch
@@ -969,6 +971,23 @@ export function createFinancialIntelligenceApi({
         const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&sequence_number=gt."+after+"&order=sequence_number.asc&limit="+limit);
         const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
         return response(200,{events:rows.data||[],head:head||{sequence:0,headHash:"0".repeat(64)},pagination:{afterSequence:after,limit,returned:(rows.data||[]).length}});
+      }
+      if(path==="/api/admin/finance/audit/export"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const subjectOwnerId=String(query.ownerId||ownerId);if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_AUDIT_OWNER_INVALID","ownerId must be a verified account UUID.");
+        const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
+        const rows=[];let offset=0;
+        while(offset<5000){
+          const page=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&order=sequence_number.asc&offset="+offset+"&limit=500");
+          const batch=Array.isArray(page.data)?page.data:[];
+          rows.push(...batch);offset+=batch.length;
+          if(batch.length<500)break;
+        }
+        const bundle=exportFinancialAuditBundle({
+          ownerId:subjectOwnerId,events:rows,head:head||{sequence:0,headHash:"0".repeat(64)},
+          signingPrivateKey:financialAuditSigningPrivateKey
+        });
+        return response(200,{bundle});
       }
       if(path==="/api/admin/finance/audit/verify"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
