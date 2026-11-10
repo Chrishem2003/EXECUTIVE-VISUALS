@@ -29,7 +29,8 @@ export function createControlRemediationApi({db}={}){
   return db.prepare("SELECT * FROM control_remediation_actions WHERE id=? AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?))").get(id,ownerId,ownerId,ownerId);
  }
  function hydrate(row){
-  return {...safeAction(row),evidence:db.prepare("SELECT id,label,evidence_uri AS uri,sha256,kind,captured_at AS capturedAt,submitted_by AS submittedBy,created_at AS createdAt FROM control_remediation_evidence WHERE action_id=? ORDER BY created_at,id").all(row.id),
+  const evidence=db.prepare("SELECT e.id,e.label,e.evidence_uri AS uri,e.sha256,e.kind,e.captured_at AS capturedAt,e.submitted_by AS submittedBy,e.created_at AS createdAt,CASE WHEN e.evidence_uri LIKE 'asset://%' THEN substr(e.evidence_uri,9) END AS assetId,a.original_name AS fileName,a.media_type AS mediaType,a.byte_size AS byteSize FROM control_remediation_evidence e LEFT JOIN assets a ON a.id=substr(e.evidence_uri,9) AND a.deleted_at IS NULL WHERE e.action_id=? ORDER BY e.created_at,e.id").all(row.id).map(item=>({...item,scanStatus:item.assetId?"not_scanned":"unavailable"}));
+  return {...safeAction(row),evidence,
    history:db.prepare("SELECT id,actor_id AS actorId,event_type AS event,from_status AS fromStatus,to_status AS toStatus,note,details_json,created_at AS at FROM control_remediation_history WHERE action_id=? ORDER BY id").all(row.id).map(x=>({...x,details:parseJson(x.details_json)}))};
  }
  function member(ownerId,projectId,memberId){
@@ -103,15 +104,24 @@ export function createControlRemediationApi({db}={}){
    return response(200,{action:hydrate(db.prepare("SELECT * FROM control_remediation_actions WHERE id=?").get(id))});
   }
   if(method==="POST"&&subroute==="evidence"){
-   const label=text(body.label,180),capturedAt=date(body.capturedAt),kind=text(body.kind,24);
-   const uri=text(body.uri,1000),sha256=text(body.sha256,64).toLowerCase();
-   if(!label||!capturedAt||!evidenceKinds.has(kind)||sha256&&!/^[a-f0-9]{64}$/.test(sha256))return error(400,"INVALID_EVIDENCE","Evidence label, capture date, kind and optional SHA-256 are required in valid form.");
+   const label=text(body.label,180),capturedAt=date(body.capturedAt),kind=text(body.kind,24),assetId=text(body.assetId,64);
+   if(!label||!capturedAt||!evidenceKinds.has(kind)||!UUID.test(assetId))return error(400,"INVALID_EVIDENCE","Evidence label, capture date, kind and a managed evidence asset are required.");
    if(!access(ownerId,row.project_id,true)||row.status==="verified")return error(403,"EVIDENCE_WRITE_FORBIDDEN","Only authorized project editors can add evidence to an unverified action.");
+   const asset=db.prepare("SELECT id,owner_id,project_id,original_name,media_type,byte_size,sha256 FROM assets WHERE id=? AND deleted_at IS NULL").get(assetId);
+   if(!asset||asset.owner_id!==ownerId||asset.project_id!==(row.project_id||null))return error(404,"EVIDENCE_ASSET_NOT_FOUND","Upload the evidence to this account or shared project before attaching it.");
+   const allowedExtensions={"application/pdf":[".pdf"],"text/plain":[".txt"],"application/json":[".json"],"image/png":[".png"],"image/jpeg":[".jpg",".jpeg"]};
+   const allowed=allowedExtensions[asset.media_type],filename=String(asset.original_name||"").toLowerCase();
+   if(!allowed||!allowed.some(ext=>filename.endsWith(ext))||!Number.isSafeInteger(Number(asset.byte_size))||Number(asset.byte_size)<1||Number(asset.byte_size)>10*1024*1024||!/^[a-f0-9]{64}$/i.test(String(asset.sha256||"")))return error(415,"UNSUPPORTED_EVIDENCE_FILE","Evidence must be a PDF, TXT, JSON, PNG or JPEG file no larger than 10 MB with a verified stored SHA-256.");
    const evidenceId=randomUUID();
-   db.prepare("INSERT INTO control_remediation_evidence(id,action_id,submitted_by,label,evidence_uri,sha256,kind,captured_at) VALUES(?,?,?,?,?,?,?,?)").run(evidenceId,id,ownerId,label,uri||null,sha256||null,kind,capturedAt);
-   db.prepare("UPDATE control_remediation_actions SET revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").run(id);
-   appendHistory(id,ownerId,"evidence_added",row.status,row.status,label,{evidenceId,sha256:sha256||null});
-   audit(db,ownerId,"control_remediation.evidence_added","control_remediation",id,{evidenceId,kind,sha256:sha256||null},row.project_id);
+   try{
+    db.exec("BEGIN IMMEDIATE");
+    const changed=db.prepare("UPDATE control_remediation_actions SET revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND revision=? AND status<>'verified'").run(id,row.revision);
+    if(!changed.changes){db.exec("ROLLBACK");return error(409,"REVISION_CONFLICT","This remediation changed while evidence was being attached. Reload and retry.");}
+    db.prepare("INSERT INTO control_remediation_evidence(id,action_id,submitted_by,label,evidence_uri,sha256,kind,captured_at) VALUES(?,?,?,?,?,?,?,?)").run(evidenceId,id,ownerId,label,"asset://"+asset.id,asset.sha256,kind,capturedAt);
+    appendHistory(id,ownerId,"evidence_file_attached",row.status,row.status,label,{evidenceId,assetId:asset.id,sha256:asset.sha256,mediaType:asset.media_type,byteSize:Number(asset.byte_size),scanStatus:"not_scanned"});
+    audit(db,ownerId,"control_remediation.evidence_file_attached","control_remediation",id,{evidenceId,assetId:asset.id,sha256:asset.sha256,mediaType:asset.media_type,byteSize:Number(asset.byte_size),scanStatus:"not_scanned"},row.project_id);
+    db.exec("COMMIT");
+   }catch(e){try{db.exec("ROLLBACK");}catch{}throw e;}
    return response(201,{action:hydrate(db.prepare("SELECT * FROM control_remediation_actions WHERE id=?").get(id))});
   }
   if(method==="POST"&&subroute==="transitions"){
