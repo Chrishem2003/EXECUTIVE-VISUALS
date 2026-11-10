@@ -859,6 +859,13 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("reconcile_ai_provider_invoice",{p_actor_id:ownerId,p_import_id:importId});
         return response(200,{reconciliation:result});
       }
+      if(path==="/api/admin/finance/ai-invoices/post-to-ledger"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const importId=String(body.importId||"");
+        if(!UUID.test(importId))return error(400,"AI_INVOICE_IMPORT_ID_INVALID","Provide a valid invoice import ID.");
+        const result=await rpc("post_verified_ai_invoice_to_service_cost_ledger",{p_actor_id:ownerId,p_import_id:importId});
+        return response(200,{posting:result});
+      }
       if(path==="/api/admin/finance/ai-cost-anomalies"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const periodMonth=String(body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
@@ -909,6 +916,14 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/profitability-trends"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const months=query.months==null?12:Number(query.months);
+        if(!Number.isSafeInteger(months)||months<3||months>36)
+          return error(400,"FINANCIAL_TREND_RANGE_INVALID","Trend period must be an integer between 3 and 36 months.");
+        const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
+        return response(200,{trends:result||{periods:[],limitations:[]}});
       }
       if(path==="/api/admin/finance/service-cost"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
