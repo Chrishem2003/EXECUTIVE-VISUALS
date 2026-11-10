@@ -52,6 +52,7 @@ export function analyzeWorkloadCostVariance(input={}){
  const actualMinor=lines.reduce((sum,line)=>sum+line.amountMinor,0);
  if(!Number.isSafeInteger(actualMinor))fail("WORKLOAD_VARIANCE_OVERFLOW","Actual cost total exceeds the safe integer range.");
  const varianceMinor=actualMinor-forecastMinor;
+ if(!Number.isSafeInteger(varianceMinor))fail("WORKLOAD_VARIANCE_OVERFLOW","Variance exceeds the safe integer range.");
  const varianceBps=bps(varianceMinor,forecastMinor);
  const classification=actualMinor<lowMinor?"below_forecast_range":actualMinor>highMinor?"above_forecast_range":"within_forecast_range";
  const totalOutputs=acceptedOutputs+rejectedOutputs;
