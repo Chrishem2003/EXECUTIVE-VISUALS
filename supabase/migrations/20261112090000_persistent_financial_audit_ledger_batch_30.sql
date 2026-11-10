@@ -65,9 +65,6 @@ declare
  v_digest text;
  v_id uuid;
 begin
- if auth.role() is distinct from 'service_role' then
-  raise exception using errcode='42501',message='service_role_required';
- end if;
  if p_owner_id is null or p_actor_id is null or p_idempotency_key is null
   or length(p_idempotency_key)<8 or length(p_idempotency_key)>160 then
   raise exception using errcode='22023',message='audit_event_input_invalid';
@@ -95,7 +92,7 @@ begin
  select * into v_existing from executive_visuals.financial_audit_events
   where owner_id=p_owner_id and idempotency_key=p_idempotency_key;
  if found then
-  if v_existing.actor_id<>p_actor_id or v_existing.event_type<>p_event_envelope->>'eventType'
+  if v_existing.actor_id<>p_actor_id or v_existing.event_type<>(p_event_envelope->>'eventType')
    or v_existing.event_envelope->'payload'<>p_event_envelope->'payload' then
    raise exception using errcode='23505',message='audit_idempotency_payload_conflict';
   end if;
@@ -136,7 +133,6 @@ set search_path=pg_catalog,executive_visuals
 as $$
 declare v_head executive_visuals.financial_audit_heads%rowtype;
 begin
- if auth.role() is distinct from 'service_role' then raise exception using errcode='42501',message='service_role_required'; end if;
  select * into v_head from executive_visuals.financial_audit_heads where owner_id=p_owner_id;
  if not found then return jsonb_build_object('sequence',0,'headHash',repeat('0',64)); end if;
  return jsonb_build_object('sequence',v_head.last_sequence,'headHash',v_head.head_hash,'updatedAt',v_head.updated_at);
