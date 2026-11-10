@@ -746,7 +746,7 @@ export function createFinancialIntelligenceApi({
         const effectiveFrom=String(body.effectiveFrom||""),sourceReference=String(body.sourceReference||"").trim();
         const rationale=String(body.rationale||"").trim(),idempotencyKey=String(body.idempotencyKey||"");
         if(!/^[A-Z]{3}$/.test(currency)||!Number.isSafeInteger(floor)||floor<0||!Number.isSafeInteger(reserve)||reserve<floor||
-          !/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveFrom)||!Number.isFinite(Date.parse(effectiveFrom+"T00:00:00Z"))||
+          !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)||!Number.isFinite(Date.parse(effectiveFrom+"T00:00:00Z"))||
           new Date(effectiveFrom+"T00:00:00Z").toISOString().slice(0,10)!==effectiveFrom||effectiveFrom<new Date().toISOString().slice(0,10)||
           sourceReference.length<3||sourceReference.length>240||rationale.length<3||rationale.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
           return error(400,"LIQUIDITY_POLICY_INVALID","Provide a valid currency, non-negative minimum cash floor, reserve target at least the floor, non-backdated effective date and policy evidence.");
