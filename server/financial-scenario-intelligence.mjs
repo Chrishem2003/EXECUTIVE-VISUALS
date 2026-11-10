@@ -80,7 +80,7 @@ function project(input, adjustment = {}) {
     const operatingContribution = revenue - variable - fixed;
     const netCashFlow = collected - variable - fixed - input.monthlyCapexMinor;
     cash += netCashFlow;
-    npv += operatingContribution / Math.pow(1 + discount, month);
+    npv += netCashFlow / Math.pow(1 + discount, month);
     rows.push({ month, revenueMinor: roundMinor(revenue), variableCostMinor: roundMinor(variable), fixedCostMinor: roundMinor(fixed), collectedRevenueMinor: roundMinor(collected), operatingContributionMinor: roundMinor(operatingContribution), capexMinor: input.monthlyCapexMinor, netCashFlowMinor: roundMinor(netCashFlow), closingCashMinor: roundMinor(cash) });
   }
   const contributionMargin = input.monthlyRevenueMinor > 0 ? 1 - input.monthlyVariableCostMinor / input.monthlyRevenueMinor * (1 + (a.variableCostRateChangeBps + (adjustment.variableCostRateChangeBps || 0)) / BPS) : 0;
@@ -88,7 +88,7 @@ function project(input, adjustment = {}) {
   const first = rows[0] || null;
   return {
     currency: input.currency, horizonMonths: a.horizonMonths,
-    npvContributionMinor: roundMinor(npv),
+    npvCashFlowMinor: roundMinor(npv),
     totalOperatingContributionMinor: roundMinor(rows.reduce((sum, row) => sum + row.operatingContributionMinor, 0)),
     endingCashMinor: roundMinor(cash),
     minimumClosingCashMinor: roundMinor(Math.min(input.openingCashMinor, ...rows.map(row => row.closingCashMinor))),
@@ -118,13 +118,13 @@ export function calculateFinancialScenarioIntelligence(rawInput) {
     ["fixedCostGrowthBps", "Fixed-cost growth", { fixedCostGrowthBps: -shock }, { fixedCostGrowthBps: shock }],
     ["churnDeltaBps", "Monthly churn", { churnDeltaBps: -shock }, { churnDeltaBps: shock }]
   ].map(([key, label, favorable, adverse]) => {
-    const high = project(input, favorable).npvContributionMinor, low = project(input, adverse).npvContributionMinor;
-    return { key, label, favorableNpvMinor: high, adverseNpvMinor: low, favorableDeltaMinor: high - base.npvContributionMinor, adverseDeltaMinor: low - base.npvContributionMinor, swingMinor: roundMinor(Math.abs(high - low)) };
+    const high = project(input, favorable).npvCashFlowMinor, low = project(input, adverse).npvCashFlowMinor;
+    return { key, label, favorableNpvMinor: high, adverseNpvMinor: low, favorableDeltaMinor: high - base.npvCashFlowMinor, adverseDeltaMinor: low - base.npvCashFlowMinor, swingMinor: roundMinor(Math.abs(high - low)) };
   }).sort((left, right) => right.swingMinor - left.swingMinor);
   const decisions = input.decisions.map(option => {
     const result = project(input, option);
-    const expectedNpv = result.npvContributionMinor * option.successProbabilityBps / BPS - option.oneTimeInvestmentMinor;
-    return { name: option.name, npvContributionMinor: result.npvContributionMinor, oneTimeInvestmentMinor: option.oneTimeInvestmentMinor, successProbabilityBps: option.successProbabilityBps, probabilityWeightedValueMinor: roundMinor(expectedNpv), incrementalValueVsBaseMinor: roundMinor(expectedNpv - base.npvContributionMinor), endingCashMinor: roundMinor(result.endingCashMinor - option.oneTimeInvestmentMinor) };
+    const expectedNpv = result.npvCashFlowMinor * option.successProbabilityBps / BPS - option.oneTimeInvestmentMinor;
+    return { name: option.name, npvCashFlowMinor: result.npvCashFlowMinor, oneTimeInvestmentMinor: option.oneTimeInvestmentMinor, successProbabilityBps: option.successProbabilityBps, probabilityWeightedValueMinor: roundMinor(expectedNpv), incrementalValueVsBaseMinor: roundMinor(expectedNpv - base.npvCashFlowMinor), endingCashMinor: roundMinor(result.endingCashMinor - option.oneTimeInvestmentMinor) };
   }).sort((left, right) => right.probabilityWeightedValueMinor - left.probabilityWeightedValueMinor);
   const confidence = confidenceFor(input.assumptions);
   return {
