@@ -79,7 +79,23 @@ const paymentReconciliationTimer = financialApi && process.env.PAYMENT_RECONCILI
       }finally{paymentReconciliationBusy=false;}
     },paymentReconciliationIntervalMinutes*60_000)
   : null;
+
 paymentReconciliationTimer?.unref();
+const subscriptionLifecycleIntervalMinutes=Math.max(5,Math.min(1440,Number(process.env.SUBSCRIPTION_LIFECYCLE_INTERVAL_MINUTES)||15));
+let subscriptionLifecycleBusy=false;
+const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCLE_ENABLED!=="false"
+  ?setInterval(async()=>{
+    if(subscriptionLifecycleBusy)return;
+    subscriptionLifecycleBusy=true;
+    try{
+      const result=await financialApi.expireDueSubscriptions();
+      if(Number(result?.expiredCount)>0)process.stdout.write("Subscription lifecycle finalized "+result.expiredCount+" expired subscription(s), including "+(result.scheduledCancellationsFinalized||0)+" scheduled cancellation(s).\\n");
+    }catch(error){
+      process.stderr.write("Subscription lifecycle cycle failed: "+String(error.message||"unknown error")+"\\n");
+    }finally{subscriptionLifecycleBusy=false;}
+  },subscriptionLifecycleIntervalMinutes*60_000)
+  :null;
+subscriptionLifecycleTimer?.unref();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
