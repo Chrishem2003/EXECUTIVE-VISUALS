@@ -575,7 +575,7 @@ begin
    where item->>'ownerId'=v_customer::text and item->>'notificationStatus'='pending') then
   raise exception 'Margin alert list/outbox did not retain the in-app notification: %',v_listing;
  end if;
- if exists(select 1 from financial_margin_notification_outbox where delivery_status='sent') then
+ if exists(select 1 from executive_visuals.financial_margin_notification_outbox where delivery_status='sent') then
   raise exception 'Margin alert evaluation must not claim external notification delivery';
  end if;
 end $batch24$;
