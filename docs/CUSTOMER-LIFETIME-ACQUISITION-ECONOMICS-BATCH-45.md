@@ -47,7 +47,7 @@ Campaign attribution is matched on the exact period, channel, campaign and curre
 - Actual payback is the first observed monthly snapshot where cumulative cohort contribution reaches the attributed CAC.
 - Modeled payback is CAC divided by current positive monthly direct contribution.
 - LTV:CAC uses predicted lifetime contribution divided by CAC.
-- `strong_unit_economics` requires modeled LTV:CAC of at least 3×; below-CAC lifetime value is classified as `value_below_acquisition_cost`; intermediate economics are flagged for monitoring.
+- `strong_unit_economics` requires modeled LTV:CAC of at least 3×; below-CAC lifetime value is classified as `value_below_acquisition_cost`; intermediate economics are flagged for monitoring. The 3× threshold is a screening heuristic, not a universal benchmark or an automatic instruction to increase spend.
 - Missing CAC or lifetime evidence receives an explicit insufficient-evidence classification.
 
 ### Confidence labels
