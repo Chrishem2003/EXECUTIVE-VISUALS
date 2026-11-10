@@ -381,3 +381,11 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - Subscription mutations are blocked while a payment for that subscription is pending provider confirmation, avoiding cancellation/plan-change races with a charge that may still succeed.
 - `server/index.mjs` syntax, financial API tests and TypeScript UI typecheck are covered by the new billing quality workflow.
 - This worker runs only when the financial API is enabled; keep billing disabled until the full ordered SQL migration set has passed isolated staging verification.
+
+
+### Batch 11 credit and SQL integration verification
+
+- Verified initial subscription activation grants the plan's included credits to the immutable credit ledger exactly once, keyed by the payment ID.
+- Verified each successful renewal grants the effective plan's included credits for that paid period; webhook replay does not duplicate the credit grant.
+- The disposable PostgreSQL CI harness applies the three Batch 11 migrations and executes reservation idempotency, pending-payment mutation lockout, initial activation, scheduled plan change, renewal settlement, credit grants, scheduled cancellation expiry and failed initial checkout release.
+- The latest full billing quality workflow passed: application TypeScript typecheck, server syntax checks, all three SQL migrations against PostgreSQL 16, end-to-end SQL integration assertions, and 39/39 financial API tests.
