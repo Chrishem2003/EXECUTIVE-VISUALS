@@ -83,6 +83,22 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
     if(!row.project_id&&row.owner_id!==ownerId)return null;
     return map(row);
   }
+  async function listTimelineRevisions({ownerId,timelineId,limit=50,offset=0}={}){
+    const current=await getTimeline({ownerId,timelineId});
+    if(!current)return null;
+    limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));
+    offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
+    const rows=await request("timeline_revisions?select=timeline_id,revision,name,created_at&timeline_id=eq."+encodeURIComponent(timelineId)+"&order=revision.desc&limit="+limit+"&offset="+offset);
+    return(Array.isArray(rows)?rows:[]).map(row=>({timelineId:row.timeline_id,revision:Number(row.revision),name:row.name,createdAt:row.created_at}));
+  }
+  async function getTimelineRevision({ownerId,timelineId,revision}={}){
+    const current=await getTimeline({ownerId,timelineId});
+    if(!current)return null;
+    if(!Number.isInteger(revision)||revision<1)throw new Error("Timeline revision must be a positive integer.");
+    const rows=await request("timeline_revisions?select=timeline_id,revision,name,timeline,otio,created_at&timeline_id=eq."+encodeURIComponent(timelineId)+"&revision=eq."+revision+"&limit=1");
+    const row=Array.isArray(rows)?rows[0]:null;
+    return row?{timelineId:row.timeline_id,revision:Number(row.revision),name:row.name,timeline:row.timeline,otio:row.otio||null,createdAt:row.created_at}:null;
+  }
   return Object.freeze({
     async create({ownerId,projectId=null,name="Untitled timeline",timeline,otio=null}={}){
       ownerId=validOwner(ownerId);if(projectId!==null&&projectId!==undefined&&projectId!==""){if(typeof projectId!=="string"||!UUID.test(projectId))throw new Error("Project ID must be a UUID.");}else projectId=null;
@@ -103,6 +119,8 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       return(Array.isArray(rows)?rows:[]).map(map);
     },
     get:getTimeline,
+    listRevisions:listTimelineRevisions,
+    getRevision:getTimelineRevision,
     async update({ownerId,timelineId,expectedRevision,timeline,otio}={}){
       ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
       if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
