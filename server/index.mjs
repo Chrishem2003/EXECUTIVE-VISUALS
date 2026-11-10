@@ -278,6 +278,8 @@ async function processNextJob() {
     if(!financialApi||process.env.RESOURCE_COST_METERING_ENABLED!=="true"||!resourceMeasurements.length)return;
     const pending=resourceMeasurements.splice(0,resourceMeasurements.length);
     for(const measurement of pending){
+      try{await financialApi.recordWorkerWorkloadTelemetry({job,measurement});}
+      catch(error){process.stderr.write("Workload telemetry could not be recorded for job "+job.id+": "+String(error.message||error)+"\\n");}
       try{await financialApi.recordWorkerResourceUsage({job,measurement});}
       catch(error){process.stderr.write("Resource cost telemetry could not be recorded for job "+job.id+": "+String(error.message||error)+"\\n");}
     }
