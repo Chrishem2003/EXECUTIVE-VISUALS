@@ -562,7 +562,7 @@ export function createAppServer() {
           :db.prepare("SELECT id,project_id,request_hash,currency,quoted_amount_micros,budget_ceiling_micros,status,created_at,updated_at FROM video_generation_approvals WHERE owner_id=? ORDER BY created_at DESC LIMIT 100").all(user.id);
         send(res,200,{approvals:rows.map(row=>({...row,quoted_amount:row.quoted_amount_micros/1000000,budget_ceiling:row.budget_ceiling_micros/1000000}))},cors);return;
       }
-      const videoSubmitMatch=path.match(/^\\/api\\/video-production-approvals\\/([0-9a-f-]{36})\\/submit$/i);
+      const videoSubmitMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/submit$/i);
       if(videoSubmitMatch&&req.method==="POST"){
         if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud generation dispatch is disabled. No cloud jobs or provider requests were created.");return;}
         if(!rateAllowed("video-production-submit:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many generation submissions. Try again shortly.");return;}
