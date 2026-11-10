@@ -1146,6 +1146,22 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/customer-lifetime-acquisition-economics"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const month=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        const monthDate=new Date(month+"T00:00:00Z");
+        const discountRateBps=Number(query.discountRateBps??100);
+        const horizonMonths=Number(query.horizonMonths??36);
+        if(month.length!==10||month.slice(7)!=="-01"||!Number.isFinite(monthDate.getTime())||
+          monthDate.toISOString().slice(0,10)!==month||!Number.isSafeInteger(discountRateBps)||
+          discountRateBps<0||discountRateBps>5000||!Number.isSafeInteger(horizonMonths)||
+          horizonMonths<1||horizonMonths>60)
+          return error(400,"CUSTOMER_LIFETIME_FILTER_INVALID","Provide a valid month start, discount rate from 0 to 5000 basis points and projection horizon from 1 to 60 months.");
+        const result=await rpc("customer_lifetime_acquisition_economics_report",{
+          p_actor_id:ownerId,p_period_month:month,p_discount_rate_bps:discountRateBps,p_horizon_months:horizonMonths
+        });
+        return response(200,{economics:result||{periodMonth:month,byCurrency:[],channels:[],campaigns:[],customers:[],limitations:[]}});
+      }
       if(path==="/api/admin/finance/profitability-trends"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const months=query.months==null?12:Number(query.months);
