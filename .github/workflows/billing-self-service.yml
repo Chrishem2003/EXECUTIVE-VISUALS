@@ -63,6 +63,8 @@ jobs:
           node --check server/financial-intelligence-api.mjs
           node --check server/ai-cost-metering.mjs
           node --check server/ai-resource-economics.mjs
+          node --check server/media.mjs
+          node --check server/workflow-executor.mjs
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Install PostgreSQL client
