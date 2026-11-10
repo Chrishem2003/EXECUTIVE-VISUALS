@@ -39,7 +39,7 @@ New regression coverage checks:
 - Stored asset SHA-256 is used in the evidence record.
 - Evidence revision increments and scan status remains explicitly `not_scanned`.
 
-No CI result is claimed until the Batch 53 branch workflow completes.
+Focused GitHub Actions workflow **passed** on commit `d53a855a9679201a0ac504c15b4cd92a3304bcde`: remediation API and role-boundary tests, lifecycle tests, API syntax check and Financial Command Centre TypeScript check all succeeded. Run: https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42880581355.
 
 ## Release boundary
 
