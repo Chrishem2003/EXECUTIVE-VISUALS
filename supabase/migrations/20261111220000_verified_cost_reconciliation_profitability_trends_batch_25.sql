@@ -119,7 +119,7 @@ begin
    invoice_import_id,invoice_line_id
   ) values(
    v_recon.id,v_usage.id,v_cost_id,v_usage.owner_id,v_usage.project_id,v_usage.job_id,
-   v_usage.provider,v_usage.response_model,v_usage.operation,v_line.currency,
+   v_usage.provider,coalesce(v_usage.response_model,v_usage.requested_model),v_usage.operation,v_line.currency,
    v_line.amount_minor,p_import_id,v_line.id
   ) on conflict(reconciliation_event_id) do nothing;
   if coalesce((v_cost->>'idempotentReplay')::boolean,false) then
