@@ -1167,7 +1167,7 @@ export function createFinancialIntelligenceApi({
         }
         try{
           const result=calculateFinancialScenarioIntelligence(rawInput);
-          const inputHash=createHash("sha256").update(JSON.stringify(rawInput)).digest("hex");
+          const inputHash=createHash("sha256").update(JSON.stringify({scenarioName,input:rawInput,evidenceReferences})).digest("hex");
           const stableResult={...result};delete stableResult.generatedAt;
           const resultHash=createHash("sha256").update(JSON.stringify(stableResult)).digest("hex");
           const saved=await rpc("create_financial_scenario_snapshot",{
