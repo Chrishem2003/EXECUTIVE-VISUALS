@@ -43,9 +43,6 @@ begin
  end if;
 
  for v_index in 1..20 loop
-  foreach v_provider,v_model in array array['route-provider-a','model-a','route-provider-b','model-b'] loop
-   null;
-  end loop;
   v_provider:='route-provider-a';v_model:='model-a';
   v_key:='batch23-route-a-'||lpad(v_index::text,2,'0');
   v_usage:=executive_visuals.record_ai_usage_cost_event(
