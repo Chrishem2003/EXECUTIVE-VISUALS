@@ -858,3 +858,7 @@ button,.module,.operation,.engine{transition:background-color .16s ease,border-c
 .table-wrap tbody tr:hover{background:#ffffff08}
 .finance-json{max-height:420px;overflow:auto;padding:16px;border:1px solid var(--line);border-radius:10px;background:#090d15;color:#ddd5ee;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
 .panel .form-grid input[type=date]{color-scheme:dark}
+
+.finance-intelligence-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px}
+.finance-intelligence-actions button{flex:0 1 auto}
+@media(max-width:760px){.finance-intelligence-actions button{flex:1 1 100%}}
