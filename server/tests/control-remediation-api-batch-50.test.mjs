@@ -171,3 +171,36 @@ test("personal evidence download audit is visible only to the personal record ow
  assert.equal(read.body.action.evidenceDownloads[0].actorId,owner);
  f.db.close();
 });
+
+
+test("reviewer inbox is assigned-reviewer scoped and returns server-derived SLA buckets",async()=>{
+ const f=setup(),now=Date.now();
+ const overdue=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"review-inbox-overdue",dueAt:new Date(now-86400000).toISOString()}});
+ const soon=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"review-inbox-soon",dueAt:new Date(now+24*60*60*1000).toISOString()}});
+ const later=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"review-inbox-later",dueAt:new Date(now+10*24*60*60*1000).toISOString()}});
+ assert.equal(overdue.status,201);assert.equal(soon.status,201);assert.equal(later.status,201);
+ const inbox=await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:reviewer});
+ assert.equal(inbox.status,200);
+ assert.equal(inbox.body.actions.length,3);
+ assert.deepEqual(new Set(inbox.body.actions.map(x=>x.slaState)),new Set(["overdue","due_soon","on_track"]));
+ assert.equal(inbox.body.counts.total,3);
+ assert.equal(inbox.body.counts.overdue,1);
+ assert.equal(inbox.body.counts.dueSoon,1);
+ assert.equal(inbox.body.counts.onTrack,1);
+ assert.equal(inbox.body.policy.dueSoonHours,72);
+ assert.equal(inbox.body.policy.escalation.includes("no automatic"),true);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:editor})).body.counts.total,0);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:owner})).body.counts.total,0);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:outsider})).body.counts.total,0);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:reviewer,query:{status:"pending_review"}})).body.actions.length,0);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:reviewer,query:{projectId:"invalid"}})).status,400);
+ f.db.close();
+});
+test("reviewer inbox excludes archived or removed project memberships",async()=>{
+ const f=setup(),created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"review-inbox-membership"}});
+ assert.equal(created.status,201);
+ f.db.prepare("DELETE FROM project_members WHERE project_id=? AND member_id=?").run(project,reviewer);
+ const inbox=await f.api.handle({method:"GET",path:"/api/finance/remediations/inbox",ownerId:reviewer});
+ assert.equal(inbox.status,200);assert.equal(inbox.body.counts.total,0);
+ f.db.close();
+});
