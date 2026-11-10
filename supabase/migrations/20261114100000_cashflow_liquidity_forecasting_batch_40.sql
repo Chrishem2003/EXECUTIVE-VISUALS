@@ -75,10 +75,10 @@ end $$;
 create or replace function executive_visuals.prevent_financial_cash_evidence_mutation()
 returns trigger language plpgsql
 set search_path=pg_catalog,executive_visuals
-as $
+as $$
 begin
  raise exception 'Cash position and cashflow evidence is append-only; create a correcting evidence record instead.' using errcode='55000';
-end $;
+end $$;
 drop trigger if exists financial_cash_position_immutable on executive_visuals.financial_cash_position_snapshots;
 create trigger financial_cash_position_immutable before update or delete on executive_visuals.financial_cash_position_snapshots
  for each row execute function executive_visuals.prevent_financial_cash_evidence_mutation();
