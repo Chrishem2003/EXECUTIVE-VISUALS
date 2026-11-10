@@ -18,6 +18,7 @@ declare
  v_upside jsonb;
  v_horizon jsonb;
  v_replay jsonb;
+ v_stale jsonb;
 begin
  v_position:=executive_visuals.record_financial_cash_position(v_actor,jsonb_build_object(
   'currency','ZZZ','availableCashMinor',1000000,'restrictedCashMinor',200000,'asOfDate',current_date,
@@ -39,6 +40,14 @@ begin
   'status','committed','sourceType','customer_receipt','sourceReference','batch40-invoice-30','description','Confidence-weighted receipt',
   'idempotencyKey','batch40-flow-001'));
  if (v_item->>'confidenceBps')::integer<>5000 then raise exception 'Cashflow item was not persisted: %',v_item; end if;
+ perform executive_visuals.record_financial_cash_position(v_actor,jsonb_build_object(
+  'currency','AAA','availableCashMinor',500000,'restrictedCashMinor',0,'asOfDate',current_date-20,
+  'sourceType','bank_statement','sourceReference','batch40-stale-bank-statement','evidenceNote','Stale position fixture',
+  'idempotencyKey','batch40-position-stale'));
+ perform executive_visuals.record_financial_cashflow_item(v_actor,jsonb_build_object(
+  'direction','outflow','currency','AAA','amountMinor',100000,'expectedDate',current_date+10,'confidenceBps',10000,
+  'status','committed','sourceType','infrastructure','sourceReference','batch40-stale-infra','description','Stale runway test outflow',
+  'idempotencyKey','batch40-stale-flow'));
  perform executive_visuals.record_financial_cashflow_item(v_actor,jsonb_build_object(
   'direction','outflow','currency','ZZZ','amountMinor',400000,'expectedDate',current_date+30,'confidenceBps',10000,
   'status','committed','sourceType','payroll','sourceReference','batch40-payroll-30','description','Payroll due',
@@ -52,7 +61,7 @@ begin
  select scenario_row.value into v_downside from jsonb_array_elements(v_report->'scenarios') as scenario_row(value) where scenario_row.value->>'currency'='ZZZ' and scenario_row.value->>'scenario'='downside';
  select scenario_row.value into v_upside from jsonb_array_elements(v_report->'scenarios') as scenario_row(value) where scenario_row.value->>'currency'='ZZZ' and scenario_row.value->>'scenario'='upside';
  if v_base is null or v_downside is null or v_upside is null then raise exception 'Scenario set incomplete: %',v_report->'scenarios'; end if;
- if (v_base->>'runwayDays')::integer<>120 or (v_base->>'netBurn30Minor')::bigint<>250000 then raise exception 'Base runway estimate incorrect: %',v_base; end if;
+ if (v_base->>'runwayDays')::integer is distinct from 120 or (v_base->>'netBurn30Minor')::bigint is distinct from 250000 then raise exception 'Base runway estimate incorrect: %',v_base; end if;
  if (v_base->>'openingAvailableCashMinor')::bigint<>1000000 or (v_base->>'restrictedCashMinor')::bigint<>200000 then
   raise exception 'Available/restricted cash boundary incorrect: %',v_base;
  end if;
@@ -75,6 +84,11 @@ begin
  select monthly_row.value into v_horizon from jsonb_array_elements(v_base->'monthly') as monthly_row(value)
   where (monthly_row.value->>'periodStart')::date<=current_date+60 and (monthly_row.value->>'periodEnd')::date>=current_date+60;
  if (v_horizon->>'projectedClosingMinor')::bigint<>-450000 then raise exception 'Second monthly period failed to reconcile cumulative cash: %',v_horizon; end if;
- if jsonb_array_length(v_report->'items')<>3 then raise exception 'Expected three scheduled cashflow items: %',v_report->'items'; end if;
+ select scenario_row.value into v_stale from jsonb_array_elements(v_report->'scenarios') as scenario_row(value)
+  where scenario_row.value->>'currency'='AAA' and scenario_row.value->>'scenario'='base';
+ if (v_stale->>'positionAgeDays')::integer<=14 or v_stale->>'runwayDays' is not null then
+  raise exception 'Stale cash position should suppress runway: %',v_stale;
+ end if;
+ if jsonb_array_length(v_report->'items')<>4 then raise exception 'Expected four scheduled cashflow items: %',v_report->'items'; end if;
 end $batch40$;
 reset role;
