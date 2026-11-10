@@ -1,35 +1,55 @@
-# Batch 46 — Financial Scenario Intelligence (calculation core)
+# Batch 46 — Financial Scenario Intelligence
 
-## Scope
+## Delivered scope
 
-This increment adds a deterministic, unit-tested calculation engine for sensitivity analysis, break-even modelling, forecast scenarios, evidence-volume confidence and decision comparisons. It is a reusable domain module and does not write to financial ledgers or execute business actions.
+Batch 46 adds a deterministic monthly scenario calculation engine and connects it to protected, persistent Financial Command Centre workflows.
 
-## Calculations
+### Calculation model
 
 - Monthly revenue path: prior-month revenue × (1 + growth − churn) + explicitly supplied new revenue.
-- Variable cost: projected revenue × observed baseline variable-cost ratio × selected variable-cost-rate adjustment.
-- Fixed cost: prior-month fixed cost compounded by selected fixed-cost growth.
-- Net cash flow: collected revenue less variable costs, fixed costs and capex.
-- Discounted operating contribution: monthly contribution discounted at the supplied monthly discount rate.
-- Break-even revenue: fixed operating cost divided by contribution margin, withheld when contribution margin is non-positive.
-- Sensitivity: one-factor favorable/adverse shocks for revenue growth, variable-cost rate, fixed-cost growth and churn, ranked by NPV swing.
-- Decision comparison: probability-weighted discounted contribution less one-time investment.
+- Variable costs use the observed baseline variable-cost ratio and an explicit scenario adjustment.
+- Fixed costs compound using the supplied fixed-cost growth assumption.
+- Net cash flow separates cash collection, variable costs, fixed costs and capex.
+- Discounted operating contribution, ending cash, minimum closing cash and months-to-positive-cash are returned by month.
+- Break-even revenue is calculated from contribution margin and explicitly unavailable when contribution margin is non-positive.
+- Downside/base/upside cases use clearly labelled illustrative shocks.
+- One-factor sensitivity covers revenue growth, variable-cost rate, fixed-cost growth and churn.
+- Decision comparisons use explicitly supplied success probabilities and one-time investments.
+
+### Protected API and persistence
+
+- GET /api/admin/finance/scenarios lists the authenticated finance administrator's saved snapshots.
+- POST /api/admin/finance/scenarios validates the request, runs the calculation server-side and persists the result.
+- The authenticated administrator identity is supplied by the session, never accepted from the request body.
+- Snapshots preserve inputs, outputs, evidence references, model version, timestamps and SHA-256 digests.
+- Actor-scoped idempotency returns the original snapshot on replay and rejects a reused key with different payload hashes.
+- The snapshot table has RLS enabled, no direct client access, and a database trigger rejecting update/delete operations.
+- Each save is recorded in the existing financial administrator audit ledger.
+
+### Financial Command Centre UI
+
+- Interactive scenario form for currency, period, opening cash, revenue, costs, capex, growth, churn, collections, discount rate, horizon and evidence coverage.
+- Server-calculated scenario save and refresh actions.
+- Saved snapshot table with confidence, ending cash and break-even status.
+- Aurora visual treatment consistent with the existing Batch 45 design system.
 
 ## Evidence and safety semantics
 
-- Amounts are integer minor units and one currency per run; no FX conversion or currency blending.
-- Evidence months, source coverage and data age are explicit inputs. Confidence is an evidence-coverage label, not a statistical confidence interval.
-- Downside/upside defaults are visibly marked illustrative. Replace them with approved assumptions before operational decisions.
-- The module does not claim to verify referenced source documents or audited balances.
-- The engine is pure and does not mutate payment, subscription, cost, customer or acquisition ledgers.
-- No automatic payments, funding, price changes, acquisition spend or provider operations are triggered.
+- Monetary values are integer minor units and a single currency per model; no FX conversion or currency blending.
+- Evidence months, source coverage and data age are explicit. Confidence is an evidence-coverage label, not a statistical confidence interval.
+- Default downside/upside shocks are illustrative; users must replace them with approved assumptions before decision use.
+- Evidence references are user-supplied identifiers and are not independently verified by the model.
+- Scenario snapshots are immutable evidence records, not approved budgets, accounting entries or instructions to spend.
+- The engine does not mutate payment, subscription, cost, customer or acquisition ledgers.
+- No payments, funding drawdowns, price changes, acquisition spend or provider operations are triggered.
 
 ## Verification
 
-Run node --test server/tests/financial-scenario-intelligence.test.mjs.
+- node --test server/tests/financial-scenario-intelligence.test.mjs server/tests/financial-scenario-api.test.mjs
+- Disposable PostgreSQL integration: scripts/financial-scenario-snapshots-postgres-integration-batch-46.sql
+- CI applies the Batch 46 migration after Batch 45 and verifies idempotency and append-only persistence.
+- The complete repository build continues to include the scenario calculation and API tests.
 
-Tests cover monthly projection, cash and contribution arithmetic, break-even availability, downside/base/upside ordering, sensitivity ranking, probability-weighted decision comparison, evidence confidence, currency isolation and invalid-input rejection.
+## Release boundary
 
-## Remaining integration work
-
-This is the calculation-core milestone of Batch 46. The protected finance-admin report endpoint, persisted scenario snapshots, Financial Command Centre controls, evidence-source binding and disposable PostgreSQL integration remain required before Batch 46 is complete or released.
+Batch 46 remains a draft until CI executes successfully, SQL integration is verified, assumptions and formulas receive review, and the staged Financial Command Centre is inspected. No production migration, deployment or merge is authorized by this implementation.
