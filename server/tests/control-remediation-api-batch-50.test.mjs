@@ -9,6 +9,13 @@ const reviewer="323e4567-e89b-42d3-a456-426614174000";
 const outsider="523e4567-e89b-42d3-a456-426614174000";
 const viewer="623e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
+const evidenceAsset1="723e4567-e89b-42d3-a456-426614174001";
+const evidenceAsset2="723e4567-e89b-42d3-a456-426614174002";
+const evidenceAsset3="723e4567-e89b-42d3-a456-426614174003";
+function seedEvidenceAsset(db,{id=evidenceAsset1,ownerId=editor,projectId=project,mediaType="application/pdf",name="workpaper.pdf",sha256="a".repeat(64),byteSize=1024}={}){
+ db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)").run(id,ownerId,projectId,name,mediaType,byteSize,sha256,"uploads/"+id+".pdf","{}");
+ return id;
+}
 function setup(){
  const db=openDatabase(":memory:");
  for(const [id,email] of [[owner,"owner@example.test"],[editor,"editor@example.test"],[reviewer,"reviewer@example.test"],[outsider,"outsider@example.test"],[viewer,"viewer@example.test"]])db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run(id,email);
@@ -49,8 +56,8 @@ test("personal remediation records default to the authenticated creator as accou
 test("evidence, owner transition and independent reviewer verification persist with audit history",async()=>{
  const f=setup();
  const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
- const id=created.body.action.id;
- const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Bank reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z",sha256:"a".repeat(64)}});
+ const id=created.body.action.id,assetId=seedEvidenceAsset(f.db);
+ const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Bank reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z",assetId}});
  assert.equal(evidence.status,201);assert.equal(evidence.body.action.evidence.length,1);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"pending_review"}})).status,200);
@@ -66,8 +73,8 @@ test("review submission is blocked until a distinct reviewer is assigned",async(
  delete body.reviewerId;
  const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body});
  assert.equal(created.status,201);
- const id=created.body.action.id,route="/api/finance/remediations/"+id;
- assert.equal((await f.api.handle({method:"POST",path:route+"/evidence",ownerId:editor,body:{label:"Control workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z"}})).status,201);
+ const id=created.body.action.id,route="/api/finance/remediations/"+id,assetId=seedEvidenceAsset(f.db,{id:evidenceAsset2});
+ assert.equal((await f.api.handle({method:"POST",path:route+"/evidence",ownerId:editor,body:{label:"Control workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z",assetId}})).status,201);
  assert.equal((await f.api.handle({method:"POST",path:route+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
  const blocked=await f.api.handle({method:"POST",path:route+"/transitions",ownerId:editor,body:{to:"pending_review"}});
  assert.equal(blocked.status,409);
@@ -77,8 +84,8 @@ test("review submission is blocked until a distinct reviewer is assigned",async(
 test("only the assigned reviewer or project owner can return submitted work with a review note",async()=>{
  const f=setup();
  const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
- const id=created.body.action.id;
- const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z"}});
+ const id=created.body.action.id,assetId=seedEvidenceAsset(f.db,{id:evidenceAsset3});
+ const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z",assetId}});
  assert.equal(evidence.status,201);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"pending_review"}})).status,200);
@@ -93,6 +100,26 @@ test("only the assigned reviewer or project owner can return submitted work with
  assert.match(returned.body.action.history.at(-1).note,/unmatched settlement rows/);
  f.db.close();
 });
+test("evidence attachment accepts only the uploader's matching project asset and derives its SHA-256 server-side",async()=>{
+ const f=setup(),created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody}),id=created.body.action.id,route="/api/finance/remediations/"+id+"/evidence";
+ const otherProject="823e4567-e89b-42d3-a456-426614174000";
+ f.db.prepare("INSERT INTO projects(id,owner_id,name) VALUES(?,?,?)").run(otherProject,owner,"Other project");
+ const wrongScope=seedEvidenceAsset(f.db,{id:"823e4567-e89b-42d3-a456-426614174001",projectId:otherProject});
+ const wrongOwner=seedEvidenceAsset(f.db,{id:"823e4567-e89b-42d3-a456-426614174002",ownerId:owner});
+ const wrongType=seedEvidenceAsset(f.db,{id:"823e4567-e89b-42d3-a456-426614174003",mediaType:"application/json",name:"payload.exe"});
+ const tooLarge=seedEvidenceAsset(f.db,{id:"823e4567-e89b-42d3-a456-426614174004",byteSize:10*1024*1024+1});
+ for(const assetId of [wrongScope,wrongOwner])assert.equal((await f.api.handle({method:"POST",path:route,ownerId:editor,body:{label:"Wrong scope",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,404);
+ for(const assetId of [wrongType,tooLarge])assert.equal((await f.api.handle({method:"POST",path:route,ownerId:editor,body:{label:"Unsafe file",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,415);
+ const good=seedEvidenceAsset(f.db,{id:"923e4567-e89b-42d3-a456-426614174001",sha256:"b".repeat(64)});
+ const attached=await f.api.handle({method:"POST",path:route,ownerId:editor,body:{label:"Verified bytes",kind:"workpaper",capturedAt:"2026-11-10",assetId:good,sha256:"c".repeat(64),uri:"https://attacker.example/file"}});
+ assert.equal(attached.status,201);
+ assert.equal(attached.body.action.evidence[0].sha256,"b".repeat(64));
+ assert.equal(attached.body.action.evidence[0].uri,"asset://"+good);
+ assert.equal(attached.body.action.evidence[0].assetId,good);
+ assert.equal(attached.body.action.evidence[0].scanStatus,"not_scanned");
+ assert.equal(attached.body.action.revision,2);
+ f.db.close();
+});
 test("optimistic revision, duplicate findings and invalid evidence fail safely",async()=>{
  const f=setup();
  const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
@@ -100,7 +127,7 @@ test("optimistic revision, duplicate findings and invalid evidence fail safely",
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody})).status,409);
  assert.equal((await f.api.handle({method:"PATCH",path:"/api/finance/remediations/"+id,ownerId:owner,body:{expectedRevision:9,actionPlan:"stale"}})).status,409);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:outsider,body:{label:"No access",kind:"other",capturedAt:"2026-11-10"}})).status,404);
- assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Bad hash",kind:"other",capturedAt:"2026-11-10",sha256:"bad"}})).status,400);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Unattached metadata",kind:"other",capturedAt:"2026-11-10",sha256:"a".repeat(64)}})).status,404);
  f.db.close();
 });
 test("API ignores unrelated routes and rejects malformed owner identities",async()=>{
