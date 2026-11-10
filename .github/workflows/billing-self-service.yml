@@ -28,6 +28,7 @@ on:
       - feat/subscription-customer-economics-batch-37
       - feat/customer-ltv-acquisition-economics-batch-45
       - feat/executive-financial-intelligence-batch-47
+      - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
   pull_request:
 
@@ -190,6 +191,8 @@ jobs:
         run: node --test server/tests/financial-scenario-intelligence.test.mjs server/tests/financial-scenario-api.test.mjs
       - name: Test Batch 47 executive brief, source coverage, export and print workflow
         run: node --test server/tests/financial-executive-intelligence-batch-47.test.mjs
+      - name: Test Batch 48 financial governance rules, control coverage and escalation
+        run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
