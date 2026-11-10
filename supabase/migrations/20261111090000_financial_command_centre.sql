@@ -75,6 +75,8 @@ revoke all on executive_visuals.financial_admin_audit,
 grant all on executive_visuals.financial_admin_audit,
  executive_visuals.flutterwave_settlement_records,
  executive_visuals.financial_reconciliation_exceptions to service_role;
+-- Service role may append audit events only; it cannot rewrite or truncate history.
+revoke update,delete,truncate on executive_visuals.financial_admin_audit from service_role;
 
 -- Audit rows are append-only, including for the service role.
 create or replace function executive_visuals.reject_financial_audit_mutation()
