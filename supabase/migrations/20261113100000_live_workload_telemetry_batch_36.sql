@@ -65,7 +65,7 @@ begin
   or coalesce(length(p_idempotency_key),0) not between 8 and 180
   or jsonb_typeof(coalesce(p_dimensions,'{}'::jsonb))<>'object'
   or pg_column_size(coalesce(p_dimensions,'{}'::jsonb))>16000
-  or case when jsonb_typeof(coalesce(p_dimensions,'{}'::jsonb))='object' then exists(
+  or exists(
     select 1 from jsonb_each(coalesce(p_dimensions,'{}'::jsonb)) d
     where d.key not in('inputAudioTokens','outputAudioTokens','cachedInputTokens','reasoningTokens',
       'inputImageCount','outputImageCount','referenceImageCount','referenceVideoSeconds',
@@ -73,7 +73,7 @@ begin
       'acceptedOutputs','rejectedOutputs','retryCount','attemptCount','latencyMs',
       'cpuSeconds','gpuSeconds','storageGbSeconds','egressBytes')
      or jsonb_typeof(d.value)<>'number' or (d.value #>> '{}')::numeric<0
-  ) else true end then
+  ) then
   raise exception 'Invalid multidimensional workload telemetry' using errcode='22023';
  end if;
  if p_owner_id is not null and not exists(select 1 from auth.users where id=p_owner_id) then
