@@ -820,7 +820,7 @@ export function createFinancialIntelligenceApi({
         const currency=String(body.currency||"").trim().toUpperCase();
         const periodStart=String(body.periodStart||""),periodEnd=String(body.periodEnd||"");
         const totalMinor=Number(body.totalMinor);
-        const validDay=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validMonthStart=value=>/^\d{4}-\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!invoiceReference||invoiceReference.length>180||
           !/^[A-Z]{3}$/.test(currency)||!validDay(periodStart)||!validDay(periodEnd)||periodEnd<periodStart||
           !Number.isSafeInteger(totalMinor)||totalMinor<0)
@@ -883,7 +883,7 @@ export function createFinancialIntelligenceApi({
           (scopeType==="customer"&&!UUID.test(attributedOwner||""))||!/^[A-Z]{3}$/.test(currency)||
           (margin===null&&contribution===null)||(margin!==null&&(!Number.isFinite(margin)||margin<0||margin>100))||
           (contribution!==null&&(!Number.isSafeInteger(contribution)||contribution<0))||
-          !validDay(effectiveFrom)||(effectiveTo!==null&&(!validDay(effectiveTo)||effectiveTo<=effectiveFrom))||
+          !validMonthStart(effectiveFrom)||(effectiveTo!==null&&(!validMonthStart(effectiveTo)||effectiveTo<=effectiveFrom))||
           idempotency.length<8||idempotency.length>160)
           return error(400,"FINANCIAL_MARGIN_POLICY_INVALID","Provide a valid scope, currency, at least one non-negative margin threshold, effective dates and idempotency key.");
         const result=await rpc("add_financial_margin_policy",{p_actor_id:ownerId,p_scope_type:scopeType,
