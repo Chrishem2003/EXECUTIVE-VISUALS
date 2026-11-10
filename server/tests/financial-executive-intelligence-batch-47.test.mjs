@@ -10,6 +10,9 @@ test("Batch 47 exposes a generated executive brief from loaded finance sources",
   assert.match(app, /data-finance-executive-generate/);
   assert.match(app, /financeState\.executiveBrief=/);
   assert.match(app, /currencyEvidence/);
+  assert.match(app, /currencyPerformance/);
+  assert.match(app, /netRevenueMinor/);
+  assert.match(app, /mrrMinor/);
   assert.match(app, /source domains were available/);
 });
 
