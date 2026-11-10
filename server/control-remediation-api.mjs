@@ -122,6 +122,7 @@ export function createControlRemediationApi({db}={}){
     if(!row.project_id||row.reviewer_id!==ownerId&&projectAccess.access_role!=="owner")return error(403,"REVIEWER_REQUIRED","Only the assigned reviewer or project owner can return a submitted action for rework.");
     if(!note)return error(400,"REVIEW_NOTE_REQUIRED","Provide a clear review note explaining the changes required.");
    }else if(to==="in_progress"&&(!actorIsAssignedOwner&&(!row.project_id||!["owner","editor"].includes(projectAccess.access_role))))return error(403,"OWNER_REQUIRED","Assigned owner or authorized project editor is required.");
+   if(to==="pending_review"&&!row.reviewer_id)return error(409,"REVIEWER_NOT_ASSIGNED","Assign a distinct project reviewer before submitting this action for review.");
    if(to==="pending_review"&&(!actorIsAssignedOwner||db.prepare("SELECT COUNT(*) AS count FROM control_remediation_evidence WHERE action_id=?").get(id).count<1))return error(409,"EVIDENCE_REQUIRED","The assigned owner must add evidence before requesting review.");
    if(to==="verified"){
     if(!row.reviewer_id||row.reviewer_id!==ownerId||actorIsAssignedOwner)return error(403,"INDEPENDENT_REVIEW_REQUIRED","Only the assigned independent reviewer can verify this remediation.");
