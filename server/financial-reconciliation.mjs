@@ -21,7 +21,7 @@ function amount(value,label){
  return n;
 }
 function normalizedReference(value){return text(value,"reference",180).toUpperCase().replace(/[\s-]+/g,"");}
-function validDay(value,label){const v=text(value,label,10);if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(v)||!Number.isFinite(Date.parse(v+"T00:00:00.000Z"))||new Date(v+"T00:00:00.000Z").toISOString().slice(0,10)!==v)fail("FINANCIAL_RECON_DATE_INVALID",label+" must be a real ISO calendar date.");return v;}
+function validDay(value,label){const v=text(value,label,10);if(!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(v)||!Number.isFinite(Date.parse(v+"T00:00:00.000Z"))||new Date(v+"T00:00:00.000Z").toISOString().slice(0,10)!==v)fail("FINANCIAL_RECON_DATE_INVALID",label+" must be a real ISO calendar date.");return v;}
 function key(...values){return values.map(v=>String(v).toLowerCase()).join("\u001f");}
 function countBy(items,fn){const m=new Map();for(const item of items){const k=fn(item);m.set(k,(m.get(k)||0)+1);}return m;}
 function totals(items,field,currencyField){
