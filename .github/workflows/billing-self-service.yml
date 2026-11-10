@@ -160,6 +160,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115100000_cashflow_actual_reconciliation_batch_41.sql
       - name: Verify Batch 41 actual settlements and forecast variances
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cashflow-actual-reconciliation-postgres-integration-batch-41.sql
+      - name: Apply Batch 42 liquidity guardrails
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115120000_liquidity_guardrails_batch_42.sql
+      - name: Verify Batch 42 minimum cash floors and reserve targets
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-guardrails-postgres-integration-batch-42.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
