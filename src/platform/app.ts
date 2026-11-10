@@ -372,7 +372,7 @@ async function exportFinanceReport(kind:string){
   const result=await apiRequest<{rows:Array<Record<string,unknown>>;generatedAt:string;truncated:boolean}>("/api/admin/finance/export?kind="+encodeURIComponent(kind));
   const rows=result.rows||[];const keys=[...new Set(rows.flatMap(row=>Object.keys(row)))];
   const cell=(value:unknown)=>'"'+String(value??"").replaceAll('"','""')+'"';
-  const csv=[keys.map(cell).join(","),...rows.map(row=>keys.map(key=>cell(row[key])).join(","))].join("\\r\\n");
+  const csv=[keys.map(cell).join(","),...rows.map(row=>keys.map(key=>cell(row[key])).join(","))].join("\r\n");
   const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="executive-visuals-"+kind+"-"+new Date().toISOString().slice(0,10)+".csv";a.click();URL.revokeObjectURL(url);
   financeState.error=result.truncated?"Export reached the configured row limit; narrow the reporting period before relying on a complete extract.":"";
  }catch(error){financeState.error=error instanceof Error?error.message:"Financial export failed.";}render();
