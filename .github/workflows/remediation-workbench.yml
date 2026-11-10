@@ -1,7 +1,7 @@
 name: Remediation workbench checks
 on:
   push:
-    branches: [feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57]
+    branches: [feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/audit-integrity-export-batch-56, feat/executive-assurance-risk-intelligence-batch-57, feat/verified-assurance-reporting-batch-58]
   pull_request:
     branches: [feat/remediation-workbench-batch-51-clean, feat/independent-review-controls-batch-52, feat/secure-evidence-assurance-batch-53, feat/evidence-access-audit-batch-54, feat/reviewer-inbox-sla-batch-55, feat/executive-assurance-risk-intelligence-batch-57]
 concurrency:
@@ -26,6 +26,10 @@ jobs:
         run: npm run verify:control-remediation
       - name: Check remediation API syntax
         run: node --check server/control-remediation-api.mjs
+      - name: Verify portfolio assurance report scope and integrity
+        run: npm run verify:finance-assurance-report
+      - name: Check assurance report verifier syntax
+        run: node --check scripts/verify-finance-assurance-report.mjs
       - name: Verify offline remediation audit export integrity
         run: npm run verify:remediation-audit-export
       - name: Check audit export verifier syntax
