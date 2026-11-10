@@ -28,6 +28,9 @@ test("persistent register creates project-scoped actions with independent owner 
  const list=await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:reviewer,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.total,1);
  assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:outsider,query:{projectId:project}})).status,404);
+ const editorCreated=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:editor,body:{...createBody,findingId:"editor-created-finding"}});
+ assert.equal(editorCreated.status,201);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/"+editorCreated.body.action.id,ownerId:owner})).status,200);
  f.db.close();
 });
 test("evidence, owner transition and independent reviewer verification persist with audit history",async()=>{
