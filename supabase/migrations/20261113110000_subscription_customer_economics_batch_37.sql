@@ -94,12 +94,22 @@ begin
    coalesce(t.reference_video_seconds,0) reference_video_seconds,
    coalesce(t.generated_video_seconds,0) generated_video_seconds,coalesce(t.render_seconds,0) render_seconds,
    coalesce(t.input_audio_tokens,0) input_audio_tokens,coalesce(t.output_audio_tokens,0) output_audio_tokens,
-   coalesce(t.frames_processed,0) frames_processed,coalesce(t.retry_count,0) retry_count
+   coalesce(t.frames_processed,0) frames_processed,coalesce(t.retry_count,0) retry_count,
+   policy.min_gross_margin_pct policy_min_gross_margin_pct,
+   policy.min_contribution_minor policy_min_contribution_minor
   from revenue r
   left join direct_costs d on d.owner_id=r.owner_id and d.currency=r.currency
   left join credits cr on cr.owner_id=r.owner_id
   left join cash_activity ca on ca.owner_id=r.owner_id and ca.currency=r.currency
   left join telemetry t on t.owner_id=r.owner_id
+  left join lateral(
+   select p.min_gross_margin_pct,p.min_contribution_minor
+   from financial_margin_policies p
+   where p.currency=r.currency and p.effective_from<=p_period_month
+    and (p.effective_to is null or p.effective_to>p_period_month)
+    and (p.scope_type='global' or (p.scope_type='customer' and p.owner_id=r.owner_id))
+   order by case when p.scope_type='customer' then 0 else 1 end,p.effective_from desc limit 1
+  ) policy on true
   left join lateral(
    select s.id,s.plan_code,s.plan_version,s.billing_interval,s.included_credits
    from customer_subscriptions s
@@ -142,9 +152,13 @@ begin
    'referenceVideoSeconds',reference_video_seconds,'generatedVideoSeconds',generated_video_seconds,
    'renderSeconds',render_seconds,'inputAudioTokens',input_audio_tokens,'outputAudioTokens',output_audio_tokens,
    'framesProcessed',frames_processed,'retryCount',retry_count,
+   'marginPolicyThresholdPct',policy_min_gross_margin_pct,
+   'marginPolicyContributionMinor',policy_min_contribution_minor,
    'marginStatus',case when mrr_minor<=0 then 'non_recurring_or_zero_revenue'
     when contribution_minor<0 then 'negative_contribution'
-    when gross_margin_pct<30 then 'low_margin' else 'positive_contribution' end,
+    when (policy_min_gross_margin_pct is not null and gross_margin_pct<policy_min_gross_margin_pct)
+      or (policy_min_contribution_minor is not null and contribution_minor<policy_min_contribution_minor)
+     then 'below_configured_margin_policy' else 'positive_contribution' end,
    'costEvidenceStatus',case when cost_event_count=0 then 'no_direct_cost_posted'
     when verified_provider_cost_minor>0 then 'contains_verified_provider_cost'
     else 'direct_costs_without_verified_provider_invoice' end
