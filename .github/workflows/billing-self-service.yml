@@ -12,6 +12,7 @@ on:
       - feat/subscription-growth-engine-batch-17
       - feat/predictive-revenue-intelligence-batch-18
       - feat/revenue-retention-acquisition-economics-batch-19
+      - feat/financial-profitability-unit-economics-batch-20
   pull_request:
 
 permissions:
@@ -87,6 +88,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111150000_predictive_revenue_intelligence.sql
       - name: Apply Revenue Retention & Acquisition Economics migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111160000_revenue_retention_acquisition_economics.sql
+      - name: Apply Financial Profitability & Unit Economics migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111170000_financial_profitability_unit_economics.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Run financial API tests
