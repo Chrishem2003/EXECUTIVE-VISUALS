@@ -770,7 +770,7 @@ if(t.closest("[data-finance-executive-generate]")){
   {label:"Dispute cases",value:financeState.disputes?String(disputes):"Unavailable",detail:"Loaded dispute register"},
   {label:"Saved scenarios",value:String(scenarios),detail:"Immutable scenario snapshots"}
  ];
- financeState.executiveBrief={periodMonth:financeState.subscriptionEconomicsPeriod,generatedAt:new Date().toISOString(),kpis,insights:[available.length+" of "+sources.length+" source domains were available when this brief was generated.","The brief preserves currency separation and reports source coverage independently of financial performance.","Executive commentary is rule-based and tied to recorded alert counts; it does not infer causes from incomplete evidence."],decisions,sources:sources.map(x=>({label:x.label,status:x.value?"Loaded":"Unavailable",records:x.records})),currencyEvidence:Array.isArray(d.byCurrency)?d.byCurrency:[],limitations};
+ financeState.executiveBrief={periodMonth:financeState.subscriptionEconomicsPeriod,generatedAt:new Date().toISOString(),kpis,insights:[available.length+" of "+sources.length+" source domains were available when this brief was generated.","The brief preserves currency separation and reports source coverage independently of financial performance.","Executive commentary is rule-based and tied to recorded alert counts; it does not infer causes from incomplete evidence."],decisions,sources:sources.map(x=>({label:x.label,status:x.value?"Loaded":"Unavailable",records:x.records})),currencyEvidence:sources.filter(x=>x.value&&Array.isArray(x.value.byCurrency)).map(x=>({source:x.label,rows:x.value.byCurrency})),limitations};
  render();return;
 }
 if(t.closest("[data-finance-executive-export]")){
