@@ -109,3 +109,16 @@ create table executive_visuals.billing_notification_outbox(
  created_at timestamptz not null default now(),
  read_at timestamptz
 );
+
+create table executive_visuals.credit_ledger(
+ id uuid primary key default gen_random_uuid(),
+ owner_id uuid not null references auth.users(id),
+ entry_type text not null check(entry_type in ('purchase_grant','reservation','settlement','refund_reversal','manual_adjustment','expiration')),
+ credit_delta bigint not null check(credit_delta<>0),
+ idempotency_key text not null,
+ payment_transaction_id uuid references executive_visuals.payment_transactions(id),
+ reason text not null,
+ metadata jsonb not null default '{}'::jsonb,
+ created_at timestamptz not null default now(),
+ unique(owner_id,idempotency_key)
+);
