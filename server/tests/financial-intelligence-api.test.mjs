@@ -24,6 +24,17 @@ function api(fetchImpl,options={}) {
   });
 }
 
+test("customer-success telemetry remains available when payment processing is disabled",async()=>{
+ const service=api(async(url,options={})=>{
+  if(String(url).endsWith("/rpc/record_customer_success_event"))return json({recorded:true,duplicate:false,milestonesAwarded:0});
+  throw new Error("Unexpected request: "+String(url));
+ },{billingEnabled:false});
+ const event=await service.handle({method:"POST",path:"/api/customer-success/events",ownerId:owner,body:{eventType:"session_started",eventKey:"session-no-billing-01"}});
+ assert.equal(event.status,202);
+ const billing=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
+ assert.equal(billing.status,503);
+});
+
 test("customer-success events and milestone summary are scoped to the authenticated account",async()=>{
  const calls=[];
  const service=api(async(url,options={})=>{
