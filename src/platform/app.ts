@@ -514,6 +514,18 @@ document.addEventListener("click",e=>{const t=e.target as HTMLElement;const tran
   }catch(error){financeState.error=error instanceof Error?error.message:"Workload cost forecast failed.";}
   render();})();return;
  }
+if(t.closest("[data-finance-reconciliation-preview]")){void (async()=>{
+  try{
+   const raw=$<HTMLTextAreaElement>("#finance-reconciliation-input").value.trim();
+   if(!raw)throw new Error("Paste at least one set of source records before running reconciliation.");
+   const payload=JSON.parse(raw) as Record<string,unknown>;
+   if(!payload||typeof payload!=="object"||Array.isArray(payload))throw new Error("Reconciliation input must be a JSON object.");
+   financeState.reconciliationPreview=null;render();
+   const result=await apiRequest<{reconciliation:FinanceDashboard}>("/api/admin/finance/reconciliation-preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
+   financeState.reconciliationPreview=result.reconciliation;financeState.error="";
+  }catch(error){financeState.error=error instanceof Error?error.message:"Financial reconciliation preview failed.";}
+  render();})();return;
+ }
 if(t.closest("[data-finance-refresh]")){void loadFinanceWorkspace();return;}
  if(t.closest("[data-finance-margin-evaluate]")){void apiRequest<FinanceDashboard>("/api/admin/finance/margin-alerts/evaluate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({})}).then(result=>{financeState.error="Margin evaluation complete: "+Number(result.evaluation?.evaluatedCustomers||0)+" customers checked, "+Number(result.evaluation?.alertsCreated||0)+" new alert(s).";return loadFinanceWorkspace();}).catch(error=>{financeState.error=error instanceof Error?error.message:"Margin evaluation failed.";render();});return;}
  if(t.closest("[data-finance-margin-refresh]")){void loadFinanceWorkspace();return;}
