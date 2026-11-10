@@ -39,7 +39,7 @@ The focused workflow runs:
 - `node --check server/control-remediation-api.mjs`
 - `npm run typecheck`
 
-No test result is claimed until the new branch workflow completes.
+Latest focused GitHub Actions run **passed**: remediation API tests, remediation lifecycle tests, API syntax check and Financial Command Centre TypeScript check all succeeded. Run: https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42879390979.
 
 ## Release status
 
