@@ -66,10 +66,11 @@ begin
     and id=case when coalesce(payment_row.metadata->>'subscription_id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
 
   if subscription_row.id is not null and subscription_row.status in ('active','past_due') then
-    grace_deadline := case
-      when p_grace_hours=0 then now()
-      else greatest(coalesce(subscription_row.grace_until,now()),now()) + make_interval(hours=>p_grace_hours)
-    end;
+    -- Never extend an existing grace deadline because of repeated failed attempts.
+    grace_deadline := coalesce(
+      subscription_row.grace_until,
+      now()+make_interval(hours=>p_grace_hours)
+    );
     update customer_subscriptions
     set status='past_due',grace_until=grace_deadline,updated_at=now()
     where id=subscription_row.id;
