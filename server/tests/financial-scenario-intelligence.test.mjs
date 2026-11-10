@@ -12,7 +12,7 @@ test("projects monthly cash, contribution and discounted value", () => {
   const result = calculateFinancialScenarioIntelligence(fixture());
   assert.equal(result.currency, "UGX"); assert.equal(result.base.rows.length, 12);
   assert.equal(result.base.rows[0].revenueMinor, 10_001_000);
-  assert.ok(Number.isSafeInteger(result.base.npvContributionMinor));
+  assert.ok(Number.isSafeInteger(result.base.npvCashFlowMinor));
   assert.ok(result.base.endingCashMinor > 5_000_000); assert.equal(result.confidence, "high");
 });
 test("break-even revenue uses contribution margin and fixed cost", () => {
@@ -33,8 +33,8 @@ test("downside, base and upside cases are deterministic and label default shocks
   const result = calculateFinancialScenarioIntelligence(fixture());
   assert.deepEqual(result.scenarios.map(item => item.id), ["downside", "base", "upside"]);
   assert.equal(result.scenarios[0].basis, "illustrative_default"); assert.equal(result.scenarios[1].basis, "provided_baseline");
-  assert.ok(result.scenarios[0].result.npvContributionMinor < result.base.npvContributionMinor);
-  assert.ok(result.scenarios[2].result.npvContributionMinor > result.base.npvContributionMinor);
+  assert.ok(result.scenarios[0].result.npvCashFlowMinor < result.base.npvCashFlowMinor);
+  assert.ok(result.scenarios[2].result.npvCashFlowMinor > result.base.npvCashFlowMinor);
 });
 test("sensitivity ranks the largest one-factor NPV swings", () => {
   const result = calculateFinancialScenarioIntelligence(fixture());
