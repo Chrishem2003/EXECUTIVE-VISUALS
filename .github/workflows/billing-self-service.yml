@@ -13,6 +13,7 @@ on:
       - feat/predictive-revenue-intelligence-batch-18
       - feat/revenue-retention-acquisition-economics-batch-19
       - feat/financial-profitability-unit-economics-batch-20
+      - feat/ai-cost-intelligence-margin-optimization-batch-21
   pull_request:
 
 permissions:
@@ -90,6 +91,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111160000_revenue_retention_acquisition_economics.sql
       - name: Apply Financial Profitability & Unit Economics migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111170000_financial_profitability_unit_economics.sql
+      - name: Apply AI Cost Intelligence Batch 21 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111180000_ai_cost_intelligence_batch_21.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Run financial API tests
