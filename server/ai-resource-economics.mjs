@@ -1,7 +1,7 @@
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CURRENCY=/^[A-Z]{3}$/;
 const RESOURCE_UNITS=Object.freeze({
- ffmpeg_second:"second",render_second:"second",gpu_second:"second",cpu_second:"second",
+ ffmpeg_second:"second",gpu_second:"second",cpu_second:"second",
  storage_gb_day:"gb_day",egress_gb:"gb"
 });
 const OPERATIONS=new Set(["text","image","video","render","upscale","audio","embedding","other"]);
