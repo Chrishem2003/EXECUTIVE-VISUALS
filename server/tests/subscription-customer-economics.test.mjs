@@ -61,6 +61,9 @@ test("subscription economics SQL keeps revenue, cash, cost, credit and telemetry
  assert.match(migration,/from financial_service_cost_events/);
  assert.match(migration,/from credit_ledger/);
  assert.match(migration,/from ai_workload_telemetry_events/);
+ assert.match(migration,/from financial_margin_policies/);
+ assert.match(migration,/below_configured_margin_policy/);
+ assert.doesNotMatch(migration,/gross_margin_pct<30/);
  assert.match(migration,/from payment_transactions p[\\s\\S]*?p\\.status='successful'/);
  assert.match(migration,/from payment_refunds r[\\s\\S]*?r\\.status='succeeded'/);
  assert.match(migration,/ca\\.currency=r\\.currency/);
