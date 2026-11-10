@@ -55,6 +55,16 @@ begin
     paid_at=coalesce(paid_at,p_verified_at),verified_at=p_verified_at,
     metadata=metadata||jsonb_build_object('subscription_applied',true,'subscription_verified_at',p_verified_at),
     updated_at=now() where id=payment_row.id;
+  if subscription_row.included_credits>0 then
+    insert into credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata)
+    values(subscription_row.owner_id,'purchase_grant',subscription_row.included_credits,
+      'subscription-purchase:'||payment_row.id::text,payment_row.id,
+      'Included credits for verified initial subscription purchase',
+      jsonb_build_object('subscription_id',subscription_row.id,'plan_code',subscription_row.plan_code,
+        'period_start',p_verified_at,'period_end',period_end))
+    on conflict(owner_id,idempotency_key) do nothing;
+  end if;
+
   update customer_subscriptions set status='active',provider='flutterwave',
     current_period_start=p_verified_at,current_period_end=period_end,updated_at=now()
     where id=subscription_row.id;
