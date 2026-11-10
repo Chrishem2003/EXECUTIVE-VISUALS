@@ -4,6 +4,8 @@ do $batch25$
 declare
  v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
  v_import uuid:=gen_random_uuid();
+ v_incomplete_import uuid:=gen_random_uuid();
+ v_incomplete_line uuid:=gen_random_uuid();
  v_line uuid:=gen_random_uuid();
  v_usage uuid:=gen_random_uuid();
  v_recon uuid:=gen_random_uuid();
@@ -65,6 +67,26 @@ begin
  select count(*) into v_ledger_count from executive_visuals.financial_service_cost_events
   where idempotency_key='ai-invoice-cost:'||v_recon::text;
  if v_ledger_count<>1 then raise exception 'Repeated invoice posting duplicated the service-cost ledger entry'; end if;
+ insert into executive_visuals.ai_provider_invoice_imports(
+  id,provider,invoice_reference,currency,period_start,period_end,total_minor,
+  imported_line_count,matched_line_count,reconciliation_status,source_fingerprint,imported_by
+ ) values(
+  v_incomplete_import,'openai','BATCH25-INCOMPLETE-'||v_incomplete_import::text,'USD',
+  date_trunc('month',now())::date,current_date,100,1,0,'pending',
+  repeat('b',64),v_actor
+ );
+ insert into executive_visuals.ai_provider_invoice_lines(
+  id,import_id,provider_line_reference,usage_period,provider,model,operation,
+  currency,amount_minor,usage_quantity,usage_unit
+ ) values(
+  v_incomplete_line,v_incomplete_import,'batch25-incomplete-'||v_incomplete_line::text,
+  current_date,'openai','gpt-unmatched','text','USD',100,20,'tokens'
+ );
+ begin
+  perform executive_visuals.post_verified_ai_invoice_to_service_cost_ledger(v_actor,v_incomplete_import);
+  raise exception 'Unmatched invoice unexpectedly posted to the service-cost ledger';
+ exception when sqlstate '22023' then null;
+ end;
  v_trends:=executive_visuals.financial_profitability_trend_report(v_actor,12);
  if jsonb_typeof(v_trends->'periods')<>'array'
   or (v_trends->>'months')::integer<>12 then
