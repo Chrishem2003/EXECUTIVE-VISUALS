@@ -1,5 +1,15 @@
 -- Batch 12: financial command-centre aggregates, settlement records and immutable admin audit.
 -- Apply only after the complete preceding billing migration chain in isolated Supabase staging.
+create or replace function executive_visuals.financial_currency_factor(p_currency text)
+returns integer language sql immutable strict
+set search_path=pg_catalog as $
+ select case
+  when upper(p_currency) in ('BIF','CLP','DJF','GNF','ISK','JPY','KMF','KRW','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF') then 1
+  when upper(p_currency) in ('BHD','IQD','JOD','KWD','LYD','OMR','TND') then 1000
+  else 100
+ end
+$;
+
 create table if not exists executive_visuals.financial_admin_audit (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid not null references auth.users(id) on delete restrict,
@@ -147,6 +157,8 @@ begin
    count(*) filter(where p.status='failed' and p.created_at>now()-interval '24 hours') failed_24h,
    count(*) filter(where p.status='successful' and p.created_at>now()-interval '24 hours') successful_24h,
    coalesce((select count(*) from payment_refunds r where r.owner_id=p.owner_id and r.status in ('requested','processing','succeeded') and r.created_at>now()-interval '30 days'),0) refund_cases_30d,
+   coalesce((select sum(r.amount_minor) from payment_refunds r where r.owner_id=p.owner_id and r.currency=p.currency and r.status in ('requested','processing','succeeded') and r.created_at>now()-interval '30 days'),0) refund_value_30d,
+   coalesce(sum(p.amount_minor) filter(where p.status='successful' and p.created_at>now()-interval '30 days'),0) gross_value_30d,
    coalesce((select count(*) from chargeback_cases cb where cb.owner_id=p.owner_id and cb.status in ('open','under_review','lost')),0) dispute_cases
   from payment_transactions p group by p.owner_id,p.currency
  )
@@ -173,9 +185,12 @@ begin
     'signals',to_jsonb(array_remove(array[
       case when f.failed_24h>=3 then 'multiple_failed_payments_24h' end,
       case when f.refund_cases_30d>=3 then 'repeated_refunds_30d' end,
+      case when f.successful_24h>=10 then 'rapid_successful_payments_24h' end,
+      case when f.gross_value_30d>0 and f.refund_value_30d*2>=f.gross_value_30d then 'high_refund_value_ratio_30d' end,
       case when f.dispute_cases>0 then 'open_or_lost_dispute' end
     ],null))
-  )) from fraud f where f.failed_24h>=3 or f.refund_cases_30d>=3 or f.dispute_cases>0 limit p_limit),'[]'::jsonb),
+  )) from fraud f where f.failed_24h>=3 or f.refund_cases_30d>=3 or f.successful_24h>=10
+    or (f.gross_value_30d>0 and f.refund_value_30d*2>=f.gross_value_30d) or f.dispute_cases>0 limit p_limit),'[]'::jsonb),
   'failedPaymentRecovery',jsonb_build_object(
     'openAttempts',(select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted') and created_at between p_from and p_to),
     'scheduledRetries',(select count(*) from payment_attempts where status='retry_scheduled' and created_at between p_from and p_to),
@@ -205,7 +220,7 @@ begin
  if coalesce(actor_role,'') not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
  sid:=p_settlement->>'id'; cur:=upper(p_settlement->>'currency');
  if sid is null or cur !~ '^[A-Z]{3}$' then raise exception 'Settlement identity or currency invalid' using errcode='22023'; end if;
- gross:=round(coalesce((p_settlement->>'gross_amount')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
+ gross:=round(coalesce((p_settlement->>'gross_amount')::numeric,0)*executive_visuals.financial_currency_factor(cur));
  net:=round(coalesce((p_settlement->>'net_amount')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
  fees:=round(coalesce((select sum((x->>'amount')::numeric) from jsonb_array_elements(coalesce(p_settlement->'fees','[]'::jsonb)) x),0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
  refunds:=round(coalesce((p_settlement->>'refund')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
