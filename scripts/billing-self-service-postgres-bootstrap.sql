@@ -123,5 +123,55 @@ create table executive_visuals.credit_ledger(
  unique(owner_id,idempotency_key)
 );
 
+
+alter table executive_visuals.payment_transactions add column if not exists provider_fee_minor bigint;
+alter table executive_visuals.payment_transactions add column if not exists flw_ref text;
+alter table executive_visuals.payment_transactions add column if not exists verified_at timestamptz;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_plan_code text;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_plan_version integer;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_billing_interval text;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_amount_minor bigint;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_currency text;
+alter table executive_visuals.customer_subscriptions add column if not exists scheduled_plan_at timestamptz;
+
+create table executive_visuals.platform_admins(
+ user_id uuid primary key references auth.users(id), role text not null,
+ granted_by uuid references auth.users(id), reason text not null, created_at timestamptz not null default now()
+);
+create table executive_visuals.payment_refunds(
+ id uuid primary key default gen_random_uuid(),
+ owner_id uuid not null references auth.users(id),
+ payment_transaction_id uuid not null references executive_visuals.payment_transactions(id),
+ provider text not null default 'flutterwave', provider_refund_id text,
+ amount_minor bigint not null, currency text not null,
+ status text not null, reason text not null, idempotency_key text not null,
+ requested_by uuid references auth.users(id), requested_at timestamptz not null default now(),
+ completed_at timestamptz, failure_code text, failure_message text,
+ provider_payload jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+create table executive_visuals.chargeback_cases(
+ id uuid primary key default gen_random_uuid(),
+ owner_id uuid not null references auth.users(id),
+ payment_transaction_id uuid references executive_visuals.payment_transactions(id),
+ provider text not null default 'flutterwave', provider_case_id text not null,
+ amount_minor bigint not null, currency text not null, reason text not null,
+ status text not null, stage text, response_due_at timestamptz, outcome_at timestamptz,
+ provider_reference text, provider_payload jsonb not null default '{}'::jsonb,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create table executive_visuals.payment_webhook_events(
+ id uuid primary key default gen_random_uuid(),provider text not null,event_key text not null,
+ event_type text not null,payload_hash text not null,signature_verified boolean not null,
+ processing_status text not null default 'received',payload jsonb not null,
+ error_message text,received_at timestamptz not null default now(),processed_at timestamptz,
+ unique(provider,event_key)
+);
+create table executive_visuals.payment_reconciliation_runs(
+ id uuid primary key default gen_random_uuid(),provider text not null,started_at timestamptz not null default now(),
+ completed_at timestamptz,status text not null,checked_count integer not null default 0,
+ matched_count integer not null default 0,exception_count integer not null default 0,report jsonb not null default '{}'::jsonb
+);
+
 grant all privileges on all tables in schema executive_visuals to service_role;
 grant all privileges on all sequences in schema executive_visuals to service_role;
