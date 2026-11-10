@@ -14,6 +14,7 @@ on:
       - feat/persistent-provider-rate-cards-batch-35
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
+      - feat/financial-governance-batch-48
   pull_request:
 
 permissions:
@@ -49,3 +50,5 @@ jobs:
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 48 financial governance rules and UI integration
+        run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
