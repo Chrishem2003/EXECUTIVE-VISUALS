@@ -16,6 +16,7 @@ on:
       - feat/ai-cost-intelligence-margin-optimization-batch-21
       - feat/automated-provider-metering-reconciliation-batch-22
       - feat/render-economics-model-routing-shadow-batch-23
+      - feat/render-economics-model-routing-shadow-batch-23-final
   pull_request:
 
 permissions:
