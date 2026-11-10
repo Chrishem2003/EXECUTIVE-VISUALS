@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,uploadRunwayEphemeralAsset,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo} from "../runway-video-gateway.mjs";
+import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,uploadRunwayEphemeralAsset,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo,submitRunwayVideoTask,getRunwayVideoTask,downloadRunwayVideoTaskOutput} from "../runway-video-gateway.mjs";
 
 test("catalog contains only models with explicit text-to-video profiles",()=>{
  const models=listRunwayVideoModels();
@@ -186,4 +186,49 @@ test("ephemeral upload rejects invalid media before making provider requests", a
   fetchImpl:async()=>{calls++;throw new Error("must not be called");}
  }),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
  assert.equal(calls,0);
+});
+
+test("durable task submission sends exactly one POST and returns the provider task identity without polling",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{calls.push({url:String(url),method:options.method});return new Response(JSON.stringify({id:"123e4567-e89b-42d3-a456-426614174000",estimatedCost:{credits:24}}),{status:200});};
+ try{
+  const task=await submitRunwayVideoTask({model:"seedance2_5",prompt:"A quiet sunrise",durationSeconds:5,fetchImpl});
+  assert.equal(task.taskId,"123e4567-e89b-42d3-a456-426614174000");
+  assert.equal(task.status,"PENDING");assert.equal(task.estimatedCostCredits,24);
+  assert.equal(calls.length,1);assert.equal(calls[0].method,"POST");
+ }finally{
+  for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
+ }
+});
+test("ambiguous provider submission is marked unknown and is never automatically repeated",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ let calls=0;
+ const fetchImpl=async()=>{calls++;throw new Error("connection reset after request write");};
+ try{
+  await assert.rejects(()=>submitRunwayVideoTask({model:"seedance2_5",prompt:"A sunrise",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
+  assert.equal(calls,1);
+ }finally{
+  for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
+ }
+});
+test("existing provider task can be polled independently without creating a new task",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{calls.push({url:String(url),method:options.method||"GET"});return new Response(JSON.stringify({id:"123e4567-e89b-42d3-a456-426614174000",status:"RUNNING",model:"seedance2_5",output:null}),{status:200});};
+ try{
+  const task=await getRunwayVideoTask({taskId:"123e4567-e89b-42d3-a456-426614174000",fetchImpl});
+  assert.equal(task.status,"RUNNING");assert.equal(task.outputUrl,null);
+  assert.equal(calls.length,1);assert.equal(calls[0].method,"GET");assert.ok(calls[0].url.endsWith("/tasks/123e4567-e89b-42d3-a456-426614174000"));
+ }finally{
+  for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
+ }
+});
+test("completed provider task output is bounded and MP4-validated by the separate downloader",async()=>{
+ const mp4=Buffer.concat([Buffer.from("0000ftyp"),Buffer.alloc(16)]);
+ const buffer=await downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/result.mp4",fetchImpl:async()=>new Response(mp4,{status:200})});
+ assert.equal(buffer.toString("ascii",4,8),"ftyp");
 });
