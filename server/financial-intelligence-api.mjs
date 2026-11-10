@@ -946,7 +946,7 @@ export function createFinancialIntelligenceApi({
             create_period:"close_period.created",assign_task:"close_task.assigned",
             complete_task:"close_task.completed",waive_task:"close_task.waived",
             submit_for_approval:"close_period.submitted",record_approval:"close_approval.recorded",
-            lock_period:"close_period.locked",reopen_period:"close_period.reopened"
+            reassign_approval:"close_approval.assigned",lock_period:"close_period.locked",reopen_period:"close_period.reopened"
           };
           const eventType=eventTypes[command];
           const payload=body.payload&&typeof body.payload==="object"&&!Array.isArray(body.payload)?body.payload:null;
