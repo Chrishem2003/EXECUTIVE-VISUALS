@@ -42,7 +42,7 @@ export function buildFinancialGovernanceAssessment(input:Input={}):GovernanceAss
  const liqRows=firstArray(liq,["alerts","items"]),marginRows=firstArray(margin,["alerts","items"]);
  const reconRows=firstArray(recon,["items","exceptions","rows"]);
  const disputeRows=firstArray(disputes,["cases","disputes","items"]);
- const overdue=disputeRows.filter(r=>!isResolved(r)&&dateValue(r.dueAt??r.deadlineAt??r.responseDueAt)!==null&&(dateValue(r.dueAt??r.deadlineAt??r.responseDueAt) as number)<asOf);
+ const overdue=disputeRows.filter(r=>!isResolved(r)&&dateValue(r.dueAt??r.due_at??r.deadlineAt??r.deadline_at??r.responseDueAt??r.response_due_at)!==null&&(dateValue(r.dueAt??r.due_at??r.deadlineAt??r.deadline_at??r.responseDueAt??r.response_due_at) as number)<asOf);
  const openRecon=reconRows.filter(r=>!isResolved(r));
  const commandExceptions=firstArray(command,["reconciliationExceptions"]).filter(r=>!isResolved(r));
  const addRows=(sourceRows:Row[],id:string,title:string,controlId:string,defaultSeverity:GovernanceSeverity,action:string)=>{
