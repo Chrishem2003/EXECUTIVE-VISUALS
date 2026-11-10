@@ -19,6 +19,7 @@ declare
   current_plan text;
   current_amount bigint;
   current_status text;
+  rewarded_period_end timestamptz;
 begin
   reservation := executive_visuals.reserve_subscription_purchase(
     v_owner_id,'creator-monthly','customer@example.com','MTN','sql-integration-key-01','EVS-SQL-INITIAL-01'
@@ -47,8 +48,16 @@ begin
     now()
   );
   if result->>'status'<>'active' then raise exception 'Verified purchase did not activate subscription'; end if;
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id and cl.payment_transaction_id=payment_id)<>1000 then
-    raise exception 'Initial subscription included credits were not granted exactly once';
+  select current_period_end into rewarded_period_end from executive_visuals.customer_subscriptions where id=sub_id;
+  if rewarded_period_end<now()+interval '1 month 29 days'
+     or rewarded_period_end>now()+interval '1 month 31 days' then
+    raise exception 'First paid subscription did not receive the one-month access extension';
+  end if;
+  if (select count(*) from executive_visuals.customer_loyalty_rewards where owner_id=v_owner_id and reward_code='first_paid_creator_welcome')<>1 then
+    raise exception 'First paid welcome reward was not recorded exactly once';
+  end if;
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id and cl.payment_transaction_id=payment_id)<>1100 then
+    raise exception 'Initial subscription credits plus welcome bonus were not granted exactly once';
   end if;
 
 
@@ -77,7 +86,7 @@ begin
     jsonb_build_object('status','succeeded','amount',240000,'currency','UGX','reference','EVR-SQL-RENEWAL-01'),
     now()
   );
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id)<>21000 then
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id)<>21100 then
     raise exception 'Renewal did not grant scheduled plan credits exactly once';
   end if;
 
