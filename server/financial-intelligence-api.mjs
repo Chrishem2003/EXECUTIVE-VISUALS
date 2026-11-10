@@ -716,6 +716,11 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_predictive_revenue_overview",{p_actor_id:ownerId});
         return response(200,{forecast:result||{currencies:[],limitations:["Forecast data is not yet available."]}});
       }
+      if(path==="/api/admin/finance/revenue-movement"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("financial_revenue_movement_overview",{p_actor_id:ownerId});
+        return response(200,{movementIntelligence:result||{comparison:{available:false},movement:[],cohorts:[],limitations:["Revenue movement data is not yet available."]}});
+      }
       if(path==="/api/admin/finance/revenue-retention"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
