@@ -18,7 +18,7 @@
 - `POST /api/admin/finance/margin-alerts/evaluate`
 - `GET /api/admin/finance/margin-alerts?limit=50`
 
-Policy scopes are `global` or `customer`. Every policy is currency-specific and must define at least one threshold: minimum gross-margin percentage or minimum contribution in currency minor units.
+Policy scopes are `global` or `customer`. Every policy is currency-specific, starts on the first day of a month, and must define at least one threshold: minimum gross-margin percentage or minimum contribution in currency minor units. Effective-date windows may not overlap for the same scope and currency.
 
 ## Accounting and safety boundaries
 
