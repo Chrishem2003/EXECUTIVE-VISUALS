@@ -5,8 +5,8 @@ import { createCloudVideoGenerationExecutor } from "../cloud-video-generation-ex
 const job={id:"job-1",owner_id:"owner-1",project_id:"project-1",job_type:"video.generate.shot",input:{approvalId:"approval-1",shotIndex:0}};
 const approval={id:"approval-1",ownerId:"owner-1",projectId:"project-1",status:"approved_pending_submission",currency:"USD",budgetCeilingMicros:5000000,requestHash:"a".repeat(64),shots:[{provider:"runway",model:"seedance2_5",prompt:"A cinematic sunrise",durationSeconds:5,aspectRatio:"16:9",estimatedCostMicros:2500000,name:"sunrise"}]};
 const mp4=Buffer.concat([Buffer.from("0000ftyp"),Buffer.alloc(32)]);
-function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCEEDED"}={}){
- const calls=[],record={id:"task-1",state:taskState,providerTaskId};
+function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCEEDED",outputAssetId=taskState==="succeeded"?"asset-1":null}={}){
+ const calls=[],record={id:"task-1",state:taskState,providerTaskId,outputAssetId};
  const tasks={
   async reserveSubmission(input){calls.push(["reserve",input]);return record;},
   async markSubmitting(id){calls.push(["submitting",id]);record.state="submitting";},
