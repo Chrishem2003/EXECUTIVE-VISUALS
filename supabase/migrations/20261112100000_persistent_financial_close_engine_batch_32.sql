@@ -187,6 +187,7 @@ begin
   v_task_id:=(p_payload->>'taskId')::uuid;
   select t.* into v_task from executive_visuals.financial_close_tasks t
    where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id for update;
+  raise notice 'Batch32 task.start lookup owner %, period %, payload task %, row task %, status %, found %',p_owner_id,p_period_month,v_task_id,v_task.task_id,v_task.status,found;
   if v_task.task_id is null or v_task.status not in('assigned','in_progress') then
    raise exception using errcode='55000',message='financial_close_task_not_startable';
   end if;
