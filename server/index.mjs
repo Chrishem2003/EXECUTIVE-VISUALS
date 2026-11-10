@@ -26,6 +26,8 @@ import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./prov
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
+import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
+import { createControlRemediationApi } from "./control-remediation-api.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -59,8 +61,43 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
+const financialApiEnabled = process.env.BILLING_API_ENABLED === "true";
+if (financialApiEnabled && AUTH_MODE !== "supabase") throw new Error("Financial intelligence API requires verified Supabase authentication.");
+const financialApi = financialApiEnabled ? createFinancialIntelligenceApi() : null;
+const paymentReconciliationIntervalMinutes = Math.max(5,Math.min(1440,Number(process.env.PAYMENT_RECONCILIATION_INTERVAL_MINUTES)||60));
+let paymentReconciliationBusy=false;
+const paymentReconciliationTimer = financialApi && process.env.PAYMENT_RECONCILIATION_ENABLED !== "false"
+  ? setInterval(async()=>{
+      if(paymentReconciliationBusy)return;
+      paymentReconciliationBusy=true;
+      try{
+        const result=await financialApi.reconcilePendingRefunds({limit:100});
+        if(result.checked)process.stdout.write("Financial reconciliation checked "+result.checked+" pending refund(s).\\n");
+      }catch(error){
+        process.stderr.write("Financial reconciliation cycle failed: "+String(error.message||"unknown error")+"\\n");
+      }finally{paymentReconciliationBusy=false;}
+    },paymentReconciliationIntervalMinutes*60_000)
+  : null;
+
+paymentReconciliationTimer?.unref();
+const subscriptionLifecycleIntervalMinutes=Math.max(5,Math.min(1440,Number(process.env.SUBSCRIPTION_LIFECYCLE_INTERVAL_MINUTES)||15));
+let subscriptionLifecycleBusy=false;
+const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCLE_ENABLED!=="false"
+  ?setInterval(async()=>{
+    if(subscriptionLifecycleBusy)return;
+    subscriptionLifecycleBusy=true;
+    try{
+      const result=await financialApi.expireDueSubscriptions();
+      if(Number(result?.expiredCount)>0)process.stdout.write("Subscription lifecycle finalized "+result.expiredCount+" expired subscription(s), including "+(result.scheduledCancellationsFinalized||0)+" scheduled cancellation(s).\\n");
+    }catch(error){
+      process.stderr.write("Subscription lifecycle cycle failed: "+String(error.message||"unknown error")+"\\n");
+    }finally{subscriptionLifecycleBusy=false;}
+  },subscriptionLifecycleIntervalMinutes*60_000)
+  :null;
+subscriptionLifecycleTimer?.unref();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
@@ -88,6 +125,11 @@ const SECURITY_HEADERS = {
 const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
+const readRawBody = async (req,limit=1024*1024) => {
+  const chunks=[];let size=0;
+  for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
+  return Buffer.concat(chunks);
+};
 const readJson = async (req,limit=1024*1024) => {
   const chunks=[];let size=0;
   for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
@@ -233,6 +275,17 @@ async function processNextJob() {
   const job=current;
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
   let leaseLost=false;
+  const resourceMeasurements=[];
+  const flushResourceMeasurements=async()=>{
+    if(!financialApi||process.env.RESOURCE_COST_METERING_ENABLED!=="true"||!resourceMeasurements.length)return;
+    const pending=resourceMeasurements.splice(0,resourceMeasurements.length);
+    for(const measurement of pending){
+      try{await financialApi.recordWorkerWorkloadTelemetry({job,measurement});}
+      catch(error){process.stderr.write("Workload telemetry could not be recorded for job "+job.id+": "+String(error.message||error)+"\\n");}
+      try{await financialApi.recordWorkerResourceUsage({job,measurement});}
+      catch(error){process.stderr.write("Resource cost telemetry could not be recorded for job "+job.id+": "+String(error.message||error)+"\\n");}
+    }
+  };
   const heartbeat=setInterval(()=>{
     if(!renewJobLease(db,job.id,WORKER_ID)){
       leaseLost=true;
@@ -245,6 +298,7 @@ async function processNextJob() {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      onResourceMeasurement:value=>{if(value&&typeof value==="object")resourceMeasurements.push(value);},
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
@@ -277,6 +331,7 @@ async function processNextJob() {
       .run(status,json(details),now(),retry?null:now(),availableAt,job.id,WORKER_ID,now());
     if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,workflowBlocked?"job.blocked":retry?"job.retry_scheduled":"job.failed",details);
   } finally {
+    await flushResourceMeasurements();
     clearInterval(heartbeat);
   }
 }
@@ -308,7 +363,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH)},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
@@ -349,9 +404,25 @@ export function createAppServer() {
         }else setCookie(res,"",0);
         send(res,200,{ok:true},cors);return;
       }
+      if(path==="/api/webhooks/flutterwave"&&req.method==="POST"){
+        if(!financialApi){fail(res,503,"BILLING_DISABLED","Flutterwave webhooks are disabled until financial staging is enabled.");return;}
+        const rawBody=await readRawBody(req,1024*1024);
+        const webhookResult=await financialApi.handleWebhook({rawBody,signatureV4:String(req.headers["flutterwave-signature"]||""),signatureV3:String(req.headers["verif-hash"]||"")});
+        send(res,webhookResult.status,webhookResult.body,cors);return;
+      }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path.startsWith("/api/finance/remediations")){
+        const remediationBody=["POST","PATCH"].includes(req.method)?await readJson(req,64*1024):{};
+        const remediationResult=await controlRemediationApi.handle({method:req.method,path,ownerId:user.id,body:remediationBody,query:Object.fromEntries(url.searchParams.entries())});
+        if(remediationResult){send(res,remediationResult.status,remediationResult.body,cors);return;}
+      }
+      if(financialApi && (path.startsWith("/api/billing/")||path.startsWith("/api/admin/billing/")||path.startsWith("/api/admin/subscriptions/")||path.startsWith("/api/admin/finance/"))){
+        const financialBody=req.method==="POST"?await readJson(req,64*1024):{};
+        const financialResult=await financialApi.handle({method:req.method,path,ownerId:user.id,body:financialBody,query:Object.fromEntries(url.searchParams.entries()),idempotencyKey:String(req.headers["idempotency-key"]||"")});
+        if(financialResult){send(res,financialResult.status,financialResult.body,cors);return;}
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
@@ -599,8 +670,14 @@ export function createAppServer() {
            send(res,200,{assetId:asset.id,verification,notice:"C2PA validity and signer trust are separate from application provenance, identity, rights clearance and factual accuracy."},cors);return;
          }
          if(assetMatch[2]==="file"&&req.method==="GET"){
-          const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
-          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
+          const file=resolve(MEDIA_ROOT,asset.storage_path),mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+          if(!file.startsWith(mediaPrefix)||!existsSync(file)||!statSync(file).isFile()){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+          res.once("finish",()=>{
+            if(res.statusCode!==200)return;
+            audit(db,user.id,"asset.downloaded","asset",asset.id,{mediaType:asset.media_type,size:Number(asset.byte_size),sha256:asset.sha256},asset.project_id);
+            controlRemediationApi.recordEvidenceDownload({ownerId:user.id,assetId:asset.id});
+          });
+          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,"cache-control":"private, no-store",...SECURITY_HEADERS,...cors});
           createReadStream(file).pipe(res);return;
         }
         if(req.method==="DELETE"){

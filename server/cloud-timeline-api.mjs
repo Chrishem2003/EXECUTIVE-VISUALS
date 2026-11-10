@@ -13,18 +13,30 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
+function timelineDurationSeconds(timeline){
+ let end=0;
+ for(const track of timeline?.tracks||[])for(const clip of track?.clips||[]){
+  const start=Number(clip?.timelineStart?.value)/Number(clip?.timelineStart?.rate);
+  const duration=Number(clip?.duration?.value)/Number(clip?.duration?.rate);
+  if(!Number.isFinite(start)||!Number.isFinite(duration)||start<0||duration<=0)
+   throw Object.assign(new Error("Timeline contains invalid timing and cannot be priced."),{code:"TIMELINE_BILLING_TIMING_INVALID"});
+  end=Math.max(end,start+duration);
+ }
+ return end;
+}
 
 /**
  * Authenticated cloud timeline API. The caller must pass the user ID returned
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0)}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
+ if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
@@ -187,10 +199,47 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      }
     }
     const jobId=randomUUID(),input={timelineId,timelineRevision:timeline.revision};
-    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:timeline.projectId,job_type:"timeline.render",status:"queued",progress:0,input,idempotency_key:key||null}});
-    if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId||rows[0].job_type!=="timeline.render")throw new Error("Cloud render job creation returned an invalid record.");
-    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"timeline.render",timelineId,timelineRevision:timeline.revision}},prefer:"return=minimal"});
-    return response(202,{job:rows[0]});
+    let creditReservation=null;
+    if(timelineCreditsPerSecond>0){
+     const durationSeconds=timelineDurationSeconds(timeline.timeline);
+     if(!Number.isFinite(durationSeconds)||durationSeconds<=0)
+      return response(422,{error:{code:"TIMELINE_DURATION_REQUIRED",message:"Add at least one valid timeline clip before submitting a billable render."}});
+     const creditUnits=Math.ceil(durationSeconds*timelineCreditsPerSecond);
+     if(!Number.isSafeInteger(creditUnits)||creditUnits<=0)
+      return response(422,{error:{code:"TIMELINE_CREDIT_QUOTE_INVALID",message:"The server could not calculate a safe credit quote for this render."}});
+     try{
+      const reserved=await request("rpc/reserve_credit_units",{method:"POST",body:{
+       p_owner_id:ownerId,p_credit_units:creditUnits,
+       p_idempotency_key:"timeline-render:"+jobId,
+       p_reason:"Reserved credits for cloud timeline render",
+       p_job_id:jobId,
+       p_metadata:{timelineId,timelineRevision:timeline.revision,durationSeconds,creditsPerSecond:timelineCreditsPerSecond}
+      }});
+      const row=Array.isArray(reserved)?reserved[0]:reserved;
+      if(!row||row.status!=="reserved"||!row.reservation_id)
+       throw Object.assign(new Error("Credit reservation returned an invalid result."),{code:"CREDIT_RESERVATION_INVALID"});
+      creditReservation=row;
+     }catch(error){
+      if(error.status===400||error.status===409)
+       return response(402,{error:{code:"INSUFFICIENT_OR_UNAVAILABLE_CREDITS",message:"This render could not reserve the required credits. Check your available balance or contact support."}});
+      throw error;
+     }
+    }
+    let rows;
+    try{
+     rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:timeline.projectId,job_type:"timeline.render",status:"queued",progress:0,input,idempotency_key:key||null}});
+     if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId||rows[0].job_type!=="timeline.render")
+      throw new Error("Cloud render job creation returned an invalid record.");
+    }catch(error){
+     // Only release on a definite client-side database rejection. A timeout,
+     // network failure or server error may have committed the job; keep the
+     // reservation held until reconciliation can inspect the durable job row.
+     if(creditReservation&&Number.isInteger(error.status)&&error.status>=400&&error.status<500)
+      await request("rpc/release_credit_reservation",{method:"POST",body:{p_reservation_id:creditReservation.reservation_id,p_reason:"Cloud render job creation was rejected"}});
+     throw error;
+    }
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"timeline.render",timelineId,timelineRevision:timeline.revision,creditReservationStatus:creditReservation?"reserved":"disabled"}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],billing:creditReservation?{reservedCredits:creditReservation.credit_units,status:"reserved"}:{enabled:false}});
    }
    if(method==="GET"&&!match[2]){
     const timeline=await service.timelines.get({ownerId,timelineId});
@@ -210,6 +259,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(error.code==="CLOUD_TIMELINE_ACCESS_DENIED")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(error.code==="CLOUD_TIMELINE_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_TIMELINE_INVALID")return response(422,{error:{code:"TIMELINE_INVALID",message:error.message,issues:error.issues||[]}});
+   if(error.code==="CREDIT_RESERVATION_INVALID")return response(500,{error:{code:"CREDIT_RESERVATION_INVALID",message:"Credit reservation could not be confirmed. No render job was created."}});
    if(error.status===409)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"The render request conflicts with an existing job."}});
    throw error;
   }

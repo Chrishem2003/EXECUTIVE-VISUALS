@@ -1,0 +1,55 @@
+name: Financial intelligence tests
+
+on:
+  push:
+    branches:
+      - ev-release-validation
+      - feat/financial-intelligence-api-integration
+      - feat/predictive-workload-economics-batch-27
+      - feat/automated-financial-reconciliation-batch-28
+      - feat/continuous-financial-close-batch-29
+      - feat/persistent-audit-ledger-batch-30
+      - feat/persistent-close-approval-engine-batch-32
+      - feat/reconciliation-backed-close-gates-batch-33
+      - feat/forecast-actual-cost-variance-batch-34
+      - feat/persistent-provider-rate-cards-batch-35
+      - feat/live-workload-telemetry-batch-36
+      - feat/subscription-customer-economics-batch-37
+      - feat/financial-governance-batch-48
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financial-intelligence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  financial-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check financial modules
+        run: |
+          node --check server/financial-intelligence-api.mjs
+          node --check server/ai-workload-telemetry.mjs
+          node --check server/ai-workload-economics.mjs
+          node --check server/workload-cost-variance.mjs
+          node --check server/financial-reconciliation.mjs
+          node --check server/financial-close-readiness.mjs
+          node --check server/financial-audit-ledger.mjs
+          node --check server/financial-audit-export.mjs
+          node --check server/scripts/verify-financial-audit-export.mjs
+          node --check server/flutterwave-auth.mjs
+          node --check server/payment-intelligence.mjs
+      - name: Run financial intelligence tests
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 48 financial governance rules and UI integration
+        run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs

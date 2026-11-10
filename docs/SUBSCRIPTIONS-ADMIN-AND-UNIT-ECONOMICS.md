@@ -1,6 +1,6 @@
 # Executive Visuals — subscriptions, admin and sustainable unit economics
 
-**Status:** Product architecture and implementation backlog, not a live billing integration.  
+**Status:** Architecture plus a development-branch subscription/entitlement foundation. Not a live recurring billing integration.  
 **Budget constraint:** $0/month infrastructure budget. No paid services, plans, payment accounts or provider credits are activated by this document.
 
 ## Commercial product model
@@ -95,3 +95,41 @@ No merchant account, payment plan, payment API key or live transaction is create
 - Flutterwave Uganda pricing: https://flutterwave.com/ug/pricing
 - Pesapal recurring payments: https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/recurringpayments
 - Stripe country availability: https://stripe.com/global
+
+
+## Implementation checkpoint — 2026-11-10
+
+The development branch now contains the first subscription foundation:
+
+- Versioned plan catalogue and immutable entitlement snapshots.
+- Customer subscription state and subscription event audit trail.
+- One public non-billable Free plan only; paid plan prices and credit allowances remain unset.
+- Owner-scoped subscription and plan read APIs.
+- Owner/billing-admin-only manual grant API backed by an audited SQL RPC.
+- No automatic Flutterwave recurring charge, cancellation, renewal or failed-payment state machine is activated yet.
+
+Flutterwave's Payment Plans documentation explicitly says that attaching a plan fixes the payment method to card. It also documents email-bound subscriptions, three additional retry attempts at 30-minute intervals, and cancellation after repeated failures. Uganda's MTN/Airtel MoMo guide describes one-time authorization, not recurring MoMo. The first recurring integration should therefore be card-only where enabled on the approved merchant account; do not market MoMo auto-renewal without written provider confirmation. See the official references below.
+
+**Release gate:** execute the new migration and API tests in isolated staging; then implement provider-backed subscription lifecycle events and verify renewal/cancellation/recovery. Do not expose paid plans until the merchant's recurring method, settlement and unit economics are verified.
+
+
+## Provider compatibility decision — 2026-11-10
+
+Flutterwave's current developer homepage states that a merchant can use only one API version at a time. Executive Visuals currently integrates V4 OAuth for checkout/refunds, while Flutterwave Payment Plans are documented under V3 and are card-only. Do not mix V3 Payment Plans calls into the V4 runtime.
+
+Before recurring subscriptions can be implemented, either obtain written confirmation of a V4-compatible recurring product or plan a complete V4-to-V3 migration of checkout, verification, refunds, webhook verification and reconciliation. This is not authorized as an automatic switch. The admin-only provider-readiness endpoint exposes this blocker without revealing credentials. Recurring billing remains disabled.
+
+
+## Batch 9 — manual mobile-money renewal
+
+Executive Visuals now has a development-only customer-initiated renewal flow using the existing V4 charge integration. Customers can initiate MTN/Airtel UGX renewal payments for their active or past-due monthly/yearly subscription. Prices are loaded from the server-side subscription record. The subscription period changes only after a signed webhook triggers a server-side V4 charge verification and the atomic renewal RPC validates the reference, amount, currency, owner and plan. This is not automatic recurring billing; no card credentials are stored and no background debit is attempted. The isolated staging migration must be applied and tested before activation.
+
+
+## Batch 10 — payment recovery
+
+Failed Flutterwave V4 charges are verified server-side, recorded as recovery attempts, and linked subscriptions enter `past_due` with a configurable grace period (default 72 hours). Customers can retrieve and mark their billing notifications as read. Billing administrators can inspect the recovery queue and explicitly process expired grace periods. No automatic MoMo debit or unattended payment retry occurs; customers must re-authorize each payment. Notification records are queued in the outbox. Email delivery remains disabled until a transactional email provider is configured and tested.
+
+
+## Batch 11 — customer subscription self-service
+
+Customers can review their plan, period, grace deadline, scheduled changes, transactions, invoice records and subscription event history in the Billing & Plan workspace. They can cancel immediately, schedule cancellation at the end of the paid period, resume a future cancellation, schedule a plan change for the next verified renewal, or cancel a scheduled plan change. Scheduled plan snapshots are server-controlled and become active only after a customer-authorized Flutterwave V4 mobile-money renewal succeeds and is independently verified. No payment credentials or MoMo PINs are stored; no automatic debit or refund is initiated. PDF invoice downloads remain gated until private document storage and signed download URLs are implemented.

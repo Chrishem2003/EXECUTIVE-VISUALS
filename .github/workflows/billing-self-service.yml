@@ -1,0 +1,202 @@
+name: Billing self-service quality checks
+
+on:
+  push:
+    branches:
+      - ev-release-validation
+      - feat/financial-intelligence-api-integration
+      - feat/financial-command-centre-batch-12
+      - feat/financial-operations-batch-13
+      - feat/customer-loyalty-batch-14
+      - feat/creator-referrals-batch-15
+      - feat/customer-lifetime-intelligence-batch-16
+      - feat/subscription-growth-engine-batch-17
+      - feat/predictive-revenue-intelligence-batch-18
+      - feat/revenue-retention-acquisition-economics-batch-19
+      - feat/financial-profitability-unit-economics-batch-20
+      - feat/ai-cost-intelligence-margin-optimization-batch-21
+      - feat/automated-provider-metering-reconciliation-batch-22
+      - feat/render-economics-model-routing-shadow-batch-23
+      - feat/render-economics-model-routing-shadow-batch-23-final
+      - feat/unified-profitability-margin-protection-batch-24
+      - feat/verified-cost-reconciliation-profitability-trends-batch-25
+      - feat/measured-shared-cost-allocation-batch-26
+      - feat/persistent-audit-ledger-batch-30
+      - feat/persistent-close-approval-engine-batch-32
+      - feat/reconciliation-backed-close-gates-batch-33
+      - feat/persistent-provider-rate-cards-batch-35
+      - feat/live-workload-telemetry-batch-36
+      - feat/subscription-customer-economics-batch-37
+      - feat/customer-ltv-acquisition-economics-batch-45
+      - feat/executive-financial-intelligence-batch-47
+      - feat/financial-governance-batch-48
+      - feat/revenue-movement-cohort-intelligence-batch-39
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-self-service-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  billing-self-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: executive_visuals_billing_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_billing_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      BILLING_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_billing_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: npm
+      - name: Install dependencies without native build side effects
+        run: npm ci --ignore-scripts
+      - name: Type-check customer billing UI and application
+        run: npm run typecheck
+      - name: Check financial API syntax
+        run: |
+          node --check server/index.mjs
+          node --check server/financial-intelligence-api.mjs
+          node --check server/financial-audit-export.mjs
+          node --check server/scripts/verify-financial-audit-export.mjs
+          node --check server/ai-cost-metering.mjs
+          node --check server/ai-resource-economics.mjs
+          node --check server/media.mjs
+          node --check server/workflow-executor.mjs
+          node --check server/flutterwave-auth.mjs
+          node --check server/payment-intelligence.mjs
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible billing schema
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-bootstrap.sql
+      - name: Apply customer subscription self-service migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110220000_customer_subscription_self_service.sql
+      - name: Apply first subscription purchase migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110230000_subscription_purchase_checkout.sql
+      - name: Apply lifecycle expiry migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110240000_subscription_lifecycle_expiry.sql
+      - name: Apply Batch 12 financial command centre migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111090000_financial_command_centre.sql
+      - name: Apply Batch 13 dispute evidence migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111100000_financial_dispute_evidence.sql
+      - name: Apply Creator Momentum loyalty migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111110000_creator_momentum_loyalty.sql
+      - name: Apply Creator Circle referrals migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111120000_creator_circle_referrals.sql
+      - name: Apply Customer Lifetime Intelligence migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111130000_customer_lifetime_intelligence.sql
+      - name: Apply Subscription Growth Engine migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111140000_subscription_growth_engine.sql
+      - name: Apply Predictive Revenue Intelligence migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111150000_predictive_revenue_intelligence.sql
+      - name: Apply Revenue Retention & Acquisition Economics migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111160000_revenue_retention_acquisition_economics.sql
+      - name: Apply Financial Profitability & Unit Economics migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111170000_financial_profitability_unit_economics.sql
+      - name: Apply AI Cost Intelligence Batch 21 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111180000_ai_cost_intelligence_batch_21.sql
+      - name: Apply Automated Provider Metering Batch 22 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111190000_automated_provider_metering_reconciliation_batch_22.sql
+      - name: Apply Render Economics & Model Routing Shadow Batch 23 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111200000_render_economics_model_routing_shadow_batch_23.sql
+      - name: Apply Unified Profitability & Margin Protection Batch 24 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111210000_unified_profitability_margin_protection_batch_24.sql
+      - name: Apply Verified Cost Reconciliation & Profitability Trends Batch 25 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111220000_verified_cost_reconciliation_profitability_trends_batch_25.sql
+      - name: Apply Measured Shared-Cost Allocation Batch 26 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_measured_shared_cost_allocation_batch_26.sql
+      - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
+      - name: Verify resource economics and shadow model routing
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/ai-resource-economics-postgres-integration.sql
+      - name: Verify Batch 25 invoice-to-ledger reconciliation and profitability trends
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-cost-reconciliation-postgres-integration.sql
+      - name: Verify Batch 26 measured shared-cost allocation and fully loaded profitability
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/measured-shared-cost-allocation-postgres-integration.sql
+      - name: Apply Batch 30 persistent financial audit ledger migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112090000_persistent_financial_audit_ledger_batch_30.sql
+      - name: Verify Batch 30 append-only financial audit ledger
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/persistent-financial-audit-ledger-postgres-integration.sql
+      - name: Apply Batch 32 persistent financial close approval engine
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112120000_persistent_financial_close_approval_engine_batch_32.sql
+      - name: Apply Batch 33 reconciliation-backed close gates
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112150000_reconciliation_backed_close_gates_batch_33.sql
+      - name: Verify Batch 32 atomic financial close and approval workflow
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/persistent-financial-close-approval-postgres-integration.sql
+      - name: Apply Batch 35 persistent provider rate cards
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112160000_persistent_provider_rate_cards_batch_35.sql
+      - name: Apply Batch 36 live workload telemetry
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113100000_live_workload_telemetry_batch_36.sql
+      - name: Apply Batch 37 subscription customer economics
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113110000_subscription_customer_economics_batch_37.sql
+      - name: Verify Batch 37 subscription customer economics and evidence boundaries
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-customer-economics-postgres-integration.sql
+      - name: Apply Batch 39 revenue movement and cohort intelligence
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113120000_revenue_movement_cohort_intelligence_batch_39.sql
+      - name: Verify Batch 39 revenue movement and observed cohort curves
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/revenue-movement-cohorts-postgres-integration.sql
+      - name: Apply Batch 40 cashflow and liquidity forecasting
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261114100000_cashflow_liquidity_forecasting_batch_40.sql
+      - name: Verify Batch 40 cashflow scenarios and liquidity shortfall
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cashflow-liquidity-postgres-integration-batch-40.sql
+      - name: Apply Batch 41 cashflow actual reconciliation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115100000_cashflow_actual_reconciliation_batch_41.sql
+      - name: Verify Batch 41 actual settlements and forecast variances
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cashflow-actual-reconciliation-postgres-integration-batch-41.sql
+      - name: Apply Batch 42 liquidity guardrails
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115120000_liquidity_guardrails_batch_42.sql
+      - name: Verify Batch 42 minimum cash floors and reserve targets
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-guardrails-postgres-integration-batch-42.sql
+      - name: Apply Batch 43 liquidity alerts and action tracking
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116120000_liquidity_alerts_action_tracking_batch_43.sql
+      - name: Verify Batch 43 early-warning alerts and immutable action history
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-alerts-action-tracking-postgres-integration-batch-43.sql
+      - name: Apply Batch 44 treasury stress and contingency planning
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261117100000_treasury_stress_and_contingency_planning_batch_44.sql
+      - name: Verify Batch 44 treasury stress and contingency evidence
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/treasury-stress-contingency-postgres-integration-batch-44.sql
+      - name: Test Batch 44 treasury stress and contingency APIs
+        run: node --test server/tests/cashflow-liquidity-batch-40.test.mjs
+      - name: Apply Batch 45 customer lifetime and acquisition economics
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261118100000_customer_lifetime_acquisition_economics_batch_45.sql
+      - name: Verify Batch 45 customer lifetime, campaign CAC and payback
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-lifetime-acquisition-economics-postgres-integration-batch-45.sql
+      - name: Apply Batch 46 immutable financial scenario snapshots
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261119100000_financial_scenario_snapshots_batch_46.sql
+      - name: Verify Batch 46 scenario snapshot idempotency and immutability
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/financial-scenario-snapshots-postgres-integration-batch-46.sql
+      - name: Test Batch 45 customer lifetime API and Financial Command Centre UI
+        run: node --test server/tests/customer-lifetime-acquisition-economics.test.mjs
+      - name: Test Batch 46 scenario calculations, protected API and saved evidence UI
+        run: node --test server/tests/financial-scenario-intelligence.test.mjs server/tests/financial-scenario-api.test.mjs
+      - name: Test Batch 47 executive brief, source coverage, export and print workflow
+        run: node --test server/tests/financial-executive-intelligence-batch-47.test.mjs
+      - name: Test Batch 48 financial governance rules, control coverage and escalation
+        run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
+      - name: Run financial API tests
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 39 revenue movement and cohort API
+        run: node --test server/tests/revenue-movement-cohorts.test.mjs
+      - name: Test Batch 40 cashflow and liquidity API
+        run: node --test server/tests/cashflow-liquidity-batch-40.test.mjs
