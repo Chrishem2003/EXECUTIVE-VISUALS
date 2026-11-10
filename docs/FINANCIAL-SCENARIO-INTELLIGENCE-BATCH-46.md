@@ -10,11 +10,11 @@ Batch 46 adds a deterministic monthly scenario calculation engine and connects i
 - Variable costs use the observed baseline variable-cost ratio and an explicit scenario adjustment.
 - Fixed costs compound using the supplied fixed-cost growth assumption.
 - Net cash flow separates cash collection, variable costs, fixed costs and capex.
-- Discounted operating contribution, ending cash, minimum closing cash and months-to-positive-cash are returned by month.
+- Discounted net cash flow (cash collections less variable costs, fixed costs and capex), ending cash, minimum closing cash and months-to-positive-cash are returned by month.
 - Break-even revenue is calculated from contribution margin and explicitly unavailable when contribution margin is non-positive.
 - Downside/base/upside cases use clearly labelled illustrative shocks.
 - One-factor sensitivity covers revenue growth, variable-cost rate, fixed-cost growth and churn.
-- Decision comparisons use explicitly supplied success probabilities and one-time investments.
+- Decision comparisons use explicitly supplied success probabilities and one-time investments against discounted net cash flow (NPV), not revenue or contribution margin alone.
 
 ### Protected API and persistence
 
