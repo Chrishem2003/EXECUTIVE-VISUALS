@@ -16,7 +16,7 @@ type Character={id:string;name:string;description:string;voice:string;consent:{k
 type Asset={id:string;name:string;type:string;size:number};
 type Task={id:string;name:string;category:string;status:"planned"|"needs-engine";created:string;detail:string};
 type Project={id:string;name:string;brief:string;audience:string;style:string;created:string;creativeDNA?:CreativeIntentPlan;storyboard?:CreativeStoryboard};
-type CloudCreativeProduction={version?:number;project?:Project&{duration?:string};blueprint?:string;creativeDNA?:CreativeIntentPlan;seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string};
+type CloudCreativeProduction={version?:number;project?:Project&{duration?:string};blueprint?:string;creativeDNA?:CreativeIntentPlan;storyboard?:CreativeStoryboard|null;seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string};
 type BrandKit={name:string;tagline:string;voice:string;visualStyle:string;colors:{primary:string;secondary:string;accent:string;background:string;text:string};typography:{heading:string;body:string};logoAssetIds:string[];prohibitedTerms:string[];legalFooter:string;updatedAt:string};
 type CampaignTemplate={id:string;name:string;channel:string;aspectRatio:string;width:number;height:number;maxDurationSeconds:number;safeArea:{top:number;right:number;bottom:number;left:number};subtitleSafeArea:boolean;enabled:boolean};
 type TransformationReadiness={status:"ready"|"blocked";canSubmit:boolean;gates:Array<{key:string;label:string;detail:string;ready:boolean}>;missing:Array<{key:string;label:string}>};
@@ -123,7 +123,7 @@ async function loadCloudWorkspace(){
   const savedProduction=selectedCloudProject?.settings?.creativeProduction;
   const savedBrief=savedProduction?.project;
   if(savedBrief?.id&&savedBrief.name&&savedBrief.brief&&savedProduction?.blueprint){
-   const restoredProject:Project={...savedBrief,creativeDNA:savedProduction.creativeDNA};
+   const restoredProject:Project={...savedBrief,creativeDNA:savedProduction.creativeDNA,storyboard:savedProduction.storyboard||undefined};
    state.projects=[restoredProject,...state.projects.filter(project=>project.id!==restoredProject.id)];
    state.activeProject=restoredProject.id;state.prompt=restoredProject.brief;state.plan=savedProduction.blueprint;
    state.cloudProjectLinks[restoredProject.id]={id:selectedCloudProject!.id,revision:selectedCloudProject!.revision};
@@ -684,7 +684,7 @@ async function publishBriefToCloud(){
  try{
   const duration=state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
   const existingSettings=state.cloudProjects.find(item=>item.id===state.cloudProjectLinks[project.id]?.id)?.settings||{};
-  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:3,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
+  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:3,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,storyboard:project.storyboard||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
   const link=state.cloudProjectLinks[project.id];
   let saved:{id:string;name:string;revision:number};
   if(link){
