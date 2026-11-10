@@ -92,3 +92,27 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
     activeImages: active.filter(item => item.trackKind === "overlay"),
   };
 }
+
+export interface TimelinePreviewAssetRef {
+  id:string;
+  mediaType:string;
+  derivativeOf?:string|null;
+}
+
+/** Prefer a source-linked video proxy only when it is present in the caller's authorized asset set. */
+export function selectTimelinePreviewAsset<T extends TimelinePreviewAssetRef>(
+  clip:Pick<TimelineClip,"metadata">,
+  source:T,
+  authorizedAssets:readonly T[],
+):T {
+  const proxyId=typeof clip.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
+  if(!proxyId)return source;
+  const proxy=authorizedAssets.find(asset=>asset.id===proxyId&&asset.mediaType.startsWith("video/")&&asset.derivativeOf===source.id);
+  return proxy||source;
+}
+
+/** Signed preview URLs must be renewed before their storage token expires. */
+export function isTimelinePreviewUrlFresh(expiresAtMs:number,nowMs=Date.now(),minimumValidityMs=30_000):boolean {
+  return Number.isFinite(expiresAtMs)&&Number.isFinite(nowMs)&&Number.isFinite(minimumValidityMs)&&
+    minimumValidityMs>=0&&expiresAtMs>nowMs+minimumValidityMs;
+}
