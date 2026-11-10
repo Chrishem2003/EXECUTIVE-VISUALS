@@ -31,6 +31,7 @@ create index if not exists financial_liquidity_alert_observations_latest_idx
 
 create table if not exists executive_visuals.financial_liquidity_alert_events(
  id uuid primary key default gen_random_uuid(),
+ event_order bigserial not null unique,
  alert_id uuid not null references executive_visuals.financial_liquidity_alerts(id) on delete restrict,
  actor_id uuid not null references auth.users(id) on delete restrict,
  event_type text not null check(event_type in('opened','evidence_refreshed','acknowledged','action_assigned','in_progress','resolved','reopened','false_positive')),
@@ -194,7 +195,7 @@ begin
  end if;
  select event_type into v_current from financial_liquidity_alert_events where alert_id=v_alert_id
   and event_type not in('opened','evidence_refreshed')
-  order by created_at desc,id desc limit 1;
+  order by event_order desc limit 1;
  if v_current is null then v_current:='opened'; end if;
  if (v_type='acknowledged' and v_current not in('opened','evidence_refreshed')) or
   (v_type='action_assigned' and v_current not in('opened','evidence_refreshed','acknowledged','action_assigned')) or
@@ -228,14 +229,16 @@ begin
  with alert_rows as(
   select a.id,a.alert_key,a.alert_type,a.severity,a.currency,a.scenario,a.policy_effective_from,a.title,a.created_at,
    o.forecast_date,o.threshold_minor,o.observed_minor,o.gap_minor,o.evidence,o.observed_at,
-   e.event_type current_event,e.assigned_to,e.due_date,e.note latest_note,e.created_at latest_event_at,
+   e.event_type current_event,assignment.assigned_to,assignment.due_date,e.note latest_note,e.created_at latest_event_at,
    coalesce((select jsonb_agg(jsonb_build_object('eventType',h.event_type,'assignedTo',h.assigned_to,'dueDate',h.due_date,
-    'note',h.note,'createdAt',h.created_at) order by h.created_at,h.id)
+    'note',h.note,'createdAt',h.created_at) order by h.event_order)
     from financial_liquidity_alert_events h where h.alert_id=a.id),'[]'::jsonb) history
   from financial_liquidity_alerts a
   left join lateral(select * from financial_liquidity_alert_observations x where x.alert_id=a.id order by x.observed_at desc,x.id desc limit 1)o on true
   left join lateral(select * from financial_liquidity_alert_events x where x.alert_id=a.id
-   and x.event_type not in('opened','evidence_refreshed') order by x.created_at desc,x.id desc limit 1)e on true
+   and x.event_type not in('opened','evidence_refreshed') order by x.event_order desc limit 1)e on true
+  left join lateral(select x.assigned_to,x.due_date from financial_liquidity_alert_events x where x.alert_id=a.id
+   and (x.assigned_to is not null or x.due_date is not null) order by x.event_order desc limit 1)assignment on true
  )
  select jsonb_build_object('generatedAt',now(),'alerts',coalesce(jsonb_agg(jsonb_build_object(
   'id',r.id,'alertType',r.alert_type,'severity',r.severity,'currency',r.currency,'scenario',r.scenario,
