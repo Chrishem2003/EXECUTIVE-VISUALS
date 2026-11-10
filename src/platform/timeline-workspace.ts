@@ -18,8 +18,8 @@ type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
 type TimelineRevisionSummary={timelineId:string;revision:number;name:string;createdAt:string};
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
 };
 const history:{timelineId:string;undo:EditorialTimeline[];redo:EditorialTimeline[]}={timelineId:"",undo:[],redo:[]};
 function recordUndo(){if(!state.timeline)return;if(history.timelineId!==state.timeline.id){history.timelineId=state.timeline.id;history.undo=[];history.redo=[];}history.undo.push(structuredClone(state.timeline));if(history.undo.length>50)history.undo.shift();history.redo=[];}
@@ -82,7 +82,7 @@ function updatePreviewDiagnostics(){
 function releaseTimelinePreview(){
  stopTimelinePlayback();
  for(const url of Object.values(state.previewAssetUrls))if(url.startsWith("blob:"))URL.revokeObjectURL(url);
- state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
+ state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewRefreshAttemptedAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
 }
 async function signedCloudPreviewUrl(asset:Asset):Promise<string>{
  const signed=await apiRequest<{asset:Asset;url:string;expiresIn:number}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
@@ -223,7 +223,7 @@ function timelinePlaybackPanel(){
  const elements=state.previewLoaded?state.timeline.tracks.flatMap((track,trackIndex)=>track.enabled&&track.kind!=="caption"?track.clips.filter(clip=>clip.enabled).map(clip=>{
   const source=state.assets.find(item=>item.id===clip.assetId),asset=source?previewAssetForClip(clip,source):undefined,src=asset?state.previewAssetUrls[asset.id]:"";
   if(!asset||!src||track.kind==="overlay"&&!asset.mediaType.startsWith("image/"))return "";
-  const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-proxy="'+(source&&asset.id!==source.id?'true':'false')+'" data-preview-track-index="'+trackIndex+'"';
+  const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-proxy="'+(source&&asset.id!==source.id?'true':'false')+'" data-preview-asset="'+esc(asset.id)+'" data-preview-track-index="'+trackIndex+'"';
   if(asset.mediaType.startsWith("audio/")||track.kind==="audio")return '<audio '+base+' preload="metadata" src="'+esc(src)+'"></audio>';
   if(asset.mediaType.startsWith("image/")){
    const metadata=clip.metadata||{},x=track.kind==="overlay"?Number(metadata.x)||0:0,y=track.kind==="overlay"?Number(metadata.y)||0:0,w=track.kind==="overlay"?Number(metadata.width)||state.timeline!.width:state.timeline!.width,h=track.kind==="overlay"?Number(metadata.height)||state.timeline!.height:state.timeline!.height,opacity=track.kind==="overlay"?Math.max(0,Math.min(1,Number(metadata.opacity??1))):1;
@@ -608,20 +608,27 @@ document.addEventListener("waiting",event=>{
 },true);
 document.addEventListener("error",event=>{
  if(!isTimelinePreviewMediaEvent(event))return;
- const media=event.target as HTMLMediaElement;
+ const media=event.target as HTMLMediaElement,assetId=media.dataset.previewAsset||"";
  state.previewDiagnostics.errors++;
- if(media.dataset.previewProxy==="true"){
-  const clipId=media.dataset.previewClip||"";
-  const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
-  const source=clip?state.assets.find(asset=>asset.id===clip.assetId):undefined;
-  const proxy=clip&&source?selectTimelinePreviewAsset(clip,source,state.assets):undefined;
-  if(source&&proxy&&proxy.id!==source.id&&!state.previewUnavailableAssetIds.includes(proxy.id)){
-   state.previewUnavailableAssetIds.push(proxy.id);state.previewDiagnostics.proxyFallbacks++;
-   void previewUrlForAsset(source).then(url=>{state.previewAssetUrls[source.id]=url;paint();}).catch(()=>{state.message="Both the linked proxy and original source could not be loaded. Check private asset access.";paint();});
-  }
+ const failedAsset=state.assets.find(asset=>asset.id===assetId);
+ if(state.mode==="cloud"&&failedAsset&&!state.previewRefreshAttemptedAssetIds.includes(assetId)){
+  state.previewRefreshAttemptedAssetIds.push(assetId);
+  delete state.previewAssetUrls[assetId];delete state.previewAssetUrlExpiresAt[assetId];
+  void previewUrlForAsset(failedAsset).then(()=>paint()).catch(()=>fallbackToOriginalPreview(media));
+  updatePreviewDiagnostics();return;
  }
+ fallbackToOriginalPreview(media);
  updatePreviewDiagnostics();
 },true);
+function fallbackToOriginalPreview(media:HTMLMediaElement){
+ if(media.dataset.previewProxy!=="true"){state.message="The original source preview could not be loaded after one signed-URL refresh. Check private asset access and media availability.";paint();return;}
+ const clipId=media.dataset.previewClip||"",clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
+ const source=clip?state.assets.find(asset=>asset.id===clip.assetId):undefined;
+ const proxy=clip&&source?selectTimelinePreviewAsset(clip,source,state.assets):undefined;
+ if(!source||!proxy||proxy.id===source.id||state.previewUnavailableAssetIds.includes(proxy.id))return;
+ state.previewUnavailableAssetIds.push(proxy.id);state.previewDiagnostics.proxyFallbacks++;
+ void previewUrlForAsset(source).then(()=>{state.message="Editing proxy unavailable; playback has fallen back to the original private source.";paint();}).catch(()=>{state.message="Both the linked proxy and original source could not be loaded. Check private asset access.";paint();});
+}
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="tl-preview-seek"&&state.timeline&&state.previewLoaded){
