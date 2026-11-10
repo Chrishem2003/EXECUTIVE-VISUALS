@@ -398,7 +398,7 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
-      if(financialApi && (path.startsWith("/api/billing/")||path.startsWith("/api/admin/finance/"))){
+      if(financialApi && (path.startsWith("/api/billing/")||path.startsWith("/api/admin/billing/")||path.startsWith("/api/admin/subscriptions/")||path.startsWith("/api/admin/finance/"))){
         const financialBody=req.method==="POST"?await readJson(req,64*1024):{};
         const financialResult=await financialApi.handle({method:req.method,path,ownerId:user.id,body:financialBody,query:Object.fromEntries(url.searchParams.entries()),idempotencyKey:String(req.headers["idempotency-key"]||"")});
         if(financialResult){send(res,financialResult.status,financialResult.body,cors);return;}
