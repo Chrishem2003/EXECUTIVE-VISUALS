@@ -171,6 +171,8 @@ begin
     'currency',c.currency,'grossRevenueMinor',c.gross_minor,'providerFeesMinor',c.fees_minor,
     'refundsMinor',c.refunds_minor,'netRevenueMinor',c.gross_minor-c.refunds_minor,
     'successfulPayments',c.successful_count,'failedPayments',c.failed_count,
+    'paymentSuccessRatePct',case when c.successful_count+c.failed_count=0 then 0 else round(100.0*c.successful_count/(c.successful_count+c.failed_count),2) end,
+    'refundRatePct',case when c.gross_minor=0 then 0 else round(100.0*c.refunds_minor/c.gross_minor,2) end,
     'mrrMinor',coalesce(m.mrr_minor,0),'arrMinor',coalesce(m.mrr_minor,0)*12,
     'paidSubscribers',coalesce(m.paid_subscribers,0)
   )) from currency_rows c left join mrr_rows m using(currency)),'[]'::jsonb),
@@ -198,7 +200,10 @@ begin
     'openAttempts',(select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted') and created_at between p_from and p_to),
     'scheduledRetries',(select count(*) from payment_attempts where status='retry_scheduled' and created_at between p_from and p_to),
     'exhausted',(select count(*) from payment_attempts where status='exhausted' and created_at between p_from and p_to),
-    'recovered',(select count(*) from payment_attempts where status='succeeded' and updated_at between p_from and p_to)
+    'recovered',(select count(*) from payment_attempts where status='succeeded' and updated_at between p_from and p_to),
+    'recoveryRatePct',case when (select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted','succeeded') and created_at between p_from and p_to)=0 then 0
+      else round(100.0*(select count(*) from payment_attempts where status='succeeded' and updated_at between p_from and p_to)/
+       (select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted','succeeded') and created_at between p_from and p_to),2) end
   ),
   'refunds',jsonb_build_object('pending',(select count(*) from payment_refunds where status in ('requested','processing')),
    'succeeded',(select count(*) from payment_refunds where status='succeeded' and completed_at between p_from and p_to)),
