@@ -5,7 +5,8 @@ insert into auth.users(id) values
  ('22222222-2222-4222-8222-222222222222'),
  ('33333333-3333-4333-8333-333333333333'),
  ('44444444-4444-4444-8444-444444444444'),
- ('55555555-5555-4555-8555-555555555555')
+ ('55555555-5555-4555-8555-555555555555'),
+ ('77777777-7777-4777-8777-777777777777')
 on conflict(id) do nothing;
 
 create or replace function pg_temp.canonical_financial_json(p_value jsonb)
@@ -62,7 +63,7 @@ end $$;
 set role service_role;
 do $batch32$
 declare
- v_owner constant uuid:='11111111-1111-4111-8111-111111111111';
+ v_owner constant uuid:='77777777-7777-4777-8777-777777777777';
  v_creator constant uuid:='22222222-2222-4222-8222-222222222222';
  v_reviewer1 constant uuid:='33333333-3333-4333-8333-333333333333';
  v_reviewer2 constant uuid:='44444444-4444-4444-8444-444444444444';
