@@ -7,6 +7,7 @@ import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
+import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
@@ -1084,6 +1085,18 @@ export function createFinancialIntelligenceApi({
           return response(200,{reconciliation});
         }catch(err){
           return error(400,err.code||"FINANCIAL_RECON_INPUT_INVALID",err.message||"Financial reconciliation preview could not be calculated.");
+        }
+      }
+      if(path==="/api/admin/finance/workload-variance"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const variance=analyzeWorkloadCostVariance({
+            estimate:body.estimate,actuals:body.actuals,
+            acceptedOutputs:body.acceptedOutputs,rejectedOutputs:body.rejectedOutputs
+          });
+          return response(200,{variance});
+        }catch(err){
+          return error(400,err.code||"WORKLOAD_VARIANCE_INVALID",err.message||"Workload cost variance could not be calculated.");
         }
       }
       if(path==="/api/admin/finance/workload-estimates"&&method==="POST"){
