@@ -146,3 +146,20 @@ test("liquidity guardrails returns policy and scenario headroom",async()=>{
  const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-guardrails",ownerId:owner});
  assert.equal(result.status,200);assert.deepEqual(result.body.guardrails,payload);
 });
+
+test("liquidity policy rejects malformed effective dates",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-policies",ownerId:owner,body:{
+  currency:"UGX",minimumCashFloorMinor:0,reserveTargetMinor:100000,effectiveFrom:"not-a-date",
+  sourceReference:"board-policy-02",rationale:"Minimum liquidity policy",idempotencyKey:"liquidity-policy-02"
+ }});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
+
+test("liquidity guardrails returns forbidden for non-admin users",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"support_agent"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-guardrails",ownerId:owner});
+ assert.equal(result.status,403);assert.equal(rpcCalled,false);
+});
