@@ -202,6 +202,19 @@ begin
   'chargebacks',jsonb_build_object('open',(select count(*) from chargeback_cases where status in ('open','under_review')),
    'exposure',coalesce((select jsonb_agg(jsonb_build_object('currency',currency,'amountMinor',sum_minor)) from
     (select currency,sum(amount_minor) sum_minor from chargeback_cases where status in ('open','under_review') group by currency) x),'[]'::jsonb)),
+  'refundQueue',coalesce((select jsonb_agg(jsonb_build_object(
+   'id',r.id,'ownerId',r.owner_id,'paymentTransactionId',r.payment_transaction_id,
+   'amountMinor',r.amount_minor,'currency',r.currency,'status',r.status,'reason',r.reason,'requestedAt',r.requested_at
+  )) from (select * from payment_refunds where status in ('requested','processing') order by requested_at asc limit p_limit) r),'[]'::jsonb),
+  'chargebackCases',coalesce((select jsonb_agg(jsonb_build_object(
+   'id',cb.id,'ownerId',cb.owner_id,'providerCaseId',cb.provider_case_id,'amountMinor',cb.amount_minor,
+   'currency',cb.currency,'status',cb.status,'stage',cb.stage,'responseDueAt',cb.response_due_at
+  )) from (select * from chargeback_cases where status in ('open','under_review','lost') order by response_due_at asc nulls last limit p_limit) cb),'[]'::jsonb),
+  'failedPaymentQueue',coalesce((select jsonb_agg(jsonb_build_object(
+   'id',a.id,'ownerId',a.owner_id,'paymentTransactionId',a.payment_transaction_id,
+   'amountMinor',a.amount_minor,'currency',a.currency,'status',a.status,'failureCode',a.failure_code,
+   'attemptNumber',a.attempt_number,'nextRetryAt',a.next_retry_at,'createdAt',a.created_at
+  )) from (select * from payment_attempts where status in ('failed','retry_scheduled','exhausted') order by created_at desc limit p_limit) a),'[]'::jsonb),
   'settlementExceptions',(select count(*) from financial_reconciliation_exceptions where status='open'),
   'dataQuality',jsonb_build_object('mrrIsRunRateNotCash','true','clvIsRealizedHistoricalValue','true','currenciesAreNeverAggregated','true')
  ) into result;
