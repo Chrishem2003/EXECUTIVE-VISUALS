@@ -114,7 +114,7 @@ create or replace function executive_visuals.add_ai_resource_rate_card(
 ) returns jsonb language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 as $$
-declare v_id uuid;
+declare v_id uuid;v_duplicate boolean:=false;
 begin
  if p_actor_id is null or not exists(select 1 from platform_admins where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Financial administrator access required' using errcode='42501';
@@ -142,13 +142,13 @@ begin
   select id into v_id from ai_resource_rate_catalog
   where provider=lower(p_provider) and resource_type=p_resource_type and unit=p_unit
    and currency=p_currency and effective_from=p_effective_from;
+  v_duplicate:=true;
  end if;
  perform write_financial_admin_audit(p_actor_id,'finance.resource_rate.created','ai_resource_rate_catalog',
   v_id::text,'Added effective-dated resource cost rate',p_source_reference,
   jsonb_build_object('provider',lower(p_provider),'resourceType',p_resource_type,'unit',p_unit,
    'currency',p_currency,'rateMinorPerUnit',p_rate_minor_per_unit,'effectiveFrom',p_effective_from));
- return jsonb_build_object('rateCardId',v_id,'duplicate',not exists(
-  select 1 from ai_resource_rate_catalog where id=v_id and created_at>=now()-interval '2 seconds'));
+ return jsonb_build_object('rateCardId',v_id,'duplicate',v_duplicate);
 end $$;
 
 create or replace function executive_visuals.record_ai_resource_usage_event(
@@ -183,7 +183,11 @@ begin
  select * into v_existing from ai_resource_cost_events where idempotency_key=p_idempotency_key;
  if found then
   if v_existing.operation_id<>p_operation_id or v_existing.resource_type<>p_resource_type
-   or v_existing.quantity<>p_quantity or v_existing.provider<>p_provider then
+   or v_existing.quantity<>p_quantity or v_existing.provider<>lower(p_provider)
+   or v_existing.model<>p_model or v_existing.unit<>p_unit
+   or v_existing.owner_id is distinct from p_owner_id
+   or v_existing.project_id is distinct from p_project_id
+   or v_existing.job_id is distinct from p_job_id then
    raise exception 'Resource usage idempotency key conflicts with an existing event' using errcode='23505';
   end if;
   return jsonb_build_object('id',v_existing.id,'costBasis',v_existing.cost_basis,
@@ -287,7 +291,10 @@ begin
  end if;
  select * into v_existing from ai_model_performance_events where idempotency_key=p_idempotency_key;
  if found then
-  if v_existing.usage_event_id<>p_usage_event_id then raise exception 'Model performance idempotency key conflict' using errcode='23505';end if;
+  if v_existing.usage_event_id<>p_usage_event_id or v_existing.latency_ms<>p_latency_ms
+   or v_existing.quality_score<>p_quality_score or v_existing.quality_source<>p_quality_source
+   or v_existing.evaluation_version<>p_evaluation_version then
+   raise exception 'Model performance idempotency key conflict' using errcode='23505';end if;
   return jsonb_build_object('id',v_existing.id,'idempotentReplay',true);
  end if;
  insert into ai_model_performance_events(usage_event_id,provider,model,operation,latency_ms,
@@ -324,6 +331,11 @@ begin
  end if;
  select * into v_existing from ai_model_route_shadow_decisions where idempotency_key=p_idempotency_key;
  if found then
+  if v_existing.operation<>p_operation or v_existing.currency<>p_currency
+   or v_existing.max_cost_minor<>p_max_cost_minor or v_existing.max_latency_ms<>p_max_latency_ms
+   or v_existing.min_quality_score<>p_min_quality_score then
+   raise exception 'Shadow route idempotency key conflicts with existing constraints' using errcode='23505';
+  end if;
   return jsonb_build_object('decisionId',v_existing.id,'decisionStatus',v_existing.decision_status,
    'recommendedProvider',v_existing.recommended_provider,'recommendedModel',v_existing.recommended_model,
    'candidates',v_existing.candidate_evidence,'decisionMode','shadow_only',
