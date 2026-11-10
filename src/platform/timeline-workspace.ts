@@ -469,7 +469,7 @@ async function runAction(action:HTMLElement){
   const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===action.dataset.clip);
   const proxyId=typeof clip?.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
   if(!proxyId){state.message="Generate a proxy before previewing this clip.";paint();return;}
-  try{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded.";}
+  try{if(state.mode==="cloud"){const asset=state.assets.find(item=>item.id===proxyId);if(!asset)throw new Error("The private proxy asset is not available in this project.");await previewUrlForAsset(asset);}else{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);}state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded."; }
   paint();return;
  }
  if(type==="generate-proxy"||type==="generate-frame-preview"){
