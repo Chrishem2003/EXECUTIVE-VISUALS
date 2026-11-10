@@ -389,3 +389,8 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - Verified each successful renewal grants the effective plan's included credits for that paid period; webhook replay does not duplicate the credit grant.
 - The disposable PostgreSQL CI harness applies the three Batch 11 migrations and executes reservation idempotency, pending-payment mutation lockout, initial activation, scheduled plan change, renewal settlement, credit grants, scheduled cancellation expiry and failed initial checkout release.
 - The latest full billing quality workflow passed: application TypeScript typecheck, server syntax checks, all three SQL migrations against PostgreSQL 16, end-to-end SQL integration assertions, and 39/39 financial API tests.
+
+
+### Flutterwave Uganda V4 acceptance gate
+
+Flutterwave's current help material lists Uganda UGX mobile money with MTN and Airtel, while the V4 mobile-money guide documents the general V4 customer/payment-method/charge and verification flow. The Uganda-specific developer guide currently illustrates the legacy V3 Uganda charge endpoint. Therefore the V4 request adapter is implemented but **Uganda-specific V4 merchant acceptance is not yet proven**. Do not enable live billing until the merchant's approved sandbox account confirms the V4 orchestration direct-charge flow for UGX + country code 256 + MTN/Airtel. Do not silently fall back to V3; any API-version change requires an explicit product/security decision.
