@@ -26,7 +26,7 @@ export function createControlRemediationApi({db}={}){
   return found;
  }
  function actionFor(ownerId,id){
-  return db.prepare("SELECT * FROM control_remediation_actions WHERE id=? AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(id,ownerId,ownerId);
+  return db.prepare("SELECT * FROM control_remediation_actions WHERE id=? AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?))").get(id,ownerId,ownerId,ownerId);
  }
  function hydrate(row){
   return {...safeAction(row),evidence:db.prepare("SELECT id,label,evidence_uri AS uri,sha256,kind,captured_at AS capturedAt,submitted_by AS submittedBy,created_at AS createdAt FROM control_remediation_evidence WHERE action_id=? ORDER BY created_at,id").all(row.id),
