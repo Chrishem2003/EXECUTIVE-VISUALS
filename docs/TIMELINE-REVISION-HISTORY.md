@@ -33,3 +33,8 @@ Cloud timeline revision history stores immutable snapshots of each timeline revi
 ## Validation
 
 Run `npm run verify:timeline`, `npm run verify:cloud-queue`, and `npm run typecheck` before review. The migration itself remains unapplied until separately approved for staging.
+
+
+## Migration operations
+
+The additive migration is named `20261120100000_timeline_revision_history.sql` so it follows the currently committed migration sequence. It is not applied automatically; apply it only after reviewing the isolated Supabase project, RLS policies and backup/restore posture.
