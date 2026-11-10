@@ -66,8 +66,9 @@ begin
  into v_count,v_total
  from ai_provider_invoice_lines l where l.import_id=p_import_id;
  if v_count=0 or v_count<>v_import.imported_line_count or v_total<>v_import.total_minor
-  or v_import.reconciliation_status='variance' then
-  raise exception 'Invoice total or line evidence is incomplete; resolve invoice variance before posting' using errcode='22023';
+  or v_import.reconciliation_status='variance'
+  or exists(select 1 from ai_provider_invoice_lines l where l.import_id=p_import_id and l.amount_minor<=0) then
+  raise exception 'Invoice total or line evidence is incomplete or non-positive; resolve invoice variance before posting' using errcode='22023';
  end if;
  if (select count(*) from ai_provider_invoice_reconciliation_events r
      where r.invoice_import_id=p_import_id)<>v_count
