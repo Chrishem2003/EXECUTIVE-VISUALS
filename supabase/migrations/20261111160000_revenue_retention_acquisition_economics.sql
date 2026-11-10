@@ -153,8 +153,8 @@ begin
  end if;
  if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date
   or p_period_month>date_trunc('month',now())::date
-  or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}
-  or coalesce(p_currency,'') !~ '^[A-Z]{3}
+  or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
+  or coalesce(p_currency,'') !~ '^[A-Z]{3}$'
   or length(btrim(coalesce(p_description,''))) not between 3 and 500
   or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
   raise exception 'Invalid acquisition spend details' using errcode='22023';
@@ -191,7 +191,7 @@ begin
   where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
- if p_owner_id is null or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}
+ if p_owner_id is null or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
   or coalesce(p_source_type,'') not in('self_reported','referral','partner','paid_campaign','organic','other')
   or p_acquired_at is null or p_acquired_at>now() then
   raise exception 'Invalid customer acquisition attribution' using errcode='22023';
