@@ -413,6 +413,10 @@ begin
   from financial_shared_cost_allocation_batches b
   join financial_shared_cost_allocation_lines l on l.batch_id=b.id
   group by b.period_month,b.currency,l.owner_id
+ ), allocation_periods as(
+  select b.period_month,b.currency,sum(b.allocated_minor)::bigint allocated_shared_cost_minor
+  from financial_shared_cost_allocation_batches b
+  group by b.period_month,b.currency
  ), customer_rows as(
   select r.snapshot_month,r.currency,r.owner_id,r.mrr_minor,
    coalesce(d.direct_cost_minor,0)::bigint direct_cost_minor,
@@ -425,7 +429,7 @@ begin
  ), periods as(
   select c.snapshot_month,c.currency,count(*) filter(where c.mrr_minor>0)::integer paid_customers,
    sum(c.mrr_minor)::bigint mrr_minor,sum(c.direct_cost_minor)::bigint direct_cost_minor,
-   sum(c.allocated_shared_cost_minor)::bigint allocated_shared_cost_minor,
+   coalesce(ap.allocated_shared_cost_minor,0)::bigint allocated_shared_cost_minor,
    sum(c.contribution_minor)::bigint contribution_minor,
    sum(c.fully_loaded_contribution_minor)::bigint fully_loaded_contribution_minor,
    case when sum(c.mrr_minor)>0 then round((sum(c.contribution_minor)*100.0)/sum(c.mrr_minor),2) else null end gross_margin_pct,
@@ -433,10 +437,11 @@ begin
    count(*) filter(where c.contribution_minor<0)::integer negative_contribution_customers,
    count(*) filter(where c.fully_loaded_contribution_minor<0)::integer negative_fully_loaded_customers,
    coalesce(s.shared_cost_minor,0)::bigint shared_cost_minor,
-   (coalesce(s.shared_cost_minor,0)-coalesce(sum(c.allocated_shared_cost_minor),0))::bigint unallocated_shared_cost_minor
+   (coalesce(s.shared_cost_minor,0)-coalesce(ap.allocated_shared_cost_minor,0))::bigint unallocated_shared_cost_minor
   from customer_rows c left join shared_costs s
    on s.period_month=c.snapshot_month and s.currency=c.currency
-  group by c.snapshot_month,c.currency,s.shared_cost_minor
+  left join allocation_periods ap on ap.period_month=c.snapshot_month and ap.currency=c.currency
+  group by c.snapshot_month,c.currency,s.shared_cost_minor,ap.allocated_shared_cost_minor
  )
  select jsonb_build_object('generatedAt',now(),'months',p_months,
   'periods',coalesce((select jsonb_agg(jsonb_build_object(
@@ -456,6 +461,7 @@ begin
    'Shared-cost allocations use immutable, month-matched batches and are shown separately from directly attributable expense.',
    'Shared costs without an approved policy, sufficient measured driver coverage or supported driver remain unallocated.',
    'Allocation does not change original service-cost ledger events, customer invoices, provider routing or statutory accounting.',
+   'Period allocation totals include every allocated recipient; fully loaded customer margins are shown only for customers with a recorded revenue snapshot in that period and currency.',
    'Trends use captured subscription revenue snapshots; missing periods are not inferred or backfilled.',
    'Currency totals remain isolated. This report is management accounting, not statutory revenue recognition or an audited financial statement.'
   )
