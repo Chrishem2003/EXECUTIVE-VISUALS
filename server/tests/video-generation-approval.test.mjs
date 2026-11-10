@@ -2,13 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {buildVideoGenerationApproval} from "../video-generation-approval.mjs";
 const shots=[{id:"shot-1",prompt:"A sunrise",durationSeconds:5,provider:"runway",model:"seedance2_5"}];
-const preflight={status:"ready_for_approval",readyForApproval:true,requestsSubmitted:false,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:1.25,shots:[]}}};
+const preflight={status:"ready_for_approval",readyForApproval:true,requestsSubmitted:false,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:1.25,shots:[{shotId:"shot-1",currency:"USD",amount:1.25,pricing:{sourceUrl:"https://pricing.example/rates",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2027-01-01T00:00:00.000Z"}}]}}};
 test("creates a deterministic immutable approval snapshot under the budget ceiling",()=>{
  const result=buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:2},confirmed:true});
  assert.equal(result.status,"approved_pending_submission");
  assert.equal(result.requestsSubmitted,false);
  assert.equal(result.quotedAmountMicros,1250000);
- assert.equal(result.budgetCeilingMicros,2000000);
+ assert.equal(result.budgetCeilingMicros,2000000);\n const snapshot=JSON.parse(result.snapshotJson);assert.equal(snapshot.shots[0].estimatedCostMicros,1250000);assert.equal(snapshot.shots[0].estimatedCost.currency,"USD");
  assert.match(result.requestHash,/^[a-f0-9]{64}$/);
  assert.equal(result.requestHash,buildVideoGenerationApproval({shots:[{...shots[0]}],preflight,budget:{currency:"USD",amount:2},confirmed:true}).requestHash);
 });
@@ -24,7 +24,7 @@ test("rejects unverified pricing, currency mismatch and budget overrun",()=>{
 });
 test("rejects amounts that cannot be represented safely in integer micro-units",()=>{
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
- const hugeQuote={...preflight,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:Number.MAX_VALUE}}};
+ const hugeQuote={...preflight,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:Number.MAX_VALUE,shots:[{shotId:"shot-1",currency:"USD",amount:Number.MAX_VALUE,pricing:{}}]}}};
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight:hugeQuote,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
 });
 test("rejects oversized or empty approval plans",()=>{
