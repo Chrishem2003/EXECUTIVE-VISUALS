@@ -313,6 +313,19 @@ export function createFinancialIntelligenceApi({
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
       }
+      if(path==="/api/billing/referrals"&&method==="GET"){
+        const result=await rpc("customer_referral_summary",{p_owner_id:ownerId});
+        return response(200,{referrals:result||{code:null,referrals:[],rewardsEarned:0,offer:null}});
+      }
+      if(path==="/api/billing/referrals/attribute"&&method==="POST"){
+        const referralCode=String(body.referralCode||"").trim().toUpperCase();
+        if(!/^[A-Z0-9]{8,12}$/.test(referralCode))
+          return error(400,"REFERRAL_CODE_INVALID","Enter a valid 8–12 character creator referral code.");
+        const result=await rpc("attribute_customer_referral_code",{
+          p_referred_owner_id:ownerId,p_referral_code:referralCode
+        });
+        return response(200,{attribution:result});
+      }
       if(path==="/api/billing/loyalty"&&method==="GET"){
         const result=await rpc("customer_loyalty_summary",{p_owner_id:ownerId});
         return response(200,{loyalty:result||{rewards:[],events:[],creditBalance:0}});
