@@ -144,32 +144,39 @@ begin
   where as_of_date<(p_period_month+interval '1 month')::date
   order by currency,as_of_date desc,created_at desc
  ), revenue as(
-  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
-   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
-     order by e.owner_id) from (
-      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
-      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
-     ) e) evidence
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count
   from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
   group by s.currency
+ ), revenue_evidence as(
+  select currency,jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',owner_id,'currency',currency,'periodMonth',snapshot_month)
+    order by owner_id) evidence
+  from (
+   select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+   where snapshot_month=p_period_month order by owner_id limit 100
+  ) e group by currency
  ), costs as(
-  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
-   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
-     order by e.created_at desc) from (
-      select id,period_month,created_at from executive_visuals.financial_service_cost_events
-      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
-     ) e) evidence
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count
   from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
   group by c.currency
+ ), cost_evidence as(
+  select currency,jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',id,'periodMonth',period_month)
+    order by created_at desc) evidence
+  from (
+   select id,currency,period_month,created_at from executive_visuals.financial_service_cost_events
+   where period_month=p_period_month order by created_at desc limit 100
+  ) e group by currency
  ), baseline_rows as(
-  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+  select cur.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
    ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
    co.direct_service_cost_minor,co.event_count direct_cost_event_count,
    coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
     where ca.id is not null),'[]'::jsonb)
-   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
-  from currencies c left join cash ca on ca.currency=c.currency
-  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+   ||coalesce(re.evidence,'[]'::jsonb)||coalesce(ce.evidence,'[]'::jsonb) evidence_references
+  from currencies cur left join cash ca on ca.currency=cur.currency
+  left join revenue r on r.currency=cur.currency
+  left join revenue_evidence re on re.currency=cur.currency
+  left join costs co on co.currency=cur.currency
+  left join cost_evidence ce on ce.currency=cur.currency
  )
  select coalesce(jsonb_agg(jsonb_build_object(
   'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
