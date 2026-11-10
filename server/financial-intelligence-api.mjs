@@ -868,6 +868,43 @@ export function createFinancialIntelligenceApi({
           p_min_cost_minor:100,p_spike_multiplier:2,p_failed_ratio:0.25});
         return response(200,{anomalies:result||{spendAnomalies:[],unpricedUsage:[],invoiceExceptions:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/margin-policies"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const scopeType=String(body.scopeType||"");
+        const attributedOwner=body.ownerId==null||body.ownerId===""?null:String(body.ownerId);
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const margin=body.minGrossMarginPct==null||body.minGrossMarginPct===""?null:Number(body.minGrossMarginPct);
+        const contribution=body.minContributionMinor==null||body.minContributionMinor===""?null:Number(body.minContributionMinor);
+        const effectiveFrom=String(body.effectiveFrom||"");
+        const effectiveTo=body.effectiveTo==null||body.effectiveTo===""?null:String(body.effectiveTo);
+        const idempotency=String(body.idempotencyKey||"").trim();
+        const validDay=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        if(!["global","customer"].includes(scopeType)||(scopeType==="global"&&attributedOwner!==null)||
+          (scopeType==="customer"&&!UUID.test(attributedOwner||""))||!/^[A-Z]{3}$/.test(currency)||
+          (margin===null&&contribution===null)||(margin!==null&&(!Number.isFinite(margin)||margin<0||margin>100))||
+          (contribution!==null&&(!Number.isSafeInteger(contribution)||contribution<0))||
+          !validDay(effectiveFrom)||(effectiveTo!==null&&(!validDay(effectiveTo)||effectiveTo<=effectiveFrom))||
+          idempotency.length<8||idempotency.length>160)
+          return error(400,"FINANCIAL_MARGIN_POLICY_INVALID","Provide a valid scope, currency, at least one non-negative margin threshold, effective dates and idempotency key.");
+        const result=await rpc("add_financial_margin_policy",{p_actor_id:ownerId,p_scope_type:scopeType,
+          p_owner_id:attributedOwner,p_currency:currency,p_min_gross_margin_pct:margin,
+          p_min_contribution_minor:contribution,p_effective_from:effectiveFrom,
+          p_effective_to:effectiveTo,p_idempotency_key:idempotency});
+        return response(200,{policy:result});
+      }
+      if(path==="/api/admin/finance/margin-alerts/evaluate"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("evaluate_financial_margin_alerts",{p_actor_id:ownerId});
+        return response(200,{evaluation:result||{evaluatedCustomers:0,policiesApplied:0,alertsCreated:0,alerts:[]}});
+      }
+      if(path==="/api/admin/finance/margin-alerts"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=query.limit==null?50:Number(query.limit);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>200)
+          return error(400,"FINANCIAL_ALERT_LIMIT_INVALID","Alert limit must be an integer between 1 and 200.");
+        const result=await rpc("list_financial_margin_alerts",{p_actor_id:ownerId,p_limit:limit});
+        return response(200,{marginAlerts:result||{alerts:[],count:0}});
+      }
       if(path==="/api/admin/finance/profitability"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
