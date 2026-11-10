@@ -93,7 +93,7 @@ begin
       and (p.owner_id=p_owner_id or exists(
         select 1 from executive_visuals.project_members pm
         where pm.project_id=p.id and pm.member_id=p_owner_id
-          and pm.role in ('owner','editor')
+          and pm.role in ('editor')
       ))) then
     raise exception 'VIDEO_APPROVAL_PROJECT_SCOPE_INVALID';
   end if;
@@ -137,7 +137,7 @@ begin
       and (p.owner_id=p_owner_id or exists(
         select 1 from executive_visuals.project_members pm
         where pm.project_id=p.id and pm.member_id=p_owner_id
-          and pm.role in ('owner','editor')
+          and pm.role in ('editor')
       ))) then
     raise exception 'VIDEO_APPROVAL_PROJECT_SCOPE_INVALID';
   end if;
