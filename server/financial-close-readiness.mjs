@@ -38,9 +38,11 @@ export function assessFinancialCloseReadiness(input={}){
   const approvedAt=approval?.approvedAt==null?null:iso(approval.approvedAt,"task approval approvedAt");
   const decision=approval?.decision==null?null:text(approval.decision,"task approval decision",24).toLowerCase();
   const issues=[];
-  if(!reviewer)issues.push("independent_reviewer_missing");\n  if(status!=="waived"&&evidenceRefs.length===0)issues.push("missing_evidence");
+  if(!reviewer)issues.push("independent_reviewer_missing");
+  if(status!=="waived"&&evidenceRefs.length===0)issues.push("missing_evidence");
   if(reviewer&&reviewer===owner)issues.push("preparer_reviewer_conflict");
-  if(status==="completed"&&!completedAt)issues.push("completion_timestamp_missing");\n  if(status==="completed"&&!approval?.preparedBy)issues.push("preparer_attestation_missing");
+  if(status==="completed"&&!completedAt)issues.push("completion_timestamp_missing");
+  if(status==="completed"&&!approval?.preparedBy)issues.push("preparer_attestation_missing");
   if(approval?.preparedBy&&approval.preparedBy!==owner)issues.push("preparer_attestation_mismatch");
   if(approvedBy&&reviewer&&approvedBy!==reviewer)issues.push("reviewer_approval_mismatch");
   if(status==="completed"&&(!approvedBy||!approvedAt||decision!=="approved"))issues.push("independent_approval_missing");
@@ -62,7 +64,8 @@ export function assessFinancialCloseReadiness(input={}){
   const evidenceRefs=status==="not_applicable"?[]:refs(x.evidenceRefs,evidence,"Reconciliation "+id);
   const issues=[];
   if(status==="open"||status==="variance"||status==="rejected")issues.push("reconciliation_exception");
-  if(["matched","approved"].includes(status)&&!reviewedBy)issues.push("independent_review_missing");\n  if(status!=="not_applicable"&&evidenceRefs.length===0)issues.push("missing_evidence");
+  if(["matched","approved"].includes(status)&&!reviewedBy)issues.push("independent_review_missing");
+  if(status!=="not_applicable"&&evidenceRefs.length===0)issues.push("missing_evidence");
   if(preparedBy&&reviewedBy&&preparedBy===reviewedBy)issues.push("preparer_reviewer_conflict");
   if(status==="not_applicable"&&!text(x.reason,"not_applicable reason",500))issues.push("not_applicable_reason_missing");
   return {index,reconciliationId:id,status,currency,varianceMinor,preparedBy,reviewedBy,evidenceRefs,issues};
