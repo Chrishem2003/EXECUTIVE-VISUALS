@@ -399,7 +399,7 @@ function financeWorkspace(){
 async function loadFinanceWorkspace(){
  if(financeRefreshBusy)return;
  financeRefreshBusy=true;financeState.loading=true;financeState.error="";render();
- try{const [dashboard,disputes,customerSuccess,growth,forecast]=await Promise.all([apiRequest<FinanceDashboard>("/api/admin/finance/command-centre"),apiRequest<FinanceDashboard>("/api/admin/finance/disputes"),apiRequest<FinanceDashboard>("/api/admin/customer-success/overview"),apiRequest<FinanceDashboard>("/api/admin/customer-success/growth"),apiRequest<FinanceDashboard>("/api/admin/finance/predictive-overview")]);financeState.data=dashboard;financeState.disputes=disputes;financeState.customerSuccess=customerSuccess.overview||null;financeState.growth=growth.growth||null;financeState.forecast=forecast.forecast||null;}
+ try{const [dashboard,disputes,customerSuccess,growth,forecast]=await Promise.all([apiRequest<FinanceDashboard>("/api/admin/finance/command-centre"),apiRequest<FinanceDashboard>("/api/admin/finance/disputes"),apiRequest<FinanceDashboard>("/api/admin/customer-success/overview"),apiRequest<FinanceDashboard>("/api/admin/customer-success/growth"),apiRequest<FinanceDashboard>("/api/admin/finance/predictive-overview").catch(()=>({forecast:null}))]);financeState.data=dashboard;financeState.disputes=disputes;financeState.customerSuccess=customerSuccess.overview||null;financeState.growth=growth.growth||null;financeState.forecast=forecast.forecast||null;}
  catch(error){financeState.error=error instanceof Error?error.message:"Financial intelligence could not be loaded. Verify finance-admin access and staging readiness.";}
  finally{financeState.loading=false;financeRefreshBusy=false;if(state.tab==="finance")render();}
 }
