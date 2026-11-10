@@ -9,6 +9,7 @@ on:
       - feat/continuous-financial-close-batch-29
       - feat/persistent-audit-ledger-batch-30
       - feat/persistent-close-approval-engine-batch-32
+      - feat/reconciliation-backed-close-gates-batch-33
   pull_request:
 
 permissions:
