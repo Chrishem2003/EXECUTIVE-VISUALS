@@ -1,4 +1,5 @@
 name: Release integration gate
+# This gate is intended to validate the consolidated main-targeting release candidate.
 
 on:
   pull_request:
