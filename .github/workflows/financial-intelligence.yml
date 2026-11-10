@@ -3,6 +3,7 @@ name: Financial intelligence tests
 on:
   push:
     branches:
+      - ev-release-validation
       - feat/financial-intelligence-api-integration
       - feat/predictive-workload-economics-batch-27
       - feat/automated-financial-reconciliation-batch-28
