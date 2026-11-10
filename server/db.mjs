@@ -266,6 +266,8 @@ export function openDatabase(filename) {
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(owner_id,project_id,finding_id)
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS control_remediation_project_finding_unique ON control_remediation_actions(project_id,finding_id) WHERE project_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS control_remediation_personal_finding_unique ON control_remediation_actions(owner_id,finding_id) WHERE project_id IS NULL;
     CREATE INDEX IF NOT EXISTS control_remediation_owner_idx ON control_remediation_actions(owner_id,status,due_at);
     CREATE INDEX IF NOT EXISTS control_remediation_project_idx ON control_remediation_actions(project_id,status,due_at);
     CREATE TABLE IF NOT EXISTS control_remediation_evidence (
