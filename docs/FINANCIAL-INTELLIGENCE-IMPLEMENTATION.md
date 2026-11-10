@@ -355,3 +355,17 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - Automatic charges are explicitly disabled. A customer must actively retry mobile-money checkout.
 - Email notification payloads are queued with `emailDelivery=queued_pending_provider`; no email is claimed as sent until a transactional email provider is configured.
 - SQL migration `20261110210000_payment_recovery_and_grace_periods.sql` is staged for isolated Supabase testing only.
+
+
+## Batch 11 — customer subscription self-service
+
+- Added `GET /api/billing/subscription/events` with an ownership check before returning event history.
+- Added `POST /api/billing/subscription/manage` for cancellation at period end, immediate cancellation, resuming a scheduled cancellation, scheduling a plan change, and cancelling a scheduled plan change.
+- Added service-role-only `manage_customer_subscription` RPC. It locks the subscription row, verifies ownership and allowed state, records immutable lifecycle events, and never issues a refund or provider charge.
+- Plan changes are stored as a full server-side plan snapshot and take effect only after the next customer-initiated mobile-money renewal is verified.
+- Renewal checkout now prices against the scheduled plan snapshot. The renewal settlement RPC applies the scheduled plan, price, interval, credits and entitlements atomically only after provider verification.
+- A subscription scheduled for cancellation cannot start a new renewal charge. Customers may resume while the active period remains open.
+- Added a responsive Billing & Plan workspace showing subscription status, scheduled changes, plan choices, customer-authorized MTN/Airtel renewal checkout, transactions, invoice records and subscription events.
+- The UI does not collect payment PINs or store wallet credentials. No automatic debit, immediate refund, or unverified entitlement update is performed.
+- Migration `20261110220000_customer_subscription_self_service.sql` is staged for isolated Supabase verification only.
+- Invoice PDF download remains gated because a private invoice-document storage/signing route is not yet implemented; the UI explicitly identifies invoice records without claiming PDF availability.
