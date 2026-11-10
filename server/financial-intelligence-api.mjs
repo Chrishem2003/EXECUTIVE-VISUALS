@@ -952,7 +952,7 @@ export function createFinancialIntelligenceApi({
             p_owner_id:ownerId,p_actor_id:ownerId,p_idempotency_key:auditKey,
             p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
           });
-          return response(201,{duplicate:Boolean(result?.duplicate),event:{eventId:event.eventId,sequence:event.sequence,eventType:event.eventType,eventHash:event.eventHash,previousHash:event.previousHash}});
+          return response(result?.duplicate?200:201,{duplicate:Boolean(result?.duplicate),event:{eventId:result?.eventId||event.eventId,sequence:Number(result?.sequence||event.sequence),eventType:event.eventType,eventHash:result?.eventHash||event.eventHash,previousHash:event.previousHash}});
         }catch(err){
           const status=err.status||(String(err.code||"").startsWith("FINANCIAL_AUDIT_")?400:409);
           return error(status,err.code||"FINANCIAL_AUDIT_APPEND_FAILED",err.message||"Financial audit event could not be appended.");
