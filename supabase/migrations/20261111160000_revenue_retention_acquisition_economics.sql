@@ -90,7 +90,7 @@ begin
  if v_month<>date_trunc('month',now())::date then
   raise exception 'Only the current month can be captured; historical backfill is not supported' using errcode='22023';
  end if;
- perform pg_advisory_xact_lock(hashtext('subscription-revenue-snapshot')::bigint,(v_month-date '2000-01-01')::bigint);
+ perform pg_advisory_xact_lock(hashtext('subscription-revenue-snapshot'),v_month-date '2000-01-01');
  if exists(select 1 from subscription_revenue_snapshots where snapshot_month=v_month) then
   select count(*) into v_count from subscription_revenue_snapshots where snapshot_month=v_month;
   return jsonb_build_object('snapshotMonth',v_month,'capturedCustomers',v_count,'insertedCustomers',0,'alreadyCaptured',true);
