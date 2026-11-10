@@ -258,7 +258,7 @@ begin
   insert into executive_visuals.financial_close_task_approvals(
    owner_id,period_month,task_id,approval_cycle,approval_level,reviewer_id,decision,comment
   ) values(p_owner_id,p_period_month,v_task_id,v_task.approval_cycle,v_level,p_actor_id,'rejected',v_reason);
-  update executive_visuals.financial_close_tasks set status='rejected',updated_at=v_now,version=version+1
+  update executive_visuals.financial_close_tasks set status='rejected',approval_cycle=approval_cycle+1,updated_at=v_now,version=version+1
    where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id;
  elsif p_action='task.waive' then
   v_task_id:=(p_payload->>'taskId')::uuid;v_reason:=p_payload->>'reason';
