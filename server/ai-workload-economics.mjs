@@ -118,6 +118,8 @@ export function compareWorkloadCandidates(input={}){
  const cards=Array.isArray(input.rateCards)?input.rateCards:[];
  if(cards.length<2||cards.length>30)fail("WORKLOAD_CANDIDATE_COUNT_INVALID","Provide between 2 and 30 model rate cards.");
  const limits=input.limits||{};
+ const currencies=new Set(cards.map(candidate=>String(candidate?.rateCard?.currency||"").trim().toUpperCase()));
+ if(currencies.size!==1||currencies.has(""))fail("WORKLOAD_CANDIDATE_CURRENCY_MISMATCH","All candidate rate cards must use the same ISO currency for a valid cost comparison.");
  const maxCostMinor=number(limits.maxCostMinor,"maxCostMinor",{integer:true,min:1});
  const maxLatencyMs=number(limits.maxLatencyMs,"maxLatencyMs",{integer:true,min:1,max:86_400_000});
  const minQualityScore=number(limits.minQualityScore,"minQualityScore",{min:0,max:1});
