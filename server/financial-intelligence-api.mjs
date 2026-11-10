@@ -8,6 +8,7 @@ import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
+import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -926,6 +927,18 @@ export function createFinancialIntelligenceApi({
           return error(400,"FINANCIAL_TREND_RANGE_INVALID","Trend period must be an integer between 3 and 36 months.");
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/close/readiness"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const assessment=assessFinancialCloseReadiness({
+            period:body.period,asOf:body.asOf,evidence:body.evidence,
+            tasks:body.tasks,reconciliations:body.reconciliations
+          });
+          return response(200,{assessment});
+        }catch(err){
+          return error(400,err.code||"FINANCIAL_CLOSE_INPUT_INVALID",err.message||"Financial close readiness could not be assessed.");
+        }
       }
       if(path==="/api/admin/finance/reconciliation-preview"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
