@@ -727,7 +727,7 @@ export function createFinancialIntelligenceApi({
         const reversesEventId=body.reversesEventId==null||body.reversesEventId===""?null:String(body.reversesEventId);
         const categories=["ai_inference","video_generation","image_generation","render_compute","storage","egress","payment_processing","support","other"];
         const sources=["provider_invoice","provider_usage_export","cloud_invoice","payment_processor","manual_receipt","other"];
-        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||(attributedOwnerId&&!UUID.test(attributedOwnerId))||
+        if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth||(attributedOwnerId&&!UUID.test(attributedOwnerId))||
           !categories.includes(category)||!sources.includes(sourceType)||!/^[A-Z]{3}$/.test(currency)||
           !Number.isSafeInteger(amountMinor)||amountMinor===0||(amountMinor<0&&!UUID.test(reversesEventId||""))||
           (amountMinor>0&&reversesEventId!==null)||sourceReference.length>160||
