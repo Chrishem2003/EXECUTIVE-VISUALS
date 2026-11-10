@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const migration = await readFile(new URL("../../supabase/migrations/20261113110000_subscription_customer_economics_batch_37.sql", import.meta.url), "utf8");
 import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
@@ -51,4 +54,18 @@ test("subscription economics calls the period-scoped report and returns its evid
  assert.equal(result.body.economics.customers[0].grossMarginPct,58.33);
  assert.equal(result.body.economics.customers[0].netCashCollectedMinor,10000);
  assert.equal(result.body.economics.limitations[0],"MRR is not cash collected.");
+});
+
+test("subscription economics SQL keeps revenue, cash, cost, credit and telemetry evidence distinct",()=>{
+ assert.match(migration,/from subscription_revenue_snapshots/);
+ assert.match(migration,/from financial_service_cost_events/);
+ assert.match(migration,/from credit_ledger/);
+ assert.match(migration,/from ai_workload_telemetry_events/);
+ assert.match(migration,/from payment_transactions p[\\s\\S]*?p\\.status='successful'/);
+ assert.match(migration,/from payment_refunds r[\\s\\S]*?r\\.status='succeeded'/);
+ assert.match(migration,/ca\\.currency=r\\.currency/);
+ assert.match(migration,/revoke all on function executive_visuals\\.subscription_customer_economics_report/);
+ assert.match(migration,/grant execute on function executive_visuals\\.subscription_customer_economics_report/);
+ const reportFunction=migration.slice(migration.indexOf("create or replace function executive_visuals.subscription_customer_economics_report"));
+ assert.doesNotMatch(reportFunction,/\\binsert into\\b|\\bupdate\\s+customer_subscriptions\\b|\\bdelete from\\b/i);
 });
