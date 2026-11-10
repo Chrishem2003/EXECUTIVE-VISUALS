@@ -114,7 +114,7 @@ begin
  end if;
  v_head_before:=executive_visuals.get_financial_audit_head(v_owner);
  begin
-  perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
+  perform pg_temp.close_action(v_owner,v_assignee,'task.start',v_period,
    jsonb_build_object('taskId',v_rework_task),'batch32-dependency-block');
   raise exception 'Dependent task unexpectedly started before its prerequisite was approved';
  exception when others then
@@ -125,31 +125,31 @@ begin
   raise exception 'Blocked dependency transition left an orphan audit event';
  end if;
 
- perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
+ perform pg_temp.close_action(v_owner,v_assignee,'task.start',v_period,
   jsonb_build_object('taskId',v_task),'batch32-task-start');
- perform pg_temp.close_action(v_assignee,v_assignee,'task.submit',v_period,
+ perform pg_temp.close_action(v_owner,v_assignee,'task.submit',v_period,
   jsonb_build_object('taskId',v_task,'evidenceRefs',jsonb_build_array('vault://evidence/bank-statement-2026-10'),
    'completionNote','Reconciled with no unexplained variance'),'batch32-task-submit');
- v_result:=pg_temp.close_action(v_reviewer_a,v_reviewer_a,'task.approve',v_period,
+ v_result:=pg_temp.close_action(v_owner,v_reviewer_a,'task.approve',v_period,
   jsonb_build_object('taskId',v_task,'comment','First independent review'),'batch32-task-approve-a');
  if v_result#>>'{task,status}'<>'submitted' then raise exception 'Multi-level task approval completed too early: %',v_result; end if;
- v_result:=pg_temp.close_action(v_reviewer_b,v_reviewer_b,'task.approve',v_period,
+ v_result:=pg_temp.close_action(v_owner,v_reviewer_b,'task.approve',v_period,
   jsonb_build_object('taskId',v_task,'comment','Second independent review'),'batch32-task-approve-b');
  if v_result#>>'{task,status}'<>'approved' then raise exception 'Task did not complete after all approvals: %',v_result; end if;
 
- perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
+ perform pg_temp.close_action(v_owner,v_assignee,'task.start',v_period,
   jsonb_build_object('taskId',v_rework_task),'batch32-rework-task-start');
- perform pg_temp.close_action(v_assignee,v_assignee,'task.submit',v_period,
+ perform pg_temp.close_action(v_owner,v_assignee,'task.submit',v_period,
   jsonb_build_object('taskId',v_rework_task,'evidenceRefs',jsonb_build_array('vault://evidence/revenue-schedule'),
    'completionNote','Initial schedule submitted'),'batch32-rework-task-submit-1');
- perform pg_temp.close_action(v_reviewer_a,v_reviewer_a,'task.reject',v_period,
+ perform pg_temp.close_action(v_owner,v_reviewer_a,'task.reject',v_period,
   jsonb_build_object('taskId',v_rework_task,'reason','Missing source invoice support'),'batch32-rework-task-reject');
- perform pg_temp.close_action(v_assignee,v_assignee,'task.submit',v_period,
+ perform pg_temp.close_action(v_owner,v_assignee,'task.submit',v_period,
   jsonb_build_object('taskId',v_rework_task,'evidenceRefs',jsonb_build_array('vault://evidence/revenue-schedule','vault://evidence/source-invoices'),
    'completionNote','Additional invoice support attached'),'batch32-rework-task-submit-2');
- perform pg_temp.close_action(v_reviewer_a,v_reviewer_a,'task.approve',v_period,
+ perform pg_temp.close_action(v_owner,v_reviewer_a,'task.approve',v_period,
   jsonb_build_object('taskId',v_rework_task,'comment','Rework accepted'),'batch32-rework-task-approve-a');
- v_result:=pg_temp.close_action(v_reviewer_b,v_reviewer_b,'task.approve',v_period,
+ v_result:=pg_temp.close_action(v_owner,v_reviewer_b,'task.approve',v_period,
   jsonb_build_object('taskId',v_rework_task,'comment','Second review accepted'),'batch32-rework-task-approve-b');
  if v_result#>>'{task,status}'<>'approved' or (v_result#>>'{task,approval_cycle}')::integer<>2 then
   raise exception 'Rejected task did not restart its ordered approval cycle: %',v_result;
@@ -163,7 +163,7 @@ begin
  exception when others then
   if sqlerrm='Period submitter unexpectedly approved own close' then raise; end if;
  end;
- v_result:=pg_temp.close_action(v_reviewer_a,v_reviewer_a,'period.approve',v_period,'{}'::jsonb,'batch32-period-approve');
+ v_result:=pg_temp.close_action(v_owner,v_reviewer_a,'period.approve',v_period,'{}'::jsonb,'batch32-period-approve');
  if v_result#>>'{period,status}'<>'approved' then raise exception 'Period did not reach approved state: %',v_result; end if;
  v_result:=pg_temp.close_action(v_owner,v_owner,'period.lock',v_period,'{}'::jsonb,'batch32-period-lock');
  if v_result#>>'{period,status}'<>'locked' then raise exception 'Period did not lock: %',v_result; end if;
