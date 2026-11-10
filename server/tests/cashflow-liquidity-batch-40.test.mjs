@@ -108,3 +108,41 @@ test("cashflow reconciliation rejects reversed or excessive date ranges",async()
  const result=await service.handle({method:"GET",path:"/api/admin/finance/cashflow-reconciliation",ownerId:owner,query:{fromDate:"2025-01-01",toDate:"2026-11-10"}});
  assert.equal(result.status,400);assert.equal(rpcCalled,false);
 });
+
+test("liquidity guardrails require finance administrator access",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-guardrails",ownerId:owner});
+ assert.equal(result.status,403);assert.equal(rpcCalled,false);
+});
+
+test("liquidity policy rejects reserve below minimum floor",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-policies",ownerId:owner,body:{
+  currency:"UGX",minimumCashFloorMinor:100000,reserveTargetMinor:90000,effectiveFrom:new Date().toISOString().slice(0,10),
+  sourceReference:"board-policy-01",rationale:"Minimum liquidity protection",idempotencyKey:"liquidity-policy-01"
+ }});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
+
+test("liquidity policy stores validated effective-dated guardrails",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_financial_liquidity_policy"))return json({id:"policy-1",currency:"UGX",minimumCashFloorMinor:100000,reserveTargetMinor:250000});
+  throw new Error("Unexpected request "+target);
+ });
+ const payload={currency:"UGX",minimumCashFloorMinor:100000,reserveTargetMinor:250000,effectiveFrom:new Date().toISOString().slice(0,10),
+  sourceReference:"board-policy-01",rationale:"Protect payroll and essential operating liquidity",idempotencyKey:"liquidity-policy-01"};
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-policies",ownerId:owner,body:payload});
+ assert.equal(result.status,201);assert.equal(result.body.policy.reserveTargetMinor,250000);
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/record_financial_liquidity_policy")).body,{p_actor_id:owner,p_payload:payload});
+});
+
+test("liquidity guardrails returns policy and scenario headroom",async()=>{
+ const payload={policies:[{currency:"UGX",minimumCashFloorMinor:100000,reserveTargetMinor:250000}],scenarios:[{currency:"UGX",scenario:"base",lowestHeadroomMinor:-50000,firstFloorBreachDate:"2026-12-01"}],limitations:[]};
+ const service=api(async url=>String(url).includes("/platform_admins?")?json([{role:"owner"}]):String(url).endsWith("/rpc/financial_liquidity_guardrails_overview")?json(payload):json({}));
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-guardrails",ownerId:owner});
+ assert.equal(result.status,200);assert.deepEqual(result.body.guardrails,payload);
+});
