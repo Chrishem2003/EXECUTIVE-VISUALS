@@ -3,6 +3,7 @@ name: Billing self-service quality checks
 on:
   push:
     branches:
+      - ev-release-validation
       - feat/financial-intelligence-api-integration
       - feat/financial-command-centre-batch-12
       - feat/financial-operations-batch-13
