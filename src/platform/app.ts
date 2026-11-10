@@ -539,7 +539,7 @@ if(t.closest("[data-finance-audit-append]")){void (async()=>{
    if(!raw)throw new Error("Enter an audit event JSON object.");
    const payload=JSON.parse(raw) as Record<string,unknown>;
    if(!payload||typeof payload!=="object"||Array.isArray(payload))throw new Error("Audit event input must be a JSON object.");
-   const result=await apiRequest<{event:FinanceDashboard}>("/api/admin/finance/audit/events",{method:"POST",headers:{"content-type":"application/json","idempotency-key":String(payload.idempotencyKey||"")},body:JSON.stringify(payload)});
+   await apiRequest<{event:FinanceDashboard}>("/api/admin/finance/audit/events",{method:"POST",headers:{"content-type":"application/json","idempotency-key":String(payload.idempotencyKey||"")},body:JSON.stringify(payload)});
    financeState.error="";financeState.auditVerification=null;
    const history=await apiRequest<FinanceDashboard>("/api/admin/finance/audit/events");
    financeState.auditEvents=history;
