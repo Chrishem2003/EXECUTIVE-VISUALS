@@ -9,7 +9,7 @@ import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRouti
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
-import { createFinancialAuditEvent, verifyFinancialAuditChain } from "./financial-audit-ledger.mjs";
+import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain } from "./financial-audit-ledger.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -937,7 +937,7 @@ export function createFinancialIntelligenceApi({
           const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key,event_envelope&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
           if(Array.isArray(existing.data)&&existing.data.length){
             const prior=existing.data[0];
-            if(prior.event_envelope?.eventType!==body.eventType||JSON.stringify(prior.event_envelope?.payload??{})!==JSON.stringify(body.payload??{}))
+            if(prior.event_envelope?.eventType!==body.eventType||canonicalFinancialAuditJson(prior.event_envelope?.payload??{})!==canonicalFinancialAuditJson(body.payload??{}))
               return error(409,"FINANCIAL_AUDIT_IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different audit event.");
             return response(200,{duplicate:true,event:{eventId:prior.event_id,sequence:Number(prior.sequence_number),eventHash:prior.event_hash}});
           }
@@ -968,12 +968,17 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/audit/verify"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&order=sequence_number.asc&limit=5000");
         const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
-        const records=(rows.data||[]).map(row=>({eventEnvelope:row.event_envelope,eventHash:row.event_hash,sequence_number:row.sequence_number,previous_hash:row.previous_hash,idempotency_key:row.idempotency_key}));
+        const records=[];let offset=0;
+        while(offset<5000){
+          const page=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&order=sequence_number.asc&offset="+offset+"&limit=500");
+          const batch=Array.isArray(page.data)?page.data:[];
+          records.push(...batch);offset+=batch.length;
+          if(batch.length<500)break;
+        }
         const result=verifyFinancialAuditChain(records,{ownerId,expectedHead:head?.headHash||"0".repeat(64)});
-        const complete=Number(head?.sequence||0)===(rows.data||[]).length;
-        return response(200,{verification:{...result,complete,valid:result.valid&&complete,storedHead:head||{sequence:0,headHash:"0".repeat(64)},limitations:[...result.limitations,...(!complete?["The full chain exceeds the 5,000-record verification limit; this response is not a complete verification."]:[])]}});
+        const complete=Number(head?.sequence||0)===records.length;
+        return response(200,{verification:{...result,complete,valid:result.valid&&complete,storedHead:head||{sequence:0,headHash:"0".repeat(64)},limitations:[...result.limitations,...(!complete?["The full chain exceeds the 5,000-record verification limit or could not be fully retrieved; this response is not a complete verification."]:[])]}});
       }
       if(path==="/api/admin/finance/close/readiness"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
