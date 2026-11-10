@@ -39,7 +39,9 @@ test("self-approved tasks cannot qualify for human sign-off",()=>{
 });
 
 test("evidence must be present and carry a valid SHA-256 reference",()=>{
- const missing=assessFinancialCloseReadiness({period:"2026-10",tasks:[{...completeTask,evidenceRefs:[]}],reconciliations:[],evidence:[]});\n assert.equal(missing.status,"blocked");\n assert.ok(missing.tasks[0].issues.includes("missing_evidence"));
+ const missing=assessFinancialCloseReadiness({period:"2026-10",tasks:[{...completeTask,evidenceRefs:[]}],reconciliations:[],evidence:[]});
+ assert.equal(missing.status,"blocked");
+ assert.ok(missing.tasks[0].issues.includes("missing_evidence"));
  assert.throws(()=>assessFinancialCloseReadiness({period:"2026-10",tasks:[],reconciliations:[],evidence:[{...evidence[0],sha256:"bad"}]}),{code:"FINANCIAL_CLOSE_EVIDENCE_HASH_INVALID"});
 });
 
