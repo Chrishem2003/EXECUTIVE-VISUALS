@@ -72,7 +72,7 @@ async function checksum(path) {
   return hash.digest("hex");
 }
 
-function outputPlan(jobType, input, source, sourcePath, outputPath) {
+export function buildCloudMediaOutputPlan(jobType, input, source, sourcePath, outputPath) {
   const baseName = String(source.name || "media").replace(/\.[^.]+$/, "").slice(0, 140);
   if (jobType === "media.thumbnail") {
     const seconds = Number(input.seconds ?? 1);
@@ -103,9 +103,20 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
     const codecs = { mp4: ["libx264", "aac"], webm: ["libvpx-vp9", "libopus"], mov: ["libx264", "aac"], mkv: ["libx264", "aac"], mp3: ["libx264", "libmp3lame"], wav: ["libx264", "pcm_s16le"] };
     const [videoCodec, audioCodec] = codecs[container];
     const args = ["-hide_banner", "-y", "-i", sourcePath];
-    if (jobType === "media.proxy") args.push("-vf", "scale='min(1280,iw)':-2");
+    if (jobType === "media.proxy") {
+      const proxyWidth = Number(input.proxyWidth ?? 960);
+      const proxyCrf = Number(input.proxyCrf ?? 28);
+      const preset = String(input.preset ?? "veryfast");
+      if (!Number.isInteger(proxyWidth) || proxyWidth < 320 || proxyWidth > 1920 ||
+          !Number.isInteger(proxyCrf) || proxyCrf < 18 || proxyCrf > 35 ||
+          !["ultrafast", "veryfast", "fast"].includes(preset)) {
+        throw Object.assign(new Error("Cloud proxy settings are outside the supported range."), { code: "INVALID_MEDIA_OPTIONS" });
+      }
+      args.push("-vf", "scale='min(" + proxyWidth + ",iw)':-2");
+    }
     if (["mp3", "wav"].includes(container)) args.push("-vn");
     else args.push("-c:v", videoCodec);
+    if (jobType === "media.proxy") args.push("-preset", String(input.preset ?? "veryfast"), "-crf", String(input.proxyCrf ?? 28), "-pix_fmt", "yuv420p", "-movflags", "+faststart");
     args.push("-c:a", audioCodec, outputPath);
     const mediaType = container === "mp3" ? "audio/mpeg" : container === "wav" ? "audio/wav" : container === "webm" ? "video/webm" : container === "mov" ? "video/quicktime" : container === "mkv" ? "video/x-matroska" : "video/mp4";
     return { args, name: baseName + (jobType === "media.proxy" ? "-proxy." : "-transcoded.") + container, mediaType };
@@ -217,7 +228,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
         sourceDurationSeconds = parsedSourceDuration;
       }
-      const plan = outputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
+      const plan = buildCloudMediaOutputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
