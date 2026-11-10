@@ -20,6 +20,7 @@ on:
       - feat/unified-profitability-margin-protection-batch-24
       - feat/verified-cost-reconciliation-profitability-trends-batch-25
       - feat/measured-shared-cost-allocation-batch-26
+      - feat/persistent-audit-ledger-batch-30
   pull_request:
 
 permissions:
@@ -121,5 +122,9 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/verified-cost-reconciliation-postgres-integration.sql
       - name: Verify Batch 26 measured shared-cost allocation and fully loaded profitability
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/measured-shared-cost-allocation-postgres-integration.sql
+      - name: Apply Batch 30 persistent financial audit ledger migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112090000_persistent_financial_audit_ledger_batch_30.sql
+      - name: Verify Batch 30 append-only financial audit ledger
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/persistent-financial-audit-ledger-postgres-integration.sql
       - name: Run financial API tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs
