@@ -1125,3 +1125,20 @@ test("service cost API validates reversals and binds immutable cost evidence to 
  assert.equal(rpcBody.p_amount_minor,-500);
  assert.equal(rpcBody.p_reverses_event_id,"44444444-4444-4444-8444-444444444444");
 });
+
+test("service cost evidence is included in protected, audited CSV exports",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,method:options.method||"GET",body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/financial_service_cost_events?"))return json([{id:"cost-1",amount_minor:1500,currency:"UGX"}]);
+  if(target.endsWith("/rpc/write_financial_admin_audit"))return json({id:"audit-1"});
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/export",ownerId:owner,query:{kind:"costs"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.kind,"costs");
+ assert.equal(result.body.rows[0].amount_minor,1500);
+ assert.ok(calls.some(x=>x.target.includes("/financial_service_cost_events?")));
+ assert.ok(calls.some(x=>x.target.endsWith("/rpc/write_financial_admin_audit")&&x.body.p_action==="finance.export.costs"));
+});
