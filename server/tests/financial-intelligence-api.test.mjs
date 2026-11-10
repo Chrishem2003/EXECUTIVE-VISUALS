@@ -1225,3 +1225,101 @@ test("margin alert listing validates bounded limits and returns the admin alert 
  assert.equal(rpcBody.p_limit,25);
  assert.equal(result.body.marginAlerts.alerts[0].notificationStatus,"pending");
 });
+
+
+test("shared-cost allocation overview is finance-admin protected and validates its reporting window",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized allocation report must not reach RPC");
+ });
+ const blocked=await denied.handle({method:"GET",path:"/api/admin/finance/shared-cost-allocations",ownerId:owner,query:{months:"12"}});
+ assert.equal(blocked.status,403);
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_shared_cost_allocation_overview")){
+   rpcBody=JSON.parse(options.body);
+   return json({months:12,policies:[],batches:[],customers:[],limitations:[]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/shared-cost-allocations",ownerId:owner,query:{months:"37"}});
+ assert.equal(invalid.status,400);
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/shared-cost-allocations",ownerId:owner,query:{months:"12"}});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_months,12);
+ assert.deepEqual(result.body.allocations.batches,[]);
+});
+
+test("shared-cost allocation policy API rejects unsupported drivers and binds immutable policy details",async()=>{
+ let rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized allocation policy must not reach RPC");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocation-policies",ownerId:owner,body:{
+  costCategory:"ai_inference",driverType:"image_count",currency:"USD",
+  effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-denied"
+ }});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/add_financial_shared_cost_allocation_policy")){
+   rpcBody=JSON.parse(options.body);
+   return json({policyId:"44444444-4444-4444-8444-444444444444",duplicate:false,driverType:"inference_tokens"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocation-policies",ownerId:owner,body:{
+  costCategory:"ai_inference",driverType:"image_count",currency:"USD",
+  effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-invalid"
+ }});
+ assert.equal(invalid.status,400);
+ const valid=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocation-policies",ownerId:owner,body:{
+  costCategory:"ai_inference",driverType:"inference_tokens",currency:"UGX",
+  effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-0001"
+ }});
+ assert.equal(valid.status,201);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_cost_category,"ai_inference");
+ assert.equal(rpcBody.p_driver_type,"inference_tokens");
+ assert.equal(rpcBody.p_currency,"UGX");
+ assert.equal(rpcBody.p_minimum_recipients,2);
+});
+
+test("shared-cost allocation run API validates month, currency and category before calling the database",async()=>{
+ let rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized allocation run must not reach RPC");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocations/run",ownerId:owner,body:{
+  periodMonth:"2026-11-01",currency:"USD",costCategory:"ai_inference"
+ }});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/run_financial_shared_cost_allocation")){
+   rpcBody=JSON.parse(options.body);
+   return json({status:"allocated",sourcePoolMinor:1001,allocatedMinor:1001,unallocatedMinor:0,recipientCount:2});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocations/run",ownerId:owner,body:{
+  periodMonth:"2026-13-01",currency:"USD",costCategory:"ai_inference"
+ }});
+ assert.equal(invalid.status,400);
+ const valid=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocations/run",ownerId:owner,body:{
+  periodMonth:"2026-11-01",currency:"USD",costCategory:"ai_inference"
+ }});
+ assert.equal(valid.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_period_month,"2026-11-01");
+ assert.equal(rpcBody.p_currency,"USD");
+ assert.equal(rpcBody.p_cost_category,"ai_inference");
+ assert.equal(valid.body.run.allocatedMinor,1001);
+});
