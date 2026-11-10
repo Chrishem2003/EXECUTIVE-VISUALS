@@ -771,7 +771,8 @@ export function createFinancialIntelligenceApi({
           sourceReference.length<3||sourceReference.length>240||sourceUrl.length>1000||(sourceUrl&&!/^https:\/\//.test(sourceUrl))||
           (sourceFingerprint&&!/^[a-f0-9]{64}$/.test(sourceFingerprint))||
           !["source_linked","contract_attested","admin_attested"].includes(verificationStatus)||
-          !dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||JSON.stringify(dimensions).length>12000||
+          !dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||JSON.stringify(dimensions).length>12000||Object.entries(dimensions).some(([key,value])=>!key||key.length>80||typeof value!=="number"||!Number.isFinite(value)||value<0)||
+          (sourceCheckedAt&&!validTimestamp(sourceCheckedAt))||(rate.supersedesId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(rate.supersedesId)))||
           prices.some(value=>value!==null&&(!Number.isFinite(value)||value<0))||
           !prices.some(value=>value!==null&&value>0)||
           (sourceType==="provider_pricing"&&(!sourceUrl||!validTimestamp(sourceCheckedAt)||verificationStatus!=="source_linked"))||
