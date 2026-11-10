@@ -243,7 +243,7 @@ begin
   where i.period_start<p_period_month+interval '1 month' and i.period_end>=p_period_month
   group by i.id,i.provider,i.invoice_reference,i.currency,i.total_minor,i.reconciliation_status
   having i.reconciliation_status in('variance','review_required')
-   or count(r.id) filter(where r.match_status<>'matched')>0
+   or count(r.id)=0 or count(r.id) filter(where r.match_status<>'matched')>0
  )
  select jsonb_build_object('periodMonth',p_period_month,'generatedAt',now(),
   'spendAnomalies',coalesce((
