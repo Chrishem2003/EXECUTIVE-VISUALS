@@ -106,7 +106,7 @@ async function refresh(){
 async function loadRun(){
  if(!state.latestRunId)return;
  const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+state.latestRunId);
- state.runStatus=response.run.status;state.runNodes=response.nodes;if(response.run.status==="completed")void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+state.latestRunId})}).catch(()=>{});
+ state.runStatus=response.run.status;state.runNodes=response.nodes;if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+state.latestRunId})}).catch(()=>{});
 }
 async function persist(){
  if(!state.graph)return;
