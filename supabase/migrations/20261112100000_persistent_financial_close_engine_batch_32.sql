@@ -34,9 +34,10 @@ create table if not exists executive_visuals.financial_close_periods(
  version bigint not null default 1 check(version>0),
  updated_at timestamptz not null default now(),
  primary key(owner_id,period_month),
- check(submitted_by is null or submitted_by<>created_by),
- check(approved_by is null or approved_by<>submitted_by)
+ constraint financial_close_periods_approver_separation check(approved_by is null or approved_by<>submitted_by)
 );
+alter table executive_visuals.financial_close_periods drop constraint if exists financial_close_periods_check;
+alter table executive_visuals.financial_close_periods drop constraint if exists financial_close_periods_check1;
 create table if not exists executive_visuals.financial_close_tasks(
  owner_id uuid not null,
  period_month date not null,
