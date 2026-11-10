@@ -64,11 +64,11 @@ test("subscription economics SQL keeps revenue, cash, cost, credit and telemetry
  assert.match(migration,/from financial_margin_policies/);
  assert.match(migration,/below_configured_margin_policy/);
  assert.doesNotMatch(migration,/gross_margin_pct<30/);
- assert.match(migration,/from payment_transactions p[\\s\\S]*?p\\.status='successful'/);
- assert.match(migration,/from payment_refunds r[\\s\\S]*?r\\.status='succeeded'/);
- assert.match(migration,/ca\\.currency=r\\.currency/);
- assert.match(migration,/revoke all on function executive_visuals\\.subscription_customer_economics_report/);
- assert.match(migration,/grant execute on function executive_visuals\\.subscription_customer_economics_report/);
+ assert.match(migration,/from payment_transactions p[\s\S]*?p\.status='successful'/);
+ assert.match(migration,/from payment_refunds r[\s\S]*?r\.status='succeeded'/);
+ assert.match(migration,/ca\.currency=r\.currency/);
+ assert.match(migration,/revoke all on function executive_visuals\.subscription_customer_economics_report/);
+ assert.match(migration,/grant execute on function executive_visuals\.subscription_customer_economics_report/);
  const reportFunction=migration.slice(migration.indexOf("create or replace function executive_visuals.subscription_customer_economics_report"));
- assert.doesNotMatch(reportFunction,/\\binsert into\\b|\\bupdate\\s+customer_subscriptions\\b|\\bdelete from\\b/i);
+ assert.doesNotMatch(reportFunction,/\binsert into\b|\bupdate\s+customer_subscriptions\b|\bdelete from\b/i);
 });
