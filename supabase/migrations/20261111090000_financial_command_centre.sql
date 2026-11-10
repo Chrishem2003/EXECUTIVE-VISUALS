@@ -127,14 +127,14 @@ begin
   select s.currency, sum(case when s.billing_interval='monthly' then s.amount_minor when s.billing_interval='yearly' then round(s.amount_minor::numeric/12)::bigint else 0 end)::bigint mrr_minor,
    count(*) filter(where s.amount_minor>0) paid_subscribers
   from customer_subscriptions s
-  where s.status in ('active','past_due') and s.billing_interval in ('monthly','yearly') and s.current_period_start<=p_to
-   and (s.current_period_end is null or s.current_period_end>p_to)
+  where s.status in ('active','past_due') and s.billing_interval in ('monthly','yearly') and s.current_period_start<=now()
+   and (s.current_period_end is null or s.current_period_end>now())
   group by s.currency
  ),
  tiers as (
   select s.currency,s.plan_code,coalesce(pl.name,s.plan_code) plan_name,
-   count(*) filter(where s.status in ('active','past_due') and (s.current_period_end is null or s.current_period_end>p_to)) active_subscriptions,
-   sum(case when s.status in ('active','past_due') and (s.current_period_end is null or s.current_period_end>p_to)
+   count(*) filter(where s.status in ('active','past_due') and (s.current_period_end is null or s.current_period_end>now())) active_subscriptions,
+   sum(case when s.status in ('active','past_due') and (s.current_period_end is null or s.current_period_end>now())
     then case when s.billing_interval='monthly' then s.amount_minor when s.billing_interval='yearly' then round(s.amount_minor::numeric/12)::bigint else 0 end else 0 end)::bigint mrr_minor
   from customer_subscriptions s left join subscription_plans pl on pl.plan_code=s.plan_code
   group by s.currency,s.plan_code,pl.name
@@ -145,7 +145,7 @@ begin
  ),
  profiles as (
   select p.owner_id,p.currency,max(p.customer_email) email,
-   (select s.status from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) subscription_status,
+   (select s.status from customer_subscriptions s where s.owner_id=p.owner_id and s.currency=p.currency order by s.created_at desc limit 1) subscription_status,
    (select s.plan_code from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) plan_code,
    (select s.current_period_end from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) period_end,
    count(distinct p.id) payment_count,
@@ -160,12 +160,13 @@ begin
    count(*) filter(where p.status='successful' and p.created_at>now()-interval '24 hours') successful_24h,
    coalesce((select count(*) from payment_refunds r where r.owner_id=p.owner_id and r.status in ('requested','processing','succeeded') and r.created_at>now()-interval '30 days'),0) refund_cases_30d,
    coalesce((select sum(r.amount_minor) from payment_refunds r where r.owner_id=p.owner_id and r.currency=p.currency and r.status in ('requested','processing','succeeded') and r.created_at>now()-interval '30 days'),0) refund_value_30d,
-   coalesce(sum(p.amount_minor) filter(where p.status='successful' and p.created_at>now()-interval '30 days'),0) gross_value_30d,
+   coalesce(sum(p.amount_minor) filter(where p.status='successful' and coalesce(p.paid_at,p.created_at)>now()-interval '30 days'),0) gross_value_30d,
    coalesce((select count(*) from chargeback_cases cb where cb.owner_id=p.owner_id and cb.status in ('open','under_review','lost')),0) dispute_cases
   from payment_transactions p group by p.owner_id,p.currency
  )
  select jsonb_build_object(
   'period',jsonb_build_object('from',p_from,'to',p_to),
+  'mrrAsOf',now(),
   'byCurrency',coalesce((select jsonb_agg(jsonb_build_object(
     'currency',c.currency,'grossRevenueMinor',c.gross_minor,'providerFeesMinor',c.fees_minor,
     'refundsMinor',c.refunds_minor,'netRevenueMinor',c.gross_minor-c.refunds_minor,
