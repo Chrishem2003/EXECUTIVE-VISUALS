@@ -1246,3 +1246,9 @@ body{
 .assurance-priority .quiet{padding:3px 0;font-size:9px}
 @media(max-width:1100px){.assurance-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.assurance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.assurance-split{grid-template-columns:1fr}.assurance-priority{align-items:flex-start;flex-direction:column}.assurance-priority>div:last-child{justify-items:start}}
+
+
+/* Batch 58 · executive assurance report delivery */
+.assurance-inbox .reviewer-inbox-head{flex-wrap:wrap}
+.assurance-inbox [data-assurance-report-export]{flex:0 0 auto;white-space:nowrap}
+@media(max-width:760px){.assurance-inbox [data-assurance-report-export]{width:100%}}
