@@ -67,7 +67,8 @@
     "verify:control-remediation": "node --experimental-strip-types --test server/tests/control-remediation-batch-49.test.mjs",
     "verify:control-remediation-api": "node --test server/tests/control-remediation-api-batch-50.test.mjs",
     "verify:remediation-audit-export": "node --test server/tests/remediation-audit-export.test.mjs",
-    "verify:finance-assurance-report": "node --test server/tests/finance-assurance-report-batch-58.test.mjs"
+    "verify:finance-assurance-report": "node --test server/tests/finance-assurance-report-batch-58.test.mjs",
+    "verify:reviewer-performance": "node --test server/tests/reviewer-performance-batch-59.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
