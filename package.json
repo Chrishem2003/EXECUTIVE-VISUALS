@@ -65,7 +65,8 @@
     "verify:financial-executive-intelligence": "node --test server/tests/financial-executive-intelligence-batch-47.test.mjs",
     "verify:financial-governance": "node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs",
     "verify:control-remediation": "node --experimental-strip-types --test server/tests/control-remediation-batch-49.test.mjs",
-    "verify:control-remediation-api": "node --test server/tests/control-remediation-api-batch-50.test.mjs"
+    "verify:control-remediation-api": "node --test server/tests/control-remediation-api-batch-50.test.mjs",
+    "verify:remediation-audit-export": "node --test server/tests/remediation-audit-export.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
