@@ -7,13 +7,15 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const editor="223e4567-e89b-42d3-a456-426614174000";
 const reviewer="323e4567-e89b-42d3-a456-426614174000";
 const outsider="523e4567-e89b-42d3-a456-426614174000";
+const viewer="623e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
 function setup(){
  const db=openDatabase(":memory:");
- for(const [id,email] of [[owner,"owner@example.test"],[editor,"editor@example.test"],[reviewer,"reviewer@example.test"],[outsider,"outsider@example.test"]])db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run(id,email);
+ for(const [id,email] of [[owner,"owner@example.test"],[editor,"editor@example.test"],[reviewer,"reviewer@example.test"],[outsider,"outsider@example.test"],[viewer,"viewer@example.test"]])db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run(id,email);
  db.prepare("INSERT INTO projects(id,owner_id,name) VALUES(?,?,?)").run(project,owner,"Finance assurance");
  db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?)").run(project,editor,"editor",owner);
  db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?)").run(project,reviewer,"reviewer",owner);
+ db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?)").run(project,viewer,"viewer",owner);
  return {db,api:createControlRemediationApi({db})};
 }
 const createBody={projectId:project,findingId:"bank-reconciliation-gap",controlId:"CTRL-REC-01",title:"Resolve unmatched bank settlements",severity:"high",ownerId:editor,reviewerId:reviewer,dueAt:"2026-12-01T00:00:00.000Z",actionPlan:"Reconcile bank statement against the settlement ledger."};
@@ -57,6 +59,25 @@ test("evidence, owner transition and independent reviewer verification persist w
  assert.equal(verified.status,200);assert.equal(verified.body.action.status,"verified");
  assert.equal(verified.body.action.verifiedBy,reviewer);
  assert.equal(verified.body.action.history.length,5);
+ f.db.close();
+});
+test("only the assigned reviewer or project owner can return submitted work with a review note",async()=>{
+ const f=setup();
+ const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
+ const id=created.body.action.id;
+ const evidence=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Reconciliation workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z"}});
+ assert.equal(evidence.status,201);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/transitions",ownerId:editor,body:{to:"pending_review"}})).status,200);
+ const route="/api/finance/remediations/"+id+"/transitions";
+ assert.equal((await f.api.handle({method:"POST",path:route,ownerId:viewer,body:{to:"in_progress",note:"Please correct the workpaper."}})).status,403);
+ assert.equal((await f.api.handle({method:"POST",path:route,ownerId:editor,body:{to:"in_progress",note:"Please correct the workpaper."}})).status,403);
+ assert.equal((await f.api.handle({method:"POST",path:route,ownerId:reviewer,body:{to:"in_progress"}})).status,400);
+ const returned=await f.api.handle({method:"POST",path:route,ownerId:reviewer,body:{to:"in_progress",note:"Reconcile the two unmatched settlement rows and attach the updated statement."}});
+ assert.equal(returned.status,200);
+ assert.equal(returned.body.action.status,"in_progress");
+ assert.equal(returned.body.action.history.at(-1).event,"review_changes_requested");
+ assert.match(returned.body.action.history.at(-1).note,/unmatched settlement rows/);
  f.db.close();
 });
 test("optimistic revision, duplicate findings and invalid evidence fail safely",async()=>{
