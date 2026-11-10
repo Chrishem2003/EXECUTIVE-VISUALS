@@ -26,7 +26,7 @@ function key(...values){return values.map(v=>String(v).toLowerCase()).join("\u00
 function countBy(items,fn){const m=new Map();for(const item of items){const k=fn(item);m.set(k,(m.get(k)||0)+1);}return m;}
 function totals(items,field,currencyField){
  const result={};
- for(const item of items){const c=item[currencyField];result[c]=(result[c]||0)+item[field];}
+ for(const item of items){const c=item[currencyField],next=(result[c]||0)+item[field];if(!Number.isSafeInteger(next))fail("FINANCIAL_RECON_TOTAL_OVERFLOW","Currency total exceeds the safe integer range.");result[c]=next;}
  return result;
 }
 function summary(kind,rowsOut,totalsOut){
