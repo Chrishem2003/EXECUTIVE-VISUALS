@@ -103,7 +103,7 @@ begin
  else
   select * into v_price from ai_model_price_catalog where provider=p_provider and model=p_requested_model
    and effective_from<=p_occurred_at and (effective_to is null or effective_to>p_occurred_at)
-   and (p_currency is null or currency=p_currency) order by effective_from desc,created_at desc limit 1;
+   and currency=p_currency order by effective_from desc,created_at desc limit 1;
   if found then
    v_cost:=coalesce(p_input_tokens,0)*coalesce(v_price.input_per_million_minor,0)/1000000
     +coalesce(p_output_tokens,0)*coalesce(v_price.output_per_million_minor,0)/1000000
