@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export function verifyAuditExport(document) {
   if (!document || typeof document !== "object" || Array.isArray(document)) {
@@ -29,7 +31,7 @@ export function verifyAuditExport(document) {
   };
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].replaceAll("\\\\", "/")}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const path = process.argv[2];
     if (!path) throw new Error("Usage: node scripts/verify-remediation-audit-export.mjs <export.json>");
