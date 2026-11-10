@@ -55,8 +55,10 @@ begin
  v_inflow:=(p_payload->>'inflowReductionBps')::integer;v_outflow:=(p_payload->>'outflowIncreaseBps')::integer;
  v_shock:=(p_payload->>'immediateCashShockMinor')::bigint;v_ref:=trim(p_payload->>'sourceReference');
  v_rationale:=trim(p_payload->>'rationale');v_key:=p_payload->>'idempotencyKey';
- if v_name is null or length(v_name) not between 3 and 120 or v_currency is null or v_currency !~ '^[A-Z]{3}
-  length(v_ref) not between 3 and 240 or length(v_rationale) not between 3 and 1000 or length(v_key) not between 8 and 160 then
+ if v_name is null or length(v_name) not between 3 and 120 or v_currency is null or v_currency !~ '^[A-Z]{3}$' or
+  v_inflow is null or v_inflow not between 0 and 10000 or v_outflow is null or v_outflow not between 0 and 30000 or
+  v_shock is null or v_shock<0 or v_ref is null or length(v_ref) not between 3 and 240 or
+  v_rationale is null or length(v_rationale) not between 3 and 1000 or v_key is null or length(v_key) not between 8 and 160 then
   raise exception 'Invalid treasury stress scenario assumptions or evidence' using errcode='22023';
  end if;
  insert into financial_liquidity_stress_scenarios(actor_id,name,currency,inflow_reduction_bps,outflow_increase_bps,immediate_cash_shock_minor,source_reference,rationale,idempotency_key)
