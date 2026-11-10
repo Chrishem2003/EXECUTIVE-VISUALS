@@ -58,10 +58,10 @@ grant select,insert on executive_visuals.customer_acquisition_attributions to se
 
 create or replace function executive_visuals.reject_revenue_intelligence_mutation()
 returns trigger language plpgsql security definer
-set search_path=pg_catalog,executive_visuals as $
+set search_path=pg_catalog,executive_visuals as $revenue$
 begin
  raise exception 'Revenue intelligence evidence is append-only' using errcode='55000';
-end $;
+end $revenue$;
 create trigger subscription_revenue_snapshots_immutable
  before update or delete on executive_visuals.subscription_revenue_snapshots
  for each row execute function executive_visuals.reject_revenue_intelligence_mutation();
