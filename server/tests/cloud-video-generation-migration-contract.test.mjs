@@ -17,10 +17,10 @@ test("cloud video RPCs are revoked from client roles and granted only to service
   assert.match(sql,new RegExp("grant execute on function executive_visuals\\."+fn+"\\([^;]+ to service_role","i"));
  }
 });
-test("cloud approval registration and enqueue both revalidate active owner/editor membership",()=>{
- assert.equal(sql.split("pm.member_id=p_owner_id").length-1,2);
+test("cloud approval registration, enqueue and task reservation all revalidate active owner/editor membership",()=>{
+ assert.equal(sql.split("pm.member_id=p_owner_id").length-1,3);
  assert.equal(sql.split("pm.role in ('editor')").length-1,2);
- assert.equal(sql.split("p.archived_at is null").length-1>=2,true);
+ assert.equal(sql.split("p.archived_at is null").length-1>=3,true);
 });
 test("task reservation serializes on approval and enforces the approved shot quote and budget ceiling",()=>{
  assert.match(sql,/where id=p_approval_id and owner_id=p_owner_id and project_id=p_project_id\s+for update/i);
