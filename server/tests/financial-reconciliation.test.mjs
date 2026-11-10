@@ -67,3 +67,18 @@ test("invalid currencies, non-integer minor units and excessive rows fail closed
  assert.throws(()=>reconcilePaymentSettlement({statementRows:[{provider:"p",providerReference:"x",currency:"USD",amountMinor:1.2}],payments:[]}),{code:"FINANCIAL_RECON_AMOUNT_INVALID"});
  assert.throws(()=>reconcileProviderInvoiceLines({invoiceLines:new Array(5001).fill({}),usageEvents:[]}),{code:"FINANCIAL_RECON_ROWS_INVALID"});
 });
+
+
+test("reconciliation rejects impossible usage dates and unsafe aggregate totals",()=>{
+ assert.throws(()=>reconcileProviderInvoiceLines({
+  invoiceLines:[{provider:"p",lineReference:"l",currency:"USD",model:"m",operation:"image",usagePeriod:"2026-02-30",amountMinor:1}],
+  usageEvents:[]
+ }),{code:"FINANCIAL_RECON_DATE_INVALID"});
+ assert.throws(()=>reconcilePaymentSettlement({
+  statementRows:[
+   {provider:"p",providerReference:"a",currency:"USD",amountMinor:Number.MAX_SAFE_INTEGER},
+   {provider:"p",providerReference:"b",currency:"USD",amountMinor:1}
+  ],
+  payments:[]
+ }),{code:"FINANCIAL_RECON_TOTAL_OVERFLOW"});
+});
