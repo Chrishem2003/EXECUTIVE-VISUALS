@@ -89,14 +89,17 @@ begin
   p_payload->>'category' is null or p_payload->>'category' not in('receivables_acceleration','discretionary_spend','supplier_terms','committed_facility','asset_monetization','owner_funding','other') or
   v_capacity is null or v_capacity<0 or v_lead is null or v_lead not between 0 and 8760 or
   p_payload->>'availabilityStatus' is null or p_payload->>'availabilityStatus' not in('validated','conditional','unverified') or
-  length(trim(p_payload->>'sourceReference')) not between 3 and 240 or length(trim(p_payload->>'rationale')) not between 3 and 1000 or
+  p_payload->>'sourceReference' is null or length(trim(p_payload->>'sourceReference')) not between 3 and 240 or
+  p_payload->>'rationale' is null or length(trim(p_payload->>'rationale')) not between 3 and 1000 or
   v_key is null or length(v_key) not between 8 and 160 then raise exception 'Invalid contingency funding option or supporting evidence' using errcode='22023'; end if;
  insert into financial_contingency_options(actor_id,currency,title,category,estimated_capacity_minor,lead_time_hours,availability_status,source_reference,rationale,idempotency_key)
  values(p_actor_id,v_currency,trim(p_payload->>'title'),p_payload->>'category',v_capacity,v_lead,p_payload->>'availabilityStatus',
   trim(p_payload->>'sourceReference'),trim(p_payload->>'rationale'),v_key) on conflict(idempotency_key) do nothing;
  select * into v_row from financial_contingency_options where idempotency_key=v_key;
  if v_row.actor_id<>p_actor_id or v_row.currency<>v_currency or v_row.estimated_capacity_minor<>v_capacity or
-  v_row.lead_time_hours<>v_lead or v_row.title<>trim(p_payload->>'title') then
+  v_row.lead_time_hours<>v_lead or v_row.title<>trim(p_payload->>'title') or v_row.category<>p_payload->>'category' or
+  v_row.availability_status<>p_payload->>'availabilityStatus' or v_row.source_reference<>trim(p_payload->>'sourceReference') or
+  v_row.rationale<>trim(p_payload->>'rationale') then
   raise exception 'Contingency option idempotency key conflicts with existing evidence' using errcode='23505';
  end if;
  return jsonb_build_object('id',v_row.id,'currency',v_row.currency,'title',v_row.title,'category',v_row.category,
