@@ -14,7 +14,7 @@ function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCE
   async markSubmissionUnknown(id,value){calls.push(["unknown",value]);record.state="submission_unknown";},
   async markProcessing(id,value){calls.push(["processing",value]);record.state="processing";},
   async markFailed(id,value){calls.push(["failed",value]);record.state="failed";},
-  async markSucceeded(id,value){calls.push(["succeeded",value]);record.state="succeeded";}
+  async markSucceeded(id,value){calls.push(["succeeded",value]);record.state="succeeded";record.outputAssetId=value.asset?.id||null;}
  };
  const approvals={async get(id){calls.push(["approval",id]);return approval;}};
  const mediaIO={async publish(value){calls.push(["publish",value]);return{id:"asset-1",...value};}};
@@ -60,4 +60,16 @@ test("terminal provider failure is recorded and does not publish an asset",async
  await assert.rejects(()=>f.execute({job}),e=>e.code==="VIDEO_PROVIDER_TASK_FAILED");
  assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
  assert.equal(f.record.state,"failed");
+});
+
+test("already-succeeded shot is replayed from the ledger without polling or republishing",async()=>{
+ const f=fixture({taskState:"succeeded",providerTaskId:"123e4567-e89b-42d3-a456-426614174000"});
+ const result=await f.execute({job});
+ assert.equal(result.replayed,true);assert.equal(result.outputAsset.id,"asset-1");
+ assert.equal(f.calls.filter(x=>x[0]==="submit"||x[0]==="poll"||x[0]==="download"||x[0]==="publish").length,0);
+});
+test("previously failed shot is not silently resubmitted",async()=>{
+ const f=fixture({taskState:"failed"});
+ await assert.rejects(()=>f.execute({job}),e=>e.code==="VIDEO_TASK_ALREADY_FAILED");
+ assert.equal(f.calls.filter(x=>x[0]==="submit").length,0);
 });
