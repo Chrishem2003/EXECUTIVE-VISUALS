@@ -128,3 +128,8 @@ Executive Visuals now has a development-only customer-initiated renewal flow usi
 ## Batch 10 — payment recovery
 
 Failed Flutterwave V4 charges are verified server-side, recorded as recovery attempts, and linked subscriptions enter `past_due` with a configurable grace period (default 72 hours). Customers can retrieve and mark their billing notifications as read. Billing administrators can inspect the recovery queue and explicitly process expired grace periods. No automatic MoMo debit or unattended payment retry occurs; customers must re-authorize each payment. Notification records are queued in the outbox. Email delivery remains disabled until a transactional email provider is configured and tested.
+
+
+## Batch 11 — customer subscription self-service
+
+Customers can review their plan, period, grace deadline, scheduled changes, transactions, invoice records and subscription event history in the Billing & Plan workspace. They can cancel immediately, schedule cancellation at the end of the paid period, resume a future cancellation, schedule a plan change for the next verified renewal, or cancel a scheduled plan change. Scheduled plan snapshots are server-controlled and become active only after a customer-authorized Flutterwave V4 mobile-money renewal succeeds and is independently verified. No payment credentials or MoMo PINs are stored; no automatic debit or refund is initiated. PDF invoice downloads remain gated until private document storage and signed download URLs are implemented.
