@@ -1,5 +1,7 @@
 grant usage on schema executive_visuals to service_role;
-insert into auth.users(id) values('11111111-1111-4111-8111-111111111111');
+insert into auth.users(id) values
+ ('11111111-1111-4111-8111-111111111111'),
+ ('22222222-2222-4222-8222-222222222222');
 insert into executive_visuals.subscription_plans(
  plan_code,version,status,is_public,billing_interval,amount_minor,currency,included_credits,entitlements
 ) values
@@ -20,6 +22,13 @@ declare
   current_amount bigint;
   current_status text;
   rewarded_period_end timestamptz;
+  referred_owner constant uuid := '22222222-2222-4222-8222-222222222222';
+  referral_code jsonb;
+  attribution jsonb;
+  referred_reservation jsonb;
+  referred_result jsonb;
+  referred_subscription_id uuid;
+  referred_payment_id uuid;
 begin
   reservation := executive_visuals.reserve_subscription_purchase(
     v_owner_id,'creator-monthly','customer@example.com','MTN','sql-integration-key-01','EVS-SQL-INITIAL-01'
@@ -61,6 +70,37 @@ begin
   end if;
 
 
+  referral_code:=executive_visuals.create_customer_referral_code(v_owner_id);
+  if length(referral_code->>'code')<8 then raise exception 'Creator referral code was not generated'; end if;
+  begin
+   perform executive_visuals.attribute_customer_referral_code(v_owner_id,referral_code->>'code');
+   raise exception 'Self-referral unexpectedly succeeded';
+  exception when sqlstate '23514' then null;
+  end;
+  attribution:=executive_visuals.attribute_customer_referral_code(referred_owner,referral_code->>'code');
+  if attribution->>'status'<>'pending' then raise exception 'Referral attribution was not recorded'; end if;
+  referred_reservation:=executive_visuals.reserve_subscription_purchase(
+   referred_owner,'creator-monthly','referred@example.com','AIRTEL','sql-referral-key-01','EVS-SQL-REFERRAL-01'
+  );
+  referred_subscription_id:=(referred_reservation->>'subscriptionId')::uuid;
+  referred_payment_id:=(referred_reservation->>'paymentId')::uuid;
+  referred_result:=executive_visuals.finalize_subscription_purchase(
+   referred_payment_id,'chg-sql-referral',
+   jsonb_build_object('status','succeeded','amount',25000,'currency','UGX','reference','EVS-SQL-REFERRAL-01'),
+   now()
+  );
+  if referred_result->>'status'<>'active' then raise exception 'Referred creator subscription did not activate'; end if;
+  if (select count(*) from executive_visuals.customer_referral_rewards where referral_attribution_id=(select id from executive_visuals.customer_referral_attributions where referred_owner_id=referred_owner))<>2 then
+   raise exception 'Double-sided Creator Circle rewards were not issued exactly once';
+  end if;
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=v_owner_id and idempotency_key like 'creator-referral:%')<>50
+   or (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=referred_owner and idempotency_key like 'creator-referral:%')<>50 then
+   raise exception 'Creator Circle referral credits were not granted to both creators';
+  end if;
+  if (select status from executive_visuals.customer_referral_attributions where referred_owner_id=referred_owner)<>'converted' then
+   raise exception 'Referral attribution did not transition to converted after verified payment';
+  end if;
+
   result := executive_visuals.manage_customer_subscription(v_owner_id,sub_id,'schedule_plan_change','pro-yearly','SQL integration plan change');
   if result->>'scheduledPlanCode'<>'pro-yearly' then raise exception 'Plan change was not scheduled'; end if;
 
@@ -86,7 +126,7 @@ begin
     jsonb_build_object('status','succeeded','amount',240000,'currency','UGX','reference','EVR-SQL-RENEWAL-01'),
     now()
   );
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id)<>21100 then
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=v_owner_id)<>21150 then
     raise exception 'Renewal did not grant scheduled plan credits exactly once';
   end if;
 
