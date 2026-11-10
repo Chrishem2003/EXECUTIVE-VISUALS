@@ -5,7 +5,7 @@ const VERSION=1;
 const ALLOWED=new Set([
  "close_period.created","close_period.submitted","close_period.locked","close_period.reopened",
  "close_task.assigned","close_task.completed","close_task.waived",
- "close_approval.assigned","close_approval.recorded","reconciliation.reviewed",
+ "close_approval.assigned","close_approval.recorded","reconciliation.recorded","reconciliation.reviewed",
  "evidence.attached","evidence.retention_changed"
 ]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
