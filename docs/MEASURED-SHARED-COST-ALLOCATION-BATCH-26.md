@@ -12,7 +12,7 @@
   - Egress: measured GB
 - Explicit administrator-triggered allocation runs for one month, currency and cost category.
 - Shared cost pools are drawn from the existing immutable service-cost ledger where `owner_id IS NULL`; customer-attributed direct costs are never redistributed.
-- Driver events must be measured for the same month and attributed to a customer. AI usage drivers include successful events only.
+- Driver events must be measured for the same month and attributed to a customer. AI usage drivers include successful events in the allocation currency only; foreign-currency and unpriced AI usage do not distort a currency-specific pool.
 - At least two measured customer recipients are required by default; policies can set a higher minimum.
 - Deterministic largest-remainder rounding allocates integer minor currency units and reconciles the allocation exactly to the source pool.
 - Immutable allocation batches preserve source event count and fingerprint, policy, driver totals, recipient counts, allocated amount and unallocated amount.
@@ -43,7 +43,7 @@ All routes require a financial administrator role. Database functions are servic
 
 ## Validation
 
-The disposable PostgreSQL integration test creates two customer usage streams with 100 and 300 successful tokens and a shared USD 10.01 minor-unit pool. It verifies the deterministic 250/751 allocation, exact reconciliation, immutable one-run idempotency, customer-level evidence, fully loaded profitability, and rejection of unsupported support-cost drivers. API tests cover administrator authorization, policy-driver compatibility, month/currency/category validation and RPC binding.
+The disposable PostgreSQL integration test creates three customer usage streams with 100, 300 and 100 successful tokens, adds a large foreign-currency usage fixture, and allocates a shared 1001-minor-unit pool. It verifies the deterministic 200/601/200 allocation, exact reconciliation, immutable one-run idempotency, customer-level evidence, fully loaded profitability, and rejection of unsupported support-cost drivers. API tests cover administrator authorization, policy-driver compatibility, month/currency/category validation and RPC binding.
 
 ## Rollout
 
