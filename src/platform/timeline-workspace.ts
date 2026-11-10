@@ -453,10 +453,16 @@ async function runAction(action:HTMLElement){
       state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
      }
     }else{
-     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
-     if(state.previewFrameUrl)URL.revokeObjectURL(state.previewFrameUrl);
-     state.previewFrameUrl=URL.createObjectURL(blob);
-     state.message="Source frame extracted and loaded into the clip preview.";
+     if(state.mode==="cloud"){
+      const thumbnailAsset=state.assets.find(item=>item.id===output.id);
+      if(!thumbnailAsset)throw new Error("The completed private thumbnail is not visible in the asset library yet.");
+      state.previewFrameUrl=await previewUrlForAsset(thumbnailAsset);
+     }else{
+      const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+      if(state.previewFrameUrl.startsWith("blob:"))URL.revokeObjectURL(state.previewFrameUrl);
+      state.previewFrameUrl=URL.createObjectURL(blob);
+     }
+     state.message="Private source-frame thumbnail extracted and loaded into the clip preview.";
     }
     state.mediaJobId="";state.mediaJobType="";
    }else if(result.job.status==="failed"||result.job.status==="cancelled"){
@@ -475,15 +481,18 @@ async function runAction(action:HTMLElement){
  if(type==="generate-proxy"||type==="generate-frame-preview"){
   const timeline=state.timeline;
   if(state.mode==="cloud"){
-   if(type!=="generate-proxy"){state.message="Cloud frame extraction is not enabled yet. Cloud proxy generation is available.";paint();return;}
-   if(!timeline){state.message="Open a timeline before creating a proxy.";paint();return;}
+   if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
    const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
    if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a cloud video clip with an accessible source asset.";paint();return;}
    try{
-    const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({operation:"proxy"})});
-    state.mediaJobId=queued.job.id;state.mediaJobType="media.proxy";state.mediaClipId=clipId;state.message="Private cloud editing proxy queued. Original source remains unchanged.";
+    const frameInput=document.querySelector<HTMLInputElement>("#tl-preview-source-frame");
+    const sourceFrame=Math.max(0,Math.min(100000000,Number(frameInput?.value??clip.sourceRange.start.value)||0));
+    const seconds=Math.min(3600,sourceFrame/sourceRate(asset,"video"));
+    const operation=type==="generate-proxy"?"proxy":"thumbnail";
+    const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify(operation==="proxy"?{operation}:{operation,seconds})});
+    state.mediaJobId=queued.job.id;state.mediaJobType=operation==="proxy"?"media.proxy":"media.thumbnail";state.mediaClipId=clipId;state.message=operation==="proxy"?"Private cloud editing proxy queued. Original source remains unchanged.":"Private cloud frame thumbnail queued.";
     window.dispatchEvent(new Event("ev:jobs-updated"));
-   }catch(error){state.message=error instanceof Error?error.message:"Cloud proxy could not be queued.";}
+   }catch(error){state.message=error instanceof Error?error.message:"Cloud preview job could not be queued.";}
    paint();return;
   }
   if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
