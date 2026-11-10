@@ -50,7 +50,7 @@ test("revision endpoint rejects invalid revision numbers",async()=>{
 });
 
 test("database migration captures immutable revisions and limits member access to reads",async()=>{
- const sql=await readFile(new URL("../../supabase/migrations/20261109200000_timeline_revision_history.sql",import.meta.url),"utf8");
+ const sql=await readFile(new URL("../../supabase/migrations/20261120100000_timeline_revision_history.sql",import.meta.url),"utf8");
  assert.match(sql,/create table if not exists executive_visuals\.timeline_revisions/i);
  assert.match(sql,/after insert or update of revision on executive_visuals\.timelines/i);
  assert.match(sql,/security definer/i);
