@@ -141,11 +141,25 @@ begin
  settlement:=executive_visuals.record_flutterwave_settlement(
   '11111111-1111-4111-8111-111111111111',
   '{"id":"stm_batch12_test","currency":"UGX","gross_amount":265000,"net_amount":264900,"status":"completed","destination":"wallet","charge_count":"0","fees":[{"type":"charge_fee","amount":100}],"processed_date":"2026-11-10T08:00:00Z"}'::jsonb,
-  null,null
+  265100,null
  );
  if settlement->>'currency'<>'UGX' or (settlement->>'grossMinor')::bigint<>265000 then
   raise exception 'Settlement import did not preserve provider amounts';
  end if;
+ perform executive_visuals.record_flutterwave_settlement(
+  '11111111-1111-4111-8111-111111111111',
+  '{"id":"stm_batch12_test","currency":"UGX","gross_amount":265000,"net_amount":264900,"status":"completed","destination":"wallet","charge_count":"0","fees":[{"type":"charge_fee","amount":100}],"processed_date":"2026-11-10T08:00:00Z"}'::jsonb,
+  265100,null
+ );
+ if (select count(*) from executive_visuals.financial_reconciliation_exceptions
+   where provider_settlement_id='stm_batch12_test' and exception_code='gross_amount_mismatch' and status='open')<>1 then
+  raise exception 'Repeated settlement mismatch created duplicate exceptions';
+ end if;
+ select id into audit_id from executive_visuals.financial_reconciliation_exceptions
+  where provider_settlement_id='stm_batch12_test' and exception_code='gross_amount_mismatch' and status='open';
+ perform executive_visuals.resolve_financial_reconciliation_exception(
+  '11111111-1111-4111-8111-111111111111',audit_id,'resolved','Resolved after confirming test settlement discrepancy'
+ );
 
  audit_id:=executive_visuals.write_financial_admin_audit(
   '11111111-1111-4111-8111-111111111111','finance.test.audit','integration_test','batch-12',
