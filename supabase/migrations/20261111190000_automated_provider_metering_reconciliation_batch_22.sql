@@ -46,7 +46,7 @@ begin
   or coalesce(length(btrim(p_invoice_reference)),0) not between 1 and 180
   or coalesce(p_currency,'') !~ '^[A-Z]{3}$' or p_period_start is null or p_period_end is null or p_period_end<p_period_start
   or p_total_minor is null or p_total_minor<0 or coalesce(p_source_fingerprint,'') !~ '^[a-f0-9]{64}$'
-  or case when jsonb_typeof(p_lines)='array' then jsonb_array_length(p_lines) between 1 and 5000 else true end then
+  or case when jsonb_typeof(p_lines)='array' then not (jsonb_array_length(p_lines) between 1 and 5000) else true end then
   raise exception 'Invalid provider invoice import' using errcode='22023';
  end if;
  v_count:=jsonb_array_length(p_lines);
