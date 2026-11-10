@@ -27,12 +27,14 @@ export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}=
  if(quoteShots.length!==shots.length)throw Object.assign(new Error("The verified production quote must contain an independently priced record for every approved shot."),{code:"VIDEO_APPROVAL_SHOT_PRICING_MISSING"});
  const snapshot=canonical(shots.map((shot,index)=>{
   const shotQuote=quoteShots[index];
-  if(!shotQuote||shotQuote.shotId!==shot.id||shotQuote.currency!==quote.currency||!Number.isFinite(shotQuote.amount)||shotQuote.amount<0)
+  if(!shotQuote||shotQuote.shotId!==shot.id||shotQuote.provider!==shot.provider||shotQuote.model!==shot.model||shotQuote.currency!==quote.currency||!Number.isFinite(shotQuote.amount)||shotQuote.amount<0||!shotQuote.pricing||typeof shotQuote.pricing.sourceUrl!=="string"||!/^https:\/\//i.test(shotQuote.pricing.sourceUrl)||!Number.isFinite(Date.parse(shotQuote.pricing.observedAt))||!Number.isFinite(Date.parse(shotQuote.pricing.expiresAt))||Date.parse(shotQuote.pricing.expiresAt)<=Date.parse(shotQuote.pricing.observedAt))
    throw Object.assign(new Error("Every approved shot must match its own verified quote."),{code:"VIDEO_APPROVAL_SHOT_PRICING_MISMATCH"});
   const amountMicros=micros(shotQuote.amount);
   if(!Number.isSafeInteger(amountMicros))throw Object.assign(new Error("A shot quote exceeds safe micro-unit precision."),{code:"VIDEO_APPROVAL_SHOT_PRICING_INVALID"});
   return {...shot,estimatedCostMicros:amountMicros,estimatedCost:{currency:shotQuote.currency,amount:shotQuote.amount,pricing:canonical(shotQuote.pricing)}};
  }));
+ const shotTotalMicros=snapshot.reduce((total,shot)=>total+shot.estimatedCostMicros,0);
+ if(!Number.isSafeInteger(shotTotalMicros)||shotTotalMicros!==quoteMicros)throw Object.assign(new Error("The sum of independently priced shots must exactly match the aggregate production quote."),{code:"VIDEO_APPROVAL_SHOT_TOTAL_MISMATCH"});
  const canonicalQuote=canonical(quote);
  const requestHash=createHash("sha256").update(JSON.stringify({shots:snapshot,quote:canonicalQuote})).digest("hex");
  return Object.freeze({
