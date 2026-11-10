@@ -44,6 +44,8 @@ begin
   when 'submit_for_approval' then 'close_period.submitted'
   when 'record_approval' then 'close_approval.recorded'
   when 'reassign_approval' then 'close_approval.assigned'
+  when 'record_reconciliation' then 'reconciliation.recorded'
+  when 'review_reconciliation' then 'reconciliation.reviewed'
   when 'lock_period' then 'close_period.locked'
   when 'reopen_period' then 'close_period.reopened'
  end;
@@ -56,6 +58,11 @@ begin
  );
  v_canonical:=pg_temp.canonical_financial_json(v_event);
  v_hash:=encode(digest(convert_to(v_canonical,'UTF8'),'sha256'),'hex');
+ if p_command in('record_reconciliation','review_reconciliation') then
+  return executive_visuals.execute_financial_reconciliation_command(
+   p_owner,p_actor,p_command,p_payload,v_event,v_canonical,v_hash
+  );
+ end if;
  return executive_visuals.execute_financial_close_command(
   p_owner,p_actor,p_command,p_payload,v_event,v_canonical,v_hash
  );
@@ -72,6 +79,7 @@ declare
  v_result jsonb;
  v_period_id uuid;
  v_task_id uuid;
+ v_reconciliation_id uuid;
  v_count integer;
 begin
  v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'create_period',
@@ -93,9 +101,20 @@ begin
   'batch32-task-complete-bank');
  if v_result->'task'->>'status'<>'completed' then raise exception 'Task completion failed: %',v_result; end if;
 
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'record_reconciliation',
+  jsonb_build_object('periodId',v_period_id,'reconciliationKey','operating_bank','accountName','Operating bank',
+   'currency','UGX','ledgerBalanceMinor',100000,'statementBalanceMinor',100000,
+   'evidenceReference','private://evidence/bank-statement-2026-11','evidenceSha256',repeat('a',64),
+   'reviewerId',v_reviewer2),'batch33-reconciliation-record');
+ v_reconciliation_id:=(v_result->'reconciliation'->>'id')::uuid;
+
  v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'submit_for_approval',
   jsonb_build_object('periodId',v_period_id),'batch32-period-submit');
  if v_result->'period'->>'status'<>'in_review' then raise exception 'Period submission failed: %',v_result; end if;
+
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_reviewer2,'review_reconciliation',
+  jsonb_build_object('periodId',v_period_id,'reconciliationId',v_reconciliation_id,'decision','approved'),
+  'batch33-reconciliation-review');
 
  v_result:=pg_temp.run_financial_close_command(v_owner,v_reviewer1,'record_approval',
   jsonb_build_object('periodId',v_period_id,'stageKey','finance_manager','decision','approved'),
@@ -113,7 +132,7 @@ begin
  if v_result->>'duplicate'<>'true' then raise exception 'Idempotent lock retry was not a no-op: %',v_result; end if;
 
  select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
- if v_count<>7 then raise exception 'Expected seven committed close audit events, found %',v_count; end if;
+ if v_count<>9 then raise exception 'Expected nine committed close audit events, found %',v_count; end if;
 
  v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'reopen_period',
   jsonb_build_object('periodId',v_period_id,'reason','Controller requested a documented review correction'),
@@ -134,7 +153,7 @@ begin
   if sqlerrm='Lock after reopen unexpectedly succeeded without new approvals' then raise; end if;
  end;
  select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
- if v_count<>8 then raise exception 'Failed close transition left an audit event behind; count=%',v_count; end if;
+ if v_count<>10 then raise exception 'Failed close transition left an audit event behind; count=%',v_count; end if;
 
  v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'reassign_approval',
   jsonb_build_object('periodId',v_period_id,'stageKey','finance_manager','reviewerId',v_assignee),
@@ -152,7 +171,7 @@ begin
   jsonb_build_object('periodId',v_period_id),'batch32-period-lock-second-round');
  if v_result->'period'->>'status'<>'locked' then raise exception 'Relocked period after reviewer reassignment failed: %',v_result; end if;
  select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
- if v_count<>13 then raise exception 'Expected thirteen close audit events after second approval round, found %',v_count; end if;
+ if v_count<>15 then raise exception 'Expected fifteen close audit events after second approval round, found %',v_count; end if;
 end
 $batch32$;
 reset role;
