@@ -19,6 +19,22 @@ const input = {
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});}
 function api(fetchImpl){return createFinancialIntelligenceApi({supabaseUrl:"https://project.supabase.co",serviceRoleKey:"service-role-test",billingEnabled:true,fetchImpl});}
 
+test("verified scenario baseline is finance-admin protected and period validated",async()=>{
+ let rpc=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_scenario_baseline")){rpc=JSON.parse(options.body);return json({periodMonth:"2026-11-01",byCurrency:[{currency:"UGX",openingCashMinor:5000000,monthlyMrrMinor:10000000,monthlyDirectServiceCostMinor:400000,evidenceReferences:[{kind:"cash_position_snapshot",id:"cash-1"}]}],limitations:["MRR is not cash collected."]});}
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/scenario-baseline",ownerId:owner,query:{periodMonth:"2026-11-10"}});
+ assert.equal(invalid.status,400);assert.equal(rpc,null);
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/scenario-baseline",ownerId:owner,query:{periodMonth:"2026-11-01"}});
+ assert.equal(result.status,200);assert.equal(rpc.p_actor_id,owner);assert.equal(rpc.p_period_month,"2026-11-01");
+ assert.equal(result.body.baseline.byCurrency[0].monthlyMrrMinor,10000000);
+ assert.match(result.body.baseline.limitations[0],/not cash collected/);
+});
+
 test("scenario snapshot read endpoint is finance-admin protected",async()=>{
  const service=api(async url=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
@@ -101,6 +117,10 @@ test("scenario snapshot list validates limits and binds actor to protected RPC",
 
 test("Batch 46 persistence migration enforces immutable, idempotent and finance-admin-only snapshots",()=>{
  assert.match(migration,/financial_scenario_snapshots/);
+ assert.match(migration,/financial_scenario_baseline/);
+ assert.match(migration,/subscription_revenue_snapshots/);
+ assert.match(migration,/financial_cash_position_snapshots/);
+ assert.match(migration,/financial_service_cost_events/);
  assert.match(migration,/enable row level security/i);
  assert.match(migration,/reject_financial_scenario_snapshot_mutation/);
  assert.match(migration,/unique\(actor_id,idempotency_key\)/);
@@ -117,6 +137,8 @@ test("Financial Command Centre exposes real scenario controls and immutable evid
  assert.match(appSource,/SCENARIO INTELLIGENCE · BATCH 46/);
  assert.match(appSource,/data-finance-scenario-save/);
  assert.match(appSource,/data-finance-scenario-refresh/);
+ assert.match(appSource,/data-finance-scenario-baseline/);
+ assert.match(appSource,/scenario-baseline\?periodMonth=/);
  assert.match(appSource,/\/api\/admin\/finance\/scenarios/);
  assert.match(appSource,/evidenceReferences/);
  assert.match(appSource,/scenarioSnapshots/);
