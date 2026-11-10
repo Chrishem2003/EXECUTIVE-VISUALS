@@ -56,6 +56,21 @@ create table executive_visuals.timelines (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table executive_visuals.timelines enable row level security;
+grant select on executive_visuals.timelines to authenticated;
+create policy test_timeline_read on executive_visuals.timelines
+  for select to authenticated
+  using (
+    owner_id=(select auth.uid())
+    or exists (
+      select 1 from executive_visuals.projects p
+      where p.id=timelines.project_id and p.owner_id=(select auth.uid())
+    )
+    or exists (
+      select 1 from executive_visuals.project_members m
+      where m.project_id=timelines.project_id and m.member_id=(select auth.uid())
+    )
+  );
 grant select on executive_visuals.project_members to authenticated, service_role;
 alter table executive_visuals.projects enable row level security;
 grant select on executive_visuals.projects to authenticated;
