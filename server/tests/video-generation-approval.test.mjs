@@ -8,7 +8,8 @@ test("creates a deterministic immutable approval snapshot under the budget ceili
  assert.equal(result.status,"approved_pending_submission");
  assert.equal(result.requestsSubmitted,false);
  assert.equal(result.quotedAmountMicros,1250000);
- assert.equal(result.budgetCeilingMicros,2000000);\n const snapshot=JSON.parse(result.snapshotJson);assert.equal(snapshot.shots[0].estimatedCostMicros,1250000);assert.equal(snapshot.shots[0].estimatedCost.currency,"USD");
+ assert.equal(result.budgetCeilingMicros,2000000);
+ const snapshot=JSON.parse(result.snapshotJson);assert.equal(snapshot.shots[0].estimatedCostMicros,1250000);assert.equal(snapshot.shots[0].estimatedCost.currency,"USD");
  assert.match(result.requestHash,/^[a-f0-9]{64}$/);
  assert.equal(result.requestHash,buildVideoGenerationApproval({shots:[{...shots[0]}],preflight,budget:{currency:"USD",amount:2},confirmed:true}).requestHash);
 });
