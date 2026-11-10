@@ -580,3 +580,97 @@ test("verified webhook retries a previously failed inbox event instead of discar
   assert.equal(result.body.result.subscriptionRenewed,true);
   assert.ok(calls.some(x=>x.target.includes("/payment_webhook_events?id=eq.event-retry")&&x.method==="PATCH"));
 });
+
+
+test("verified failed Flutterwave charge creates recovery attempt and queues customer notification",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({event:"charge.completed",data:{id:"chg_failed_recovery",status:"failed"}}));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+    if(target.includes("/payment_webhook_events?select=id,processing_status"))return json([]);
+    if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/charges/chg_failed_recovery")return json({data:{
+      id:"chg_failed_recovery",reference:"EVfailedrecovery",currency:"UGX",amount:15000,status:"failed",
+      failure_code:"INSUFFICIENT_FUNDS",failure_message:"Insufficient funds"
+    }});
+    if(target.includes("/payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata,description"))return json([{
+      id:paymentId,owner_id:owner,provider_transaction_id:"chg_failed_recovery",
+      tx_ref:"EVfailedrecovery",amount_minor:15000,currency:"UGX",status:"pending",
+      metadata:{payment_purpose:"subscription_renewal",subscription_id:"44444444-4444-4444-8444-444444444444"}
+    }]);
+    if(target.includes("/payment_transactions?id=eq."+paymentId)&&options.method==="PATCH")return new Response(null,{status:204});
+    if(target.endsWith("/rpc/record_payment_failure")){
+      const payload=JSON.parse(options.body);
+      assert.equal(payload.p_payment_id,paymentId);
+      assert.equal(payload.p_failure_code,"INSUFFICIENT_FUNDS");
+      assert.equal(payload.p_grace_hours,72);
+      return json({paymentAttemptId:"55555555-5555-4555-8555-555555555555",status:"retry_scheduled",subscriptionStatus:"past_due",notificationQueued:true});
+    }
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave&event_key=eq.")&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.result.status,"failed");
+  assert.equal(result.body.result.recovery.notificationQueued,true);
+  assert.ok(calls.some(x=>x.target.endsWith("/rpc/record_payment_failure")));
+});
+
+test("customer billing notifications are scoped to authenticated owner",async()=>{
+  let target="";
+  const service=api(async url=>{
+    target=String(url);
+    return json([{id:"55555555-5555-4555-8555-555555555555",owner_id:owner,notification_type:"payment_failed",payload:{title:"Payment needs attention"},status:"queued"}]);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/notifications",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.ok(target.includes("/billing_notification_outbox?"));
+  assert.ok(target.includes("owner_id=eq."+owner));
+  assert.equal(result.body.notifications.length,1);
+});
+
+test("customer cannot mark another user's billing notification as read",async()=>{
+  let target="";
+  const service=api(async(url,options={})=>{
+    target=String(url);
+    assert.equal(options.method,"PATCH");
+    return json([]);
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/billing/notifications/read",ownerId:owner,
+    body:{notificationId:"55555555-5555-4555-8555-555555555555"}
+  });
+  assert.equal(result.status,200);
+  assert.equal(result.body.markedRead,false);
+  assert.ok(target.includes("owner_id=eq."+owner));
+});
+
+test("billing recovery queue is administrator-only",async()=>{
+  const service=api(async url=>{
+    if(String(url).includes("platform_admins"))return json([{role:"support"}]);
+    throw new Error("Recovery data must not be read by support users");
+  });
+  const result=await service.handle({method:"GET",path:"/api/admin/billing/recovery",ownerId:owner});
+  assert.equal(result.status,403);
+  assert.equal(result.body.error.code,"BILLING_ADMIN_REQUIRED");
+});
+
+test("admin grace-expiry action is role-protected and reports no provider charges",async()=>{
+  let rpcCalled=false;
+  const service=api(async(url,options={})=>{
+    if(String(url).includes("platform_admins"))return json([{role:"billing_admin"}]);
+    if(String(url).endsWith("/rpc/expire_due_subscriptions")){
+      rpcCalled=true;
+      assert.equal(JSON.parse(options.body).p_limit,100);
+      return json({expiredCount:2});
+    }
+    throw new Error("Unexpected request: "+String(url));
+  });
+  const result=await service.handle({method:"POST",path:"/api/admin/billing/recovery/expire-grace",ownerId:owner,body:{}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.expiredCount,2);
+  assert.equal(result.body.providerChargesInitiated,false);
+  assert.equal(rpcCalled,true);
+});
