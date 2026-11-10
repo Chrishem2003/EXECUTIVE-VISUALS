@@ -1,4 +1,12 @@
 -- Batch 26: measured shared-cost allocation, exact integer reconciliation and profitability reporting.
+reset role;
+insert into executive_visuals.subscription_revenue_snapshots(
+ snapshot_month,owner_id,cohort_month,currency,mrr_minor,subscription_status
+) values
+ (date_trunc('month',now())::date,'11111111-1111-4111-8111-111111111111',date_trunc('month',now())::date,'XTS',10000,'active'),
+ (date_trunc('month',now())::date,'22222222-2222-4222-8222-222222222222',date_trunc('month',now())::date,'XTS',20000,'active')
+on conflict(snapshot_month,owner_id,currency) do update
+set mrr_minor=excluded.mrr_minor,subscription_status=excluded.subscription_status;
 set role service_role;
 do $batch26$
 declare
@@ -15,14 +23,6 @@ declare
  v_sum bigint;
  v_lines integer;
 begin
- insert into executive_visuals.subscription_revenue_snapshots(
-  snapshot_month,owner_id,cohort_month,currency,mrr_minor,subscription_status
- ) values
-  (v_month,v_customer_a,v_month,'XTS',10000,'active'),
-  (v_month,v_customer_b,v_month,'XTS',20000,'active')
- on conflict(snapshot_month,owner_id,currency) do update
- set mrr_minor=excluded.mrr_minor,subscription_status=excluded.subscription_status;
-
  perform executive_visuals.record_ai_usage_cost_event(
   v_actor,now()-interval '2 hours',v_customer_a,null,null,'batch26-ai-use-a',
   'openai','gpt-batch26','gpt-batch26','text','succeeded',
