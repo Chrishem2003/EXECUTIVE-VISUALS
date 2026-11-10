@@ -61,7 +61,7 @@
     "verify:upscale-evidence": "node server/scripts/verify-upscale-quality-evidence.mjs",
     "benchmark:upscale": "node server/scripts/run-upscale-benchmark.mjs",
     "verify:customer-lifetime-acquisition-economics": "node --test server/tests/customer-lifetime-acquisition-economics.test.mjs",
-    "verify:financial-scenario-intelligence": "node --test server/tests/financial-scenario-intelligence.test.mjs"
+    "verify:financial-scenario-intelligence": "node --test server/tests/financial-scenario-intelligence.test.mjs server/tests/financial-scenario-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
