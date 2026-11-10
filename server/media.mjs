@@ -356,10 +356,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
-    const renderStartedAt=process.hrtime.bigint();
     const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,onResourceMeasurement,c2paPreserver,c2paSigner,c2paSignerMode});
-    const renderSeconds=Number(process.hrtime.bigint()-renderStartedAt)/1e9;
-    if(renderSeconds>0&&typeof onResourceMeasurement==="function")onResourceMeasurement({measurementId:randomUUID(),resourceType:"render_second",quantity:renderSeconds,unit:"second",measuredAt:new Date().toISOString()});
     return result;
   }
   if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
