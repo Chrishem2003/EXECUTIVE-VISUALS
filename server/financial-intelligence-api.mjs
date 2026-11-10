@@ -327,11 +327,11 @@ export function createFinancialIntelligenceApi({
         const email=String(body.email||"").trim().toLowerCase();
         const first=String(body.firstName||"").trim().slice(0,80);
         const last=String(body.lastName||"").trim().slice(0,80);
-        const rawPhone=String(body.phoneNumber||"").replace(/[\\s()+-]/g,"");
+        const rawPhone=String(body.phoneNumber||"").replace(/[\s()+-]/g,"");
         const key=String(idempotencyKey||"").trim();
         const phone=rawPhone.startsWith("256")?rawPhone.slice(3):rawPhone.startsWith("0")?rawPhone.slice(1):rawPhone;
         if(!UUID.test(subscriptionId)||!["MTN","AIRTEL"].includes(network)||
-          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||!first||!last||!/^7\\d{8}$/.test(phone)||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!first||!last||!/^7\d{8}$/.test(phone)||
           key.length<8||key.length>180)
           return error(400,"SUBSCRIPTION_RENEWAL_INPUT_INVALID","Provide a valid subscription, customer details, Ugandan mobile number, MTN/Airtel network and idempotency key.");
         const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
