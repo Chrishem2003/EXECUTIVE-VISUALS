@@ -247,4 +247,40 @@ begin
  end;
 end $$;
 
+
+do $
+declare
+  v_owner constant uuid := '11111111-1111-4111-8111-111111111111';
+  event_result jsonb;
+  summary_result jsonb;
+  health_result jsonb;
+  i integer;
+begin
+  for i in 1..5 loop
+    event_result:=executive_visuals.record_customer_success_event(v_owner,'session_started','batch16-session-'||i);
+  end loop;
+  perform executive_visuals.record_customer_success_event(v_owner,'project_created','batch16-project-first');
+  perform executive_visuals.record_customer_success_event(v_owner,'render_completed','batch16-render-first');
+  perform executive_visuals.record_customer_success_event(v_owner,'asset_uploaded','batch16-asset-first');
+  perform executive_visuals.record_customer_success_event(v_owner,'workflow_completed','batch16-workflow-first');
+  event_result:=executive_visuals.record_customer_success_event(v_owner,'render_completed','batch16-render-first');
+  if event_result->>'duplicate'<>'true' then
+    raise exception 'Customer-success event idempotency did not reject a duplicate event';
+  end if;
+  summary_result:=executive_visuals.customer_success_summary(v_owner);
+  if (summary_result->>'completedCount')::integer<>5
+   or (summary_result->>'points')::integer<>85 then
+    raise exception 'Creator milestone awards or points were not calculated correctly: %',summary_result;
+  end if;
+  health_result:=executive_visuals.customer_success_health_for_owner(v_owner);
+  if (health_result->>'score')::integer<75
+   or health_result->>'riskLevel'<>'healthy' then
+    raise exception 'Customer health score did not reflect verified engagement milestones: %',health_result;
+  end if;
+  if (select count(*) from executive_visuals.customer_success_activity_events
+      where owner_id=v_owner and event_key='batch16-render-first')<>1 then
+    raise exception 'Duplicate product events were stored more than once';
+  end if;
+end $;
+
 reset role;
