@@ -30,8 +30,21 @@ export function createControlRemediationApi({db}={}){
  }
  function hydrate(row){
   const evidence=db.prepare("SELECT e.id,e.label,e.evidence_uri AS uri,e.sha256,e.kind,e.captured_at AS capturedAt,e.submitted_by AS submittedBy,e.created_at AS createdAt,CASE WHEN a.id IS NOT NULL THEN a.id END AS assetId,a.original_name AS fileName,a.media_type AS mediaType,a.byte_size AS byteSize FROM control_remediation_evidence e LEFT JOIN assets a ON a.id=substr(e.evidence_uri,9) AND a.deleted_at IS NULL WHERE e.action_id=? ORDER BY e.created_at,e.id").all(row.id).map(item=>({...item,scanStatus:item.assetId?"not_scanned":"unavailable"}));
-  return {...safeAction(row),evidence,
+  const evidenceDownloads=db.prepare("SELECT owner_id AS actorId,details_json,created_at AS at FROM audit_events WHERE subject_type='control_remediation' AND subject_id=? AND event_type='control_remediation.evidence_downloaded' ORDER BY id DESC LIMIT 25").all(row.id).map(item=>({...item,details:parseJson(item.details_json)}));
+  return {...safeAction(row),evidence,evidenceDownloads,
    history:db.prepare("SELECT id,actor_id AS actorId,event_type AS event,from_status AS fromStatus,to_status AS toStatus,note,details_json,created_at AS at FROM control_remediation_history WHERE action_id=? ORDER BY id").all(row.id).map(x=>({...x,details:parseJson(x.details_json)}))};
+ }
+ function recordEvidenceDownload({ownerId,assetId}={}){
+  if(!UUID.test(String(ownerId||""))||!UUID.test(String(assetId||"")))return 0;
+  const links=db.prepare("SELECT e.id AS evidence_id,e.label,e.sha256,e.kind,a.id AS action_id,a.project_id,a.owner_id FROM control_remediation_evidence e JOIN control_remediation_actions a ON a.id=e.action_id WHERE e.evidence_uri=?").all("asset://"+assetId);
+  let recorded=0;
+  for(const link of links){
+   const allowed=link.project_id?!!access(ownerId,link.project_id,false):link.owner_id===ownerId;
+   if(!allowed)continue;
+   audit(db,ownerId,"control_remediation.evidence_downloaded","control_remediation",link.action_id,{evidenceId:link.evidence_id,assetId,kind:link.kind,label:link.label,sha256:link.sha256},link.project_id);
+   recorded++;
+  }
+  return recorded;
  }
  function member(ownerId,projectId,memberId){
   if(!memberId)return null;
@@ -111,7 +124,7 @@ export function createControlRemediationApi({db}={}){
    if(!asset||asset.owner_id!==ownerId||asset.project_id!==(row.project_id||null))return error(404,"EVIDENCE_ASSET_NOT_FOUND","Upload the evidence to this account or shared project before attaching it.");
    const allowedExtensions={"application/pdf":[".pdf"],"image/png":[".png"],"image/jpeg":[".jpg",".jpeg"]};
    const allowed=allowedExtensions[asset.media_type],filename=String(asset.original_name||"").toLowerCase();
-   if(!allowed||!allowed.some(ext=>filename.endsWith(ext))||!Number.isSafeInteger(Number(asset.byte_size))||Number(asset.byte_size)<1||Number(asset.byte_size)>10*1024*1024||!/^[a-f0-9]{64}$/i.test(String(asset.sha256||"")))return error(415,"UNSUPPORTED_EVIDENCE_FILE","Evidence must be a PDF, TXT, JSON, PNG or JPEG file no larger than 10 MB with a verified stored SHA-256.");
+   if(!allowed||!allowed.some(ext=>filename.endsWith(ext))||!Number.isSafeInteger(Number(asset.byte_size))||Number(asset.byte_size)<1||Number(asset.byte_size)>10*1024*1024||!/^[a-f0-9]{64}$/i.test(String(asset.sha256||"")))return error(415,"UNSUPPORTED_EVIDENCE_FILE","Evidence must be a PDF, PNG or JPEG file no larger than 10 MB with a verified stored SHA-256.");
    const evidenceId=randomUUID();
    try{
     db.exec("BEGIN IMMEDIATE");
@@ -153,5 +166,5 @@ export function createControlRemediationApi({db}={}){
   }
   return error(405,"METHOD_NOT_ALLOWED","Method is not supported for this remediation route.");
  }
- return {handle};
+ return {handle,recordEvidenceDownload};
 }
