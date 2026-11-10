@@ -94,7 +94,8 @@ begin
   or (p_min_gross_margin_pct is null and p_min_contribution_minor is null)
   or (p_min_gross_margin_pct is not null and (p_min_gross_margin_pct<0 or p_min_gross_margin_pct>100))
   or (p_min_contribution_minor is not null and p_min_contribution_minor<0)
-  or p_effective_from is null or (p_effective_to is not null and p_effective_to<=p_effective_from)
+  or p_effective_from is null or p_effective_from<>date_trunc('month',p_effective_from)::date
+  or (p_effective_to is not null and (p_effective_to<=p_effective_from or p_effective_to<>date_trunc('month',p_effective_to)::date))
   or coalesce(length(p_idempotency_key),0) not between 8 and 160 then
   raise exception 'Invalid financial margin policy' using errcode='22023';
  end if;
