@@ -75,7 +75,7 @@ test("v4 webhook verifies provider refund before atomic credit settlement and de
   const service=api(async(url,options={})=>{
     const target=String(url);
     if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
-    if(target.includes("/payment_webhook_events?select=id"))return json(duplicate?[{id:"event-1"}]:[]);
+    if(target.includes("/payment_webhook_events?select=id"))return json(duplicate?[{id:"event-1",processing_status:"processed"}]:[]);
     if(target.endsWith("/payment_webhook_events")&&options.method==="POST"){dbWrites++;return new Response(null,{status:201});}
     if(target.includes("payment_refunds?select=id,owner_id"))return json([{
       id:refundId,owner_id:owner,payment_transaction_id:paymentId,
@@ -551,4 +551,32 @@ test("verified V4 renewal charge calls atomic renewal RPC instead of granting pu
   assert.equal(result.body.result.subscriptionRenewed,true);
   assert.ok(calls.some(x=>x.target.endsWith("/rpc/finalize_subscription_renewal")));
   assert.equal(calls.some(x=>x.target.endsWith("/rpc/finalize_payment_purchase")),false);
+});
+
+
+test("verified webhook retries a previously failed inbox event instead of discarding it as duplicate",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({event:"charge.completed",data:{id:"chg_retry",status:"succeeded"}}));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+    if(target.includes("/payment_webhook_events?select=id,processing_status"))return json([{id:"event-retry",processing_status:"failed"}]);
+    if(target.includes("/payment_webhook_events?id=eq.event-retry")&&options.method==="PATCH")return new Response(null,{status:204});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/charges/chg_retry")return json({data:{
+      id:"chg_retry",reference:"EVRretry",currency:"UGX",amount:15000,status:"succeeded"
+    }});
+    if(target.includes("/payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata,description"))return json([{
+      id:paymentId,owner_id:owner,provider_transaction_id:"chg_retry",tx_ref:"EVRretry",
+      amount_minor:15000,currency:"UGX",status:"pending",
+      metadata:{payment_purpose:"subscription_renewal",subscription_id:"44444444-4444-4444-8444-444444444444"}
+    }]);
+    if(target.endsWith("/rpc/finalize_subscription_renewal"))return json({status:"active"});
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave&event_key=eq.")&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.result.subscriptionRenewed,true);
+  assert.ok(calls.some(x=>x.target.includes("/payment_webhook_events?id=eq.event-retry")&&x.method==="PATCH"));
 });
