@@ -132,6 +132,24 @@ begin
  end;
  select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
  if v_count<>8 then raise exception 'Failed close transition left an audit event behind; count=%',v_count; end if;
+
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'reassign_approval',
+  jsonb_build_object('periodId',v_period_id,'stageKey','finance_manager','reviewerId',v_assignee),
+  'batch32-approval-reassign-manager');
+ if v_result->'approval'->>'reviewer_id'<>v_assignee::text then raise exception 'Approval reassignment failed: %',v_result; end if;
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'submit_for_approval',
+  jsonb_build_object('periodId',v_period_id),'batch32-period-resubmit');
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_assignee,'record_approval',
+  jsonb_build_object('periodId',v_period_id,'stageKey','finance_manager','decision','approved'),
+  'batch32-approval-reassigned-manager');
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_reviewer2,'record_approval',
+  jsonb_build_object('periodId',v_period_id,'stageKey','controller','decision','approved'),
+  'batch32-approval-controller-second-round');
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'lock_period',
+  jsonb_build_object('periodId',v_period_id),'batch32-period-lock-second-round');
+ if v_result->'period'->>'status'<>'locked' then raise exception 'Relocked period after reviewer reassignment failed: %',v_result; end if;
+ select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
+ if v_count<>13 then raise exception 'Expected thirteen close audit events after second approval round, found %',v_count; end if;
 end
 $batch32$;
 reset role;
