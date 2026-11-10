@@ -1452,3 +1452,44 @@ test("financial close readiness is admin-only, read-only and requires independen
  assert.ok(incomplete.body.assessment.blockers.some(x=>x.issue==="preparer_reviewer_conflict"));
  assert.ok(incomplete.body.assessment.tasks[0].issues.includes("missing_evidence"));
 });
+
+
+test("financial audit ledger enforces admin access, idempotent append and independent chain verification",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized audit requests must not reach ledger storage.");});
+ const forbidden=await denied.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
+ assert.equal(forbidden.status,403);
+ let appended=null;
+ const service=api(async(url,options={})=>{
+  const u=String(url);
+  if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(u.includes("/financial_audit_events?select=event_id"))return json([]);
+  if(u.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});
+  if(u.endsWith("/rpc/append_financial_audit_event")){appended=JSON.parse(options.body);return json({duplicate:false,sequence:1,eventHash:appended.p_event_hash});}
+  if(u.includes("/financial_audit_events?select=event_envelope"))return json([]);
+  throw new Error("Unexpected audit request: "+u);
+ });
+ const created=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
+ assert.equal(created.status,201);
+ assert.equal(created.body.event.sequence,1);
+ assert.ok(/^[a-f0-9]{64}$/.test(created.body.event.eventHash));
+ assert.equal(appended.p_event_envelope.ownerId,owner);
+ assert.equal(appended.p_event_envelope.eventType,"close_period.created");
+ assert.equal(appended.p_event_envelope.sequence,1);
+ const history=await service.handle({method:"GET",path:"/api/admin/finance/audit/events",ownerId:owner});
+ assert.equal(history.status,200);
+ assert.equal(history.body.head.sequence,0);
+ const verified=await service.handle({method:"GET",path:"/api/admin/finance/audit/verify",ownerId:owner});
+ assert.equal(verified.status,200);
+ assert.equal(verified.body.verification.valid,true);
+ assert.equal(verified.body.verification.complete,true);
+});
+
+test("audit event API rejects unsupported event types and requires idempotency",async()=>{
+ const service=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);throw new Error("Invalid audit payload must fail before storage.");});
+ const missing=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",payload:{period:"2026-10"}}});
+ assert.equal(missing.status,400);
+ assert.equal(missing.body.error.code,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID");
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"ledger.deleted",idempotencyKey:"audit-invalid-event",payload:{}}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"FINANCIAL_AUDIT_EVENT_TYPE_INVALID");
+});
