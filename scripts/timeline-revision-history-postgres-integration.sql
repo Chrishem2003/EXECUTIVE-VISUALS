@@ -25,18 +25,18 @@ set project_id='20000000-0000-4000-8000-000000000002'
 where id='30000000-0000-4000-8000-000000000001';
 set role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',false);
-do $ declare n integer; begin
+do $$ declare n integer; begin
  select count(*) into n from executive_visuals.timeline_revisions where timeline_id='30000000-0000-4000-8000-000000000001';
  if n<>0 then raise exception 'Former project member retained access after timeline move.'; end if;
-end $;
+end $$;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000004',false);
-do $ declare n integer; begin
+do $$ declare n integer; begin
  select count(*) into n from executive_visuals.timeline_revisions where timeline_id='30000000-0000-4000-8000-000000000001';
  if n<>2 then raise exception 'Current project member cannot read timeline history after move.'; end if;
-end $;
+end $$;
 reset role;
 
-do $ begin
+do $$ begin
  if has_table_privilege('service_role','executive_visuals.timeline_revisions','INSERT')
  or has_table_privilege('service_role','executive_visuals.timeline_revisions','UPDATE')
  or has_table_privilege('service_role','executive_visuals.timeline_revisions','DELETE')
