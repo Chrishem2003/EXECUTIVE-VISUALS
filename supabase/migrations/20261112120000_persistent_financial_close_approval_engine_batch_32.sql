@@ -221,7 +221,7 @@ begin
   v_reviewer:=(p_payload->>'reviewerId')::uuid;
   select * into v_approval from executive_visuals.financial_close_approvals
    where owner_id=p_owner_id and period_id=v_period_id and stage_key=v_stage for update;
-  if not found or v_approval.status<>'pending' or v_reviewer=p_period.created_by
+  if not found or v_approval.status<>'pending' or v_reviewer=v_period.created_by
    or exists(select 1 from executive_visuals.financial_close_approvals
     where period_id=v_period_id and owner_id=p_owner_id and stage_key<>v_stage and reviewer_id=v_reviewer) then
    raise exception using errcode='22023',message='financial_close_reassignment_conflict';
