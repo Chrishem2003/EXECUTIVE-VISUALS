@@ -29,8 +29,9 @@ No payment, refund, journal, subscription, account role, identity-provider entit
 
 - Updated `server/tests/control-remediation-api-batch-50.test.mjs` to cover personal creator ownership.
 - Existing build gate includes `npm run verify:control-remediation-api`, `npm run verify:control-remediation` and the broader application type-check/build.
-- The GitHub workflow has not yet been observed running against this stacked feature PR. Do not interpret the source updates as a passing CI result.
-- A local build could not be run in this environment because the GitHub remote could not be resolved by the shell runtime.
+- Focused GitHub Actions workflow completed successfully: remediation API tests, Batch 49 lifecycle tests, API syntax check and Financial Command Centre TypeScript check all passed.
+- Financial intelligence tests also passed. The broader billing/migration quality workflow is still running and is not required to interpret the focused remediation result.
+- A full local build could not be run in this environment because the GitHub remote could not be resolved by the shell runtime; CI supplied the focused checks above.
 
 ## Release status
 
