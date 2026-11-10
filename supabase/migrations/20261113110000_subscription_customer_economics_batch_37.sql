@@ -29,9 +29,12 @@ begin
   group by c.owner_id,c.currency
  ), credits as(
   select l.owner_id,
-   coalesce(sum(l.credit_delta) filter(where l.entry_type='purchase_grant' and l.metadata ? 'subscription_id' and l.credit_delta>0),0)::bigint subscription_credits_granted,
-   coalesce(-sum(l.credit_delta) filter(where l.entry_type='settlement' and l.credit_delta<0),0)::bigint credits_consumed,
-   coalesce(-sum(l.credit_delta) filter(where l.entry_type='refund_reversal' and l.credit_delta<0),0)::bigint credits_reversed,
+   coalesce(sum(l.credit_delta) filter(where l.entry_type='purchase_grant' and l.metadata ? 'subscription_id' and l.credit_delta>0
+    and l.created_at>=p_period_month::timestamptz and l.created_at<((p_period_month+interval '1 month')::date)::timestamptz),0)::bigint subscription_credits_granted,
+   coalesce(-sum(l.credit_delta) filter(where l.entry_type='settlement' and l.credit_delta<0
+    and l.created_at>=p_period_month::timestamptz and l.created_at<((p_period_month+interval '1 month')::date)::timestamptz),0)::bigint credits_consumed,
+   coalesce(-sum(l.credit_delta) filter(where l.entry_type='refund_reversal' and l.credit_delta<0
+    and l.created_at>=p_period_month::timestamptz and l.created_at<((p_period_month+interval '1 month')::date)::timestamptz),0)::bigint credits_reversed,
    coalesce(sum(l.credit_delta) filter(where l.created_at<((p_period_month+interval '1 month')::date)::timestamptz),0)::bigint ledger_balance_at_period_end
   from credit_ledger l
   where l.created_at<((p_period_month+interval '1 month')::date)::timestamptz
@@ -135,7 +138,7 @@ begin
    'Customer rows require an existing subscription revenue snapshot; no missing revenue, usage or customer attribution is inferred.',
    'Customers are ranked by direct contribution margin; output is limited and aggregate totals cover all snapshot customers.'
   )
- );
+ ) into v_result;
  return v_result;
 end $$;
 revoke all on function executive_visuals.subscription_customer_economics_report(uuid,date,integer) from public,anon,authenticated;
