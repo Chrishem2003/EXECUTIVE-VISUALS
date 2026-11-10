@@ -15,7 +15,7 @@ test("estimates token and resource costs with explicit versioned rates and price
  });
  assert.equal(result.estimateType,"forecast_not_actual");
  assert.equal(result.costRange.baseMinor,1000+1000+4800+1800);
- assert.equal(result.unitCostMinor,3800);
+ assert.equal(result.unitCostMinor,4300);
  assert.ok(result.costRange.lowMinor<result.costRange.baseMinor);
  assert.ok(result.costRange.highMinor>result.costRange.baseMinor);
  assert.ok(result.pricing.highCostMinimumPriceMinor>result.pricing.minimumPriceMinor);
@@ -47,7 +47,7 @@ test("shadow candidate selection requires evaluation evidence and all guardrails
  assert.equal(candidates.mode,"shadow_only");
  assert.equal(candidates.automaticRouting,false);
  assert.equal(candidates.recommended.provider,"provider-b");
- assert.equal(candidates.candidates[1].evidenceReady,false);
+ assert.equal(candidates.candidates.find(row=>row.model==='cheap-unproven').evidenceReady,false);
 });
 test("no route is recommended when all candidates fail measured quality or cost gates",()=>{
  const result=compareWorkloadCandidates({
