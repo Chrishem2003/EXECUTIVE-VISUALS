@@ -148,7 +148,7 @@ export async function submitRunwayVideoTask({model=process.env.RUNWAY_VIDEO_MODE
   if(["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR"].includes(error?.code))throw fail("Runway submission outcome is unknown. Reconcile the provider task/account before any retry; automatic resubmission is unsafe.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
   throw error;
  }
- return Object.freeze({taskId:assertRunwayTaskId(submitted.id),status:"PENDING",model:String(model),estimatedCostCredits:submitted.estimatedCostCredits,submittedAt:new Date().toISOString()});
+ return Object.freeze({taskId:assertRunwayTaskId(submitted.id),status:"PENDING",model:String(model),estimatedCostCredits:Number(submitted.estimatedCost?.credits)||null,submittedAt:new Date().toISOString()});
 }
 /** Retrieve an existing provider task; polling may safely use bounded backoff. */
 export async function getRunwayVideoTask({taskId,fetchImpl=fetch}={}){
@@ -179,7 +179,7 @@ export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,
   if(task?.status!=="SUCCEEDED")throw fail("Runway generation timed out before completion.","VIDEO_GATEWAY_TIMEOUT");
   const output=task.outputUrl;
   const buffer=await downloadRunwayVideoTaskOutput({outputUrl:output,fetchImpl,timeoutMs:Math.min(60000,Math.max(1000,deadline-now()))});
-  return {buffer,model:String(task.model||model),provider:"runway",requestId:taskId,usage:null,estimatedCostCredits:Number(submitted.estimatedCost?.credits)||null,mimeType:"video/mp4",adapterVersion:"runway-video-gateway-v1"};
+  return {buffer,model:String(task.model||model),provider:"runway",requestId:taskId,usage:null,estimatedCostCredits:submitted.estimatedCostCredits,mimeType:"video/mp4",adapterVersion:"runway-video-gateway-v1"};
 }
 
 
