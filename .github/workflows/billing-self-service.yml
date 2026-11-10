@@ -177,12 +177,12 @@ jobs:
         run: node --test server/tests/cashflow-liquidity-batch-40.test.mjs
       - name: Apply Batch 45 customer lifetime and acquisition economics
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261118100000_customer_lifetime_acquisition_economics_batch_45.sql
+      - name: Verify Batch 45 customer lifetime, campaign CAC and payback
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-lifetime-acquisition-economics-postgres-integration-batch-45.sql
       - name: Apply Batch 46 immutable financial scenario snapshots
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261119100000_financial_scenario_snapshots_batch_46.sql
       - name: Verify Batch 46 scenario snapshot idempotency and immutability
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/financial-scenario-snapshots-postgres-integration-batch-46.sql
-      - name: Verify Batch 45 customer lifetime, campaign CAC and payback
-        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-lifetime-acquisition-economics-postgres-integration-batch-45.sql
       - name: Test Batch 45 customer lifetime API and Financial Command Centre UI
         run: node --test server/tests/customer-lifetime-acquisition-economics.test.mjs
       - name: Test Batch 46 scenario calculations, protected API and saved evidence UI
