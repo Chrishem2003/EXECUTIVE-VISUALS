@@ -311,3 +311,27 @@ Do not switch the live merchant or credentials automatically. Confirm the mercha
 ### Batch 8 validation gate
 
 Tests verify that the readiness endpoint reports the version conflict, does not expose credentials, and denies support-role access. No provider calls, live charges, API-version switch, migration or deployment occurred.
+
+
+## Batch 9 — customer-initiated V4 subscription renewals
+
+Implemented a manual renewal path that uses the existing Flutterwave V4 checkout and Uganda MTN/Airtel mobile-money rails. This is not an automatic recurring debit and does not use V3 Payment Plans.
+
+- Added `POST /api/billing/subscription/renewal-checkout`.
+- Requires the authenticated subscription owner, subscription ID, Ugandan phone, MTN/Airtel network, customer details and idempotency key.
+- Server loads the subscription price and currency; client cannot set the amount.
+- Only active or past-due monthly/yearly UGX subscriptions can be renewed.
+- Duplicate idempotency keys replay the original attempt; a second pending renewal is rejected before contacting Flutterwave.
+- The payment is recorded as `subscription_renewal`, not a credit purchase.
+- Successful charge webhooks are re-queried against Flutterwave V4 and then call the service-role-only atomic `finalize_subscription_renewal` RPC.
+- The SQL RPC verifies provider status, transaction reference, ID, amount, currency, owner, subscription status, plan interval and price; it extends the subscription period and records a renewal event in one database transaction.
+- Replayed successful renewals are idempotent. Generic purchase-credit fulfillment is deliberately bypassed.
+- Added tests for MTN initiation, pending-attempt protection and verified webhook-to-renewal settlement.
+
+### Batch 9 boundaries
+
+- No card-on-file storage, automatic debit, saved payment credentials or unattended recurring charges.
+- No Flutterwave API-version switch; all checkout and verification remains V4.
+- MTN/Airtel mobile money is customer-initiated. Subscription period extension occurs only after provider-side verification.
+- Migration `20261110200000_subscription_manual_renewal.sql` is staged in Git only and must be applied/tested on isolated Supabase staging before enabling the API.
+- No production database migration, live charge or deployment performed.
