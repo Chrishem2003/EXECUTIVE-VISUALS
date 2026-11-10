@@ -969,3 +969,38 @@ test("customer-success intervention completion requires a measured outcome",asyn
  assert.equal(completed.body.intervention.outcome,"renewed");
 });
 
+test("predictive revenue overview is finance-admin only and preserves scenario semantics",async()=>{
+ const denied=api(async()=>json([]));
+ const forbidden=await denied.handle({method:"GET",path:"/api/admin/finance/predictive-overview",ownerId:owner});
+ assert.equal(forbidden.status,403);
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_predictive_revenue_overview"))return json({
+   modelVersion:"subscription-scenario-v1",sourceWindowDays:180,
+   forecastSemantics:"Scenario estimates, not recognized revenue or guaranteed collections.",
+   currencies:[{currency:"UGX",activeSubscribers:20,currentMrrMinor:500000,currentArrMinor:6000000,
+    observedMonthlyChurnPct:2.1,churnConfidence:"low",churnSampleSize:25,
+    averageRealizedLtvMinor:125000,predictedLtvMinor:450000,cacAvailability:"not_instrumented",
+    forecast:[{days:30,base:{endMrrMinor:489500,revenueAtRiskMinor:10500},
+      conservative:{endMrrMinor:484250,revenueAtRiskMinor:15750},
+      upside:{endMrrMinor:492125,revenueAtRiskMinor:7875}}]}],
+   limitations:["CAC and acquisition-channel attribution are unavailable."]
+  });
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/predictive-overview",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.forecast.currencies[0].forecast[0].days,30);
+ assert.equal(result.body.forecast.currencies[0].cacAvailability,"not_instrumented");
+ assert.match(result.body.forecast.forecastSemantics,/not recognized revenue/);
+ const rpcCall=calls.find(x=>x.target.endsWith("/rpc/financial_predictive_revenue_overview"));
+ assert.equal(rpcCall.body.p_actor_id,owner);
+});
+
+test("predictive revenue overview remains disabled when billing intelligence is disabled",async()=>{
+ const service=api(async()=>{throw new Error("Database must not be called");},{billingEnabled:false});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/predictive-overview",ownerId:owner});
+ assert.equal(result.status,503);
+});
