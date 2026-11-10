@@ -25,7 +25,7 @@ test("rejects unverified pricing, currency mismatch and budget overrun",()=>{
 });
 test("rejects amounts that cannot be represented safely in integer micro-units",()=>{
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
- const hugeQuote={...preflight,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:Number.MAX_VALUE,shots:[{shotId:"shot-1",provider:"runway",model:"seedance2_5",currency:"USD",amount:Number.MAX_VALUE,pricing:{}}]}}};
+ const hugeQuote={...preflight,pricing:{status:"verified_estimate",quote:{available:true,estimated:true,currency:"USD",amount:Number.MAX_VALUE,shots:[{shotId:"shot-1",provider:"runway",model:"seedance2_5",currency:"USD",amount:Number.MAX_VALUE,pricing:{sourceUrl:"https://pricing.example/rates",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2027-01-01T00:00:00.000Z"}}]}}};
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight:hugeQuote,budget:{currency:"USD",amount:Number.MAX_VALUE},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_INVALID_BUDGET");
 });
 test("rejects oversized or empty approval plans",()=>{
