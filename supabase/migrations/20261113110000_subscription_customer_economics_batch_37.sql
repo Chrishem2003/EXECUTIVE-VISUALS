@@ -21,10 +21,11 @@ begin
   from subscription_revenue_snapshots s where s.snapshot_month=p_period_month
  ), direct_costs as(
   select c.owner_id,c.currency,sum(c.amount_minor)::bigint direct_cost_minor,
-   sum(c.amount_minor) filter(where c.source_type in('provider_invoice','provider_usage_export'))::bigint verified_provider_cost_minor,
-   sum(c.amount_minor) filter(where c.source_type not in('provider_invoice','provider_usage_export'))::bigint other_direct_cost_minor,
+   coalesce(sum(l.amount_minor),0)::bigint verified_provider_cost_minor,
+   (sum(c.amount_minor)-coalesce(sum(l.amount_minor),0))::bigint other_direct_cost_minor,
    count(*)::integer cost_event_count
   from financial_service_cost_events c
+  left join financial_cost_attribution_links l on l.service_cost_event_id=c.id
   where c.period_month=p_period_month and c.owner_id is not null
   group by c.owner_id,c.currency
  ), cash_activity as(
