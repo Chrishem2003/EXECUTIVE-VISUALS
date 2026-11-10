@@ -130,6 +130,15 @@ begin
     update customer_subscriptions
       set status='expired',updated_at=now()
       where id=row_item.id and status='past_due';
+    update payment_attempts pa
+      set status='exhausted',next_retry_at=null,updated_at=now()
+      where pa.owner_id=row_item.owner_id
+        and pa.status='retry_scheduled'
+        and pa.payment_transaction_id in (
+          select pt.id from payment_transactions pt
+          where pt.owner_id=row_item.owner_id
+            and pt.metadata->>'subscription_id'=row_item.id::text
+        );
     insert into subscription_events(subscription_id,owner_id,event_type,source,reason,event_data)
       values(row_item.id,row_item.owner_id,'expired','system','Payment recovery grace period expired',
         jsonb_build_object('plan_code',row_item.plan_code,'grace_until',row_item.grace_until));
