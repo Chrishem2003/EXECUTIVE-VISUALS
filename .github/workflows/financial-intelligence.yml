@@ -38,7 +38,6 @@ jobs:
         run: |
           node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-telemetry.mjs
-          node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-economics.mjs
           node --check server/workload-cost-variance.mjs
           node --check server/financial-reconciliation.mjs
