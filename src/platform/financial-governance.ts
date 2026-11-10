@@ -7,7 +7,7 @@ export interface GovernanceFinding {
 }
 export interface GovernanceControl {
   id: string; name: string; objective: string; owner: string; frequency: string;
-  status: "effective_evidence" | "attention" | "not_assessed";
+  status: "evidence_available" | "attention" | "not_assessed";
   evidence: string; findingCount: number;
 }
 export interface GovernanceAssessment {
@@ -51,7 +51,7 @@ export function buildFinancialGovernanceAssessment(input:Input={}):GovernanceAss
  const addRows=(sourceRows:Row[],id:string,title:string,controlId:string,defaultSeverity:GovernanceSeverity,action:string)=>{
   if(!sourceRows.length)return;
   const grouped=new Map<string,Row[]>();
-  for(const r of sourceRows){const sev=text(r.severity??r.riskLevel??r.priority)||defaultSeverity;const key=["critical","high","medium","low"].includes(sev)?sev:defaultSeverity;grouped.set(key,[...(grouped.get(key)||[]),r]);}
+  for(const r of sourceRows.filter(r=>!isResolved(r))){const sev=text(r.severity??r.riskLevel??r.priority)||defaultSeverity;const key=["critical","high","medium","low"].includes(sev)?sev:defaultSeverity;grouped.set(key,[...(grouped.get(key)||[]),r]);}
   for(const [severity,group] of grouped)add(findings,{id:id+"-"+severity,controlId,title,severity:severity as GovernanceSeverity,status:"open",count:group.length,evidence:"Loaded source records",rationale:group.length+" unresolved record(s) are present in the loaded source.",recommendedAction:action});
  };
  addRows(liqRows,"liquidity","Liquidity threshold alerts","CTRL-LIQ-01","high","Treasury owner should validate the affected currency, forecast horizon, policy threshold and contingency response.");
@@ -60,8 +60,7 @@ export function buildFinancialGovernanceAssessment(input:Input={}):GovernanceAss
  addRows(commandExceptions,"command-reconciliation","Command-centre reconciliation exceptions","CTRL-REC-01","high","Reconciliation owner should trace exceptions to source settlement evidence and record independent review.");
  if(overdue.length)add(findings,{id:"dispute-deadline-overdue",controlId:"CTRL-DSP-01",title:"Overdue dispute response deadlines",severity:"critical",status:"open",count:overdue.length,evidence:"Dispute register due-date fields",rationale:overdue.length+" unresolved dispute(s) have a due date before the assessment time.",recommendedAction:"Escalate immediately to the dispute owner; preserve evidence and confirm processor response deadlines."});
  if(audit&&!Boolean(audit.valid))add(findings,{id:"audit-chain-invalid",controlId:"CTRL-AUD-01",title:"Audit-chain integrity verification failed",severity:"critical",status:"open",count:1,evidence:"Financial audit chain verification",rationale:String((audit.firstBroken as Row|undefined)?.reason||"The supplied audit chain did not verify."),recommendedAction:"Suspend reliance on this audit extract, preserve the evidence bundle and investigate the first broken sequence."});
- if(audit&&!Boolean(audit.valid)===false&&audit.valid===true){} 
- if(!audit)add(findings,{id:"audit-chain-not-verified",controlId:"CTRL-AUD-01",title:"Audit-chain verification not performed",severity:"unknown",status:"not_assessed",count:0,evidence:"No verification result loaded",rationale:"The current session has no verified chain result; absence of a failure is not proof of integrity.",recommendedAction:"Run the existing audit-chain verification and retain the exported evidence with an independently trusted checkpoint."});
+  if(!audit)add(findings,{id:"audit-chain-not-verified",controlId:"CTRL-AUD-01",title:"Audit-chain verification not performed",severity:"unknown",status:"not_assessed",count:0,evidence:"No verification result loaded",rationale:"The current session has no verified chain result; absence of a failure is not proof of integrity.",recommendedAction:"Run the existing audit-chain verification and retain the exported evidence with an independently trusted checkpoint."});
  if(!liq)add(findings,{id:"liquidity-source-gap",controlId:"CTRL-LIQ-01",title:"Liquidity monitoring evidence unavailable",severity:"unknown",status:"evidence_gap",count:0,evidence:"Liquidity alert source unavailable",rationale:"The liquidity alert source did not load; no conclusion about liquidity risk can be drawn.",recommendedAction:"Refresh the liquidity alert source and investigate any data or authorization errors."});
  if(!margin)add(findings,{id:"margin-source-gap",controlId:"CTRL-MRG-01",title:"Margin monitoring evidence unavailable",severity:"unknown",status:"evidence_gap",count:0,evidence:"Margin alert source unavailable",rationale:"The margin alert source did not load; no conclusion about margin health can be drawn.",recommendedAction:"Refresh margin alerts and confirm the underlying profitability data is current."});
  if(!recon)add(findings,{id:"reconciliation-source-gap",controlId:"CTRL-REC-01",title:"Cash reconciliation evidence unavailable",severity:"unknown",status:"evidence_gap",count:0,evidence:"Cash-flow reconciliation source unavailable",rationale:"Reconciliation control effectiveness cannot be assessed without its evidence source.",recommendedAction:"Load cash-flow reconciliation data and obtain preparer/reviewer sign-off records."});
@@ -75,7 +74,7 @@ export function buildFinancialGovernanceAssessment(input:Input={}):GovernanceAss
   {id:"CTRL-CLOSE-01",name:"Financial close governance",objective:"Require reconciliations, evidence and independent approval before close.",owner:"Controller / authorized approver",frequency:"Each period close",source:close,findings:[]},
   {id:"CTRL-SCN-01",name:"Scenario and downside review",objective:"Retain documented downside and sensitivity review for material decisions.",owner:"FP&A / Executive sponsor",frequency:"Before material decisions",source:scenarios,findings:[]}
  ];
- const controls:GovernanceControl[]=specs.map(c=>({id:c.id,name:c.name,objective:c.objective,owner:c.owner,frequency:c.frequency,status:!c.source?"not_assessed":c.findings.some(f=>f.status==="open")?"attention":"effective_evidence",evidence:!c.source?"Source unavailable":c.findings.length?c.findings.length+" finding(s)":"Source loaded; operating effectiveness not independently tested",findingCount:c.findings.length}));
+ const controls:GovernanceControl[]=specs.map(c=>({id:c.id,name:c.name,objective:c.objective,owner:c.owner,frequency:c.frequency,status:!c.source?"not_assessed":c.findings.some(f=>f.status==="open")?"attention":"evidence_available",evidence:!c.source?"Source unavailable":c.findings.length?c.findings.length+" finding(s)":"Source loaded; operating effectiveness not independently tested",findingCount:c.findings.length}));
  const weights:Record<string,number>={critical:25,high:12,medium:5,low:2};
  const scoreFindings=findings.filter(f=>f.status==="open");
  const score=scoreFindings.length?Math.min(100,scoreFindings.reduce((sum,f)=>sum+(weights[f.severity]||0)*Math.min(f.count,5),0)):0;
