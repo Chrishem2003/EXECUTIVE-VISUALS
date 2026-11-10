@@ -722,7 +722,7 @@ export function createFinancialIntelligenceApi({
         const amountMinor=Number(body.amountMinor);
         const description=String(body.description||"").trim();
         const idempotencyKey=String(body.idempotencyKey||"").trim();
-        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(channel)||
+        if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(channel)||
           campaign.length>120||!/^[A-Z]{3}$/.test(currency)||!Number.isSafeInteger(amountMinor)||amountMinor<=0||
           description.length<3||description.length>500||idempotencyKey.length<8||idempotencyKey.length>160)
           return error(400,"ACQUISITION_SPEND_INVALID","Provide a month, channel, currency, positive integer minor-unit amount, description and idempotency key.");
