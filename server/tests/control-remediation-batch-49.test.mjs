@@ -10,8 +10,8 @@ test("register creates accountable actions only from actionable findings and ret
 });
 test("remediation lifecycle requires evidence and independent verification",()=>{
  const [action]=buildRemediationRegister(assessment,[],"2026-11-10T00:00:00.000Z");
- assert.throws(()=>transitionRemediation(action,{to:"pending_review",actor:"Finance owner",actorRole:"owner"}),/evidence/);
  const working=transitionRemediation(action,{to:"in_progress",actor:"Finance owner",actorRole:"owner"});
+ assert.throws(()=>transitionRemediation(working,{to:"pending_review",actor:"Finance owner",actorRole:"owner"}),/evidence/);
  const evidence={id:"ev-1",label:"Processor reconciliation",uri:"https://example.invalid/evidence/1",capturedAt:"2026-11-10T01:00:00.000Z",submittedBy:"Finance owner",kind:"workpaper"};
  const review=transitionRemediation(working,{to:"pending_review",actor:"Finance owner",actorRole:"owner",evidence:[evidence]});
  assert.throws(()=>transitionRemediation(review,{to:"verified",actor:"Finance owner",actorRole:"owner"}),/independent/);
