@@ -24,6 +24,22 @@ function api(fetchImpl,options={}) {
   });
 }
 
+test("customer loyalty summary is fetched only for the authenticated owner",async()=>{
+ let rpcBody;
+ const service=api(async(url,options={})=>{
+  if(String(url).includes("/rpc/customer_loyalty_summary")){
+   rpcBody=JSON.parse(options.body);
+   return json({rewards:[{reward_code:"first_paid_creator_welcome",granted_days:30,bonus_credits:100}],events:[],creditBalance:1100});
+  }
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const result=await service.handle({method:"GET",path:"/api/billing/loyalty",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_owner_id,owner);
+ assert.equal(result.body.loyalty.rewards[0].granted_days,30);
+ assert.equal(result.body.loyalty.creditBalance,1100);
+});
+
 test("billing endpoints fail closed when billing is disabled",async()=>{
   const service=api(async()=>{throw new Error("must not call network");},{billingEnabled:false});
   const result=await service.handle({method:"GET",path:"/api/billing/transactions",ownerId:owner});
