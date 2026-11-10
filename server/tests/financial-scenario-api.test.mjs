@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mjs";
 
@@ -73,6 +74,7 @@ test("scenario snapshot write calculates server-side, binds authenticated actor 
  assert.equal(persisted.p_model_version,"deterministic_monthly_scenario_v1");
  assert.equal(persisted.p_evidence_references.length,2);
  assert.match(persisted.p_input_sha256,/^[0-9a-f]{64}$/);
+ assert.equal(persisted.p_input_sha256,createHash("sha256").update(JSON.stringify({scenarioName:"November plan",input,evidenceReferences:["approved-budget-2026-11","cash-snapshot-001"]})).digest("hex"));
  assert.match(persisted.p_result_sha256,/^[0-9a-f]{64}$/);
  assert.equal(persisted.p_result_payload.base.rows.length,12);
  assert.equal(audit.p_action,"finance.scenario.snapshot.create");
