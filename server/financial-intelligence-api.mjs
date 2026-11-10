@@ -1147,6 +1147,15 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const month=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        const monthDate=new Date(month+"T00:00:00Z");
+        if(month.length!==10||month.slice(7)!=="-01"||Number.isNaN(monthDate.getTime())||monthDate.toISOString().slice(0,10)!==month)
+          return error(400,"FINANCIAL_SCENARIO_PERIOD_INVALID","Provide a valid first day of a reporting month.");
+        const baseline=await rpc("financial_scenario_baseline",{p_actor_id:ownerId,p_period_month:month});
+        return response(200,{baseline:baseline||{periodMonth:month,byCurrency:[],limitations:[]}});
+      }
       if(path==="/api/admin/finance/scenarios"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const limit=query.limit==null?25:Number(query.limit);
