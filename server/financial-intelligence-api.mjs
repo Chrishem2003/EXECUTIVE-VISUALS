@@ -32,6 +32,7 @@ export function createFinancialIntelligenceApi({
   billingEnabled=process.env.BILLING_API_ENABLED==="true",
   refundsEnabled=process.env.FLW_REFUNDS_ENABLED==="true",
   allowLive=process.env.FLW_ALLOW_LIVE==="true",
+  paymentGracePeriodHours=Number(process.env.PAYMENT_GRACE_PERIOD_HOURS||72),
   fetchImpl=globalThis.fetch
 }={}){
   if(!supabaseUrl||!serviceRoleKey)throw new Error("Financial API requires server-side Supabase credentials.");
@@ -145,7 +146,13 @@ export function createFinancialIntelligenceApi({
       await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id)+"&status=eq.pending",{
         method:"PATCH",body:{status:"failed",provider_transaction_id:providerChargeId,metadata:{...payment.metadata,provider_verification:charge},updated_at:new Date().toISOString()},prefer:"return=minimal"
       });
-      return {matched:true,status:"failed",paymentId:payment.id};
+      const recovery=await rpc("record_payment_failure",{
+        p_payment_id:payment.id,
+        p_failure_code:String(charge.failure_code||charge.processor_response_code||"PAYMENT_FAILED").slice(0,100),
+        p_failure_message:String(charge.failure_message||charge.processor_response||"Flutterwave confirmed that the payment failed.").slice(0,500),
+        p_grace_hours:Number.isInteger(paymentGracePeriodHours)?Math.max(0,Math.min(720,paymentGracePeriodHours)):72
+      });
+      return {matched:true,status:"failed",paymentId:payment.id,recovery};
     }
     if(providerStatus!=="succeeded")return {matched:true,status:"pending",paymentId:payment.id};
     if(payment.metadata?.payment_purpose==="subscription_renewal"){
@@ -477,6 +484,19 @@ export function createFinancialIntelligenceApi({
         }));
         return response(200,{invoices,limit,offset});
       }
+      if(path==="/api/billing/notifications"&&method==="GET"){
+        const limit=Math.max(1,Math.min(50,Number(query.limit)||25));
+        const result=await dbRequest("billing_notification_outbox?select=id,notification_type,payload,status,created_at,read_at&owner_id=eq."+encodeURIComponent(ownerId)+"&order=created_at.desc&limit="+limit);
+        return response(200,{notifications:Array.isArray(result.data)?result.data:[],limit});
+      }
+      if(path==="/api/billing/notifications/read"&&method==="POST"){
+        const notificationId=String(body.notificationId||"");
+        if(!UUID.test(notificationId))return error(400,"NOTIFICATION_ID_INVALID","A valid notification ID is required.");
+        const updated=await dbRequest("billing_notification_outbox?id=eq."+encodeURIComponent(notificationId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&read_at=is.null",{
+          method:"PATCH",body:{read_at:new Date().toISOString()},prefer:"return=representation"
+        });
+        return response(200,{markedRead:Array.isArray(updated.data)&&updated.data.length>0});
+      }
       if(path==="/api/billing/refunds"&&method==="GET"){
         const limit=Math.max(1,Math.min(SAFE_PAGE,Number(query.limit)||25));
         const offset=Math.max(0,Math.min(10000,Number(query.offset)||0));
@@ -511,6 +531,28 @@ export function createFinancialIntelligenceApi({
           reviewRequired:true
         }));
         return response(200,{events,limit,automatedEntitlementChanges:false});
+      }
+      if(path==="/api/admin/billing/recovery"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"BILLING_ADMIN_REQUIRED","A billing administrator role is required.");
+        const limit=Math.max(1,Math.min(100,Number(query.limit)||50));
+        const [attempts,notifications]=await Promise.all([
+          dbRequest("payment_attempts?select=id,owner_id,payment_transaction_id,tx_ref,amount_minor,currency,status,failure_code,failure_message,attempt_number,next_retry_at,created_at&status=in.(failed,retry_scheduled,exhausted)&order=created_at.desc&limit="+limit),
+          dbRequest("billing_notification_outbox?select=id,owner_id,notification_type,status,attempt_count,available_at,last_error,created_at&status=in.(queued,failed)&order=created_at.asc&limit="+limit)
+        ]);
+        const rows=Array.isArray(attempts.data)?attempts.data:[];
+        return response(200,{
+          attempts:rows,
+          notifications:Array.isArray(notifications.data)?notifications.data:[],
+          summary:{openAttempts:rows.length,scheduledRetries:rows.filter(x=>x.status==="retry_scheduled").length,exhausted:rows.filter(x=>x.status==="exhausted").length},
+          automaticChargesEnabled:false,
+          emailDeliveryConfigured:false,
+          note:"Customers must explicitly retry mobile-money checkout. Email messages remain queued until a transactional email provider is configured."
+        });
+      }
+      if(path==="/api/admin/billing/recovery/expire-grace"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"BILLING_ADMIN_REQUIRED","A billing administrator role is required.");
+        const result=await rpc("expire_due_subscriptions",{p_limit:Math.max(1,Math.min(500,Number(body.limit)||100))});
+        return response(200,{...result,action:"expired_only_after_grace_deadline",providerChargesInitiated:false});
       }
       if(path==="/api/admin/finance/summary"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
