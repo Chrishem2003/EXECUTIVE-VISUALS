@@ -82,12 +82,13 @@ begin
  end if;
  v_currency:=upper(p_payload->>'currency');v_capacity:=(p_payload->>'estimatedCapacityMinor')::bigint;
  v_lead:=(p_payload->>'leadTimeHours')::integer;v_key:=p_payload->>'idempotencyKey';
- if v_currency is null or v_currency !~ '^[A-Z]{3}
+ if v_currency is null or v_currency !~ '^[A-Z]{3}$' or p_payload->>'title' is null or
+  length(trim(p_payload->>'title')) not between 3 and 160 or
   p_payload->>'category' is null or p_payload->>'category' not in('receivables_acceleration','discretionary_spend','supplier_terms','committed_facility','asset_monetization','owner_funding','other') or
   v_capacity is null or v_capacity<0 or v_lead is null or v_lead not between 0 and 8760 or
   p_payload->>'availabilityStatus' is null or p_payload->>'availabilityStatus' not in('validated','conditional','unverified') or
   length(trim(p_payload->>'sourceReference')) not between 3 and 240 or length(trim(p_payload->>'rationale')) not between 3 and 1000 or
-  length(v_key) not between 8 and 160 then raise exception 'Invalid contingency funding option or supporting evidence' using errcode='22023'; end if;
+  v_key is null or length(v_key) not between 8 and 160 then raise exception 'Invalid contingency funding option or supporting evidence' using errcode='22023'; end if;
  insert into financial_contingency_options(actor_id,currency,title,category,estimated_capacity_minor,lead_time_hours,availability_status,source_reference,rationale,idempotency_key)
  values(p_actor_id,v_currency,trim(p_payload->>'title'),p_payload->>'category',v_capacity,v_lead,p_payload->>'availabilityStatus',
   trim(p_payload->>'sourceReference'),trim(p_payload->>'rationale'),v_key) on conflict(idempotency_key) do nothing;
