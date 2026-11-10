@@ -1278,6 +1278,11 @@ test("shared-cost allocation policy API rejects unsupported drivers and binds im
   effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-invalid"
  }});
  assert.equal(invalid.status,400);
+ const inheritedKey=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocation-policies",ownerId:owner,body:{
+  costCategory:"toString",driverType:"includes",currency:"USD",
+  effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-prototype"
+ }});
+ assert.equal(inheritedKey.status,400);
  const valid=await service.handle({method:"POST",path:"/api/admin/finance/shared-cost-allocation-policies",ownerId:owner,body:{
   costCategory:"ai_inference",driverType:"inference_tokens",currency:"UGX",
   effectiveFrom:"2026-11-01",minimumRecipients:2,idempotencyKey:"allocation-policy-0001"
