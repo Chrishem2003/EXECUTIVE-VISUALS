@@ -7,7 +7,7 @@ Batch 18 extends the Financial Command Centre with an auditable, scenario-based 
 - Current paid MRR and ARR run rate by currency.
 - 30-, 60-, 90- and 365-day ending-MRR scenarios.
 - Conservative, base and upside churn-sensitivity cases.
-- Estimated revenue-at-risk from the modeled change in ending MRR.
+- Estimated MRR-at-risk from the modeled change in ending MRR.
 - Observed paid-subscription cancellation hazard from the prior 180 days.
 - Sample size and explicit confidence labels.
 - Realized average customer revenue after recorded completed refunds.
