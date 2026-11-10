@@ -1494,3 +1494,23 @@ test("audit event API rejects unsupported event types and requires idempotency",
  assert.equal(invalid.status,400);
  assert.equal(invalid.body.error.code,"FINANCIAL_AUDIT_EVENT_TYPE_INVALID");
 });
+
+
+test("financial audit export is administrator-only and marks unsigned bundles honestly",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized audit export must not access records.");});
+ const forbidden=await denied.handle({method:"GET",path:"/api/admin/finance/audit/export",ownerId:owner});
+ assert.equal(forbidden.status,403);
+ const service=api(async(url)=>{
+  const u=String(url);
+  if(u.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(u.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});
+  if(u.includes("/financial_audit_events?select=event_envelope"))return json([]);
+  throw new Error("Unexpected audit export request: "+u);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/audit/export",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.bundle.format,"executive-visuals.financial-audit-export");
+ assert.equal(result.body.bundle.signature.status,"unsigned_key_not_configured");
+ assert.equal(result.body.bundle.verification.valid,true);
+ assert.equal(result.body.bundle.eventCount,0);
+});
