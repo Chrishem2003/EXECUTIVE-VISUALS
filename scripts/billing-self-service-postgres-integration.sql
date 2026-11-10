@@ -103,4 +103,59 @@ begin
   end if;
 end;
 $$;
+
+-- Batch 12: dashboard aggregates, MRR/ARR, settlement persistence and append-only audit.
+insert into executive_visuals.platform_admins(user_id,role,reason)
+values('11111111-1111-4111-8111-111111111111','owner','Disposable PostgreSQL integration owner')
+on conflict(user_id) do update set role='owner';
+
+update executive_visuals.customer_subscriptions
+ set status='active',current_period_start=now()-interval '1 day',current_period_end=now()+interval '29 days'
+ where owner_id='11111111-1111-4111-8111-111111111111' and plan_code='pro-yearly';
+
+do $
+declare
+ dashboard jsonb;
+ mrr bigint;
+ arr bigint;
+ audit_id uuid;
+ settlement jsonb;
+begin
+ dashboard:=executive_visuals.admin_financial_command_centre(
+  '11111111-1111-4111-8111-111111111111',now()-interval '30 days',now(),50
+ );
+ select (item->>'mrrMinor')::bigint,(item->>'arrMinor')::bigint into mrr,arr
+ from jsonb_array_elements(dashboard->'byCurrency') item where item->>'currency'='UGX';
+ if mrr<>20000 or arr<>240000 then
+  raise exception 'MRR/ARR calculation mismatch: mrr %, arr %',mrr,arr;
+ end if;
+ if not exists(select 1 from jsonb_array_elements(dashboard->'tiers') t where t->>'plan_code'='pro-yearly') then
+  raise exception 'Subscription tier revenue is missing from dashboard';
+ end if;
+ if not exists(select 1 from jsonb_array_elements(dashboard->'customerProfiles') p
+   where p->>'ownerId'='11111111-1111-4111-8111-111111111111'
+    and (p->>'realizedLifetimeValueMinor')::bigint=265000) then
+  raise exception 'Realized customer lifetime value mismatch';
+ end if;
+
+ settlement:=executive_visuals.record_flutterwave_settlement(
+  '11111111-1111-4111-8111-111111111111',
+  '{"id":"stm_batch12_test","currency":"UGX","gross_amount":265000,"net_amount":264900,"status":"completed","destination":"wallet","charge_count":"0","fees":[{"type":"charge_fee","amount":100}],"processed_date":"2026-11-10T08:00:00Z"}'::jsonb,
+  null,null
+ );
+ if settlement->>'currency'<>'UGX' or (settlement->>'grossMinor')::bigint<>265000 then
+  raise exception 'Settlement import did not preserve provider amounts';
+ end if;
+
+ audit_id:=executive_visuals.write_financial_admin_audit(
+  '11111111-1111-4111-8111-111111111111','finance.test.audit','integration_test','batch-12',
+  'Verify append-only financial audit'
+ );
+ begin
+  update executive_visuals.financial_admin_audit set reason='tampered' where id=audit_id;
+  raise exception 'Financial audit update unexpectedly succeeded';
+ exception when sqlstate '42501' then null;
+ end;
+end $;
+
 reset role;
