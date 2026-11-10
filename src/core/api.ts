@@ -20,3 +20,17 @@ export async function apiRequest<T>(path:string,init:RequestInit={}):Promise<T>{
   }
   return payload as T;
 }
+
+
+/** Fetch a private asset as a Blob while preserving the same bearer-token boundary as apiRequest. */
+export async function apiRequestBlob(path:string,init:RequestInit={}):Promise<Blob>{
+  const headers=new Headers(init.headers||{});
+  if(accessToken)headers.set("authorization","Bearer "+accessToken);
+  const response=await fetch(path,{...init,headers,credentials:"same-origin"});
+  if(!response.ok){
+    const payload=await response.json().catch(()=>({}));
+    const error=(payload as {error?:ApiErrorBody}).error||{};
+    throw new ApiError(response.status,error.code||"REQUEST_FAILED",error.message||"The media asset could not be loaded.");
+  }
+  return response.blob();
+}
