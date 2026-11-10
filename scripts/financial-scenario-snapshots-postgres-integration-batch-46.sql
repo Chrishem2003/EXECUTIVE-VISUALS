@@ -7,7 +7,7 @@ declare
  v_input jsonb:='{"monthlyRevenueMinor":1000000,"monthlyVariableCostMinor":400000,"monthlyFixedCostMinor":300000}'::jsonb;
  v_result jsonb:='{"base":{"endingCashMinor":300000}}'::jsonb;
  v_evidence jsonb:='[{"kind":"management_input","reference":"budget-approved-2026-11"}]'::jsonb;
- v_first jsonb;v_replay jsonb;v_list jsonb;v_count integer;v_id uuid;
+ v_first jsonb;v_replay jsonb;v_list jsonb;v_baseline jsonb;v_count integer;
 begin
  if not exists(select 1 from executive_visuals.platform_admins where user_id=v_actor and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Batch 46 fixture requires finance administrator actor.';
@@ -32,6 +32,10 @@ begin
   raise exception 'Reusing an idempotency key with different content must fail.';
  exception when unique_violation then null;
  end;
+ v_baseline:=executive_visuals.financial_scenario_baseline(v_actor,date_trunc('month',now())::date);
+ if jsonb_typeof(v_baseline->'byCurrency')<>'array' or jsonb_typeof(v_baseline->'limitations')<>'array' then
+  raise exception 'Verified scenario baseline must return currency-separated evidence and explicit limitations: %',v_baseline;
+ end if;
  v_list:=executive_visuals.list_financial_scenario_snapshots(v_actor,10);
  if not exists(select 1 from jsonb_array_elements(v_list->'snapshots') s where s->>'id'=v_first->'snapshot'->>'id') then
   raise exception 'Saved scenario snapshot is missing from the finance-admin list.';
