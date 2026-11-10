@@ -1180,3 +1180,13 @@ body{
 .remediation-evidence-item small{color:#a7a1b8;font-size:10px;line-height:1.5}
 .remediation-evidence-form input[type=file]{padding:10px;border:1px dashed rgba(196,181,253,.3);border-radius:8px;background:rgba(15,23,42,.45);font-size:11px}
 .remediation-evidence-form small{display:block;color:#a7a1b8;font-size:10px;line-height:1.55}
+
+
+/* Batch 54 · evidence access history */
+.remediation-download-history{margin-top:10px;padding:10px 12px;border:1px solid rgba(167,139,250,.16);border-radius:9px;background:rgba(15,23,42,.24)}
+.remediation-download-history summary{cursor:pointer;color:#c4b5fd;font-size:10px;font-weight:700}
+.remediation-download-history ol{margin:9px 0 8px;padding-left:18px;display:grid;gap:8px}
+.remediation-download-history li{color:#d0c8e0;font-size:10px;line-height:1.45}
+.remediation-download-history li span{display:block;color:#8f89a5;font-size:9px}
+.remediation-download-history li p{margin:3px 0;color:#aaa3bd}
+.remediation-download-history>small{display:block;color:#817b91;font-size:9px;line-height:1.5}
