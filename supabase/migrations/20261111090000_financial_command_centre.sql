@@ -2,13 +2,13 @@
 -- Apply only after the complete preceding billing migration chain in isolated Supabase staging.
 create or replace function executive_visuals.financial_currency_factor(p_currency text)
 returns integer language sql immutable strict
-set search_path=pg_catalog as $
+set search_path=pg_catalog as $$
  select case
   when upper(p_currency) in ('BIF','CLP','DJF','GNF','ISK','JPY','KMF','KRW','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF') then 1
   when upper(p_currency) in ('BHD','IQD','JOD','KWD','LYD','OMR','TND') then 1000
   else 100
  end
-$;
+$$;
 
 create table if not exists executive_visuals.financial_admin_audit (
   id uuid primary key default gen_random_uuid(),
