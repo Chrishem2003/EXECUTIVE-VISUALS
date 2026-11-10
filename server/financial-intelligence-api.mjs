@@ -931,6 +931,48 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/close"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const subjectOwnerId=String(query.ownerId||ownerId);
+        if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_CLOSE_OWNER_INVALID","ownerId must be a verified account UUID.");
+        const overview=await rpc("get_financial_close_overview",{p_owner_id:subjectOwnerId});
+        return response(200,{close:overview||{periods:[],tasks:[],approvals:[]}});
+      }
+      if(path==="/api/admin/finance/close/commands"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const command=String(body.command||"");
+          const eventTypes={
+            create_period:"close_period.created",assign_task:"close_task.assigned",
+            complete_task:"close_task.completed",waive_task:"close_task.waived",
+            submit_for_approval:"close_period.submitted",record_approval:"close_approval.recorded",
+            lock_period:"close_period.locked",reopen_period:"close_period.reopened"
+          };
+          const eventType=eventTypes[command];
+          const payload=body.payload&&typeof body.payload==="object"&&!Array.isArray(body.payload)?body.payload:null;
+          const auditKey=String(body.idempotencyKey||idempotencyKey||"");
+          const subjectOwnerId=String(body.subjectOwnerId||ownerId);
+          if(!eventType)return error(400,"FINANCIAL_CLOSE_COMMAND_INVALID","Unsupported financial close command.");
+          if(!payload)return error(400,"FINANCIAL_CLOSE_PAYLOAD_INVALID","A JSON object payload is required.");
+          if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_CLOSE_OWNER_INVALID","subjectOwnerId must be a verified account UUID.");
+          if(!auditKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
+          const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
+          const event=createFinancialAuditEvent({
+            ownerId:subjectOwnerId,actorId:ownerId,eventType,payload,
+            idempotencyKey:auditKey,occurredAt:new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>!["eventHash","canonicalEvent"].includes(key)));
+          const result=await rpc("execute_financial_close_command",{
+            p_owner_id:subjectOwnerId,p_actor_id:ownerId,p_command:command,p_payload:payload,
+            p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(result?.duplicate?200:201,{duplicate:Boolean(result?.duplicate),command,result});
+        }catch(err){
+          const status=err.status||(String(err.code||"").startsWith("FINANCIAL_")?400:409);
+          return error(status,err.code||"FINANCIAL_CLOSE_COMMAND_FAILED",err.message||"Financial close command could not be completed.");
+        }
+      }
       if(path==="/api/admin/finance/audit/events"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         try{
