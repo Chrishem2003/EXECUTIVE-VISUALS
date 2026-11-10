@@ -396,4 +396,58 @@ if not exists(select 1 from jsonb_array_elements(report->'retention') item where
   raise exception 'GRR/NRR cohort calculations did not reconcile for equal opening and ending MRR: %',report->'retention';
  end if;
 end $batch19$;
+
+do $batch20$
+declare
+ v_owner constant uuid:='11111111-1111-4111-8111-111111111111';
+ direct_cost jsonb; replay jsonb; report jsonb; currency_row jsonb; customer_row jsonb; shared_row jsonb;
+ original_id uuid; month_start date:=date_trunc('month',now())::date;
+begin
+ direct_cost:=executive_visuals.record_financial_service_cost(
+  v_owner,month_start,v_owner,'ai_inference','provider_usage_export','UGX',1000,
+  'batch20-model-invoice','Attributed model inference cost','batch20-direct-cost-0001',null
+ );
+ original_id:=(direct_cost->>'id')::uuid;
+ replay:=executive_visuals.record_financial_service_cost(
+  v_owner,month_start,v_owner,'ai_inference','provider_usage_export','UGX',1000,
+  'batch20-model-invoice','Attributed model inference cost','batch20-direct-cost-0001',null
+ );
+ if replay->>'idempotentReplay'<>'true' then raise exception 'Cost evidence replay was not idempotent'; end if;
+ perform executive_visuals.record_financial_service_cost(
+  v_owner,month_start,v_owner,'ai_inference','provider_invoice','UGX',-200,
+  'batch20-provider-credit','Partial provider credit reversal','batch20-direct-reversal-0001',original_id
+ );
+ perform executive_visuals.record_financial_service_cost(
+  v_owner,month_start,null,'storage','cloud_invoice','UGX',3000,
+  'batch20-cloud-invoice','Shared platform storage cost','batch20-shared-cost-0001',null
+ );
+ begin
+  perform executive_visuals.record_financial_service_cost(
+   v_owner,month_start,v_owner,'ai_inference','provider_invoice','UGX',-900,
+   'batch20-over-credit','Invalid excess provider credit','batch20-direct-reversal-over-0001',original_id
+  );
+  raise exception 'Excess cost reversal unexpectedly succeeded';
+ exception when sqlstate '22023' then null;
+ end;
+ report:=executive_visuals.financial_profitability_overview(v_owner);
+ select item into currency_row from jsonb_array_elements(report->'byCurrency') item where item->>'currency'='UGX';
+ if currency_row is null or (currency_row->>'directCostMinor')::bigint<>800 then
+  raise exception 'Direct costs did not net original expense and reversal: %',report->'byCurrency';
+ end if;
+ select item into customer_row from jsonb_array_elements(report->'customers') item where item->>'ownerId'=v_owner::text;
+ if customer_row is null or (customer_row->>'directCostMinor')::bigint<>800
+  or (customer_row->>'grossContributionMinor')::bigint<>(customer_row->>'mrrMinor')::bigint-800
+  or (customer_row->>'cacMinor')::bigint<>120000
+  or (customer_row->>'cacPaybackMonths') is null then
+  raise exception 'Customer contribution, CAC or payback did not reconcile: %',customer_row;
+ end if;
+ select item into shared_row from jsonb_array_elements(report->'sharedCosts') item
+  where item->>'category'='storage' and item->>'currency'='UGX';
+ if shared_row is null or (shared_row->>'amountMinor')::bigint<>3000 then
+  raise exception 'Shared overhead should be reported separately, not allocated to customer gross margin: %',report->'sharedCosts';
+ end if;
+ if (customer_row->>'ltvAvailability')<>'no_observed_churn_in_comparison_window' then
+  raise exception 'LTV must not be fabricated when the comparison window has no observed churn: %',customer_row;
+ end if;
+end $batch20$;
 reset role;
