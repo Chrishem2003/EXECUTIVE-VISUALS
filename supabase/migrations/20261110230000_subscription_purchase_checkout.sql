@@ -68,6 +68,8 @@ begin
   update customer_subscriptions set status='active',provider='flutterwave',
     current_period_start=p_verified_at,current_period_end=period_end,updated_at=now()
     where id=subscription_row.id;
+  -- A first-purchase loyalty trigger may extend the verified period; use the persisted end date.
+  select current_period_end into period_end from customer_subscriptions where id=subscription_row.id;
   insert into subscription_events(subscription_id,owner_id,event_type,source,reason,event_data)
   values(subscription_row.id,subscription_row.owner_id,'activated','flutterwave',
     'Initial customer subscription activated after verified Flutterwave payment',
