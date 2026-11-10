@@ -67,7 +67,7 @@ begin
  for attempt in 1..5 loop
   candidate:=upper(substr(encode(gen_random_bytes(8),'hex'),1,10));
   insert into customer_referral_codes(owner_id,referral_code)
-  values(p_owner_id,candidate) on conflict(owner_id) do nothing
+  values(p_owner_id,candidate) on conflict do nothing
   returning * into code_row;
   if code_row.id is not null then
    return jsonb_build_object('code',code_row.referral_code,'status',code_row.status);
