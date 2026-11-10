@@ -36,7 +36,7 @@ create index if not exists financial_audit_events_owner_time_idx
  on executive_visuals.financial_audit_events(owner_id,occurred_at desc);
 alter table executive_visuals.financial_audit_events enable row level security;
 revoke all on executive_visuals.financial_audit_events from public,anon,authenticated;
-grant select,insert on executive_visuals.financial_audit_events to service_role;
+grant select on executive_visuals.financial_audit_events to service_role;
 create trigger financial_audit_events_immutable before update or delete
  on executive_visuals.financial_audit_events for each row
  execute function executive_visuals.reject_revenue_intelligence_mutation();
@@ -95,7 +95,8 @@ begin
  select * into v_existing from executive_visuals.financial_audit_events
   where owner_id=p_owner_id and idempotency_key=p_idempotency_key;
  if found then
-  if v_existing.event_hash<>p_event_hash then
+  if v_existing.actor_id<>p_actor_id or v_existing.event_type<>p_event_envelope->>'eventType'
+   or v_existing.event_envelope->'payload'<>p_event_envelope->'payload' then
    raise exception using errcode='23505',message='audit_idempotency_payload_conflict';
   end if;
   return jsonb_build_object('duplicate',true,'eventId',v_existing.event_id,
