@@ -925,6 +925,52 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/shared-cost-allocations"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const months=query.months==null?12:Number(query.months);
+        if(!Number.isSafeInteger(months)||months<1||months>36)
+          return error(400,"SHARED_ALLOCATION_RANGE_INVALID","Allocation report period must be an integer between 1 and 36 months.");
+        const result=await rpc("financial_shared_cost_allocation_overview",{p_actor_id:ownerId,p_months:months});
+        return response(200,{allocations:result||{policies:[],batches:[],customers:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/shared-cost-allocation-policies"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const category=String(body.costCategory||"");
+        const driverType=String(body.driverType||"");
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const effectiveFrom=String(body.effectiveFrom||"");
+        const effectiveTo=body.effectiveTo==null||body.effectiveTo===""?null:String(body.effectiveTo);
+        const minimumRecipients=body.minimumRecipients==null?2:Number(body.minimumRecipients);
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        const drivers:Record<string,string[]>={ai_inference:["inference_tokens"],image_generation:["image_count"],video_generation:["video_seconds"],render_compute:["ffmpeg_seconds","gpu_seconds","cpu_seconds"],storage:["storage_gb_days"],egress:["egress_gb"]};
+        const validMonth=(value:string)=>/^\\d{4}-\\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        if(!drivers[category]?.includes(driverType)||!/^[A-Z]{3}$/.test(currency)||!validMonth(effectiveFrom)||
+          (effectiveTo!==null&&(!validMonth(effectiveTo)||effectiveTo<=effectiveFrom))||
+          !Number.isSafeInteger(minimumRecipients)||minimumRecipients<2||minimumRecipients>100000||
+          idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"SHARED_ALLOCATION_POLICY_INVALID","Choose a supported measured driver for the cost category, valid currency and month range, at least two recipients, and a valid idempotency key.");
+        const result=await rpc("add_financial_shared_cost_allocation_policy",{
+          p_actor_id:ownerId,p_cost_category:category,p_driver_type:driverType,p_currency:currency,
+          p_effective_from:effectiveFrom,p_effective_to:effectiveTo,
+          p_minimum_recipients:minimumRecipients,p_idempotency_key:idempotencyKey
+        });
+        return response(201,{policy:result});
+      }
+      if(path==="/api/admin/finance/shared-cost-allocations/run"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(body.periodMonth||"");
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const category=String(body.costCategory||"");
+        const categories=["ai_inference","image_generation","video_generation","render_compute","storage","egress"];
+        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+          new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth||
+          !/^[A-Z]{3}$/.test(currency)||!categories.includes(category))
+          return error(400,"SHARED_ALLOCATION_RUN_INVALID","Provide a valid month, ISO currency and supported shared-cost category.");
+        const result=await rpc("run_financial_shared_cost_allocation",{
+          p_actor_id:ownerId,p_period_month:periodMonth,p_currency:currency,p_cost_category:category
+        });
+        return response(200,{run:result});
+      }
       if(path==="/api/admin/finance/service-cost"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const periodMonth=String(body.periodMonth||"");
