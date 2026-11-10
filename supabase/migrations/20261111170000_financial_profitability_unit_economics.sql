@@ -233,7 +233,7 @@ begin
     then round(estimated_gross_profit_ltv_minor::numeric/customer_cac_minor,2) else null end,
    'ltvAvailability',case when monthly_logo_churn is null then 'insufficient_monthly_snapshots'
     when monthly_logo_churn=0 then 'no_observed_churn_in_comparison_window' else 'modeled_from_latest_monthly_logo_churn' end
-  ) order by gross_margin_pct asc nulls last,owner_id) from customer_rows),'[]'::jsonb),
+  ) order by case when mrr_minor>0 then contribution_minor*100.0/mrr_minor else null end asc nulls last,owner_id) from customer_rows),'[]'::jsonb),
   'sharedCosts',coalesce((select jsonb_agg(jsonb_build_object(
    'category',cost_category,'currency',currency,'amountMinor',amount_minor
   ) order by currency,cost_category) from shared_costs),'[]'::jsonb),
