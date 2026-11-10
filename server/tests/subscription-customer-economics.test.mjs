@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migration = await readFile(new URL("../../supabase/migrations/20261113110000_subscription_customer_economics_batch_37.sql", import.meta.url), "utf8");
+const appSource = await readFile(new URL("../../src/platform/app.ts", import.meta.url), "utf8");
 import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
@@ -71,4 +72,16 @@ test("subscription economics SQL keeps revenue, cash, cost, credit and telemetry
  assert.match(migration,/grant execute on function executive_visuals\.subscription_customer_economics_report/);
  const reportFunction=migration.slice(migration.indexOf("create or replace function executive_visuals.subscription_customer_economics_report"));
  assert.doesNotMatch(reportFunction,/\binsert into\b|\bupdate\s+customer_subscriptions\b|\bdelete from\b/i);
+});
+
+test("financial command centre renders the read-only subscription economics report",()=>{
+ assert.match(appSource,/SUBSCRIPTION CUSTOMER ECONOMICS · BATCH 37/);
+ assert.match(appSource,/finance-subscription-economics-month/);
+ assert.match(appSource,/data-finance-subscription-economics-refresh/);
+ assert.match(appSource,/subscription-economics\?periodMonth=/);
+ assert.match(appSource,/netCashCollectedMinor/);
+ assert.match(appSource,/providerCostEvidenceEvents/);
+ assert.match(appSource,/costEvidenceStatus/);
+ assert.match(appSource,/Each currency is reported independently/);
+ assert.match(appSource,/This report is read-only/);
 });
