@@ -44,7 +44,7 @@ test("technically compatible shots still require current verified pricing",()=>{
  assert.equal(result.readyForApproval,false);
  assert.equal(result.pricing.status,"unavailable");
  assert.equal(result.requestsSubmitted,false);
- assert.match(result.reason,/will not be invented/);
+ assert.match(result.reason,/price will be invented/);
 });
 test("preflight validates shot count, prompt and input shape",()=>{
  assert.equal(preflightVideoProduction({shots:[],providerCatalog,pricingCatalog:pricing}).status,"blocked");
