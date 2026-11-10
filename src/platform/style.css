@@ -1305,3 +1305,9 @@ body{
 @media(max-width:680px){.timeline-preview-transport output{width:100%;margin:4px 0 0}.timeline-preview-transport button{flex:1 1 auto}}
 
 .timeline-preview-diagnostics{margin-top:10px;padding:8px 10px;border:1px solid rgba(167,139,250,.18);border-radius:8px;background:rgba(15,12,24,.45);color:#c4b5fd;font-size:11px;font-variant-numeric:tabular-nums;line-height:1.5}
+
+
+.timeline-effect-stack{grid-column:1/-1;margin:10px 0 2px;padding:14px;border:1px solid rgba(167,139,250,.32);border-radius:9px;background:rgba(124,58,237,.07)}
+.timeline-effect-stack .eyebrow{color:#c4b5fd}
+.timeline-effect-stack p{margin:0 0 10px;font-size:11px;line-height:1.6}
+.timeline-toolbar button:disabled{opacity:.38;cursor:not-allowed;transform:none}
