@@ -1,9 +1,9 @@
 name: Financial intelligence checks
 on:
   pull_request:
-    branches: [feat/financial-intelligence-refunds-disputes]
+    branches: [main]
   push:
-    branches: [feat/financial-intelligence-api-integration]
+    branches: [feat/financial-intelligence-api-integration, feat/financial-intelligence-refunds-disputes]
 concurrency:
   group: financial-intelligence-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
