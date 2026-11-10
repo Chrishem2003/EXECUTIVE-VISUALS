@@ -136,5 +136,13 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112150000_reconciliation_backed_close_gates_batch_33.sql
       - name: Verify Batch 32 atomic financial close and approval workflow
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/persistent-financial-close-approval-postgres-integration.sql
+      - name: Apply Batch 35 persistent provider rate cards
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112160000_persistent_provider_rate_cards_batch_35.sql
+      - name: Apply Batch 36 live workload telemetry
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113100000_live_workload_telemetry_batch_36.sql
+      - name: Apply Batch 37 subscription customer economics
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113110000_subscription_customer_economics_batch_37.sql
+      - name: Verify Batch 37 subscription customer economics and evidence boundaries
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-customer-economics-postgres-integration.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
