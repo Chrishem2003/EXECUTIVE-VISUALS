@@ -741,7 +741,7 @@ export function createFinancialIntelligenceApi({
         const defaultFrom=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
         const defaultTo=new Date(Date.now()+180*86400000).toISOString().slice(0,10);
         const fromDate=String(query.fromDate||defaultFrom),toDate=String(query.toDate||defaultTo);
-        const validDate=(value)=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validDate=(value)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!validDate(fromDate)||!validDate(toDate)||toDate<fromDate||Date.parse(toDate+"T00:00:00Z")-Date.parse(fromDate+"T00:00:00Z")>366*86400000)
           return error(400,"CASHFLOW_RECONCILIATION_RANGE_INVALID","Provide a valid ordered date range no longer than 367 days.");
         const reconciliation=await rpc("financial_cashflow_reconciliation",{p_actor_id:ownerId,p_from_date:fromDate,p_to_date:toDate});
@@ -752,7 +752,7 @@ export function createFinancialIntelligenceApi({
         const cashflowItemId=String(body.cashflowItemId||""),amount=Number(body.amountMinor),actualDate=String(body.actualDate||"");
         const sourceType=String(body.sourceType||""),sourceReference=String(body.sourceReference||"").trim();
         const evidenceNote=String(body.evidenceNote||"").trim(),idempotencyKey=String(body.idempotencyKey||"");
-        if(!UUID.test(cashflowItemId)||!Number.isSafeInteger(amount)||amount<=0||!/^\\d{4}-\\d{2}-\\d{2}$/.test(actualDate)||!Number.isFinite(Date.parse(actualDate+"T00:00:00Z"))||new Date(actualDate+"T00:00:00Z").toISOString().slice(0,10)!==actualDate||actualDate>new Date().toISOString().slice(0,10)||!["bank_statement","bank_portal","cashbook","payment_confirmation","receipt_confirmation","other"].includes(sourceType)||sourceReference.length<3||sourceReference.length>240||evidenceNote.length<3||evidenceNote.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
+        if(!UUID.test(cashflowItemId)||!Number.isSafeInteger(amount)||amount<=0||!/^\d{4}-\d{2}-\d{2}$/.test(actualDate)||!Number.isFinite(Date.parse(actualDate+"T00:00:00Z"))||new Date(actualDate+"T00:00:00Z").toISOString().slice(0,10)!==actualDate||actualDate>new Date().toISOString().slice(0,10)||!["bank_statement","bank_portal","cashbook","payment_confirmation","receipt_confirmation","other"].includes(sourceType)||sourceReference.length<3||sourceReference.length>240||evidenceNote.length<3||evidenceNote.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
           return error(400,"CASHFLOW_ACTUAL_INVALID","Provide a valid cashflow item, positive safe-integer amount, non-future actual date and source-referenced evidence.");
         const actual=await rpc("record_financial_cashflow_actual",{p_actor_id:ownerId,p_payload:{cashflowItemId,amountMinor:amount,actualDate,sourceType,sourceReference,evidenceNote,idempotencyKey}});
         return response(201,{actual});
