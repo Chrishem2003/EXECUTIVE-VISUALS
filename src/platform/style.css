@@ -1149,3 +1149,12 @@ body{
 .remediation-create-form label,.remediation-evidence-form label{display:grid;gap:6px;color:#c9c3d7;font-size:11px}
 .remediation-create-form input,.remediation-create-form select,.remediation-create-form textarea,.remediation-evidence-form input,.remediation-evidence-form select{width:100%;min-width:0}
 @media(max-width:700px){.remediation-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.remediation-card-head{align-items:flex-start}}
+
+
+/* Batch 52 · independent reviewer feedback */
+.remediation-review-form{margin-top:10px;padding:12px;border:1px solid rgba(251,191,36,.2);border-radius:9px;background:rgba(120,86,18,.08)}
+.remediation-review-form summary{cursor:pointer;color:#f0d69b;font-size:11px;font-weight:650}
+.remediation-review-form form{display:grid;gap:9px;margin-top:10px}
+.remediation-review-form label{display:grid;gap:6px;color:#d8cba9;font-size:11px}
+.remediation-review-form textarea{width:100%;min-height:76px;resize:vertical}
+.remediation-review-form button{justify-self:start}
