@@ -1219,3 +1219,30 @@ body{
 /* Batch 56 · audit export and digest verification affordance */
 .remediation-audit-export{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0 8px;padding:10px 11px;border:1px solid rgba(167,139,250,.16);border-radius:9px;background:rgba(91,62,150,.07)}
 .remediation-audit-export small{color:#9891a9;font-size:10px;line-height:1.5}
+
+
+/* Batch 57 · portfolio-wide executive assurance */
+.assurance-inbox{margin-top:12px;border-color:rgba(167,139,250,.24);background:linear-gradient(145deg,rgba(65,48,104,.14),rgba(15,23,42,.34))}
+.assurance-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:15px 0}
+.assurance-metric{padding:12px;border:1px solid rgba(167,139,250,.14);border-radius:9px;background:rgba(8,12,24,.34);min-width:0}
+.assurance-metric small,.assurance-metric span{display:block;color:#a9a2b9;font-size:9px;line-height:1.5}
+.assurance-metric b{display:block;color:#f4f0ff;font:750 22px Manrope;margin:5px 0;font-variant-numeric:tabular-nums}
+.assurance-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;margin-top:14px}
+.assurance-split h4{margin:0 0 9px;color:#e8e2f6;font-size:11px}
+.assurance-project-list,.assurance-priority-list{display:grid;gap:7px}
+.assurance-project{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 11px;border:1px solid rgba(167,139,250,.13);border-radius:8px;background:rgba(8,12,24,.3)}
+.assurance-project:hover{border-color:#8b5cf6}
+.assurance-project span:first-child b,.assurance-project span:first-child small{display:block}
+.assurance-project span:first-child b{font-size:10px;color:#eee9fa}
+.assurance-project span:first-child small,.assurance-project-risk small{font-size:8px;color:#9992aa;margin-top:4px}
+.assurance-project-risk{display:grid;grid-template-columns:auto auto;gap:2px 7px;align-items:center;text-align:right}
+.assurance-project-risk b{font-size:11px;color:#f2eaff;font-variant-numeric:tabular-nums}
+.assurance-priority{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 11px;border:1px solid rgba(167,139,250,.13);border-radius:8px;background:rgba(8,12,24,.3)}
+.assurance-priority>div:first-child{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 8px;align-items:center;min-width:0}
+.assurance-priority>div:first-child b{font-size:10px;color:#eee9fa;overflow-wrap:anywhere}
+.assurance-priority>div:first-child small{grid-column:2;color:#9992aa;font-size:8px}
+.assurance-priority>div:last-child{display:grid;justify-items:end;gap:4px;white-space:nowrap}
+.assurance-priority>div:last-child small{color:#aaa3bd;font-size:8px}
+.assurance-priority .quiet{padding:3px 0;font-size:9px}
+@media(max-width:1100px){.assurance-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.assurance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.assurance-split{grid-template-columns:1fr}.assurance-priority{align-items:flex-start;flex-direction:column}.assurance-priority>div:last-child{justify-items:start}}
