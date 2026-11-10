@@ -38,7 +38,7 @@ export function buildFinancialGovernanceAssessment(input:Input={}):GovernanceAss
  const asOf=dateValue(input.asOf)||Date.now(), findings:GovernanceFinding[]=[];
  const command=input.commandCentre||null,liq=input.liquidityAlerts||null,margin=input.marginAlerts||null;
  const recon=input.cashflowReconciliation||null,disputes=input.disputes||null,audit=input.auditVerification||null;
- const auditEvents=input.auditEvents||null,close=input.closeWorkflow||null,scenarios=input.scenarioSnapshots||null;
+ const close=input.closeWorkflow||null,scenarios=input.scenarioSnapshots||null;
  const liqRows=firstArray(liq,["alerts","items"]),marginRows=firstArray(margin,["alerts","items"]);
  const reconRows=firstArray(recon,["items","exceptions","rows"]);
  const disputeRows=firstArray(disputes,["cases","disputes","items"]);
