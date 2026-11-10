@@ -32,6 +32,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
+import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit } from "./admin-operations.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -425,7 +426,30 @@ export function createAppServer() {
       }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
-      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
+      if(path.startsWith("/api/admin/operations/")){
+        if(!isPlatformAdministrator(user)){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
+        if(path==="/api/admin/operations/overview"&&req.method==="GET"){
+          send(res,200,{overview:getAdminOperationsOverview(db,{authMode:AUTH_MODE,dataPersistence:DATA_DIR_PERSISTENCE,persistentDataRequired:REQUIRE_PERSISTENT_DATA_DIR})},cors);return;
+        }
+        if(path==="/api/admin/operations/users"&&req.method==="GET"){
+          send(res,200,{users:listAdminOperationUsers(db,{query:String(url.searchParams.get("q")||""),limit:url.searchParams.get("limit")})},cors);return;
+        }
+        if(path==="/api/admin/operations/jobs"&&req.method==="GET"){
+          send(res,200,{jobs:listAdminOperationJobs(db,{limit:url.searchParams.get("limit")})},cors);return;
+        }
+        if(path==="/api/admin/operations/providers"&&req.method==="GET"){
+          const [modelProbes,qualityEvidence]=await Promise.all([Promise.all(["realesrgan-x4plus","realesrgan-x4plus-anime"].map(model=>aiUpscaleAdapter.probe(model))),loadUpscaleQualityEvidence()]);
+          const upscaleModels=modelProbes.map(model=>({...model,qualityVerified:qualityEvidence.models[model.model]?.qualityVerified===true,qualityEvidence:qualityEvidence.models[model.model]?.qualityEvidence||null,qualityReason:qualityEvidence.models[model.model]?.reason||qualityEvidence.reason}));
+          const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
+          const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
+          send(res,200,{providers:catalog.providers.map(item=>({id:item.id,provider:item.provider,status:item.status,enabled:item.enabled,configured:item.configured,remote:item.remote,model:item.model,reason:item.reason,capabilities:item.capabilities}))},cors);return;
+        }
+        if(path==="/api/admin/operations/audit"&&req.method==="GET"){
+          send(res,200,{events:listAdminOperationAudit(db,{limit:url.searchParams.get("limit")})},cors);return;
+        }
+        fail(res,404,"ADMIN_OPERATIONS_ROUTE_NOT_FOUND","Administrator operations route not found.");return;
+      }
       if(path.startsWith("/api/finance/remediations")){
         const remediationBody=["POST","PATCH"].includes(req.method)?await readJson(req,64*1024):{};
         const remediationResult=await controlRemediationApi.handle({method:req.method,path,ownerId:user.id,body:remediationBody,query:Object.fromEntries(url.searchParams.entries())});
