@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../core/timeline-playback";
 
 type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -611,7 +611,7 @@ document.addEventListener("error",event=>{
  const media=event.target as HTMLMediaElement,assetId=media.dataset.previewAsset||"";
  state.previewDiagnostics.errors++;
  const failedAsset=state.assets.find(asset=>asset.id===assetId);
- if(state.mode==="cloud"&&failedAsset&&!state.previewRefreshAttemptedAssetIds.includes(assetId)){
+ if(failedAsset&&shouldRetryTimelinePreviewUrl(state.mode,assetId,state.previewRefreshAttemptedAssetIds)){
   state.previewRefreshAttemptedAssetIds.push(assetId);
   delete state.previewAssetUrls[assetId];delete state.previewAssetUrlExpiresAt[assetId];
   void previewUrlForAsset(failedAsset).then(()=>paint()).catch(()=>fallbackToOriginalPreview(media));
@@ -625,7 +625,7 @@ function fallbackToOriginalPreview(media:HTMLMediaElement){
  const clipId=media.dataset.previewClip||"",clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
  const source=clip?state.assets.find(asset=>asset.id===clip.assetId):undefined;
  const proxy=clip&&source?selectTimelinePreviewAsset(clip,source,state.assets):undefined;
- if(!source||!proxy||proxy.id===source.id||state.previewUnavailableAssetIds.includes(proxy.id))return;
+ if(!source||!proxy||!shouldFallbackToTimelineSourcePreview(media.dataset.previewProxy==="true",source.id,proxy.id,state.previewUnavailableAssetIds))return;
  state.previewUnavailableAssetIds.push(proxy.id);state.previewDiagnostics.proxyFallbacks++;
  void previewUrlForAsset(source).then(()=>{state.message="Editing proxy unavailable; playback has fallen back to the original private source.";paint();}).catch(()=>{state.message="Both the linked proxy and original source could not be loaded. Check private asset access.";paint();});
 }
