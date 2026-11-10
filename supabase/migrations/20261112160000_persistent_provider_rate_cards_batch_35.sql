@@ -77,7 +77,8 @@ begin
   or (v_input is not null and v_input<0) or (v_output is not null and v_output<0)
   or (v_image is not null and v_image<0) or (v_video is not null and v_video<0)
   or (v_render is not null and v_render<0)
-  or num_nonnulls(v_input,v_output,v_image,v_video,v_render)=0 then
+  or num_nonnulls(v_input,v_output,v_image,v_video,v_render)=0
+  or greatest(coalesce(v_input,0),coalesce(v_output,0),coalesce(v_image,0),coalesce(v_video,0),coalesce(v_render,0))<=0 then
   raise exception 'Invalid provider rate-card fields' using errcode='22023';
  end if;
  if v_source_type='provider_pricing' and (v_source_url='' or v_checked_at is null or v_status<>'source_linked') then
