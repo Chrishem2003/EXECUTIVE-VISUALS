@@ -32,6 +32,14 @@ begin
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
 
+ -- The dashboard refreshes frequently; reuse the last hourly snapshot to avoid
+ -- writing a new forecast record on every page refresh.
+ select id,forecast_payload into v_snapshot_id,v_payload
+ from financial_forecast_snapshots
+ where created_at>=now()-interval '1 hour'
+ order by created_at desc limit 1;
+ if found then return v_payload||jsonb_build_object('snapshotId',v_snapshot_id); end if;
+
  with active_subscriptions as(
   select cs.owner_id,cs.currency,cs.amount_minor,cs.billing_interval,
    case
