@@ -35,7 +35,7 @@ test("overdue unresolved disputes escalate as critical but resolved cases do not
  const a=buildFinancialGovernanceAssessment({
   asOf:"2026-11-10T12:00:00.000Z",
   disputes:{cases:[
-   {id:"d1",status:"open",dueAt:"2026-11-09T12:00:00.000Z"},
+   {id:"d1",status:"open",response_due_at:"2026-11-09T12:00:00.000Z"},
    {id:"d2",status:"resolved",dueAt:"2026-11-01T12:00:00.000Z"},
    {id:"d3",status:"open",dueAt:"2026-11-11T12:00:00.000Z"}
   ]}
