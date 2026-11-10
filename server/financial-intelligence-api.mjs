@@ -730,6 +730,7 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/reconcile"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
         const result=await reconcilePendingRefunds({limit:100});
+        await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.refunds.reconcile",p_resource_type:"refund_batch",p_resource_id:randomUUID(),p_reason:"Administrator initiated pending refund reconciliation",p_request_id:randomUUID(),p_metadata:{checked:result.checked}});
         return response(200,result);
       }
       if(path==="/api/admin/finance/command-centre"&&method==="GET"){
