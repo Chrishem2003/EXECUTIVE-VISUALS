@@ -764,14 +764,15 @@ export function createFinancialIntelligenceApi({
             const lineReference=String(line.lineReference||line.providerLineReference||"").trim();
             const model=String(line.model||"").trim();
             const operation=String(line.operation||"");
+            const usageQuantity=line.usageQuantity==null?null:Number(line.usageQuantity);
             if(!lineReference||lineReference.length>180||!model||model.length>160||
               !["text","image","video","render","upscale","audio","embedding","other"].includes(operation)||
               !Number.isSafeInteger(amount)||!/^\d{4}-\d{2}-\d{2}$/.test(usagePeriod)||
-              !Number.isFinite(Date.parse(usagePeriod+"T00:00:00Z"))||new Date(usagePeriod+"T00:00:00Z").toISOString().slice(0,10)!==usagePeriod)
+              !Number.isFinite(Date.parse(usagePeriod+"T00:00:00Z"))||new Date(usagePeriod+"T00:00:00Z").toISOString().slice(0,10)!==usagePeriod||
+              (usageQuantity!==null&&(!Number.isFinite(usageQuantity)||usageQuantity<0)))
               throw Object.assign(new Error("Invoice line "+(index+1)+" is invalid."),{code:"AI_INVOICE_LINE_INVALID"});
             return {provider,currency,lineReference,model,operation,amountMinor:amount,usagePeriod,
-              usageQuantity:line.usageQuantity==null?null:Number(line.usageQuantity),usageUnit:String(line.usageUnit||""),
-              ownerId:line.ownerId||null,projectId:line.projectId||null,jobId:line.jobId||null};
+              usageQuantity,usageUnit:String(line.usageUnit||"")};
           });
         }catch(err){return error(400,err.code||"AI_INVOICE_CSV_INVALID",err.message||"Invoice lines are invalid.");}
         const fingerprint=hashText(JSON.stringify({provider,invoiceReference,currency,periodStart,periodEnd,totalMinor,lines}));
