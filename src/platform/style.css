@@ -848,3 +848,13 @@ button,.module,.operation,.engine{transition:background-color .16s ease,border-c
  .billing-plan-grid{grid-template-columns:1fr}
  .billing-actions>*{flex:1 1 100%}
 }
+
+/* Batch 12 financial command centre */
+.table-wrap{width:100%;overflow:auto;margin:12px 0}
+.table-wrap table{width:100%;border-collapse:collapse;min-width:620px;font-size:12px}
+.table-wrap th,.table-wrap td{padding:12px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
+.table-wrap th{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;background:#0e121b}
+.table-wrap td{color:#eeeaf5}
+.table-wrap tbody tr:hover{background:#ffffff08}
+.finance-json{max-height:420px;overflow:auto;padding:16px;border:1px solid var(--line);border-radius:10px;background:#090d15;color:#ddd5ee;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
+.panel .form-grid input[type=date]{color-scheme:dark}
