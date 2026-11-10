@@ -15,6 +15,12 @@
 - Service-role RPC validates administrator/system actor, idempotency, attribution, evidence source and dimension keys.
 - Append-only table, immutable trigger, RLS and audit-ledger event preserve evidence.
 
+## Provider evidence references
+- OpenAI usage and cost review: https://help.openai.com/en/articles/10478918-reviewing-api-usage-and-costs
+- OpenAI monthly usage and cost exports: https://help.openai.com/en/articles/20001072-exporting-monthly-usage-details-from-the-api-usage-dashboard
+- Gemini multimodal token usage: https://ai.google.dev/gemini-api/docs/tokens
+- Runway task detail and credit usage: https://docs.dev.runwayml.com/api/
+
 ## Accounting boundaries
 - Dimensions are usage counters, not monetary values.
 - Provider cost is populated only when explicitly reported with currency.
