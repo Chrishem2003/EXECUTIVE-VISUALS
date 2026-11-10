@@ -17,6 +17,7 @@ on:
       - feat/automated-provider-metering-reconciliation-batch-22
       - feat/render-economics-model-routing-shadow-batch-23
       - feat/render-economics-model-routing-shadow-batch-23-final
+      - feat/unified-profitability-margin-protection-batch-24
   pull_request:
 
 permissions:
@@ -104,6 +105,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111190000_automated_provider_metering_reconciliation_batch_22.sql
       - name: Apply Render Economics & Model Routing Shadow Batch 23 migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111200000_render_economics_model_routing_shadow_batch_23.sql
+      - name: Apply Unified Profitability & Margin Protection Batch 24 migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111210000_unified_profitability_margin_protection_batch_24.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
