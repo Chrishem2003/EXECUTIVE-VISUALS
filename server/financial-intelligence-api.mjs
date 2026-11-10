@@ -754,6 +754,7 @@ export function createFinancialIntelligenceApi({
           dbRequest("chargeback_cases?select=id,payment_transaction_id,provider_case_id,amount_minor,currency,status,stage,response_due_at,created_at&owner_id=eq."+encodeURIComponent(customerId)+"&order=created_at.desc&limit=100")
         ]);
         const rows=x=>Array.isArray(x.data)?x.data:[];
+        await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.customer_profile.view",p_resource_type:"customer",p_resource_id:customerId,p_reason:"Administrator viewed customer financial profile",p_request_id:randomUUID(),p_metadata:{payments:rows(payments).length,refunds:rows(refunds).length,chargebacks:rows(disputes).length}});
         return response(200,{customerId,payments:rows(payments),subscriptions:rows(subscriptions),refunds:rows(refunds),paymentAttempts:rows(attempts),chargebacks:rows(disputes)});
       }
       if(path==="/api/admin/finance/audit"&&method==="GET"){
@@ -783,8 +784,15 @@ export function createFinancialIntelligenceApi({
         const from=String(body.from||"").slice(0,10),to=String(body.to||"").slice(0,10);
         const dateOk=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
         if(!dateOk(from)||!dateOk(to)||to<from)return error(400,"SETTLEMENT_PERIOD_INVALID","Provide a valid settlement date range.");
-        const list=await providerRequest("/settlements?page=1&size=100&from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
-        const settlements=Array.isArray(list?.data)?list.data:[];
+        const settlements=[];
+        let page=1,totalPages=1;
+        while(page<=totalPages&&page<=10){
+          const list=await providerRequest("/settlements?page="+page+"&size=100&from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
+          if(Array.isArray(list?.data))settlements.push(...list.data);
+          totalPages=Math.max(1,Math.min(100,Number(list?.meta?.page_info?.total_pages)||1));
+          page++;
+        }
+        const truncated=totalPages>10;
         const results=[];
         for(const summary of settlements){
           try{
@@ -813,7 +821,7 @@ export function createFinancialIntelligenceApi({
           }catch(err){results.push({providerSettlementId:String(summary?.id||""),reconciliationStatus:"failed",code:err.code||"SETTLEMENT_RECONCILIATION_FAILED"});}
         }
         await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.settlements.reconcile",p_resource_type:"settlement_batch",p_resource_id:from+"/"+to,p_reason:"Administrator initiated Flutterwave settlement reconciliation",p_request_id:randomUUID(),p_metadata:{settlementCount:results.length}});
-        return response(200,{from,to,checked:results.length,results,provider:"flutterwave",note:"Settlements without complete provider charge details or exact local charge matches remain review_required; no discrepancy is silently marked as reconciled."});
+        return response(200,{from,to,checked:results.length,results,truncated,provider:"flutterwave",note:"Settlements without complete provider charge details or exact local charge matches remain review_required; no discrepancy is silently marked as reconciled."});
       }
       if(path==="/api/admin/finance/reconciliation-exceptions/resolve"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
