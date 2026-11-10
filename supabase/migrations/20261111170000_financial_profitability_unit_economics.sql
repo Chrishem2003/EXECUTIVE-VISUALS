@@ -72,7 +72,9 @@ begin
   if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
    or v_existing.currency<>p_currency or v_existing.owner_id is distinct from p_owner_id
    or v_existing.cost_category<>p_cost_category or v_existing.period_month<>p_period_month
-   or v_existing.reverses_event_id is distinct from p_reverses_event_id then
+   or v_existing.reverses_event_id is distinct from p_reverses_event_id
+   or v_existing.source_type<>p_source_type or v_existing.source_reference<>coalesce(p_source_reference,'')
+   or v_existing.description<>p_description then
    raise exception 'Idempotency key was already used with different cost details' using errcode='23505';
   end if;
   return jsonb_build_object('id',v_existing.id,'periodMonth',v_existing.period_month,'ownerId',v_existing.owner_id,
@@ -111,7 +113,9 @@ begin
   if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
    or v_existing.currency<>p_currency or v_existing.owner_id is distinct from p_owner_id
    or v_existing.cost_category<>p_cost_category or v_existing.period_month<>p_period_month
-   or v_existing.reverses_event_id is distinct from p_reverses_event_id then
+   or v_existing.reverses_event_id is distinct from p_reverses_event_id
+   or v_existing.source_type<>p_source_type or v_existing.source_reference<>coalesce(p_source_reference,'')
+   or v_existing.description<>p_description then
    raise exception 'Idempotency key was already used with different cost details' using errcode='23505';
   end if;
   v_id:=v_existing.id;
@@ -181,7 +185,7 @@ begin
   left join lateral(
    select s.owner_id,s.mrr_minor,s.currency,s.snapshot_month
    from subscription_revenue_snapshots s
-   where s.currency=cur.currency and s.snapshot_month=(select snapshot_month from latest_month)-interval '1 month'
+   where s.currency=cur.currency and s.snapshot_month=((select snapshot_month from latest_month)-interval '1 month')::date
   ) prior on true
   left join lateral(
    select s.owner_id,s.mrr_minor from subscription_revenue_snapshots s
