@@ -44,6 +44,33 @@ create table executive_visuals.project_members (
   created_at timestamptz not null default now(),
   primary key(project_id,member_id)
 );
+create table executive_visuals.timelines (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  name text not null,
+  revision integer not null default 1 check (revision > 0),
+  timeline jsonb not null check (jsonb_typeof(timeline)='object'),
+  otio jsonb check (otio is null or jsonb_typeof(otio)='object'),
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table executive_visuals.timelines enable row level security;
+grant select on executive_visuals.timelines to authenticated;
+create policy test_timeline_read on executive_visuals.timelines
+  for select to authenticated
+  using (
+    owner_id=(select auth.uid())
+    or exists (
+      select 1 from executive_visuals.projects p
+      where p.id=timelines.project_id and p.owner_id=(select auth.uid())
+    )
+    or exists (
+      select 1 from executive_visuals.project_members m
+      where m.project_id=timelines.project_id and m.member_id=(select auth.uid())
+    )
+  );
 grant select on executive_visuals.project_members to authenticated, service_role;
 alter table executive_visuals.projects enable row level security;
 grant select on executive_visuals.projects to authenticated;

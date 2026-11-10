@@ -181,6 +181,18 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     return response(200,{job});
    }
+   const revisionMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/revisions(?:\/([0-9]+))?$/i);
+   if(revisionMatch&&safeId(revisionMatch[1])&&method==="GET"){
+    const timelineId=revisionMatch[1];
+    if(revisionMatch[2]){
+     const revision=Number(revisionMatch[2]);
+     if(!Number.isSafeInteger(revision)||revision<1)return response(400,{error:{code:"INVALID_REVISION",message:"Revision must be a positive integer."}});
+     const snapshot=await service.timelines.getRevision({ownerId,timelineId,revision});
+     return snapshot?response(200,{revision:snapshot}):response(404,{error:{code:"TIMELINE_REVISION_NOT_FOUND",message:"Timeline revision not found."}});
+    }
+    const revisions=await service.timelines.listRevisions({ownerId,timelineId,limit:Math.min(100,Math.max(1,Number(query.limit)||50)),offset:Math.max(0,Number(query.offset)||0)});
+    return revisions?response(200,{revisions}):response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+   }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
    const timelineId=match[1];
@@ -288,7 +300,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!extensions[mediaType])return response(415,{error:{code:"UNSUPPORTED_MEDIA_TYPE",message:"This media type is not accepted."}});
   if(!req||typeof req[Symbol.asyncIterator]!=="function")return response(400,{error:{code:"UPLOAD_STREAM_REQUIRED",message:"A binary upload stream is required."}});
   let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
-  name=basename(name.replace(/[\\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
+  name=basename(name.replace(/[\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
   const declared=Number(req.headers?.["content-length"]||0);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});
   const directory=await mkdtemp(join(tempRoot,"ev-cloud-upload-")),filePath=join(directory,randomUUID()+"."+extensions[mediaType]);
   let size=0,header=Buffer.alloc(0);
