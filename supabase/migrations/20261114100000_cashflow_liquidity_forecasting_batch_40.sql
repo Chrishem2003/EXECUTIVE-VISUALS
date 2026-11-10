@@ -190,6 +190,7 @@ end $$;
 revoke all on table executive_visuals.financial_cash_position_snapshots,executive_visuals.financial_cashflow_items from public,anon,authenticated;
 grant all on table executive_visuals.financial_cash_position_snapshots,executive_visuals.financial_cashflow_items to service_role;
 revoke all on function executive_visuals.prevent_financial_cash_evidence_mutation() from public,anon,authenticated;
+grant execute on function executive_visuals.prevent_financial_cash_evidence_mutation() to service_role;
 revoke all on function executive_visuals.record_financial_cash_position(uuid,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.record_financial_cashflow_item(uuid,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.financial_cashflow_forecast_overview(uuid) from public,anon,authenticated;
