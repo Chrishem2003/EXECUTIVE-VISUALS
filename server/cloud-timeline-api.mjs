@@ -84,7 +84,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
    }
-   const mediaJobMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/media-jobs$/i);
+   const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
    if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"MEDIA_JOB_BODY_INVALID",message:"Media job request must be a JSON object."}});
     const operation=String(body.operation||"");
