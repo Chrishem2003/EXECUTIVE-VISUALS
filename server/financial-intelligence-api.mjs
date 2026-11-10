@@ -7,7 +7,7 @@ import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
-import { detectDuplicateInvoices, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
+import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -937,6 +937,7 @@ export function createFinancialIntelligenceApi({
         try{
           const reconciliation={generatedAt:new Date().toISOString(),mode:"read_only_preview",automaticPosting:false};
           if(hasInvoices)reconciliation.duplicateInvoices=detectDuplicateInvoices({invoices:body.invoiceHeaders});
+          if(hasInvoices&&Array.isArray(body.invoiceLines))reconciliation.invoiceHeaderTotals=reconcileInvoiceTotals({invoiceHeaders:body.invoiceHeaders,invoiceLines:body.invoiceLines});
           if(hasInvoiceLines){
             if(!Array.isArray(body.invoiceLines)||!Array.isArray(body.usageEvents))
               return error(400,"FINANCIAL_RECON_INPUT_INCOMPLETE","Invoice-line reconciliation requires both invoiceLines and usageEvents arrays.");
