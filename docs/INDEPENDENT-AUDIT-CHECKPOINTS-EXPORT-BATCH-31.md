@@ -1,4 +1,4 @@
-# Batch 31 — Independent Audit Checkpoints & Offline Evidence Export
+# Batch 31 — Portable Audit Evidence Export & Offline Verification
 
 ## Scope
 
