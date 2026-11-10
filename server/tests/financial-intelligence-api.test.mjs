@@ -1142,3 +1142,82 @@ test("service cost evidence is included in protected, audited CSV exports",async
  assert.ok(calls.some(x=>x.target.includes("/financial_service_cost_events?")));
  assert.ok(calls.some(x=>x.target.endsWith("/rpc/write_financial_admin_audit")&&x.body.p_action==="finance.export.costs"));
 });
+
+
+test("margin policy API is finance-admin protected and validates currency, thresholds and scope",async()=>{
+ let rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized margin policy must not reach RPC");
+ });
+ const deniedResult=await denied.handle({method:"POST",path:"/api/admin/finance/margin-policies",ownerId:owner,body:{
+  scopeType:"global",currency:"UGX",minGrossMarginPct:25,effectiveFrom:"2026-11-01",idempotencyKey:"margin-policy-0001"
+ }});
+ assert.equal(deniedResult.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/add_financial_margin_policy")){
+   rpcBody=JSON.parse(options.body);return json({policyId:"44444444-4444-4444-8444-444444444444",duplicate:false});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/margin-policies",ownerId:owner,body:{
+  scopeType:"global",ownerId:owner,currency:"UGX",minGrossMarginPct:101,
+  effectiveFrom:"2026-11-01",idempotencyKey:"margin-policy-invalid"
+ }});
+ assert.equal(invalid.status,400);
+ const valid=await service.handle({method:"POST",path:"/api/admin/finance/margin-policies",ownerId:owner,body:{
+  scopeType:"customer",ownerId:owner,currency:"UGX",minGrossMarginPct:35.5,minContributionMinor:5000,
+  effectiveFrom:"2026-11-01",effectiveTo:"2027-01-01",idempotencyKey:"margin-policy-0002"
+ }});
+ assert.equal(valid.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_scope_type,"customer");
+ assert.equal(rpcBody.p_owner_id,owner);
+ assert.equal(rpcBody.p_currency,"UGX");
+ assert.equal(rpcBody.p_min_gross_margin_pct,35.5);
+ assert.equal(rpcBody.p_min_contribution_minor,5000);
+});
+
+test("margin alert evaluation is protected and delegates to the trusted profitability evaluator",async()=>{
+ let called=false;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized margin evaluation must not run");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/margin-alerts/evaluate",ownerId:owner});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/evaluate_financial_margin_alerts")){
+   called=true;assert.equal(JSON.parse(options.body).p_actor_id,owner);
+   return json({periodMonth:"2026-11-01",evaluatedCustomers:12,policiesApplied:4,alertsCreated:2,alerts:[]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/margin-alerts/evaluate",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(called,true);
+ assert.equal(result.body.evaluation.alertsCreated,2);
+});
+
+test("margin alert listing validates bounded limits and returns the admin alert ledger",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/list_financial_margin_alerts")){
+   rpcBody=JSON.parse(options.body);return json({count:1,alerts:[{alertType:"negative_contribution",notificationStatus:"pending"}]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/margin-alerts",ownerId:owner,query:{limit:"5000"}});
+ assert.equal(invalid.status,400);
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/margin-alerts",ownerId:owner,query:{limit:"25"}});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_limit,25);
+ assert.equal(result.body.marginAlerts.alerts[0].notificationStatus,"pending");
+});
