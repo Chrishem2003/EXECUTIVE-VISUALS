@@ -137,3 +137,55 @@ test("AI usage API rejects invalid reporting month before calling the database",
  const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-cost-intelligence",ownerId:owner,body:{periodMonth:"2026-13-01"}});
  assert.equal(result.status,400);
 });
+
+
+test("verified invoice posting is finance-admin protected and binds the exact import ID",async()=>{
+ let rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized ledger posting must not run");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/ai-invoices/post-to-ledger",ownerId:owner,body:{importId}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/post_verified_ai_invoice_to_service_cost_ledger")){
+   rpcBody=JSON.parse(options.body);
+   return json({importId,posted:3,idempotentReplays:0,sharedCostLines:1,totalMinor:900,currency:"USD",status:"posted_to_service_cost_ledger"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/ai-invoices/post-to-ledger",ownerId:owner,body:{importId:"bad"}});
+ assert.equal(invalid.status,400);
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/ai-invoices/post-to-ledger",ownerId:owner,body:{importId}});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_import_id,importId);
+ assert.equal(result.body.posting.posted,3);
+});
+
+test("profitability trend API validates bounded month ranges and is finance-admin protected",async()=>{
+ let rpcBody=null;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized trend query must not run");
+ });
+ const blocked=await denied.handle({method:"GET",path:"/api/admin/finance/profitability-trends",ownerId:owner,query:{months:"12"}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/financial_profitability_trend_report")){
+   rpcBody=JSON.parse(options.body);return json({months:12,periods:[{currency:"USD",grossMarginPct:42.5}],limitations:[]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/profitability-trends",ownerId:owner,query:{months:"2"}});
+ assert.equal(invalid.status,400);
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/profitability-trends",ownerId:owner,query:{months:"12"}});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_months,12);
+ assert.equal(result.body.trends.periods[0].grossMarginPct,42.5);
+});
