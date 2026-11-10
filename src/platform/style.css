@@ -1018,3 +1018,14 @@ body{
   .panel h3{font-size:14px}
   .billing-metrics{grid-template-columns:1fr}
 }
+
+.scenario-intelligence{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(40,31,66,.72),rgba(17,20,34,.96));border-color:rgba(167,139,250,.24);box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 18px 50px rgba(5,3,15,.16)}
+.scenario-intelligence:before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(196,181,253,.65),transparent);pointer-events:none}
+.scenario-intelligence .eyebrow{color:#c4b5fd;letter-spacing:.16em}
+.scenario-intelligence .form-grid{align-items:end;margin:20px 0}
+.scenario-intelligence .form-grid label{min-width:0}
+.scenario-intelligence .form-grid input,.scenario-intelligence .form-grid textarea{width:100%;min-width:0}
+.scenario-intelligence .form-grid label.full{grid-column:1/-1}
+.scenario-intelligence [data-finance-scenario-save]{background:linear-gradient(110deg,#7c3aed,#8b5cf6);border-color:rgba(196,181,253,.4);box-shadow:0 8px 24px rgba(124,58,237,.2)}
+.scenario-intelligence .muted{max-width:100ch;line-height:1.65}
+@media(max-width:700px){.scenario-intelligence .form-grid{grid-template-columns:1fr}.scenario-intelligence .form-grid label.full{grid-column:auto}}
