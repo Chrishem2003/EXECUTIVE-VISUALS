@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { buildFinancialGovernanceAssessment } from "../../src/platform/financial-governance.ts";
+const app = await readFile(new URL("../../src/platform/app.ts", import.meta.url), "utf8");
+const css = await readFile(new URL("../../src/platform/style.css", import.meta.url), "utf8");
 
 test("missing source domains are reported as evidence gaps, not clean controls",()=>{
  const a=buildFinancialGovernanceAssessment({asOf:"2026-11-10T12:00:00.000Z"});
@@ -69,4 +72,15 @@ test("control coverage and limitations remain explicit even with no open finding
  assert.equal(a.score,null);
  assert.ok(a.limitations.some(x=>x.includes("does not detect complete historical replacement")));
  assert.ok(a.controls.every(c=>c.status==="evidence_available"));
+});
+
+test("Batch 48 governance panel is integrated with protected audit controls and responsive styling",()=>{
+ assert.match(app,/FINANCIAL GOVERNANCE · BATCH 48/);
+ assert.match(app,/data-finance-governance-export/);
+ assert.match(app,/data-finance-governance-audit-refresh/);
+ assert.match(app,/data-finance-governance-audit-verify/);
+ assert.match(app,/buildFinancialGovernanceAssessment/);
+ assert.match(css,/\.governance-panel/);
+ assert.match(css,/\.governance-findings/);
+ assert.match(css,/@media\(max-width:700px\)/);
 });
