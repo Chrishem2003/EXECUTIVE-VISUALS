@@ -19,6 +19,7 @@ on:
       - feat/render-economics-model-routing-shadow-batch-23-final
       - feat/unified-profitability-margin-protection-batch-24
       - feat/verified-cost-reconciliation-profitability-trends-batch-25
+      - feat/measured-shared-cost-allocation-batch-26
   pull_request:
 
 permissions:
