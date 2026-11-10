@@ -57,3 +57,54 @@ test("cashflow item stores a dated, confidence-weighted commitment",async()=>{
  assert.equal(result.status,201);assert.equal(result.body.item.confidenceBps,7500);
  assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/record_financial_cashflow_item")).body,{p_actor_id:owner,p_payload:payload});
 });
+
+test("cashflow actuals require a finance administrator",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/cashflow-actuals",ownerId:owner,body:{}});
+ assert.equal(result.status,403);assert.equal(rpcCalled,false);
+});
+
+test("cashflow actuals reject malformed or future evidence before the RPC",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/cashflow-actuals",ownerId:owner,body:{
+  cashflowItemId:"not-a-uuid",amountMinor:-1,actualDate:"2099-01-01",sourceType:"unknown",
+  sourceReference:"x",evidenceNote:"",idempotencyKey:"short"
+ }});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
+
+test("cashflow actuals persist validated partial settlement evidence",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_financial_cashflow_actual"))return json({id:"actual-1",cashflowItemId:"22222222-2222-4222-8222-222222222222",amountMinor:25000});
+  throw new Error("Unexpected request "+target);
+ });
+ const payload={cashflowItemId:"22222222-2222-4222-8222-222222222222",amountMinor:25000,actualDate:new Date().toISOString().slice(0,10),
+  sourceType:"bank_statement",sourceReference:"bank-line-44",evidenceNote:"Part payment matched to invoice 44",idempotencyKey:"cashflow-actual-123"};
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/cashflow-actuals",ownerId:owner,body:payload});
+ assert.equal(result.status,201);assert.equal(result.body.actual.amountMinor,25000);
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/record_financial_cashflow_actual")).body,{p_actor_id:owner,p_payload:payload});
+});
+
+test("cashflow reconciliation validates range and returns currency-separated variances",async()=>{
+ const payload={fromDate:"2026-08-01",toDate:"2026-11-10",items:[],currencies:[{currency:"UGX",forecastAmountMinor:100000,actualAmountMinor:90000,favorableVarianceMinor:-10000}],limitations:[]};
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/financial_cashflow_reconciliation"))return json(payload);
+  throw new Error("Unexpected request "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/cashflow-reconciliation",ownerId:owner,query:{fromDate:payload.fromDate,toDate:payload.toDate}});
+ assert.equal(result.status,200);assert.deepEqual(result.body.reconciliation,payload);
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/financial_cashflow_reconciliation")).body,{p_actor_id:owner,p_from_date:payload.fromDate,p_to_date:payload.toDate});
+});
+
+test("cashflow reconciliation rejects reversed or excessive date ranges",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/cashflow-reconciliation",ownerId:owner,query:{fromDate:"2025-01-01",toDate:"2026-11-10"}});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
