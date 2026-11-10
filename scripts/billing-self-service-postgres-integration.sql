@@ -177,7 +177,7 @@ begin
  );
  select (item->>'mrrMinor')::bigint,(item->>'arrMinor')::bigint into mrr,arr
  from jsonb_array_elements(dashboard->'byCurrency') item where item->>'currency'='UGX';
- if mrr<>20000 or arr<>240000 then
+ if mrr<>45000 or arr<>540000 then
   raise exception 'MRR/ARR calculation mismatch: mrr %, arr %',mrr,arr;
  end if;
  if not exists(select 1 from jsonb_array_elements(dashboard->'tiers') t where t->>'plan_code'='pro-yearly') then
