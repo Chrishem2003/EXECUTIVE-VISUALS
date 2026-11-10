@@ -37,20 +37,20 @@ begin
   'status','planned','sourceType','vendor_bill','sourceReference','batch40-vendor-60','description','Large vendor payment',
   'idempotencyKey','batch40-flow-003'));
  v_report:=executive_visuals.financial_cashflow_forecast_overview(v_actor);
- select row into v_base from jsonb_array_elements(v_report->'scenarios') row where row->>'currency'='ZZZ' and row->>'scenario'='base';
- select row into v_downside from jsonb_array_elements(v_report->'scenarios') row where row->>'currency'='ZZZ' and row->>'scenario'='downside';
- select row into v_upside from jsonb_array_elements(v_report->'scenarios') row where row->>'currency'='ZZZ' and row->>'scenario'='upside';
+ select scenario_row.value into v_base from jsonb_array_elements(v_report->'scenarios') as scenario_row(value) where scenario_row.value->>'currency'='ZZZ' and scenario_row.value->>'scenario'='base';
+ select scenario_row.value into v_downside from jsonb_array_elements(v_report->'scenarios') as scenario_row(value) where scenario_row.value->>'currency'='ZZZ' and scenario_row.value->>'scenario'='downside';
+ select scenario_row.value into v_upside from jsonb_array_elements(v_report->'scenarios') as scenario_row(value) where scenario_row.value->>'currency'='ZZZ' and scenario_row.value->>'scenario'='upside';
  if v_base is null or v_downside is null or v_upside is null then raise exception 'Scenario set incomplete: %',v_report->'scenarios'; end if;
  if (v_base->>'openingAvailableCashMinor')::bigint<>1000000 or (v_base->>'restrictedCashMinor')::bigint<>200000 then
   raise exception 'Available/restricted cash boundary incorrect: %',v_base;
  end if;
- select value into v_horizon from jsonb_array_elements(v_base->'horizons') value where value->>'days'='30';
+ select horizon_row.value into v_horizon from jsonb_array_elements(v_base->'horizons') as horizon_row(value) where horizon_row.value->>'days'='30';
  if (v_horizon->>'projectedClosingMinor')::bigint<>1050000 then raise exception 'Base 30-day cash forecast incorrect: %',v_horizon; end if;
- select value into v_horizon from jsonb_array_elements(v_downside->'horizons') value where value->>'days'='30';
+ select horizon_row.value into v_horizon from jsonb_array_elements(v_downside->'horizons') as horizon_row(value) where horizon_row.value->>'days'='30';
  if (v_horizon->>'projectedClosingMinor')::bigint<>1010000 then raise exception 'Downside 30-day cash forecast incorrect: %',v_horizon; end if;
- select value into v_horizon from jsonb_array_elements(v_upside->'horizons') value where value->>'days'='30';
+ select horizon_row.value into v_horizon from jsonb_array_elements(v_upside->'horizons') as horizon_row(value) where horizon_row.value->>'days'='30';
  if (v_horizon->>'projectedClosingMinor')::bigint<>1065000 then raise exception 'Upside 30-day cash forecast incorrect: %',v_horizon; end if;
- select value into v_horizon from jsonb_array_elements(v_base->'horizons') value where value->>'days'='60';
+ select horizon_row.value into v_horizon from jsonb_array_elements(v_base->'horizons') as horizon_row(value) where horizon_row.value->>'days'='60';
  if (v_horizon->>'projectedClosingMinor')::bigint<>-150000 or (v_horizon->>'liquidityShortfall')::boolean is not true then
   raise exception '60-day liquidity shortfall not identified: %',v_horizon;
  end if;
