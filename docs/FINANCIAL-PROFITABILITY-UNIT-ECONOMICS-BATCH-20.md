@@ -16,6 +16,7 @@ Batch 20 extends the Financial Command Centre with an auditable operating-cost l
 - Shared overhead shown separately rather than silently allocated to customers.
 - Protected admin APIs and financial audit events for every cost write/reversal.
 - Financial Command Centre profitability tables and cost-entry control.
+- Audited CSV export of the service-cost evidence ledger.
 
 ## Metric definitions
 
