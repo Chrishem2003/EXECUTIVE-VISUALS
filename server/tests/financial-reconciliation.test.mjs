@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {detectDuplicateInvoices,reconcileProviderInvoiceLines,reconcilePaymentSettlement} from "../financial-reconciliation.mjs";
+import {detectDuplicateInvoices,reconcileInvoiceTotals,reconcileProviderInvoiceLines,reconcilePaymentSettlement} from "../financial-reconciliation.mjs";
 
 test("duplicate invoice scan normalizes provider references without conflating currencies",()=>{
  const result=detectDuplicateInvoices({invoices:[
@@ -81,4 +81,24 @@ test("reconciliation rejects impossible usage dates and unsafe aggregate totals"
   ],
   payments:[]
  }),{code:"FINANCIAL_RECON_TOTAL_OVERFLOW"});
+});
+
+
+test("invoice header totals reconcile exactly against their invoice line population",()=>{
+ const result=reconcileInvoiceTotals({
+  invoiceHeaders:[
+   {provider:"p",invoiceReference:"INV-1",currency:"USD",totalMinor:300},
+   {provider:"p",invoiceReference:"INV-2",currency:"USD",totalMinor:500}
+  ],
+  invoiceLines:[
+   {provider:"p",invoiceReference:"inv 1",currency:"USD",amountMinor:100},
+   {provider:"p",invoiceReference:"INV-1",currency:"USD",amountMinor:200},
+   {provider:"p",invoiceReference:"INV-2",currency:"USD",amountMinor:450},
+   {provider:"p",invoiceReference:"INV-3",currency:"USD",amountMinor:25}
+  ]
+ });
+ assert.equal(result.counts.matched,1);
+ assert.equal(result.counts.variance,1);
+ assert.equal(result.counts.unmatched,1);
+ assert.equal(result.rows[1].varianceMinor,50);
 });
