@@ -74,7 +74,7 @@ begin
   if tg_op = 'DELETE' and pg_trigger_depth() > 1 then return old; end if;
   raise exception 'Timeline revision snapshots are immutable.' using errcode = '55000';
 end;
-$;
+$$;
 
 drop trigger if exists ev_timeline_revisions_immutable on executive_visuals.timeline_revisions;
 create trigger ev_timeline_revisions_immutable
