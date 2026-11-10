@@ -134,7 +134,8 @@ begin
 
  if p_command='create_period' then
   if (p_payload->>'periodStart') is null or (p_payload->>'periodEnd') is null
-   or p_payload->>'currency' is null or (p_payload->>'currency') !~ '^[A-Z]{3}   or jsonb_typeof(p_payload->'approvalStages')<>'array'
+   or p_payload->>'currency' is null or (p_payload->>'currency') !~ '^[A-Z]{3}$'
+   or jsonb_typeof(p_payload->'approvalStages')<>'array'
    or jsonb_array_length(p_payload->'approvalStages')<2 then
    raise exception using errcode='22023',message='financial_close_period_requirements_invalid';
   end if;
