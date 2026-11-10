@@ -61,6 +61,19 @@ test("evidence, owner transition and independent reviewer verification persist w
  assert.equal(verified.body.action.history.length,5);
  f.db.close();
 });
+test("review submission is blocked until a distinct reviewer is assigned",async()=>{
+ const f=setup(),body={...createBody,findingId:"reviewer-required"};
+ delete body.reviewerId;
+ const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body});
+ assert.equal(created.status,201);
+ const id=created.body.action.id,route="/api/finance/remediations/"+id;
+ assert.equal((await f.api.handle({method:"POST",path:route+"/evidence",ownerId:editor,body:{label:"Control workpaper",kind:"workpaper",capturedAt:"2026-11-10T12:00:00.000Z"}})).status,201);
+ assert.equal((await f.api.handle({method:"POST",path:route+"/transitions",ownerId:editor,body:{to:"in_progress"}})).status,200);
+ const blocked=await f.api.handle({method:"POST",path:route+"/transitions",ownerId:editor,body:{to:"pending_review"}});
+ assert.equal(blocked.status,409);
+ assert.equal(blocked.body.error.code,"REVIEWER_NOT_ASSIGNED");
+ f.db.close();
+});
 test("only the assigned reviewer or project owner can return submitted work with a review note",async()=>{
  const f=setup();
  const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
