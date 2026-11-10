@@ -248,7 +248,7 @@ begin
 end $$;
 
 
-do $
+do $$
 declare
   v_owner constant uuid := '11111111-1111-4111-8111-111111111111';
   event_result jsonb;
@@ -281,6 +281,6 @@ begin
       where owner_id=v_owner and event_key='batch16-render-first')<>1 then
     raise exception 'Duplicate product events were stored more than once';
   end if;
-end $;
+end $$;
 
 reset role;
