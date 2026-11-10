@@ -77,7 +77,7 @@ create table if not exists executive_visuals.financial_shared_cost_allocation_li
  currency text not null check(currency ~ '^[A-Z]{3}$'),
  driver_units numeric(30,8) not null check(driver_units>0),
  driver_event_count bigint not null check(driver_event_count>0),
- share_pct numeric(12,8) not null check(share_pct>0 and share_pct<=100),
+ share_pct numeric(30,16) not null check(share_pct>=0 and share_pct<=100),
  amount_minor bigint not null check(amount_minor>0),
  created_at timestamptz not null default now(),
  unique(batch_id,owner_id)
