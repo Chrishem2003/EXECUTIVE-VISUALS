@@ -65,7 +65,7 @@ begin
  select * into code_row from customer_referral_codes where owner_id=p_owner_id;
  if found then return jsonb_build_object('code',code_row.referral_code,'status',code_row.status); end if;
  for attempt in 1..5 loop
-  candidate:=upper(substr(encode(gen_random_bytes(8),'hex'),1,10));
+  candidate:=upper(substr(replace(gen_random_uuid()::text,'-',''),1,10));
   insert into customer_referral_codes(owner_id,referral_code)
   values(p_owner_id,candidate) on conflict do nothing
   returning * into code_row;
