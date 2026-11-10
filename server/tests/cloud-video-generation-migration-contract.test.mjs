@@ -19,7 +19,7 @@ test("cloud video RPCs are revoked from client roles and granted only to service
 });
 test("cloud approval registration, enqueue and task reservation all revalidate active owner/editor membership",()=>{
  assert.equal(sql.split("pm.member_id=p_owner_id").length-1,3);
- assert.equal(sql.split("pm.role in ('editor')").length-1,2);
+ assert.equal(sql.split("pm.role in ('editor')").length-1,3);
  assert.equal(sql.split("p.archived_at is null").length-1>=3,true);
 });
 test("task reservation serializes on approval and enforces the approved shot quote and budget ceiling",()=>{
