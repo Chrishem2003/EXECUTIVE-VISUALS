@@ -51,8 +51,11 @@ begin
   or coalesce(p_source_fingerprint,'') !~ '^[a-f0-9]{64}
   raise exception 'Invalid provider invoice import' using errcode='22023';
  end if;
- if p_lines is null or jsonb_typeof(p_lines)<>'array' or jsonb_array_length(p_lines) not between 1 and 5000 then
-  raise exception 'Invoice lines must be an array containing 1 to 5,000 items' using errcode='22023';
+ if p_lines is null or jsonb_typeof(p_lines)<>'array' then
+  raise exception 'Invoice lines must be a JSON array' using errcode='22023';
+ end if;
+ if jsonb_array_length(p_lines) not between 1 and 5000 then
+  raise exception 'Invoice lines must contain 1 to 5,000 items' using errcode='22023';
  end if;
  v_count:=jsonb_array_length(p_lines);
  for v_line in select value from jsonb_array_elements(p_lines) loop
