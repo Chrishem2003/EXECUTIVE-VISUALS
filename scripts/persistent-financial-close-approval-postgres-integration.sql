@@ -78,6 +78,7 @@ declare
  v_assignee constant uuid:='55555555-5555-4555-8555-555555555555';
  v_result jsonb;
  v_period_id uuid;
+ v_period_id2 uuid;
  v_task_id uuid;
  v_reconciliation_id uuid;
  v_count integer;
@@ -172,6 +173,34 @@ begin
  if v_result->'period'->>'status'<>'locked' then raise exception 'Relocked period after reviewer reassignment failed: %',v_result; end if;
  select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
  if v_count<>15 then raise exception 'Expected fifteen close audit events after second approval round, found %',v_count; end if;
+
+ -- A fully approved period without any persisted reconciliation must still fail its lock gate.
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'create_period',
+  jsonb_build_object('periodStart','2026-12-01','periodEnd','2026-12-31','currency','UGX',
+   'approvalStages',jsonb_build_array(
+    jsonb_build_object('stageKey','finance_manager','reviewerId',v_reviewer1),
+    jsonb_build_object('stageKey','controller','reviewerId',v_reviewer2)
+   )),'batch33-period-create-no-reconciliation');
+ v_period_id2:=(v_result->'period'->>'id')::uuid;
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_creator,'submit_for_approval',
+  jsonb_build_object('periodId',v_period_id2),'batch33-period-submit-no-reconciliation');
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_reviewer1,'record_approval',
+  jsonb_build_object('periodId',v_period_id2,'stageKey','finance_manager','decision','approved'),
+  'batch33-approval-no-recon-finance');
+ v_result:=pg_temp.run_financial_close_command(v_owner,v_reviewer2,'record_approval',
+  jsonb_build_object('periodId',v_period_id2,'stageKey','controller','decision','approved'),
+  'batch33-approval-no-recon-controller');
+ select count(*) into v_count from executive_visuals.financial_audit_events where owner_id=v_owner;
+ begin
+  perform pg_temp.run_financial_close_command(v_owner,v_creator,'lock_period',
+   jsonb_build_object('periodId',v_period_id2),'batch33-lock-without-reconciliation');
+  raise exception 'Period without reconciliation unexpectedly locked';
+ exception when others then
+  if sqlerrm='Period without reconciliation unexpectedly locked' then raise; end if;
+ end;
+ if (select count(*) from executive_visuals.financial_audit_events where owner_id=v_owner)<>v_count then
+  raise exception 'Failed reconciliation lock gate left an audit event behind';
+ end if;
 end
 $batch32$;
 reset role;
