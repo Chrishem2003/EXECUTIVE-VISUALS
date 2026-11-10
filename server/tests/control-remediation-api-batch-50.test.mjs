@@ -229,3 +229,36 @@ test("audit export is access-scoped and its SHA-256 manifest detects payload cha
  assert.equal(verifyAuditExport(countAltered).valid,false);
  f.db.close();
 });
+
+
+test("executive assurance summary is access-scoped and reports portfolio exposure without archived or foreign records",async()=>{
+ const f=setup();
+ const first=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"assurance-overdue",dueAt:"2026-11-01T00:00:00.000Z"}});
+ assert.equal(first.status,201);
+ const assetId=seedEvidenceAsset(f.db,{id:"a23e4567-e89b-42d3-a456-426614174001"});
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+first.body.action.id+"/evidence",ownerId:editor,body:{label:"Reconciliation evidence",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,201);
+ const second=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"assurance-critical",severity:"critical",reviewerId:undefined,dueAt:"2026-11-11T00:00:00.000Z"}});
+ assert.equal(second.status,201);
+ const personalBody={...createBody,findingId:"assurance-personal"};delete personalBody.projectId;delete personalBody.ownerId;delete personalBody.reviewerId;
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:personalBody})).status,201);
+ const archivedProject="b23e4567-e89b-42d3-a456-426614174000";
+ f.db.prepare("INSERT INTO projects(id,owner_id,name,archived_at) VALUES(?,?,?,?,?)".replace(",?)",",?)")).run(archivedProject,owner,"Archived project","2026-11-10T00:00:00.000Z");
+ const ownerView=await f.api.handle({method:"GET",path:"/api/finance/remediations/assurance",ownerId:owner});
+ assert.equal(ownerView.status,200);
+ assert.equal(ownerView.body.totals.total,3);
+ assert.equal(ownerView.body.totals.open,3);
+ assert.equal(ownerView.body.totals.criticalOpen,1);
+ assert.equal(ownerView.body.totals.highOpen,1);
+ assert.equal(ownerView.body.totals.overdue,1);
+ assert.equal(ownerView.body.totals.withoutEvidence,2);
+ assert.equal(ownerView.body.coverage.evidenceCoveragePct,33);
+ assert.equal(ownerView.body.byProject.length,2);
+ const reviewerView=await f.api.handle({method:"GET",path:"/api/finance/remediations/assurance",ownerId:reviewer});
+ assert.equal(reviewerView.body.totals.total,2);
+ const outsiderView=await f.api.handle({method:"GET",path:"/api/finance/remediations/assurance",ownerId:outsider});
+ assert.equal(outsiderView.body.totals.total,0);
+ assert.equal(outsiderView.body.priorityItems.length,0);
+ assert.equal(ownerView.body.priorityItems.some(x=>x.findingId==="assurance-personal"),true);
+ assert.equal(reviewerView.body.priorityItems.some(x=>x.findingId==="assurance-personal"),false);
+ f.db.close();
+});
