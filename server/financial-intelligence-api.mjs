@@ -971,10 +971,11 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/audit/verify"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+        const subjectOwnerId=String(query.ownerId||ownerId);if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_AUDIT_OWNER_INVALID","ownerId must be a verified account UUID.");
+        const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
         const records=[];let offset=0;
         while(offset<5000){
-          const page=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&order=sequence_number.asc&offset="+offset+"&limit=500");
+          const page=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&order=sequence_number.asc&offset="+offset+"&limit=500");
           const batch=Array.isArray(page.data)?page.data:[];
           records.push(...batch);offset+=batch.length;
           if(batch.length<500)break;
