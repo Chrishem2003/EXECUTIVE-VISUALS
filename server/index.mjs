@@ -534,7 +534,7 @@ export function createAppServer() {
         }
         const existing=db.prepare("SELECT * FROM video_generation_approvals WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
         if(existing){
-          if(existing.request_hash!==approval.requestHash||existing.project_id!==projectId||existing.currency!==approval.currency||existing.budget_ceiling_micros!==approval.budgetCeilingMicros){
+          if(existing.request_hash!==approval.requestHash||existing.project_id!==projectId||existing.currency!==approval.currency||existing.quoted_amount_micros!==approval.quotedAmountMicros||existing.budget_ceiling_micros!==approval.budgetCeilingMicros){
             fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different approval request.");return;
           }
           send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
