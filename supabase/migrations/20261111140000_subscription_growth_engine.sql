@@ -74,7 +74,7 @@ begin
    'variant',assignment_row.variant_key,'assignedAt',assignment_row.assigned_at,'existing',true);
  end if;
  variants_count:=jsonb_array_length(exp_row.variants);
- chosen_index:=(('x'||substr(md5(p_owner_id::text||':'||exp_row.experiment_key),1,8))::bit(32)::bigint % variants_count)::integer;
+ chosen_index:=(abs(hashtext(p_owner_id::text||':'||exp_row.experiment_key)::bigint) % variants_count)::integer;
  chosen_key:=exp_row.variants->chosen_index->>'key';
  if chosen_key is null or chosen_key !~ '^[a-z0-9][a-z0-9_-]{1,39}$' then
   raise exception 'Experiment variant configuration is invalid' using errcode='22023';
