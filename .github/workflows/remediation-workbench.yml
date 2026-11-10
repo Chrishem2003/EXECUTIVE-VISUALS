@@ -1,9 +1,9 @@
 name: Remediation workbench checks
 on:
   push:
-    branches: [feat/remediation-workbench-batch-51]
+    branches: [feat/independent-review-controls-batch-52]
   pull_request:
-    branches: [feat/persistent-remediation-operations-batch-50]
+    branches: [feat/remediation-workbench-batch-51-clean]
 concurrency:
   group: remediation-workbench-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
