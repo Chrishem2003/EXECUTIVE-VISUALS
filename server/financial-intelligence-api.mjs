@@ -933,23 +933,25 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         try{
           const auditKey=String(body.idempotencyKey||idempotencyKey||"");
+          const subjectOwnerId=String(body.subjectOwnerId||ownerId);
+          if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_AUDIT_OWNER_INVALID","subjectOwnerId must be a verified account UUID.");
           if(!auditKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
-          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key,event_envelope&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
+          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key,event_envelope&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
           if(Array.isArray(existing.data)&&existing.data.length){
             const prior=existing.data[0];
             if(prior.event_envelope?.eventType!==body.eventType||canonicalFinancialAuditJson(prior.event_envelope?.payload??{})!==canonicalFinancialAuditJson(body.payload??{}))
               return error(409,"FINANCIAL_AUDIT_IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different audit event.");
             return response(200,{duplicate:true,event:{eventId:prior.event_id,sequence:Number(prior.sequence_number),eventHash:prior.event_hash}});
           }
-          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
           const event=createFinancialAuditEvent({
-            ownerId,actorId:ownerId,eventType:body.eventType,payload:body.payload||{},
+            ownerId:subjectOwnerId,actorId:ownerId,eventType:body.eventType,payload:body.payload||{},
             idempotencyKey:auditKey,occurredAt:body.occurredAt||new Date().toISOString(),
             sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
           });
           const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>!["eventHash","canonicalEvent"].includes(key)));
           const result=await rpc("append_financial_audit_event",{
-            p_owner_id:ownerId,p_actor_id:ownerId,p_idempotency_key:auditKey,
+            p_owner_id:subjectOwnerId,p_actor_id:ownerId,p_idempotency_key:auditKey,
             p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
           });
           return response(result?.duplicate?200:201,{duplicate:Boolean(result?.duplicate),event:{eventId:result?.eventId||event.eventId,sequence:Number(result?.sequence||event.sequence),eventType:event.eventType,eventHash:result?.eventHash||event.eventHash,previousHash:event.previousHash}});
@@ -960,10 +962,11 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/audit/events"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const subjectOwnerId=String(query.ownerId||ownerId);if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_AUDIT_OWNER_INVALID","ownerId must be a verified account UUID.");
         const after=Number(query.afterSequence||0),limit=Math.min(500,Math.max(1,Number(query.limit)||100));
         if(!Number.isSafeInteger(after)||after<0)return error(400,"FINANCIAL_AUDIT_CURSOR_INVALID","afterSequence must be a non-negative integer.");
-        const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&sequence_number=gt."+after+"&order=sequence_number.asc&limit="+limit);
-        const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+        const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&sequence_number=gt."+after+"&order=sequence_number.asc&limit="+limit);
+        const head=await rpc("get_financial_audit_head",{p_owner_id:subjectOwnerId});
         return response(200,{events:rows.data||[],head:head||{sequence:0,headHash:"0".repeat(64)},pagination:{afterSequence:after,limit,returned:(rows.data||[]).length}});
       }
       if(path==="/api/admin/finance/audit/verify"&&method==="GET"){
@@ -976,7 +979,7 @@ export function createFinancialIntelligenceApi({
           records.push(...batch);offset+=batch.length;
           if(batch.length<500)break;
         }
-        const result=verifyFinancialAuditChain(records,{ownerId,expectedHead:head?.headHash||"0".repeat(64)});
+        const result=verifyFinancialAuditChain(records,{ownerId:subjectOwnerId,expectedHead:head?.headHash||"0".repeat(64)});
         const complete=Number(head?.sequence||0)===records.length;
         return response(200,{verification:{...result,complete,valid:result.valid&&complete,storedHead:head||{sequence:0,headHash:"0".repeat(64)},limitations:[...result.limitations,...(!complete?["The full chain exceeds the 5,000-record verification limit or could not be fully retrieved; this response is not a complete verification."]:[])]}});
       }
