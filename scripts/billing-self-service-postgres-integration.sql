@@ -372,4 +372,20 @@ begin
  end if;
 end $$;
 
+do $
+declare
+ snap jsonb; replay jsonb; spend jsonb; attr jsonb; report jsonb; month_start date:=date_trunc('month',now())::date; row_data jsonb;
+begin
+ snap:=executive_visuals.capture_subscription_revenue_snapshot('11111111-1111-4111-8111-111111111111');
+ if coalesce((snap->>'insertedCustomers')::integer,0)<1 then raise exception 'Revenue snapshot did not capture paid customers: %',snap; end if;
+ replay:=executive_visuals.capture_subscription_revenue_snapshot('11111111-1111-4111-8111-111111111111');
+ if replay->>'alreadyCaptured'<>'true' then raise exception 'Snapshot capture must be idempotent: %',replay; end if;
+ spend:=executive_visuals.record_customer_acquisition_spend('11111111-1111-4111-8111-111111111111',month_start,'paid_search','integration-campaign','UGX',120000,'Disposable integration acquisition spend','batch19-acq-spend-0001');
+ attr:=executive_visuals.record_customer_acquisition_attribution('11111111-1111-4111-8111-111111111111','11111111-1111-4111-8111-111111111111','paid_search','integration-campaign','UGX','paid_campaign',now());
+ report:=executive_visuals.financial_revenue_retention_overview('11111111-1111-4111-8111-111111111111');
+ select item into row_data from jsonb_array_elements(report->'acquisition') item where item->>'periodMonth'=month_start::text and item->>'currency'='UGX' and item->>'channel'='paid_search';
+ if row_data is null or (row_data->>'spendMinor')::bigint<>120000 or (row_data->>'attributedNewCustomers')::integer<1 or (row_data->>'cacMinor')::bigint<>120000 then raise exception 'Acquisition CAC did not reconcile: %',report->'acquisition'; end if;
+ if jsonb_array_length(report->'retention')<>0 then raise exception 'Retention comparison must wait for a second real monthly snapshot'; end if;
+end $;
+
 reset role;
