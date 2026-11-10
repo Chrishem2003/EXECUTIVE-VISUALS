@@ -176,8 +176,8 @@ begin
   if v_assignee=any(v_approvers) then raise exception using errcode='22023',message='financial_close_self_approval'; end if;
   if exists(select 1 from unnest(v_approvers) a left join auth.users u on u.id=a where u.id is null) then raise exception using errcode='22023',message='financial_close_approver_not_found'; end if;
   update executive_visuals.financial_close_tasks t set assigned_to=v_assignee,approver_ids=v_approvers,
-   status='assigned',approval_cycle=approval_cycle+1,prepared_at=null,prepared_by=null,
-   approved_at=null,approved_by=null,waiver_reason=null,updated_at=v_now,version=version+1
+   status='assigned',approval_cycle=t.approval_cycle+1,prepared_at=null,prepared_by=null,
+   approved_at=null,approved_by=null,waiver_reason=null,updated_at=v_now,version=t.version+1
    from executive_visuals.financial_close_periods p
    where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id
     and p.owner_id=t.owner_id and p.period_month=t.period_month and p.status in('open','reopened')
@@ -264,7 +264,7 @@ begin
  elsif p_action='task.waive' then
   v_task_id:=(p_payload->>'taskId')::uuid;v_reason:=p_payload->>'reason';
   update executive_visuals.financial_close_tasks t set status='waived',waiver_reason=v_reason,
-   updated_at=v_now,version=version+1
+   updated_at=v_now,version=t.version+1
    from executive_visuals.financial_close_periods p
    where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id
     and p.owner_id=t.owner_id and p.period_month=t.period_month and p.status in('open','reopened')
