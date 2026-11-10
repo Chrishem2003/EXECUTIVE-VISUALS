@@ -56,6 +56,6 @@ test("database migration captures immutable revisions and limits member access t
  assert.match(sql,/security definer/i);
  assert.match(sql,/on conflict \(timeline_id, revision\) do nothing/i);
  assert.match(sql,/create policy ev_timeline_revisions_read/i);
- assert.match(sql,/from executive_visuals\\.timelines t/i);
+ assert.ok(sql.includes("from executive_visuals.timelines t"));
  assert.doesNotMatch(sql,/create policy[^;]+for (insert|update|delete)/i);
 });
