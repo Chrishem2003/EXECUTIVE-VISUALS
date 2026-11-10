@@ -304,6 +304,19 @@ export function createFinancialIntelligenceApi({
     if(!billingEnabled)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
+      if(path==="/api/customer-success/me"&&method==="GET"){
+        const result=await rpc("customer_success_summary",{p_owner_id:ownerId});
+        return response(200,{success:result||{milestones:[],progress:[],points:0,completedCount:0,totalCount:0}});
+      }
+      if(path==="/api/customer-success/events"&&method==="POST"){
+        const eventType=String(body.eventType||"");
+        const eventKey=String(body.eventKey||"");
+        const allowed=["session_started","workspace_opened","project_created","render_completed","asset_uploaded","workflow_completed","tutorial_completed","billing_viewed"];
+        if(!allowed.includes(eventType)||eventKey.length<8||eventKey.length>120||!/^[A-Za-z0-9:_-]+$/.test(eventKey))
+          return error(400,"CUSTOMER_SUCCESS_EVENT_INVALID","Provide a supported product event and a valid idempotency key.");
+        const result=await rpc("record_customer_success_event",{p_owner_id:ownerId,p_event_type:eventType,p_event_key:eventKey});
+        return response(202,{event:result});
+      }
       if(path==="/api/billing/plans"&&method==="GET"){
         const result=await dbRequest("subscription_plans?select=plan_code,name,description,billing_interval,amount_minor,currency,included_credits,entitlements,version&status=eq.active&is_public=eq.true&order=amount_minor.asc");
         return response(200,{plans:Array.isArray(result.data)?result.data:[]});
@@ -671,6 +684,11 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"BILLING_ADMIN_REQUIRED","A billing administrator role is required.");
         const result=await rpc("expire_due_subscriptions",{p_limit:Math.max(1,Math.min(500,Number(body.limit)||100))});
         return response(200,{...result,action:"expired_only_after_grace_deadline",providerChargesInitiated:false});
+      }
+      if(path==="/api/admin/customer-success/overview"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
+        const result=await rpc("customer_success_admin_overview",{});
+        return response(200,{overview:result||{customers:[],totalCustomers:0,healthy:0,watch:0,atRisk:0,critical:0}});
       }
       if(path==="/api/admin/finance/summary"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
