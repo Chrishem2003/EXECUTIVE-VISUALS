@@ -24,6 +24,45 @@ function api(fetchImpl,options={}) {
   });
 }
 
+test("customer-success events and milestone summary are scoped to the authenticated account",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.endsWith("/rpc/record_customer_success_event"))return json({recorded:true,duplicate:false,milestonesAwarded:1});
+  if(target.endsWith("/rpc/customer_success_summary"))return json({milestones:[],progress:[{code:"first_project",completed:false}],points:0,completedCount:0,totalCount:1});
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/customer-success/events",ownerId:owner,body:{eventType:"unknown",eventKey:"event-key-123"}});
+ assert.equal(invalid.status,400);
+ const recorded=await service.handle({method:"POST",path:"/api/customer-success/events",ownerId:owner,body:{eventType:"render_completed",eventKey:"render-key-123"}});
+ assert.equal(recorded.status,202);
+ assert.equal(calls[0].body.p_owner_id,owner);
+ assert.equal(calls[0].body.p_event_type,"render_completed");
+ const summary=await service.handle({method:"GET",path:"/api/customer-success/me",ownerId:owner});
+ assert.equal(summary.status,200);
+ assert.equal(summary.body.success.progress[0].completed,false);
+});
+
+test("customer-success admin overview requires an authorized admin role",async()=>{
+ let overviewCalled=false;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized caller must not reach admin data");
+ });
+ const deniedResult=await denied.handle({method:"GET",path:"/api/admin/customer-success/overview",ownerId:owner});
+ assert.equal(deniedResult.status,403);
+ const allowed=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/customer_success_admin_overview")){overviewCalled=true;return json({totalCustomers:12,atRisk:2,customers:[]});}
+  throw new Error("Unexpected request: "+target);
+ });
+ const allowedResult=await allowed.handle({method:"GET",path:"/api/admin/customer-success/overview",ownerId:owner});
+ assert.equal(allowedResult.status,200);
+ assert.equal(overviewCalled,true);
+ assert.equal(allowedResult.body.overview.totalCustomers,12);
+});
+
 test("Creator Circle referral summary and attribution endpoints are owner-scoped",async()=>{
  const calls=[];
  const service=api(async(url,options={})=>{
