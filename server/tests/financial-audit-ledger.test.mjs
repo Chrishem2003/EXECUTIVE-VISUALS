@@ -19,7 +19,7 @@ test("valid event chain verifies sequence, predecessor hashes and event digests"
  assert.equal(result.valid,true);assert.equal(result.verifiedCount,2);assert.equal(result.headSequence,2);assert.equal(result.headHash,events[1].eventHash);
 });
 test("modified payload is detected at the first altered event",()=>{
- const events=chain();const rows=events.map(e=>({eventEnvelope:{...e,eventHash:undefined,canonicalEvent:undefined},eventHash:e.eventHash}));
+ const events=chain();const rows=events.map(e=>({eventEnvelope:Object.fromEntries(Object.entries(e).filter(([k])=>!["eventHash","canonicalEvent"].includes(k))),eventHash:e.eventHash}));
  rows[0].eventEnvelope.payload.period="2026-09";
  const result=verifyFinancialAuditChain(rows,{ownerId:owner});
  assert.equal(result.valid,false);assert.equal(result.firstBroken.sequence,1);assert.equal(result.firstBroken.reason,"event_hash_mismatch");
