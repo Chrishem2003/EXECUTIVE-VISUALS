@@ -738,7 +738,7 @@ if(t.closest("[data-finance-refresh]")){void loadFinanceWorkspace();return;}
   $<HTMLInputElement>("#finance-scenario-currency").value=String(row.currency);
   if(row.openingCashMinor!==null&&row.openingCashMinor!==undefined)$<HTMLInputElement>("#finance-scenario-opening").value=String(row.openingCashMinor);
   if(row.monthlyMrrMinor!==null&&row.monthlyMrrMinor!==undefined)$<HTMLInputElement>("#finance-scenario-revenue").value=String(row.monthlyMrrMinor);
-  const references=Array.isArray(row.evidenceReferences)?row.evidenceReferences.map((item:any)=>String(item.kind||"source")+":"+String(item.id||"")).filter((item:string)=>!item.endsWith(":")):[];
+  const references=Array.isArray(row.evidenceReferences)?row.evidenceReferences.map((item:any)=>String(item.kind||"source")+":"+String(item.id||item.ownerId||"")).filter((item:string)=>!item.endsWith(":")):[];
   $<HTMLTextAreaElement>("#finance-scenario-evidence-refs").value=references.join("\n");
   financeState.scenarioBaseline=baseline;
   const direct=row.monthlyDirectServiceCostMinor==null?"not recorded":String(row.monthlyDirectServiceCostMinor);
