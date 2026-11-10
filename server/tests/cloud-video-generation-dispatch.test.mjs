@@ -10,7 +10,7 @@ function fixture({status="approved_pending_submission",projectId=project,canWrit
  const calls=[],events=[];let localStatus=status;
  const db={prepare(sql){return{get(...args){calls.push(["get",sql,args]);return row;},run(...args){calls.push(["run",sql,args]);if(localStatus==="approved_pending_submission"){localStatus="consumed";return{changes:1};}return{changes:0};}}}};
  const repositories={approvals:{
-  async register(input){calls.push(["register",input]);if(registerError)throw registerError;return registerResult||{id:approval,ownerId:owner,projectId,currency:"USD",requestHash:"a".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"};},
+  async register(input){calls.push(["register",input]);if(registerError)throw registerError;return registerResult||{id:approval,ownerId:owner,projectId:project,currency:"USD",requestHash:"a".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"};},
   async enqueue(id,ownerIdArg){calls.push(["enqueue",id,ownerIdArg]);if(enqueueError)throw enqueueError;return enqueueResult;}
  }};
  const dispatch=createCloudVideoGenerationDispatch({db,repositories,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
