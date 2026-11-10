@@ -65,6 +65,9 @@ create table if not exists executive_visuals.financial_reconciliation_exceptions
 );
 create index if not exists financial_reconciliation_exceptions_open_idx
   on executive_visuals.financial_reconciliation_exceptions(status,created_at desc);
+create unique index if not exists financial_reconciliation_exception_open_uq
+  on executive_visuals.financial_reconciliation_exceptions(settlement_record_id,exception_code)
+  where status in ('open','investigating');
 
 alter table executive_visuals.financial_admin_audit enable row level security;
 alter table executive_visuals.flutterwave_settlement_records enable row level security;
@@ -261,12 +264,16 @@ begin
  returning id into rec_id;
  if p_expected_gross_minor is not null and gross<>p_expected_gross_minor then
   insert into financial_reconciliation_exceptions(settlement_record_id,provider_settlement_id,currency,exception_code,expected_minor,actual_minor)
-  values(rec_id,sid,cur,'gross_amount_mismatch',p_expected_gross_minor,gross);
+  values(rec_id,sid,cur,'gross_amount_mismatch',p_expected_gross_minor,gross)
+  on conflict(settlement_record_id,exception_code) where status in ('open','investigating')
+  do update set expected_minor=excluded.expected_minor,actual_minor=excluded.actual_minor,created_at=now();
   issues:=issues||jsonb_build_array('gross_amount_mismatch');
  end if;
  if p_expected_fees_minor is not null and fees<>p_expected_fees_minor then
   insert into financial_reconciliation_exceptions(settlement_record_id,provider_settlement_id,currency,exception_code,expected_minor,actual_minor)
-  values(rec_id,sid,cur,'provider_fee_mismatch',p_expected_fees_minor,fees);
+  values(rec_id,sid,cur,'provider_fee_mismatch',p_expected_fees_minor,fees)
+  on conflict(settlement_record_id,exception_code) where status in ('open','investigating')
+  do update set expected_minor=excluded.expected_minor,actual_minor=excluded.actual_minor,created_at=now();
   issues:=issues||jsonb_build_array('provider_fee_mismatch');
  end if;
  return jsonb_build_object('settlementRecordId',rec_id,'providerSettlementId',sid,'currency',cur,
