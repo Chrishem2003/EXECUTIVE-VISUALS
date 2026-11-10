@@ -5,6 +5,7 @@ import {
 } from "./payment-intelligence.mjs";
 import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
+import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -34,6 +35,9 @@ export function createFinancialIntelligenceApi({
   refundsEnabled=process.env.FLW_REFUNDS_ENABLED==="true",
   allowLive=process.env.FLW_ALLOW_LIVE==="true",
   paymentGracePeriodHours=Number(process.env.PAYMENT_GRACE_PERIOD_HOURS||72),
+  financialSystemActorId=process.env.FINANCIAL_SYSTEM_ACTOR_ID,
+  resourceCostMeteringEnabled=process.env.RESOURCE_COST_METERING_ENABLED==="true",
+  resourceCostCurrency=process.env.RESOURCE_COST_CURRENCY||null,
   fetchImpl=globalThis.fetch
 }={}){
   if(!supabaseUrl||!serviceRoleKey)throw new Error("Financial API requires server-side Supabase credentials.");
@@ -718,6 +722,73 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
       }
+      if(path==="/api/admin/finance/resource-rates"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const provider=String(body.provider||"").trim().toLowerCase();
+        const resourceType=String(body.resourceType||"");
+        const unit=String(body.unit||"");
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const rate=Number(body.rateMinorPerUnit);
+        const effectiveFrom=String(body.effectiveFrom||"");
+        const effectiveTo=body.effectiveTo?String(body.effectiveTo):null;
+        const sourceType=String(body.sourceType||"");
+        const sourceReference=String(body.sourceReference||"").trim();
+        if(provider.length<2||provider.length>80||!Number.isFinite(rate)||rate<0||
+          !Number.isFinite(Date.parse(effectiveFrom))||(effectiveTo&&!Number.isFinite(Date.parse(effectiveTo)))||
+          (effectiveTo&&Date.parse(effectiveTo)<=Date.parse(effectiveFrom))||
+          !["provider_invoice","cloud_contract","admin_verified"].includes(sourceType)||
+          sourceReference.length<3||sourceReference.length>240)
+          return error(400,"RESOURCE_RATE_INVALID","Provide a valid provider, resource type, unit, currency, non-negative rate, effective period and evidence reference.");
+        const result=await rpc("add_ai_resource_rate_card",{p_actor_id:ownerId,p_provider:provider,
+          p_resource_type:resourceType,p_unit:unit,p_currency:currency,p_rate_minor_per_unit:rate,
+          p_effective_from:effectiveFrom,p_effective_to:effectiveTo,p_source_type:sourceType,
+          p_source_reference:sourceReference});
+        return response(200,{rateCard:result});
+      }
+      if(path==="/api/admin/finance/resource-usage"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        let event;
+        try{event=normalizeResourceUsage(body);}catch(err){return error(400,err.code||"RESOURCE_USAGE_INVALID",err.message||"Resource usage is invalid.");}
+        const result=await rpc("record_ai_resource_usage_event",{
+          p_actor_id:ownerId,p_occurred_at:event.occurredAt,p_owner_id:event.ownerId,
+          p_project_id:event.projectId,p_job_id:event.jobId,p_operation_id:event.operationId,
+          p_provider:event.provider,p_model:event.model,p_resource_type:event.resourceType,
+          p_quantity:event.quantity,p_unit:event.unit,p_currency:event.currency,
+          p_provider_cost_minor:event.providerCostMinor,p_idempotency_key:event.idempotencyKey,
+          p_evidence:{source:"admin_api"}
+        });
+        return response(200,{resourceUsage:result});
+      }
+      if(path==="/api/admin/finance/resource-economics"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(query.periodMonth||body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        if(!/^\d{4}-\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||
+          new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+          return error(400,"RESOURCE_PERIOD_INVALID","Provide a valid first-of-month reporting date.");
+        const result=await rpc("ai_resource_economics_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
+        return response(200,{economics:result||{byResource:[],byCustomer:[],topJobs:[],unpricedEvents:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/model-performance"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        let event;
+        try{event=normalizeModelPerformance(body);}catch(err){return error(400,err.code||"MODEL_PERFORMANCE_INVALID",err.message||"Model performance evidence is invalid.");}
+        const result=await rpc("record_ai_model_performance_event",{p_actor_id:ownerId,
+          p_usage_event_id:event.usageEventId,p_provider:event.provider,p_model:event.model,
+          p_operation:event.operation,p_latency_ms:event.latencyMs,p_quality_score:event.qualityScore,
+          p_quality_source:event.qualitySource,p_evaluation_version:event.evaluationVersion,
+          p_idempotency_key:event.idempotencyKey});
+        return response(200,{performance:result});
+      }
+      if(path==="/api/admin/finance/model-routing/shadow"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        let request;
+        try{request=normalizeShadowRoutingRequest(body);}catch(err){return error(400,err.code||"MODEL_ROUTE_REQUEST_INVALID",err.message||"Shadow routing constraints are invalid.");}
+        const result=await rpc("recommend_ai_model_route_shadow",{p_actor_id:ownerId,
+          p_operation:request.operation,p_currency:request.currency,p_max_cost_minor:request.maxCostMinor,
+          p_max_latency_ms:request.maxLatencyMs,p_min_quality_score:request.minQualityScore,
+          p_idempotency_key:request.idempotencyKey});
+        return response(200,{recommendation:result||{decisionStatus:"insufficient_evidence",decisionMode:"shadow_only",executionChanged:false,candidates:[]}});
+      }
       if(path==="/api/admin/finance/ai-usage"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         let event;
@@ -1155,5 +1226,28 @@ export function createFinancialIntelligenceApi({
     }
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
+  async function recordWorkerResourceUsage({job,measurement}={}){
+    if(!resourceCostMeteringEnabled)return {recorded:false,reason:"resource_cost_metering_disabled"};
+    if(!UUID.test(String(financialSystemActorId||"")))return {recorded:false,reason:"financial_system_actor_not_configured"};
+    if(!job||!measurement)return {recorded:false,reason:"resource_measurement_missing"};
+    const event=normalizeResourceUsage({
+      occurredAt:measurement.measuredAt,provider:"executive-visuals-worker",model:job.job_type,
+      operationId:job.id,resourceType:measurement.resourceType,quantity:measurement.quantity,
+      unit:measurement.unit,currency:resourceCostCurrency,ownerId:job.owner_id,
+      projectId:job.project_id,jobId:job.id,
+      idempotencyKey:"worker-resource:"+job.id+":"+String(measurement.measurementId||randomUUID())
+    });
+    const result=await rpc("record_ai_resource_usage_event",{
+      p_actor_id:financialSystemActorId,p_occurred_at:event.occurredAt,p_owner_id:event.ownerId,
+      p_project_id:event.projectId,p_job_id:event.jobId,p_operation_id:event.operationId,
+      p_provider:event.provider,p_model:event.model,p_resource_type:event.resourceType,
+      p_quantity:event.quantity,p_unit:event.unit,p_currency:event.currency,
+      p_provider_cost_minor:null,p_idempotency_key:event.idempotencyKey,
+      p_evidence:{source:"worker_instrumentation",measurement:"ffmpeg_process_wall_clock",
+        jobType:job.job_type,attempt:Number(job.attempt_count)||1}
+    });
+    return {recorded:true,result};
+  }
+
+  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,recordWorkerResourceUsage,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
 }
