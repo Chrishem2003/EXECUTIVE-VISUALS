@@ -247,7 +247,7 @@ begin
  chargebacks:=round(coalesce((p_settlement->>'chargeback')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
  insert into flutterwave_settlement_records(provider_settlement_id,currency,gross_amount_minor,net_amount_minor,fee_amount_minor,refund_amount_minor,chargeback_amount_minor,provider_status,destination,due_at,settled_at,charge_count,provider_payload,last_reconciled_at)
  values(sid,cur,gross,net,fees,refunds,chargebacks,coalesce(p_settlement->>'status','unknown'),p_settlement->>'destination',
-  nullif(p_settlement->>'due_datetime','')::timestamptz,nullif(p_settlement->>'processed_date','')::timestamptz,
+  nullif(p_settlement->>'due_datetime','')::timestamptz,coalesce(nullif(p_settlement->>'processed_date',''),nullif(p_settlement->>'created_datetime',''))::timestamptz,
   coalesce(nullif(p_settlement->>'charge_count','')::integer,0),p_settlement,now())
  on conflict(provider_settlement_id) do update set currency=excluded.currency,gross_amount_minor=excluded.gross_amount_minor,
  net_amount_minor=excluded.net_amount_minor,fee_amount_minor=excluded.fee_amount_minor,refund_amount_minor=excluded.refund_amount_minor,
