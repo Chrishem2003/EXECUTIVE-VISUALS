@@ -30,7 +30,7 @@ create index if not exists financial_scenario_snapshots_period_idx
  on executive_visuals.financial_scenario_snapshots(period_month desc,currency,created_at desc);
 alter table executive_visuals.financial_scenario_snapshots enable row level security;
 revoke all on executive_visuals.financial_scenario_snapshots from public,anon,authenticated;
-grant select,insert on executive_visuals.financial_scenario_snapshots to service_role;
+revoke all on executive_visuals.financial_scenario_snapshots from service_role;
 
 create or replace function executive_visuals.reject_financial_scenario_snapshot_mutation()
 returns trigger language plpgsql set search_path=pg_catalog,executive_visuals
@@ -54,6 +54,8 @@ begin
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  if p_scenario_name is null or length(btrim(p_scenario_name)) not between 1 and 100
+  or p_currency is null or p_model_version is null or p_input_payload is null or p_result_payload is null or p_evidence_references is null
+  or p_input_sha256 is null or p_result_sha256 is null
   or p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date
   or p_currency !~ '^[A-Z]{3}$'
   or p_model_version<>'deterministic_monthly_scenario_v1'
