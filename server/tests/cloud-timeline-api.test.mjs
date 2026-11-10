@@ -15,8 +15,8 @@ function setup({canWrite=true,projectId=project,existing=[],timelineCreditsPerSe
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:"video/mp4"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
  return{api,calls,created};
 }
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
@@ -163,4 +163,29 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
+
+test("cloud media preview jobs are queued with fixed server-side proxy settings and owner scope",async()=>{
+ const f=setup();
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"proxy",sourceAssetId:"attacker-controlled"},idempotencyKey:"proxy-job-0001"});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.job_type,"media.proxy");
+ assert.equal(result.body.job.owner_id,owner);
+ assert.equal(result.body.job.project_id,project);
+ assert.deepEqual(result.body.job.input,{sourceAssetId:assetId,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"});
+ assert.ok(f.calls.some(call=>call[0]==="asset-get"&&call[1].assetId===assetId));
+});
+test("cloud media preview jobs reject unsupported operations, invalid idempotency and non-video sources",async()=>{
+ const f=setup();
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ assert.equal((await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"provider.generate"},idempotencyKey:"proxy-job-0002"})).status,400);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"proxy"},idempotencyKey:"x"})).status,400);
+});
+test("cloud media preview jobs require project editor authorization",async()=>{
+ const f=setup({canWrite:false});
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"proxy"},idempotencyKey:"proxy-job-0003"});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs")&&call[2].method==="POST"),false);
 });
