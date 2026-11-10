@@ -101,6 +101,19 @@ begin
  ) then
   raise exception 'Profitability trend did not include fully-loaded measured shared costs: %',v_report;
  end if;
+ if not exists(
+  select 1 from jsonb_array_elements(v_report->'customers') c
+  where c->>'ownerId'=v_customer_a::text
+   and (c->>'allocatedSharedCostMinor')::bigint=200
+   and (c->>'fullyLoadedContributionMinor')::bigint=9800
+ ) or not exists(
+  select 1 from jsonb_array_elements(v_report->'customers') c
+  where c->>'ownerId'=v_customer_b::text
+   and (c->>'allocatedSharedCostMinor')::bigint=601
+   and (c->>'fullyLoadedContributionMinor')::bigint=19399
+ ) then
+  raise exception 'Customer-level fully loaded profitability rows are missing or inaccurate: %',v_report->'customers';
+ end if;
  v_report:=executive_visuals.financial_shared_cost_allocation_overview(v_actor,12);
  if jsonb_array_length(v_report->'batches')<1 or jsonb_array_length(v_report->'customers')<3 then
   raise exception 'Allocation overview did not expose batch and customer-level evidence: %',v_report;
