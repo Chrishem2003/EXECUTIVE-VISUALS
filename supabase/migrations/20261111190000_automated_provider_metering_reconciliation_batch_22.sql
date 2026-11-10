@@ -75,8 +75,7 @@ begin
   insert into ai_provider_invoice_lines(import_id,provider_line_reference,usage_period,owner_id,project_id,job_id,
    provider,model,operation,currency,amount_minor,usage_quantity,usage_unit)
   values(v_import_id,v_line->>'lineReference',(v_line->>'usagePeriod')::date,
-   nullif(v_line->>'ownerId','')::uuid,nullif(v_line->>'projectId','')::uuid,nullif(v_line->>'jobId','')::uuid,
-   p_provider,v_line->>'model',v_line->>'operation',p_currency,(v_line->>'amountMinor')::bigint,
+   null,null,null,p_provider,v_line->>'model',v_line->>'operation',p_currency,(v_line->>'amountMinor')::bigint,
    nullif(v_line->>'usageQuantity','')::numeric,coalesce(v_line->>'usageUnit',''));
  end loop;
  perform write_financial_admin_audit(p_actor_id,'finance.ai_invoice.imported','ai_provider_invoice',v_import_id::text,
