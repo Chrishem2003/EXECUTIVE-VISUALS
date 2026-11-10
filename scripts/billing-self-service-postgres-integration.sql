@@ -381,7 +381,7 @@ begin
  replay:=executive_visuals.capture_subscription_revenue_snapshot('11111111-1111-4111-8111-111111111111');
  if replay->>'alreadyCaptured'<>'true' then raise exception 'Snapshot capture must be idempotent: %',replay; end if;
  spend:=executive_visuals.record_customer_acquisition_spend('11111111-1111-4111-8111-111111111111',month_start,'paid_search','integration-campaign','UGX',120000,'Disposable integration acquisition spend','batch19-acq-spend-0001');
- attr:=executive_visuals.record_customer_acquisition_attribution('11111111-1111-4111-8111-111111111111','11111111-1111-4111-8111-111111111111','paid_search','integration-campaign','UGX','paid_campaign',now());
+ attr:=executive_visuals.record_customer_acquisition_attribution('11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','paid_search','integration-campaign','UGX','paid_campaign',now());
  report:=executive_visuals.financial_revenue_retention_overview('11111111-1111-4111-8111-111111111111');
  select item into row_data from jsonb_array_elements(report->'acquisition') item where item->>'periodMonth'=month_start::text and item->>'currency'='UGX' and item->>'channel'='paid_search';
  if row_data is null or (row_data->>'spendMinor')::bigint<>120000 or (row_data->>'attributedNewCustomers')::integer<1 or (row_data->>'cacMinor')::bigint<>120000 then raise exception 'Acquisition CAC did not reconcile: %',report->'acquisition'; end if;
@@ -400,11 +400,12 @@ end $batch19$;
 do $batch20$
 declare
  v_owner constant uuid:='11111111-1111-4111-8111-111111111111';
+ v_customer constant uuid:='22222222-2222-4222-8222-222222222222';
  direct_cost jsonb; replay jsonb; report jsonb; currency_row jsonb; customer_row jsonb; shared_row jsonb;
  original_id uuid; month_start date:=date_trunc('month',now())::date;
 begin
  direct_cost:=executive_visuals.record_financial_service_cost(
-  v_owner,month_start,v_owner,'ai_inference','provider_usage_export','UGX',1000,
+  v_owner,month_start,v_customer,'ai_inference','provider_usage_export','UGX',1000,
   'batch20-model-invoice','Attributed model inference cost','batch20-direct-cost-0001',null
  );
  original_id:=(direct_cost->>'id')::uuid;
@@ -434,7 +435,7 @@ begin
  if currency_row is null or (currency_row->>'directCostMinor')::bigint<>800 then
   raise exception 'Direct costs did not net original expense and reversal: %',report->'byCurrency';
  end if;
- select item into customer_row from jsonb_array_elements(report->'customers') item where item->>'ownerId'=v_owner::text;
+ select item into customer_row from jsonb_array_elements(report->'customers') item where item->>'ownerId'=v_customer::text;
  if customer_row is null or (customer_row->>'directCostMinor')::bigint<>800
   or (customer_row->>'grossContributionMinor')::bigint<>(customer_row->>'mrrMinor')::bigint-800
   or (customer_row->>'cacMinor')::bigint<>120000
