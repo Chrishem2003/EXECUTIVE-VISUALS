@@ -229,9 +229,9 @@ begin
  ), acquisition as(
   select s.period_month,s.currency,s.channel,
    sum(s.amount_minor)::bigint net_spend_minor,
-   count(distinct a.owner_id)::integer attributed_new_customers,
-   case when count(distinct a.owner_id)>0
-    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id))::bigint else null end cac_minor
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
   from(
    select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
    from customer_acquisition_spend_events
@@ -400,9 +400,9 @@ begin
  ), acquisition as(
   select s.period_month,s.currency,s.channel,
    sum(s.amount_minor)::bigint net_spend_minor,
-   count(distinct a.owner_id)::integer attributed_new_customers,
-   case when count(distinct a.owner_id)>0
-    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id))::bigint else null end cac_minor
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
   from(
    select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
    from customer_acquisition_spend_events
