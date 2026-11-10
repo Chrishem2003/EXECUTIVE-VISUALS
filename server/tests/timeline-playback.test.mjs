@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, rational } from "../../src/core/timeline.ts";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh } from "../../src/core/timeline-playback.ts";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../../src/core/timeline-playback.ts";
 
 function fixture(){
  let timeline=createTimeline("project-1","timeline-1","Playback",{numerator:30000,denominator:1001});
@@ -92,4 +92,18 @@ test("signed cloud preview URL freshness rejects invalid timestamps and unsafe r
  assert.equal(isTimelinePreviewUrlFresh(now+60_000,Number.NaN),false);
  assert.equal(isTimelinePreviewUrlFresh(now+60_000,now,-1),false);
  assert.equal(isTimelinePreviewUrlFresh(now+60_000,now,Number.POSITIVE_INFINITY),false);
+});
+
+test("cloud preview recovery permits exactly one signed URL renewal per asset",()=>{
+ assert.equal(shouldRetryTimelinePreviewUrl("cloud","asset-1",[]),true);
+ assert.equal(shouldRetryTimelinePreviewUrl("cloud","asset-1",["asset-1"]),false);
+ assert.equal(shouldRetryTimelinePreviewUrl("local","asset-1",[]),false);
+ assert.equal(shouldRetryTimelinePreviewUrl("cloud","",[]),false);
+});
+test("proxy recovery falls back only to the matching canonical source and only once",()=>{
+ assert.equal(shouldFallbackToTimelineSourcePreview(true,"source-1","proxy-1",[]),true);
+ assert.equal(shouldFallbackToTimelineSourcePreview(false,"source-1","proxy-1",[]),false);
+ assert.equal(shouldFallbackToTimelineSourcePreview(true,"source-1","source-1",[]),false);
+ assert.equal(shouldFallbackToTimelineSourcePreview(true,"source-1","proxy-2",["proxy-2"]),false);
+ assert.equal(shouldFallbackToTimelineSourcePreview(true,"","proxy-1",[]),false);
 });

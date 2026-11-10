@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+import { createCloudMediaExecutor, buildCloudMediaOutputPlan } from "../cloud-media-executor.mjs";
 
 const noC2paPreservation=async()=>({status:"not_present",preserved:false});
 
@@ -536,4 +536,22 @@ test("cloud media executor fails closed instead of publishing when C2PA lineage 
   if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
   await rm(directory,{recursive:true,force:true});
  }
+});
+
+test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
+ const plan=buildCloudMediaOutputPlan("media.proxy",{proxyWidth:960,proxyCrf:28,preset:"veryfast"},{name:"scene.mp4"},"/tmp/source.mp4","/tmp/proxy.mp4");
+ assert.deepEqual(plan.args.slice(plan.args.indexOf("-vf"),plan.args.indexOf("-vf")+2),["-vf","scale='min(960,iw)':-2"]);
+ assert.ok(plan.args.includes("-preset"));
+ assert.ok(plan.args.includes("veryfast"));
+ assert.ok(plan.args.includes("-crf"));
+ assert.ok(plan.args.includes("28"));
+ assert.ok(plan.args.includes("-pix_fmt"));
+ assert.ok(plan.args.includes("yuv420p"));
+ assert.equal(plan.name,"scene-proxy.mp4");
+ assert.equal(plan.mediaType,"video/mp4");
+});
+test("cloud proxy output plan rejects unbounded dimensions and encoder settings",()=>{
+ assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyWidth:99999},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
+ assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyCrf:99},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
+ assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{preset:"slow"},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
 });

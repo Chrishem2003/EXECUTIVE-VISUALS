@@ -186,3 +186,140 @@ export function formatCreativeIntent(plan: CreativeIntentPlan): string {
     "BOUNDARY\nPlanning blueprint only. No model inference, generation, paid provider call or publishing was performed."
   ].join("\n\n");
 }
+
+
+export type CreativeStoryboardShot = {
+  id:string;
+  sequence:number;
+  durationSeconds:number;
+  role:"establish"|"action"|"detail"|"human"|"proof"|"transition"|"payoff";
+  prompt:string;
+  camera:string;
+  framing:string;
+  movement:string;
+  soundDirection:string;
+  negativePrompt:string;
+};
+export type CreativeStoryboardScene = {
+  id:string;
+  sequence:number;
+  title:string;
+  beat:string;
+  purpose:string;
+  durationSeconds:number;
+  visualDirection:string[];
+  proofNote:string;
+  shots:CreativeStoryboardShot[];
+};
+export type CreativeStoryboard = {
+  schemaVersion:1;
+  title:string;
+  creativePromise:string;
+  audienceContract:string;
+  durationSeconds:number;
+  shotTargetSeconds:number;
+  sceneCount:number;
+  shotCount:number;
+  scenes:CreativeStoryboardScene[];
+  missingInputs:string[];
+  planningOnly:true;
+  generationState:"not_submitted";
+  providerSubmitted:false;
+};
+
+const STORY_WEIGHTS=[12,18,18,14,25,13];
+const STORY_ROLES:CreativeStoryboardShot["role"][]=["establish","action","detail","human","proof","transition","payoff"];
+const STORY_FRAMING:Record<CreativeStoryboardShot["role"],string>={
+ establish:"Wide establishing composition that makes the setting and subject immediately legible",
+ action:"Medium action coverage with a clear beginning, middle and end",
+ detail:"Tactile close-up that reveals a meaningful detail rather than decorative filler",
+ human:"Human-scale close-up that captures a real decision, reaction or consequence",
+ proof:"Evidence-led insert or demonstration; show only what the supplied proof can substantiate",
+ transition:"Motivated visual bridge that preserves geography, screen direction and continuity",
+ payoff:"Confident closing composition that resolves the opening visual question"
+};
+
+/** Convert the Director's selected duration label into a conservative exact planning runtime. */
+export function resolveCreativeDurationSeconds(label:string):number {
+  const normalized=clean(label).toLowerCase().replace(/–/g,"-");
+  const exact:Record<string,number>={
+    "15 seconds":15,"30 seconds":30,"60 seconds":60,"90 seconds":90,
+    "3 minutes":180,"5-10 minutes":300,"10-30 minutes":600
+  };
+  const value=exact[normalized];
+  if(!value)throw new Error("Choose one of the supported Creative Director duration presets.");
+  return value;
+}
+
+function allocateStoryboardDuration(total:number,weights:number[]):number[] {
+  const sum=weights.reduce((a,b)=>a+b,0);
+  const raw=weights.map((weight,index)=>({index,value:total*weight/sum}));
+  const values=raw.map(item=>Math.floor(item.value));
+  let remainder=total-values.reduce((a,b)=>a+b,0);
+  raw.sort((a,b)=>(b.value-Math.floor(b.value))-(a.value-Math.floor(a.value)));
+  for(let index=0;index<remainder;index++)values[raw[index].index]++;
+  return values;
+}
+
+/**
+ * Compile an editable, timed storyboard from the Director's structured brief.
+ * This is deterministic planning: it does not call a model, invent proof, or submit paid work.
+ */
+export function compileCreativeStoryboard(
+  plan:CreativeIntentPlan,
+  durationSeconds:number,
+  shotTargetSeconds=8
+):CreativeStoryboard {
+  if(!plan||plan.schemaVersion!==1||plan.planningOnly!==true)throw new Error("A supported Creative DNA plan is required.");
+  if(!Number.isInteger(durationSeconds)||durationSeconds<15||durationSeconds>1800)throw new Error("Storyboard runtime must be 15–1800 seconds.");
+  if(!Number.isInteger(shotTargetSeconds)||shotTargetSeconds<4||shotTargetSeconds>30)throw new Error("Shot target must be 4–30 seconds.");
+  if(!Array.isArray(plan.storyBeats)||plan.storyBeats.length!==6)throw new Error("Creative DNA must contain six ordered story beats.");
+  const sceneDurations=allocateStoryboardDuration(durationSeconds,STORY_WEIGHTS);
+  const proofNote=plan.proofAndTrustChecks.find(value=>value.startsWith("Proof candidate supplied:"))||
+    "No proof supplied. Do not present an unverified factual claim as established evidence.";
+  let globalSequence=0;
+  const scenes=plan.storyBeats.map((storyBeat,index)=>{
+    const split=storyBeat.split(" · "),beat=split[0]||"STORY",purpose=split.slice(1).join(" · ")||storyBeat;
+    const sceneDuration=sceneDurations[index],shotCount=Math.ceil(sceneDuration/shotTargetSeconds);
+    const shotDurations=allocateStoryboardDuration(sceneDuration,Array(shotCount).fill(1));
+    const shots=shotDurations.map((duration,shotIndex)=>{
+      globalSequence++;
+      const sceneRoles:CreativeStoryboardShot["role"][]=["establish","action","detail","proof","payoff","transition"];
+      const role=shotIndex===0?sceneRoles[index]:STORY_ROLES[Math.min(shotIndex+1,STORY_ROLES.length-1)];
+      const visual=plan.visualGrammar[shotIndex%Math.max(1,plan.visualGrammar.length)]||"Maintain a coherent visual language.";
+      const sound=plan.soundIdentity[shotIndex%Math.max(1,plan.soundIdentity.length)]||"Use intentional, restrained sound design.";
+      const action=shotIndex===0?purpose:
+        role==="proof"?proofNote:
+        role==="human"?"Show the human consequence of this beat without fabricating dialogue or reactions.":
+        role==="payoff"?"Resolve this beat with a clear, motivated visual payoff.":
+        "Add a distinct visual detail that advances this beat; do not repeat the previous shot.";
+      return {
+        id:"scene-"+String(index+1).padStart(2,"0")+"-shot-"+String(shotIndex+1).padStart(2,"0"),
+        sequence:globalSequence,durationSeconds:duration,role,
+        prompt:[plan.creativePromise,"Story beat: "+beat,"Shot action: "+action,visual,"Audience: "+plan.audienceContract].join("\n"),
+        camera:role==="establish"?"Controlled wide or aerial establishing move":role==="detail"?"Measured macro or close-focus move":role==="human"?"Gentle eye-level push-in":role==="payoff"?"Deliberate hero move":"Motivated camera movement that follows the action",
+        framing:STORY_FRAMING[role],
+        movement:role==="transition"?"Match movement or screen direction into the next shot":"Keep movement motivated by the subject and story beat",
+        soundDirection:sound,
+        negativePrompt:"Do not invent factual evidence, dialogue, logos, endorsements or outcomes. Preserve subject identity, wardrobe, props, location geography, screen direction, lighting continuity and visual style. Avoid unintended text, watermarks, flicker and visual artifacts."
+      };
+    });
+    return {
+      id:"scene-"+String(index+1).padStart(2,"0"),sequence:index+1,
+      title:beat==="OPEN"?"Opening hook":beat==="ORIENT"?"Context and promise":beat==="ESCALATE"?"Development · "+String(index-1):beat==="PROVE"?"Proof and demonstration":beat==="PAY OFF"?"Reveal and payoff":"Closing invitation",
+      beat,purpose,durationSeconds:sceneDuration,
+      visualDirection:plan.visualGrammar,
+      proofNote:beat==="PROVE"?proofNote:"Use only supplied, approved evidence; keep metaphor distinct from fact.",
+      shots
+    };
+  });
+  const totalShots=scenes.reduce((sum,scene)=>sum+scene.shots.reduce((n,shot)=>n+shot.durationSeconds,0),0);
+  if(totalShots!==durationSeconds||scenes.some(scene=>scene.shots.some(shot=>shot.durationSeconds>30)))throw new Error("Storyboard timing failed its duration integrity check.");
+  return {
+    schemaVersion:1,title:plan.title,creativePromise:plan.creativePromise,
+    audienceContract:plan.audienceContract,durationSeconds,shotTargetSeconds,
+    sceneCount:scenes.length,shotCount:globalSequence,scenes,
+    missingInputs:plan.missingInputs.slice(),planningOnly:true,
+    generationState:"not_submitted",providerSubmitted:false
+  };
+}

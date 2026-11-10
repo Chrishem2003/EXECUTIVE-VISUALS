@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileCreativeIntent, formatCreativeIntent } from "../../src/core/creative-intent.ts";
+import { compileCreativeIntent, formatCreativeIntent, compileCreativeStoryboard, resolveCreativeDurationSeconds } from "../../src/core/creative-intent.ts";
 
 const base = {
   title: "A Different Tomorrow",
@@ -48,4 +48,37 @@ test("rejects an empty brief and formats a readable blueprint", () => {
   assert.match(output, /EMOTIONAL JOURNEY/);
   assert.match(output, /PROOF, RIGHTS & TRUST/);
   assert.match(output, /No model inference/);
+});
+
+test("compiles Creative DNA into a timed, editable storyboard without submitting generation",()=>{
+ const plan=compileCreativeIntent(base);
+ const storyboard=compileCreativeStoryboard(plan,90,8);
+ assert.equal(storyboard.schemaVersion,1);
+ assert.equal(storyboard.sceneCount,6);
+ assert.equal(storyboard.durationSeconds,90);
+ assert.equal(storyboard.scenes.reduce((sum,scene)=>sum+scene.durationSeconds,0),90);
+ assert.equal(storyboard.scenes.reduce((sum,scene)=>sum+scene.shots.reduce((n,shot)=>n+shot.durationSeconds,0),0),90);
+ assert.ok(storyboard.scenes.every(scene=>scene.shots.length>0&&scene.shots.every(shot=>shot.durationSeconds>=1&&shot.durationSeconds<=30)));
+ assert.equal(storyboard.scenes[3].shots[0].role,"proof");
+ assert.ok(storyboard.scenes[3].proofNote.includes(base.proof));
+ assert.equal(storyboard.planningOnly,true);
+ assert.equal(storyboard.generationState,"not_submitted");
+ assert.equal(storyboard.providerSubmitted,false);
+});
+test("preserves missing-proof warnings and resolves duration presets conservatively",()=>{
+ const plan=compileCreativeIntent({...base,proof:""});
+ const storyboard=compileCreativeStoryboard(plan,180,10);
+ assert.ok(storyboard.missingInputs.length>0);
+ assert.ok(storyboard.scenes[3].proofNote.includes("No proof supplied"));
+ assert.equal(resolveCreativeDurationSeconds("15 seconds"),15);
+ assert.equal(resolveCreativeDurationSeconds("5–10 minutes"),300);
+ assert.equal(resolveCreativeDurationSeconds("10–30 minutes"),600);
+ assert.throws(()=>resolveCreativeDurationSeconds("2 hours"),/supported/);
+});
+test("rejects invalid storyboard runtimes and shot targets",()=>{
+ const plan=compileCreativeIntent(base);
+ assert.throws(()=>compileCreativeStoryboard(plan,14,8),/15–1800/);
+ assert.throws(()=>compileCreativeStoryboard(plan,1801,8),/15–1800/);
+ assert.throws(()=>compileCreativeStoryboard(plan,90,31),/4–30/);
+ assert.throws(()=>compileCreativeStoryboard({...plan,storyBeats:[]},90,8),/six ordered/);
 });

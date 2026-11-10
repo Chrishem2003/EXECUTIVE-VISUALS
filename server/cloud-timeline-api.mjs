@@ -84,6 +84,32 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
    }
+   const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
+   if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
+    if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"MEDIA_JOB_BODY_INVALID",message:"Media job request must be a JSON object."}});
+    const operation=String(body.operation||"");
+    if(!["proxy","thumbnail"].includes(operation))return response(400,{error:{code:"MEDIA_JOB_OPERATION_INVALID",message:"Choose proxy or thumbnail preview."}});
+    const asset=await service.assets.get({ownerId,assetId:mediaJobMatch[1]});
+    if(!asset.mediaType.startsWith("video/"))return response(422,{error:{code:"MEDIA_JOB_SOURCE_INVALID",message:"Cloud preview jobs require a video source asset."}});
+    const projectId=asset.projectId||null;
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found or editor access required."}});
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
+    const jobType=operation==="proxy"?"media.proxy":"media.thumbnail";
+    const seconds=operation==="thumbnail"?Number(body.seconds??1):null;
+    if(operation==="thumbnail"&&(!Number.isFinite(seconds)||seconds<0||seconds>3600))return response(400,{error:{code:"MEDIA_JOB_OPTIONS_INVALID",message:"Thumbnail time must be between 0 and 3600 seconds."}});
+    const input=operation==="proxy"?{sourceAssetId:asset.id,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{sourceAssetId:asset.id,seconds};
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,input,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!==jobType||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different media operation."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].project_id!==(projectId||null)||rows[0].job_type!==jobType||rows[0].status!=="queued")throw new Error("Cloud media preview job creation returned an invalid receipt.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId:asset.id,operation}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
    const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(assetMatch&&safeId(assetMatch[1])){
     if(method==="GET"){

@@ -116,3 +116,18 @@ export function isTimelinePreviewUrlFresh(expiresAtMs:number,nowMs=Date.now(),mi
   return Number.isFinite(expiresAtMs)&&Number.isFinite(nowMs)&&Number.isFinite(minimumValidityMs)&&
     minimumValidityMs>=0&&expiresAtMs>nowMs+minimumValidityMs;
 }
+
+/** Allow one authenticated signed-URL renewal per cloud asset during a preview session. */
+export function shouldRetryTimelinePreviewUrl(
+  mode:"local"|"cloud",assetId:string,attemptedAssetIds:readonly string[],
+):boolean {
+  return mode==="cloud"&&assetId.length>0&&!attemptedAssetIds.includes(assetId);
+}
+
+/** A failed derivative may fall back only to its own canonical source, once per preview session. */
+export function shouldFallbackToTimelineSourcePreview(
+  isProxy:boolean,sourceAssetId:string,proxyAssetId:string,unavailableProxyAssetIds:readonly string[],
+):boolean {
+  return isProxy&&sourceAssetId.length>0&&proxyAssetId.length>0&&
+    sourceAssetId!==proxyAssetId&&!unavailableProxyAssetIds.includes(proxyAssetId);
+}

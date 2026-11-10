@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../core/timeline-playback";
 
 type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -18,9 +18,11 @@ type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
 type TimelineRevisionSummary={timelineId:string;revision:number;name:string;createdAt:string};
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
 };
+const history:{timelineId:string;undo:EditorialTimeline[];redo:EditorialTimeline[]}={timelineId:"",undo:[],redo:[]};
+function recordUndo(){if(!state.timeline)return;if(history.timelineId!==state.timeline.id){history.timelineId=state.timeline.id;history.undo=[];history.redo=[];}history.undo.push(structuredClone(state.timeline));if(history.undo.length>50)history.undo.shift();history.redo=[];}
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
@@ -51,10 +53,11 @@ function clipInspector(){
  const track=state.timeline.tracks.find(item=>item.clips.some(clip=>clip.id===state.selectedClipId));
  const clip=track?.clips.find(item=>item.id===state.selectedClipId);
  if(!track||!clip)return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR</div><p class="muted">Select a clip on the timeline to edit its properties.</p></div>';
- const metadata=clip.metadata||{},proxyAssetId=typeof metadata.proxyAssetId==="string"?metadata.proxyAssetId:"",trace=readCreativeTrace(clip)||{storyBeat:"",purpose:"",audiencePromise:"",proofReference:"",decisionNote:""},decisions=readCreativeDecisionHistory(clip),start=Math.round(clip.timelineStart.value),duration=Math.round(clip.duration.value),sourceIn=Math.round(clip.sourceRange.start.value);
+ const metadata=clip.metadata||{},effects=(metadata.timelineEffects||{}) as Record<string,number>,proxyAssetId=typeof metadata.proxyAssetId==="string"?metadata.proxyAssetId:"",trace=readCreativeTrace(clip)||{storyBeat:"",purpose:"",audiencePromise:"",proofReference:"",decisionNote:""},decisions=readCreativeDecisionHistory(clip),start=Math.round(clip.timelineStart.value),duration=Math.round(clip.duration.value),sourceIn=Math.round(clip.sourceRange.start.value);
  let specific="";
  if(track.kind==="audio")specific='<div><label>Gain (dB)</label><input name="gainDb" type="number" min="-60" max="24" step="0.5" value="'+esc(clip.gainDb??0)+'"></div>';
  if(track.kind==="overlay")specific='<div><label>X position</label><input name="x" type="number" min="0" value="'+esc(metadata.x??Math.max(0,(state.timeline.width||1920)-Math.round((state.timeline.width||1920)*0.24)-24))+'"></div><div><label>Y position</label><input name="y" type="number" min="0" value="'+esc(metadata.y??24)+'"></div><div><label>Width (px)</label><input name="width" type="number" min="16" value="'+esc(metadata.width??Math.round((state.timeline.width||1920)*0.24))+'"></div><div><label>Height (px)</label><input name="height" type="number" min="16" value="'+esc(metadata.height??Math.round((state.timeline.height||1080)*0.24))+'"></div><div><label>Opacity</label><input name="opacity" type="number" min="0" max="1" step="0.05" value="'+esc(metadata.opacity??1)+'"></div>';
+ if(track.kind==="video")specific='<div class="full timeline-effect-stack"><div class="eyebrow">NON-DESTRUCTIVE EFFECT LAYER</div><p class="muted">Effects are saved with this clip and applied during rendering. Original media remains unchanged.</p><div class="form-grid"><div><label>Brightness</label><input name="effectBrightness" type="number" min="-0.5" max="0.5" step="0.01" value="'+esc(effects.brightness??0)+'"></div><div><label>Contrast</label><input name="effectContrast" type="number" min="0.5" max="2" step="0.05" value="'+esc(effects.contrast??1)+'"></div><div><label>Saturation</label><input name="effectSaturation" type="number" min="0" max="2" step="0.05" value="'+esc(effects.saturation??1)+'"></div><div><label>Denoise</label><input name="effectDenoise" type="number" min="0" max="10" step="0.25" value="'+esc(effects.denoise??0)+'"></div><div><label>Sharpen</label><input name="effectSharpen" type="number" min="0" max="1" step="0.05" value="'+esc(effects.sharpen??0)+'"></div></div></div>';
  if(track.kind==="caption")specific='<div><label>Font family</label><input name="fontName" value="'+esc(metadata.fontName??"DejaVu Sans")+'"></div><div><label>Font size</label><input name="fontSize" type="number" min="12" max="96" value="'+esc(metadata.fontSize??32)+'"></div><div><label>Text color</label><input name="primaryColor" type="color" value="'+esc(metadata.primaryColor??"#FFFFFF")+'"></div><div><label>Caption placement</label><select name="alignment">'+[1,2,3,4,5,6,7,8,9].map(n=>'<option value="'+n+'" '+(Number(metadata.alignment??2)===n?'selected':'')+'>'+n+'</option>').join("")+'</select></div><div><label>Background panel</label><select name="backgroundMode"><option value="box" '+(metadata.backgroundMode!=="none"?'selected':'')+'>Behind captions</option><option value="none" '+(metadata.backgroundMode==="none"?'selected':'')+'>No panel</option></select></div><div><label>Panel color</label><input name="backgroundColor" type="color" value="'+esc(metadata.backgroundColor??"#000000")+'"></div><div><label>Panel opacity</label><input name="backgroundOpacity" type="number" min="0" max="1" step="0.05" value="'+esc(metadata.backgroundOpacity??0.68)+'"></div><div><label>Outline</label><input name="outline" type="number" min="0" max="8" step="0.5" value="'+esc(metadata.outline??2)+'"></div><div><label>Shadow</label><input name="shadow" type="number" min="0" max="8" step="0.5" value="'+esc(metadata.shadow??1)+'"></div><div><label>Bottom safe-area margin</label><input name="marginV" type="number" min="0" max="240" value="'+esc(metadata.marginV??42)+'"></div>';
  return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR · '+esc(track.kind.toUpperCase())+'</div><form id="tl-clip-inspector" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'"><div class="form-grid"><div><label>Clip name</label><input name="name" value="'+esc(clip.name)+'" required></div><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+start+'"></div><div><label>Duration (frames)</label><input name="duration" type="number" min="1" value="'+duration+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="'+sourceIn+'"></div>'+specific+'</div><div class="eyebrow" style="margin-top:16px">CREATIVE INTENT LINK</div><div class="form-grid"><div><label>Story beat</label><input name="storyBeat" maxlength="120" value="'+esc(trace.storyBeat)+'" placeholder="Opening hook / Proof / Payoff"></div><div><label>Audience promise served</label><input name="audiencePromise" maxlength="300" value="'+esc(trace.audiencePromise)+'" placeholder="What did we promise viewers?"></div><div class="full"><label>Why this shot exists</label><textarea name="purpose" maxlength="500" rows="2" placeholder="What information, emotion or transition does it contribute?">'+esc(trace.purpose)+'</textarea></div><div><label>Proof / source reference</label><input name="proofReference" maxlength="300" value="'+esc(trace.proofReference)+'" placeholder="Evidence ID, source or approved claim"></div><div><label>Creative decision note</label><input name="decisionNote" maxlength="500" value="'+esc(trace.decisionNote)+'" placeholder="Why this take, framing or edit was chosen"></div></div>'+(decisions.length?'<div class="eyebrow" style="margin-top:16px">CREATIVE DECISION HISTORY · '+decisions.length+'</div><div class="timeline-quality-list">'+decisions.slice().reverse().slice(0,8).map(item=>'<article class="timeline-quality-item info"><b>r'+item.sequence+' · '+esc(item.summary)+'</b><p>'+esc(item.recordedAt)+'</p></article>').join("")+'</div>':'')+'<button class="secondary">Save clip properties and intent</button></form>'+timelineMediaTools(track,clip,sourceIn,proxyAssetId,String(metadata.proxyAssetName||""))+'</div>';
 }
@@ -79,7 +82,7 @@ function updatePreviewDiagnostics(){
 function releaseTimelinePreview(){
  stopTimelinePlayback();
  for(const url of Object.values(state.previewAssetUrls))if(url.startsWith("blob:"))URL.revokeObjectURL(url);
- state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
+ state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewRefreshAttemptedAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
 }
 async function signedCloudPreviewUrl(asset:Asset):Promise<string>{
  const signed=await apiRequest<{asset:Asset;url:string;expiresIn:number}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
@@ -220,7 +223,7 @@ function timelinePlaybackPanel(){
  const elements=state.previewLoaded?state.timeline.tracks.flatMap((track,trackIndex)=>track.enabled&&track.kind!=="caption"?track.clips.filter(clip=>clip.enabled).map(clip=>{
   const source=state.assets.find(item=>item.id===clip.assetId),asset=source?previewAssetForClip(clip,source):undefined,src=asset?state.previewAssetUrls[asset.id]:"";
   if(!asset||!src||track.kind==="overlay"&&!asset.mediaType.startsWith("image/"))return "";
-  const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-proxy="'+(source&&asset.id!==source.id?'true':'false')+'" data-preview-track-index="'+trackIndex+'"';
+  const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-proxy="'+(source&&asset.id!==source.id?'true':'false')+'" data-preview-asset="'+esc(asset.id)+'" data-preview-track-index="'+trackIndex+'"';
   if(asset.mediaType.startsWith("audio/")||track.kind==="audio")return '<audio '+base+' preload="metadata" src="'+esc(src)+'"></audio>';
   if(asset.mediaType.startsWith("image/")){
    const metadata=clip.metadata||{},x=track.kind==="overlay"?Number(metadata.x)||0:0,y=track.kind==="overlay"?Number(metadata.y)||0:0,w=track.kind==="overlay"?Number(metadata.width)||state.timeline!.width:state.timeline!.width,h=track.kind==="overlay"?Number(metadata.height)||state.timeline!.height:state.timeline!.height,opacity=track.kind==="overlay"?Math.max(0,Math.min(1,Number(metadata.opacity??1))):1;
@@ -305,7 +308,7 @@ export function timelineQualityPanel(){
  '<small class="muted">Sequence structure and source-media checks use the current timeline and saved FFprobe metadata. A source passes only when its probe contains readable streams, the required track stream exists and every used source range stays within probed duration. Full decode integrity, shot-engine compatibility, continuity, delivery conformance requires a current-revision master with a successful output probe; the gate compares container, codec, resolution, frame rate, duration and required audio against the sequence or explicit delivery profile. Caption readiness requires saved cue-level WebVTT validation for timing, overlaps, reading speed, line length and media-duration bounds. Audio readiness requires saved probe and FFmpeg signal-analysis evidence; clipping and near-full-scale peaks require review. Rights status is based only on explicit asset metadata attestations and supporting references; this is not independent legal verification. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"&&state.timeline?'<button class="secondary" data-tl-action="revision-history">Revision history</button>':'')+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mediaJobId?'<button class="secondary" data-tl-action="media-job-check">Check media job</button>':'')+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="undo" '+(history.undo.length?'':'disabled')+'>↶ Undo</button><button class="secondary" data-tl-action="redo" '+(history.redo.length?'':'disabled')+'>↷ Redo</button>'+(state.mode==="cloud"&&state.timeline?'<button class="secondary" data-tl-action="revision-history">Revision history</button>':'')+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mediaJobId?'<button class="secondary" data-tl-action="media-job-check">Check media job</button>':'')+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
@@ -384,6 +387,8 @@ async function runAction(action:HTMLElement){
  if(type==="preview-step-back"){stepTimelineFrame(-1);paint();return;}
  if(type==="preview-step-forward"){stepTimelineFrame(1);paint();return;}
  if(type==="refresh"){await refresh();paint();return;}
+ if(type==="undo"&&state.timeline&&history.undo.length){history.redo.push(structuredClone(state.timeline));state.timeline=history.undo.pop()!;state.message="Restoring previous edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Undo could not be saved.";}paint();return;}
+ if(type==="redo"&&state.timeline&&history.redo.length){history.undo.push(structuredClone(state.timeline));state.timeline=history.redo.pop()!;state.message="Reapplying edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Redo could not be saved.";}paint();return;}
  if(type==="revision-history"){try{await loadRevisionHistory();}catch(error){state.message=error instanceof Error?error.message:"Could not load revision history.";}paint();return;}
  if(type==="close-revision-history"){state.revisionHistoryOpen=false;state.historyCompareTimeline=null;state.historyComparison=null;paint();return;}
  if(type==="compare-revision"||type==="restore-revision"){
@@ -426,7 +431,7 @@ async function runAction(action:HTMLElement){
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;} 
  if(type==="media-job-check"&&state.mediaJobId){
   try{
-   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>("/api/jobs/"+state.mediaJobId);
+   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>((state.mode==="cloud"?"/api/cloud/jobs/":"/api/jobs/")+state.mediaJobId);
    state.message="Media job "+result.job.status+" · "+Number(result.job.progress||0)+"%";
    if(result.job.status==="succeeded"){
     const output=result.job.output?.outputAsset;if(!output?.id)throw new Error("The completed media job did not return an output asset.");
@@ -436,15 +441,28 @@ async function runAction(action:HTMLElement){
      if(!clip)throw new Error("The source clip is no longer in the selected timeline. The proxy remains in your asset library.");
      clip.metadata={...clip.metadata,proxyAssetId:output.id,proxyAssetName:output.name||"Editing proxy",proxyAssetSha256:output.sha256||"",proxyProfile:"timeline-preview-960p"};
      await persist();
-     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
-     if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);
-     state.proxyPreviewUrl=URL.createObjectURL(blob);
-     state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
+     if(state.mode==="cloud"){
+      const proxyAsset=state.assets.find(item=>item.id===output.id);
+      if(!proxyAsset)throw new Error("The completed cloud proxy is not visible in the private asset library yet.");
+      await previewUrlForAsset(proxyAsset);
+      state.message="Private cloud proxy generated, linked to this clip and verified for preview. Master renders still use the original source.";
+     }else{
+      const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+      if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);
+      state.proxyPreviewUrl=URL.createObjectURL(blob);
+      state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
+     }
     }else{
-     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
-     if(state.previewFrameUrl)URL.revokeObjectURL(state.previewFrameUrl);
-     state.previewFrameUrl=URL.createObjectURL(blob);
-     state.message="Source frame extracted and loaded into the clip preview.";
+     if(state.mode==="cloud"){
+      const thumbnailAsset=state.assets.find(item=>item.id===output.id);
+      if(!thumbnailAsset)throw new Error("The completed private thumbnail is not visible in the asset library yet.");
+      state.previewFrameUrl=await previewUrlForAsset(thumbnailAsset);
+     }else{
+      const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+      if(state.previewFrameUrl.startsWith("blob:"))URL.revokeObjectURL(state.previewFrameUrl);
+      state.previewFrameUrl=URL.createObjectURL(blob);
+     }
+     state.message="Private source-frame thumbnail extracted and loaded into the clip preview.";
     }
     state.mediaJobId="";state.mediaJobType="";
    }else if(result.job.status==="failed"||result.job.status==="cancelled"){
@@ -457,12 +475,26 @@ async function runAction(action:HTMLElement){
   const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===action.dataset.clip);
   const proxyId=typeof clip?.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
   if(!proxyId){state.message="Generate a proxy before previewing this clip.";paint();return;}
-  try{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded.";}
+  try{if(state.mode==="cloud"){const asset=state.assets.find(item=>item.id===proxyId);if(!asset)throw new Error("The private proxy asset is not available in this project.");await previewUrlForAsset(asset);}else{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);}state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded."; }
   paint();return;
  }
  if(type==="generate-proxy"||type==="generate-frame-preview"){
-  if(state.mode!=="local"){state.message="Proxy and frame-preview jobs are currently available in the local media worker only.";paint();return;}
   const timeline=state.timeline;
+  if(state.mode==="cloud"){
+   if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
+   const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a cloud video clip with an accessible source asset.";paint();return;}
+   try{
+    const frameInput=document.querySelector<HTMLInputElement>("#tl-preview-source-frame");
+    const sourceFrame=Math.max(0,Math.min(100000000,Number(frameInput?.value??clip.sourceRange.start.value)||0));
+    const seconds=Math.min(3600,sourceFrame/sourceRate(asset,"video"));
+    const operation=type==="generate-proxy"?"proxy":"thumbnail";
+    const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify(operation==="proxy"?{operation}:{operation,seconds})});
+    state.mediaJobId=queued.job.id;state.mediaJobType=operation==="proxy"?"media.proxy":"media.thumbnail";state.mediaClipId=clipId;state.message=operation==="proxy"?"Private cloud editing proxy queued. Original source remains unchanged.":"Private cloud frame thumbnail queued.";
+    window.dispatchEvent(new Event("ev:jobs-updated"));
+   }catch(error){state.message=error instanceof Error?error.message:"Cloud preview job could not be queued.";}
+   paint();return;
+  }
   if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
   const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a video clip with an accessible source asset.";paint();return;}
@@ -482,12 +514,12 @@ async function runAction(action:HTMLElement){
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
-  const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
+  recordUndo();const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
   state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
- }else if(type==="trim")state.timeline=trimClip(state.timeline,trackId,clipId,12,12);
+ }else if(type==="trim"){recordUndo();state.timeline=trimClip(state.timeline,trackId,clipId,12,12);}
  else if(type==="move"){
-  const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
+  recordUndo();const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
   const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
   const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
  }else if(type==="export"){
@@ -503,7 +535,7 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
-  state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
+  recordUndo();state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-clip"){
@@ -515,7 +547,7 @@ document.addEventListener("submit",event=>{
   if(destination?.kind==="video"&&!asset.mediaType.startsWith("video/")&&!asset.mediaType.startsWith("image/")){alert("Video tracks require image or video assets.");return;}
   if(destination?.kind==="overlay"&&!asset.mediaType.startsWith("image/")){alert("Overlay tracks currently require still-image assets.");return;}
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
-  const sourceFps=sourceRate(asset,destination?.kind||"video");
+  recordUndo();const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
   try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
@@ -525,10 +557,11 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
   const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
-  const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
+  recordUndo();const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
   clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());
   clip.sourceRange={start:rational(sourceIn,sourceFps),duration:rational(duration/fps()*sourceFps,sourceFps)};
+  if(track.kind==="video")clip.metadata={...clip.metadata,timelineEffects:{brightness:Math.max(-0.5,Math.min(0.5,Number(data.get("effectBrightness"))||0)),contrast:Math.max(0.5,Math.min(2,Number(data.get("effectContrast"))||1)),saturation:Math.max(0,Math.min(2,Number(data.get("effectSaturation"))||1)),denoise:Math.max(0,Math.min(10,Number(data.get("effectDenoise"))||0)),sharpen:Math.max(0,Math.min(1,Number(data.get("effectSharpen"))||0))}};
   if(track.kind==="audio")clip.gainDb=Math.max(-60,Math.min(24,Number(data.get("gainDb"))||0));
   if(track.kind==="overlay")clip.metadata={...clip.metadata,x:Number(data.get("x"))||0,y:Number(data.get("y"))||0,width:Math.max(16,Number(data.get("width"))||16),height:Math.max(16,Number(data.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(data.get("opacity")??1)))};
   if(track.kind==="caption")clip.metadata={...clip.metadata,fontName:String(data.get("fontName")||"DejaVu Sans").slice(0,48),fontSize:Math.max(12,Math.min(96,Number(data.get("fontSize"))||32)),primaryColor:/^#[0-9a-f]{6}$/i.test(String(data.get("primaryColor")||""))?String(data.get("primaryColor")):"#FFFFFF",alignment:Math.max(1,Math.min(9,Number(data.get("alignment"))||2)),backgroundMode:data.get("backgroundMode")==="none"?"none":"box",backgroundColor:/^#[0-9a-f]{6}$/i.test(String(data.get("backgroundColor")||""))?String(data.get("backgroundColor")):"#000000",backgroundOpacity:Math.max(0,Math.min(1,Number(data.get("backgroundOpacity")??0.68))),outline:Math.max(0,Math.min(8,Number(data.get("outline")??2))),shadow:Math.max(0,Math.min(8,Number(data.get("shadow")??1))),marginV:Math.max(0,Math.min(240,Number(data.get("marginV"))||42))};
@@ -540,18 +573,18 @@ document.addEventListener("submit",event=>{
   state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-marker"){
-  event.preventDefault();const data=new FormData(form);
+  event.preventDefault();const data=new FormData(form);recordUndo();
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){releaseTimelinePreview();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){releaseTimelinePreview();state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){history.timelineId="";history.undo=[];history.redo=[];releaseTimelinePreview();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){history.timelineId="";history.undo=[];history.redo=[];releaseTimelinePreview();state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){releaseTimelinePreview();state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
+  if(saved){history.timelineId=saved.id;history.undo=[];history.redo=[];releaseTimelinePreview();state.revisionHistoryOpen=false;state.revisionHistory=[];state.historyComparison=null;state.historyCompareTimeline=null;if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
@@ -575,20 +608,27 @@ document.addEventListener("waiting",event=>{
 },true);
 document.addEventListener("error",event=>{
  if(!isTimelinePreviewMediaEvent(event))return;
- const media=event.target as HTMLMediaElement;
+ const media=event.target as HTMLMediaElement,assetId=media.dataset.previewAsset||"";
  state.previewDiagnostics.errors++;
- if(media.dataset.previewProxy==="true"){
-  const clipId=media.dataset.previewClip||"";
-  const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
-  const source=clip?state.assets.find(asset=>asset.id===clip.assetId):undefined;
-  const proxy=clip&&source?selectTimelinePreviewAsset(clip,source,state.assets):undefined;
-  if(source&&proxy&&proxy.id!==source.id&&!state.previewUnavailableAssetIds.includes(proxy.id)){
-   state.previewUnavailableAssetIds.push(proxy.id);state.previewDiagnostics.proxyFallbacks++;
-   void previewUrlForAsset(source).then(url=>{state.previewAssetUrls[source.id]=url;paint();}).catch(()=>{state.message="Both the linked proxy and original source could not be loaded. Check private asset access.";paint();});
-  }
+ const failedAsset=state.assets.find(asset=>asset.id===assetId);
+ if(failedAsset&&shouldRetryTimelinePreviewUrl(state.mode,assetId,state.previewRefreshAttemptedAssetIds)){
+  state.previewRefreshAttemptedAssetIds.push(assetId);
+  delete state.previewAssetUrls[assetId];delete state.previewAssetUrlExpiresAt[assetId];
+  void previewUrlForAsset(failedAsset).then(()=>paint()).catch(()=>fallbackToOriginalPreview(media));
+  updatePreviewDiagnostics();return;
  }
+ fallbackToOriginalPreview(media);
  updatePreviewDiagnostics();
 },true);
+function fallbackToOriginalPreview(media:HTMLMediaElement){
+ if(media.dataset.previewProxy!=="true"){state.message="The original source preview could not be loaded after one signed-URL refresh. Check private asset access and media availability.";paint();return;}
+ const clipId=media.dataset.previewClip||"",clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
+ const source=clip?state.assets.find(asset=>asset.id===clip.assetId):undefined;
+ const proxy=clip&&source?selectTimelinePreviewAsset(clip,source,state.assets):undefined;
+ if(!source||!proxy||!shouldFallbackToTimelineSourcePreview(media.dataset.previewProxy==="true",source.id,proxy.id,state.previewUnavailableAssetIds))return;
+ state.previewUnavailableAssetIds.push(proxy.id);state.previewDiagnostics.proxyFallbacks++;
+ void previewUrlForAsset(source).then(()=>{state.message="Editing proxy unavailable; playback has fallen back to the original private source.";paint();}).catch(()=>{state.message="Both the linked proxy and original source could not be loaded. Check private asset access.";paint();});
+}
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="tl-preview-seek"&&state.timeline&&state.previewLoaded){

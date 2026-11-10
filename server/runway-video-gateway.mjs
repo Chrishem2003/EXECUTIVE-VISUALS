@@ -126,32 +126,60 @@ async function downloadMp4(raw,{fetchImpl=fetch,timeoutMs=60000}={}){
     return buffer;
   }finally{clearTimeout(timer);}
 }
+function runwayServerConfig(){
+ if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");
+ if(process.env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote video providers are disabled. Review Runway pricing and explicitly enable remote access on the server.","VIDEO_GATEWAY_REMOTE_DISABLED");
+ const key=String(process.env.RUNWAYML_API_SECRET||"").trim();
+ if(!key)throw fail("Configure RUNWAYML_API_SECRET on the server before using Runway models.","VIDEO_GATEWAY_CONFIG_INVALID");
+ return {authorization:"Bearer "+key,"content-type":"application/json","X-Runway-Version":API_VERSION};
+}
+function assertRunwayTaskId(value){
+ const id=String(value||"");
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))throw fail("Runway did not return a valid task identifier.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return id;
+}
+/** Submit once. Ambiguous outcomes must be reconciled, never blindly resubmitted. */
+export async function submitRunwayVideoTask({model=process.env.RUNWAY_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",referenceImageDataUrl="",fetchImpl=fetch}={}){
+ const headers=runwayServerConfig();
+ const payload=referenceImageDataUrl?buildRunwayImageToVideoPayload({model,prompt,promptImage:referenceImageDataUrl,durationSeconds,aspectRatio,resolution}):buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution});
+ let submitted;
+ try{submitted=await requestJson(API_BASE+(referenceImageDataUrl?"/image_to_video":"/text_to_video"),{method:"POST",headers,body:JSON.stringify(payload),timeoutMs:30000,fetchImpl});}
+ catch(error){
+  if(["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR"].includes(error?.code))throw fail("Runway submission outcome is unknown. Reconcile the provider task/account before any retry; automatic resubmission is unsafe.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
+  throw error;
+ }
+ return Object.freeze({taskId:assertRunwayTaskId(submitted.id),status:"PENDING",model:String(model),estimatedCostCredits:Number(submitted.estimatedCost?.credits)||null,submittedAt:new Date().toISOString()});
+}
+/** Retrieve an existing provider task; polling may safely use bounded backoff. */
+export async function getRunwayVideoTask({taskId,fetchImpl=fetch}={}){
+ const id=assertRunwayTaskId(taskId),headers=runwayServerConfig();
+ const task=await requestJson(API_BASE+"/tasks/"+encodeURIComponent(id),{headers,timeoutMs:15000,fetchImpl});
+ const statuses=new Set(["PENDING","THROTTLED","RUNNING","SUCCEEDED","FAILED","CANCELED","CANCELLED"]);
+ if(!statuses.has(task.status))throw fail("Runway returned an unknown task state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ if(task.id&&task.id!==id)throw fail("Runway task identity did not match the requested task.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ const outputUrl=Array.isArray(task.output)?task.output.find(item=>typeof item==="string"&&item.length>0)||null:null;
+ if(task.status==="SUCCEEDED"&&!outputUrl)throw fail("Runway task succeeded without an output video URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return Object.freeze({taskId:id,status:task.status,model:String(task.model||""),outputUrl,createdAt:task.createdAt||null,completedAt:task.completedAt||null,error:task.failure||task.error||null});
+}
+export async function downloadRunwayVideoTaskOutput({outputUrl,fetchImpl=fetch,timeoutMs=60000}={}){
+ return downloadMp4(outputUrl,{fetchImpl,timeoutMs});
+}
 export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",referenceImageDataUrl="",fetchImpl=fetch,sleepImpl=sleep,now=Date.now}={}){
-  if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");
-  if(process.env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote video providers are disabled. Review Runway pricing and explicitly enable remote access on the server.","VIDEO_GATEWAY_REMOTE_DISABLED");
-  const key=String(process.env.RUNWAYML_API_SECRET||"").trim();
-  if(!key)throw fail("Configure RUNWAYML_API_SECRET on the server before using Runway models.","VIDEO_GATEWAY_CONFIG_INVALID");
-  const payload=referenceImageDataUrl
-   ?buildRunwayImageToVideoPayload({model,prompt,promptImage:referenceImageDataUrl,durationSeconds,aspectRatio,resolution})
-   :buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution});
-  const headers={authorization:"Bearer "+key,"content-type":"application/json","X-Runway-Version":API_VERSION};
-  const submitted=await requestJson(API_BASE+(referenceImageDataUrl?"/image_to_video":"/text_to_video"),{method:"POST",headers,body:JSON.stringify(payload),timeoutMs:30000,fetchImpl});
-  const taskId=String(submitted.id||"");
-  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId))throw fail("Runway did not return a valid task identifier.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  const submitted=await submitRunwayVideoTask({model,prompt,durationSeconds,aspectRatio,resolution,referenceImageDataUrl,fetchImpl});
+  const taskId=submitted.taskId;
+  const headers=runwayServerConfig();
   const timeoutMs=Math.max(10000,Math.min(600000,Number(process.env.VIDEO_GATEWAY_TIMEOUT_MS)||300000));
   const deadline=now()+timeoutMs;let task;
   while(now()<deadline){
-    task=await requestJson(API_BASE+"/tasks/"+encodeURIComponent(taskId),{headers,timeoutMs:15000,fetchImpl});
+    task=await getRunwayVideoTask({taskId,fetchImpl});
     if(task.status==="SUCCEEDED")break;
     if(["FAILED","CANCELED","CANCELLED"].includes(task.status))throw fail("Runway generation failed. Review the provider task details before retrying.","VIDEO_GATEWAY_JOB_FAILED");
-    if(!["PENDING","RUNNING","THROTTLED"].includes(task.status))throw fail("Runway returned an unknown task state.","VIDEO_GATEWAY_INVALID_RESPONSE");
     await sleepImpl(Math.min(5000,Math.max(0,deadline-now())));
   }
   if(task?.status!=="SUCCEEDED")throw fail("Runway generation timed out before completion.","VIDEO_GATEWAY_TIMEOUT");
-  const output=Array.isArray(task.output)?task.output.find(item=>typeof item==="string"&&item.length>0):"";
-  if(!output)throw fail("Runway task succeeded without an output video URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
-  const buffer=await downloadMp4(output,{fetchImpl,timeoutMs:Math.min(60000,Math.max(1000,deadline-now()))});
-  return {buffer,model:String(task.model||model),provider:"runway",requestId:taskId,usage:null,estimatedCostCredits:Number(submitted.estimatedCost?.credits)||null,mimeType:"video/mp4",adapterVersion:"runway-video-gateway-v1"};
+  const output=task.outputUrl;
+  const buffer=await downloadRunwayVideoTaskOutput({outputUrl:output,fetchImpl,timeoutMs:Math.min(60000,Math.max(1000,deadline-now()))});
+  return {buffer,model:String(task.model||model),provider:"runway",requestId:taskId,usage:null,estimatedCostCredits:submitted.estimatedCostCredits,mimeType:"video/mp4",adapterVersion:"runway-video-gateway-v1"};
 }
 
 
