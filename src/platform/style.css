@@ -1122,3 +1122,30 @@ body{
 @media(max-width:1000px){.governance-overview{grid-template-columns:repeat(3,minmax(0,1fr))}.governance-heading{align-items:flex-start;flex-direction:column}}
 @media(max-width:700px){.governance-findings{grid-template-columns:1fr}.governance-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){.governance-overview{grid-template-columns:1fr}}
+
+
+/* Batch 51 · persistent remediation workbench */
+.remediation-workbench{border-color:rgba(167,139,250,.24);background:linear-gradient(145deg,rgba(22,18,39,.92),rgba(12,16,29,.96))}
+.remediation-list{display:grid;gap:12px}
+.remediation-card{min-width:0;padding:17px;border:1px solid rgba(196,181,253,.16);border-radius:13px;background:rgba(9,13,25,.68)}
+.remediation-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.remediation-card-head>div{display:grid;justify-items:start;gap:7px}
+.remediation-card-head small{font-size:10px;color:#928da5;overflow-wrap:anywhere}
+.remediation-card h4{margin:12px 0 7px;font-size:15px;color:#f1edf9}
+.remediation-card>p{margin:0;color:#b8b3c7;font-size:12px;line-height:1.65;white-space:pre-wrap}
+.remediation-severity{font-size:9px;letter-spacing:.1em;color:#c4b5fd}
+.remediation-severity.critical{color:#fca5a5}.remediation-severity.high{color:#fdba74}.remediation-severity.medium{color:#fde68a}.remediation-severity.low{color:#93c5fd}
+.remediation-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin:13px 0;padding:10px 0;border-top:1px solid rgba(196,181,253,.12);border-bottom:1px solid rgba(196,181,253,.12);font-size:10px;color:#a9a4ba}
+.remediation-review-note{padding:10px 12px;border-radius:8px;background:rgba(234,179,8,.08);color:#e9d69a;font-size:11px;line-height:1.6}
+.remediation-evidence,.remediation-history{margin-top:12px;border-top:1px solid rgba(196,181,253,.12);padding-top:10px}
+.remediation-evidence summary,.remediation-history summary{cursor:pointer;color:#d5c7f5;font-size:11px;font-weight:650}
+.remediation-evidence-form{display:grid;gap:10px;margin-top:12px}
+.remediation-evidence-form small{font-size:10px;line-height:1.6;color:#928da5}
+.remediation-history ol{margin:10px 0 0;padding-left:20px;display:grid;gap:8px}
+.remediation-history li{color:#aaa6bd;font-size:10px;line-height:1.5}
+.remediation-history li span{display:block;color:#7f7a91;font-size:9px}
+.remediation-history li p{margin:3px 0}
+.remediation-create-form{display:grid;gap:12px;padding:16px;border:1px solid rgba(196,181,253,.16);border-radius:12px;background:rgba(12,16,29,.55)}
+.remediation-create-form label,.remediation-evidence-form label{display:grid;gap:6px;color:#c9c3d7;font-size:11px}
+.remediation-create-form input,.remediation-create-form select,.remediation-create-form textarea,.remediation-evidence-form input,.remediation-evidence-form select{width:100%;min-width:0}
+@media(max-width:700px){.remediation-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.remediation-card-head{align-items:flex-start}}
