@@ -335,3 +335,10 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - MTN/Airtel mobile money is customer-initiated. Subscription period extension occurs only after provider-side verification.
 - Migration `20261110200000_subscription_manual_renewal.sql` is staged in Git only and must be applied/tested on isolated Supabase staging before enabling the API.
 - No production database migration, live charge or deployment performed.
+
+
+### Batch 9 reliability hardening
+
+- Verified webhook inbox events previously marked `failed` or left `received` are retried when Flutterwave redelivers them; terminal `processed`, `ignored` and `needs_review` events remain deduplicated.
+- Renewal settlement now safely attaches the provider charge ID if a verified webhook arrives before the checkout response finishes persisting it, while rejecting a conflicting pre-existing provider ID.
+- Added a regression test for webhook retry recovery.
