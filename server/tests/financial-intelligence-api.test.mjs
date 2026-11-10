@@ -784,3 +784,19 @@ test("verified initial subscription payment activates the pending plan through t
   assert.equal(result.body.result.subscriptionActivated,true);
   assert.ok(calls.some(x=>x.target.endsWith("/rpc/finalize_subscription_purchase")));
 });
+
+
+test("subscription lifecycle worker invokes bounded service-role expiry RPC",async()=>{
+  let rpcPayload=null;
+  const service=api(async(url,options={})=>{
+    if(String(url).endsWith("/rpc/expire_due_subscriptions")){
+      rpcPayload=JSON.parse(options.body);
+      return json({expiredCount:3,scheduledCancellationsFinalized:2});
+    }
+    throw new Error("Unexpected request: "+String(url));
+  });
+  const result=await service.expireDueSubscriptions();
+  assert.deepEqual(rpcPayload,{p_limit:100});
+  assert.equal(result.expiredCount,3);
+  assert.equal(result.scheduledCancellationsFinalized,2);
+});
