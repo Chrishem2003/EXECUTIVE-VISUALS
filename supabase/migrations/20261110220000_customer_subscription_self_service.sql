@@ -51,6 +51,17 @@ begin
   for update;
   if not found then raise exception 'Subscription not found' using errcode='P0002'; end if;
 
+  -- Do not mutate the subscription while a provider charge is awaiting verification.
+  -- This prevents a successful in-flight charge from being orphaned by a concurrent cancel or plan change.
+  if exists(
+    select 1 from payment_transactions
+    where owner_id=p_owner_id and status='pending'
+      and metadata->>'subscription_id'=sub_row.id::text
+  ) then
+    raise exception 'A subscription payment is awaiting provider confirmation; refresh billing before changing this subscription'
+      using errcode='55000';
+  end if;
+
   if action_name='cancel_at_period_end' then
     if sub_row.status not in ('active','past_due','trialing') then
       raise exception 'Subscription cannot be scheduled for cancellation' using errcode='23514';
