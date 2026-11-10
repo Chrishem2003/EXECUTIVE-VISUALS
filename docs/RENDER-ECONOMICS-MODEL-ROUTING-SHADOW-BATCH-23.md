@@ -10,6 +10,7 @@ Measure the real resource footprint of Executive Visuals workloads, attach cost 
 - Resource rate cards are effective-dated, currency-specific, source-referenced and immutable.
 - Resource cost events distinguish provider-reported actuals, rate-card estimates and unpriced measurements.
 - Resource economics overview groups costs by resource type/provider, customer and job; it exposes unpriced events.
+- Resource-ledger costs are presented in a dedicated economics view; the legacy profitability gross-margin calculation is not silently rewritten. A later accounting integration must reconcile source references and prevent duplicate invoice/manual entries before combining ledgers.
 - Model performance evidence links one evaluation to one successful usage-cost event and records latency, quality score, evaluation source and version.
 - Shadow routing compares candidates only when at least 20 recent (30-day) observations have provider-reported actual cost plus linked quality/latency evidence.
 - Candidate constraints include maximum actual cost, p95 latency and minimum quality. Recommendations are scored with quality 60%, cost 25% and latency 15%.
@@ -33,6 +34,7 @@ All public API routes require a finance administrator role. Worker telemetry use
 - Resource estimates require a currency-specific, effective-dated rate card. Missing rates or currency remain unpriced.
 - Model-routing cost comparisons use provider-reported actual inference costs only. Catalog estimates do not qualify as actual-cost evidence.
 - Quality evidence must identify human review or an approved evaluator and a version. The system does not infer quality from completion status.
+- Model performance evidence is accepted through an administrator-protected API; automatic capture from every external model adapter and evaluator is a follow-on integration task.
 
 ## Staged activation
 Worker persistence is fail-closed and requires all of:
