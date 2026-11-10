@@ -2,7 +2,7 @@
 create table if not exists executive_visuals.ai_resource_rate_catalog(
  id uuid primary key default gen_random_uuid(),
  provider text not null,
- resource_type text not null check(resource_type in('ffmpeg_second','render_second','gpu_second','cpu_second','storage_gb_day','egress_gb')),
+ resource_type text not null check(resource_type in('ffmpeg_second','gpu_second','cpu_second','storage_gb_day','egress_gb')),
  unit text not null check(unit in('second','gb_day','gb')),
  currency text not null check(currency ~ '^[A-Z]{3}$'),
  rate_minor_per_unit numeric(24,8) not null check(rate_minor_per_unit>=0),
@@ -27,7 +27,7 @@ create table if not exists executive_visuals.ai_resource_cost_events(
  operation_id text not null,
  provider text not null,
  model text not null,
- resource_type text not null check(resource_type in('ffmpeg_second','render_second','gpu_second','cpu_second','storage_gb_day','egress_gb')),
+ resource_type text not null check(resource_type in('ffmpeg_second','gpu_second','cpu_second','storage_gb_day','egress_gb')),
  quantity numeric(24,8) not null check(quantity>0),
  unit text not null check(unit in('second','gb_day','gb')),
  currency text,
@@ -37,7 +37,7 @@ create table if not exists executive_visuals.ai_resource_cost_events(
  idempotency_key text not null unique,
  evidence jsonb not null default '{}'::jsonb,
  recorded_at timestamptz not null default now(),
- check((resource_type in('ffmpeg_second','render_second','gpu_second','cpu_second') and unit='second')
+ check((resource_type in('ffmpeg_second','gpu_second','cpu_second') and unit='second')
   or (resource_type='storage_gb_day' and unit='gb_day')
   or (resource_type='egress_gb' and unit='gb')),
  check((cost_basis='unpriced' and cost_minor is null and currency is null)
@@ -120,9 +120,9 @@ begin
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  if coalesce(length(p_provider),0) not between 2 and 80
-  or p_resource_type not in('ffmpeg_second','render_second','gpu_second','cpu_second','storage_gb_day','egress_gb')
+  or p_resource_type not in('ffmpeg_second','gpu_second','cpu_second','storage_gb_day','egress_gb')
   or p_unit not in('second','gb_day','gb')
-  or (p_resource_type in('ffmpeg_second','render_second','gpu_second','cpu_second') and p_unit<>'second')
+  or (p_resource_type in('ffmpeg_second','gpu_second','cpu_second') and p_unit<>'second')
   or (p_resource_type='storage_gb_day' and p_unit<>'gb_day')
   or (p_resource_type='egress_gb' and p_unit<>'gb')
   or coalesce(p_currency,'') !~ '^[A-Z]{3}$'
@@ -166,10 +166,10 @@ begin
  end if;
  if p_occurred_at is null or coalesce(length(p_operation_id),0) not between 1 and 180
   or coalesce(length(p_provider),0) not between 2 and 80 or coalesce(length(p_model),0) not between 1 and 160
-  or p_resource_type not in('ffmpeg_second','render_second','gpu_second','cpu_second','storage_gb_day','egress_gb')
+  or p_resource_type not in('ffmpeg_second','gpu_second','cpu_second','storage_gb_day','egress_gb')
   or p_quantity is null or p_quantity<=0 or p_quantity>1000000000000
   or p_unit not in('second','gb_day','gb')
-  or (p_resource_type in('ffmpeg_second','render_second','gpu_second','cpu_second') and p_unit<>'second')
+  or (p_resource_type in('ffmpeg_second','gpu_second','cpu_second') and p_unit<>'second')
   or (p_resource_type='storage_gb_day' and p_unit<>'gb_day')
   or (p_resource_type='egress_gb' and p_unit<>'gb')
   or (p_currency is not null and p_currency !~ '^[A-Z]{3}$')
