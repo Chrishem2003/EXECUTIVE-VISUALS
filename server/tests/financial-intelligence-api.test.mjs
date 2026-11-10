@@ -1401,8 +1401,10 @@ test("financial reconciliation preview is admin-only, read-only and supports inv
  const result=await service.handle({method:"POST",path:"/api/admin/finance/reconciliation-preview",ownerId:owner,body:{
   invoiceHeaders:[
    {provider:"p",invoiceReference:"inv-1",currency:"USD",totalMinor:1000},
-   {provider:"p",invoiceReference:"INV 1",currency:"USD",totalMinor:1000}
+   {provider:"p",invoiceReference:"INV 1",currency:"USD",totalMinor:1000},
+   {provider:"p",invoiceReference:"INV-2",currency:"USD",totalMinor:500}
   ],
+  invoiceLines:[{provider:"p",invoiceReference:"INV-2",currency:"USD",amountMinor:450}],
   statementRows:[{provider:"flw",providerReference:"tx-1",currency:"UGX",amountMinor:10000}],
   payments:[{id:"payment-1",provider:"flw",providerReference:"TX 1",currency:"UGX",amountMinor:10000,status:"settled"}]
  }});
@@ -1411,6 +1413,7 @@ test("financial reconciliation preview is admin-only, read-only and supports inv
  assert.equal(result.body.reconciliation.automaticPosting,false);
  assert.equal(result.body.reconciliation.duplicateInvoices.duplicateGroups,1);
  assert.equal(result.body.reconciliation.paymentSettlement.counts.matched,1);
+ assert.equal(result.body.reconciliation.invoiceHeaderTotals.counts.variance,1);
 });
 
 test("financial reconciliation preview rejects non-admins and malformed financial values without writes",async()=>{
