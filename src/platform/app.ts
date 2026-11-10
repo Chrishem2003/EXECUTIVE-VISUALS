@@ -561,6 +561,19 @@ if(t.closest("[data-finance-audit-append]")){void (async()=>{
   render();})();return;
  }
  if(t.closest("[data-finance-audit-verify]")){void (async()=>{try{const result=await apiRequest<{verification:FinanceDashboard}>("/api/admin/finance/audit/verify");financeState.auditVerification=result.verification;financeState.error="";}catch(error){financeState.error=error instanceof Error?error.message:"Audit chain verification failed.";}render();})();return;}
+ if(t.closest("[data-finance-close-command]")){void (async()=>{
+  try{
+   const raw=$<HTMLTextAreaElement>("#finance-close-command-input").value.trim();
+   if(!raw)throw new Error("Enter a close command JSON object.");
+   const command=JSON.parse(raw) as Record<string,unknown>;
+   if(!command||typeof command!=="object"||Array.isArray(command))throw new Error("Close command must be a JSON object.");
+   const result=await apiRequest<{result:FinanceDashboard}>("/api/admin/finance/close/commands",{method:"POST",headers:{"content-type":"application/json","idempotency-key":String(command.idempotencyKey||"")},body:JSON.stringify(command)});
+   financeState.closeWorkflow=(await apiRequest<{close:FinanceDashboard}>("/api/admin/finance/close")).close;
+   financeState.error=result.result?.duplicate?"This command was already applied; no duplicate close mutation was made.":"Financial close command committed with its audit event.";
+  }catch(error){financeState.error=error instanceof Error?error.message:"Financial close command failed.";}
+  render();})();return;
+ }
+ if(t.closest("[data-finance-close-refresh]")){void (async()=>{try{financeState.closeWorkflow=(await apiRequest<{close:FinanceDashboard}>("/api/admin/finance/close")).close;financeState.error="";}catch(error){financeState.error=error instanceof Error?error.message:"Financial close workflow could not be loaded.";}render();})();return;}
  if(t.closest("[data-finance-close-readiness]")){void (async()=>{
   try{
    const raw=$<HTMLTextAreaElement>("#finance-close-readiness-input").value.trim();
