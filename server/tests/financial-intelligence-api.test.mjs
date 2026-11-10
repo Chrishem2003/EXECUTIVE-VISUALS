@@ -1427,3 +1427,28 @@ test("financial reconciliation preview rejects non-admins and malformed financia
  assert.equal(result.status,400);
  assert.equal(result.body.error.code,"FINANCIAL_RECON_AMOUNT_INVALID");
 });
+
+
+test("financial close readiness is admin-only, read-only and requires independent evidence-backed review",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Denied close assessment must not read or write financial data.");});
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/close/readiness",ownerId:owner,body:{period:"2026-10",tasks:[],reconciliations:[],evidence:[]}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);throw new Error("Close readiness must not persist or post financial records.");});
+ const hash="a".repeat(64);
+ const ready=await service.handle({method:"POST",path:"/api/admin/finance/close/readiness",ownerId:owner,body:{
+  period:"2026-10",asOf:"2026-11-04T10:00:00Z",
+  evidence:[{evidenceId:"bank",sha256:hash,sourceType:"bank_statement",sourceReference:"statement-1",period:"2026-10",recordedAt:"2026-11-01T10:00:00Z",recordedBy:"preparer"}],
+  tasks:[{taskId:"cash",title:"Cash reconciliation",ownerId:"preparer",reviewerId:"reviewer",status:"completed",dueAt:"2026-11-03T17:00:00Z",completedAt:"2026-11-02T12:00:00Z",evidenceRefs:["bank"],approval:{preparedBy:"preparer",approvedBy:"reviewer",approvedAt:"2026-11-02T14:00:00Z",decision:"approved"}}],
+  reconciliations:[{reconciliationId:"cash-ledger",status:"approved",currency:"UGX",varianceMinor:0,preparedBy:"preparer",reviewedBy:"reviewer",evidenceRefs:["bank"]}]
+ }});
+ assert.equal(ready.status,200);
+ assert.equal(ready.body.assessment.status,"eligible_for_human_signoff");
+ assert.equal(ready.body.assessment.automaticClose,false);
+ assert.equal(ready.body.assessment.automaticJournalPosting,false);
+ assert.equal(ready.body.assessment.controls.signoffRecorded,false);
+ const incomplete=await service.handle({method:"POST",path:"/api/admin/finance/close/readiness",ownerId:owner,body:{period:"2026-10",tasks:[{taskId:"cash",title:"Cash",ownerId:"same",reviewerId:"same",status:"in_progress",evidenceRefs:[]}],reconciliations:[],evidence:[]}});
+ assert.equal(incomplete.status,200);
+ assert.equal(incomplete.body.assessment.status,"blocked");
+ assert.ok(incomplete.body.assessment.blockers.some(x=>x.issue==="preparer_reviewer_conflict"));
+ assert.ok(incomplete.body.assessment.tasks[0].issues.includes("missing_evidence"));
+});
