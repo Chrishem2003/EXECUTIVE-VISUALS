@@ -245,6 +245,53 @@ export function openDatabase(filename) {
       UNIQUE(owner_id,idempotency_key)
     );
     CREATE INDEX IF NOT EXISTS transformation_plans_project_idx ON transformation_plans(project_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS control_remediation_actions (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      finding_id TEXT NOT NULL,
+      control_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      assigned_owner_id TEXT REFERENCES users(id),
+      reviewer_id TEXT REFERENCES users(id),
+      due_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('unassigned','open','in_progress','pending_review','verified','reopened')),
+      action_plan TEXT NOT NULL DEFAULT '',
+      verified_at TEXT,
+      verified_by TEXT REFERENCES users(id),
+      reopened_count INTEGER NOT NULL DEFAULT 0 CHECK(reopened_count >= 0),
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(owner_id,project_id,finding_id)
+    );
+    CREATE INDEX IF NOT EXISTS control_remediation_owner_idx ON control_remediation_actions(owner_id,status,due_at);
+    CREATE INDEX IF NOT EXISTS control_remediation_project_idx ON control_remediation_actions(project_id,status,due_at);
+    CREATE TABLE IF NOT EXISTS control_remediation_evidence (
+      id TEXT PRIMARY KEY,
+      action_id TEXT NOT NULL REFERENCES control_remediation_actions(id) ON DELETE CASCADE,
+      submitted_by TEXT NOT NULL REFERENCES users(id),
+      label TEXT NOT NULL,
+      evidence_uri TEXT,
+      sha256 TEXT,
+      kind TEXT NOT NULL CHECK(kind IN ('source','workpaper','approval','test','other')),
+      captured_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS control_remediation_evidence_action_idx ON control_remediation_evidence(action_id,created_at);
+    CREATE TABLE IF NOT EXISTS control_remediation_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action_id TEXT NOT NULL REFERENCES control_remediation_actions(id) ON DELETE CASCADE,
+      actor_id TEXT NOT NULL REFERENCES users(id),
+      event_type TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS control_remediation_history_action_idx ON control_remediation_history(action_id,id);
   `);
   const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
   for (const [name, definition] of [
