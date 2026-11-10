@@ -61,6 +61,22 @@ from executive_visuals.timelines
 where archived_at is null
 on conflict (timeline_id, revision) do nothing;
 
-revoke all on table executive_visuals.timeline_revisions from public, anon;
+revoke all on table executive_visuals.timeline_revisions from public, anon, authenticated, service_role;
 grant select on table executive_visuals.timeline_revisions to authenticated, service_role;
-revoke insert, update, delete on table executive_visuals.timeline_revisions from authenticated;
+
+create or replace function executive_visuals.prevent_timeline_revision_mutation()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+begin
+  if tg_op = 'DELETE' and pg_trigger_depth() > 1 then return old; end if;
+  raise exception 'Timeline revision snapshots are immutable.' using errcode = '55000';
+end;
+$;
+
+drop trigger if exists ev_timeline_revisions_immutable on executive_visuals.timeline_revisions;
+create trigger ev_timeline_revisions_immutable
+  before update or delete on executive_visuals.timeline_revisions
+  for each row execute function executive_visuals.prevent_timeline_revision_mutation();

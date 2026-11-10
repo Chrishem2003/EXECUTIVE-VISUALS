@@ -23,6 +23,7 @@ for (const policy of ["ev_projects_read","ev_members_read","ev_project_workspace
 }
 if (!timelineRevisionSql.includes("create table if not exists executive_visuals.timeline_revisions") || !timelineRevisionSql.includes("after insert or update of revision on executive_visuals.timelines")) issues.push("Immutable timeline revision snapshots are not captured.");
 if (!timelineRevisionSql.includes("security definer") || !timelineRevisionSql.includes("create policy ev_timeline_revisions_read")) issues.push("Timeline revision snapshots require server-side capture and an authorized read policy.");
+if (!timelineRevisionSql.includes("create trigger ev_timeline_revisions_immutable") || !timelineRevisionSql.includes("revoke all on table executive_visuals.timeline_revisions from public, anon, authenticated, service_role")) issues.push("Timeline revision snapshots must be immutable and not writable by API roles.");
 if (!sql.includes("create trigger ev_workflow_runs_snapshot_immutable")) issues.push("Workflow run snapshots must be immutable.");
 if (!sql.includes("create policy ev_workflow_runs_insert") || !sql.includes("status='awaiting_approval'") || !sql.includes("and job_id is null")) {
   issues.push("New workflow runs must be created in a gated, unsubmitted state.");

@@ -77,3 +77,9 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-integration.sql
+      - name: Prepare timeline revision history fixture
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-revision-history-postgres-fixture.sql
+      - name: Apply timeline revision history migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261120100000_timeline_revision_history.sql
+      - name: Verify timeline revision capture, immutability and RLS
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-revision-history-postgres-integration.sql
