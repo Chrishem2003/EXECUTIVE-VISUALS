@@ -121,13 +121,13 @@ begin
   from weekly_flows w
  ), monthly_periods as(
   select c.currency,c.scenario,c.available_cash_minor,c.restricted_cash_minor,c.as_of_date,c.inflow_factor_bps,c.outflow_factor_bps,
-   (date_trunc('month',c.as_of_date)+make_interval(months=>n))::date period_start,
-   (date_trunc('month',c.as_of_date)+make_interval(months=>n+1)-interval '1 day')::date period_end,n period_number
-  from currencies c cross join generate_series(1,6) n
+   case when n=0 then c.as_of_date+1 else (date_trunc('month',c.as_of_date+1)+make_interval(months=>n))::date end period_start,
+   (date_trunc('month',c.as_of_date+1)+make_interval(months=>n+1)-interval '1 day')::date period_end,n+1 period_number
+  from currencies c cross join generate_series(0,5) n
  ), monthly_flows as(
   select m.*,coalesce(sum(case when i.direction='inflow' then round(i.amount_minor::numeric*i.confidence_bps/10000*m.inflow_factor_bps/10000) else 0 end),0)::bigint expected_inflows_minor,
    coalesce(sum(case when i.direction='outflow' then round(i.amount_minor::numeric*m.outflow_factor_bps/10000) else 0 end),0)::bigint expected_outflows_minor
-  from monthly_periods m left join financial_cashflow_items i on i.currency=m.currency and i.expected_date>m.as_of_date and i.expected_date<=m.period_end and i.status in('planned','committed')
+  from monthly_periods m left join financial_cashflow_items i on i.currency=m.currency and i.expected_date>=m.period_start and i.expected_date<=m.period_end and i.status in('planned','committed')
   group by m.currency,m.scenario,m.available_cash_minor,m.restricted_cash_minor,m.as_of_date,m.inflow_factor_bps,m.outflow_factor_bps,m.period_start,m.period_end,m.period_number
  ), monthly_rows as(
   select m.*,m.available_cash_minor+sum(m.expected_inflows_minor-m.expected_outflows_minor) over(partition by m.currency,m.scenario order by m.period_number) projected_closing_minor
