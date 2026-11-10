@@ -79,10 +79,10 @@ begin
    and exists(select 1 from customer_subscriptions cs where cs.owner_id=a.owner_id and cs.amount_minor>0)
  ), retention_pairs as(
   select prior.currency,prior.snapshot_month,prior.owner_id,
-   case when next.mrr_minor>0 then 1 else 0 end retained
+   case when following.mrr_minor>0 then 1 else 0 end retained
   from subscription_revenue_snapshots prior
-  join subscription_revenue_snapshots next on next.owner_id=prior.owner_id and next.currency=prior.currency
-   and next.snapshot_month=(prior.snapshot_month+interval '1 month')::date
+  join subscription_revenue_snapshots following on following.owner_id=prior.owner_id and following.currency=prior.currency
+   and following.snapshot_month=(prior.snapshot_month+interval '1 month')::date
   where prior.snapshot_month<p_period_month and prior.mrr_minor>0
  ), retention as(
   select currency,count(*)::integer observed_customer_month_pairs,
@@ -175,7 +175,7 @@ begin
    'growthQuality',case when l.cac_minor is null then 'insufficient_acquisition_evidence'
     when l.predicted_lifetime_contribution_minor is null then 'insufficient_lifetime_evidence'
     when l.predicted_lifetime_contribution_minor<l.cac_minor then 'value_below_acquisition_cost'
-    when l.predicted_lifetime_contribution_minor/l.cac_minor>=3 then 'strong_unit_economics' else 'monitor_unit_economics' end,
+    when l.predicted_lifetime_contribution_minor::numeric/l.cac_minor::numeric>=3 then 'strong_unit_economics' else 'monitor_unit_economics' end,
    'modeledPaybackMonths',l.modeled_payback_months,
    'actualPaybackMonth',ap.actual_payback_month,
    'actualPaybackMonths',case when ap.actual_payback_month is null then null
