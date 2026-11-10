@@ -459,7 +459,7 @@ declare
  v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
  v_customer constant uuid:='22222222-2222-4222-8222-222222222222';
  v_month date:=date_trunc('month',now())::date;
- v_import jsonb; v_duplicate jsonb; v_reconciled jsonb; v_replay jsonb; v_anomalies jsonb; v_usage jsonb; v_unpriced jsonb;
+ v_import jsonb; v_duplicate jsonb; v_reconciled jsonb; v_replay jsonb; v_anomalies jsonb; v_usage jsonb; v_unpriced jsonb; i integer;
 begin
  v_usage:=executive_visuals.record_ai_usage_cost_event(
   v_actor,now(),v_customer,null,null,'batch22-video-job-001','runway','gen-4','gen-4',
@@ -518,8 +518,25 @@ begin
   raise exception 'Effective-dated model rate card did not calculate expected cost: %',v_usage;
  end if;
 
+
+ for i in 1..5 loop
+  perform executive_visuals.record_ai_usage_cost_event(
+   v_actor,(v_month-6+i)::timestamptz,v_customer,null,null,'batch22-spike-baseline-'||i,
+   'anomaly-provider','anomaly-model','anomaly-model','video','succeeded',0,0,0,1,0,
+   'USD',100,'','batch22-spike-trace-'||i,'batch22-spike-key-'||i
+  );
+ end loop;
+ perform executive_visuals.record_ai_usage_cost_event(
+  v_actor,(v_month+1)::timestamptz,v_customer,null,null,'batch22-spike-current',
+  'anomaly-provider','anomaly-model','anomaly-model','video','succeeded',0,0,0,1,0,
+  'USD',500,'','batch22-spike-trace-current','batch22-spike-key-current'
+ );
+
  v_anomalies:=executive_visuals.ai_cost_anomaly_report(v_actor,v_month,100,2,0.25);
  if jsonb_array_length(v_anomalies->'unpricedUsage')<1 then
   raise exception 'Cost anomaly report must expose unpriced provider/model usage: %',v_anomalies;
+ end if;
+ if not exists(select 1 from jsonb_array_elements(v_anomalies->'spendAnomalies') item where item->>'type'='spend_spike') then
+  raise exception 'Cost anomaly report did not detect a spend spike against five observed baseline days: %',v_anomalies;
  end if;
 end $batch22$;
