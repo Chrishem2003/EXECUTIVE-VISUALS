@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS,EPISODE_RUNTIME_CHOICES} from "../../src/core/series-production.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,buildSeriesPlanFromStoryboard,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS,EPISODE_RUNTIME_CHOICES} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,input.episodeRuntimeSeconds);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -172,3 +172,18 @@ assert.ok(expandedEpisode.scenes.every(scene=>scene.shots.every(shot=>shot.durat
 assert.equal(validateSeriesProductionPlan(expandedContinuity).valid,true);
 console.log("Runtime rebalance continuity verification passed: authored shot IDs, camera direction, negative prompts and story-bible bindings survive expansion; new shots receive unique IDs and valid durations.");
 console.log("Long-form series verification passed: 15-minute plans, 30-minute overrides, exact scene/shot timing, 30-second clip cap and timeline marker integrity.");
+
+import { compileCreativeIntent, compileCreativeStoryboard } from "../../src/core/creative-intent.ts";
+const directorPlan=compileCreativeIntent({title:"Future Makers",brief:"A community turns discarded plastic into useful building materials.",audience:"Young African entrepreneurs",channel:"YouTube",style:"Cinematic documentary",duration:"90 seconds",desiredFeeling:"possibility",differentiator:"Follow one bottle through transformation",proof:"Show the workshop and measured output",callToAction:"Visit a collection point",visualSignature:"Macro match cuts",soundSignature:"Workshop sound motif",constraints:"Secure participant releases."});
+const directorBoard=compileCreativeStoryboard(directorPlan,90,8);
+const converted=buildSeriesPlanFromStoryboard(directorBoard,{format:"documentary",aspectRatio:"16:9",frameRate:24,resolution:"1080p",visualStyle:"Cinematic documentary",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life"});
+const convertedEpisode=converted.seasons[0].episodes[0];
+assert.equal(converted.seasons.length,1);assert.equal(convertedEpisode.scenes.length,directorBoard.sceneCount);
+assert.equal(convertedEpisode.scenes.reduce((n,scene)=>n+scene.shots.reduce((m,shot)=>m+shot.durationSeconds,0),0),directorBoard.durationSeconds);
+assert.equal(validateSeriesProductionPlan(converted).valid,true);
+const convertedPackage=buildEpisodeShotPackage(converted,convertedEpisode);
+assert.equal(convertedPackage.shotCount,directorBoard.shotCount);
+assert.ok(convertedPackage.shots[0].prompt.includes("Story beat:"));
+assert.ok(convertedPackage.shots.every(shot=>shot.durationSeconds<=30));
+assert.throws(()=>buildSeriesPlanFromStoryboard({...directorBoard,providerSubmitted:true},{format:"documentary",aspectRatio:"16:9",frameRate:24,resolution:"1080p",visualStyle:"Cinematic",language:"English",voiceMode:"Natural",captions:"Both",music:"Score",cameraLanguage:"Mixed",shotComposition:"Mixed",pacing:"Measured",colorGrade:"Natural"}),/planning-only/);
+console.log("Creative Director handoff verification passed: timed storyboard converts to a validated editable episode and engine-neutral shot package without provider execution.");
