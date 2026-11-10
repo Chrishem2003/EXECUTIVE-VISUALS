@@ -37,7 +37,7 @@ declare
  v_currency text:=upper(btrim(coalesce(p_rate_card->>'currency','')));
  v_version text:=btrim(coalesce(p_rate_card->>'rateCardVersion',''));
  v_unit text:=coalesce(p_rate_card->>'billingUnit','');
- v_from timestamptz; v_to timestamptz;
+ v_from timestamptz; v_to timestamptz; v_checked_at timestamptz;
  v_source_type text:=coalesce(p_rate_card->>'sourceType','');
  v_source_reference text:=btrim(coalesce(p_rate_card->>'sourceReference',''));
  v_source_url text:=btrim(coalesce(p_rate_card->>'sourceUrl',''));
@@ -53,6 +53,7 @@ begin
  begin
   v_from:=(p_rate_card->>'effectiveFrom')::timestamptz;
   if nullif(p_rate_card->>'effectiveTo','') is not null then v_to:=(p_rate_card->>'effectiveTo')::timestamptz; end if;
+  if nullif(p_rate_card->>'sourceCheckedAt','') is not null then v_checked_at:=(p_rate_card->>'sourceCheckedAt')::timestamptz; end if;
   v_input:=nullif(p_rate_card->>'inputPerMillionMinor','')::numeric;
   v_output:=nullif(p_rate_card->>'outputPerMillionMinor','')::numeric;
   v_image:=nullif(p_rate_card->>'imageUnitMinor','')::numeric;
@@ -87,6 +88,7 @@ begin
  -- Serialize overlap checks per provider/model/currency to prevent concurrent conflicting versions.
  perform pg_advisory_xact_lock(hashtextextended(v_provider||'|'||v_model||'|'||v_currency,0));
  if exists(select 1 from ai_model_price_catalog c where c.provider=v_provider and c.model=v_model and c.currency=v_currency
+  and c.verification_status<>'legacy_unverified'
   and tstzrange(c.effective_from,coalesce(c.effective_to,'infinity'::timestamptz),'[)')
    && tstzrange(v_from,coalesce(v_to,'infinity'::timestamptz),'[)')) then
   raise exception 'Rate-card effective period overlaps an existing version' using errcode='23P01';
@@ -97,7 +99,7 @@ begin
   source_fingerprint,verification_status,pricing_dimensions,supersedes_id)
  values(v_provider,v_model,v_currency,v_input,v_output,v_image,v_video,v_render,v_from,v_to,v_source_type,
   v_source_reference,p_actor_id,v_version,v_unit,v_source_url,
-  nullif(p_rate_card->>'sourceCheckedAt','')::timestamptz,v_source_fingerprint,v_status,v_dimensions,
+  v_checked_at,v_source_fingerprint,v_status,v_dimensions,
   nullif(p_rate_card->>'supersedesId','')::uuid)
  returning id into v_id;
  perform write_financial_admin_audit(p_actor_id,'finance.ai_model_rate_card.created',
@@ -108,7 +110,7 @@ begin
  return jsonb_build_object('id',v_id,'provider',v_provider,'model',v_model,'currency',v_currency,
   'rateCardVersion',v_version,'billingUnit',v_unit,'effectiveFrom',v_from,'effectiveTo',v_to,
   'sourceType',v_source_type,'sourceReference',v_source_reference,'sourceUrl',v_source_url,
-  'sourceCheckedAt',nullif(p_rate_card->>'sourceCheckedAt',''),'sourceFingerprint',v_source_fingerprint,
+  'sourceCheckedAt',v_checked_at,'sourceFingerprint',v_source_fingerprint,
   'verificationStatus',v_status,'pricingDimensions',v_dimensions,'supersedesId',nullif(p_rate_card->>'supersedesId',''));
 end $$;
 
