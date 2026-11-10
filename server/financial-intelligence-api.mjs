@@ -750,7 +750,7 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const alertId=String(body.alertId||""),eventType=String(body.eventType||""),note=String(body.note||"").trim();
         const assignedTo=String(body.assignedTo||"").trim(),dueDate=String(body.dueDate||""),idempotencyKey=String(body.idempotencyKey||"");
-        const validDate=(value:string)=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const validDate=(value)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(alertId)||
           !["acknowledged","action_assigned","in_progress","resolved","reopened","false_positive"].includes(eventType)||
           note.length<3||note.length>1000||(eventType==="action_assigned"&&(assignedTo.length<2||assignedTo.length>160))||
