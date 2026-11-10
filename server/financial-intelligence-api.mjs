@@ -708,6 +708,50 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
         return response(200,{intelligence:result||{retention:[],acquisition:[],forecastAccuracy:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const month=String(body.periodMonth||"");
+        const periodMonth=month||new Date().toISOString().slice(0,7)+"-01";
+        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+          return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
+        const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
+        return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/ai-usage"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const occurredAt=String(body.occurredAt||"");
+        const provider=String(body.provider||"").trim().toLowerCase();
+        const requestedModel=String(body.requestedModel||"").trim();
+        const operationId=String(body.operationId||"").trim();
+        const operation=String(body.operation||"");
+        const status=String(body.status||"unknown");
+        const owner=body.ownerId==null||body.ownerId===""?null:String(body.ownerId);
+        const currency=body.currency==null||body.currency===""?null:String(body.currency).trim().toUpperCase();
+        const providerCostMinor=body.providerCostMinor==null||body.providerCostMinor===""?null:Number(body.providerCostMinor);
+        const integerOrZero=value=>value==null||value===""?0:Number(value);
+        const inputTokens=integerOrZero(body.inputTokens),outputTokens=integerOrZero(body.outputTokens);
+        const imageCount=integerOrZero(body.imageCount),videoSeconds=integerOrZero(body.videoSeconds),renderSeconds=integerOrZero(body.renderSeconds);
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        if(!Number.isFinite(Date.parse(occurredAt))||!provider||provider.length>80||!requestedModel||requestedModel.length>160||
+          !operationId||operationId.length>180||!["text","image","video","render","upscale","audio","embedding","other"].includes(operation)||
+          !["succeeded","failed","cancelled","unknown"].includes(status)||(owner&&!UUID.test(owner))||
+          (currency&&!/^[A-Z]{3}$/.test(currency))||(providerCostMinor!==null&&(!Number.isSafeInteger(providerCostMinor)||providerCostMinor<0||!currency))||
+          ![inputTokens,outputTokens,imageCount,videoSeconds,renderSeconds].every(value=>Number.isFinite(value)&&value>=0)||
+          !Number.isSafeInteger(inputTokens)||!Number.isSafeInteger(outputTokens)||idempotencyKey.length<8||idempotencyKey.length>180)
+          return error(400,"AI_USAGE_EVENT_INVALID","Provide a valid provider, model, operation, timestamp, usage quantities and idempotency key. Provider-reported cost requires an explicit currency.");
+        const result=await rpc("record_ai_usage_cost_event",{
+          p_actor_id:ownerId,p_occurred_at:occurredAt,p_owner_id:owner,
+          p_project_id:body.projectId&&UUID.test(String(body.projectId))?String(body.projectId):null,
+          p_job_id:body.jobId&&UUID.test(String(body.jobId))?String(body.jobId):null,
+          p_operation_id:operationId,p_provider:provider,p_requested_model:requestedModel,
+          p_response_model:String(body.responseModel||"").slice(0,160),p_operation:operation,p_status:status,
+          p_input_tokens:inputTokens,p_output_tokens:outputTokens,p_image_count:imageCount,
+          p_video_seconds:videoSeconds,p_render_seconds:renderSeconds,p_currency:currency,
+          p_provider_cost_minor:providerCostMinor,p_invoice_line_reference:String(body.invoiceLineReference||"").slice(0,180),
+          p_trace_id:String(body.traceId||"").slice(0,128),p_idempotency_key:idempotencyKey
+        });
+        return response(200,{usage:result});
+      }
       if(path==="/api/admin/finance/profitability"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
