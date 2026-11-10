@@ -75,4 +75,8 @@ test("provider rate-card endpoint rejects invalid filters, unlinked sources and 
  assert.equal(missingEvidence.status,400);
  const invalidVersion=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-cards",ownerId:owner,body:{rateCard:{...rateCard,rateCardVersion:"bad version"}}});
  assert.equal(invalidVersion.status,400);
+ const invalidDimensions=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-cards",ownerId:owner,body:{rateCard:{...rateCard,pricingDimensions:{referenceVideoSecondMinor:"15"}}}});
+ assert.equal(invalidDimensions.status,400);
+ const zeroPrice=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-cards",ownerId:owner,body:{rateCard:{...rateCard,videoSecondMinor:0}}});
+ assert.equal(zeroPrice.status,400);
 });
