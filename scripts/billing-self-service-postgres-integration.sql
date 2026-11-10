@@ -82,7 +82,7 @@ begin
   end if;
 
 
-  perform executive_visuals.manage_customer_subscription(owner_id,sub_id,'cancel_at_period_end',null,'SQL integration scheduled cancellation');
+  perform executive_visuals.manage_customer_subscription(v_owner_id,sub_id,'cancel_at_period_end',null,'SQL integration scheduled cancellation');
   update executive_visuals.customer_subscriptions set current_period_start=now()-interval '2 days',current_period_end=now()-interval '1 second' where id=sub_id;
   result := executive_visuals.expire_due_subscriptions(100);
   select status into current_status from executive_visuals.customer_subscriptions where id=sub_id;
