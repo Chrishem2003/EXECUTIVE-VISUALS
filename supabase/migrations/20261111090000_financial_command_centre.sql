@@ -89,7 +89,7 @@ as $$
 declare actor_role text; result jsonb;
 begin
  select role into actor_role from platform_admins where user_id=p_actor_id;
- if actor_role not in ('owner','platform_admin','billing_admin') then
+ if coalesce(actor_role,'') not in ('owner','platform_admin','billing_admin') then
   raise exception 'Finance administrator role required' using errcode='42501';
  end if;
  if p_from is null or p_to is null or p_to<=p_from or p_to>now()+interval '1 day'
@@ -202,7 +202,7 @@ set search_path=pg_catalog,executive_visuals as $$
 declare actor_role text; sid text; cur text; gross bigint; net bigint; fees bigint; refunds bigint; chargebacks bigint; rec_id uuid; issues jsonb:='[]'::jsonb;
 begin
  select role into actor_role from platform_admins where user_id=p_actor_id;
- if actor_role not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
+ if coalesce(actor_role,'') not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
  sid:=p_settlement->>'id'; cur:=upper(p_settlement->>'currency');
  if sid is null or cur !~ '^[A-Z]{3}$' then raise exception 'Settlement identity or currency invalid' using errcode='22023'; end if;
  gross:=round(coalesce((p_settlement->>'gross_amount')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
@@ -212,7 +212,7 @@ begin
  chargebacks:=round(coalesce((p_settlement->>'chargeback')::numeric,0)*case when cur in ('UGX','JPY','KRW') then 1 else 100 end);
  insert into flutterwave_settlement_records(provider_settlement_id,currency,gross_amount_minor,net_amount_minor,fee_amount_minor,refund_amount_minor,chargeback_amount_minor,provider_status,destination,due_at,settled_at,charge_count,provider_payload,last_reconciled_at)
  values(sid,cur,gross,net,fees,refunds,chargebacks,coalesce(p_settlement->>'status','unknown'),p_settlement->>'destination',
-  nullif(p_settlement->>'due_datetime','')::timestamptz,nullif(p_settlement->>'created_datetime','')::timestamptz,
+  nullif(p_settlement->>'due_datetime','')::timestamptz,nullif(p_settlement->>'processed_date','')::timestamptz,
   coalesce(nullif(p_settlement->>'charge_count','')::integer,0),p_settlement,now())
  on conflict(provider_settlement_id) do update set currency=excluded.currency,gross_amount_minor=excluded.gross_amount_minor,
  net_amount_minor=excluded.net_amount_minor,fee_amount_minor=excluded.fee_amount_minor,refund_amount_minor=excluded.refund_amount_minor,
@@ -242,7 +242,7 @@ set search_path=pg_catalog,executive_visuals as $$
 declare actor_role text;
 begin
  select role into actor_role from platform_admins where user_id=p_actor_id;
- if actor_role not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
+ if coalesce(actor_role,'') not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
  if p_status not in ('investigating','resolved','accepted_difference') or char_length(btrim(coalesce(p_reason,''))) not between 3 and 500 then raise exception 'Resolution status and reason required' using errcode='22023'; end if;
  update financial_reconciliation_exceptions set status=p_status,resolution_reason=btrim(p_reason),
   resolved_by=p_actor_id,resolved_at=case when p_status in ('resolved','accepted_difference') then now() else null end
@@ -261,7 +261,7 @@ set search_path=pg_catalog,executive_visuals as $$
 declare actor_role text; new_id uuid;
 begin
  select role into actor_role from platform_admins where user_id=p_actor_id;
- if actor_role not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
+ if coalesce(actor_role,'') not in ('owner','platform_admin','billing_admin') then raise exception 'Finance administrator role required' using errcode='42501'; end if;
  if p_action !~ '^[a-z][a-z0-9_.-]{2,95}$' or char_length(coalesce(p_reason,'')) not between 3 and 500
   or jsonb_typeof(coalesce(p_metadata,'{}'::jsonb))<>'object' then raise exception 'Audit reason and action required' using errcode='22023'; end if;
  insert into financial_admin_audit(actor_id,actor_role,action,resource_type,resource_id,reason,request_id,metadata)
