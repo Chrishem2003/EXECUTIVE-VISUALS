@@ -1468,7 +1468,7 @@ test("financial audit ledger enforces admin access, idempotent append and indepe
   if(u.includes("/financial_audit_events?select=event_envelope"))return json([]);
   throw new Error("Unexpected audit request: "+u);
  });
- const created=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
+ const created=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{subjectOwnerId:"33333333-3333-4333-8333-333333333333",eventType:"close_period.created",idempotencyKey:"audit-close-2026-10",payload:{period:"2026-10"}}});
  assert.equal(created.status,201);
  assert.equal(created.body.event.sequence,1);
  assert.ok(/^[a-f0-9]{64}$/.test(created.body.event.eventHash));
@@ -1486,7 +1486,7 @@ test("financial audit ledger enforces admin access, idempotent append and indepe
 });
 
 test("audit event API rejects unsupported event types and requires idempotency",async()=>{
- const service=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);throw new Error("Invalid audit payload must fail before storage.");});
+ const service=api(async(url)=>{const u=String(url);if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);if(u.includes("/financial_audit_events?select=event_id"))return json([]);throw new Error("Invalid audit payload must fail before storage.");});
  const missing=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",payload:{period:"2026-10"}}});
  assert.equal(missing.status,400);
  assert.equal(missing.body.error.code,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID");
