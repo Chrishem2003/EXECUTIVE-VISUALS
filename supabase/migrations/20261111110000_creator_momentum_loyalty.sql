@@ -181,7 +181,7 @@ language plpgsql
 security definer
 set search_path=pg_catalog,executive_visuals
 as $$
-declare reward_rows jsonb; event_rows jsonb; credit_balance bigint;
+declare reward_rows jsonb; event_rows jsonb; credit_balance bigint; campaign_offer jsonb;
 begin
  if p_owner_id is null then raise exception 'Customer identity required' using errcode='22023'; end if;
  select coalesce(jsonb_agg(to_jsonb(r) order by r.granted_at desc),'[]'::jsonb)
@@ -198,7 +198,15 @@ begin
  ) e;
  select coalesce(sum(credit_delta),0) into credit_balance
  from credit_ledger where owner_id=p_owner_id;
- return jsonb_build_object('rewards',reward_rows,'events',event_rows,'creditBalance',credit_balance);
+ select jsonb_build_object('name',name,'description',description,'rewardDays',reward_days,
+  'bonusCredits',bonus_credits,'endsAt',ends_at)
+ into campaign_offer
+ from customer_loyalty_campaigns
+ where campaign_code='first_paid_creator_welcome' and status='active'
+  and now()>=starts_at and (ends_at is null or now()<ends_at)
+  and award_count<max_awards
+ order by created_at desc limit 1;
+ return jsonb_build_object('rewards',reward_rows,'events',event_rows,'creditBalance',credit_balance,'offer',campaign_offer);
 end $$;
 
 revoke all on function executive_visuals.customer_loyalty_summary(uuid) from public,anon,authenticated;
