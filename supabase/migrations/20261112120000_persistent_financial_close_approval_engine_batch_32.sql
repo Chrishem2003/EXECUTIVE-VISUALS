@@ -77,8 +77,7 @@ create index if not exists financial_close_approvals_owner_period_idx
 alter table executive_visuals.financial_close_periods enable row level security;
 alter table executive_visuals.financial_close_tasks enable row level security;
 alter table executive_visuals.financial_close_approvals enable row level security;
-revoke all on executive_visuals.financial_close_periods,executive_visuals.financial_close_tasks,executive_visuals.financial_close_approvals from public,anon,authenticated;
-grant select,insert,update on executive_visuals.financial_close_periods,executive_visuals.financial_close_tasks,executive_visuals.financial_close_approvals to service_role;
+revoke all on executive_visuals.financial_close_periods,executive_visuals.financial_close_tasks,executive_visuals.financial_close_approvals from public,anon,authenticated,service_role;
 
 create or replace function executive_visuals.execute_financial_close_command(
  p_owner_id uuid,p_actor_id uuid,p_command text,p_payload jsonb,
