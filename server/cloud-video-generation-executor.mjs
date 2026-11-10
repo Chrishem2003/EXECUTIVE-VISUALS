@@ -55,7 +55,7 @@ export function createCloudVideoGenerationExecutor({
   const approvalId=String(input.approvalId||"");
   const shotIndex=Number(input.shotIndex);
   if(!approvalId||!Number.isInteger(shotIndex)||shotIndex<0)throw fail("Video generation job must reference an approval and shot index.","VIDEO_JOB_INVALID_INPUT");
-  const approval=await approvals.get(approvalId);
+  const approval=await approvals.get(approvalId,{ownerId:job.owner_id,projectId:job.project_id});
   if(!approval||approval.id!==approvalId||approval.ownerId!==job.owner_id||approval.projectId!==job.project_id)
    throw fail("Approved production record is not accessible to this job owner and project.","VIDEO_APPROVAL_SCOPE_INVALID");
   if(!["approved_pending_submission","processing"].includes(approval.status)||!Array.isArray(approval.shots)||shotIndex>=approval.shots.length)
@@ -73,6 +73,11 @@ export function createCloudVideoGenerationExecutor({
   // implemented against the same durable ledger as the approval record.
   let task=await tasks.reserveSubmission({approvalId,shotIndex,ownerId:job.owner_id,projectId:job.project_id,requestHash:String(approval.requestHash||""),currency,estimatedCostMicros});
   if(!task||!task.id)throw fail("Durable task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
+  if(task.state==="succeeded"){
+   if(!task.outputAssetId)throw fail("A completed task is missing its published asset identity.","VIDEO_TASK_LEDGER_CORRUPT");
+   return {approvalId,shotIndex,provider:"runway",model:shot.model,providerTaskId:task.providerTaskId,outputAsset:{id:task.outputAssetId},replayed:true};
+  }
+  if(task.state==="failed")throw fail("This approved shot already failed. Create a new approval to authorize another paid attempt.","VIDEO_TASK_ALREADY_FAILED");
   let providerTaskId=task.providerTaskId||null;
   if(!providerTaskId){
    if(["submitting","submission_unknown"].includes(task.state))
