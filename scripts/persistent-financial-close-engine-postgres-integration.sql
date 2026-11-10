@@ -73,6 +73,7 @@ declare
  v_reviewer_a constant uuid:='77777777-7777-4777-8777-777777777777';
  v_reviewer_b constant uuid:='88888888-8888-4888-8888-888888888888';
  v_task constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ v_rework_task constant uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
  v_period constant date:='2026-10-01';
  v_result jsonb;
  v_head_before jsonb;
@@ -94,6 +95,10 @@ begin
    'assignedTo',v_assignee,'approverIds',jsonb_build_array(v_reviewer_a,v_reviewer_b),
    'dueAt','2026-11-05T17:00:00.000Z','dependencies','[]'::jsonb),'batch32-task-create');
  if v_result#>>'{task,status}'<>'assigned' then raise exception 'Task was not created: %',v_result; end if;
+ perform pg_temp.close_action(v_owner,v_owner,'task.create',v_period,
+  jsonb_build_object('taskId',v_rework_task,'title','Revenue reconciliation','description','Tie revenue schedule to source records',
+   'assignedTo',v_assignee,'approverIds',jsonb_build_array(v_reviewer_a,v_reviewer_b),
+   'dueAt','2026-11-05T17:00:00.000Z','dependencies','[]'::jsonb),'batch32-task-create-rework');
 
  v_head_before:=executive_visuals.get_financial_audit_head(v_owner);
  begin
@@ -118,6 +123,24 @@ begin
  v_result:=pg_temp.close_action(v_reviewer_b,v_reviewer_b,'task.approve',v_period,
   jsonb_build_object('taskId',v_task,'comment','Second independent review'),'batch32-task-approve-b');
  if v_result#>>'{task,status}'<>'approved' then raise exception 'Task did not complete after all approvals: %',v_result; end if;
+
+ perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
+  jsonb_build_object('taskId',v_rework_task),'batch32-rework-task-start');
+ perform pg_temp.close_action(v_assignee,v_assignee,'task.submit',v_period,
+  jsonb_build_object('taskId',v_rework_task,'evidenceRefs',jsonb_build_array('vault://evidence/revenue-schedule'),
+   'completionNote','Initial schedule submitted'),'batch32-rework-task-submit-1');
+ perform pg_temp.close_action(v_reviewer_a,v_reviewer_a,'task.reject',v_period,
+  jsonb_build_object('taskId',v_rework_task,'reason','Missing source invoice support'),'batch32-rework-task-reject');
+ perform pg_temp.close_action(v_assignee,v_assignee,'task.submit',v_period,
+  jsonb_build_object('taskId',v_rework_task,'evidenceRefs',jsonb_build_array('vault://evidence/revenue-schedule','vault://evidence/source-invoices'),
+   'completionNote','Additional invoice support attached'),'batch32-rework-task-submit-2');
+ perform pg_temp.close_action(v_reviewer_a,v_reviewer_a,'task.approve',v_period,
+  jsonb_build_object('taskId',v_rework_task,'comment','Rework accepted'),'batch32-rework-task-approve-a');
+ v_result:=pg_temp.close_action(v_reviewer_b,v_reviewer_b,'task.approve',v_period,
+  jsonb_build_object('taskId',v_rework_task,'comment','Second review accepted'),'batch32-rework-task-approve-b');
+ if v_result#>>'{task,status}'<>'approved' or (v_result#>>'{task,approval_cycle}')::integer<>2 then
+  raise exception 'Rejected task did not restart its ordered approval cycle: %',v_result;
+ end if;
 
  v_result:=pg_temp.close_action(v_owner,v_owner,'period.submit',v_period,'{}'::jsonb,'batch32-period-submit');
  if v_result#>>'{period,status}'<>'pending_approval' then raise exception 'Period did not enter approval: %',v_result; end if;
