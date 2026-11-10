@@ -11,6 +11,8 @@ insert into executive_visuals.subscription_revenue_snapshots(
   (date_trunc('month',now())-interval '1 month')::date,'ZZZ',80000,'active'),
  ((date_trunc('month',now())-interval '1 month')::date,'66666666-6666-4666-8666-666666666666',
   (date_trunc('month',now())-interval '1 month')::date,'ZZZ',30000,'active'),
+ (date_trunc('month',now())::date,'77777777-7777-4777-8777-777777777777',
+  (date_trunc('month',now())-interval '1 month')::date,'ZZZ',100000,'active'),
  (date_trunc('month',now())::date,'55555555-5555-4555-8555-555555555555',
   date_trunc('month',now())::date,'ZZZ',40000,'active')
 on conflict(snapshot_month,owner_id,currency) do update
