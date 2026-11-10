@@ -99,7 +99,7 @@ begin
  perform pg_temp.close_action(v_owner,v_owner,'task.create',v_period,
   jsonb_build_object('taskId',v_rework_task,'title','Revenue reconciliation','description','Tie revenue schedule to source records',
    'assignedTo',v_assignee,'approverIds',jsonb_build_array(v_reviewer_a,v_reviewer_b),
-   'dueAt','2026-11-05T17:00:00.000Z','dependencies','[]'::jsonb),'batch32-task-create-rework');
+   'dueAt','2026-11-05T17:00:00.000Z','dependencies',jsonb_build_array(v_task)),'batch32-task-create-rework');
 
  v_head_before:=executive_visuals.get_financial_audit_head(v_owner);
  begin
@@ -111,6 +111,18 @@ begin
  v_head_after:=executive_visuals.get_financial_audit_head(v_owner);
  if v_head_before->>'headHash'<>v_head_after->>'headHash' then
   raise exception 'Failed close transition left an orphan audit event';
+ end if;
+ v_head_before:=executive_visuals.get_financial_audit_head(v_owner);
+ begin
+  perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
+   jsonb_build_object('taskId',v_rework_task),'batch32-dependency-block');
+  raise exception 'Dependent task unexpectedly started before its prerequisite was approved';
+ exception when others then
+  if sqlerrm='Dependent task unexpectedly started before its prerequisite was approved' then raise; end if;
+ end;
+ v_head_after:=executive_visuals.get_financial_audit_head(v_owner);
+ if v_head_before->>'headHash'<>v_head_after->>'headHash' then
+  raise exception 'Blocked dependency transition left an orphan audit event';
  end if;
 
  perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
@@ -160,7 +172,7 @@ begin
  if v_result#>>'{period,status}'<>'reopened' then raise exception 'Period did not reopen: %',v_result; end if;
 
  v_result:=pg_temp.close_action(v_owner,v_owner,'task.assign',v_period,
-  jsonb_build_object('taskId',v_task,'assignedTo',v_assignee,'approverIds',jsonb_build_array(v_reviewer_a)),
+  jsonb_build_object('taskId',v_rework_task,'assignedTo',v_assignee,'approverIds',jsonb_build_array(v_reviewer_a)),
   'batch32-task-reassign-after-reopen');
  if v_result#>>'{task,status}'<>'assigned' then raise exception 'Reopened task could not be reassigned: %',v_result; end if;
 
