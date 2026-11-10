@@ -2,7 +2,7 @@ const CURRENCY=/^[A-Z]{3}$/;
 const RATE_FIELDS=Object.freeze({
  inputTokens:"inputMinorPerMillionTokens",
  outputTokens:"outputMinorPerMillionTokens",
- images:"imageMinorPerImage",
+ imageCount:"imageMinorPerImage",
  videoSeconds:"videoMinorPerSecond",
  renderSeconds:"renderMinorPerSecond",
  gpuSeconds:"gpuMinorPerSecond",
