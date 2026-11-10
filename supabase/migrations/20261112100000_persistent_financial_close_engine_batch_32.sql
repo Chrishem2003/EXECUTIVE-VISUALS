@@ -243,9 +243,9 @@ begin
   end if;
  elsif p_action='task.reject' then
   v_task_id:=(p_payload->>'taskId')::uuid;v_reason:=p_payload->>'reason';
-  select * into v_task from executive_visuals.financial_close_tasks
-   where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id for update;
-  if not found or v_task.status<>'submitted' then raise exception using errcode='55000',message='financial_close_task_not_awaiting_approval'; end if;
+  select t.* into v_task from executive_visuals.financial_close_tasks t
+   where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id for update;
+  if v_task.task_id is null or v_task.status<>'submitted' then raise exception using errcode='55000',message='financial_close_task_not_awaiting_approval'; end if;
   if p_actor_id=v_task.assigned_to or not (p_actor_id=any(v_task.approver_ids)) then
    raise exception using errcode='42501',message='financial_close_approver_required';
   end if;
