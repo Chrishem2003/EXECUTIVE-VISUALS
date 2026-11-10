@@ -23,8 +23,10 @@ alter table executive_visuals.ai_model_price_catalog
  add constraint ai_model_price_catalog_fingerprint_check check(source_fingerprint='' or source_fingerprint ~ '^[a-f0-9]{64}$'),
  add constraint ai_model_price_catalog_dimensions_check check(jsonb_typeof(pricing_dimensions)='object');
 
-create unique index if not exists ai_model_price_catalog_version_unique
- on executive_visuals.ai_model_price_catalog(provider,model,currency,rate_card_version);
+drop index if exists executive_visuals.ai_model_price_catalog_version_unique;
+create unique index ai_model_price_catalog_version_unique
+ on executive_visuals.ai_model_price_catalog(provider,model,currency,rate_card_version)
+ where verification_status<>'legacy_unverified';
 create index if not exists ai_model_price_catalog_current_lookup
  on executive_visuals.ai_model_price_catalog(provider,model,currency,effective_from desc);
 
@@ -69,14 +71,16 @@ begin
   or (v_source_url<>'' and v_source_url !~ '^https://')
   or v_source_fingerprint<>'' and v_source_fingerprint !~ '^[a-f0-9]{64}$'
   or v_status not in('source_linked','contract_attested','admin_attested')
-  or jsonb_typeof(v_dimensions)<>'object'
+  or jsonb_typeof(v_dimensions)<>'object' or pg_column_size(v_dimensions)>12000
+  or exists(select 1 from jsonb_each(v_dimensions) d where length(d.key)>80
+   or case when jsonb_typeof(d.value)='number' then (d.value #>> '{}')::numeric<0 else true end)
   or (v_input is not null and v_input<0) or (v_output is not null and v_output<0)
   or (v_image is not null and v_image<0) or (v_video is not null and v_video<0)
   or (v_render is not null and v_render<0)
   or num_nonnulls(v_input,v_output,v_image,v_video,v_render)=0 then
   raise exception 'Invalid provider rate-card fields' using errcode='22023';
  end if;
- if v_source_type='provider_pricing' and (v_source_url='' or nullif(p_rate_card->>'sourceCheckedAt','') is null or v_status<>'source_linked') then
+ if v_source_type='provider_pricing' and (v_source_url='' or v_checked_at is null or v_status<>'source_linked') then
   raise exception 'Provider pricing requires an HTTPS source URL, check timestamp and source_linked status' using errcode='22023';
  end if;
  if v_source_type='provider_contract' and v_status<>'contract_attested' then
@@ -85,6 +89,10 @@ begin
  if v_source_type='admin_verified' and v_status<>'admin_attested' then
   raise exception 'Admin-entered pricing requires admin_attested status' using errcode='22023';
  end if;
+ if nullif(p_rate_card->>'supersedesId','') is not null and not exists(
+  select 1 from ai_model_price_catalog c where c.id=(p_rate_card->>'supersedesId')::uuid
+   and c.provider=v_provider and c.model=v_model and c.currency=v_currency and c.effective_from<v_from
+ ) then raise exception 'Superseded rate card must be an earlier version of the same provider, model and currency' using errcode='22023'; end if;
  -- Serialize overlap checks per provider/model/currency to prevent concurrent conflicting versions.
  perform pg_advisory_xact_lock(hashtextextended(v_provider||'|'||v_model||'|'||v_currency,0));
  if exists(select 1 from ai_model_price_catalog c where c.provider=v_provider and c.model=v_model and c.currency=v_currency
