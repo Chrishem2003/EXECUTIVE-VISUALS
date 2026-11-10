@@ -13,6 +13,7 @@ import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoi
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
+import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -1145,6 +1146,47 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/scenarios"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=query.limit==null?25:Number(query.limit);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100)return error(400,"FINANCIAL_SCENARIO_LIMIT_INVALID","Scenario snapshot limit must be an integer between 1 and 100.");
+        const result=await rpc("list_financial_scenario_snapshots",{p_actor_id:ownerId,p_limit:limit});
+        return response(200,{...result,source:"immutable saved scenario snapshots"});
+      }
+      if(path==="/api/admin/finance/scenarios"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const scenarioName=String(body.scenarioName||"").trim();
+        const idempotencyKey=String(body.idempotencyKey||"");
+        const rawInput=body.input;
+        const evidenceReferences=body.evidenceReferences??[];
+        if(!scenarioName||scenarioName.length>100||!/^[A-Za-z0-9:_-]{8,128}$/.test(idempotencyKey)||
+          !Array.isArray(evidenceReferences)||evidenceReferences.length>50||
+          evidenceReferences.some(item=>typeof item!=="string"||item.trim().length<1||item.length>500)){
+          return error(400,"FINANCIAL_SCENARIO_PAYLOAD_INVALID","Provide a scenario name, a unique 8–128 character idempotency key and up to 50 evidence references.");
+        }
+        try{
+          const result=calculateFinancialScenarioIntelligence(rawInput);
+          const inputHash=createHash("sha256").update(JSON.stringify(rawInput)).digest("hex");
+          const resultHash=createHash("sha256").update(JSON.stringify(result)).digest("hex");
+          const saved=await rpc("create_financial_scenario_snapshot",{
+            p_actor_id:ownerId,p_scenario_name:scenarioName,p_period_month:result.periodMonth,
+            p_currency:result.currency,p_model_version:result.model,
+            p_input_payload:rawInput,p_result_payload:result,p_evidence_references:evidenceReferences,
+            p_input_sha256:inputHash,p_result_sha256:resultHash,p_idempotency_key:idempotencyKey
+          });
+          const snapshot=saved?.snapshot||null;
+          await rpc("write_financial_admin_audit",{
+            p_actor_id:ownerId,p_action:"finance.scenario.snapshot.create",
+            p_resource_type:"financial_scenario_snapshot",p_resource_id:String(snapshot?.id||""),
+            p_reason:"Administrator saved an immutable financial scenario calculation",
+            p_request_id:randomUUID(),p_metadata:{scenarioName,currency:result.currency,periodMonth:result.periodMonth,model:result.model,idempotentReplay:Boolean(saved?.idempotentReplay)}
+          });
+          return response(saved?.idempotentReplay?200:201,{...saved,source:"server-calculated immutable scenario snapshot"});
+        }catch(err){
+          if(err instanceof TypeError||err instanceof RangeError)return error(400,"FINANCIAL_SCENARIO_INPUT_INVALID",String(err.message||"Scenario inputs are invalid."));
+          throw err;
+        }
       }
       if(path==="/api/admin/finance/customer-lifetime-acquisition-economics"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
