@@ -1,3 +1,4 @@
+import type { CreativeStoryboard } from "./creative-intent";
 export type SeriesFormat="documentary"|"docuseries"|"education"|"fiction"|"interview"|"brand"|"children"|"shorts";
 export type SeriesDefaults={episodeRuntimeSeconds:number;shotLengthSeconds:number;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;language:string;voiceMode:string;captions:string;music:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string};
 export type EpisodeShot={id:string;durationSeconds:number;prompt:string;status:"planned";camera?:string;framing?:string;movement?:string;lens?:string;negativePrompt?:string;storyBibleEntryIds?:string[]};
@@ -11,7 +12,7 @@ export type SeriesSeason={id:string;number:number;title:string;episodes:SeriesEp
 export type SeriesProductionPlan={id:string;schemaVersion:1;title:string;premise:string;format:SeriesFormat;genre:string;continuityNotes:string;defaults:SeriesDefaults;seasons:SeriesSeason[];storyBible?:SeriesStoryBible;seasonArcs?:Record<string,string>;createdAt:string;updatedAt:string};
 export type SeriesProductionInput={title:string;premise:string;format:string;genre?:string;seasonCount:number;episodesPerSeason:number;episodeRuntimeSeconds:number;shotLengthSeconds:number;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;language:string;voiceMode:string;captions:string;music:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;continuityNotes?:string};
 export const MAX_EPISODE_SECONDS=1800,MAX_GENERATED_CLIP_SECONDS=30;
-export const EPISODE_RUNTIME_CHOICES=Object.freeze([30,60,90,120,180,240,300,600,900,1200,1800]);
+export const EPISODE_RUNTIME_CHOICES=Object.freeze([15,30,60,90,120,180,240,300,600,900,1200,1800]);
 const RATIOS=new Set(["16:9","9:16","1:1","4:3","3:4","21:9"]),FORMATS=new Set(["documentary","docuseries","education","fiction","interview","brand","children","shorts"]);
 const text=(v:unknown,n:number,l:string)=>{if(typeof v!=="string"||!v.trim()||v.trim().length>n)throw new Error(l+" must contain 1–"+n+" characters.");return v.trim();};
 const integer=(v:number,min:number,max:number,l:string)=>{if(!Number.isInteger(v)||v<min||v>max)throw new Error(l+" must be a whole number from "+min+" to "+max+".");return v;};
@@ -161,4 +162,38 @@ export function buildEpisodeShotPackage(series:SeriesProductionPlan,episode:Seri
  const totalShotSeconds=shots.reduce((sum,shot)=>sum+shot.durationSeconds,0);
  if(totalShotSeconds!==direction.episodeRuntimeSeconds)throw new Error("Shot package duration does not equal the effective episode runtime.");
  return{schemaVersion:1,seriesId:series.id,seriesTitle:series.title,seasonNumber:season.number,episodeId:episode.id,episodeNumber:episode.number,episodeTitle:episode.title,runtimeSeconds:direction.episodeRuntimeSeconds,settings:direction,storyBibleVersion:series.storyBible?.version||1,shotCount:shots.length,totalShotSeconds,shots,createdAt:new Date().toISOString()};
+}
+
+
+export type StoryboardSeriesOptions={
+ format?:SeriesFormat;genre?:string;aspectRatio:string;frameRate:number;resolution:string;
+ visualStyle:string;language:string;voiceMode:string;captions:string;music:string;
+ cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;continuityNotes?:string;
+};
+
+/** Turn an approved Creative Director storyboard into an editable one-episode production plan. */
+export function buildSeriesPlanFromStoryboard(storyboard:CreativeStoryboard,options:StoryboardSeriesOptions):SeriesProductionPlan {
+ if(!storyboard||storyboard.schemaVersion!==1||storyboard.planningOnly!==true||storyboard.providerSubmitted!==false)throw new Error("A planning-only Creative Director storyboard is required.");
+ if(storyboard.generationState!=="not_submitted"||!Array.isArray(storyboard.scenes)||storyboard.scenes.length<1)throw new Error("Storyboard is not ready for production planning.");
+ const plan=buildSeriesProductionPlan({
+  title:storyboard.title,premise:storyboard.creativePromise,format:options.format||"documentary",genre:options.genre||"",
+  seasonCount:1,episodesPerSeason:1,episodeRuntimeSeconds:storyboard.durationSeconds,shotLengthSeconds:8,
+  aspectRatio:options.aspectRatio,frameRate:options.frameRate,resolution:options.resolution,visualStyle:options.visualStyle,
+  language:options.language,voiceMode:options.voiceMode,captions:options.captions,music:options.music,
+  cameraLanguage:options.cameraLanguage,shotComposition:options.shotComposition,pacing:options.pacing,
+  colorGrade:options.colorGrade,continuityNotes:options.continuityNotes||""
+ });
+ const episode=plan.seasons[0].episodes[0];
+ episode.title="Episode 01 · "+storyboard.title;
+ episode.logline=storyboard.creativePromise;
+ episode.scenes=storyboard.scenes.map(scene=>({
+  id:scene.id,title:scene.title,purpose:scene.purpose,durationSeconds:scene.durationSeconds,
+  shots:scene.shots.map(shot=>({
+   id:shot.id,durationSeconds:shot.durationSeconds,prompt:shot.prompt,status:"planned" as const,
+   camera:shot.camera,framing:shot.framing,movement:shot.movement,negativePrompt:shot.negativePrompt
+  }))
+ }));
+ const validation=validateSeriesProductionPlan(plan);
+ if(!validation.valid)throw new Error("Storyboard-to-series conversion failed validation: "+validation.issues.join(" "));
+ return plan;
 }
