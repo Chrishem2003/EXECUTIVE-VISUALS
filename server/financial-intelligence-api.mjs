@@ -740,6 +740,44 @@ export function createFinancialIntelligenceApi({
         const guardrails=await rpc("financial_liquidity_guardrails_overview",{p_actor_id:ownerId});
         return response(200,{guardrails:guardrails||{policies:[],scenarios:[],limitations:["Liquidity guardrails are not available."]}});
       }
+      if(path==="/api/admin/finance/liquidity-stress"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const overview=await rpc("financial_liquidity_stress_overview",{p_actor_id:ownerId});
+        return response(200,{stress:overview||{scenarios:[],runs:[],contingencyOptions:[]}});
+      }
+      if(path==="/api/admin/finance/liquidity-stress-scenarios"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const name=String(body.name||"").trim(),currency=String(body.currency||"").trim().toUpperCase();
+        const inflowReductionBps=Number(body.inflowReductionBps),outflowIncreaseBps=Number(body.outflowIncreaseBps),immediateCashShockMinor=Number(body.immediateCashShockMinor);
+        const sourceReference=String(body.sourceReference||"").trim(),rationale=String(body.rationale||"").trim(),idempotencyKey=String(body.idempotencyKey||"");
+        if(name.length<3||name.length>120||!/^[A-Z]{3}$/.test(currency)||!Number.isInteger(inflowReductionBps)||inflowReductionBps<0||inflowReductionBps>10000||
+          !Number.isInteger(outflowIncreaseBps)||outflowIncreaseBps<0||outflowIncreaseBps>30000||!Number.isSafeInteger(immediateCashShockMinor)||immediateCashShockMinor<0||
+          sourceReference.length<3||sourceReference.length>240||rationale.length<3||rationale.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"LIQUIDITY_STRESS_SCENARIO_INVALID","Provide valid scenario assumptions, a currency and supporting evidence.");
+        const scenario=await rpc("record_financial_liquidity_stress_scenario",{p_actor_id:ownerId,p_payload:{name,currency,inflowReductionBps,outflowIncreaseBps,immediateCashShockMinor,sourceReference,rationale,idempotencyKey}});
+        return response(201,{scenario});
+      }
+      if(path==="/api/admin/finance/liquidity-stress-runs"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const scenarioId=String(body.scenarioId||"");
+        if(!UUID.test(scenarioId))return error(400,"LIQUIDITY_STRESS_SCENARIO_ID_INVALID","A valid saved scenario ID is required.");
+        const result=await rpc("run_financial_liquidity_stress_test",{p_actor_id:ownerId,p_scenario_id:scenarioId});
+        return response(201,{result});
+      }
+      if(path==="/api/admin/finance/liquidity-contingency-options"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const currency=String(body.currency||"").trim().toUpperCase(),title=String(body.title||"").trim(),category=String(body.category||"");
+        const estimatedCapacityMinor=Number(body.estimatedCapacityMinor),leadTimeHours=Number(body.leadTimeHours),availabilityStatus=String(body.availabilityStatus||"");
+        const sourceReference=String(body.sourceReference||"").trim(),rationale=String(body.rationale||"").trim(),idempotencyKey=String(body.idempotencyKey||"");
+        if(!/^[A-Z]{3}$/.test(currency)||title.length<3||title.length>160||
+          !["receivables_acceleration","discretionary_spend","supplier_terms","committed_facility","asset_monetization","owner_funding","other"].includes(category)||
+          !Number.isSafeInteger(estimatedCapacityMinor)||estimatedCapacityMinor<0||!Number.isInteger(leadTimeHours)||leadTimeHours<0||leadTimeHours>8760||
+          !["validated","conditional","unverified"].includes(availabilityStatus)||sourceReference.length<3||sourceReference.length>240||
+          rationale.length<3||rationale.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"LIQUIDITY_CONTINGENCY_OPTION_INVALID","Provide a valid currency, capacity, lead time, readiness status and supporting evidence.");
+        const option=await rpc("record_financial_contingency_option",{p_actor_id:ownerId,p_payload:{currency,title,category,estimatedCapacityMinor,leadTimeHours,availabilityStatus,sourceReference,rationale,idempotencyKey}});
+        return response(201,{option});
+      }
       if(path==="/api/admin/finance/liquidity-alerts"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const refresh=await rpc("refresh_financial_liquidity_alerts",{p_actor_id:ownerId});
