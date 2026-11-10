@@ -27,6 +27,25 @@ begin
   from financial_service_cost_events c
   where c.period_month=p_period_month and c.owner_id is not null
   group by c.owner_id,c.currency
+ ), cash_activity as(
+  select owner_id,currency,sum(cash_collected_minor)::bigint cash_collected_minor,
+   sum(refunded_minor)::bigint refunded_minor,count(*)::integer cash_event_count
+  from (
+   select p.owner_id,p.currency,sum(p.amount_minor)::bigint cash_collected_minor,
+    0::bigint refunded_minor,count(*)::integer
+   from payment_transactions p
+   where p.status='successful' and p.paid_at>=p_period_month::timestamptz
+    and p.paid_at<((p_period_month+interval '1 month')::date)::timestamptz
+    and p.metadata->>'payment_purpose' in('subscription_purchase','subscription_renewal')
+   group by p.owner_id,p.currency
+   union all
+   select r.owner_id,r.currency,0::bigint,sum(r.amount_minor)::bigint,count(*)::integer
+   from payment_refunds r
+   where r.status='succeeded' and r.completed_at>=p_period_month::timestamptz
+    and r.completed_at<((p_period_month+interval '1 month')::date)::timestamptz
+   group by r.owner_id,r.currency
+  ) movements
+  group by owner_id,currency
  ), credits as(
   select l.owner_id,
    coalesce(sum(l.credit_delta) filter(where l.entry_type='purchase_grant' and l.metadata ? 'subscription_id' and l.credit_delta>0
@@ -75,6 +94,7 @@ begin
   from revenue r
   left join direct_costs d on d.owner_id=r.owner_id and d.currency=r.currency
   left join credits cr on cr.owner_id=r.owner_id
+  left join cash_activity ca on ca.owner_id=r.owner_id and ca.currency=r.currency
   left join telemetry t on t.owner_id=r.owner_id
   left join lateral(
    select s.id,s.plan_code,s.plan_version,s.billing_interval,s.included_credits
@@ -88,6 +108,10 @@ begin
    count(*) filter(where mrr_minor>0)::integer paid_customers,
    sum(mrr_minor)::bigint mrr_minor,sum(direct_cost_minor)::bigint direct_cost_minor,
    sum(contribution_minor)::bigint contribution_minor,
+   sum(cash_collected_minor)::bigint cash_collected_minor,
+   sum(refunded_minor)::bigint refunded_minor,
+   sum(net_cash_collected_minor)::bigint net_cash_collected_minor,
+   sum(cash_event_count)::bigint cash_event_count,
    case when sum(mrr_minor)>0 then round(sum(contribution_minor)*100.0/sum(mrr_minor),2) else null end gross_margin_pct,
    sum(subscription_credits_granted)::bigint subscription_credits_granted,
    sum(credits_consumed)::bigint credits_consumed,
@@ -105,6 +129,8 @@ begin
    'directCostMinor',direct_cost_minor,'verifiedProviderCostMinor',verified_provider_cost_minor,
    'otherDirectCostMinor',other_direct_cost_minor,'costEventCount',cost_event_count,
    'contributionMinor',contribution_minor,'grossMarginPct',gross_margin_pct,
+   'cashCollectedMinor',cash_collected_minor,'refundedMinor',refunded_minor,
+   'netCashCollectedMinor',net_cash_collected_minor,'cashEventCount',cash_event_count,
    'subscriptionCreditsGranted',subscription_credits_granted,'creditsConsumed',credits_consumed,
    'creditsReversed',credits_reversed,'creditLedgerBalanceAtPeriodEnd',ledger_balance_at_period_end,
    'telemetryEventCount',telemetry_event_count,'providerCostEvidenceCount',provider_cost_evidence_count,
@@ -123,13 +149,15 @@ begin
   'byCurrency',coalesce((select jsonb_agg(jsonb_build_object(
    'currency',currency,'customers',customers,'paidCustomers',paid_customers,
    'mrrMinor',mrr_minor,'directCostMinor',direct_cost_minor,'contributionMinor',contribution_minor,
-   'grossMarginPct',gross_margin_pct,'subscriptionCreditsGranted',subscription_credits_granted,
+   'grossMarginPct',gross_margin_pct,'cashCollectedMinor',cash_collected_minor,
+   'refundedMinor',refunded_minor,'netCashCollectedMinor',net_cash_collected_minor,
+   'cashEventCount',cash_event_count,'subscriptionCreditsGranted',subscription_credits_granted,
    'creditsConsumed',credits_consumed,'telemetryEvents',telemetry_events,
    'providerCostEvidenceEvents',provider_cost_evidence_events,
    'negativeContributionCustomers',negative_contribution_customers
   ) order by currency) from totals),'[]'::jsonb),
   'limitations',jsonb_build_array(
-   'Revenue is the recorded subscription MRR snapshot, not cash collected or statutory recognized revenue.',
+   'MRR is the recorded subscription revenue snapshot; successful subscription cash receipts and completed refunds are reported separately by payment date.',
    'Direct cost includes only immutable service-cost ledger entries assigned to the customer and same currency; shared overhead is excluded.',
    'Provider costs are counted in contribution only after reconciliation and posting to the service-cost ledger.',
    'Workload telemetry counters and provider-cost evidence counts are diagnostic and are not added again to costs.',
