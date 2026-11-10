@@ -4,7 +4,7 @@
 
 Batch 53 moves the remediation evidence workflow from manually asserted metadata to actual managed asset attachments.
 
-- The Financial Command Centre accepts PDF, TXT, JSON, PNG and JPEG evidence files up to 10 MiB.
+- The Financial Command Centre accepts PDF, PNG and JPEG evidence files up to 10 MiB.
 - The browser uploads file bytes through the existing authenticated `POST /api/assets` endpoint; it does not send a caller-supplied file URL or checksum as proof.
 - Existing server-side upload handling enforces a streaming byte limit, creates a server-generated UUID storage name, calculates SHA-256 from the received bytes, and checks the file signature against the declared media type.
 - The remediation API accepts only an existing asset owned by the submitting user and scoped to the exact same project (or personal account) as the remediation.
