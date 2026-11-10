@@ -154,7 +154,987 @@ begin
  if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date
   or p_period_month>date_trunc('month',now())::date
   or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}
+  or coalesce(p_currency,'') !~ '^[A-Z]{3}
+  or length(btrim(coalesce(p_description,''))) not between 3 and 500
+  or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
+  raise exception 'Invalid acquisition spend details' using errcode='22023';
+ end if;
+ insert into customer_acquisition_spend_events(period_month,channel,campaign,currency,amount_minor,entry_type,description,idempotency_key,recorded_by)
+ values(p_period_month,p_channel,coalesce(p_campaign,''),p_currency,p_amount_minor,'spend',p_description,p_idempotency_key,p_actor_id)
+ on conflict(idempotency_key) do nothing returning id into v_id;
+ if v_id is null then
+  select * into v_existing from customer_acquisition_spend_events where idempotency_key=p_idempotency_key;
+  if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
+   or v_existing.currency<>p_currency or v_existing.channel<>p_channel
+   or v_existing.period_month<>p_period_month or v_existing.campaign<>coalesce(p_campaign,'') or v_existing.description<>p_description then
+   raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
+  end if;
+  v_id:=v_existing.id;
+ else
+  perform write_financial_admin_audit(p_actor_id,'acquisition.spend.recorded','customer_acquisition_spend',v_id::text,
+   'Record acquisition campaign spend',p_idempotency_key,
+   jsonb_build_object('periodMonth',p_period_month,'channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'amountMinor',p_amount_minor));
+ end if;
+ return jsonb_build_object('id',v_id,'periodMonth',p_period_month,'channel',p_channel,'currency',p_currency,'amountMinor',p_amount_minor,'idempotentReplay',v_existing.id is not null);
+end $$;
+
+create or replace function executive_visuals.record_customer_acquisition_attribution(
+ p_actor_id uuid,p_owner_id uuid,p_channel text,p_campaign text,p_currency text,
+ p_source_type text,p_acquired_at timestamptz
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_existing customer_acquisition_attributions%rowtype; v_inserted_owner uuid;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_owner_id is null or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}
+  or coalesce(p_source_type,'') not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing returning owner_id into v_inserted_owner;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ if v_inserted_owner is not null then
+  perform write_financial_admin_audit(p_actor_id,'acquisition.attribution.recorded','customer_acquisition_attribution',p_owner_id::text,
+   'Record first-touch acquisition attribution',null,
+   jsonb_build_object('channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'sourceType',p_source_type));
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_inserted_owner is null);
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select case when count(*)>=2 then min(snapshot_month) end prior_month,max(snapshot_month) current_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month=(p.prior_month+interval '1 month')::date and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select se.owner_id,min(se.created_at) first_paid_at
+  from subscription_events se join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and cs.amount_minor>0
+  group by se.owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se join customer_subscriptions paid on paid.id=se.subscription_id
+    where se.owner_id=cs.owner_id and se.event_type='activated' and paid.amount_minor>0)
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+
   or p_currency !~ '^[A-Z]{3}$' or p_amount_minor is null or p_amount_minor<=0
+  or length(btrim(coalesce(p_description,''))) not between 3 and 500
+  or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
+  raise exception 'Invalid acquisition spend details' using errcode='22023';
+ end if;
+ insert into customer_acquisition_spend_events(period_month,channel,campaign,currency,amount_minor,entry_type,description,idempotency_key,recorded_by)
+ values(p_period_month,p_channel,coalesce(p_campaign,''),p_currency,p_amount_minor,'spend',p_description,p_idempotency_key,p_actor_id)
+ on conflict(idempotency_key) do nothing returning id into v_id;
+ if v_id is null then
+  select * into v_existing from customer_acquisition_spend_events where idempotency_key=p_idempotency_key;
+  if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
+   or v_existing.currency<>p_currency or v_existing.channel<>p_channel
+   or v_existing.period_month<>p_period_month then
+   raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
+  end if;
+  v_id:=v_existing.id;
+ end if;
+ return jsonb_build_object('id',v_id,'periodMonth',p_period_month,'channel',p_channel,'currency',p_currency,'amountMinor',p_amount_minor,'idempotentReplay',v_existing.id is not null);
+end $$;
+
+create or replace function executive_visuals.record_customer_acquisition_attribution(
+ p_actor_id uuid,p_owner_id uuid,p_channel text,p_campaign text,p_currency text,
+ p_source_type text,p_acquired_at timestamptz
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_existing customer_acquisition_attributions%rowtype;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_owner_id is null or p_channel !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
+  or p_currency !~ '^[A-Z]{3}$'
+  or p_source_type not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_existing.created_at<now()-interval '1 second');
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select max(snapshot_month) current_month,min(snapshot_month) prior_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month is not null and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select owner_id,min(created_at) first_paid_at
+  from subscription_events where event_type='activated'
+  group by owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se where se.owner_id=cs.owner_id and se.event_type='activated')
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+
+  or coalesce(p_currency,'') !~ '^[A-Z]{3}
+  or coalesce(p_source_type,'') not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing returning owner_id into v_inserted_owner;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ if v_inserted_owner is not null then
+  perform write_financial_admin_audit(p_actor_id,'acquisition.attribution.recorded','customer_acquisition_attribution',p_owner_id::text,
+   'Record first-touch acquisition attribution',null,
+   jsonb_build_object('channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'sourceType',p_source_type));
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_inserted_owner is null);
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select case when count(*)>=2 then min(snapshot_month) end prior_month,max(snapshot_month) current_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month=(p.prior_month+interval '1 month')::date and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select se.owner_id,min(se.created_at) first_paid_at
+  from subscription_events se join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and cs.amount_minor>0
+  group by se.owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se join customer_subscriptions paid on paid.id=se.subscription_id
+    where se.owner_id=cs.owner_id and se.event_type='activated' and paid.amount_minor>0)
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+
+  or p_currency !~ '^[A-Z]{3}$' or p_amount_minor is null or p_amount_minor<=0
+  or length(btrim(coalesce(p_description,''))) not between 3 and 500
+  or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
+  raise exception 'Invalid acquisition spend details' using errcode='22023';
+ end if;
+ insert into customer_acquisition_spend_events(period_month,channel,campaign,currency,amount_minor,entry_type,description,idempotency_key,recorded_by)
+ values(p_period_month,p_channel,coalesce(p_campaign,''),p_currency,p_amount_minor,'spend',p_description,p_idempotency_key,p_actor_id)
+ on conflict(idempotency_key) do nothing returning id into v_id;
+ if v_id is null then
+  select * into v_existing from customer_acquisition_spend_events where idempotency_key=p_idempotency_key;
+  if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
+   or v_existing.currency<>p_currency or v_existing.channel<>p_channel
+   or v_existing.period_month<>p_period_month then
+   raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
+  end if;
+  v_id:=v_existing.id;
+ end if;
+ return jsonb_build_object('id',v_id,'periodMonth',p_period_month,'channel',p_channel,'currency',p_currency,'amountMinor',p_amount_minor,'idempotentReplay',v_existing.id is not null);
+end $$;
+
+create or replace function executive_visuals.record_customer_acquisition_attribution(
+ p_actor_id uuid,p_owner_id uuid,p_channel text,p_campaign text,p_currency text,
+ p_source_type text,p_acquired_at timestamptz
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_existing customer_acquisition_attributions%rowtype;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_owner_id is null or p_channel !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
+  or p_currency !~ '^[A-Z]{3}$'
+  or p_source_type not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_existing.created_at<now()-interval '1 second');
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select max(snapshot_month) current_month,min(snapshot_month) prior_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month is not null and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select owner_id,min(created_at) first_paid_at
+  from subscription_events where event_type='activated'
+  group by owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se where se.owner_id=cs.owner_id and se.event_type='activated')
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+
+  or coalesce(p_source_type,'') not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing returning owner_id into v_inserted_owner;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ if v_inserted_owner is not null then
+  perform write_financial_admin_audit(p_actor_id,'acquisition.attribution.recorded','customer_acquisition_attribution',p_owner_id::text,
+   'Record first-touch acquisition attribution',null,
+   jsonb_build_object('channel',p_channel,'campaign',coalesce(p_campaign,''),'currency',p_currency,'sourceType',p_source_type));
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_inserted_owner is null);
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select case when count(*)>=2 then min(snapshot_month) end prior_month,max(snapshot_month) current_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month=(p.prior_month+interval '1 month')::date and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select se.owner_id,min(se.created_at) first_paid_at
+  from subscription_events se join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and cs.amount_minor>0
+  group by se.owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se join customer_subscriptions paid on paid.id=se.subscription_id
+    where se.owner_id=cs.owner_id and se.event_type='activated' and paid.amount_minor>0)
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+
+  or p_currency !~ '^[A-Z]{3}$' or p_amount_minor is null or p_amount_minor<=0
+  or length(btrim(coalesce(p_description,''))) not between 3 and 500
+  or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
+  raise exception 'Invalid acquisition spend details' using errcode='22023';
+ end if;
+ insert into customer_acquisition_spend_events(period_month,channel,campaign,currency,amount_minor,entry_type,description,idempotency_key,recorded_by)
+ values(p_period_month,p_channel,coalesce(p_campaign,''),p_currency,p_amount_minor,'spend',p_description,p_idempotency_key,p_actor_id)
+ on conflict(idempotency_key) do nothing returning id into v_id;
+ if v_id is null then
+  select * into v_existing from customer_acquisition_spend_events where idempotency_key=p_idempotency_key;
+  if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
+   or v_existing.currency<>p_currency or v_existing.channel<>p_channel
+   or v_existing.period_month<>p_period_month then
+   raise exception 'Idempotency key was already used with different spend details' using errcode='23505';
+  end if;
+  v_id:=v_existing.id;
+ end if;
+ return jsonb_build_object('id',v_id,'periodMonth',p_period_month,'channel',p_channel,'currency',p_currency,'amountMinor',p_amount_minor,'idempotentReplay',v_existing.id is not null);
+end $$;
+
+create or replace function executive_visuals.record_customer_acquisition_attribution(
+ p_actor_id uuid,p_owner_id uuid,p_channel text,p_campaign text,p_currency text,
+ p_source_type text,p_acquired_at timestamptz
+) returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_existing customer_acquisition_attributions%rowtype;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_owner_id is null or p_channel !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
+  or p_currency !~ '^[A-Z]{3}$'
+  or p_source_type not in('self_reported','referral','partner','paid_campaign','organic','other')
+  or p_acquired_at is null or p_acquired_at>now() then
+  raise exception 'Invalid customer acquisition attribution' using errcode='22023';
+ end if;
+ if not exists(select 1 from customer_subscriptions cs where cs.owner_id=p_owner_id and cs.amount_minor>0) then
+  raise exception 'Attribution requires a customer with a paid subscription record' using errcode='22023';
+ end if;
+ insert into customer_acquisition_attributions(owner_id,channel,campaign,currency,source_type,acquired_at,recorded_by)
+ values(p_owner_id,p_channel,coalesce(p_campaign,''),p_currency,p_source_type,p_acquired_at,p_actor_id)
+ on conflict(owner_id) do nothing;
+ select * into v_existing from customer_acquisition_attributions where owner_id=p_owner_id;
+ if v_existing.recorded_by<>p_actor_id or v_existing.channel<>p_channel
+  or v_existing.currency<>p_currency then
+  raise exception 'Customer acquisition attribution already exists and is immutable' using errcode='23505';
+ end if;
+ return jsonb_build_object('ownerId',p_owner_id,'channel',v_existing.channel,'currency',v_existing.currency,'alreadyAttributed',v_existing.created_at<now()-interval '1 second');
+end $$;
+
+create or replace function executive_visuals.financial_revenue_retention_overview(p_actor_id uuid)
+returns jsonb
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+
+ with months as(
+  select distinct snapshot_month from subscription_revenue_snapshots
+  order by snapshot_month desc limit 2
+ ), month_pair as(
+  select max(snapshot_month) current_month,min(snapshot_month) prior_month from months
+ ), retention as(
+  select p.prior_month,p.current_month,b.currency,b.cohort_month,
+   count(*)::integer opening_customers,
+   count(*) filter(where coalesce(c.mrr_minor,0)>0)::integer retained_customers,
+   sum(b.mrr_minor)::bigint opening_mrr_minor,
+   sum(coalesce(c.mrr_minor,0))::bigint ending_mrr_minor,
+   sum(least(b.mrr_minor,coalesce(c.mrr_minor,0)))::bigint gross_retained_mrr_minor
+  from month_pair p
+  join subscription_revenue_snapshots b on b.snapshot_month=p.prior_month
+  left join subscription_revenue_snapshots c on c.snapshot_month=p.current_month
+   and c.owner_id=b.owner_id and c.currency=b.currency
+  where p.prior_month is not null and p.current_month is not null and b.mrr_minor>0
+  group by p.prior_month,p.current_month,b.currency,b.cohort_month
+ ), first_paid_for_cac as(
+  select owner_id,min(created_at) first_paid_at
+  from subscription_events where event_type='activated'
+  group by owner_id
+  union all
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from subscription_events se where se.owner_id=cs.owner_id and se.event_type='activated')
+  group by cs.owner_id
+ ), acquisition as(
+  select s.period_month,s.currency,s.channel,
+   sum(s.amount_minor)::bigint net_spend_minor,
+   count(distinct a.owner_id) filter(where paid.owner_id is not null)::integer attributed_new_customers,
+   case when count(distinct a.owner_id) filter(where paid.owner_id is not null)>0
+    then round(sum(s.amount_minor)::numeric/count(distinct a.owner_id) filter(where paid.owner_id is not null))::bigint else null end cac_minor
+  from(
+   select period_month,currency,channel,sum(amount_minor)::bigint amount_minor
+   from customer_acquisition_spend_events
+   group by period_month,currency,channel
+  ) s
+  left join customer_acquisition_attributions a
+   on a.currency=s.currency and a.channel=s.channel
+   and date_trunc('month',a.acquired_at)::date=s.period_month
+  left join first_paid_for_cac paid on paid.owner_id=a.owner_id
+   and date_trunc('month',paid.first_paid_at)::date=s.period_month
+  where s.amount_minor is not null
+  group by s.period_month,s.currency,s.channel
+ ), forecast_errors as(
+  select fs.id,fs.created_at,cur->>'currency' currency,
+   (point->>'days')::integer horizon_days,
+   (point->'base'->>'endMrrMinor')::numeric forecast_mrr,
+   actual.snapshot_month,
+   actual.actual_mrr
+  from financial_forecast_snapshots fs
+  cross join lateral jsonb_array_elements(fs.forecast_payload->'currencies') cur
+  cross join lateral jsonb_array_elements(cur->'forecast') point
+  join lateral(
+   select s.snapshot_month,sum(s.mrr_minor)::numeric actual_mrr
+   from subscription_revenue_snapshots s
+   where s.currency=cur->>'currency'
+    and s.snapshot_month between (fs.created_at::date+(point->>'days')::integer-15)
+     and (fs.created_at::date+(point->>'days')::integer+15)
+   group by s.snapshot_month
+   order by abs(s.snapshot_month-(fs.created_at::date+(point->>'days')::integer))
+   limit 1
+  ) actual on true
+ )
+ select jsonb_build_object(
+  'generatedAt',now(),
+  'retention',coalesce((select jsonb_agg(jsonb_build_object(
+   'priorMonth',prior_month,'currentMonth',current_month,'currency',currency,'cohortMonth',cohort_month,
+   'openingCustomers',opening_customers,'retainedCustomers',retained_customers,
+   'openingMrrMinor',opening_mrr_minor,'endingMrrMinor',ending_mrr_minor,
+   'grossRetainedMrrMinor',gross_retained_mrr_minor,
+   'grrPct',case when opening_mrr_minor>0 then round(gross_retained_mrr_minor*100.0/opening_mrr_minor,2) else null end,
+   'nrrPct',case when opening_mrr_minor>0 then round(ending_mrr_minor*100.0/opening_mrr_minor,2) else null end
+  ) order by prior_month desc,currency,cohort_month desc) from retention),'[]'::jsonb),
+  'acquisition',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',period_month,'currency',currency,'channel',channel,
+   'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
+   'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
+  ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
+  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
+   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'limitations',jsonb_build_array(
+   'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
+   'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
+   'CAC payback is unavailable until subscription gross-margin and variable service costs are instrumented.',
+   'Forecast accuracy appears only when an observed monthly snapshot falls within 15 days of a forecast horizon.'
+  )
+ ) into v_result;
+ return v_result;
+end $$;
+
+revoke all on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_revenue_retention_overview(uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.capture_subscription_revenue_snapshot(uuid,date) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_spend(uuid,date,text,text,text,bigint,text,text) to service_role;
+grant execute on function executive_visuals.record_customer_acquisition_attribution(uuid,uuid,text,text,text,text,timestamptz) to service_role;
+grant execute on function executive_visuals.financial_revenue_retention_overview(uuid) to service_role;
+ or p_amount_minor is null or p_amount_minor<=0
   or length(btrim(coalesce(p_description,''))) not between 3 and 500
   or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
   raise exception 'Invalid acquisition spend details' using errcode='22023';
