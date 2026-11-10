@@ -247,6 +247,16 @@ begin
     updated_at=now()
   where id=subscription_row.id;
 
+  if target_credits>0 then
+    insert into credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata)
+    values(subscription_row.owner_id,'purchase_grant',target_credits,
+      'subscription-renewal:'||payment_row.id::text,payment_row.id,
+      'Included subscription credits for verified renewal',
+      jsonb_build_object('subscription_id',subscription_row.id,'plan_code',target_plan_code,
+        'period_start',next_period_start,'period_end',next_period_end))
+    on conflict(owner_id,idempotency_key) do nothing;
+  end if;
+
   insert into subscription_events(subscription_id,owner_id,event_type,source,reason,event_data)
   values(subscription_row.id,subscription_row.owner_id,'renewed','flutterwave',
     'Customer-initiated mobile-money renewal verified by Flutterwave',
