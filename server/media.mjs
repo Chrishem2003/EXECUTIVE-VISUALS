@@ -116,9 +116,11 @@ export function executableAvailable(name) {
   const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
 }
-export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null, maxCaptureBytes = 16000) {
+export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null, maxCaptureBytes = 16000, onResourceMeasurement = null) {
   return new Promise((resolve, reject) => {
     const executable=bin==="ffmpeg"?(process.env.FFMPEG_PATH||bin):bin==="ffprobe"?(process.env.FFPROBE_PATH||bin):bin;
+    const startedAt=process.hrtime.bigint();
+    const measurementId=randomUUID();
     const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     if(jobId&&activeProcesses)activeProcesses.set(jobId,child);
     let stdout = "", stderr = "", timer, cancellationTimer;
@@ -132,6 +134,10 @@ export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeP
       clearTimeout(timer);
       if(cancellationTimer)clearInterval(cancellationTimer);
       if(jobId&&activeProcesses)activeProcesses.delete(jobId);
+      if(bin==="ffmpeg"&&typeof onResourceMeasurement==="function"){
+        const quantity=Number(process.hrtime.bigint()-startedAt)/1e9;
+        if(Number.isFinite(quantity)&&quantity>0){try{onResourceMeasurement({measurementId,resourceType:"ffmpeg_second",quantity,unit:"second",measuredAt:new Date().toISOString()});}catch{}}
+      }
       if (code === 0) resolve({ stdout, stderr });
       else reject(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code:"MEDIA_PROCESS_FAILED" }));
     });
@@ -202,7 +208,7 @@ function addAsset(db, job, filePath, originalName, mediaType, size, sha256, deri
   return { id, name:originalName, mediaType, size, sha256, derivativeOf, metadata };
 }
 
-async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2paPreserver=defaultC2paPreserver,c2paSigner=null,c2paSignerMode="local"}){
+async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,onResourceMeasurement=null,c2paPreserver=defaultC2paPreserver,c2paSigner=null,c2paSignerMode="local"}){
   const input=parseJson(job.input_json);
   const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(input.timelineId||""));
   if(!record)throw Object.assign(new Error("Timeline not found."),{code:"TIMELINE_NOT_FOUND"});
@@ -318,7 +324,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   const cancelled=()=>db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status==="cancelled";
   try {
-    await run("ffmpeg",args,60*60*1000,job.id,activeProcesses,cancelled);
+    await run("ffmpeg",args,60*60*1000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
   } catch(error) {
     await unlink(outputPath).catch(()=>{});
     throw error;
@@ -346,11 +352,11 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onResourceMeasurement=null, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
-    const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2paPreserver,c2paSigner,c2paSignerMode});
+    const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,onResourceMeasurement,c2paPreserver,c2paSigner,c2paSignerMode});
     return result;
   }
   if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
@@ -397,23 +403,23 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   }
 
   if (job.job_type === "media.probe") {
-    const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
+    const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
     const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],temporalLumaSamples:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Temporal luma samples are a 2 fps coarse exposure-stability signal, not a high-frequency flicker or perceptual-quality certification."]};
     if(streams.some(stream=>stream.codec_type==="video")){
-      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
       else signalAnalysis.unavailable.push({check:"black-frame",reason:check.reason});
-      const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const motion=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(motion.status==="completed"){signalAnalysis.freezes=parseFreezeEvents(motion.result.stderr);signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.result.stderr);signalAnalysis.performed.push("freeze-detect","scene-change");}
       else signalAnalysis.unavailable.push({check:"freeze-and-scene-change",reason:motion.reason});
-      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const temporal=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","fps=2,signalstats,metadata=print:key=lavfi.signalstats.YAVG","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(temporal.status==="completed"){signalAnalysis.temporalLumaSamples=parseTemporalLumaSamples(temporal.result.stderr);signalAnalysis.performed.push("temporal-luma-2fps");}
       else signalAnalysis.unavailable.push({check:"temporal-luma",reason:temporal.reason});
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
-      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000,onResourceMeasurement),{isCancelled:cancelled});
       if(check.status==="completed"){
         signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
         signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
@@ -465,11 +471,11 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   }
   const outputPath = join(outputDir,id+"."+ext);
   onProgress(35);
-  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
+  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
   onProgress(85);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
   
-  const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
+  const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
   let outputMetadata;
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
