@@ -1073,3 +1073,52 @@ body{
  body.print-executive-brief .executive-kpis>div{background:#fff!important;border:1px solid #ddd!important;break-inside:avoid}
  body.print-executive-brief .executive-report .code-block{max-height:none;white-space:pre-wrap;color:#272333!important;background:#f7f6fa!important}
 }
+
+
+.governance-panel{position:relative;overflow:hidden;border-color:rgba(196,181,253,.3);background:radial-gradient(ellipse at 88% 0%,rgba(139,92,246,.15),transparent 34%),linear-gradient(145deg,rgba(31,27,50,.97),rgba(12,17,29,.99));box-shadow:0 22px 64px rgba(7,5,18,.2),inset 0 1px rgba(255,255,255,.045)}
+.governance-panel>.eyebrow{color:#d8caff;letter-spacing:.19em}
+.governance-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:22px;margin:9px 0 22px}
+.governance-heading>div:first-child{max-width:760px}
+.governance-heading h2{margin:0 0 8px;font-size:clamp(23px,2.6vw,32px);letter-spacing:-.035em}
+.governance-heading p{margin:0;color:#aaa6bd;line-height:1.7}
+.governance-heading .actions{display:flex;flex-wrap:wrap;gap:8px}
+.governance-heading .primary{background:linear-gradient(110deg,#7550d8,#9a7af1);border:1px solid rgba(221,214,254,.4)}
+.governance-overview{display:grid;grid-template-columns:1.2fr repeat(4,minmax(0,1fr));gap:10px;margin:20px 0 28px}
+.governance-overview>div{min-width:0;padding:15px;border:1px solid rgba(196,181,253,.14);border-radius:13px;background:linear-gradient(145deg,rgba(47,39,71,.55),rgba(16,20,34,.8))}
+.governance-overview small,.governance-overview span{display:block;color:#a9a4ba;font-size:10px;line-height:1.5}
+.governance-overview b{display:block;margin:7px 0 5px;color:#f1edfc;font-size:25px;letter-spacing:-.03em}
+.governance-score{background:radial-gradient(circle at 90% 0,rgba(167,139,250,.19),transparent 60%),rgba(32,25,52,.7)!important}
+.governance-score b{font-size:34px;color:#e2d5ff}
+.governance-section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:25px 0 12px}
+.governance-section-title h3{font-size:16px;margin:0 0 5px;color:#e8e2f6}
+.governance-section-title p{font-size:11px;color:#a9a4ba;margin:0}
+.governance-generated{font-size:10px;color:#a9a4ba}
+.governance-findings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.governance-finding{min-width:0;padding:16px;border:1px solid rgba(196,181,253,.16);border-left:3px solid rgba(167,139,250,.65);border-radius:12px;background:rgba(12,16,29,.64)}
+.governance-finding.critical{border-left-color:#f87171}
+.governance-finding.high{border-left-color:#fb923c}
+.governance-finding.medium{border-left-color:#eab308}
+.governance-finding.low{border-left-color:#60a5fa}
+.governance-finding.unknown{border-left-color:#a78bfa}
+.finding-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.finding-severity{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:#f0d8aa}
+.finding-id{font-size:9px;color:#8e89a2;overflow-wrap:anywhere}
+.governance-finding h4{margin:10px 0 7px;color:#f0edf8;font-size:14px}
+.governance-finding p{margin:0;color:#b8b3c7;font-size:11px;line-height:1.65}
+.finding-meta{display:flex;justify-content:space-between;gap:10px;margin:12px 0;padding-top:10px;border-top:1px solid rgba(196,181,253,.12);font-size:10px;color:#9691a8}
+.finding-meta b{color:#ded7f0;white-space:nowrap}
+.finding-action{display:grid;gap:5px;padding:10px;border-radius:8px;background:rgba(139,92,246,.08);font-size:10px;line-height:1.6}
+.finding-action b{color:#d9cbfa}
+.finding-action span{color:#bdb6d0}
+.governance-empty{padding:24px;text-align:center;border:1px solid rgba(196,181,253,.16);border-radius:12px;color:#aaa6bd;background:rgba(12,16,29,.5);font-size:12px;line-height:1.7}
+.governance-table td{vertical-align:top;white-space:normal;min-width:110px}
+.governance-table td:first-child{min-width:170px}
+.governance-table td small{display:block;margin-top:5px;color:#8f8aa3;font-size:9px;line-height:1.5}
+.control-status{display:inline-block;padding:5px 8px;border-radius:99px;border:1px solid rgba(167,139,250,.25);color:#d8caff;background:rgba(139,92,246,.09);font-size:9px;text-transform:uppercase;letter-spacing:.07em}
+.control-status.attention{border-color:rgba(251,146,60,.3);color:#fdc38e;background:rgba(194,99,23,.1)}
+.control-status.not_assessed{border-color:rgba(148,163,184,.25);color:#c3c7d2;background:rgba(100,116,139,.1)}
+.governance-limitations{margin:0;padding-left:19px;color:#aaa6bd;font-size:10px;line-height:1.8}
+.governance-footnote{margin-top:20px;padding-top:14px;border-top:1px solid rgba(196,181,253,.14);color:#928da5;font-size:10px;line-height:1.7}
+@media(max-width:1000px){.governance-overview{grid-template-columns:repeat(3,minmax(0,1fr))}.governance-heading{align-items:flex-start;flex-direction:column}}
+@media(max-width:700px){.governance-findings{grid-template-columns:1fr}.governance-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.governance-overview{grid-template-columns:1fr}}
