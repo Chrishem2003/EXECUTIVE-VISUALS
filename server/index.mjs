@@ -27,6 +27,7 @@ import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
+import { createControlRemediationApi } from "./control-remediation-api.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -60,6 +61,7 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const financialApiEnabled = process.env.BILLING_API_ENABLED === "true";
@@ -411,6 +413,11 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path.startsWith("/api/finance/remediations")){
+        const remediationBody=["POST","PATCH"].includes(req.method)?await readJson(req,64*1024):{};
+        const remediationResult=await controlRemediationApi.handle({method:req.method,path,ownerId:user.id,body:remediationBody,query:Object.fromEntries(url.searchParams.entries())});
+        if(remediationResult){send(res,remediationResult.status,remediationResult.body,cors);return;}
+      }
       if(financialApi && (path.startsWith("/api/billing/")||path.startsWith("/api/admin/billing/")||path.startsWith("/api/admin/subscriptions/")||path.startsWith("/api/admin/finance/"))){
         const financialBody=req.method==="POST"?await readJson(req,64*1024):{};
         const financialResult=await financialApi.handle({method:req.method,path,ownerId:user.id,body:financialBody,query:Object.fromEntries(url.searchParams.entries()),idempotencyKey:String(req.headers["idempotency-key"]||"")});
