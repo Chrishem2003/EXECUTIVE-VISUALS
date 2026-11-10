@@ -932,9 +932,9 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/audit/events"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         try{
-          const idempotencyKey=String(body.idempotencyKey||idempotencyKey||"");
-          if(!idempotencyKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
-          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1");
+          const auditKey=String(body.idempotencyKey||idempotencyKey||"");
+          if(!auditKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
+          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
           if(Array.isArray(existing.data)&&existing.data.length){
             const prior=existing.data[0];
             return response(200,{duplicate:true,event:{eventId:prior.event_id,sequence:Number(prior.sequence_number),eventHash:prior.event_hash}});
@@ -942,12 +942,12 @@ export function createFinancialIntelligenceApi({
           const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
           const event=createFinancialAuditEvent({
             ownerId,actorId:ownerId,eventType:body.eventType,payload:body.payload||{},
-            idempotencyKey,occurredAt:body.occurredAt||new Date().toISOString(),
+            idempotencyKey:auditKey,occurredAt:body.occurredAt||new Date().toISOString(),
             sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
           });
           const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>!["eventHash","canonicalEvent"].includes(key)));
           const result=await rpc("append_financial_audit_event",{
-            p_owner_id:ownerId,p_actor_id:ownerId,p_idempotency_key:idempotencyKey,
+            p_owner_id:ownerId,p_actor_id:ownerId,p_idempotency_key:auditKey,
             p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
           });
           return response(201,{duplicate:Boolean(result?.duplicate),event:{eventId:event.eventId,sequence:event.sequence,eventType:event.eventType,eventHash:event.eventHash,previousHash:event.previousHash}});
