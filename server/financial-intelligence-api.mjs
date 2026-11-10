@@ -4,6 +4,7 @@ import {
   parseRefundStatus, getCurrencyDecimals, minorToMajor
 } from "./payment-intelligence.mjs";
 import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
+import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -719,38 +720,81 @@ export function createFinancialIntelligenceApi({
       }
       if(path==="/api/admin/finance/ai-usage"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
-        const occurredAt=String(body.occurredAt||"");
-        const provider=String(body.provider||"").trim().toLowerCase();
-        const requestedModel=String(body.requestedModel||"").trim();
-        const operationId=String(body.operationId||"").trim();
-        const operation=String(body.operation||"");
-        const status=String(body.status||"unknown");
-        const owner=body.ownerId==null||body.ownerId===""?null:String(body.ownerId);
-        const currency=body.currency==null||body.currency===""?null:String(body.currency).trim().toUpperCase();
-        const providerCostMinor=body.providerCostMinor==null||body.providerCostMinor===""?null:Number(body.providerCostMinor);
-        const integerOrZero=value=>value==null||value===""?0:Number(value);
-        const inputTokens=integerOrZero(body.inputTokens),outputTokens=integerOrZero(body.outputTokens);
-        const imageCount=integerOrZero(body.imageCount),videoSeconds=integerOrZero(body.videoSeconds),renderSeconds=integerOrZero(body.renderSeconds);
-        const idempotencyKey=String(body.idempotencyKey||"").trim();
-        if(!Number.isFinite(Date.parse(occurredAt))||!provider||provider.length>80||!requestedModel||requestedModel.length>160||
-          !operationId||operationId.length>180||!["text","image","video","render","upscale","audio","embedding","other"].includes(operation)||
-          !["succeeded","failed","cancelled","unknown"].includes(status)||(owner&&!UUID.test(owner))||
-          (currency&&!/^[A-Z]{3}$/.test(currency))||(providerCostMinor!==null&&(!Number.isSafeInteger(providerCostMinor)||providerCostMinor<0||!currency))||
-          ![inputTokens,outputTokens,imageCount,videoSeconds,renderSeconds].every(value=>Number.isFinite(value)&&value>=0)||
-          !Number.isSafeInteger(inputTokens)||!Number.isSafeInteger(outputTokens)||idempotencyKey.length<8||idempotencyKey.length>180)
-          return error(400,"AI_USAGE_EVENT_INVALID","Provide a valid provider, model, operation, timestamp, usage quantities and idempotency key. Provider-reported cost requires an explicit currency.");
+        let event;
+        try{event=normalizeGenAiUsage(body);}catch(err){return error(400,err.code||"AI_USAGE_EVENT_INVALID",err.message||"AI usage event is invalid.");}
+        const {occurredAt,provider,requestedModel,responseModel,operation,status,ownerId:attributedOwner,
+          currency,providerCostMinor,inputTokens,outputTokens,imageCount,videoSeconds,renderSeconds,
+          operationId,idempotencyKey}=event;
+        if(!Number.isFinite(Date.parse(occurredAt))||!operationId||operationId.length>180||
+          (attributedOwner&&!UUID.test(String(attributedOwner)))||
+          (body.projectId&&!UUID.test(String(body.projectId)))||(body.jobId&&!UUID.test(String(body.jobId)))||
+          (providerCostMinor!==null&&!currency)||idempotencyKey.length<8||idempotencyKey.length>180)
+          return error(400,"AI_USAGE_EVENT_INVALID","Usage requires a valid timestamp, operation/request identifier, trusted owner/project/job IDs and idempotency key. Provider-reported cost requires currency.");
         const result=await rpc("record_ai_usage_cost_event",{
-          p_actor_id:ownerId,p_occurred_at:occurredAt,p_owner_id:owner,
-          p_project_id:body.projectId&&UUID.test(String(body.projectId))?String(body.projectId):null,
-          p_job_id:body.jobId&&UUID.test(String(body.jobId))?String(body.jobId):null,
+          p_actor_id:ownerId,p_occurred_at:occurredAt,p_owner_id:attributedOwner,
+          p_project_id:body.projectId||null,p_job_id:body.jobId||null,
           p_operation_id:operationId,p_provider:provider,p_requested_model:requestedModel,
-          p_response_model:String(body.responseModel||"").slice(0,160),p_operation:operation,p_status:status,
+          p_response_model:responseModel,p_operation:operation,p_status:status,
           p_input_tokens:inputTokens,p_output_tokens:outputTokens,p_image_count:imageCount,
           p_video_seconds:videoSeconds,p_render_seconds:renderSeconds,p_currency:currency,
-          p_provider_cost_minor:providerCostMinor,p_invoice_line_reference:String(body.invoiceLineReference||"").slice(0,180),
-          p_trace_id:String(body.traceId||"").slice(0,128),p_idempotency_key:idempotencyKey
+          p_provider_cost_minor:providerCostMinor,p_invoice_line_reference:event.invoiceLineReference,
+          p_trace_id:event.traceId,p_idempotency_key:idempotencyKey
         });
         return response(200,{usage:result});
+      }
+      if(path==="/api/admin/finance/ai-invoices/import"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const provider=String(body.provider||"").trim().toLowerCase();
+        const invoiceReference=String(body.invoiceReference||"").trim();
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const periodStart=String(body.periodStart||""),periodEnd=String(body.periodEnd||"");
+        const totalMinor=Number(body.totalMinor);
+        const validDay=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!invoiceReference||invoiceReference.length>180||
+          !/^[A-Z]{3}$/.test(currency)||!validDay(periodStart)||!validDay(periodEnd)||periodEnd<periodStart||
+          !Number.isSafeInteger(totalMinor)||totalMinor<0)
+          return error(400,"AI_INVOICE_HEADER_INVALID","Provide a provider, invoice reference, ISO date range, currency and non-negative minor-unit invoice total.");
+        let lines;
+        try{
+          lines=typeof body.csv==="string"?parseProviderInvoiceCsv(body.csv,{provider,currency}):body.lines;
+          if(!Array.isArray(lines)||lines.length<1||lines.length>5000)throw Object.assign(new Error("Invoice requires 1 to 5,000 line items."),{code:"AI_INVOICE_LINES_INVALID"});
+          lines=lines.map((line,index)=>{
+            const amount=Number(line.amountMinor);
+            const usagePeriod=String(line.usagePeriod||"");
+            const lineReference=String(line.lineReference||line.providerLineReference||"").trim();
+            const model=String(line.model||"").trim();
+            const operation=String(line.operation||"");
+            if(!lineReference||lineReference.length>180||!model||model.length>160||
+              !["text","image","video","render","upscale","audio","embedding","other"].includes(operation)||
+              !Number.isSafeInteger(amount)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(usagePeriod)||
+              !Number.isFinite(Date.parse(usagePeriod+"T00:00:00Z"))||new Date(usagePeriod+"T00:00:00Z").toISOString().slice(0,10)!==usagePeriod)
+              throw Object.assign(new Error("Invoice line "+(index+1)+" is invalid."),{code:"AI_INVOICE_LINE_INVALID"});
+            return {provider,currency,lineReference,model,operation,amountMinor:amount,usagePeriod,
+              usageQuantity:line.usageQuantity==null?null:Number(line.usageQuantity),usageUnit:String(line.usageUnit||""),
+              ownerId:line.ownerId||null,projectId:line.projectId||null,jobId:line.jobId||null};
+          });
+        }catch(err){return error(400,err.code||"AI_INVOICE_CSV_INVALID",err.message||"Invoice lines are invalid.");}
+        const fingerprint=hashText(JSON.stringify({provider,invoiceReference,currency,periodStart,periodEnd,totalMinor,lines}));
+        const result=await rpc("import_ai_provider_invoice",{p_actor_id:ownerId,p_provider:provider,
+          p_invoice_reference:invoiceReference,p_currency:currency,p_period_start:periodStart,p_period_end:periodEnd,
+          p_total_minor:totalMinor,p_source_fingerprint:fingerprint,p_lines:lines});
+        return response(200,{invoice:result});
+      }
+      if(path==="/api/admin/finance/ai-invoices/reconcile"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const importId=String(body.importId||"");
+        if(!UUID.test(importId))return error(400,"AI_INVOICE_IMPORT_ID_INVALID","Provide a valid invoice import ID.");
+        const result=await rpc("reconcile_ai_provider_invoice",{p_actor_id:ownerId,p_import_id:importId});
+        return response(200,{reconciliation:result});
+      }
+      if(path==="/api/admin/finance/ai-cost-anomalies"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(body.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!Number.isFinite(Date.parse(periodMonth+"T00:00:00Z"))||new Date(periodMonth+"T00:00:00Z").toISOString().slice(0,10)!==periodMonth)
+          return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
+        const result=await rpc("ai_cost_anomaly_report",{p_actor_id:ownerId,p_period_month:periodMonth,
+          p_min_cost_minor:100,p_spike_multiplier:2,p_failed_ratio:0.25});
+        return response(200,{anomalies:result||{spendAnomalies:[],unpricedUsage:[],invoiceExceptions:[],limitations:[]}});
       }
       if(path==="/api/admin/finance/profitability"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
