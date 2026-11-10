@@ -679,6 +679,42 @@ export function createFinancialIntelligenceApi({
         });
         return response(200,{period:validPeriod?{from,to}:null,byCurrency,reconciliationRequired:true,sourceTruncated:paymentRows.length===1000||refundRows.length===1000||disputeRows.length===1000,sourceLimit:1000,source:"provider-backed transaction records"});
       }
+      if(path==="/api/admin/finance/disputes"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Math.max(1,Math.min(200,Number(query.limit)||100));
+        const casesResult=await dbRequest("chargeback_cases?select=id,owner_id,payment_transaction_id,provider,provider_case_id,amount_minor,currency,reason,status,stage,response_due_at,outcome_at,provider_reference,created_at,updated_at&order=response_due_at.asc.nullslast&limit="+limit);
+        const cases=Array.isArray(casesResult.data)?casesResult.data:[];
+        const ids=cases.map(row=>row.id).filter(id=>UUID.test(String(id)));
+        const evidenceResult=ids.length?await dbRequest("financial_dispute_evidence_items?select=id,case_id,evidence_type,status,storage_object_path,note,reviewed_at,updated_at&case_id=in.("+ids.join(",")+")&order=updated_at.desc"): {data:[]};
+        const evidence=Array.isArray(evidenceResult.data)?evidenceResult.data:[];
+        const now=Date.now();
+        const deadlines=cases.reduce((acc,row)=>{
+          const due=Date.parse(row.response_due_at||"");
+          if(Number.isFinite(due)){if(due<now)acc.overdue++;else if(due-now<=72*60*60*1000)acc.dueSoon++;}
+          return acc;
+        },{overdue:0,dueSoon:0});
+        return response(200,{cases,evidence,deadlines,limit,source:"provider-backed dispute records"});
+      }
+      if(path==="/api/admin/finance/disputes/evidence"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const caseId=String(body.caseId||"");
+        const evidenceType=String(body.evidenceType||"");
+        const status=String(body.status||"");
+        const objectPath=body.storageObjectPath==null?null:String(body.storageObjectPath).trim();
+        const note=String(body.note||"").trim().slice(0,1000);
+        const reason=String(body.reason||"").trim().slice(0,500);
+        const evidenceTypes=["payment_receipt","service_delivery","customer_communication","refund_record","terms_acceptance","other"];
+        const evidenceStatuses=["missing","uploaded","verified","rejected"];
+        if(!UUID.test(caseId)||!evidenceTypes.includes(evidenceType)||!evidenceStatuses.includes(status)||reason.length<3||note.length>1000)
+          return error(400,"DISPUTE_EVIDENCE_INPUT_INVALID","Provide a valid dispute, evidence type, status and audit reason.");
+        if(["uploaded","verified"].includes(status)&&(!objectPath||objectPath.length>500||/^https?:\/\//i.test(objectPath)||objectPath.includes("..")||objectPath.startsWith("/")))
+          return error(400,"DISPUTE_EVIDENCE_PATH_INVALID","Uploaded evidence must reference a private relative storage object path.");
+        const evidence=await rpc("upsert_financial_dispute_evidence",{
+          p_actor_id:ownerId,p_case_id:caseId,p_evidence_type:evidenceType,p_status:status,
+          p_storage_object_path:objectPath,p_note:note,p_reason:reason
+        });
+        return response(200,{evidence});
+      }
       if(path==="/api/admin/finance/refunds"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
         if(!refundsEnabled)return error(503,"REFUNDS_DISABLED","Refund initiation is disabled.");
