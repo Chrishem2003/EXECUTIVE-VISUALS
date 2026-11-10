@@ -49,11 +49,13 @@ begin
   union
   select currency from payment_transactions
   where status='successful' and paid_at>=now()-interval '180 days'
- ), activation_base as(
-  select distinct owner_id from subscription_events
-  where event_type='activated' and created_at>=now()-interval '180 days'
+ ), activation_base_by_currency as(
+  select distinct currency,owner_id from active_subscriptions
   union
-  select distinct owner_id from active_subscriptions
+  select distinct cs.currency,se.owner_id
+  from subscription_events se
+  join customer_subscriptions cs on cs.id=se.subscription_id
+  where se.event_type='activated' and se.created_at>=now()-interval '180 days'
  ), cancellation_events as(
   select distinct se.owner_id,cs.currency
   from subscription_events se
@@ -68,8 +70,7 @@ begin
  ), activation_stats as(
   select cs.currency,count(distinct ab.owner_id)::integer activation_customers
   from currency_set cs
-  left join active_subscriptions a on a.currency=cs.currency
-  left join activation_base ab on ab.owner_id=a.owner_id
+  left join activation_base_by_currency ab on ab.currency=cs.currency
   group by cs.currency
  ), active_stats as(
   select currency,count(distinct owner_id)::integer active_subscribers,
