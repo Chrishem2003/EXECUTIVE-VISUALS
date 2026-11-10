@@ -35,7 +35,7 @@ test("dispatch never submits a withdrawn or otherwise non-pending local approval
  assert.equal(result.status,409);assert.equal(f.calls.some(x=>x[0]==="register"),false);
 });
 test("dispatch fails closed when cloud registration conflicts with the local approval snapshot",async()=>{
- const f=fixture({registerResult:{id:approval,ownerId:owner,projectId,currency:"USD",requestHash:"b".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"}});
+ const f=fixture({registerResult:{id:approval,ownerId:owner,projectId:project,currency:"USD",requestHash:"b".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"}});
  const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
  assert.equal(result.status,502);assert.equal(f.calls.some(x=>x[0]==="enqueue"),false);
 });
