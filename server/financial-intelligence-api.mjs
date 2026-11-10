@@ -9,6 +9,7 @@ import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRouti
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
+import { createFinancialAuditEvent, verifyFinancialAuditChain } from "./financial-audit-ledger.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -927,6 +928,50 @@ export function createFinancialIntelligenceApi({
           return error(400,"FINANCIAL_TREND_RANGE_INVALID","Trend period must be an integer between 3 and 36 months.");
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/audit/events"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const idempotencyKey=String(body.idempotencyKey||idempotencyKey||"");
+          if(!idempotencyKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
+          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1");
+          if(Array.isArray(existing.data)&&existing.data.length){
+            const prior=existing.data[0];
+            return response(200,{duplicate:true,event:{eventId:prior.event_id,sequence:Number(prior.sequence_number),eventHash:prior.event_hash}});
+          }
+          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const event=createFinancialAuditEvent({
+            ownerId,actorId:ownerId,eventType:body.eventType,payload:body.payload||{},
+            idempotencyKey,occurredAt:body.occurredAt||new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>!["eventHash","canonicalEvent"].includes(key)));
+          const result=await rpc("append_financial_audit_event",{
+            p_owner_id:ownerId,p_actor_id:ownerId,p_idempotency_key:idempotencyKey,
+            p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(201,{duplicate:Boolean(result?.duplicate),event:{eventId:event.eventId,sequence:event.sequence,eventType:event.eventType,eventHash:event.eventHash,previousHash:event.previousHash}});
+        }catch(err){
+          const status=err.status||(["FINANCIAL_AUDIT_EVENT_TYPE_INVALID","FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","FINANCIAL_AUDIT_PAYLOAD_INVALID","FINANCIAL_AUDIT_NUMBER_INVALID","FINANCIAL_AUDIT_TIMESTAMP_INVALID","FINANCIAL_AUDIT_EVENT_TOO_LARGE"].includes(err.code)?400:409);
+          return error(status,err.code||"FINANCIAL_AUDIT_APPEND_FAILED",err.message||"Financial audit event could not be appended.");
+        }
+      }
+      if(path==="/api/admin/finance/audit/events"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const after=Number(query.afterSequence||0),limit=Math.min(500,Math.max(1,Number(query.limit)||100));
+        if(!Number.isSafeInteger(after)||after<0)return error(400,"FINANCIAL_AUDIT_CURSOR_INVALID","afterSequence must be a non-negative integer.");
+        const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&sequence_number=gt."+after+"&order=sequence_number.asc&limit="+limit);
+        const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+        return response(200,{events:rows.data||[],head:head||{sequence:0,headHash:"0".repeat(64)},pagination:{afterSequence:after,limit,returned:(rows.data||[]).length}});
+      }
+      if(path==="/api/admin/finance/audit/verify"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const rows=await dbRequest("financial_audit_events?select=event_envelope,event_hash,sequence_number,previous_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&order=sequence_number.asc&limit=5000");
+        const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+        const records=(rows.data||[]).map(row=>({eventEnvelope:row.event_envelope,eventHash:row.event_hash,sequence_number:row.sequence_number,previous_hash:row.previous_hash,idempotency_key:row.idempotency_key}));
+        const result=verifyFinancialAuditChain(records,{ownerId,expectedHead:head?.headHash||"0".repeat(64)});
+        const complete=Number(head?.sequence||0)===(rows.data||[]).length;
+        return response(200,{verification:{...result,complete,valid:result.valid&&complete,storedHead:head||{sequence:0,headHash:"0".repeat(64)},limitations:[...result.limitations,...(!complete?["The full chain exceeds the 5,000-record verification limit; this response is not a complete verification."]:[])]}});
       }
       if(path==="/api/admin/finance/close/readiness"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
