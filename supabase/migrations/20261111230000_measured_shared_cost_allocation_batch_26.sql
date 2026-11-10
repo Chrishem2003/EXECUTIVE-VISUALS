@@ -216,6 +216,7 @@ begin
     else 0::numeric end units
   from ai_usage_cost_events u
   where u.period_month=p_period_month and u.status='succeeded' and u.owner_id is not null
+   and u.currency=p_currency
    and ((v_policy.driver_type='inference_tokens' and u.operation in('text','embedding','audio'))
     or (v_policy.driver_type='image_count' and u.operation='image')
     or (v_policy.driver_type='video_seconds' and u.operation='video'))
@@ -265,6 +266,7 @@ begin
     else 0::numeric end units
   from ai_usage_cost_events u
   where u.period_month=p_period_month and u.status='succeeded' and u.owner_id is not null
+   and u.currency=p_currency
    and ((v_policy.driver_type='inference_tokens' and u.operation in('text','embedding','audio'))
     or (v_policy.driver_type='image_count' and u.operation='image')
     or (v_policy.driver_type='video_seconds' and u.operation='video'))
