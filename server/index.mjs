@@ -23,6 +23,8 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
+import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -104,6 +106,13 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
+if(cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud video generation dispatch requires verified Supabase authentication.");
+if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
+const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createCloudVideoGenerationDispatch({
+ db,repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+ audit:(ownerId,...args)=>audit(db,ownerId,...args)
+}):null;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -552,6 +561,13 @@ export function createAppServer() {
           ?db.prepare("SELECT id,project_id,request_hash,currency,quoted_amount_micros,budget_ceiling_micros,status,created_at,updated_at FROM video_generation_approvals WHERE owner_id=? AND project_id=? ORDER BY created_at DESC LIMIT 100").all(user.id,projectId)
           :db.prepare("SELECT id,project_id,request_hash,currency,quoted_amount_micros,budget_ceiling_micros,status,created_at,updated_at FROM video_generation_approvals WHERE owner_id=? ORDER BY created_at DESC LIMIT 100").all(user.id);
         send(res,200,{approvals:rows.map(row=>({...row,quoted_amount:row.quoted_amount_micros/1000000,budget_ceiling:row.budget_ceiling_micros/1000000}))},cors);return;
+      }
+      const videoSubmitMatch=path.match(/^\\/api\\/video-production-approvals\\/([0-9a-f-]{36})\\/submit$/i);
+      if(videoSubmitMatch&&req.method==="POST"){
+        if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud generation dispatch is disabled. No cloud jobs or provider requests were created.");return;}
+        if(!rateAllowed("video-production-submit:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many generation submissions. Try again shortly.");return;}
+        const result=await cloudVideoGenerationDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
+        send(res,result.status,result.body,cors);return;
       }
       const videoApprovalMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/withdraw$/i);
       if(videoApprovalMatch&&req.method==="POST"){
