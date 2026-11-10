@@ -906,3 +906,66 @@ test("subscription lifecycle worker invokes bounded service-role expiry RPC",asy
   assert.equal(result.expiredCount,3);
   assert.equal(result.scheduledCancellationsFinalized,2);
 });
+
+test("growth intelligence requires administrator access and returns measured cohorts",async()=>{
+ const denied=api(async()=>json([]));
+ const forbidden=await denied.handle({method:"GET",path:"/api/admin/customer-success/growth",ownerId:owner});
+ assert.equal(forbidden.status,403);
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,method:options.method||"GET",body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/customer_growth_admin_overview"))return json({
+   cohortDefinition:"First paid month; current paid status snapshot.",
+   cohorts:[{cohortMonth:"2026-10-01",customers:12,activeNow:9,currentRetentionPct:75}],
+   renewalWatchlist:[],cancellationReasons:[],experiments:[]
+  });
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/customer-success/growth",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.growth.cohorts[0].currentRetentionPct,75);
+ assert.ok(calls.some(x=>x.target.endsWith("/rpc/customer_growth_admin_overview")));
+});
+
+test("growth experiments validate definitions and assign only to the authenticated customer",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/customer_growth_create_experiment"))return json({id:"44444444-4444-4444-8444-444444444444",experimentKey:"onboarding-test",status:"draft"});
+  if(target.endsWith("/rpc/customer_growth_assign_experiment"))return json({assigned:true,experimentKey:"onboarding-test",variant:"control"});
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/customer-success/experiments",ownerId:owner,body:{experimentKey:"bad",name:"x",hypothesis:"short",primaryMetric:"activation_rate",variants:[]}});
+ assert.equal(invalid.status,400);
+ const created=await service.handle({method:"POST",path:"/api/admin/customer-success/experiments",ownerId:owner,body:{
+  experimentKey:"onboarding-test",name:"Onboarding test",hypothesis:"A guided first project increases activation.",
+  primaryMetric:"activation_rate",variants:[{key:"control",label:"Standard"},{key:"guided",label:"Guided"}]
+ }});
+ assert.equal(created.status,201);
+ const assigned=await service.handle({method:"POST",path:"/api/customer-success/experiments/assign",ownerId:owner,body:{experimentKey:"onboarding-test"}});
+ assert.equal(assigned.status,200);
+ assert.equal(assigned.body.assignment.variant,"control");
+ const assignmentCall=calls.find(x=>x.target.endsWith("/rpc/customer_growth_assign_experiment"));
+ assert.equal(assignmentCall.body.p_owner_id,owner);
+});
+
+test("customer-success intervention completion requires a measured outcome",async()=>{
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/customer_growth_update_intervention"))return json({id:"55555555-5555-4555-8555-555555555555",status:"completed",outcome:"renewed"});
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"PATCH",path:"/api/admin/customer-success/interventions",ownerId:owner,body:{
+  interventionId:"55555555-5555-4555-8555-555555555555",status:"completed"
+ }});
+ assert.equal(invalid.status,400);
+ const completed=await service.handle({method:"PATCH",path:"/api/admin/customer-success/interventions",ownerId:owner,body:{
+  interventionId:"55555555-5555-4555-8555-555555555555",status:"completed",outcome:"renewed"
+ }});
+ assert.equal(completed.status,200);
+ assert.equal(completed.body.intervention.outcome,"renewed");
+});
+
