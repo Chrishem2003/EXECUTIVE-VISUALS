@@ -234,7 +234,7 @@ begin
   if v_period.status<>'in_review' then raise exception using errcode='22023',message='financial_close_approval_state_invalid'; end if;
   v_stage:=p_payload->>'stageKey';
   v_decision:=p_payload->>'decision';
-  if v_decision not in('approved','rejected') then raise exception using errcode='22023',message='financial_close_decision_invalid'; end if;
+  if v_decision is null or v_decision not in('approved','rejected') then raise exception using errcode='22023',message='financial_close_decision_invalid'; end if;
   select * into v_approval from executive_visuals.financial_close_approvals
    where owner_id=p_owner_id and period_id=v_period_id and stage_key=v_stage for update;
   if not found or v_approval.reviewer_id<>p_actor_id or v_approval.status<>'pending'
