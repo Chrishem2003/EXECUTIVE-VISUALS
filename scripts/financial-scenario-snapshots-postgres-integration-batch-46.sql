@@ -37,12 +37,18 @@ begin
   raise exception 'Verified scenario baseline must return currency-separated evidence and explicit limitations: %',v_baseline;
  end if;
  v_list:=executive_visuals.list_financial_scenario_snapshots(v_actor,10);
- if not exists(select 1 from jsonb_array_elements(v_list->'snapshots') s where s->>'id'=v_first->'snapshot'->>'id') then
+ if not exists(select 1 from jsonb_array_elements(v_list->'snapshots') as snapshot(value) where value->>'id'=v_first->'snapshot'->>'id') then
   raise exception 'Saved scenario snapshot is missing from the finance-admin list.';
  end if;
  if v_list->>'immutable'<>'true' then raise exception 'Snapshot list must declare immutable evidence.'; end if;
- select count(*) into v_count from executive_visuals.financial_scenario_snapshots
-  where actor_id=v_actor and idempotency_key='batch46-scenario-snapshot-001';
- if v_count<>1 then raise exception 'Expected one immutable snapshot, found %',v_count; end if;
+ begin
+  update executive_visuals.financial_scenario_snapshots set scenario_name='tampered'
+   where id=(v_first->'snapshot'->>'id')::uuid;
+  raise exception 'Direct mutation of a saved scenario snapshot must be rejected.';
+ exception when insufficient_privilege or object_not_in_prerequisite_state then null;
+ end;
+ if not exists(select 1 from pg_trigger where tgname='financial_scenario_snapshots_immutable' and not tgisinternal) then
+  raise exception 'Append-only database trigger is missing.';
+ end if;
 end $batch46$;
 reset role;
