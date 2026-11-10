@@ -208,3 +208,19 @@ test("cloud media preview jobs replay an exact idempotent request",async()=>{
  assert.equal(result.body.job.id,existing[0].id);
  assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs")&&call[2].method==="POST"),false);
 });
+
+test("cloud thumbnail preview jobs queue the validated source timestamp",async()=>{
+ const f=setup();
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"thumbnail",seconds:12.5},idempotencyKey:"thumbnail-job-0001"});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.job_type,"media.thumbnail");
+ assert.deepEqual(result.body.job.input,{sourceAssetId:assetId,seconds:12.5});
+});
+test("cloud thumbnail preview jobs reject timestamps outside the supported range",async()=>{
+ const f=setup();
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets/"+assetId+"/media-jobs",ownerId:owner,body:{operation:"thumbnail",seconds:3601},idempotencyKey:"thumbnail-job-0002"});
+ assert.equal(result.status,400);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs")&&call[2].method==="POST"),false);
+});
