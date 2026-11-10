@@ -1303,3 +1303,5 @@ body{
 .timeline-preview-meta{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
 .timeline-playback>.muted{font-size:11px;line-height:1.55;margin-top:10px}
 @media(max-width:680px){.timeline-preview-transport output{width:100%;margin:4px 0 0}.timeline-preview-transport button{flex:1 1 auto}}
+
+.timeline-preview-diagnostics{margin-top:10px;padding:8px 10px;border:1px solid rgba(167,139,250,.18);border-radius:8px;background:rgba(15,12,24,.45);color:#c4b5fd;font-size:11px;font-variant-numeric:tabular-nums;line-height:1.5}

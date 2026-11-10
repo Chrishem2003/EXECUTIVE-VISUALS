@@ -87,8 +87,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(assetMatch&&safeId(assetMatch[1])){
     if(method==="GET"){
-     const signed=await service.assets.createSignedUrl({ownerId,assetId:assetMatch[1],expiresIn:300});
-     return response(200,{asset:signed.asset,url:signed.url,expiresIn:300});
+     const signed=await service.assets.createSignedUrl({ownerId,assetId:assetMatch[1],expiresIn:3600});
+     return response(200,{asset:signed.asset,url:signed.url,expiresIn:3600});
     }
     if(method==="DELETE"){
      const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});

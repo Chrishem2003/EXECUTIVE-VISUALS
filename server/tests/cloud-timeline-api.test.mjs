@@ -121,11 +121,11 @@ test("cloud asset upload enforces the configured streaming byte limit",async()=>
 test("cloud asset signed read and delete delegate to the owner-aware private repository",async()=>{
  const calls=[];
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{
-  async createSignedUrl(input){calls.push(["read",input]);return{asset:{id:input.assetId},url:"https://signed.example/private",expiresIn:300};},
+  async createSignedUrl(input){calls.push(["read",input]);return{asset:{id:input.assetId},url:"https://signed.example/private",expiresIn:3600};},
   async softDelete(input){calls.push(["delete",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};}
  }},authorize:async()=>true});
  const read=await api.handle({method:"GET",path:"/api/cloud/assets/"+timelineId,ownerId:owner});
- assert.equal(read.status,200);assert.equal(read.body.expiresIn,300);
+ assert.equal(read.status,200);assert.equal(read.body.expiresIn,3600);assert.equal(calls[0][1].expiresIn,3600);assert.equal(read.body.asset.id,timelineId);
  const deleted=await api.handle({method:"DELETE",path:"/api/cloud/assets/"+timelineId,ownerId:owner});
  assert.equal(deleted.status,200);assert.deepEqual(calls.map(call=>call[0]),["read","delete"]);
 });
