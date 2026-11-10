@@ -34,10 +34,11 @@ jobs:
           node --check server/ai-workload-economics.mjs
           node --check server/financial-reconciliation.mjs
           node --check server/financial-close-readiness.mjs
+          node --check server/financial-close-engine.mjs
           node --check server/financial-audit-ledger.mjs
           node --check server/financial-audit-export.mjs
           node --check server/scripts/verify-financial-audit-export.mjs
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-close-engine.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
