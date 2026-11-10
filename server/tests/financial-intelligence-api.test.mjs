@@ -24,6 +24,26 @@ function api(fetchImpl,options={}) {
   });
 }
 
+test("Creator Circle referral summary and attribution endpoints are owner-scoped",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.includes("/rpc/customer_referral_summary"))return json({code:"AB12CD34EF",referrals:[],rewardsEarned:0,offer:{bonusCreditsPerSide:50}});
+  if(target.includes("/rpc/attribute_customer_referral_code"))return json({attributed:true,status:"pending"});
+  throw new Error("Unexpected request: "+target);
+ });
+ const summary=await service.handle({method:"GET",path:"/api/billing/referrals",ownerId:owner});
+ assert.equal(summary.status,200);
+ assert.equal(summary.body.referrals.code,"AB12CD34EF");
+ assert.equal(calls[0].body.p_owner_id,owner);
+ const invalid=await service.handle({method:"POST",path:"/api/billing/referrals/attribute",ownerId:owner,body:{referralCode:"bad"}});
+ assert.equal(invalid.status,400);
+ const applied=await service.handle({method:"POST",path:"/api/billing/referrals/attribute",ownerId:owner,body:{referralCode:"ab12cd34ef"}});
+ assert.equal(applied.status,200);
+ assert.equal(calls[1].body.p_referred_owner_id,owner);
+ assert.equal(calls[1].body.p_referral_code,"AB12CD34EF");
+});
+
 test("creator referral summary is owner-scoped and referral attribution validates the code",async()=>{
  const requests=[];
  const service=api(async(url,options={})=>{
