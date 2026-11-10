@@ -819,3 +819,32 @@ button,.module,.operation,.engine{transition:background-color .16s ease,border-c
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Customer billing workspace — responsive, account-scoped self-service */
+.billing-current{border-color:#51418c;background:linear-gradient(135deg,rgba(124,92,252,.12),rgba(20,23,34,.72))}
+.billing-current-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+.billing-current-top h2{font-size:clamp(25px,3vw,36px);letter-spacing:-.04em;margin:8px 0}
+.billing-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}
+.billing-metrics>div{display:flex;flex-direction:column;gap:6px;padding:17px;border:1px solid var(--line);border-radius:11px;background:rgba(10,12,20,.34)}
+.billing-metrics small,.billing-metrics span{font-size:11px;color:var(--muted)}
+.billing-metrics b{font-size:clamp(17px,2vw,24px);letter-spacing:-.03em}
+.billing-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.billing-plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:16px 0 26px}
+.billing-plan{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:22px;border:1px solid var(--line);border-radius:13px;background:var(--panel)}
+.billing-plan h3{font-size:19px;margin:0}
+.billing-plan p{font-size:12px;line-height:1.7;color:var(--muted);min-height:40px}
+.billing-plan strong{font-size:25px;letter-spacing:-.04em}
+.billing-plan small{font-size:11px;color:var(--muted)}
+.billing-plan .secondary{margin-top:auto}
+.billing-current .notice{margin:12px 0}
+.readiness-pill.success{color:#b7f2d0;background:rgba(32,155,99,.14);border-color:rgba(32,155,99,.32)}
+.readiness-pill.warning{color:#f6d18b;background:rgba(205,146,40,.13);border-color:rgba(205,146,40,.32)}
+.readiness-pill.neutral{color:var(--muted)}
+.billing-current .billing-actions .danger{border:1px solid rgba(221,89,89,.45);color:#ffb1b1;background:rgba(221,89,89,.08)}
+@media(max-width:760px){
+ .billing-metrics{grid-template-columns:1fr}
+ .billing-current-top{flex-direction:column}
+ .billing-plan-grid{grid-template-columns:1fr}
+ .billing-actions>*{flex:1 1 100%}
+}
