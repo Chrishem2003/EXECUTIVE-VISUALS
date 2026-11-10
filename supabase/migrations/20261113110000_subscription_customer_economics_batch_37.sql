@@ -29,17 +29,17 @@ begin
   group by c.owner_id,c.currency
  ), cash_activity as(
   select owner_id,currency,sum(cash_collected_minor)::bigint cash_collected_minor,
-   sum(refunded_minor)::bigint refunded_minor,count(*)::integer cash_event_count
+   sum(refunded_minor)::bigint refunded_minor,sum(cash_event_count)::integer cash_event_count
   from (
    select p.owner_id,p.currency,sum(p.amount_minor)::bigint cash_collected_minor,
-    0::bigint refunded_minor,count(*)::integer
+    0::bigint refunded_minor,count(*)::integer cash_event_count
    from payment_transactions p
    where p.status='successful' and p.paid_at>=p_period_month::timestamptz
     and p.paid_at<((p_period_month+interval '1 month')::date)::timestamptz
     and p.metadata->>'payment_purpose' in('subscription_purchase','subscription_renewal')
    group by p.owner_id,p.currency
    union all
-   select r.owner_id,r.currency,0::bigint,sum(r.amount_minor)::bigint,count(*)::integer
+   select r.owner_id,r.currency,0::bigint,sum(r.amount_minor)::bigint,count(*)::integer cash_event_count
    from payment_refunds r
    where r.status='succeeded' and r.completed_at>=p_period_month::timestamptz
     and r.completed_at<((p_period_month+interval '1 month')::date)::timestamptz
