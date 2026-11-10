@@ -114,7 +114,7 @@ begin
  ), weekly_flows as(
   select w.*,coalesce(sum(case when i.direction='inflow' then round(i.amount_minor::numeric*i.confidence_bps/10000*w.inflow_factor_bps/10000) else 0 end),0)::bigint expected_inflows_minor,
    coalesce(sum(case when i.direction='outflow' then round(i.amount_minor::numeric*w.outflow_factor_bps/10000) else 0 end),0)::bigint expected_outflows_minor
-  from weekly_periods w left join financial_cashflow_items i on i.currency=w.currency and i.expected_date>w.as_of_date and i.expected_date<=w.period_end and i.status in('planned','committed')
+  from weekly_periods w left join financial_cashflow_items i on i.currency=w.currency and i.expected_date>(w.as_of_date+((w.period_number-1)*7)) and i.expected_date<=w.period_end and i.status in('planned','committed')
   group by w.currency,w.scenario,w.available_cash_minor,w.restricted_cash_minor,w.as_of_date,w.inflow_factor_bps,w.outflow_factor_bps,w.period_end,w.period_number
  ), weekly_rows as(
   select w.*,w.available_cash_minor+sum(w.expected_inflows_minor-w.expected_outflows_minor) over(partition by w.currency,w.scenario order by w.period_number) projected_closing_minor
