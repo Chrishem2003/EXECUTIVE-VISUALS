@@ -3,9 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 const GENESIS="0".repeat(64);
 const VERSION=1;
 const ALLOWED=new Set([
- "close_period.created","close_task.assigned","close_task.completed",
- "close_task.waived","reconciliation.reviewed","close_approval.recorded",
- "close_period.reopened","evidence.attached","evidence.retention_changed"
+ "close_period.created","close_period.submitted","close_period.locked","close_period.reopened",
+ "close_task.assigned","close_task.completed","close_task.waived",
+ "close_approval.assigned","close_approval.recorded","reconciliation.reviewed",
+ "evidence.attached","evidence.retention_changed"
 ]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const plain=(v)=>v!==null&&typeof v==="object"&&!Array.isArray(v)&&(Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null);
