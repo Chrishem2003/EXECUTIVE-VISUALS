@@ -66,6 +66,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110240000_subscription_lifecycle_expiry.sql
       - name: Apply Batch 12 financial command centre migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111090000_financial_command_centre.sql
+      - name: Apply Batch 13 dispute evidence migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111100000_financial_dispute_evidence.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Run financial API tests
