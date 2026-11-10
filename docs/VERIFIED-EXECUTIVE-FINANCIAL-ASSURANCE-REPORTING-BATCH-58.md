@@ -43,7 +43,7 @@ GitHub Actions runs:
 - Existing remediation API, lifecycle and audit export tests.
 - Financial Command Centre TypeScript check.
 
-No passing result is claimed until the Batch 58 workflow completes.
+**Passed** on commit `12a12622df6f9093990822d693ac6eb010ad2026`: portfolio report scope/integrity/truncation tests, offline verifier syntax, remediation API and lifecycle tests, API syntax, audit export verifier and Financial Command Centre TypeScript all succeeded. Workflow: https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42888600980.
 
 ## Release boundary
 
