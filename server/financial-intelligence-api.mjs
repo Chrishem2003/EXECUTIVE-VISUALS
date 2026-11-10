@@ -930,15 +930,15 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/reconciliation-preview"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const hasInvoices=Array.isArray(body.invoiceHeaders);
-        const hasInvoiceLines=Array.isArray(body.invoiceLines)||Array.isArray(body.usageEvents);
+        const hasInvoiceUsage=Array.isArray(body.usageEvents)||(Array.isArray(body.invoiceLines)&&!hasInvoices);
         const hasSettlement=Array.isArray(body.statementRows)||Array.isArray(body.payments);
-        if(!hasInvoices&&!hasInvoiceLines&&!hasSettlement)
+        if(!hasInvoices&&!hasInvoiceUsage&&!hasSettlement)
           return error(400,"FINANCIAL_RECON_INPUT_REQUIRED","Provide invoice headers, invoice lines with usage events, or payment statement rows with internal payment records.");
         try{
           const reconciliation={generatedAt:new Date().toISOString(),mode:"read_only_preview",automaticPosting:false};
           if(hasInvoices)reconciliation.duplicateInvoices=detectDuplicateInvoices({invoices:body.invoiceHeaders});
           if(hasInvoices&&Array.isArray(body.invoiceLines))reconciliation.invoiceHeaderTotals=reconcileInvoiceTotals({invoiceHeaders:body.invoiceHeaders,invoiceLines:body.invoiceLines});
-          if(hasInvoiceLines){
+          if(hasInvoiceUsage){
             if(!Array.isArray(body.invoiceLines)||!Array.isArray(body.usageEvents))
               return error(400,"FINANCIAL_RECON_INPUT_INCOMPLETE","Invoice-line reconciliation requires both invoiceLines and usageEvents arrays.");
             reconciliation.providerInvoiceUsage=reconcileProviderInvoiceLines({invoiceLines:body.invoiceLines,usageEvents:body.usageEvents});
