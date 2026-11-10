@@ -21,7 +21,8 @@ The command RPC appends the versioned financial audit event and performs the cor
 - Submission moves an open period to \`in_review\`.
 - An approval can only be recorded by the assigned reviewer, and a preparer cannot approve their own period.
 - Locking requires all required tasks to be completed/waived and every assigned approval stage to be approved by at least two distinct reviewers.
-- Reopening a locked period requires a documented reason and resets approvals to pending.
+- Reopening a locked or in-review period requires a documented reason and resets approvals to pending.
+- Pending approval stages can be reassigned while the period is open; the new reviewer must be distinct from the preparer and other stage reviewers.
 - Close commands are administrator-only and all tables are inaccessible to anon/authenticated roles; access is through server-side service-role functions.
 
 ## Explicit limitations
@@ -29,9 +30,9 @@ The command RPC appends the versioned financial audit event and performs the cor
 - Evidence references are identifiers/URIs only; this workflow does not fetch or cryptographically validate the referenced file bytes.
 - Reconciliation readiness is still a separate read-only assessment and must be connected to persisted reconciliation records before close locking can represent full accounting close completion.
 - This batch does not post journals, create accounting entries, execute payments, calculate tax, or replace a qualified human controller's review.
-- Approval assignment is captured in the period-created event payload; later reviewer reassignment is not implemented in this batch.
+- Approval reassignment is supported only while the period is open; in-review periods must first be reopened with a reason.
 - Notifications, timed escalations, delegated approvals and a full approval-policy editor remain future work.
 
 ## Validation
 
-The billing quality workflow applies the Batch 32 migration after the Batch 30 audit-ledger migration, then runs PostgreSQL integration tests for the full create → assign → complete → submit → approve (two reviewers) → lock → reopen lifecycle, duplicate-command idempotency and rollback of failed transitions. API tests cover authorization, validation and the event-envelope binding.
+The billing quality workflow applies the Batch 32 migration after the Batch 30 audit-ledger migration, then runs PostgreSQL integration tests for the full create → assign → complete → submit → approve (two reviewers) → lock → reopen → reassign → resubmit → relock lifecycle, duplicate-command idempotency and rollback of failed transitions. API tests cover authorization, validation and the event-envelope binding.
