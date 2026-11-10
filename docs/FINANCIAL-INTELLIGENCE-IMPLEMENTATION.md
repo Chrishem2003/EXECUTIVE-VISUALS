@@ -342,3 +342,16 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - Verified webhook inbox events previously marked `failed` or left `received` are retried when Flutterwave redelivers them; terminal `processed`, `ignored` and `needs_review` events remain deduplicated.
 - Renewal settlement now safely attaches the provider charge ID if a verified webhook arrives before the checkout response finishes persisting it, while rejecting a conflicting pre-existing provider ID.
 - Added a regression test for webhook retry recovery.
+
+
+## Batch 10 — payment recovery and subscription grace periods
+
+- Failed/voided V4 charges are verified directly against Flutterwave before recovery is recorded.
+- Added service-role-only `record_payment_failure` RPC. It creates or updates one payment-attempt recovery record per payment, records failure reason, moves a linked active subscription to `past_due`, starts a configurable grace period, and inserts a deduplicated billing notification outbox event.
+- Default grace period is 72 hours; `PAYMENT_GRACE_PERIOD_HOURS` can be set from 0 to 720. This setting controls access grace, not automatic payment attempts.
+- Added customer-scoped `GET /api/billing/notifications` and `POST /api/billing/notifications/read`.
+- Added administrator-only `GET /api/admin/billing/recovery` and `POST /api/admin/billing/recovery/expire-grace`.
+- Added atomic `expire_due_subscriptions` RPC using row locks and `SKIP LOCKED`; it expires only subscriptions whose grace deadline has passed and writes a deduplicated customer notification.
+- Automatic charges are explicitly disabled. A customer must actively retry mobile-money checkout.
+- Email notification payloads are queued with `emailDelivery=queued_pending_provider`; no email is claimed as sent until a transactional email provider is configured.
+- SQL migration `20261110210000_payment_recovery_and_grace_periods.sql` is staged for isolated Supabase testing only.
