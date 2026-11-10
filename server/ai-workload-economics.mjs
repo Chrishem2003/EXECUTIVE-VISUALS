@@ -90,7 +90,8 @@ function range(cost,uncertaintyBps){
 }
 export function estimateWorkloadEconomics(input={}){
  const card=rateCard(input.rateCard),job=workload(input.workload);
- if(card.currency!==String(input.workload.currency||card.currency).toUpperCase())fail("WORKLOAD_CURRENCY_MISMATCH","Workload and rate-card currencies must match.");
+ const requestedCurrency=String(input.workload.currency||card.currency).trim().toUpperCase();
+ if(!CURRENCY.test(requestedCurrency)||card.currency!==requestedCurrency)fail("WORKLOAD_CURRENCY_MISMATCH","Workload and rate-card currencies must match an ISO currency code.");
  const uncertaintyBps=number(input.uncertaintyBps??1500,"uncertaintyBps",{integer:true,min:0,max:5000});
  const costs=costLines(card,job),costRange=range(costs.total,uncertaintyBps);
  const assumptions=input.pricing||{};
