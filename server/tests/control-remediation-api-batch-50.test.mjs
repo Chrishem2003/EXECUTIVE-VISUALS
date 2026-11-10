@@ -136,3 +136,38 @@ test("API ignores unrelated routes and rejects malformed owner identities",async
  assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:"not-a-user"})).status,401);
  f.db.close();
 });
+
+
+test("evidence download audit records successful authorized access and exposes a bounded reviewer trail",async()=>{
+ const f=setup(),created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody}),id=created.body.action.id,assetId=seedEvidenceAsset(f.db,{id:"a23e4567-e89b-42d3-a456-426614174001"});
+ const attached=await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Signed reconciliation",kind:"workpaper",capturedAt:"2026-11-10",assetId}});
+ assert.equal(attached.status,201);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:outsider,assetId}),0);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:reviewer,assetId}),1);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:viewer,assetId}),1);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:editor,assetId}),1);
+ const read=await f.api.handle({method:"GET",path:"/api/finance/remediations/"+id,ownerId:reviewer});
+ assert.equal(read.status,200);
+ assert.equal(read.body.action.evidenceDownloads.length,3);
+ assert.deepEqual(read.body.action.evidenceDownloads.map(x=>x.actorId),[editor,viewer,reviewer]);
+ assert.equal(read.body.action.evidenceDownloads[0].details.evidenceId,attached.body.action.evidence[0].id);
+ assert.equal(read.body.action.evidenceDownloads[0].details.assetId,assetId);
+ assert.equal(read.body.action.evidenceDownloads[0].details.label,"Signed reconciliation");
+ const auditCount=f.db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='control_remediation.evidence_downloaded'").get().count;
+ assert.equal(auditCount,3);
+ f.db.close();
+});
+test("personal evidence download audit is visible only to the personal record owner",async()=>{
+ const f=setup(),body={...createBody,findingId:"personal-download-audit"};
+ delete body.projectId;delete body.ownerId;delete body.reviewerId;
+ const created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body});
+ const assetId=seedEvidenceAsset(f.db,{id:"b23e4567-e89b-42d3-a456-426614174001",ownerId:owner,projectId:null});
+ const id=created.body.action.id;
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:owner,body:{label:"Personal workpaper",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,201);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:editor,assetId}),0);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:owner,assetId}),1);
+ const read=await f.api.handle({method:"GET",path:"/api/finance/remediations/"+id,ownerId:owner});
+ assert.equal(read.body.action.evidenceDownloads.length,1);
+ assert.equal(read.body.action.evidenceDownloads[0].actorId,owner);
+ f.db.close();
+});
