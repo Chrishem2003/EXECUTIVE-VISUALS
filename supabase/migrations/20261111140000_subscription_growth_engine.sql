@@ -184,11 +184,21 @@ returns jsonb
 language sql security definer
 set search_path=pg_catalog,executive_visuals,auth
 as $$
- with first_paid as(
+ with first_paid_events as(
   select owner_id,min(created_at) first_paid_at
-  from customer_subscriptions
-  where amount_minor>0 and status in('active','past_due','cancelled','expired','suspended')
+  from subscription_events
+  where event_type='activated'
   group by owner_id
+ ), first_paid_fallback as(
+  select cs.owner_id,min(cs.created_at) first_paid_at
+  from customer_subscriptions cs
+  where cs.amount_minor>0 and cs.status in('active','past_due','cancelled','expired','suspended')
+   and not exists(select 1 from first_paid_events f where f.owner_id=cs.owner_id)
+  group by cs.owner_id
+ ), first_paid as(
+  select owner_id,first_paid_at from first_paid_events
+  union all
+  select owner_id,first_paid_at from first_paid_fallback
  ), cohort_base as(
   select f.owner_id,date_trunc('month',f.first_paid_at)::date cohort_month,
    coalesce(s.status,'unknown') current_status
