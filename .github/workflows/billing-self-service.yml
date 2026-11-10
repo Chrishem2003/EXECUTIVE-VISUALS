@@ -164,6 +164,10 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115120000_liquidity_guardrails_batch_42.sql
       - name: Verify Batch 42 minimum cash floors and reserve targets
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-guardrails-postgres-integration-batch-42.sql
+      - name: Apply Batch 43 liquidity alerts and action tracking
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116120000_liquidity_alerts_action_tracking_batch_43.sql
+      - name: Verify Batch 43 early-warning alerts and immutable action history
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-alerts-action-tracking-postgres-integration-batch-43.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
