@@ -118,7 +118,10 @@ export function createControlRemediationApi({db}={}){
    const to=text(body.to,24),note=text(body.note,1000);
    if(!statuses.has(to)||!transitions[row.status].includes(to))return error(409,"INVALID_TRANSITION","Requested remediation status transition is not allowed.");
    const actorIsAssignedOwner=row.assigned_owner_id===ownerId;
-   if(to==="in_progress"&&(!actorIsAssignedOwner&&!["owner","editor"].includes(projectAccess.access_role)))return error(403,"OWNER_REQUIRED","Assigned owner or project editor is required.");
+   if(to==="in_progress"&&row.status==="pending_review"){
+    if(!row.project_id||row.reviewer_id!==ownerId&&projectAccess.access_role!=="owner")return error(403,"REVIEWER_REQUIRED","Only the assigned reviewer or project owner can return a submitted action for rework.");
+    if(!note)return error(400,"REVIEW_NOTE_REQUIRED","Provide a clear review note explaining the changes required.");
+   }else if(to==="in_progress"&&(!actorIsAssignedOwner&&(!row.project_id||!["owner","editor"].includes(projectAccess.access_role))))return error(403,"OWNER_REQUIRED","Assigned owner or authorized project editor is required.");
    if(to==="pending_review"&&(!actorIsAssignedOwner||db.prepare("SELECT COUNT(*) AS count FROM control_remediation_evidence WHERE action_id=?").get(id).count<1))return error(409,"EVIDENCE_REQUIRED","The assigned owner must add evidence before requesting review.");
    if(to==="verified"){
     if(!row.reviewer_id||row.reviewer_id!==ownerId||actorIsAssignedOwner)return error(403,"INDEPENDENT_REVIEW_REQUIRED","Only the assigned independent reviewer can verify this remediation.");
@@ -126,10 +129,15 @@ export function createControlRemediationApi({db}={}){
    }
    if(to==="reopened"&&!["owner","reviewer"].includes(projectAccess.access_role))return error(403,"REVIEWER_REQUIRED","Project owner or reviewer is required to reopen a verified action.");
    const verified=to==="verified",reopened=to==="reopened";
-   db.prepare("UPDATE control_remediation_actions SET status=?,verified_at=?,verified_by=?,reopened_count=reopened_count+?,revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
-    .run(to,verified?new Date().toISOString():reopened?null:row.verified_at,verified?ownerId:reopened?null:row.verified_by,reopened?1:0,id);
-   appendHistory(id,ownerId,"status_transition",row.status,to,note);
-   audit(db,ownerId,"control_remediation.status_changed","control_remediation",id,{from:row.status,to},row.project_id);
+   try{
+    db.exec("BEGIN IMMEDIATE");
+    const changed=db.prepare("UPDATE control_remediation_actions SET status=?,verified_at=?,verified_by=?,reopened_count=reopened_count+?,revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND revision=? AND status=?")
+     .run(to,verified?new Date().toISOString():reopened?null:row.verified_at,verified?ownerId:reopened?null:row.verified_by,reopened?1:0,id,row.revision,row.status);
+    if(!changed.changes){db.exec("ROLLBACK");return error(409,"REVISION_CONFLICT","This action changed during review. Reload it before trying again.");}
+    appendHistory(id,ownerId,row.status==="pending_review"&&to==="in_progress"?"review_changes_requested":"status_transition",row.status,to,note);
+    audit(db,ownerId,"control_remediation.status_changed","control_remediation",id,{from:row.status,to,reviewNote:row.status==="pending_review"&&to==="in_progress"?note:undefined},row.project_id);
+    db.exec("COMMIT");
+   }catch(e){try{db.exec("ROLLBACK");}catch{}throw e;}
    return response(200,{action:hydrate(db.prepare("SELECT * FROM control_remediation_actions WHERE id=?").get(id))});
   }
   return error(405,"METHOD_NOT_ALLOWED","Method is not supported for this remediation route.");
