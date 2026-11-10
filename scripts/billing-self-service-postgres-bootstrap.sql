@@ -10,7 +10,7 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   create role service_role nologin bypassrls;
 exception when duplicate_object then null; end $$;
-create table auth.users(id uuid primary key);
+create table auth.users(id uuid primary key,email text,created_at timestamptz not null default now());
 
 create table executive_visuals.subscription_plans(
  id uuid primary key default gen_random_uuid(),
