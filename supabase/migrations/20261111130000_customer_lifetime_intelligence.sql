@@ -70,8 +70,8 @@ set search_path=pg_catalog,executive_visuals
 as $$
 declare
  last_seen timestamptz;
- sessions_7d integer:=0;
- sessions_30d integer:=0;
+ activity_events_7d integer:=0;
+ activity_events_30d integer:=0;
  projects_30d integer:=0;
  renders_30d integer:=0;
  workflows_30d integer:=0;
@@ -88,7 +88,7 @@ begin
         count(*) filter(where event_type='project_created' and occurred_at>=now()-interval '30 days'),
         count(*) filter(where event_type='render_completed' and occurred_at>=now()-interval '30 days'),
         count(*) filter(where event_type='workflow_completed' and occurred_at>=now()-interval '30 days')
- into sessions_7d,sessions_30d,projects_30d,renders_30d,workflows_30d
+ into activity_events_7d,activity_events_30d,projects_30d,renders_30d,workflows_30d
  from customer_success_activity_events
  where owner_id=p_owner_id and event_type in('session_started','workspace_opened','project_created','render_completed','asset_uploaded','workflow_completed','tutorial_completed','billing_viewed');
  select count(*) into milestones_count from customer_success_milestone_awards where owner_id=p_owner_id;
@@ -101,7 +101,7 @@ begin
   when last_seen>=now()-interval '14 days' then 14
   when last_seen>=now()-interval '30 days' then 7
   else 2 end;
- health_score:=health_score+least(25,sessions_7d*5);
+ health_score:=health_score+least(25,activity_events_7d*5);
  health_score:=health_score+least(20,projects_30d*5+renders_30d*7+workflows_30d*8);
  health_score:=health_score+least(15,milestones_count*3);
  health_score:=health_score+case when subscription_status in('active','trialing') then 10 when subscription_status='past_due' then 2 else 0 end;
@@ -115,7 +115,7 @@ begin
   when last_seen<now()-interval '7 days' then 'usage_guidance'
   else 'renewal_checkin' end;
  return jsonb_build_object('ownerId',p_owner_id,'score',health_score,'riskLevel',risk_level,
-  'lastSeenAt',last_seen,'sessions7d',sessions_7d,'sessions30d',sessions_30d,
+  'lastSeenAt',last_seen,'activityEvents7d',activity_events_7d,'activityEvents30d',activity_events_30d,
   'projects30d',projects_30d,'renders30d',renders_30d,'workflows30d',workflows_30d,
   'milestones',milestones_count,'subscriptionStatus',subscription_status,
   'recommendedIntervention',recommendation);
