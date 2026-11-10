@@ -17,7 +17,7 @@ const evidenceIndex=(items)=>{
  return map;
 };
 const refs=(values,map,label)=>{
- if(!Array.isArray(values)||values.length===0)fail("FINANCIAL_CLOSE_EVIDENCE_REQUIRED",label+" requires at least one evidence reference.");
+ if(values==null)return [];if(!Array.isArray(values))fail("FINANCIAL_CLOSE_EVIDENCE_REQUIRED",label+" evidence references must be an array.");
  const out=[];
  for(const id of values){const key=text(id,label+" evidence reference",120),item=map.get(key);if(!item)fail("FINANCIAL_CLOSE_EVIDENCE_MISSING","Referenced evidence "+key+" does not exist in the supplied evidence manifest.");out.push(key);}
  return [...new Set(out)].sort();
@@ -26,7 +26,7 @@ const canonical=value=>Array.isArray(value)?"["+value.map(canonical).join(",")+"
 const sum=(items,field)=>items.reduce((n,x)=>n+(Number.isSafeInteger(x[field])?x[field]:0),0);
 
 export function assessFinancialCloseReadiness(input={}){
- const closePeriod=period(input.period),asOf=iso(input.asOf||new Date().toISOString(),"asOf"),evidence=evidenceIndex(input.evidence||[]);
+ const closePeriod=period(input.period),asOf=iso(input.asOf||new Date().toISOString(),"asOf"),evidence=evidenceIndex(input.evidence||[]);\n for(const item of evidence.values())if(item.period!==closePeriod)fail("FINANCIAL_CLOSE_EVIDENCE_PERIOD_MISMATCH","Every evidence record must belong to the assessed close period.");
  const tasks=list(input.tasks||[],"tasks",300).map((x,index)=>{
   const id=text(x.taskId,"taskId",120),title=text(x.title,"task title",180),owner=text(x.ownerId,"task ownerId",120),reviewer=x.reviewerId==null?null:text(x.reviewerId,"task reviewerId",120),status=text(x.status,"task status",32).toLowerCase();
   if(!["not_started","in_progress","completed","blocked","waived"].includes(status))fail("FINANCIAL_CLOSE_TASK_STATUS_INVALID","Task status must be not_started, in_progress, completed, blocked or waived.");
@@ -37,9 +37,9 @@ export function assessFinancialCloseReadiness(input={}){
   const approvedAt=approval?.approvedAt==null?null:iso(approval.approvedAt,"task approval approvedAt");
   const decision=approval?.decision==null?null:text(approval.decision,"task approval decision",24).toLowerCase();
   const issues=[];
-  if(!reviewer)issues.push("independent_reviewer_missing");
+  if(!reviewer)issues.push("independent_reviewer_missing");\n  if(status!=="waived"&&evidenceRefs.length===0)issues.push("missing_evidence");
   if(reviewer&&reviewer===owner)issues.push("preparer_reviewer_conflict");
-  if(status==="completed"&&!completedAt)issues.push("completion_timestamp_missing");
+  if(status==="completed"&&!completedAt)issues.push("completion_timestamp_missing");\n  if(status==="completed"&&!approval?.preparedBy)issues.push("preparer_attestation_missing");
   if(status==="completed"&&(!approvedBy||!approvedAt||decision!=="approved"))issues.push("independent_approval_missing");
   if(approvedBy&&approvedBy===owner)issues.push("self_approval_prohibited");
   if(status==="blocked")issues.push("task_blocked");
@@ -59,7 +59,7 @@ export function assessFinancialCloseReadiness(input={}){
   const evidenceRefs=status==="not_applicable"?[]:refs(x.evidenceRefs,evidence,"Reconciliation "+id);
   const issues=[];
   if(status==="open"||status==="variance"||status==="rejected")issues.push("reconciliation_exception");
-  if(status==="matched"&&!reviewedBy)issues.push("independent_review_missing");
+  if(["matched","approved"].includes(status)&&!reviewedBy)issues.push("independent_review_missing");\n  if(status!=="not_applicable"&&evidenceRefs.length===0)issues.push("missing_evidence");
   if(preparedBy&&reviewedBy&&preparedBy===reviewedBy)issues.push("preparer_reviewer_conflict");
   if(status==="not_applicable"&&!text(x.reason,"not_applicable reason",500))issues.push("not_applicable_reason_missing");
   return {index,reconciliationId:id,status,currency,varianceMinor,preparedBy,reviewedBy,evidenceRefs,issues};
