@@ -10,6 +10,8 @@ on:
       - feat/persistent-audit-ledger-batch-30
       - feat/persistent-close-approval-engine-batch-32
       - feat/reconciliation-backed-close-gates-batch-33
+      - feat/forecast-actual-cost-variance-batch-34
+      - feat/persistent-provider-rate-cards-batch-35
   pull_request:
 
 permissions:
@@ -35,6 +37,7 @@ jobs:
           node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-economics.mjs
           node --check server/workload-cost-variance.mjs
+          node --check server/financial-intelligence-api.mjs
           node --check server/financial-reconciliation.mjs
           node --check server/financial-close-readiness.mjs
           node --check server/financial-audit-ledger.mjs
@@ -43,4 +46,4 @@ jobs:
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
