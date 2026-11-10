@@ -313,6 +313,10 @@ export function createFinancialIntelligenceApi({
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
       }
+      if(path==="/api/billing/loyalty"&&method==="GET"){
+        const result=await rpc("customer_loyalty_summary",{p_owner_id:ownerId});
+        return response(200,{loyalty:result||{rewards:[],events:[],creditBalance:0}});
+      }
       if(path==="/api/billing/subscription/manage"&&method==="POST"){
         const subscriptionId=String(body.subscriptionId||"");
         const action=String(body.action||"");
