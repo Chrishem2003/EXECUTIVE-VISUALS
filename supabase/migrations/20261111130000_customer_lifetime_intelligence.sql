@@ -82,9 +82,10 @@ declare
  recommendation text;
 begin
  if p_owner_id is null then raise exception 'Customer identity required' using errcode='22023'; end if;
- select max(occurred_at) into last_seen from customer_success_activity_events where owner_id=p_owner_id;
- select count(*) filter(where occurred_at>=now()-interval '7 days'),
-        count(*) filter(where occurred_at>=now()-interval '30 days'),
+ select max(occurred_at) into last_seen from customer_success_activity_events
+ where owner_id=p_owner_id and event_type in('session_started','project_created','render_completed','asset_uploaded','workflow_completed','tutorial_completed');
+ select count(*) filter(where occurred_at>=now()-interval '7 days' and event_type in('session_started','project_created','render_completed','asset_uploaded','workflow_completed','tutorial_completed')),
+        count(*) filter(where occurred_at>=now()-interval '30 days' and event_type in('session_started','project_created','render_completed','asset_uploaded','workflow_completed','tutorial_completed')),
         count(*) filter(where event_type='project_created' and occurred_at>=now()-interval '30 days'),
         count(*) filter(where event_type='render_completed' and occurred_at>=now()-interval '30 days'),
         count(*) filter(where event_type='workflow_completed' and occurred_at>=now()-interval '30 days')
