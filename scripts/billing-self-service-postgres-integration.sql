@@ -47,7 +47,7 @@ begin
     now()
   );
   if result->>'status'<>'active' then raise exception 'Verified purchase did not activate subscription'; end if;
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=owner_id and payment_transaction_id=payment_id)<>1000 then
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=owner_id and cl.payment_transaction_id=payment_id)<>1000 then
     raise exception 'Initial subscription included credits were not granted exactly once';
   end if;
 
@@ -72,7 +72,12 @@ begin
   if current_plan<>'pro-yearly' or current_amount<>240000 or current_status<>'active' then
     raise exception 'Verified renewal did not atomically apply scheduled plan snapshot';
   end if;
-  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=owner_id)<>21000 then
+  perform executive_visuals.finalize_subscription_renewal(
+    renewal_id,'chg-sql-renewal',
+    jsonb_build_object('status','succeeded','amount',240000,'currency','UGX','reference','EVR-SQL-RENEWAL-01'),
+    now()
+  );
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger cl where cl.owner_id=owner_id)<>21000 then
     raise exception 'Renewal did not grant scheduled plan credits exactly once';
   end if;
 
