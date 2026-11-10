@@ -17,12 +17,23 @@ declare
  v_downside jsonb;
  v_upside jsonb;
  v_horizon jsonb;
+ v_replay jsonb;
 begin
  v_position:=executive_visuals.record_financial_cash_position(v_actor,jsonb_build_object(
   'currency','ZZZ','availableCashMinor',1000000,'restrictedCashMinor',200000,'asOfDate',current_date,
   'sourceType','bank_statement','sourceReference','batch40-bank-statement','evidenceNote','Disposable reconciled test balance',
   'idempotencyKey','batch40-position-001'));
  if (v_position->>'availableCashMinor')::bigint<>1000000 then raise exception 'Cash position was not persisted: %',v_position; end if;
+ v_replay:=executive_visuals.record_financial_cash_position(v_actor,jsonb_build_object(
+  'currency','ZZZ','availableCashMinor',1,'restrictedCashMinor',0,'asOfDate',current_date,
+  'sourceType','bank_statement','sourceReference','different-replay','evidenceNote','Idempotency replay must preserve original',
+  'idempotencyKey','batch40-position-001'));
+ if (v_replay->>'availableCashMinor')::bigint<>1000000 then raise exception 'Cash position idempotency replay changed source evidence: %',v_replay; end if;
+ begin
+  update executive_visuals.financial_cash_position_snapshots set available_cash_minor=0 where id=(v_position->>'id')::uuid;
+  raise exception 'Append-only cash position evidence accepted an update';
+ exception when sqlstate '55000' then null;
+ end;
  v_item:=executive_visuals.record_financial_cashflow_item(v_actor,jsonb_build_object(
   'direction','inflow','currency','ZZZ','amountMinor',300000,'expectedDate',current_date+30,'confidenceBps',5000,
   'status','committed','sourceType','customer_receipt','sourceReference','batch40-invoice-30','description','Confidence-weighted receipt',
