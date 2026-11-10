@@ -112,7 +112,7 @@ begin
  if v_head_before->>'headHash'<>v_head_after->>'headHash' then
   raise exception 'Failed close transition left an orphan audit event';
  end if;
- raise notice 'Batch 32 tasks before start: %', (select jsonb_agg(jsonb_build_object('task_id',task_id,'status',status,'assigned_to',assigned_to)) from executive_visuals.financial_close_tasks where owner_id=v_owner and period_month=v_period);
+ raise notice 'Batch 32 close state before task start: %', executive_visuals.financial_close_overview(v_owner,v_period);
 
  perform pg_temp.close_action(v_assignee,v_assignee,'task.start',v_period,
   jsonb_build_object('taskId',v_task),'batch32-task-start');
