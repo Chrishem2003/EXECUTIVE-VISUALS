@@ -698,6 +698,11 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("customer_growth_admin_overview",{});
         return response(200,{growth:result||{cohorts:[],renewalWatchlist:[],cancellationReasons:[],experiments:[]}});
       }
+      if(path==="/api/admin/finance/predictive-overview"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("financial_predictive_revenue_overview",{p_actor_id:ownerId});
+        return response(200,{forecast:result||{currencies:[],limitations:["Forecast data is not yet available."]}});
+      }
       if(path==="/api/admin/customer-success/experiments"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
         const experimentKey=String(body.experimentKey||"").trim();
