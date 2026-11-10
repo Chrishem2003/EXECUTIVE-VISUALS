@@ -123,3 +123,8 @@ Before recurring subscriptions can be implemented, either obtain written confirm
 ## Batch 9 — manual mobile-money renewal
 
 Executive Visuals now has a development-only customer-initiated renewal flow using the existing V4 charge integration. Customers can initiate MTN/Airtel UGX renewal payments for their active or past-due monthly/yearly subscription. Prices are loaded from the server-side subscription record. The subscription period changes only after a signed webhook triggers a server-side V4 charge verification and the atomic renewal RPC validates the reference, amount, currency, owner and plan. This is not automatic recurring billing; no card credentials are stored and no background debit is attempted. The isolated staging migration must be applied and tested before activation.
+
+
+## Batch 10 — payment recovery
+
+Failed Flutterwave V4 charges are verified server-side, recorded as recovery attempts, and linked subscriptions enter `past_due` with a configurable grace period (default 72 hours). Customers can retrieve and mark their billing notifications as read. Billing administrators can inspect the recovery queue and explicitly process expired grace periods. No automatic MoMo debit or unattended payment retry occurs; customers must re-authorize each payment. Notification records are queued in the outbox. Email delivery remains disabled until a transactional email provider is configured and tested.
