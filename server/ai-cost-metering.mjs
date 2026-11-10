@@ -25,7 +25,7 @@ export function normalizeGenAiUsage(input={}){
  const inputTokens=safeNumber(firstDefined(usage.billable_input_tokens,usage.input_tokens,usage.prompt_tokens,attrs["gen_ai.usage.input_tokens"],input.inputTokens),"Input token usage",{integer:true});
  const outputTokens=safeNumber(firstDefined(usage.billable_output_tokens,usage.output_tokens,usage.completion_tokens,attrs["gen_ai.usage.output_tokens"],input.outputTokens),"Output token usage",{integer:true});
  const operationRaw=String(firstDefined(attrs["gen_ai.operation.name"],input.operation,"other")).toLowerCase();
- const operationMap={chat:"text",text_completion:"text",generate_content:"other",embeddings:"embedding",image_generation:"image"};
+ const operationMap={chat:"text",text_completion:"text",generate_content:"other",embeddings:"embedding",image_generation:"image",video_generation:"video"};
  const operation=operationMap[operationRaw]||operationRaw;
  if(!provider||provider.length>80||!requestedModel||requestedModel.length>160||!OPERATIONS.has(operation))
   throw Object.assign(new Error("Provider, requested model or operation is missing or invalid."),{code:"AI_USAGE_IDENTITY_INVALID"});
@@ -63,6 +63,7 @@ export function parseProviderInvoiceCsv(csv,{provider,currency}={}){
    else if(ch==='"')quoted=false;
    else field+=ch;
   }else if(ch==='"'&&field.length===0)quoted=true;
+  else if(ch==='"')throw Object.assign(new Error("Invoice CSV contains a quote inside an unquoted field."),{code:"AI_INVOICE_CSV_INVALID"});
   else if(ch===","){row.push(field);field="";}
   else if(ch==="\n"||ch==="\r"){
    if(ch==="\r"&&csv[i+1]==="\n")i++;
