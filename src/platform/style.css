@@ -1158,3 +1158,16 @@ body{
 .remediation-review-form label{display:grid;gap:6px;color:#d8cba9;font-size:11px}
 .remediation-review-form textarea{width:100%;min-height:76px;resize:vertical}
 .remediation-review-form button{justify-self:start}
+
+
+/* Batch 52 · shared-project assurance controls */
+.remediation-project-form{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:12px 0 16px;padding:12px;border:1px solid rgba(196,181,253,.15);border-radius:10px;background:rgba(9,13,25,.5)}
+.remediation-project-form label{display:grid;gap:6px;min-width:min(280px,100%);flex:1;color:#c9c3d7;font-size:11px}
+.remediation-project-form select{width:100%}
+.remediation-assignment{margin:10px 0;padding:10px 12px;border:1px solid rgba(196,181,253,.14);border-radius:9px;background:rgba(30,25,48,.28)}
+.remediation-assignment summary{cursor:pointer;color:#d5c7f5;font-size:11px;font-weight:650}
+.remediation-assignment form{display:grid;gap:10px;margin-top:12px}
+.remediation-assignment label{display:grid;gap:6px;color:#c9c3d7;font-size:11px}
+.remediation-assignment input,.remediation-assignment select,.remediation-assignment textarea{width:100%;min-width:0}
+.remediation-assignment textarea{resize:vertical}
+.remediation-assignment small{font-size:10px;color:#928da5;line-height:1.5}
