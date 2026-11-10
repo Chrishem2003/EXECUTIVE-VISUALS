@@ -132,15 +132,15 @@ begin
   from payments p group by p.owner_id,p.currency
  ),
  profiles as (
-  select s.owner_id,s.currency,max(coalesce(s.customer_email,p.customer_email)) email,
-   max(s.status) filter(where s.status in ('active','past_due','cancelled','expired')) subscription_status,
-   max(s.plan_code) plan_code,max(s.current_period_end) period_end,
+  select p.owner_id,p.currency,max(p.customer_email) email,
+   (select s.status from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) subscription_status,
+   (select s.plan_code from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) plan_code,
+   (select s.current_period_end from customer_subscriptions s where s.owner_id=p.owner_id order by s.created_at desc limit 1) period_end,
    count(distinct p.id) payment_count,
    coalesce(sum(p.amount_minor) filter(where p.status='successful'),0) gross_paid_minor,
-   coalesce((select sum(r.amount_minor) from payment_refunds r where r.owner_id=s.owner_id and r.currency=s.currency and r.status='succeeded'),0) refunded_minor
-  from customer_subscriptions s
-  left join payment_transactions p on p.owner_id=s.owner_id and p.currency=s.currency
-  group by s.owner_id,s.currency
+   coalesce((select sum(r.amount_minor) from payment_refunds r where r.owner_id=p.owner_id and r.currency=p.currency and r.status='succeeded'),0) refunded_minor
+  from payment_transactions p
+  group by p.owner_id,p.currency
  ),
  fraud as (
   select p.owner_id,p.currency,
@@ -177,9 +177,9 @@ begin
     ],null))
   )) from fraud f where f.failed_24h>=3 or f.refund_cases_30d>=3 or f.dispute_cases>0 limit p_limit),'[]'::jsonb),
   'failedPaymentRecovery',jsonb_build_object(
-    'openAttempts',(select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted')),
-    'scheduledRetries',(select count(*) from payment_attempts where status='retry_scheduled'),
-    'exhausted',(select count(*) from payment_attempts where status='exhausted'),
+    'openAttempts',(select count(*) from payment_attempts where status in ('failed','retry_scheduled','exhausted') and created_at between p_from and p_to),
+    'scheduledRetries',(select count(*) from payment_attempts where status='retry_scheduled' and created_at between p_from and p_to),
+    'exhausted',(select count(*) from payment_attempts where status='exhausted' and created_at between p_from and p_to),
     'recovered',(select count(*) from payment_attempts where status='succeeded' and updated_at between p_from and p_to)
   ),
   'refunds',jsonb_build_object('pending',(select count(*) from payment_refunds where status in ('requested','processing')),
