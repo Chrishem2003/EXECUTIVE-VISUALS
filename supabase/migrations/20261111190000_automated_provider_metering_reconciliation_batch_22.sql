@@ -48,7 +48,8 @@ begin
   or coalesce(p_currency,'') !~ '^[A-Z]{3}$'
   or p_period_start is null or p_period_end is null or p_period_end<p_period_start
   or p_total_minor is null or p_total_minor<0
-  or coalesce(p_source_fingerprint,'') !~ '^[a-f0-9]{64}  raise exception 'Invalid provider invoice import' using errcode='22023';
+  or coalesce(p_source_fingerprint,'') !~ '^[a-f0-9]{64}$' then
+  raise exception 'Invalid provider invoice import' using errcode='22023';
  end if;
  if p_lines is null or jsonb_typeof(p_lines)<>'array' then
   raise exception 'Invoice lines must be a JSON array' using errcode='22023';
@@ -64,7 +65,9 @@ begin
    or coalesce(v_line->>'provider','')<>p_provider
    or coalesce(v_line->>'model','')='' or length(v_line->>'model')>160
    or coalesce(v_line->>'operation','') not in('text','image','video','render','upscale','audio','embedding','other')
-   or coalesce(v_line->>'amountMinor','') !~ '^-?[0-9]{1,18}   raise exception 'Invoice contains an invalid line item' using errcode='22023';
+   or coalesce(v_line->>'amountMinor','') !~ '^-?[0-9]{1,18}$'
+   or coalesce(v_line->>'usagePeriod','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+   raise exception 'Invoice contains an invalid line item' using errcode='22023';
   end if;
   if (v_line->>'usagePeriod')::date<p_period_start or (v_line->>'usagePeriod')::date>p_period_end then
    raise exception 'Invoice usage period falls outside the declared invoice period' using errcode='22023';
