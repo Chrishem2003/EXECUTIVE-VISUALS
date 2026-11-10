@@ -567,7 +567,7 @@ function financeWorkspace(){
 <label>Currency (ISO 4217)<input id="finance-scenario-currency" maxlength="3" value="UGX"></label>
 <label>Reporting month<input id="finance-scenario-month" type="month" value="${new Date().toISOString().slice(0,7)}"></label>
 <label>Opening cash · minor units<input id="finance-scenario-opening" type="number" min="0" step="1" value="0"></label>
-<label>Monthly revenue · minor units<input id="finance-scenario-revenue" type="number" min="0" step="1" value="0"></label>
+<label>Monthly recurring revenue baseline · minor units<input id="finance-scenario-revenue" type="number" min="0" step="1" value="0"></label>
 <label>Monthly variable costs · minor units<input id="finance-scenario-variable" type="number" min="0" step="1" value="0"></label>
 <label>Monthly fixed costs · minor units<input id="finance-scenario-fixed" type="number" min="0" step="1" value="0"></label>
 <label>Monthly capex · minor units<input id="finance-scenario-capex" type="number" min="0" step="1" value="0"></label>
