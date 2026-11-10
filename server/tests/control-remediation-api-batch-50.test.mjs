@@ -24,7 +24,6 @@ test("persistent register creates project-scoped actions with independent owner 
  assert.equal(result.body.action.ownerId,editor);
  assert.equal(result.body.action.reviewerId,reviewer);
  assert.equal(result.body.action.status,"open");
- assert.equal(result.body.action.ownerId,owner);
  assert.equal(result.body.action.revision,1);
  const list=await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:reviewer,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.total,1);
@@ -33,6 +32,16 @@ test("persistent register creates project-scoped actions with independent owner 
  assert.equal(editorCreated.status,201);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody})).status,409);
  assert.equal((await f.api.handle({method:"GET",path:"/api/finance/remediations/"+editorCreated.body.action.id,ownerId:owner})).status,200);
+ f.db.close();
+});
+test("personal remediation records default to the authenticated creator as accountable owner",async()=>{
+ const f=setup();
+ const body={...createBody,projectId:undefined,ownerId:undefined,reviewerId:undefined,findingId:"personal-finding"};
+ delete body.projectId;delete body.ownerId;delete body.reviewerId;
+ const result=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body});
+ assert.equal(result.status,201);
+ assert.equal(result.body.action.ownerId,owner);
+ assert.equal(result.body.action.status,"open");
  f.db.close();
 });
 test("evidence, owner transition and independent reviewer verification persist with audit history",async()=>{
