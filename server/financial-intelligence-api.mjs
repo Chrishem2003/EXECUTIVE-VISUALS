@@ -152,9 +152,20 @@ export function createFinancialIntelligenceApi({
         p_failure_message:String(charge.failure_message||charge.processor_response||"Flutterwave confirmed that the payment failed.").slice(0,500),
         p_grace_hours:Number.isInteger(paymentGracePeriodHours)?Math.max(0,Math.min(720,paymentGracePeriodHours)):72
       });
-      return {matched:true,status:"failed",paymentId:payment.id,recovery};
+      const initialSubscription=payment.metadata?.payment_purpose==="subscription_purchase"
+        ?await rpc("expire_failed_subscription_purchase",{p_payment_id:payment.id}):null;
+      return {matched:true,status:"failed",paymentId:payment.id,recovery,initialSubscription};
     }
     if(providerStatus!=="succeeded")return {matched:true,status:"pending",paymentId:payment.id};
+    if(payment.metadata?.payment_purpose==="subscription_purchase"){
+      const purchase=await rpc("finalize_subscription_purchase",{
+        p_payment_id:payment.id,
+        p_provider_transaction_id:String(providerChargeId),
+        p_provider_payload:charge,
+        p_verified_at:new Date().toISOString()
+      });
+      return {matched:true,status:"successful",paymentId:payment.id,subscriptionActivated:true,purchase};
+    }
     if(payment.metadata?.payment_purpose==="subscription_renewal"){
       const renewal=await rpc("finalize_subscription_renewal",{
         p_payment_id:payment.id,
@@ -360,6 +371,72 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/billing/products"&&method==="GET"){
         const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});
+      }
+      if(path==="/api/billing/subscription/checkout"&&method==="POST"){
+        const planCode=String(body.planCode||"").trim().toLowerCase();
+        const network=String(body.network||"").toUpperCase();
+        const email=String(body.email||"").trim().toLowerCase();
+        const first=String(body.firstName||"").trim().slice(0,80);
+        const last=String(body.lastName||"").trim().slice(0,80);
+        const rawPhone=String(body.phoneNumber||"").replace(/[\s()+-]/g,"");
+        const key=String(idempotencyKey||"").trim();
+        const phone=rawPhone.startsWith("256")?rawPhone.slice(3):rawPhone.startsWith("0")?rawPhone.slice(1):rawPhone;
+        if(!/^[a-z][a-z0-9_-]{1,63}$/.test(planCode)||!["MTN","AIRTEL"].includes(network)||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!first||!last||!/^7\d{8}$/.test(phone)||
+          key.length<8||key.length>180)
+          return error(400,"SUBSCRIPTION_CHECKOUT_INPUT_INVALID","Provide a valid plan, customer details, Ugandan mobile number, MTN/Airtel network and idempotency key.");
+        const txRef="EVS"+randomUUID().replaceAll("-","");
+        let reservation;
+        try{
+          reservation=await rpc("reserve_subscription_purchase",{
+            p_owner_id:ownerId,p_plan_code:planCode,p_customer_email:email,
+            p_mobile_money_network:network,p_idempotency_key:key,p_tx_ref:txRef
+          });
+        }catch(err){
+          if(err?.code==="23505")return error(409,"SUBSCRIPTION_ALREADY_EXISTS","An active or pending subscription already exists, or this idempotency key is already in use.");
+          throw err;
+        }
+        if(!reservation?.paymentId||!reservation?.subscriptionId)
+          throw Object.assign(new Error("Subscription checkout reservation returned an invalid result."),{code:"SUBSCRIPTION_RESERVATION_INVALID"});
+        if(reservation.idempotentReplay)
+          return response(200,{payment:{id:reservation.paymentId,subscriptionId:reservation.subscriptionId,reference:reservation.txRef,status:reservation.status},idempotentReplay:true});
+        try{
+          const charge=await providerRequest("/orchestration/direct-charges",{
+            method:"POST",idempotencyKey:key,
+            body:{
+              amount:minorToMajor(Number(reservation.amountMinor),String(reservation.currency)),currency:String(reservation.currency),reference:String(reservation.txRef),
+              customer:{email,name:{first,last},phone:{country_code:"256",number:phone}},
+              payment_method:{type:"mobile_money",mobile_money:{country_code:"256",network,phone_number:phone}}
+            }
+          });
+          const providerCharge=charge?.data;
+          if(!providerCharge?.id)throw Object.assign(new Error("Flutterwave returned no charge ID."),{code:"PROVIDER_INVALID_RESPONSE"});
+          const nextAction=providerCharge.next_action||null;
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(reservation.paymentId)+"&owner_id=eq."+encodeURIComponent(ownerId),{
+            method:"PATCH",body:{
+              provider_transaction_id:String(providerCharge.id),
+              metadata:{payment_purpose:"subscription_purchase",subscription_id:reservation.subscriptionId,
+                plan_code:planCode,idempotency_key:key,mobile_money_network:network,
+                provider_charge_id:String(providerCharge.id),next_action:nextAction,
+                checkout_started_at:new Date().toISOString()},
+              updated_at:new Date().toISOString()
+            },prefer:"return=minimal"
+          });
+          return response(202,{payment:{id:reservation.paymentId,subscriptionId:reservation.subscriptionId,
+            reference:reservation.txRef,providerChargeId:String(providerCharge.id),
+            status:String(providerCharge.status||"pending"),nextAction},
+            message:"Subscription checkout initiated. The plan activates only after Flutterwave verification."});
+        }catch(err){
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(reservation.paymentId)+"&owner_id=eq."+encodeURIComponent(ownerId),{
+            method:"PATCH",body:{metadata:{payment_purpose:"subscription_purchase",subscription_id:reservation.subscriptionId,
+              plan_code:planCode,idempotency_key:key,mobile_money_network:network,
+              checkout_error_code:err.code||"PROVIDER_RESULT_UNCERTAIN",checkout_result_uncertain:true},
+              updated_at:new Date().toISOString()},prefer:"return=minimal"
+          }).catch(()=>{});
+          return response(err.status===202?202:502,{payment:{id:reservation.paymentId,
+            subscriptionId:reservation.subscriptionId,reference:reservation.txRef,status:"pending"},
+            error:{code:err.code||"CHECKOUT_RESULT_UNCERTAIN",message:"Subscription payment initiation is not confirmed. Reconcile this reference before retrying."}});
+        }
       }
       if(path==="/api/billing/subscription/renewal-checkout"&&method==="POST"){
         const subscriptionId=String(body.subscriptionId||"");
