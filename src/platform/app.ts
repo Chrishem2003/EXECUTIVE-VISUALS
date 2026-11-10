@@ -574,6 +574,7 @@ if(t.closest("[data-finance-audit-append]")){void (async()=>{
    const command=JSON.parse(raw) as Record<string,any>;
    if(!command||typeof command!=="object"||Array.isArray(command))throw new Error("Financial close command must be a JSON object.");
    if(!command.idempotencyKey)command.idempotencyKey="close-"+uid();
+   $<HTMLTextAreaElement>("#finance-close-engine-command").value=JSON.stringify(command,null,2);
    const result=await apiRequest<{result:FinanceDashboard}>("/api/admin/finance/close/periods",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(command)});
    financeState.closeEngineResult=result.result;financeState.error="";
    const overview=await apiRequest<{close:FinanceDashboard}>("/api/admin/finance/close/periods");
