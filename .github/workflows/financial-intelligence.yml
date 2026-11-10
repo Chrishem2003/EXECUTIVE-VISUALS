@@ -7,6 +7,7 @@ on:
       - feat/predictive-workload-economics-batch-27
       - feat/automated-financial-reconciliation-batch-28
       - feat/continuous-financial-close-batch-29
+      - feat/persistent-audit-ledger-batch-30
   pull_request:
 
 permissions:
@@ -33,7 +34,8 @@ jobs:
           node --check server/ai-workload-economics.mjs
           node --check server/financial-reconciliation.mjs
           node --check server/financial-close-readiness.mjs
+          node --check server/financial-audit-ledger.mjs
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs
