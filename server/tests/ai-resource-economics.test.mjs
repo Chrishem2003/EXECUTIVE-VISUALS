@@ -5,6 +5,7 @@ import {
  rankShadowModelCandidates
 } from "../ai-resource-economics.mjs";
 import { createFinancialIntelligenceApi } from "../financial-intelligence-api.mjs";
+import { run } from "../media.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
 const jobId="22222222-2222-4222-8222-222222222222";
@@ -102,4 +103,23 @@ test("worker FFmpeg measurements persist only when the server-side system actor 
  assert.equal(rpcPayload.p_resource_type,"ffmpeg_second");
  assert.equal(rpcPayload.p_quantity,4.25);
  assert.equal(rpcPayload.p_evidence.measurement,"ffmpeg_process_wall_clock");
+});
+
+
+test("FFmpeg runner reports measured child-process wall time without changing process results",async()=>{
+ const previous=process.env.FFMPEG_PATH;
+ const measurements=[];
+ process.env.FFMPEG_PATH=process.execPath;
+ try{
+  const result=await run("ffmpeg",["-e","setTimeout(()=>process.exit(0),40)"],5000,null,null,null,1024,value=>measurements.push(value));
+  assert.equal(result.stdout,"");
+ }finally{
+  if(previous===undefined)delete process.env.FFMPEG_PATH;
+  else process.env.FFMPEG_PATH=previous;
+ }
+ assert.equal(measurements.length,1);
+ assert.equal(measurements[0].resourceType,"ffmpeg_second");
+ assert.equal(measurements[0].unit,"second");
+ assert.ok(measurements[0].quantity>0);
+ assert.ok(measurements[0].measurementId);
 });
