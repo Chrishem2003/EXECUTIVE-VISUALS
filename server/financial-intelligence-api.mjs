@@ -301,7 +301,8 @@ export function createFinancialIntelligenceApi({
   }
 
   async function handle({method,path,ownerId,body={},query={},idempotencyKey=""}={}){
-    if(!billingEnabled)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
+    const customerSuccessRoute=String(path||"").startsWith("/api/customer-success/")||String(path||"").startsWith("/api/admin/customer-success/");
+    if(!billingEnabled&&!customerSuccessRoute)return error(503,"BILLING_DISABLED","Financial intelligence APIs are disabled until staging verification is complete.");
     if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified Supabase account is required.");
     try{
       if(path==="/api/customer-success/me"&&method==="GET"){
