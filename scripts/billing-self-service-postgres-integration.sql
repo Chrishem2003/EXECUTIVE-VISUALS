@@ -283,4 +283,58 @@ begin
   end if;
 end $$;
 
+
+do $
+declare
+ v_owner constant uuid := '11111111-1111-4111-8111-111111111111';
+ experiment_result jsonb;
+ assignment_one jsonb;
+ assignment_two jsonb;
+ intervention_result jsonb;
+ intervention_update jsonb;
+ growth_result jsonb;
+begin
+ experiment_result:=executive_visuals.customer_growth_create_experiment(
+  v_owner,'batch17-onboarding-test','Guided onboarding experiment',
+  'A guided first project increases activation and first value completion.',
+  'activation_rate',
+  '[{"key":"control","label":"Standard onboarding"},{"key":"guided","label":"Guided onboarding"}]'::jsonb,
+  now()-interval '1 hour',now()+interval '7 days'
+ );
+ if experiment_result->>'status'<>'draft' then
+  raise exception 'New growth experiment should begin in draft status: %',experiment_result;
+ end if;
+ perform executive_visuals.customer_growth_set_experiment_status(
+  v_owner,(experiment_result->>'id')::uuid,'running'
+ );
+ assignment_one:=executive_visuals.customer_growth_assign_experiment(v_owner,'batch17-onboarding-test');
+ assignment_two:=executive_visuals.customer_growth_assign_experiment(v_owner,'batch17-onboarding-test');
+ if assignment_one->>'assigned'<>'true'
+  or assignment_one->>'variant' not in('control','guided')
+  or assignment_two->>'variant'<>assignment_one->>'variant'
+  or assignment_two->>'existing'<>'true' then
+  raise exception 'Experiment assignment must be stable and idempotent: %, %',assignment_one,assignment_two;
+ end if;
+ intervention_result:=executive_visuals.customer_growth_record_intervention(
+  v_owner,v_owner,'renewal_checkin','Check that the creator reached first value before renewal.'
+ );
+ intervention_update:=executive_visuals.customer_growth_update_intervention(
+  v_owner,(intervention_result->>'id')::uuid,'completed','renewed'
+ );
+ if intervention_update->>'status'<>'completed'
+  or intervention_update->>'outcome'<>'renewed' then
+  raise exception 'Intervention outcome was not recorded: %',intervention_update;
+ end if;
+ growth_result:=executive_visuals.customer_growth_admin_overview();
+ if not (growth_result ? 'cohorts')
+  or not (growth_result ? 'renewalWatchlist')
+  or not (growth_result ? 'cancellationReasons')
+  or not (growth_result ? 'experiments') then
+  raise exception 'Growth overview omitted required sections: %',growth_result;
+ end if;
+ if jsonb_array_length(growth_result->'experiments')<1 then
+  raise exception 'Growth overview did not include the active experiment';
+ end if;
+end $;
+
 reset role;
