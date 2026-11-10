@@ -147,24 +147,11 @@ begin
   select s.snapshot_month,s.owner_id,s.cohort_month,s.currency,s.mrr_minor,
    coalesce(d.direct_cost_minor,0)::bigint direct_cost_minor,
    (s.mrr_minor-coalesce(d.direct_cost_minor,0))::bigint contribution_minor,
-   a.channel,a.acquired_at,
-   ac.cac_minor
+   a.channel,a.acquired_at
   from subscription_revenue_snapshots s
   join latest_month lm on lm.snapshot_month=s.snapshot_month
   left join direct_costs d on d.period_month=s.snapshot_month and d.owner_id=s.owner_id and d.currency=s.currency
   left join customer_acquisition_attributions a on a.owner_id=s.owner_id and a.currency=s.currency
-  left join lateral(
-   select round(sum(sp.amount_minor)::numeric/nullif(count(distinct paid.owner_id),0))::bigint cac_minor
-   from customer_acquisition_spend_events sp
-   join customer_acquisition_attributions paid on paid.channel=sp.channel
-    and paid.currency=sp.currency and date_trunc('month',paid.acquired_at)::date=sp.period_month
-   where sp.period_month=date_trunc('month',a.acquired_at)::date
-    and sp.currency=s.currency and sp.channel=a.channel
-    and paid.owner_id in(
-     select cs.owner_id from customer_subscriptions cs
-     where cs.owner_id=paid.owner_id and cs.amount_minor>0
-    )
-  ) ac on true
  ), currency_totals as(
   select currency,count(*) filter(where mrr_minor>0)::integer paid_customers,
    sum(mrr_minor)::bigint mrr_minor,sum(direct_cost_minor)::bigint direct_cost_minor,
@@ -174,7 +161,7 @@ begin
  ), churn as(
   select cur.currency,
    count(*) filter(where prior.mrr_minor>0)::integer opening_customers,
-   count(*) filter(where prior.mrr_minor>0 and coalesce(current.mrr_minor,0)=0)::integer churned_customers,
+   count(*) filter(where prior.mrr_minor>0 and coalesce(cur_snap.mrr_minor,0)=0)::integer churned_customers,
    case when count(*) filter(where prior.mrr_minor>0)>0
     then (count(*) filter(where prior.mrr_minor>0 and coalesce(current.mrr_minor,0)=0))::numeric/
      count(*) filter(where prior.mrr_minor>0) else null end monthly_logo_churn
@@ -182,21 +169,25 @@ begin
   left join lateral(
    select s.owner_id,s.mrr_minor,s.currency,s.snapshot_month
    from subscription_revenue_snapshots s
-   where s.currency=cur.currency and s.snapshot_month=(select max(snapshot_month) from subscription_revenue_snapshots where snapshot_month<(select snapshot_month from latest_month))
+   where s.currency=cur.currency and s.snapshot_month=(select snapshot_month from latest_month)-interval '1 month'
   ) prior on true
   left join lateral(
    select s.owner_id,s.mrr_minor from subscription_revenue_snapshots s
    where s.currency=cur.currency and s.snapshot_month=(select snapshot_month from latest_month)
-  ) current on current.owner_id=prior.owner_id
+  ) cur_snap on cur_snap.owner_id=prior.owner_id
   group by cur.currency
+ ), spend_by_channel as(
+  select period_month,currency,channel,sum(amount_minor)::bigint spend_minor
+  from customer_acquisition_spend_events
+  group by period_month,currency,channel
  ), channel_cac as(
   select a.currency,a.channel,date_trunc('month',a.acquired_at)::date period_month,
-   round(sum(s.amount_minor)::numeric/nullif(count(distinct a.owner_id),0))::bigint cac_minor
+   round(s.spend_minor::numeric/nullif(count(distinct a.owner_id),0))::bigint cac_minor
   from customer_acquisition_attributions a
-  join customer_subscriptions cs on cs.owner_id=a.owner_id and cs.amount_minor>0
-  left join customer_acquisition_spend_events s on s.currency=a.currency and s.channel=a.channel
+  join spend_by_channel s on s.currency=a.currency and s.channel=a.channel
    and s.period_month=date_trunc('month',a.acquired_at)::date
-  group by a.currency,a.channel,date_trunc('month',a.acquired_at)::date
+  where exists(select 1 from customer_subscriptions cs where cs.owner_id=a.owner_id and cs.amount_minor>0)
+  group by a.currency,a.channel,date_trunc('month',a.acquired_at)::date,s.spend_minor
  ), customer_rows as(
   select cb.*,cc.cac_minor customer_cac_minor,
    ch.monthly_logo_churn,
