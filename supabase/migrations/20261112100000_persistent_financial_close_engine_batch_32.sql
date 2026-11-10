@@ -155,6 +155,7 @@ begin
   select coalesce(array_agg(value::uuid),'{}'::uuid[]) into v_dependencies
    from jsonb_array_elements_text(coalesce(p_payload->'dependencies','[]'::jsonb));
   if v_assignee=any(v_approvers) then raise exception using errcode='22023',message='financial_close_self_approval'; end if;
+  if exists(select 1 from unnest(v_approvers) a left join auth.users u on u.id=a where u.id is null) then raise exception using errcode='22023',message='financial_close_approver_not_found'; end if;
   if cardinality(v_dependencies)>0 and exists(
    select 1 from unnest(v_dependencies) d(id)
    left join executive_visuals.financial_close_tasks t
@@ -172,13 +173,14 @@ begin
   v_assignee:=(p_payload->>'assignedTo')::uuid;
   select array_agg(value::uuid) into v_approvers from jsonb_array_elements_text(p_payload->'approverIds');
   if v_assignee=any(v_approvers) then raise exception using errcode='22023',message='financial_close_self_approval'; end if;
+  if exists(select 1 from unnest(v_approvers) a left join auth.users u on u.id=a where u.id is null) then raise exception using errcode='22023',message='financial_close_approver_not_found'; end if;
   update executive_visuals.financial_close_tasks t set assigned_to=v_assignee,approver_ids=v_approvers,
    status='assigned',approval_cycle=approval_cycle+1,prepared_at=null,prepared_by=null,
-   approved_at=null,approved_by=null,updated_at=v_now,version=version+1
+   approved_at=null,approved_by=null,waiver_reason=null,updated_at=v_now,version=version+1
    from executive_visuals.financial_close_periods p
    where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id
     and p.owner_id=t.owner_id and p.period_month=t.period_month and p.status in('open','reopened')
-    and t.status in('assigned','in_progress','rejected')
+    and t.status in('assigned','in_progress','rejected','approved','waived')
    returning t.* into v_task;
   if not found then raise exception using errcode='55000',message='financial_close_task_not_assignable'; end if;
  elsif p_action='task.start' then
