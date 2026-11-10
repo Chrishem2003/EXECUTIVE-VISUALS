@@ -7,6 +7,7 @@ Batch 28 adds a deterministic, administrator-only reconciliation workbench. It i
 ## Capabilities
 
 - Provider invoice duplicate scan using normalized provider + invoice reference + currency.
+- Invoice header totals reconciled against the sum of supplied invoice lines.
 - Exact one-to-one invoice-line-to-metered-usage matching.
 - Exact payment settlement-to-internal-payment matching.
 - Detection of unmatched, duplicate, ambiguous, invalid and amount/model/operation/period variance cases.
@@ -21,6 +22,7 @@ Batch 28 adds a deterministic, administrator-only reconciliation workbench. It i
 Supported payload collections:
 
 - `invoiceHeaders`: provider, invoiceReference, currency, totalMinor, optional sourceId.
+- `invoiceLines` can be supplied with `invoiceHeaders` to reconcile header totals against line totals.
 - `invoiceLines` and `usageEvents`: exact provider line reference, currency, model, operation, usage period and provider-reported cost.
 - `statementRows` and `payments`: provider transaction reference, currency, exact minor-unit amount and internal payment settlement status.
 
