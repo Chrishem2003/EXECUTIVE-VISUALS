@@ -884,9 +884,10 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/workload-telemetry"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const month=String(query.periodMonth||new Date().toISOString().slice(0,7)+"-01");
+        const monthDate=new Date(month+"T00:00:00Z");
         const limit=Number(query.limit||100);
-        if(!/^\\d{4}-\\d{2}-01$/.test(month)||!Number.isFinite(Date.parse(month+"T00:00:00Z"))||
-          !Number.isSafeInteger(limit)||limit<1||limit>500)
+        if(month.length!==10||month.slice(7)!=="-01"||!Number.isFinite(monthDate.getTime())||
+          monthDate.toISOString().slice(0,10)!==month||!Number.isSafeInteger(limit)||limit<1||limit>500)
           return error(400,"WORKLOAD_TELEMETRY_FILTER_INVALID","Provide a month start date and a limit from 1 to 500.");
         const result=await rpc("ai_workload_telemetry_overview",{p_actor_id:ownerId,p_period_month:month,p_limit:limit});
         return response(200,{telemetry:result||{periodMonth:month,totals:{},byProviderModelOperation:[]}});
