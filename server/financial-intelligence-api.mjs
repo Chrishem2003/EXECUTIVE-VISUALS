@@ -1039,7 +1039,7 @@ export function createFinancialIntelligenceApi({
         }catch(err){
           const message=err.message||"Financial close command could not be applied.";
           const code=err.code||"FINANCIAL_CLOSE_COMMAND_FAILED";
-          const status=err.status||(["FINANCIAL_CLOSE_ACTION_INVALID","FINANCIAL_CLOSE_INPUT_INVALID","FINANCIAL_CLOSE_PERIOD_INVALID","FINANCIAL_CLOSE_UUID_INVALID","FINANCIAL_CLOSE_TIMESTAMP_INVALID","FINANCIAL_CLOSE_APPROVERS_INVALID","FINANCIAL_CLOSE_SELF_APPROVAL","FINANCIAL_CLOSE_EVIDENCE_REQUIRED","FINANCIAL_CLOSE_CURRENCY_INVALID","FINANCIAL_CLOSE_IDEMPOTENCY_INVALID"].includes(code)?400:409);
+          const status=err.status||(code.startsWith("FINANCIAL_CLOSE_")?400:409);
           return error(status,code,message);
         }
       }
