@@ -52,7 +52,7 @@ begin
   end if;
 
 
-  result := executive_visuals.manage_customer_subscription(owner_id,sub_id,'schedule_plan_change','pro-yearly','SQL integration plan change');
+  result := executive_visuals.manage_customer_subscription(v_owner_id,sub_id,'schedule_plan_change','pro-yearly','SQL integration plan change');
   if result->>'scheduledPlanCode'<>'pro-yearly' then raise exception 'Plan change was not scheduled'; end if;
 
   insert into executive_visuals.payment_transactions(
