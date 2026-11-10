@@ -26,7 +26,8 @@ const canonical=value=>Array.isArray(value)?"["+value.map(canonical).join(",")+"
 const sum=(items,field)=>items.reduce((n,x)=>n+(Number.isSafeInteger(x[field])?x[field]:0),0);
 
 export function assessFinancialCloseReadiness(input={}){
- const closePeriod=period(input.period),asOf=iso(input.asOf||new Date().toISOString(),"asOf"),evidence=evidenceIndex(input.evidence||[]);\n for(const item of evidence.values())if(item.period!==closePeriod)fail("FINANCIAL_CLOSE_EVIDENCE_PERIOD_MISMATCH","Every evidence record must belong to the assessed close period.");
+ const closePeriod=period(input.period),asOf=iso(input.asOf||new Date().toISOString(),"asOf"),evidence=evidenceIndex(input.evidence||[]);
+ for(const item of evidence.values())if(item.period!==closePeriod)fail("FINANCIAL_CLOSE_EVIDENCE_PERIOD_MISMATCH","Every evidence record must belong to the assessed close period.");
  const tasks=list(input.tasks||[],"tasks",300).map((x,index)=>{
   const id=text(x.taskId,"taskId",120),title=text(x.title,"task title",180),owner=text(x.ownerId,"task ownerId",120),reviewer=x.reviewerId==null?null:text(x.reviewerId,"task reviewerId",120),status=text(x.status,"task status",32).toLowerCase();
   if(!["not_started","in_progress","completed","blocked","waived"].includes(status))fail("FINANCIAL_CLOSE_TASK_STATUS_INVALID","Task status must be not_started, in_progress, completed, blocked or waived.");
