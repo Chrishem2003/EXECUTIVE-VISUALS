@@ -458,6 +458,17 @@ begin
    'sharedCostMinor',shared_cost_minor,'unallocatedSharedCostMinor',unallocated_shared_cost_minor,
    'sharedOverheadAllocated',(allocated_shared_cost_minor>0)
   ) order by snapshot_month,currency) from periods),'[]'::jsonb),
+  'customers',coalesce((select jsonb_agg(jsonb_build_object(
+   'periodMonth',r.snapshot_month,'ownerId',r.owner_id,'currency',r.currency,
+   'mrrMinor',r.mrr_minor,'directCostMinor',r.direct_cost_minor,
+   'allocatedSharedCostMinor',r.allocated_shared_cost_minor,
+   'fullyLoadedCostMinor',(r.direct_cost_minor+r.allocated_shared_cost_minor),
+   'contributionMinor',r.contribution_minor,
+   'grossMarginPct',case when r.mrr_minor>0 then round(r.contribution_minor*100.0/r.mrr_minor,2) else null end,
+   'fullyLoadedContributionMinor',r.fully_loaded_contribution_minor,
+   'fullyLoadedGrossMarginPct',case when r.mrr_minor>0 then round(r.fully_loaded_contribution_minor*100.0/r.mrr_minor,2) else null end
+  ) order by r.snapshot_month,r.currency,r.fully_loaded_contribution_minor asc,r.owner_id)
+  from customer_rows r),'[]'::jsonb),
   'limitations',jsonb_build_array(
    'Direct contribution subtracts only recorded customer-attributed service costs; fully loaded contribution also subtracts measured shared-cost allocations.',
    'Shared-cost allocations use immutable, month-matched batches and are shown separately from directly attributable expense.',
