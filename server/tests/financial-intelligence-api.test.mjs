@@ -466,3 +466,89 @@ test("provider readiness denies support users",async()=>{
   assert.equal(result.body.error.code,"FINANCE_ADMIN_REQUIRED");
   assert.equal(providerRead,false);
 });
+
+
+test("customer-initiated subscription renewal uses V4 MTN checkout and idempotent reservation",async()=>{
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body,headers:options.headers||{}});
+    if(target.includes("/payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("/payment_transactions?select=id,tx_ref&"))return json([]);
+    if(target.includes("/customer_subscriptions?select=id,owner_id,status,billing_interval"))return json([{
+      id:"44444444-4444-4444-8444-444444444444",owner_id:owner,status:"past_due",
+      billing_interval:"monthly",amount_minor:15000,currency:"UGX",
+      current_period_end:"2026-10-01T00:00:00Z",customer_email:"customer@example.com"
+    }]);
+    if(target.endsWith("/payment_transactions")&&options.method==="POST")return json([{
+      id:paymentId,owner_id:owner,tx_ref:"EVRrenewalref",status:"pending",
+      metadata:{payment_purpose:"subscription_renewal",subscription_id:"44444444-4444-4444-8444-444444444444",idempotency_key:"renewal-key-0001",mobile_money_network:"MTN"}
+    }],201);
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges")return json({data:{id:"chg_renewal_1",status:"pending",next_action:{type:"wait"}}},202);
+    if(target.includes("/payment_transactions?id=eq."+paymentId)&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId,
+    idempotencyKey:"renewal-key-0001",
+    body:{subscriptionId:"44444444-4444-4444-8444-444444444444",network:"MTN",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}
+  });
+  assert.equal(result.status,202);
+  assert.equal(result.body.payment.providerChargeId,"chg_renewal_1");
+  const charge=calls.find(x=>x.target.endsWith("/orchestration/direct-charges"));
+  assert.ok(charge);
+  const payload=JSON.parse(charge.body);
+  assert.equal(payload.amount,15000);
+  assert.equal(payload.currency,"UGX");
+  assert.equal(payload.payment_method.mobile_money.network,"MTN");
+  assert.equal(charge.headers["x-idempotency-key"],"renewal-key-0001");
+  const inserted=calls.find(x=>x.target.endsWith("/payment_transactions")&&x.method==="POST");
+  assert.equal(JSON.parse(inserted.body).metadata.payment_purpose,"subscription_renewal");
+});
+
+test("subscription renewal checkout rejects a second pending attempt before charging provider",async()=>{
+  let providerCalled=false;
+  const service=api(async url=>{
+    const target=String(url);
+    if(target.includes("/payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("/payment_transactions?select=id,tx_ref&"))return json([{id:paymentId,tx_ref:"EVRpending"}]);
+    if(target.includes("flutterwave"))providerCalled=true;
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({
+    method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId,
+    idempotencyKey:"renewal-key-0002",
+    body:{subscriptionId:"44444444-4444-4444-8444-444444444444",network:"AIRTEL",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}
+  });
+  assert.equal(result.status,409);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_RENEWAL_ALREADY_PENDING");
+  assert.equal(providerCalled,false);
+});
+
+test("verified V4 renewal charge calls atomic renewal RPC instead of granting purchase credits",async()=>{
+  const rawBody=Buffer.from(JSON.stringify({event:"charge.completed",data:{id:"chg_renewal_verified",status:"succeeded"}}));
+  const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
+  const calls=[];
+  const service=api(async(url,options={})=>{
+    const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
+    if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")return json({access_token:"provider-test-token",expires_in:600});
+    if(target.includes("/payment_webhook_events?select=id"))return json([]);
+    if(target.endsWith("/payment_webhook_events")&&options.method==="POST")return new Response(null,{status:201});
+    if(target==="https://developersandbox-api.flutterwave.com/charges/chg_renewal_verified")return json({data:{
+      id:"chg_renewal_verified",reference:"EVRverifiedrenewal",currency:"UGX",amount:15000,status:"succeeded"
+    }});
+    if(target.includes("/payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata,description"))return json([{
+      id:paymentId,owner_id:owner,provider_transaction_id:"chg_renewal_verified",
+      tx_ref:"EVRverifiedrenewal",amount_minor:15000,currency:"UGX",status:"pending",
+      metadata:{payment_purpose:"subscription_renewal",subscription_id:"44444444-4444-4444-8444-444444444444"}
+    }]);
+    if(target.endsWith("/rpc/finalize_subscription_renewal"))return json({status:"active"});
+    if(target.includes("/payment_webhook_events?provider=eq.flutterwave&event_key=eq.")&&options.method==="PATCH")return new Response(null,{status:204});
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handleWebhook({rawBody,signatureV4:signature});
+  assert.equal(result.status,200);
+  assert.equal(result.body.result.subscriptionRenewed,true);
+  assert.ok(calls.some(x=>x.target.endsWith("/rpc/finalize_subscription_renewal")));
+  assert.equal(calls.some(x=>x.target.endsWith("/rpc/finalize_payment_purchase")),false);
+});
