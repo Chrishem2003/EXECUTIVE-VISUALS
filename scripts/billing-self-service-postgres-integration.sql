@@ -337,7 +337,7 @@ begin
  end if;
 end $$;
 
-do $
+do $$
 declare
  forecast_result jsonb;
  ugx_row jsonb;
@@ -370,6 +370,6 @@ begin
  if not exists(select 1 from executive_visuals.financial_forecast_snapshots where id=snapshot_id) then
   raise exception 'Forecast snapshot was not persisted';
  end if;
-end $;
+end $$;
 
 reset role;
