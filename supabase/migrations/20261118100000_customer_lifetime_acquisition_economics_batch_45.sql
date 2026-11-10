@@ -137,8 +137,8 @@ begin
    sum(predicted_lifetime_contribution_minor) filter(where predicted_lifetime_contribution_minor is not null)::bigint predicted_lifetime_contribution_minor,
    count(*) filter(where predicted_lifetime_contribution_minor is not null)::integer modeled_customers,
    sum(cac_minor) filter(where cac_minor is not null)::bigint attributed_cac_minor,
-   sum(realized_contribution_to_date_minor-coalesce(cac_minor,0))::bigint realized_after_cac_minor,
-   sum(predicted_lifetime_contribution_minor-coalesce(cac_minor,0)) filter(where predicted_lifetime_contribution_minor is not null)::bigint predicted_after_cac_minor
+   sum(realized_contribution_to_date_minor-cac_minor) filter(where cac_minor is not null)::bigint realized_after_cac_minor,
+   sum(predicted_lifetime_contribution_minor-cac_minor) filter(where predicted_lifetime_contribution_minor is not null and cac_minor is not null)::bigint predicted_after_cac_minor
   from ltv_rows group by currency
  )
  select jsonb_build_object(
@@ -169,8 +169,8 @@ begin
    'monthlyContributionMinor',l.contribution_minor,
    'realizedContributionToDateMinor',l.realized_contribution_to_date_minor,
    'predictedLifetimeContributionMinor',l.predicted_lifetime_contribution_minor,
-   'cacMinor',l.cac_minor,'realizedAfterCacMinor',l.realized_contribution_to_date_minor-coalesce(l.cac_minor,0),
-   'predictedAfterCacMinor',case when l.predicted_lifetime_contribution_minor is null then null else l.predicted_lifetime_contribution_minor-coalesce(l.cac_minor,0) end,
+   'cacMinor',l.cac_minor,'realizedAfterCacMinor',case when l.cac_minor is null then null else l.realized_contribution_to_date_minor-l.cac_minor end,
+   'predictedAfterCacMinor',case when l.predicted_lifetime_contribution_minor is null or l.cac_minor is null then null else l.predicted_lifetime_contribution_minor-l.cac_minor end,
    'ltvCacRatio',case when l.cac_minor>0 and l.predicted_lifetime_contribution_minor is not null then round(l.predicted_lifetime_contribution_minor::numeric/l.cac_minor,2) else null end,
    'growthQuality',case when l.cac_minor is null then 'insufficient_acquisition_evidence'
     when l.predicted_lifetime_contribution_minor is null then 'insufficient_lifetime_evidence'
