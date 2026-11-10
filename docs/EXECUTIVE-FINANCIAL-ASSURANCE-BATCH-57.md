@@ -36,7 +36,7 @@ The endpoint deliberately does not produce a composite risk score, fraud probabi
 
 GitHub Actions runs the existing remediation API test suite (including Batch 57 scope and metric regression tests), remediation lifecycle tests, audit export verifier, API syntax check and Financial Command Centre TypeScript check.
 
-Batch 57 remediation workflow **passed** on commit `0fb9fa4c5ce8fbe6af4cc293b1d0a542f338d6c4`: API and role-boundary tests (including portfolio-scope/metrics), lifecycle tests, API syntax, audit export verifier and Financial Command Centre TypeScript all succeeded. Workflow: https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42886558475.
+All three workflows **passed** on final Batch 57 commit `9d0e015c0bbffe581e16b8c96d57b05629f2f7ce`: remediation workbench (https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42886663708), financial intelligence (https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42886674368), and billing self-service quality (https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42886674390).
 
 ## Release boundary
 
