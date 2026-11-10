@@ -259,6 +259,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(error.code==="CLOUD_TIMELINE_ACCESS_DENIED")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(error.code==="CLOUD_TIMELINE_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_TIMELINE_INVALID")return response(422,{error:{code:"TIMELINE_INVALID",message:error.message,issues:error.issues||[]}});
+   if(error.code==="CREDIT_RESERVATION_INVALID")return response(500,{error:{code:"CREDIT_RESERVATION_INVALID",message:"Credit reservation could not be confirmed. No render job was created."}});
    if(error.status===409)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"The render request conflicts with an existing job."}});
    throw error;
   }
