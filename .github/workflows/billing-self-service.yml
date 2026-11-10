@@ -152,7 +152,13 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261113120000_revenue_movement_cohort_intelligence_batch_39.sql
       - name: Verify Batch 39 revenue movement and observed cohort curves
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/revenue-movement-cohorts-postgres-integration.sql
+      - name: Apply Batch 40 cashflow and liquidity forecasting
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261114100000_cashflow_liquidity_forecasting_batch_40.sql
+      - name: Verify Batch 40 cashflow scenarios and liquidity shortfall
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cashflow-liquidity-postgres-integration-batch-40.sql
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
         run: node --test server/tests/revenue-movement-cohorts.test.mjs
+      - name: Test Batch 40 cashflow and liquidity API
+        run: node --test server/tests/cashflow-liquidity-batch-40.test.mjs
