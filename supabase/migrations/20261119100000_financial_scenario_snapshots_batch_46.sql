@@ -169,8 +169,7 @@ begin
   select cur.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
    ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
    co.direct_service_cost_minor,co.event_count direct_cost_event_count,
-   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
-    where ca.id is not null),'[]'::jsonb)
+   case when ca.id is null then '[]'::jsonb else jsonb_build_array(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference)) end
    ||coalesce(re.evidence,'[]'::jsonb)||coalesce(ce.evidence,'[]'::jsonb) evidence_references
   from currencies cur left join cash ca on ca.currency=cur.currency
   left join revenue r on r.currency=cur.currency
