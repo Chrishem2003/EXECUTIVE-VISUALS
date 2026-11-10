@@ -60,7 +60,7 @@ export function createControlRemediationApi({db}={}){
    const findingId=text(body.findingId,160),controlId=text(body.controlId,120),title=text(body.title,240),severity=text(body.severity,24).toLowerCase();
    const dueAt=date(body.dueAt),actionPlan=text(body.actionPlan,4000);
    if(!findingId||!controlId||!title||!dueAt||!["critical","high","medium","low","unknown"].includes(severity))return error(400,"INVALID_REMEDIATION","Finding, control, title, supported severity and due date are required.");
-   const assignedOwnerId=text(body.ownerId,64)||null,reviewerId=text(body.reviewerId,64)||null;
+   const assignedOwnerId=text(body.ownerId,64)||(!projectId?ownerId:null),reviewerId=text(body.reviewerId,64)||null;
    for(const id of [assignedOwnerId,reviewerId])if(id&&!UUID.test(id))return error(400,"INVALID_ASSIGNMENT","Assignment must reference a valid account.");
    if(assignedOwnerId){const assignedAccess=member(ownerId,projectId,assignedOwnerId);if(!assignedAccess||!["owner","editor"].includes(assignedAccess.access_role))return error(400,"INVALID_OWNER","Assigned owner must have owner or editor access to this project.");}
    if(reviewerId){const reviewerAccess=member(ownerId,projectId,reviewerId);if(!reviewerAccess||!["owner","reviewer"].includes(reviewerAccess.access_role)||reviewerId===assignedOwnerId)return error(400,"INVALID_REVIEWER","Reviewer must be a distinct project owner or reviewer.");}
