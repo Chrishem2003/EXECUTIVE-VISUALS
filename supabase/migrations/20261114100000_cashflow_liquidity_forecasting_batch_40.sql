@@ -72,6 +72,20 @@ begin
   'expectedDate',v_row.expected_date,'confidenceBps',v_row.confidence_bps,'status',v_row.status,'sourceType',v_row.source_type);
 end $$;
 
+create or replace function executive_visuals.prevent_financial_cash_evidence_mutation()
+returns trigger language plpgsql
+set search_path=pg_catalog,executive_visuals
+as $
+begin
+ raise exception 'Cash position and cashflow evidence is append-only; create a correcting evidence record instead.' using errcode='55000';
+end $;
+drop trigger if exists financial_cash_position_immutable on executive_visuals.financial_cash_position_snapshots;
+create trigger financial_cash_position_immutable before update or delete on executive_visuals.financial_cash_position_snapshots
+ for each row execute function executive_visuals.prevent_financial_cash_evidence_mutation();
+drop trigger if exists financial_cashflow_item_immutable on executive_visuals.financial_cashflow_items;
+create trigger financial_cashflow_item_immutable before update or delete on executive_visuals.financial_cashflow_items
+ for each row execute function executive_visuals.prevent_financial_cash_evidence_mutation();
+
 create or replace function executive_visuals.financial_cashflow_forecast_overview(p_actor_id uuid)
 returns jsonb language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
@@ -149,6 +163,10 @@ begin
   'restrictedCashMinor',cs.restricted_cash_minor,'asOfDate',cs.as_of_date,
   'positionAgeDays',(current_date-cs.as_of_date),'positionSource','captured_cash_position',
   'weekly',cs.weekly,'monthly',cs.monthly,'horizons',cs.horizons,'firstProjectedShortfallDate',cs.first_shortfall,
+  'netBurn30Minor',(select h.outflows_minor-h.inflows_minor from horizon_rows h where h.currency=cs.currency and h.scenario=cs.scenario and h.days=30),
+  'runwayDays',case when current_date-cs.as_of_date<=14 and
+   (select h.outflows_minor-h.inflows_minor from horizon_rows h where h.currency=cs.currency and h.scenario=cs.scenario and h.days=30)>0
+   then floor(cs.available_cash_minor::numeric*30/(select h.outflows_minor-h.inflows_minor from horizon_rows h where h.currency=cs.currency and h.scenario=cs.scenario and h.days=30))::integer else null end,
   'assumptions',jsonb_build_object('receiptConfidenceApplied',true,'baseInflowMultiplierBps',case cs.scenario when 'downside' then 8000 when 'upside' then 11000 else 10000 end,
    'outflowMultiplierBps',case cs.scenario when 'downside' then 11000 else 10000 end)
  ) order by cs.currency,case cs.scenario when 'base' then 1 when 'downside' then 2 else 3 end) from currency_scenarios cs),'[]'::jsonb),
@@ -169,6 +187,9 @@ begin
  return v_result;
 end $$;
 
+revoke all on table executive_visuals.financial_cash_position_snapshots,executive_visuals.financial_cashflow_items from public,anon,authenticated;
+grant all on table executive_visuals.financial_cash_position_snapshots,executive_visuals.financial_cashflow_items to service_role;
+revoke all on function executive_visuals.prevent_financial_cash_evidence_mutation() from public,anon,authenticated;
 revoke all on function executive_visuals.record_financial_cash_position(uuid,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.record_financial_cashflow_item(uuid,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.financial_cashflow_forecast_overview(uuid) from public,anon,authenticated;
