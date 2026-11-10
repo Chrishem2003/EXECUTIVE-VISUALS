@@ -43,7 +43,7 @@ Flutterwave V4 documents list and retrieve settlement endpoints, and settlement 
 5. compares provider gross and (when locally recorded for every charge) provider fees;
 6. persists the provider settlement snapshot and opens exceptions for exact amount mismatches.
 
-If Flutterwave returns only a partial charge list (the V4 reference documents a maximum of ten embedded charge rows), or a local charge/fee match is incomplete, the settlement remains **review_required**. The application does not manufacture a match from aggregate estimates.
+Settlement charge details are paginated independently (V4 retrieve-settlement reference supports page/size, up to 50 rows per page). The importer reads up to 20 pages; if provider metadata or charge counts show that the line-item list is incomplete, or a local charge/fee match is incomplete, the settlement remains **review_required**. The application does not manufacture a match from aggregate estimates.
 
 Official provider references:
 - https://developer.flutterwave.com/v4.0/docs/settlements
