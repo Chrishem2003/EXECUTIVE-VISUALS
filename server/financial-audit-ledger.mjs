@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 const GENESIS="0".repeat(64);
 const VERSION=1;
 const ALLOWED=new Set([
- "close_period.created","close_task.assigned","close_task.completed",
+ "close_period.created","close_task.assigned","close_task.started","close_task.submitted","close_task.approved","close_task.rejected","close_task.completed","close_period.submitted","close_period.approved","close_period.locked",
  "close_task.waived","reconciliation.reviewed","close_approval.recorded",
  "close_period.reopened","evidence.attached","evidence.retention_changed"
 ]);
