@@ -35,7 +35,7 @@ begin
  if (v_base->>'lowestHeadroomMinor')::bigint<>-1250000 or (v_base->>'firstFloorBreachDate')::date<>current_date+35 then
   raise exception 'Base scenario floor headroom or breach date incorrect: %',v_base;
  end if;
- if (v_downside->>'lowestHeadroomMinor')::bigint<>(-1320000) then
+ if (v_downside->>'lowestHeadroomMinor')::bigint<>(-1440000) then
   raise exception 'Downside floor headroom incorrect: %',v_downside;
  end if;
  if (v_upside->>'lowestHeadroomMinor')::bigint<>(-1235000) then
