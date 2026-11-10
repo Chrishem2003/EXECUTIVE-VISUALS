@@ -47,7 +47,7 @@ create or replace function executive_visuals.create_financial_scenario_snapshot(
 ) returns jsonb language plpgsql security definer
 set search_path=pg_catalog,executive_visuals,auth
 as $$
-declare v_row executive_visuals.financial_scenario_snapshots%rowtype;v_inserted boolean:=false;
+declare v_row executive_visuals.financial_scenario_snapshots%rowtype;v_inserted boolean:=false;v_rows integer:=0;
 begin
  if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
   where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
@@ -71,7 +71,8 @@ begin
  ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
   p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
  on conflict(actor_id,idempotency_key) do nothing;
- get diagnostics v_inserted=row_count;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
  select * into v_row from executive_visuals.financial_scenario_snapshots
   where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
  if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
