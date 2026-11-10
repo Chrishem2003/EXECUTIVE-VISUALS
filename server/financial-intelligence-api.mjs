@@ -731,6 +731,97 @@ export function createFinancialIntelligenceApi({
         const result=await reconcilePendingRefunds({limit:100});
         return response(200,result);
       }
+      if(path==="/api/admin/finance/command-centre"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const from=String(query.from||"").slice(0,30),to=String(query.to||"").slice(0,30);
+        const validDate=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
+        if((from&&!validDate(from))||(to&&!validDate(to))||(from&&to&&to<from))return error(400,"FINANCE_PERIOD_INVALID","Use a valid inclusive date range.");
+        const start=from?from+"T00:00:00.000Z":new Date(Date.now()-30*86400000).toISOString();
+        const end=to?to+"T23:59:59.999Z":new Date().toISOString();
+        const data=await rpc("admin_financial_command_centre",{p_actor_id:ownerId,p_from:start,p_to:end,p_limit:Math.max(1,Math.min(200,Number(query.limit)||100))});
+        return response(200,{...data,generatedAt:new Date().toISOString(),source:"verified local payment, refund and subscription records"});
+      }
+      if(path==="/api/admin/finance/customer"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const customerId=String(query.ownerId||"");
+        if(!UUID.test(customerId))return error(400,"CUSTOMER_ID_INVALID","A valid customer ID is required.");
+        const [payments,subscriptions,refunds,attempts,disputes]=await Promise.all([
+          dbRequest("payment_transactions?select=id,tx_ref,provider_transaction_id,amount_minor,currency,status,payment_method,description,paid_at,created_at,provider_fee_minor&owner_id=eq."+encodeURIComponent(customerId)+"&order=created_at.desc&limit=200"),
+          dbRequest("customer_subscriptions?select=id,plan_code,status,billing_interval,amount_minor,currency,current_period_start,current_period_end,grace_until,cancel_at_period_end,created_at&owner_id=eq."+encodeURIComponent(customerId)+"&order=created_at.desc&limit=50"),
+          dbRequest("payment_refunds?select=id,payment_transaction_id,amount_minor,currency,status,reason,requested_at,completed_at&owner_id=eq."+encodeURIComponent(customerId)+"&order=requested_at.desc&limit=100"),
+          dbRequest("payment_attempts?select=id,tx_ref,amount_minor,currency,status,failure_code,failure_message,attempt_number,next_retry_at,created_at&owner_id=eq."+encodeURIComponent(customerId)+"&order=created_at.desc&limit=100"),
+          dbRequest("chargeback_cases?select=id,payment_transaction_id,provider_case_id,amount_minor,currency,status,stage,response_due_at,created_at&owner_id=eq."+encodeURIComponent(customerId)+"&order=created_at.desc&limit=100")
+        ]);
+        const rows=x=>Array.isArray(x.data)?x.data:[];
+        return response(200,{customerId,payments:rows(payments),subscriptions:rows(subscriptions),refunds:rows(refunds),paymentAttempts:rows(attempts),chargebacks:rows(disputes)});
+      }
+      if(path==="/api/admin/finance/audit"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const limit=Math.max(1,Math.min(200,Number(query.limit)||50));
+        const result=await dbRequest("financial_admin_audit?select=id,actor_id,actor_role,action,resource_type,resource_id,reason,request_id,metadata,created_at&order=created_at.desc&limit="+limit);
+        return response(200,{events:Array.isArray(result.data)?result.data:[],limit,immutable:true});
+      }
+      if(path==="/api/admin/finance/export"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const kind=String(query.kind||"payments");
+        const limit=Math.max(1,Math.min(1000,Number(query.limit)||1000));
+        const allowed={
+          payments:"payment_transactions?select=id,owner_id,tx_ref,provider_transaction_id,amount_minor,currency,status,payment_method,provider_fee_minor,paid_at,created_at&order=created_at.desc&limit="+limit,
+          refunds:"payment_refunds?select=id,owner_id,payment_transaction_id,provider_refund_id,amount_minor,currency,status,reason,requested_at,completed_at&order=requested_at.desc&limit="+limit,
+          subscriptions:"customer_subscriptions?select=id,owner_id,plan_code,status,billing_interval,amount_minor,currency,current_period_start,current_period_end,created_at&order=created_at.desc&limit="+limit,
+          chargebacks:"chargeback_cases?select=id,owner_id,provider_case_id,amount_minor,currency,status,stage,response_due_at,created_at&order=created_at.desc&limit="+limit,
+          settlements:"flutterwave_settlement_records?select=provider_settlement_id,currency,gross_amount_minor,net_amount_minor,fee_amount_minor,refund_amount_minor,chargeback_amount_minor,provider_status,destination,due_at,settled_at,last_reconciled_at&order=last_reconciled_at.desc&limit="+limit
+        };
+        if(!allowed[kind])return error(400,"EXPORT_KIND_INVALID","Choose payments, refunds, subscriptions, chargebacks or settlements.");
+        const data=await dbRequest(allowed[kind]);
+        await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.export."+kind,p_resource_type:"financial_report",p_resource_id:kind,p_reason:"Administrator requested financial data export",p_request_id:randomUUID(),p_metadata:{rowCount:Array.isArray(data.data)?data.data.length:0}});
+        return response(200,{kind,generatedAt:new Date().toISOString(),rows:Array.isArray(data.data)?data.data:[],truncated:Array.isArray(data.data)&&data.data.length===limit});
+      }
+      if(path==="/api/admin/finance/settlements/reconcile"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const from=String(body.from||"").slice(0,10),to=String(body.to||"").slice(0,10);
+        const dateOk=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
+        if(!dateOk(from)||!dateOk(to)||to<from)return error(400,"SETTLEMENT_PERIOD_INVALID","Provide a valid settlement date range.");
+        const list=await providerRequest("/settlements?page=1&size=100&from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
+        const settlements=Array.isArray(list?.data)?list.data:[];
+        const results=[];
+        for(const summary of settlements){
+          try{
+            const sid=String(summary?.id||"");
+            if(!sid)continue;
+            const detailPayload=await providerRequest("/settlements/"+encodeURIComponent(sid));
+            const detail=detailPayload?.data||detailPayload;
+            const charges=Array.isArray(detail?.charges)?detail.charges:[];
+            const declared=Number(detail?.charge_count||summary?.charge_count||0);
+            const complete=declared===charges.length;
+            let expectedGross=null,expectedFees=null;
+            if(complete){
+              const ids=charges.map(c=>String(c?.id||"")).filter(Boolean);
+              if(ids.length===charges.length&&ids.length){
+                const filter=ids.map(id=>encodeURIComponent(id)).join(",");
+                const local=await dbRequest("payment_transactions?select=provider_transaction_id,amount_minor,provider_fee_minor,currency,status&provider=eq.flutterwave&provider_transaction_id=in.("+filter+")");
+                const localRows=Array.isArray(local.data)?local.data:[];
+                if(localRows.length===ids.length&&localRows.every(row=>row.currency===detail.currency&&row.status==="successful")){
+                  expectedGross=localRows.reduce((sum,row)=>sum+Number(row.amount_minor),0);
+                  if(localRows.every(row=>Number.isSafeInteger(row.provider_fee_minor)))expectedFees=localRows.reduce((sum,row)=>sum+Number(row.provider_fee_minor),0);
+                }
+              }
+            }
+            const recorded=await rpc("record_flutterwave_settlement",{p_actor_id:ownerId,p_settlement:detail,p_expected_gross_minor:expectedGross,p_expected_fees_minor:expectedFees});
+            results.push({...recorded,lineItemsComplete:complete,localChargeMatch:expectedGross!==null,reconciliationStatus:recorded.exceptions?.length?"exception":expectedGross===null?"review_required":"matched"});
+          }catch(err){results.push({providerSettlementId:String(summary?.id||""),reconciliationStatus:"failed",code:err.code||"SETTLEMENT_RECONCILIATION_FAILED"});}
+        }
+        await rpc("write_financial_admin_audit",{p_actor_id:ownerId,p_action:"finance.settlements.reconcile",p_resource_type:"settlement_batch",p_resource_id:from+"/"+to,p_reason:"Administrator initiated Flutterwave settlement reconciliation",p_request_id:randomUUID(),p_metadata:{settlementCount:results.length}});
+        return response(200,{from,to,checked:results.length,results,provider:"flutterwave",note:"Settlements without complete provider charge details or exact local charge matches remain review_required; no discrepancy is silently marked as reconciled."});
+      }
+      if(path==="/api/admin/finance/reconciliation-exceptions/resolve"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
+        const exceptionId=String(body.exceptionId||""),status=String(body.status||""),reason=String(body.reason||"").trim();
+        if(!UUID.test(exceptionId)||!["investigating","resolved","accepted_difference"].includes(status)||reason.length<3||reason.length>500)
+          return error(400,"RECONCILIATION_RESOLUTION_INVALID","Provide an exception, valid status and a reason.");
+        await rpc("resolve_financial_reconciliation_exception",{p_actor_id:ownerId,p_exception_id:exceptionId,p_status:status,p_reason:reason});
+        return response(200,{success:true,status,exceptionId});
+      }
       return null;
     }catch(err){
       const status=err.status===400?400:err.status===404?404:err.status===409?409:err.status===202?202:502;
