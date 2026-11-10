@@ -1561,3 +1561,25 @@ test("financial close API rejects unsupported commands, malformed payloads and m
  assert.equal(missing.status,400);
  assert.equal(missing.body.error.code,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID");
 });
+
+
+test("reconciliation commands use the dedicated atomic audit RPC and remain administrator-only",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized reconciliation commands must not reach storage.");});
+ const forbidden=await denied.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"record_reconciliation",idempotencyKey:"recon-record-denied",payload:{}}});
+ assert.equal(forbidden.status,403);
+ let rpcName="",rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const u=String(url);
+  if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(u.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});
+  if(u.endsWith("/rpc/execute_financial_reconciliation_command")){rpcName="execute_financial_reconciliation_command";rpcBody=JSON.parse(options.body);return json({duplicate:false,reconciliation:{status:"pending"}});}
+  throw new Error("Unexpected reconciliation request: "+u);
+ });
+ const payload={periodId:"44444444-4444-4444-8444-444444444444",reconciliationKey:"operating_bank",accountName:"Operating bank",currency:"UGX",ledgerBalanceMinor:100000,statementBalanceMinor:100000,evidenceReference:"private://bank-statement",evidenceSha256:"a".repeat(64),reviewerId:"55555555-5555-4555-8555-555555555555"};
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/close/commands",ownerId:owner,body:{command:"record_reconciliation",idempotencyKey:"recon-record-2026-11",payload}});
+ assert.equal(result.status,201);
+ assert.equal(rpcName,"execute_financial_reconciliation_command");
+ assert.equal(rpcBody.p_command,"record_reconciliation");
+ assert.equal(rpcBody.p_event_envelope.eventType,"reconciliation.recorded");
+ assert.deepEqual(rpcBody.p_event_envelope.payload,payload);
+});
