@@ -476,7 +476,7 @@ begin
   raise exception 'Unknown provider pricing must remain explicitly unpriced: %',v_unpriced;
  end if;
  v_import:=executive_visuals.import_ai_provider_invoice(
-  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month-1 day')::date,
+  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month' - interval '1 day')::date,
   500,repeat('a',64),
   jsonb_build_array(jsonb_build_object('lineReference','line-b22-001','provider','runway',
    'currency','UGX','model','gen-4','operation','video','amountMinor',500,'usagePeriod',v_month::text))
@@ -485,7 +485,7 @@ begin
   raise exception 'Invoice import did not create pending evidence: %',v_import;
  end if;
  v_duplicate:=executive_visuals.import_ai_provider_invoice(
-  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month-1 day')::date,
+  v_actor,'runway','BATCH22-INV-001','UGX',v_month,(v_month+interval '1 month' - interval '1 day')::date,
   500,repeat('a',64),
   jsonb_build_array(jsonb_build_object('lineReference','line-b22-001','provider','runway',
    'currency','UGX','model','gen-4','operation','video','amountMinor',500,'usagePeriod',v_month::text))
