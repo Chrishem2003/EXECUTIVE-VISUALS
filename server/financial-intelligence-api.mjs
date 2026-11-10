@@ -658,7 +658,7 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/summary"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A billing administrator role is required.");
         const from=String(query.from||"").slice(0,30),to=String(query.to||"").slice(0,30);
-        const validPeriod=from&&to&&/^\\d{4}-\\d{2}-\\d{2}$/.test(from)&&/^\\d{4}-\\d{2}-\\d{2}$/.test(to);
+        const validPeriod=from&&to&&/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to);
         const paymentDateFilter=validPeriod?"&and=(created_at.gte."+from+"T00:00:00Z,created_at.lte."+to+"T23:59:59Z)":"";
         const refundDateFilter=validPeriod?"&and=(requested_at.gte."+from+"T00:00:00Z,requested_at.lte."+to+"T23:59:59Z)":"";
         const [payments,refunds,disputes]=await Promise.all([
@@ -734,7 +734,7 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/command-centre"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
         const from=String(query.from||"").slice(0,30),to=String(query.to||"").slice(0,30);
-        const validDate=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
+        const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
         if((from&&!validDate(from))||(to&&!validDate(to))||(from&&to&&to<from))return error(400,"FINANCE_PERIOD_INVALID","Use a valid inclusive date range.");
         const start=from?from+"T00:00:00.000Z":new Date(Date.now()-30*86400000).toISOString();
         const end=to?to+"T23:59:59.999Z":new Date().toISOString();
@@ -780,7 +780,7 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/admin/finance/settlements/reconcile"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCE_ADMIN_REQUIRED","A finance administrator role is required.");
         const from=String(body.from||"").slice(0,10),to=String(body.to||"").slice(0,10);
-        const dateOk=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
+        const dateOk=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+"T00:00:00Z"));
         if(!dateOk(from)||!dateOk(to)||to<from)return error(400,"SETTLEMENT_PERIOD_INVALID","Provide a valid settlement date range.");
         const list=await providerRequest("/settlements?page=1&size=100&from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));
         const settlements=Array.isArray(list?.data)?list.data:[];
