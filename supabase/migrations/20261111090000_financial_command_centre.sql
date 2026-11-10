@@ -219,6 +219,10 @@ begin
    'attemptNumber',a.attempt_number,'nextRetryAt',a.next_retry_at,'createdAt',a.created_at
   )) from (select * from payment_attempts where status in ('failed','retry_scheduled','exhausted') order by created_at desc limit p_limit) a),'[]'::jsonb),
   'settlementExceptions',(select count(*) from financial_reconciliation_exceptions where status='open'),
+  'reconciliationExceptions',coalesce((select jsonb_agg(jsonb_build_object(
+   'id',e.id,'providerSettlementId',e.provider_settlement_id,'currency',e.currency,'code',e.exception_code,
+   'expectedMinor',e.expected_minor,'actualMinor',e.actual_minor,'status',e.status,'reason',e.resolution_reason,'createdAt',e.created_at
+  )) from (select * from financial_reconciliation_exceptions where status in ('open','investigating') order by created_at desc limit p_limit) e),'[]'::jsonb),
   'dataQuality',jsonb_build_object('mrrIsRunRateNotCash','true','clvIsRealizedHistoricalValue','true','currenciesAreNeverAggregated','true')
  ) into result;
  return result;
