@@ -99,9 +99,10 @@ begin
  if (v_customer->>'subscriptionIncludedCredits')::bigint<>10000 then
   raise exception 'Subscription entitlement snapshot was not reported: %',v_customer;
  end if;
- if jsonb_array_length(v_report->'byCurrency')<>1
-  or (v_report->'byCurrency'->0->>'currency')<>'UGX' then
-  raise exception 'Customer economics crossed currency boundaries: %',v_report->'byCurrency';
+ if not exists(select 1 from jsonb_array_elements(v_report->'byCurrency') c where c->>'currency'='UGX')
+  or not exists(select 1 from jsonb_array_elements(v_report->'byCurrency') c where c->>'currency'='XTS')
+  or (select count(*) from jsonb_array_elements(v_report->'byCurrency') c where c->>'currency'='UGX')<>1 then
+  raise exception 'Customer economics failed to preserve separate currency groups: %',v_report->'byCurrency';
  end if;
 end $batch37$;
 reset role;
