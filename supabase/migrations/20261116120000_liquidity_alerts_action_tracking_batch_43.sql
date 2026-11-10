@@ -43,7 +43,7 @@ create table if not exists executive_visuals.financial_liquidity_alert_events(
  check(event_type<>'action_assigned' or (assigned_to is not null and length(trim(assigned_to)) between 2 and 160))
 );
 create index if not exists financial_liquidity_alert_events_latest_idx
- on executive_visuals.financial_liquidity_alert_events(alert_id,created_at desc);
+ on executive_visuals.financial_liquidity_alert_events(alert_id,event_order desc);
 
 create or replace function executive_visuals.prevent_financial_liquidity_alert_history_mutation()
 returns trigger language plpgsql set search_path=pg_catalog,executive_visuals
@@ -104,7 +104,7 @@ begin
    v_evidence:=jsonb_build_object('currency',v_scenario->>'currency','scenario',v_scenario->>'scenario',
     'policyEffectiveFrom',v_policy->>'effectiveFrom','forecastDate',v_date,'minimumCashFloorMinor',v_threshold,
     'projectedClosingMinor',v_observed,'shortfallMinor',v_gap,'lowestProjectedClosingMinor',v_scenario->>'lowestProjectedClosingMinor',
-    'lowestHeadroomMinor',v_scenario->>'lowestHeadroomMinor','forecastGeneratedAt',v_report->>'generatedAt');
+    'lowestHeadroomMinor',v_scenario->>'lowestHeadroomMinor');
    insert into financial_liquidity_alerts(alert_key,actor_id,alert_type,severity,currency,scenario,policy_effective_from,title)
     values(v_alert_key,p_actor_id,v_type,v_severity,v_scenario->>'currency',v_scenario->>'scenario',(v_policy->>'effectiveFrom')::date,
      concat(v_scenario->>'currency',' ',upper(v_scenario->>'scenario'),' forecast breaches the minimum cash floor'))
@@ -135,7 +135,7 @@ begin
    v_evidence:=jsonb_build_object('currency',v_scenario->>'currency','scenario',v_scenario->>'scenario',
     'policyEffectiveFrom',v_policy->>'effectiveFrom','reserveTargetMinor',v_threshold,'maximumReserveGapMinor',v_gap,
     'projectedCashAtMaximumGapMinor',v_observed,'firstReserveGapDate',v_date,
-    'forecastGeneratedAt',v_report->>'generatedAt','weekly',v_scenario->'weekly');
+    'weekly',v_scenario->'weekly');
    insert into financial_liquidity_alerts(alert_key,actor_id,alert_type,severity,currency,scenario,policy_effective_from,title)
     values(v_alert_key,p_actor_id,v_type,v_severity,v_scenario->>'currency',v_scenario->>'scenario',(v_policy->>'effectiveFrom')::date,
      concat(v_scenario->>'currency',' ',upper(v_scenario->>'scenario'),' forecast falls below the reserve target'))
