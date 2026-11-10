@@ -9,7 +9,9 @@ Batch 52 strengthens the shared-project remediation review lifecycle.
 - A review return is recorded as `review_changes_requested` in the append-only remediation history, with the note retained.
 - A distinct reviewer must be assigned before an action can enter `pending_review`; this prevents actions becoming stranded in an unreviewable state.
 - Status updates use a revision-and-status compare-and-set update inside a SQLite immediate transaction. Stale concurrent decisions return HTTP 409 rather than silently overwriting another decision.
-- The Financial Command Centre exposes a reviewer feedback form for project-scoped actions with an assigned reviewer.
+- The Financial Command Centre can switch between the personal register and accessible shared-project registers.
+- Project owners can assign an accountable owner and a distinct independent reviewer from current project membership, update due dates and action plans, and submit the changes with an expected revision.
+- Project member roles are loaded from the authenticated project-members endpoint; the server revalidates every assignment.
 - Adds regression tests for viewer/editor denial, reviewer-authorized returns, mandatory review notes and missing-reviewer submission.
 
 ## Authorization model
