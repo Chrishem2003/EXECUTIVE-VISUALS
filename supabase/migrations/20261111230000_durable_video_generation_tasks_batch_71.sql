@@ -254,7 +254,7 @@ begin
     raise exception 'VIDEO_TASK_STATE_CONFLICT';
   end if;
   if p_to_state='succeeded' and (
-    select count(*)=jsonb_array_length(a.snapshot_json->'shots')
+    select count(t.id)=jsonb_array_length(a.snapshot_json->'shots')
        and coalesce(bool_and(t.state='succeeded'),false)
     from executive_visuals.video_generation_approvals a
     left join executive_visuals.video_generation_tasks t on t.approval_id=a.id
