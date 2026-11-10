@@ -20,6 +20,9 @@ create unique index if not exists ai_invoice_reconciliation_one_match_per_usage
  where usage_event_id is not null;
 create index if not exists ai_invoice_reconciliation_import_idx
  on executive_visuals.ai_provider_invoice_reconciliation_events(invoice_import_id,match_status);
+create index if not exists ai_usage_invoice_reference_idx
+ on executive_visuals.ai_usage_cost_events(provider,requested_model,currency,invoice_line_reference)
+ where invoice_line_reference<>'';
 alter table executive_visuals.ai_provider_invoice_reconciliation_events enable row level security;
 revoke all on executive_visuals.ai_provider_invoice_reconciliation_events from public,anon,authenticated;
 grant select,insert on executive_visuals.ai_provider_invoice_reconciliation_events to service_role;
@@ -110,7 +113,7 @@ begin
  for v_line in select * from ai_provider_invoice_lines where import_id=p_import_id order by id loop
   select array_agg(id),count(*) into v_candidates,v_count from ai_usage_cost_events
    where provider=v_line.provider and requested_model=v_line.model and currency=v_line.currency
-    and invoice_line_reference=v_line.provider_line_reference
+    and invoice_line_reference=v_line.provider_line_reference and cost_basis='provider_reported'
     and not exists(select 1 from ai_provider_invoice_reconciliation_events prior where prior.usage_event_id=ai_usage_cost_events.id);
   if coalesce(v_count,0)=0 then v_status:='unmatched';
   elsif v_count>1 then v_status:='ambiguous';
