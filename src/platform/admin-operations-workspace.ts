@@ -5,7 +5,8 @@ type UserRow={id:string;email:string;authSource:string;createdAt:string;projects
 type JobRow={id:string;email:string;jobType:string;status:string;progress:number;attempts:number;createdAt:string;updatedAt:string;completedAt:string|null};
 type ProviderRow={id:string;provider:string;status:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;reason:string;capabilities:string[]};
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
-const state:{loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];updatedAt:string}={loading:false,error:"Administrator data has not been loaded.",overview:null,users:[],jobs:[],providers:[],audit:[],updatedAt:""};
+const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],audit:[],updatedAt:""};
+export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
 const money=(value:number)=>{const n=Number(value||0)/1_000_000;return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n);};
@@ -46,4 +47,9 @@ export async function loadAdminOperationsWorkspace(){
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.adminOperations==="true")view.innerHTML=renderAdminOperationsWorkspace();}
 export function initAdminOperationsWorkspace(){
  document.addEventListener("click",event=>{if((event.target as HTMLElement).closest("[data-admin-ops-refresh]"))void loadAdminOperationsWorkspace();});
+ void apiRequest<{capabilities:{admin:boolean}}>("/api/me").then(result=>{
+  state.allowed=result.capabilities?.admin===true;
+  state.error=state.allowed?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
+  window.dispatchEvent(new CustomEvent("ev:admin-operations-capability"));
+ }).catch(()=>{state.allowed=false;state.error="Sign in with an allowlisted administrator account to access this workspace.";window.dispatchEvent(new CustomEvent("ev:admin-operations-capability"));});
 }
