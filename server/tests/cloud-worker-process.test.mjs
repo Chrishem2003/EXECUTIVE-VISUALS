@@ -63,3 +63,11 @@ test("video generation worker requires explicit remote provider enablement and s
  const config=readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_GENERATION_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"server-only-secret"});
  assert.equal(config.video,true);assert.equal(config.media,false);assert.equal(config.timeline,false);
 });
+
+test("cloud worker supervisor forwards execution progress to its event log",async()=>{
+ const events=[];
+ const workers=[{async recoverExpired(){return 0;},async runCycle(options){options.onProgress({jobId:"job-video-1",workerId:"video-1",progress:45});return{claimed:false};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
+ await supervisor.start();await supervisor.stop();
+ assert.ok(events.some(event=>event.kind==="progress"&&event.jobId==="job-video-1"&&event.progress===45));
+});
