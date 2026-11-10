@@ -107,6 +107,7 @@ if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud 
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
+if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error("Cloud video generation dispatch requires CLOUD_TIMELINE_API_ENABLED=true for authenticated job progress and asset access.");
 if(cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud video generation dispatch requires verified Supabase authentication.");
 if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
 const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createCloudVideoGenerationDispatch({
