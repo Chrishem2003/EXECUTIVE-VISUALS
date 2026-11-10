@@ -112,14 +112,13 @@ begin
  if p_actor_id is null or not exists(select 1 from platform_admins where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
- if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date or p_limit not between 1 and 500 then
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date or p_limit is null or p_limit not between 1 and 500 then
   raise exception 'Invalid workload telemetry period or limit' using errcode='22023';
  end if;
  select coalesce(jsonb_agg(to_jsonb(g)),'[]'::jsonb) into v_groups from (
   select provider,model,operation,evidence_source,resolution_tier,count(*) event_count,
    count(*) filter(where provider_cost_minor is not null) cost_evidence_count,
-   count(*) filter(where owner_id is null) unattributed_count,
-   jsonb_object_agg('eventCount',count(*)) as event_summary
+   count(*) filter(where owner_id is null) unattributed_count
   from ai_workload_telemetry_events where period_month=p_period_month
   group by provider,model,operation,evidence_source,resolution_tier
   order by count(*) desc,provider,model limit p_limit
