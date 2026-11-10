@@ -180,16 +180,26 @@ export function createFinancialIntelligenceApi({
     const status=String(data?.status||"unknown").slice(0,80);
     const payloadHash=hashWebhookPayload(rawBody);
     const eventKey=hashText(event+":"+providerEventId+":"+status+":"+payloadHash);
-    const existing=await dbRequest("payment_webhook_events?select=id&provider=eq.flutterwave&event_key=eq."+eventKey+"&limit=1");
-    if(Array.isArray(existing.data)&&existing.data.length)return response(200,{received:true,duplicate:true});
-    const inserted=await dbRequest("payment_webhook_events",{
-      method:"POST",body:{
-        provider:"flutterwave",event_key:eventKey,event_type:event,
-        payload_hash:payloadHash,signature_verified:true,
-        processing_status:"received",payload
-      },prefer:"return=minimal",allowConflict:true
-    });
-    if(inserted.status===409)return response(200,{received:true,duplicate:true});
+    const existing=await dbRequest("payment_webhook_events?select=id,processing_status&provider=eq.flutterwave&event_key=eq."+eventKey+"&limit=1");
+    const priorEvent=Array.isArray(existing.data)?existing.data[0]:null;
+    if(priorEvent&&["processed","ignored","needs_review"].includes(priorEvent.processing_status))
+      return response(200,{received:true,duplicate:true});
+    if(priorEvent){
+      // Retry a previously received/failed event. Finalization RPCs are idempotent,
+      // so provider retries can safely recover from transient DB/provider failures.
+      await dbRequest("payment_webhook_events?id=eq."+encodeURIComponent(priorEvent.id),{
+        method:"PATCH",body:{processing_status:"processing",error_message:null},prefer:"return=minimal"
+      });
+    }else{
+      const inserted=await dbRequest("payment_webhook_events",{
+        method:"POST",body:{
+          provider:"flutterwave",event_key:eventKey,event_type:event,
+          payload_hash:payloadHash,signature_verified:true,
+          processing_status:"received",payload
+        },prefer:"return=minimal",allowConflict:true
+      });
+      if(inserted.status===409)return response(200,{received:true,duplicate:true});
+    }
     try{
       if(/^(charge\.|payment\.)/i.test(event)) {
         const chargeId=String(data?.id||"");
