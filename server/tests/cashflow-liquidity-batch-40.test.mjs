@@ -163,3 +163,47 @@ test("liquidity guardrails returns forbidden for non-admin users",async()=>{
  const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-guardrails",ownerId:owner});
  assert.equal(result.status,403);assert.equal(rpcCalled,false);
 });
+
+test("liquidity alerts refresh evidence before returning action history",async()=>{
+ const calls=[];
+ const payload={alerts:[{id:"11111111-1111-4111-8111-111111111111",severity:"critical",status:"open"}]};
+ const service=api(async(url,options={})=>{const target=String(url);calls.push(target);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/refresh_financial_liquidity_alerts"))return json({scenariosEvaluated:3,newAlerts:1,newObservations:1});
+  if(target.endsWith("/rpc/financial_liquidity_alerts_overview"))return json(payload);
+  throw new Error("Unexpected request "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-alerts",ownerId:owner});
+ assert.equal(result.status,200);assert.equal(result.body.refresh.newAlerts,1);assert.deepEqual(result.body.alerts,payload);
+ assert.ok(calls.findIndex(x=>x.endsWith("/rpc/refresh_financial_liquidity_alerts"))<calls.findIndex(x=>x.endsWith("/rpc/financial_liquidity_alerts_overview")));
+});
+
+test("liquidity alert action validates administrator and records immutable action event",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_financial_liquidity_alert_event"))return json({id:"event-1",eventType:"action_assigned"});
+  throw new Error("Unexpected request "+target);
+ });
+ const payload={alertId:"11111111-1111-4111-8111-111111111111",eventType:"action_assigned",note:"Treasury team to secure short-term cash cover",assignedTo:"Treasury team",dueDate:new Date(Date.now()+86400000).toISOString().slice(0,10),idempotencyKey:"alert-action-0001"};
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-alert-events",ownerId:owner,body:payload});
+ assert.equal(result.status,201);assert.equal(result.body.event.eventType,"action_assigned");
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/record_financial_liquidity_alert_event")).body,{p_actor_id:owner,p_payload:payload});
+});
+
+test("liquidity alert action rejects assignment without owner before RPC",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-alert-events",ownerId:owner,body:{
+  alertId:"11111111-1111-4111-8111-111111111111",eventType:"action_assigned",note:"Assign a responsible team",idempotencyKey:"alert-action-0002"
+ }});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
+
+test("liquidity alert endpoints deny non-finance administrators",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"support_agent"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const read=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-alerts",ownerId:owner});
+ const write=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-alert-events",ownerId:owner,body:{alertId:"11111111-1111-4111-8111-111111111111",eventType:"acknowledged",note:"Reviewed alert",idempotencyKey:"alert-action-0003"}});
+ assert.equal(read.status,403);assert.equal(write.status,403);assert.equal(rpcCalled,false);
+});
