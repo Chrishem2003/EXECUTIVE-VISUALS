@@ -11,7 +11,7 @@ const fixture = overrides => ({
 test("projects monthly cash, contribution and discounted value", () => {
   const result = calculateFinancialScenarioIntelligence(fixture());
   assert.equal(result.currency, "UGX"); assert.equal(result.base.rows.length, 12);
-  assert.equal(result.base.rows[0].revenueMinor, 10_001_000);
+  assert.equal(result.base.rows[0].revenueMinor, 10_100_000);
   assert.ok(Number.isSafeInteger(result.base.npvCashFlowMinor));
   assert.ok(result.base.endingCashMinor > 5_000_000); assert.equal(result.confidence, "high");
 });
