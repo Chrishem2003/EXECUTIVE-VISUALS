@@ -369,3 +369,15 @@ Implemented a manual renewal path that uses the existing Flutterwave V4 checkout
 - The UI does not collect payment PINs or store wallet credentials. No automatic debit, immediate refund, or unverified entitlement update is performed.
 - Migration `20261110220000_customer_subscription_self_service.sql` is staged for isolated Supabase verification only.
 - Invoice PDF download remains gated because a private invoice-document storage/signing route is not yet implemented; the UI explicitly identifies invoice records without claiming PDF availability.
+
+
+### Batch 11 — first subscription purchase and lifecycle automation
+
+- Added atomic `reserve_subscription_purchase` to create the pending subscription and payment reservation together under an owner-scoped advisory lock.
+- Added `POST /api/billing/subscription/checkout`; customers initiate MTN/Airtel mobile-money checkout for a server-published UGX plan. Browser-supplied prices are ignored.
+- Added `finalize_subscription_purchase` to activate initial entitlements only after verified Flutterwave V4 charge settlement. Verified failed initial payments expire the pending subscription so another plan can be selected.
+- Added a bounded subscription lifecycle worker in the server process. It calls the service-role-only expiry RPC every 15 minutes by default (configurable with `SUBSCRIPTION_LIFECYCLE_INTERVAL_MINUTES`, minimum 5).
+- Lifecycle processing finalizes past-due grace expirations and end-of-period cancellations, with row locks, `SKIP LOCKED`, notification deduplication and no provider charges.
+- Subscription mutations are blocked while a payment for that subscription is pending provider confirmation, avoiding cancellation/plan-change races with a charge that may still succeed.
+- `server/index.mjs` syntax, financial API tests and TypeScript UI typecheck are covered by the new billing quality workflow.
+- This worker runs only when the financial API is enabled; keep billing disabled until the full ordered SQL migration set has passed isolated staging verification.
