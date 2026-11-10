@@ -78,6 +78,12 @@ begin
  if jsonb_array_length(v_base->'weekly')<>13 or jsonb_array_length(v_base->'monthly')<>6 then
   raise exception 'Weekly/monthly rolling forecast periods missing: %',v_base;
  end if;
+ select week_row.value into v_horizon from jsonb_array_elements(v_base->'weekly') week_row(value) where (week_row.value->>'week')::integer=5;
+ if (v_horizon->>'projectedClosingMinor')::bigint<>750000 then raise exception 'Week 5 closing cash should include only the dated receipt and payroll: %',v_horizon; end if;
+ select week_row.value into v_horizon from jsonb_array_elements(v_base->'weekly') week_row(value) where (week_row.value->>'week')::integer=6;
+ if (v_horizon->>'projectedClosingMinor')::bigint<>750000 then raise exception 'Week 6 must carry forward week 5 closing cash without repeating prior transactions: %',v_horizon; end if;
+ select week_row.value into v_horizon from jsonb_array_elements(v_base->'weekly') week_row(value) where (week_row.value->>'week')::integer=9;
+ if (v_horizon->>'projectedClosingMinor')::bigint<>-450000 then raise exception 'Week 9 must include the vendor payment exactly once: %',v_horizon; end if;
  select monthly_row.value into v_horizon from jsonb_array_elements(v_base->'monthly') as monthly_row(value)
   where (monthly_row.value->>'periodStart')::date<=current_date+30 and (monthly_row.value->>'periodEnd')::date>=current_date+30;
  if (v_horizon->>'projectedClosingMinor')::bigint<>750000 then raise exception 'First monthly period failed to reconcile dated cash items: %',v_horizon; end if;
