@@ -23,6 +23,12 @@ test("break-even is unavailable for non-positive contribution margin", () => {
   const result = calculateFinancialScenarioIntelligence(fixture({ monthlyVariableCostMinor: 12_000_000, assumptions: { horizonMonths: 2 } }));
   assert.equal(result.base.breakEvenRevenueMinor, null); assert.equal(result.base.breakEvenStatus, "unavailable_non_positive_contribution_margin");
 });
+test("opening positive cash reports zero months to positive cash and scenario break-even reflects cost shocks", () => {
+  const result = calculateFinancialScenarioIntelligence(fixture());
+  assert.equal(result.base.monthsToPositiveCash, 0);
+  assert.ok(result.scenarios[0].result.breakEvenRevenueMinor > result.base.breakEvenRevenueMinor);
+  assert.ok(result.scenarios[2].result.breakEvenRevenueMinor < result.base.breakEvenRevenueMinor);
+});
 test("downside, base and upside cases are deterministic and label default shocks", () => {
   const result = calculateFinancialScenarioIntelligence(fixture());
   assert.deepEqual(result.scenarios.map(item => item.id), ["downside", "base", "upside"]);
