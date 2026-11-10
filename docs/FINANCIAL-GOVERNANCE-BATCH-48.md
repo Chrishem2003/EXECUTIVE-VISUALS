@@ -40,6 +40,10 @@ Missing data remains explicitly unavailable/not assessed. A missing alert source
 - Existing audit-chain verification limitations remain: chain consistency alone cannot detect complete historical replacement without an independently retained trusted checkpoint.
 - No new database migrations, production deployment or paid infrastructure are included.
 
+## Adjacent baseline repair
+
+The full billing CI migration sequence exposed an incomplete validation condition in the existing Batch 46 scenario-snapshot migration. The migration was repaired to validate the ISO currency code, deterministic model version, JSON payload shapes, SHA-256 digests and idempotency-key length before inserting immutable snapshots. This is a test-discovered baseline repair; the migration still requires the disposable PostgreSQL integration run to complete successfully.
+
 ## Verification
 
 Run `npm run verify:financial-governance` for the Batch 48 deterministic rule tests. The test command is also included in the project build and the billing self-service GitHub Actions workflow. CI and browser/staging verification must pass before merge or production release.
