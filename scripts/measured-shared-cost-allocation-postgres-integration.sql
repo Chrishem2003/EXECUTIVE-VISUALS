@@ -40,6 +40,11 @@ begin
   'openai','gpt-batch26','gpt-batch26','text','succeeded',
   80,20,0,0,0,'XTS',0,'','batch26-trace-c','batch26-ai-usage-c'
  );
+ perform executive_visuals.record_ai_usage_cost_event(
+  v_actor,now()-interval '20 minutes',v_customer_a,null,null,'batch26-ai-use-other-currency',
+  'openai','gpt-batch26','gpt-batch26','text','succeeded',
+  5000,5000,0,0,0,'USD',0,'','batch26-trace-other-currency','batch26-ai-usage-other-currency'
+ );
  perform executive_visuals.record_financial_service_cost(
   v_actor,v_month,null,'ai_inference','cloud_invoice','XTS',1001,
   'batch26-shared-inference','Shared inference gateway and platform cost',
