@@ -49,8 +49,9 @@ begin
   when 'period.approve' then 'close_period.approved'
   when 'period.lock' then 'close_period.locked'
   when 'period.reopen' then 'close_period.reopened'
-  else raise exception 'unsupported close test action';
+  else null
  end;
+ if v_type is null then raise exception 'unsupported close test action'; end if;
  v_payload:=jsonb_build_object('action',p_action,'period',to_char(p_period,'YYYY-MM'))||coalesce(p_payload,'{}'::jsonb);
  v_head:=executive_visuals.get_financial_audit_head(p_owner);
  v_event:=jsonb_build_object(
