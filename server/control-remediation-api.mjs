@@ -28,10 +28,18 @@ export function createControlRemediationApi({db}={}){
  function actionFor(ownerId,id){
   return db.prepare("SELECT * FROM control_remediation_actions WHERE id=? AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?))").get(id,ownerId,ownerId,ownerId);
  }
+ function slaState(row,now=Date.now()){
+  if(row.status==="verified")return "completed";
+  const due=Date.parse(String(row.due_at||""));
+  if(!Number.isFinite(due))return "unknown";
+  if(due<now)return "overdue";
+  if(due<=now+72*60*60*1000)return "due_soon";
+  return "on_track";
+ }
  function hydrate(row){
   const evidence=db.prepare("SELECT e.id,e.label,e.evidence_uri AS uri,e.sha256,e.kind,e.captured_at AS capturedAt,e.submitted_by AS submittedBy,e.created_at AS createdAt,CASE WHEN a.id IS NOT NULL THEN a.id END AS assetId,a.original_name AS fileName,a.media_type AS mediaType,a.byte_size AS byteSize FROM control_remediation_evidence e LEFT JOIN assets a ON a.id=substr(e.evidence_uri,9) AND a.deleted_at IS NULL WHERE e.action_id=? ORDER BY e.created_at,e.id").all(row.id).map(item=>({...item,scanStatus:item.assetId?"not_scanned":"unavailable"}));
   const evidenceDownloads=db.prepare("SELECT owner_id AS actorId,details_json,created_at AS at FROM audit_events WHERE subject_type='control_remediation' AND subject_id=? AND event_type='control_remediation.evidence_downloaded' ORDER BY id DESC LIMIT 25").all(row.id).map(item=>({...item,details:parseJson(item.details_json)}));
-  return {...safeAction(row),evidence,evidenceDownloads,
+  return {...safeAction(row),slaState:slaState(row),evidence,evidenceDownloads,
    history:db.prepare("SELECT id,actor_id AS actorId,event_type AS event,from_status AS fromStatus,to_status AS toStatus,note,details_json,created_at AS at FROM control_remediation_history WHERE action_id=? ORDER BY id").all(row.id).map(x=>({...x,details:parseJson(x.details_json)}))};
  }
  function recordEvidenceDownload({ownerId,assetId}={}){
@@ -58,6 +66,14 @@ export function createControlRemediationApi({db}={}){
  async function handle({method,path,ownerId,body={},query={}}){
   if(!path.startsWith("/api/finance/remediations"))return null;
   if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified account is required.");
+  if(path==="/api/finance/remediations/inbox"&&method==="GET"){
+   const projectId=text(query.projectId,64)||null,status=text(query.status,24)||null,limit=Math.min(100,Math.max(1,Number.parseInt(String(query.limit||"50"),10)||50));
+   if(projectId&&!UUID.test(projectId))return error(400,"INVALID_PROJECT","Project ID is invalid.");
+   if(status&&!statuses.has(status))return error(400,"INVALID_STATUS","Reviewer inbox status filter is invalid.");
+   const rows=db.prepare("SELECT a.* FROM control_remediation_actions a WHERE a.reviewer_id=? AND a.project_id IS NOT NULL AND a.project_id IN (SELECT p.id FROM projects p WHERE p.archived_at IS NULL AND (p.owner_id=? OR p.id IN (SELECT pm.project_id FROM project_members pm WHERE pm.member_id=?))) AND (? IS NULL OR a.project_id=?) AND (? IS NULL OR a.status=?) ORDER BY CASE a.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,a.due_at,a.created_at LIMIT ?").all(ownerId,ownerId,ownerId,projectId,projectId,status,status,limit);
+   const actions=rows.map(hydrate),counts={total:actions.length,awaitingReview:actions.filter(x=>x.status==="pending_review").length,overdue:actions.filter(x=>x.slaState==="overdue").length,dueSoon:actions.filter(x=>x.slaState==="due_soon").length,onTrack:actions.filter(x=>x.slaState==="on_track").length,completed:actions.filter(x=>x.slaState==="completed").length};
+   return response(200,{actions,counts,policy:{dueSoonHours:72,overdueRule:"dueAt is earlier than server time",escalation:"visibility only; no automatic reassignment or notifications"},limit});
+  }
   if(path==="/api/finance/remediations"&&method==="GET"){
    const projectId=text(query.projectId,64)||null;
    if(projectId&&!UUID.test(projectId))return error(400,"INVALID_PROJECT","Project ID is invalid.");
