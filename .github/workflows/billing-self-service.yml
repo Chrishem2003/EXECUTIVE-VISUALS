@@ -168,6 +168,12 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116120000_liquidity_alerts_action_tracking_batch_43.sql
       - name: Verify Batch 43 early-warning alerts and immutable action history
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/liquidity-alerts-action-tracking-postgres-integration-batch-43.sql
+      - name: Apply Batch 44 treasury stress and contingency planning
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261117100000_treasury_stress_and_contingency_planning_batch_44.sql
+      - name: Verify Batch 44 treasury stress and contingency evidence
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/treasury-stress-contingency-postgres-integration-batch-44.sql
+      - name: Test Batch 44 treasury stress and contingency APIs
+        run: node --test server/tests/cashflow-liquidity-batch-40.test.mjs
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
