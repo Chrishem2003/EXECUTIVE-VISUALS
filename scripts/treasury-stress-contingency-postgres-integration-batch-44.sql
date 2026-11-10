@@ -4,7 +4,7 @@ set role service_role;
 do $batch44$
 declare
  v_actor constant uuid:='99999999-9999-4999-8999-999999999999';
- v_scenario jsonb;v_replay jsonb;v_run jsonb;v_option jsonb;v_overview jsonb;
+ v_scenario jsonb;v_replay jsonb;v_run jsonb;v_option jsonb;v_option_replay jsonb;v_overview jsonb;
  v_base jsonb;v_run_id uuid;v_capacity bigint;
 begin
  v_scenario:=executive_visuals.record_financial_liquidity_stress_scenario(v_actor,jsonb_build_object(
@@ -23,6 +23,21 @@ begin
   'sourceReference','batch44-ar-aging','rationale','Subject to customer confirmation and collection team capacity.',
   'idempotencyKey','batch44-option-001'));
  if v_option->>'availabilityStatus'<>'conditional' then raise exception 'Contingency readiness status missing: %',v_option; end if;
+ v_option_replay:=executive_visuals.record_financial_contingency_option(v_actor,jsonb_build_object(
+  'currency','ZZZ','title','Accelerate confirmed customer receivables','category','receivables_acceleration',
+  'estimatedCapacityMinor',250000,'leadTimeHours',48,'availabilityStatus','conditional',
+  'sourceReference','batch44-ar-aging','rationale','Subject to customer confirmation and collection team capacity.',
+  'idempotencyKey','batch44-option-001'));
+ if v_option_replay->>'id'<>v_option->>'id' then raise exception 'Contingency option idempotency replay created a duplicate'; end if;
+ begin
+  perform executive_visuals.record_financial_contingency_option(v_actor,jsonb_build_object(
+   'currency','ZZZ','title','Accelerate confirmed customer receivables','category','receivables_acceleration',
+   'estimatedCapacityMinor',250000,'leadTimeHours',72,'availabilityStatus','conditional',
+   'sourceReference','batch44-ar-aging','rationale','Subject to customer confirmation and collection team capacity.',
+   'idempotencyKey','batch44-option-001'));
+  raise exception 'Conflicting contingency option idempotency replay was accepted';
+ exception when sqlstate '23505' then null;
+ end;
  v_run:=executive_visuals.run_financial_liquidity_stress_test(v_actor,(v_scenario->>'id')::uuid);
  if jsonb_array_length(v_run->'weekly')<>13 then raise exception 'Expected 13 weekly stress results: %',v_run; end if;
  if (v_run->>'lowestProjectedCashMinor')::bigint>=1000000 then raise exception 'Stress test did not reduce baseline liquidity: %',v_run; end if;
