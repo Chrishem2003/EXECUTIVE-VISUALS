@@ -25,6 +25,10 @@ begin
  if v_alert->>'severity'<>'critical' or v_alert->>'status'<>'open' or (v_alert->>'gapMinor')::bigint<=0 then
   raise exception 'Base floor breach severity, status or gap incorrect: %',v_alert;
  end if;
+ v_refresh:=executive_visuals.refresh_financial_liquidity_alerts(v_actor);
+ if (v_refresh->>'newAlerts')::integer<>0 or (v_refresh->>'newObservations')::integer<>0 then
+  raise exception 'Unchanged forecast refresh should not create duplicate alerts or observations: %',v_refresh;
+ end if;
  v_alert_id:=(v_alert->>'id')::uuid;
  v_event:=executive_visuals.record_financial_liquidity_alert_event(v_actor,jsonb_build_object(
   'alertId',v_alert_id,'eventType','acknowledged','note','Treasury reviewed the projected cash floor breach.',
