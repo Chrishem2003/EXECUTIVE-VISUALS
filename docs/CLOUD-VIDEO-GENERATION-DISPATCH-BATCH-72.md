@@ -10,7 +10,7 @@ New authenticated endpoint:
 
 `POST /api/video-production-approvals/:approvalId/submit`
 
-The endpoint is available only when `CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED=true`. The application must also run with `AUTH_MODE=supabase` and server-side `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` credentials.
+The endpoint is available only when `CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED=true`. The application must also run with `AUTH_MODE=supabase`, `CLOUD_TIMELINE_API_ENABLED=true` (for authenticated job progress and asset access), and server-side `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` credentials.
 
 The route:
 1. Uses the verified authenticated user ID; it never accepts an owner ID from the request body.
