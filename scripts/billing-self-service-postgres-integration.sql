@@ -284,7 +284,7 @@ begin
 end $$;
 
 
-do $
+do $$
 declare
  v_owner constant uuid := '11111111-1111-4111-8111-111111111111';
  experiment_result jsonb;
@@ -335,6 +335,6 @@ begin
  if jsonb_array_length(growth_result->'experiments')<1 then
   raise exception 'Growth overview did not include the active experiment';
  end if;
-end $;
+end $$;
 
 reset role;
