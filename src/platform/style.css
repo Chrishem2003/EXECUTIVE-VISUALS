@@ -1252,3 +1252,15 @@ body{
 .assurance-inbox .reviewer-inbox-head{flex-wrap:wrap}
 .assurance-inbox [data-assurance-report-export]{flex:0 0 auto;white-space:nowrap}
 @media(max-width:760px){.assurance-inbox [data-assurance-report-export]{width:100%}}
+
+
+/* Batch 59 · reviewer performance analytics */
+.reviewer-performance{margin-top:18px}
+.reviewer-performance-table{width:100%;overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+.reviewer-performance-table table{width:100%;border-collapse:collapse;min-width:760px}
+.reviewer-performance-table th,.reviewer-performance-table td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+.reviewer-performance-table th{color:var(--muted);font-weight:650;background:var(--surface-subtle,transparent)}
+.reviewer-performance-table td code{font-size:11px;color:var(--muted)}
+.reviewer-performance-projects{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px}
+.reviewer-performance-projects>div{display:grid;gap:5px;padding:12px;border:1px solid var(--border);border-radius:10px}
+.reviewer-performance-projects span{font-size:12px;color:var(--muted)}
