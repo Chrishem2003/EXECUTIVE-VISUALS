@@ -24,6 +24,7 @@ test("persistent register creates project-scoped actions with independent owner 
  assert.equal(result.body.action.ownerId,editor);
  assert.equal(result.body.action.reviewerId,reviewer);
  assert.equal(result.body.action.status,"open");
+ assert.equal(result.body.action.ownerId,owner);
  assert.equal(result.body.action.revision,1);
  const list=await f.api.handle({method:"GET",path:"/api/finance/remediations",ownerId:reviewer,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.total,1);
