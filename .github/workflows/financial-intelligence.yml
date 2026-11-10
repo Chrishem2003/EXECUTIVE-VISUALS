@@ -5,6 +5,7 @@ on:
     branches:
       - feat/financial-intelligence-api-integration
       - feat/predictive-workload-economics-batch-27
+      - feat/automated-financial-reconciliation-batch-28
   pull_request:
 
 permissions:
@@ -29,7 +30,8 @@ jobs:
         run: |
           node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-economics.mjs
+          node --check server/financial-reconciliation.mjs
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/financial-reconciliation.test.mjs
