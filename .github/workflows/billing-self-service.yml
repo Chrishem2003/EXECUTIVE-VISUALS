@@ -1,0 +1,38 @@
+name: Billing self-service quality checks
+
+on:
+  push:
+    branches:
+      - feat/financial-intelligence-api-integration
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-self-service-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  billing-self-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: npm
+      - name: Install dependencies without native build side effects
+        run: npm ci --ignore-scripts
+      - name: Type-check customer billing UI and application
+        run: npm run typecheck
+      - name: Check financial API syntax
+        run: |
+          node --check server/financial-intelligence-api.mjs
+          node --check server/flutterwave-auth.mjs
+          node --check server/payment-intelligence.mjs
+      - name: Run financial API tests
+        run: node --test server/tests/financial-intelligence-api.test.mjs
