@@ -72,8 +72,8 @@ begin
   or v_source_fingerprint<>'' and v_source_fingerprint !~ '^[a-f0-9]{64}$'
   or v_status not in('source_linked','contract_attested','admin_attested')
   or jsonb_typeof(v_dimensions)<>'object' or pg_column_size(v_dimensions)>12000
-  or exists(select 1 from jsonb_each(v_dimensions) d where length(d.key)>80
-   or case when jsonb_typeof(d.value)='number' then (d.value #>> '{}')::numeric<0 else true end)
+  or case when jsonb_typeof(v_dimensions)='object' then exists(select 1 from jsonb_each(v_dimensions) d where length(d.key)>80
+   or case when jsonb_typeof(d.value)='number' then (d.value #>> '{}')::numeric<0 else true end) else true end
   or (v_input is not null and v_input<0) or (v_output is not null and v_output<0)
   or (v_image is not null and v_image<0) or (v_video is not null and v_video<0)
   or (v_render is not null and v_render<0)
