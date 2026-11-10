@@ -81,7 +81,7 @@ async function loadTimelinePreview(){
  const required=new Map<string,Asset>();
  for(const track of state.timeline.tracks){
   if(!track.enabled||track.kind==="caption")continue;
-  for(const clip of track.clips){if(!clip.enabled)continue;const sourceAsset=state.assets.find(item=>item.id===clip.assetId),proxyId=String(clip.metadata?.proxyAssetId||""),asset=(proxyId?state.assets.find(item=>item.id===proxyId):undefined)||sourceAsset;if(asset&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")||asset.mediaType.startsWith("image/")))required.set(asset.id,asset);}
+  for(const clip of track.clips){if(!clip.enabled)continue;const sourceAsset=state.assets.find(item=>item.id===clip.assetId),proxyId=track.kind==="video"&&sourceAsset?.mediaType.startsWith("video/")?String(clip.metadata?.proxyAssetId||""):"",asset=(proxyId?state.assets.find(item=>item.id===proxyId):undefined)||sourceAsset;if(track.kind==="overlay"&&asset&&!asset.mediaType.startsWith("image/"))continue;if(asset&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")||asset.mediaType.startsWith("image/")))required.set(asset.id,asset);}
  }
  if(!required.size){state.previewLoading=false;throw new Error("No enabled local video, audio or image clips are available for preview.");}
  try{
@@ -107,7 +107,7 @@ function syncPreviewAtFrame(frame:number){
  const active=new Map(playback.active.map(item=>[item.clipId,item]));
  const topVideo=playback.activeVideo[playback.activeVideo.length-1];
  const audioActive=playback.activeAudio.length>0;
- const hasPicture=playback.active.some(item=>item.trackKind!=="audio"&&state.assets.some(asset=>asset.id===item.assetId&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/"))));
+ const hasPicture=playback.active.some(item=>state.assets.some(asset=>asset.id===item.assetId&&((item.trackKind==="video"&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/")))||(item.trackKind==="overlay"&&asset.mediaType.startsWith("image/")))));
  const placeholder=document.querySelector<HTMLElement>("#timeline-playback .timeline-preview-placeholder");if(placeholder)placeholder.style.display=hasPicture?"none":"grid";
  document.querySelectorAll<HTMLElement>("#timeline-playback [data-preview-media]").forEach(element=>{
   const clipId=element.dataset.previewClip||"",item=active.get(clipId),kind=element.dataset.previewKind||"";
@@ -167,7 +167,7 @@ function timelinePlaybackPanel(){
  if(!state.timeline)return "";
  const duration=clampTimelineFrame(timelineDurationSeconds(state.timeline)*fps(),state.timeline);
  const elements=state.previewLoaded?state.timeline.tracks.flatMap((track,trackIndex)=>track.enabled&&track.kind!=="caption"?track.clips.filter(clip=>clip.enabled).map(clip=>{
-  const sourceAsset=state.assets.find(item=>item.id===clip.assetId),proxyId=String(clip.metadata?.proxyAssetId||""),asset=(proxyId?state.assets.find(item=>item.id===proxyId):undefined)||sourceAsset,src=asset?state.previewAssetUrls[asset.id]:"";
+  const sourceAsset=state.assets.find(item=>item.id===clip.assetId),proxyId=track.kind==="video"&&sourceAsset?.mediaType.startsWith("video/")?String(clip.metadata?.proxyAssetId||""):"",asset=(proxyId?state.assets.find(item=>item.id===proxyId):undefined)||sourceAsset,src=asset?state.previewAssetUrls[asset.id]:"";if(track.kind==="overlay"&&asset&&!asset.mediaType.startsWith("image/"))return "";
   if(!asset||!src)return "";
   const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-track-index="'+trackIndex+'"';
   if(asset.mediaType.startsWith("audio/")||track.kind==="audio")return '<audio '+base+' preload="auto" src="'+esc(src)+'"></audio>';
