@@ -75,10 +75,11 @@ export function reconcileProviderInvoiceLines(input={}){
   if(candidates.length===0){out.push({index:i,status:"unmatched",provider,reference,currency:curr,amountMinor,reason:"No provider usage event has the same provider, line reference and currency."});continue;}
   const u=candidates[0];
   if(consumed.has(u.index)){out.push({index:i,status:"duplicate",provider,reference,currency:curr,amountMinor,usageEventId:u.id,reason:"Usage event has already been matched to another invoice line."});continue;}
+  consumed.add(u.index);
   if(u.model!==model||u.operation!==operation||u.usagePeriod!==period){out.push({index:i,status:"variance",provider,reference,currency:curr,amountMinor,usageEventId:u.id,reason:"Model, operation or usage period differs from the metered usage event."});continue;}
   if(u.providerCostMinor===null){out.push({index:i,status:"invalid",provider,reference,currency:curr,amountMinor,usageEventId:u.id,reason:"Usage event has no provider-reported cost; invoice amount cannot be independently verified."});continue;}
   if(u.providerCostMinor!==amountMinor){out.push({index:i,status:"variance",provider,reference,currency:curr,amountMinor,usageEventId:u.id,usageCostMinor:u.providerCostMinor,varianceMinor:amountMinor-u.providerCostMinor,reason:"Invoice line amount differs from provider-reported usage cost."});continue;}
-  consumed.add(u.index);out.push({index:i,status:"matched",provider,reference,currency:curr,amountMinor,usageEventId:u.id,reason:"Exact one-to-one provider, line reference, currency, model, operation, period and amount match."});
+  out.push({index:i,status:"matched",provider,reference,currency:curr,amountMinor,usageEventId:u.id,reason:"Exact one-to-one provider, line reference, currency, model, operation, period and amount match."});
  }
  const matched=out.filter(x=>x.status==="matched");
  const unused=usage.filter(x=>!consumed.has(x.index)).map(x=>({usageEventId:x.id,provider:x.provider,reference:x.reference,currency:x.currency,providerCostMinor:x.providerCostMinor,status:"unmatched",reason:"Metered usage event was not consumed by an exact invoice-line match."}));
