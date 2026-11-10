@@ -185,9 +185,9 @@ begin
    'forecast',(
     select jsonb_agg(jsonb_build_object(
      'days',s.days,'months',round(s.days/30.4375,2),
-     'base',jsonb_build_object('endMrrMinor',s.base_end_mrr,'revenueAtRiskMinor',s.base_risk),
-     'conservative',jsonb_build_object('endMrrMinor',s.conservative_end_mrr,'revenueAtRiskMinor',s.conservative_risk),
-     'upside',jsonb_build_object('endMrrMinor',s.upside_end_mrr,'revenueAtRiskMinor',s.upside_risk)
+     'base',jsonb_build_object('endMrrMinor',s.base_end_mrr,'mrrAtRiskMinor',s.base_risk),
+     'conservative',jsonb_build_object('endMrrMinor',s.conservative_end_mrr,'mrrAtRiskMinor',s.conservative_risk),
+     'upside',jsonb_build_object('endMrrMinor',s.upside_end_mrr,'mrrAtRiskMinor',s.upside_risk)
     ) order by s.days)
     from scenario_rows s where s.currency=currency_json.currency
    )
