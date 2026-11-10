@@ -9,7 +9,7 @@ import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRouti
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
-import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain } from "./financial-audit-ledger.mjs";
+import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -936,6 +936,7 @@ export function createFinancialIntelligenceApi({
           const subjectOwnerId=String(body.subjectOwnerId||ownerId);
           if(!UUID.test(subjectOwnerId))return error(400,"FINANCIAL_AUDIT_OWNER_INVALID","subjectOwnerId must be a verified account UUID.");
           if(!auditKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
+          if(!FINANCIAL_AUDIT_EVENT_TYPES.includes(body.eventType))return error(400,"FINANCIAL_AUDIT_EVENT_TYPE_INVALID","Unsupported financial audit event type.");
           const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key,event_envelope&owner_id=eq."+encodeURIComponent(subjectOwnerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
           if(Array.isArray(existing.data)&&existing.data.length){
             const prior=existing.data[0];
