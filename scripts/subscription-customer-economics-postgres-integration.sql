@@ -37,8 +37,7 @@ insert into executive_visuals.payment_refunds(
  owner_id,payment_transaction_id,provider,amount_minor,currency,status,reason,idempotency_key,completed_at
 ) select '77777777-7777-4777-8777-777777777777',id,'flutterwave',5000,'UGX','succeeded',
  'Batch 37 refund reporting integration','batch37-refund',now()
- from executive_visuals.payment_transactions where tx_ref='batch37-subscription-paid'
-on conflict(idempotency_key) do nothing;
+ from executive_visuals.payment_transactions where tx_ref='batch37-subscription-paid';
 insert into executive_visuals.credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,reason,metadata)
 values
  ('77777777-7777-4777-8777-777777777777','purchase_grant',5000,'batch37-credit-grant','Batch 37 subscription credits',
