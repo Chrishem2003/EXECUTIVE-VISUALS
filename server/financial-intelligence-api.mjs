@@ -7,6 +7,7 @@ import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
+import { detectDuplicateInvoices, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -925,6 +926,31 @@ export function createFinancialIntelligenceApi({
           return error(400,"FINANCIAL_TREND_RANGE_INVALID","Trend period must be an integer between 3 and 36 months.");
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/reconciliation-preview"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const hasInvoices=Array.isArray(body.invoiceHeaders);
+        const hasInvoiceLines=Array.isArray(body.invoiceLines)||Array.isArray(body.usageEvents);
+        const hasSettlement=Array.isArray(body.statementRows)||Array.isArray(body.payments);
+        if(!hasInvoices&&!hasInvoiceLines&&!hasSettlement)
+          return error(400,"FINANCIAL_RECON_INPUT_REQUIRED","Provide invoice headers, invoice lines with usage events, or payment statement rows with internal payment records.");
+        try{
+          const reconciliation={generatedAt:new Date().toISOString(),mode:"read_only_preview",automaticPosting:false};
+          if(hasInvoices)reconciliation.duplicateInvoices=detectDuplicateInvoices({invoices:body.invoiceHeaders});
+          if(hasInvoiceLines){
+            if(!Array.isArray(body.invoiceLines)||!Array.isArray(body.usageEvents))
+              return error(400,"FINANCIAL_RECON_INPUT_INCOMPLETE","Invoice-line reconciliation requires both invoiceLines and usageEvents arrays.");
+            reconciliation.providerInvoiceUsage=reconcileProviderInvoiceLines({invoiceLines:body.invoiceLines,usageEvents:body.usageEvents});
+          }
+          if(hasSettlement){
+            if(!Array.isArray(body.statementRows)||!Array.isArray(body.payments))
+              return error(400,"FINANCIAL_RECON_INPUT_INCOMPLETE","Payment settlement reconciliation requires both statementRows and payments arrays.");
+            reconciliation.paymentSettlement=reconcilePaymentSettlement({statementRows:body.statementRows,payments:body.payments});
+          }
+          return response(200,{reconciliation});
+        }catch(err){
+          return error(400,err.code||"FINANCIAL_RECON_INPUT_INVALID",err.message||"Financial reconciliation preview could not be calculated.");
+        }
       }
       if(path==="/api/admin/finance/workload-estimates"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
