@@ -35,7 +35,7 @@ Evidence entries store a label, kind, capture time, submitter, optional URI and 
 - Access certification decisions are not executed by this API.
 - No background escalation or notification is scheduled in this batch.
 - Suggested deadlines remain management decisions; the API requires a due date but does not impose a universal SLA.
-- The app's existing authenticated finance workspace loads the persisted register. Personal creation is supported; project assignment and evidence-file upload require the corresponding project and storage integrations.
+- The finance workspace data loader now requests the persisted register. The visible interactive register controls and finding-to-action creation UI are not yet wired; those are a follow-on interface task. The API supports personal creation; project assignment and evidence-file upload require the corresponding project and storage integrations.
 
 ## Verification
 
