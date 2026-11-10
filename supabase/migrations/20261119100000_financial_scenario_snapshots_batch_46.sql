@@ -135,17 +135,23 @@ begin
   where as_of_date<(p_period_month+interval '1 month')::date
   order by currency,as_of_date desc,created_at desc
  ), revenue as(
-  select currency,sum(mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
-   jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',owner_id,'currency',currency,'periodMonth',snapshot_month)
-    order by snapshot_month desc) evidence
-  from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
-  group by currency
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
  ), costs as(
-  select currency,sum(amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
-   jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',id,'periodMonth',period_month)
-    order by created_at desc) evidence
-  from executive_visuals.financial_service_cost_events where period_month=p_period_month
-  group by currency
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
  ), baseline_rows as(
   select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
    ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
