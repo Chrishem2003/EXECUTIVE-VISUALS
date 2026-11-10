@@ -18,6 +18,7 @@
 - Immutable allocation batches preserve source event count and fingerprint, policy, driver totals, recipient counts, allocated amount and unallocated amount.
 - Immutable customer allocation lines preserve each customer's measured units, event count, share and allocated amount.
 - Profitability trends now retain direct contribution/margin and add allocated shared cost, fully loaded contribution/margin, negative fully-loaded customer count and remaining unallocated shared costs.
+- Customer-level trend rows now show MRR, direct costs, allocated shared costs, fully loaded costs, direct contribution and fully loaded contribution/margin; recipients without a revenue snapshot remain visible in the allocation ledger but are not assigned a fabricated margin.
 - Financial Command Centre exposes policy creation, explicit allocation runs, batch history and customer-level allocations.
 
 ## Accounting safeguards
