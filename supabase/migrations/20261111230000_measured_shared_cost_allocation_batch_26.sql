@@ -59,7 +59,13 @@ create table if not exists executive_visuals.financial_shared_cost_allocation_ba
  created_by uuid not null references auth.users(id) on delete restrict,
  created_at timestamptz not null default now(),
  unique(period_month,currency,cost_category),
- check(allocated_minor+unallocated_minor=source_pool_minor)
+ check(allocated_minor+unallocated_minor=source_pool_minor),
+ check((cost_category='ai_inference' and driver_type='inference_tokens') or
+  (cost_category='image_generation' and driver_type='image_count') or
+  (cost_category='video_generation' and driver_type='video_seconds') or
+  (cost_category='render_compute' and driver_type in('ffmpeg_seconds','gpu_seconds','cpu_seconds')) or
+  (cost_category='storage' and driver_type='storage_gb_days') or
+  (cost_category='egress' and driver_type='egress_gb'))
 );
 create index if not exists financial_shared_cost_allocation_batch_period_idx
  on executive_visuals.financial_shared_cost_allocation_batches(period_month,currency,cost_category);
@@ -78,7 +84,7 @@ create table if not exists executive_visuals.financial_shared_cost_allocation_li
  driver_units numeric(30,8) not null check(driver_units>0),
  driver_event_count bigint not null check(driver_event_count>0),
  share_pct numeric(30,16) not null check(share_pct>=0 and share_pct<=100),
- amount_minor bigint not null check(amount_minor>0),
+ amount_minor bigint not null check(amount_minor>=0),
  created_at timestamptz not null default now(),
  unique(batch_id,owner_id)
 );
@@ -278,7 +284,7 @@ begin
   select d.owner_id,d.units,d.event_count,
    floor(v_pool::numeric*d.units/v_driver_total)::bigint base_minor,
    (v_pool::numeric*d.units/v_driver_total)-floor(v_pool::numeric*d.units/v_driver_total) fractional_remainder,
-   (v_pool::numeric*d.units/v_driver_total*100) / v_pool share_pct
+   (d.units/v_driver_total*100) share_pct
   from drivers d
  ), ranked as(
   select r.*,row_number() over(order by fractional_remainder desc,owner_id) remainder_rank,
@@ -291,7 +297,7 @@ begin
  select v_batch_id,owner_id,p_currency,units,event_count,share_pct,
   base_minor+case when remainder_rank<=remainder_units then 1 else 0 end
  from ranked
- where base_minor+case when remainder_rank<=remainder_units then 1 else 0 end>0;
+;
  select coalesce(sum(l.amount_minor),0)::bigint into v_allocated
  from financial_shared_cost_allocation_lines l where l.batch_id=v_batch_id;
  v_unallocated:=v_pool-v_allocated;
