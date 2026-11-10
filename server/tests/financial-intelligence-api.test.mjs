@@ -1004,3 +1004,66 @@ test("predictive revenue overview remains disabled when billing intelligence is 
  const result=await service.handle({method:"GET",path:"/api/admin/finance/predictive-overview",ownerId:owner});
  assert.equal(result.status,503);
 });
+
+test("revenue retention overview and snapshot capture require a financial administrator",async()=>{
+ const denied=api(async()=>json([]));
+ const forbidden=await denied.handle({method:"GET",path:"/api/admin/finance/revenue-retention",ownerId:owner});
+ assert.equal(forbidden.status,403);
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_revenue_retention_overview"))return json({retention:[],acquisition:[],forecastAccuracy:[],limitations:["Two snapshots required."]});
+  if(target.endsWith("/rpc/capture_subscription_revenue_snapshot"))return json({snapshotMonth:"2026-11-01",capturedCustomers:12,insertedCustomers:12,alreadyCaptured:false});
+  throw new Error("Unexpected request: "+target);
+ });
+ const overview=await service.handle({method:"GET",path:"/api/admin/finance/revenue-retention",ownerId:owner});
+ assert.equal(overview.status,200);
+ assert.equal(overview.body.intelligence.retention.length,0);
+ const snapshot=await service.handle({method:"POST",path:"/api/admin/finance/revenue-retention/snapshot",ownerId:owner,body:{}});
+ assert.equal(snapshot.status,200);
+ const capture=calls.find(x=>x.target.endsWith("/rpc/capture_subscription_revenue_snapshot"));
+ assert.equal(capture.body.p_actor_id,owner);
+});
+
+test("acquisition spend API validates input and binds spend to the authenticated administrator",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/record_customer_acquisition_spend")){
+   rpcBody=JSON.parse(options.body);return json({id:"44444444-4444-4444-8444-444444444444",amountMinor:120000});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/acquisition-spend",ownerId:owner,body:{periodMonth:"November",channel:"paid_search"}});
+ assert.equal(invalid.status,400);
+ const valid=await service.handle({method:"POST",path:"/api/admin/finance/acquisition-spend",ownerId:owner,body:{
+  periodMonth:"2026-11-01",channel:"paid_search",campaign:"launch",currency:"UGX",
+  amountMinor:120000,description:"November campaign spend",idempotencyKey:"campaign-spend-2026-11"
+ }});
+ assert.equal(valid.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_amount_minor,120000);
+ assert.equal(rpcBody.p_currency,"UGX");
+});
+
+test("customer acquisition attribution validates paid customer identity and source",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_customer_acquisition_attribution")){
+   rpcBody=JSON.parse(options.body);return json({ownerId:owner,channel:"referral",currency:"UGX"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/acquisition-attribution",ownerId:owner,body:{
+  ownerId:owner,channel:"referral",campaign:"creator-circle",currency:"UGX",
+  sourceType:"referral",acquiredAt:"2026-11-10T08:00:00.000Z"
+ }});
+ assert.equal(result.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_owner_id,owner);
+ assert.equal(rpcBody.p_source_type,"referral");
+});
