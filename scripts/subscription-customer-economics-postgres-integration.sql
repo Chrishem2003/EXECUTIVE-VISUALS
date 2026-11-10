@@ -23,7 +23,7 @@ insert into executive_visuals.customer_subscriptions(
 insert into executive_visuals.subscription_revenue_snapshots(
  snapshot_month,owner_id,cohort_month,currency,mrr_minor,subscription_status
 ) values(date_trunc('month',now())::date,'77777777-7777-4777-8777-777777777777',
- date_trunc('month',now())::date,'UGX',100000,'active')
+ (date_trunc('month',now())-interval '1 month')::date,'UGX',100000,'active')
 on conflict(snapshot_month,owner_id,currency) do update set mrr_minor=excluded.mrr_minor,subscription_status=excluded.subscription_status;
 insert into executive_visuals.payment_transactions(
  owner_id,provider,tx_ref,amount_minor,currency,status,paid_at,metadata
