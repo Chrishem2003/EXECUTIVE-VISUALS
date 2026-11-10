@@ -1382,3 +1382,45 @@ test("model economics comparison is admin-only and returns shadow recommendation
  assert.equal(result.body.comparison.automaticRouting,false);
  assert.equal(result.body.comparison.recommended.provider,"provider-a");
 });
+
+
+test("financial reconciliation preview is admin-only, read-only and supports invoice and settlement checks",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Unauthorized reconciliation must not reach data processing.");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/reconciliation-preview",ownerId:owner,body:{invoiceHeaders:[]}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Read-only preview must not call database RPCs or payment providers.");
+ });
+ const missing=await service.handle({method:"POST",path:"/api/admin/finance/reconciliation-preview",ownerId:owner,body:{invoiceLines:[]}});
+ assert.equal(missing.status,400);
+ assert.equal(missing.body.error.code,"FINANCIAL_RECON_INPUT_INCOMPLETE");
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/reconciliation-preview",ownerId:owner,body:{
+  invoiceHeaders:[
+   {provider:"p",invoiceReference:"inv-1",currency:"USD",totalMinor:1000},
+   {provider:"p",invoiceReference:"INV 1",currency:"USD",totalMinor:1000}
+  ],
+  statementRows:[{provider:"flw",providerReference:"tx-1",currency:"UGX",amountMinor:10000}],
+  payments:[{id:"payment-1",provider:"flw",providerReference:"TX 1",currency:"UGX",amountMinor:10000,status:"settled"}]
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.reconciliation.mode,"read_only_preview");
+ assert.equal(result.body.reconciliation.automaticPosting,false);
+ assert.equal(result.body.reconciliation.duplicateInvoices.duplicateGroups,1);
+ assert.equal(result.body.reconciliation.paymentSettlement.counts.matched,1);
+});
+
+test("financial reconciliation preview rejects non-admins and malformed financial values without writes",async()=>{
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  throw new Error("Malformed data must fail before any write.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/reconciliation-preview",ownerId:owner,body:{
+  statementRows:[{provider:"flw",providerReference:"tx-1",currency:"USD",amountMinor:12.5}],payments:[]
+ }});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"FINANCIAL_RECON_AMOUNT_INVALID");
+});
