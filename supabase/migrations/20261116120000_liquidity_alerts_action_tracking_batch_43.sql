@@ -174,8 +174,8 @@ begin
  if p_actor_id is null or not exists(select 1 from platform_admins where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
- if v_alert_id is null or v_type not in('acknowledged','action_assigned','in_progress','resolved','reopened','false_positive') or
-  length(v_note) not between 3 and 1000 or length(v_key) not between 8 and 180 or
+ if v_alert_id is null or v_type is null or v_type not in('acknowledged','action_assigned','in_progress','resolved','reopened','false_positive') or
+  v_note is null or length(v_note) not between 3 and 1000 or v_key is null or length(v_key) not between 8 and 180 or
   (v_type='action_assigned' and (v_assigned is null or length(v_assigned) not between 2 and 160)) or
   (v_due is not null and v_due<current_date) then
   raise exception 'Valid alert action, note, assignee and due date are required' using errcode='22023';
@@ -183,8 +183,19 @@ begin
  if not exists(select 1 from financial_liquidity_alerts where id=v_alert_id) then
   raise exception 'Liquidity alert not found' using errcode='P0002';
  end if;
+ select * into v_event from financial_liquidity_alert_events where idempotency_key=v_key;
+ if found then
+  if v_event.alert_id<>v_alert_id or v_event.actor_id<>p_actor_id or v_event.event_type<>v_type or
+   v_event.note<>v_note or v_event.assigned_to is distinct from v_assigned or v_event.due_date is distinct from v_due then
+   raise exception 'Alert action idempotency key conflicts with existing evidence' using errcode='23505';
+  end if;
+  return jsonb_build_object('id',v_event.id,'alertId',v_event.alert_id,'eventType',v_event.event_type,
+   'assignedTo',v_event.assigned_to,'dueDate',v_event.due_date,'note',v_event.note,'createdAt',v_event.created_at);
+ end if;
  select event_type into v_current from financial_liquidity_alert_events where alert_id=v_alert_id
+  and event_type not in('opened','evidence_refreshed')
   order by created_at desc,id desc limit 1;
+ if v_current is null then v_current:='opened'; end if;
  if (v_type='acknowledged' and v_current not in('opened','evidence_refreshed')) or
   (v_type='action_assigned' and v_current not in('opened','evidence_refreshed','acknowledged','action_assigned')) or
   (v_type='in_progress' and v_current not in('opened','evidence_refreshed','acknowledged','action_assigned','in_progress')) or
@@ -223,7 +234,8 @@ begin
     from financial_liquidity_alert_events h where h.alert_id=a.id),'[]'::jsonb) history
   from financial_liquidity_alerts a
   left join lateral(select * from financial_liquidity_alert_observations x where x.alert_id=a.id order by x.observed_at desc,x.id desc limit 1)o on true
-  left join lateral(select * from financial_liquidity_alert_events x where x.alert_id=a.id order by x.created_at desc,x.id desc limit 1)e on true
+  left join lateral(select * from financial_liquidity_alert_events x where x.alert_id=a.id
+   and x.event_type not in('opened','evidence_refreshed') order by x.created_at desc,x.id desc limit 1)e on true
  )
  select jsonb_build_object('generatedAt',now(),'alerts',coalesce(jsonb_agg(jsonb_build_object(
   'id',r.id,'alertType',r.alert_type,'severity',r.severity,'currency',r.currency,'scenario',r.scenario,
