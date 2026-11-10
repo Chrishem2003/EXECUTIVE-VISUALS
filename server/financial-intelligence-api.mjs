@@ -738,5 +738,5 @@ export function createFinancialIntelligenceApi({
     }
   }
 
-  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds};
+  return {handle,handleWebhook,verifyAndFinalizeRefund,verifyAndFinalizePayment,reconcilePendingRefunds,expireDueSubscriptions:()=>rpc("expire_due_subscriptions",{p_limit:100})};
 }
