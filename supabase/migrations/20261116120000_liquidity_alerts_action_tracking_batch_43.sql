@@ -243,7 +243,7 @@ begin
  select jsonb_build_object('generatedAt',now(),'alerts',coalesce(jsonb_agg(jsonb_build_object(
   'id',r.id,'alertType',r.alert_type,'severity',r.severity,'currency',r.currency,'scenario',r.scenario,
   'policyEffectiveFrom',r.policy_effective_from,'title',r.title,'status',case
-   when r.current_event in('resolved','false_positive') then r.current_event
+   when r.current_event in('resolved','false_positive','reopened') then r.current_event
    when r.current_event='in_progress' then 'in_progress'
    when r.current_event='action_assigned' then 'action_assigned'
    when r.current_event='acknowledged' then 'acknowledged'
