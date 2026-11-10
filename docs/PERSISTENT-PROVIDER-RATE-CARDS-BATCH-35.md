@@ -27,6 +27,11 @@ Extend the existing immutable `ai_model_price_catalog` into a versioned, evidenc
 - Supplied SHA-256 fingerprints are validated for shape; bytes are not fetched or re-hashed.
 - Existing records are retained as `legacy_unverified`.
 
+## Research references
+- OpenAI API pricing: https://developers.openai.com/api/docs/pricing
+- Runway Dev API pricing: https://dev.runway.com/pricing
+- Pricing pages are reference sources only; this batch does not auto-import live prices or seed unapproved rate cards.
+
 ## Metering boundary
 The current usage-cost function can directly price tokens, images, video seconds and render seconds. Extra dimensions such as audio, reference-video seconds, resolution tiers and output formats are retained as structured metadata but are not automatically billed until the corresponding telemetry and calculation rules are implemented in a later batch. No automatic customer charge is created.
 
