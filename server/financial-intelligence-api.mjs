@@ -729,6 +729,62 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
       }
+      if(path==="/api/admin/finance/model-rate-cards"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const provider=query.provider?String(query.provider).trim().toLowerCase():null;
+        const model=query.model?String(query.model).trim():null;
+        const currency=query.currency?String(query.currency).trim().toUpperCase():null;
+        const limit=Number(query.limit||200);
+        if(provider&&(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider))||
+          model&&model.length>160||currency&&!/^[A-Z]{3}$/.test(currency)||
+          !Number.isSafeInteger(limit)||limit<1||limit>500)
+          return error(400,"MODEL_RATE_CARD_FILTER_INVALID","Provide valid provider/model/currency filters and a limit from 1 to 500.");
+        const result=await rpc("ai_model_price_rate_card_catalog",{p_actor_id:ownerId,
+          p_provider:provider,p_model:model,p_currency:currency,p_limit:limit});
+        return response(200,{catalog:result||{rateCards:[],count:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/model-rate-cards"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const rate=body.rateCard||{};
+        const provider=String(rate.provider||"").trim().toLowerCase();
+        const model=String(rate.model||"").trim();
+        const currency=String(rate.currency||"").trim().toUpperCase();
+        const version=String(rate.rateCardVersion||"").trim();
+        const billingUnit=String(rate.billingUnit||"");
+        const effectiveFrom=String(rate.effectiveFrom||"");
+        const effectiveTo=rate.effectiveTo?String(rate.effectiveTo):null;
+        const sourceType=String(rate.sourceType||"");
+        const sourceReference=String(rate.sourceReference||"").trim();
+        const sourceUrl=String(rate.sourceUrl||"").trim();
+        const sourceCheckedAt=rate.sourceCheckedAt?String(rate.sourceCheckedAt):null;
+        const sourceFingerprint=String(rate.sourceFingerprint||"").toLowerCase();
+        const verificationStatus=String(rate.verificationStatus||"");
+        const dimensions=rate.pricingDimensions===undefined?{}:rate.pricingDimensions;
+        const priceFields=["inputPerMillionMinor","outputPerMillionMinor","imageUnitMinor","videoSecondMinor","renderSecondMinor"];
+        const prices=priceFields.map(key=>rate[key]===undefined||rate[key]===null?null:Number(rate[key]));
+        const validTimestamp=value=>typeof value==="string"&&Number.isFinite(Date.parse(value));
+        if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!model||model.length>160||
+          !/^[A-Z]{3}$/.test(currency)||!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version)||
+          !["tokens_per_million","image","video_second","render_second","request","frame","minute","character_block","mixed"].includes(billingUnit)||
+          !validTimestamp(effectiveFrom)||(effectiveTo&&(!validTimestamp(effectiveTo)||Date.parse(effectiveTo)<=Date.parse(effectiveFrom)))||
+          !["provider_pricing","provider_contract","admin_verified"].includes(sourceType)||
+          sourceReference.length<3||sourceReference.length>240||(sourceUrl&&!/^https:\/\//.test(sourceUrl))||
+          (sourceFingerprint&&!/^[a-f0-9]{64}$/.test(sourceFingerprint))||
+          !["source_linked","contract_attested","admin_attested"].includes(verificationStatus)||
+          !dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||JSON.stringify(dimensions).length>12000||
+          prices.some(value=>value!==null&&(!Number.isFinite(value)||value<0))||
+          !prices.some(value=>value!==null&&value>0)||
+          (sourceType==="provider_pricing"&&(!sourceUrl||!validTimestamp(sourceCheckedAt)||verificationStatus!=="source_linked"))||
+          (sourceType==="provider_contract"&&verificationStatus!=="contract_attested")||
+          (sourceType==="admin_verified"&&verificationStatus!=="admin_attested"))
+          return error(400,"MODEL_RATE_CARD_INVALID","Provide a valid versioned rate card, billing unit, effective period, non-negative price and matching source-evidence status.");
+        const result=await rpc("add_ai_model_price_rate_card",{p_actor_id:ownerId,p_rate_card:{
+          ...rate,provider,model,currency,rateCardVersion:version,billingUnit,effectiveFrom,effectiveTo,
+          sourceType,sourceReference,sourceUrl,sourceCheckedAt,sourceFingerprint,verificationStatus,
+          pricingDimensions:dimensions
+        }});
+        return response(201,{rateCard:result});
+      }
       if(path==="/api/admin/finance/resource-rates"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const provider=String(body.provider||"").trim().toLowerCase();
