@@ -441,10 +441,17 @@ async function runAction(action:HTMLElement){
      if(!clip)throw new Error("The source clip is no longer in the selected timeline. The proxy remains in your asset library.");
      clip.metadata={...clip.metadata,proxyAssetId:output.id,proxyAssetName:output.name||"Editing proxy",proxyAssetSha256:output.sha256||"",proxyProfile:"timeline-preview-960p"};
      await persist();
-     const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
-     if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);
-     state.proxyPreviewUrl=URL.createObjectURL(blob);
-     state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
+     if(state.mode==="cloud"){
+      const proxyAsset=state.assets.find(item=>item.id===output.id);
+      if(!proxyAsset)throw new Error("The completed cloud proxy is not visible in the private asset library yet.");
+      await previewUrlForAsset(proxyAsset);
+      state.message="Private cloud proxy generated, linked to this clip and verified for preview. Master renders still use the original source.";
+     }else{
+      const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
+      if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);
+      state.proxyPreviewUrl=URL.createObjectURL(blob);
+      state.message="Proxy generated, linked to this clip and loaded for preview. Master renders still use the original source.";
+     }
     }else{
      const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
      if(state.previewFrameUrl)URL.revokeObjectURL(state.previewFrameUrl);
