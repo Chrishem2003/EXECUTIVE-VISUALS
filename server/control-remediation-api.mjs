@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { audit, json, parseJson, getProjectAccess } from "./db.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -66,6 +66,19 @@ export function createControlRemediationApi({db}={}){
  async function handle({method,path,ownerId,body={},query={}}){
   if(!path.startsWith("/api/finance/remediations"))return null;
   if(!UUID.test(String(ownerId||"")))return error(401,"AUTH_REQUIRED","A verified account is required.");
+  const exportMatch=path.match(/^\\/api\\/finance\\/remediations\\/([0-9a-f-]{36})\\/audit-export$/i);
+  if(exportMatch&&method==="GET"){
+   const [,id]=exportMatch,row=actionFor(ownerId,id);
+   if(!row)return error(404,"NOT_FOUND","Remediation record not found.");
+   const projectAccess=row.project_id?access(ownerId,row.project_id,false):row.owner_id===ownerId?{access_role:"owner"}:null;
+   if(!projectAccess)return error(404,"NOT_FOUND","Remediation record not found.");
+   const history=db.prepare("SELECT id,actor_id AS actorId,event_type AS event,from_status AS fromStatus,to_status AS toStatus,note,details_json,created_at AS at FROM control_remediation_history WHERE action_id=? ORDER BY id").all(id).map(x=>({...x,details:parseJson(x.details_json)}));
+   const auditEvents=db.prepare("SELECT id,owner_id AS actorId,event_type AS event,subject_type AS subjectType,subject_id AS subjectId,details_json,created_at AS at FROM audit_events WHERE subject_type='control_remediation' AND subject_id=? ORDER BY id").all(id).map(x=>({...x,details:parseJson(x.details_json)}));
+   const evidence=db.prepare("SELECT id,label,sha256,kind,captured_at AS capturedAt,submitted_by AS submittedBy,created_at AS createdAt FROM control_remediation_evidence WHERE action_id=? ORDER BY created_at,id").all(id);
+   const payload={schemaVersion:1,action:safeAction(row),history,auditEvents,evidence};
+   const canonical=JSON.stringify(payload),sha256=createHash("sha256").update(canonical,"utf8").digest("hex");
+   return response(200,{payload,integrity:{algorithm:"SHA-256",canonicalization:"UTF-8 JSON.stringify(payload), property insertion order preserved",sha256,historyCount:history.length,auditEventCount:auditEvents.length,evidenceCount:evidence.length,generatedAt:new Date().toISOString(),scope:"integrity-after-export-only"}});
+  }
   if(path==="/api/finance/remediations/inbox"&&method==="GET"){
    const projectId=text(query.projectId,64)||null,status=text(query.status,24)||null,limit=Math.min(100,Math.max(1,Number.parseInt(String(query.limit||"50"),10)||50));
    if(projectId&&!UUID.test(projectId))return error(400,"INVALID_PROJECT","Project ID is invalid.");
