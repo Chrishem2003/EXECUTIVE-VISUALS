@@ -47,6 +47,10 @@ begin
     now()
   );
   if result->>'status'<>'active' then raise exception 'Verified purchase did not activate subscription'; end if;
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=owner_id and payment_transaction_id=payment_id)<>1000 then
+    raise exception 'Initial subscription included credits were not granted exactly once';
+  end if;
+
 
   result := executive_visuals.manage_customer_subscription(owner_id,sub_id,'schedule_plan_change','pro-yearly','SQL integration plan change');
   if result->>'scheduledPlanCode'<>'pro-yearly' then raise exception 'Plan change was not scheduled'; end if;
@@ -68,6 +72,10 @@ begin
   if current_plan<>'pro-yearly' or current_amount<>240000 or current_status<>'active' then
     raise exception 'Verified renewal did not atomically apply scheduled plan snapshot';
   end if;
+  if (select coalesce(sum(credit_delta),0) from executive_visuals.credit_ledger where owner_id=owner_id)<>21000 then
+    raise exception 'Renewal did not grant scheduled plan credits exactly once';
+  end if;
+
 
   perform executive_visuals.manage_customer_subscription(owner_id,sub_id,'cancel_at_period_end',null,'SQL integration scheduled cancellation');
   update executive_visuals.customer_subscriptions set current_period_start=now()-interval '2 days',current_period_end=now()-interval '1 second' where id=sub_id;
