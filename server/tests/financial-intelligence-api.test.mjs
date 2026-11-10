@@ -674,3 +674,48 @@ test("admin grace-expiry action is role-protected and reports no provider charge
   assert.equal(result.body.providerChargesInitiated,false);
   assert.equal(rpcCalled,true);
 });
+
+
+test("customer subscription management delegates ownership-bound cancellation to the service RPC",async()=>{
+  let rpcPayload=null;
+  const service=api(async(url,options={})=>{
+    const target=String(url);
+    if(target.endsWith("/rpc/manage_customer_subscription")){
+      rpcPayload=JSON.parse(options.body);
+      return json({subscriptionId:"44444444-4444-4444-8444-444444444444",status:"active",cancelAtPeriodEnd:true,effectiveAt:"2026-12-01T00:00:00Z"});
+    }
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"POST",path:"/api/billing/subscription/manage",ownerId:owner,body:{
+    subscriptionId:"44444444-4444-4444-8444-444444444444",action:"cancel_at_period_end"
+  }});
+  assert.equal(result.status,200);
+  assert.equal(rpcPayload.p_owner_id,owner);
+  assert.equal(rpcPayload.p_action,"cancel_at_period_end");
+  assert.equal(rpcPayload.p_reason,"Customer self-service");
+});
+
+test("subscription management rejects invalid plan codes before database access",async()=>{
+  const service=api(async()=>{throw new Error("database must not be called");});
+  const result=await service.handle({method:"POST",path:"/api/billing/subscription/manage",ownerId:owner,body:{
+    subscriptionId:"44444444-4444-4444-8444-444444444444",action:"schedule_plan_change",planCode:"../../admin"
+  }});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_MANAGEMENT_INPUT_INVALID");
+});
+
+test("subscription event history verifies ownership before reading events",async()=>{
+  const calls=[];
+  const service=api(async url=>{
+    const target=String(url);calls.push(target);
+    if(target.includes("/customer_subscriptions?select=id"))return json([{id:"44444444-4444-4444-8444-444444444444"}]);
+    if(target.includes("/subscription_events?"))return json([{event_type:"renewed"}]);
+    throw new Error("Unexpected request: "+target);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/subscription/events",ownerId:owner,query:{
+    subscriptionId:"44444444-4444-4444-8444-444444444444"
+  }});
+  assert.equal(result.status,200);
+  assert.equal(result.body.events.length,1);
+  assert.ok(calls[0].includes("owner_id=eq."+owner));
+});
