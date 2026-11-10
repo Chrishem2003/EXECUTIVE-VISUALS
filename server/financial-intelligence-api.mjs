@@ -148,6 +148,15 @@ export function createFinancialIntelligenceApi({
       return {matched:true,status:"failed",paymentId:payment.id};
     }
     if(providerStatus!=="succeeded")return {matched:true,status:"pending",paymentId:payment.id};
+    if(payment.metadata?.payment_purpose==="subscription_renewal"){
+      const renewal=await rpc("finalize_subscription_renewal",{
+        p_payment_id:payment.id,
+        p_provider_transaction_id:String(providerChargeId),
+        p_provider_payload:charge,
+        p_verified_at:new Date().toISOString()
+      });
+      return {matched:true,status:"successful",paymentId:payment.id,subscriptionRenewed:true,renewal};
+    }
     const settlement=await rpc("finalize_payment_purchase",{
       p_payment_id:payment.id,p_provider_transaction_id:String(providerChargeId),
       p_provider_payload:charge,p_verified_at:new Date().toISOString()
@@ -311,6 +320,73 @@ export function createFinancialIntelligenceApi({
       if(path==="/api/billing/products"&&method==="GET"){
         const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});
+      }
+      if(path==="/api/billing/subscription/renewal-checkout"&&method==="POST"){
+        const subscriptionId=String(body.subscriptionId||"");
+        const network=String(body.network||"").toUpperCase();
+        const email=String(body.email||"").trim().toLowerCase();
+        const first=String(body.firstName||"").trim().slice(0,80);
+        const last=String(body.lastName||"").trim().slice(0,80);
+        const rawPhone=String(body.phoneNumber||"").replace(/[\\s()+-]/g,"");
+        const key=String(idempotencyKey||"").trim();
+        const phone=rawPhone.startsWith("256")?rawPhone.slice(3):rawPhone.startsWith("0")?rawPhone.slice(1):rawPhone;
+        if(!UUID.test(subscriptionId)||!["MTN","AIRTEL"].includes(network)||
+          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||!first||!last||!/^7\\d{8}$/.test(phone)||
+          key.length<8||key.length>180)
+          return error(400,"SUBSCRIPTION_RENEWAL_INPUT_INVALID","Provide a valid subscription, customer details, Ugandan mobile number, MTN/Airtel network and idempotency key.");
+        const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+        if(Array.isArray(prior.data)&&prior.data.length){
+          const row=prior.data[0];
+          if(row.metadata?.payment_purpose!=="subscription_renewal"||row.metadata?.subscription_id!==subscriptionId||row.metadata?.mobile_money_network!==network)
+            return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to another payment.");
+          return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
+        }
+        const pending=await dbRequest("payment_transactions?select=id,tx_ref&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.pending&metadata->>payment_purpose=eq.subscription_renewal&metadata->>subscription_id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        if(Array.isArray(pending.data)&&pending.data.length)
+          return error(409,"SUBSCRIPTION_RENEWAL_ALREADY_PENDING","A renewal payment is already awaiting confirmation. Complete or reconcile it before starting another.");
+        const subscriptionResult=await dbRequest("customer_subscriptions?select=id,owner_id,status,billing_interval,amount_minor,currency,current_period_end,customer_email&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        const subscription=Array.isArray(subscriptionResult.data)?subscriptionResult.data[0]:null;
+        if(!subscription)return error(404,"SUBSCRIPTION_NOT_FOUND","Subscription not found.");
+        if(!["active","past_due"].includes(subscription.status)||!["monthly","yearly"].includes(subscription.billing_interval)||
+          subscription.currency!=="UGX"||!Number.isSafeInteger(Number(subscription.amount_minor))||Number(subscription.amount_minor)<=0)
+          return error(409,"SUBSCRIPTION_NOT_RENEWABLE","Only an active or past-due UGX subscription with a configured monthly or yearly price can be renewed.");
+        const txRef="EVR"+randomUUID().replaceAll("-","");
+        const created=await dbRequest("payment_transactions",{
+          method:"POST",body:{
+            owner_id:ownerId,tx_ref:txRef,amount_minor:Number(subscription.amount_minor),currency:"UGX",
+            status:"pending",payment_method:"mobile_money",customer_email:email,
+            description:"Subscription renewal",
+            metadata:{payment_purpose:"subscription_renewal",subscription_id:subscription.id,idempotency_key:key,mobile_money_network:network,billing_interval:subscription.billing_interval}
+          },prefer:"return=representation"
+        });
+        const payment=Array.isArray(created.data)?created.data[0]:null;
+        if(!payment?.id)throw Object.assign(new Error("Subscription renewal reservation could not be created."),{code:"SUBSCRIPTION_RENEWAL_RESERVATION_FAILED"});
+        try{
+          const charge=await providerRequest("/orchestration/direct-charges",{
+            method:"POST",idempotencyKey:key,
+            body:{
+              amount:minorToMajor(Number(subscription.amount_minor),"UGX"),currency:"UGX",reference:txRef,
+              customer:{email,name:{first,last},phone:{country_code:"256",number:phone}},
+              payment_method:{type:"mobile_money",mobile_money:{country_code:"256",network,phone_number:phone}}
+            }
+          });
+          const providerCharge=charge?.data;
+          if(!providerCharge?.id)throw Object.assign(new Error("Flutterwave returned no charge ID."),{code:"PROVIDER_INVALID_RESPONSE"});
+          const nextAction=providerCharge.next_action||null;
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id),{
+            method:"PATCH",body:{
+              provider_transaction_id:String(providerCharge.id),
+              metadata:{...payment.metadata,provider_charge_id:String(providerCharge.id),next_action:nextAction,checkout_started_at:new Date().toISOString()},
+              updated_at:new Date().toISOString()
+            },prefer:"return=minimal"
+          });
+          return response(202,{payment:{id:payment.id,reference:txRef,providerChargeId:String(providerCharge.id),status:String(providerCharge.status||"pending"),nextAction},message:"Renewal payment initiated. The subscription period is extended only after Flutterwave verification."});
+        }catch(err){
+          await dbRequest("payment_transactions?id=eq."+encodeURIComponent(payment.id),{
+            method:"PATCH",body:{metadata:{...payment.metadata,checkout_error_code:err.code||"PROVIDER_RESULT_UNCERTAIN",checkout_result_uncertain:true},updated_at:new Date().toISOString()},prefer:"return=minimal"
+          }).catch(()=>{});
+          return response(err.status===202?202:502,{payment:{id:payment.id,reference:txRef,status:"pending"},error:{code:err.code||"CHECKOUT_RESULT_UNCERTAIN",message:"Renewal initiation is not confirmed. Reconcile this reference before retrying."}});
+        }
       }
       if(path==="/api/billing/checkout"&&method==="POST"){
         const productCode=String(body.productCode||"").trim();
