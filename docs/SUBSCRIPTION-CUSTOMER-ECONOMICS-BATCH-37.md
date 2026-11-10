@@ -15,7 +15,7 @@ Expose customer-level subscription economics by joining the existing monthly sub
 - Successful subscription cash receipts, completed refunds and net cash movement from verified payment records, reported separately from MRR.
 - Direct customer costs from the same-month, same-currency immutable service-cost ledger.
 - Provider-invoice/provider-usage-export costs separated from other direct costs.
-- Contribution and direct gross margin; negative/low-margin customer flags.
+- Contribution and direct gross margin; negative-contribution and configured customer/global margin-policy flags.
 - Subscription credit grants, settled credit consumption, reversals and end-of-period credit-ledger balance.
 - Multimodal workload telemetry counters, event counts and provider-cost evidence counts.
 
