@@ -118,7 +118,8 @@ begin
   else null end;
  if v_expected_event is null or p_event_envelope->>'eventType'<>v_expected_event
   or p_event_envelope->>'ownerId'<>p_owner_id::text
-  or p_event_envelope->>'actorId'<>p_actor_id::text then
+  or p_event_envelope->>'actorId'<>p_actor_id::text
+  or p_event_envelope->'payload'<>p_payload then
   raise exception using errcode='22023',message='financial_close_command_event_mismatch';
  end if;
 
