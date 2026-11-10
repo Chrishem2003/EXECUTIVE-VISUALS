@@ -58,6 +58,3703 @@ begin
   or p_input_sha256 is null or p_result_sha256 is null
   or p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date
   or p_currency !~ '^[A-Z]{3}
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_model_version <> 'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload) <> 'object'
+  or jsonb_typeof(p_result_payload) <> 'object'
+  or jsonb_typeof(p_evidence_references) <> 'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_result_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_model_version <> 'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload) <> 'object'
+  or jsonb_typeof(p_result_payload) <> 'object'
+  or jsonb_typeof(p_evidence_references) <> 'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_model_version <> 'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload) <> 'object'
+  or jsonb_typeof(p_result_payload) <> 'object'
+  or jsonb_typeof(p_evidence_references) <> 'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_result_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_result_sha256 !~ '^[0-9a-f]{64}
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_model_version <> 'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload) <> 'object'
+  or jsonb_typeof(p_result_payload) <> 'object'
+  or jsonb_typeof(p_evidence_references) <> 'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_result_sha256 !~ '^[0-9a-f]{64}
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+
+create or replace function executive_visuals.financial_scenario_baseline(
+ p_actor_id uuid,p_period_month date
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_period_month is null or p_period_month<>date_trunc('month',p_period_month)::date then
+  raise exception 'Scenario baseline period must be the first day of a month' using errcode='22023';
+ end if;
+ with currencies as(
+  select currency from executive_visuals.financial_cash_position_snapshots
+   where as_of_date<(p_period_month+interval '1 month')::date
+  union
+  select currency from executive_visuals.subscription_revenue_snapshots where snapshot_month=p_period_month
+  union
+  select currency from executive_visuals.financial_service_cost_events where period_month=p_period_month
+ ), cash as(
+  select distinct on(currency) id,currency,available_cash_minor,as_of_date,source_reference
+  from executive_visuals.financial_cash_position_snapshots
+  where as_of_date<(p_period_month+interval '1 month')::date
+  order by currency,as_of_date desc,created_at desc
+ ), revenue as(
+  select s.currency,sum(s.mrr_minor)::bigint monthly_mrr_minor,count(*)::integer snapshot_count,
+   (select jsonb_agg(jsonb_build_object('kind','subscription_revenue_snapshot','ownerId',e.owner_id,'currency',e.currency,'periodMonth',e.snapshot_month)
+     order by e.owner_id) from (
+      select owner_id,currency,snapshot_month from executive_visuals.subscription_revenue_snapshots
+      where snapshot_month=p_period_month and currency=s.currency order by owner_id limit 20
+     ) e) evidence
+  from executive_visuals.subscription_revenue_snapshots s where s.snapshot_month=p_period_month
+  group by s.currency
+ ), costs as(
+  select c.currency,sum(c.amount_minor)::bigint direct_service_cost_minor,count(*)::integer event_count,
+   (select jsonb_agg(jsonb_build_object('kind','financial_service_cost_event','id',e.id,'periodMonth',e.period_month)
+     order by e.created_at desc) from (
+      select id,period_month,created_at from executive_visuals.financial_service_cost_events
+      where period_month=p_period_month and currency=c.currency order by created_at desc limit 20
+     ) e) evidence
+  from executive_visuals.financial_service_cost_events c where c.period_month=p_period_month
+  group by c.currency
+ ), baseline_rows as(
+  select c.currency,ca.available_cash_minor opening_cash_minor,ca.as_of_date cash_as_of_date,
+   ca.id cash_snapshot_id,r.monthly_mrr_minor,r.snapshot_count revenue_snapshot_count,
+   co.direct_service_cost_minor,co.event_count direct_cost_event_count,
+   coalesce((select jsonb_agg(jsonb_build_object('kind','cash_position_snapshot','id',ca.id,'asOfDate',ca.as_of_date,'sourceReference',ca.source_reference))
+    where ca.id is not null),'[]'::jsonb)
+   ||coalesce(r.evidence,'[]'::jsonb)||coalesce(co.evidence,'[]'::jsonb) evidence_references
+  from currencies c left join cash ca on ca.currency=c.currency
+  left join revenue r on r.currency=c.currency left join costs co on co.currency=c.currency
+ )
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'currency',currency,'openingCashMinor',opening_cash_minor,'cashAsOfDate',cash_as_of_date,
+  'cashPositionSnapshotId',cash_snapshot_id,'monthlyMrrMinor',monthly_mrr_minor,
+  'revenueSnapshotCount',coalesce(revenue_snapshot_count,0),
+  'monthlyDirectServiceCostMinor',direct_service_cost_minor,
+  'directCostEventCount',coalesce(direct_cost_event_count,0),
+  'evidenceReferences',evidence_references
+ ) order by currency),'[]'::jsonb) into v_result from baseline_rows;
+ return jsonb_build_object('periodMonth',p_period_month,'byCurrency',v_result,
+  'limitations',jsonb_build_array(
+   'Subscription MRR is recurring revenue evidence, not cash collected or total business revenue.',
+   'Direct service-cost events are not a complete variable-cost or cost-of-goods-sold ledger and are not automatically mapped into the scenario cost assumptions.',
+   'Opening cash is the latest recorded available-cash snapshot on or before the selected month end; it may not be a live bank balance.',
+   'Fixed operating costs and capital expenditure are not inferred from these sources and must be supplied from approved records.',
+   'Currencies are kept separate. Missing source records remain null and are never converted to zero.'
+  ));
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+revoke all on function executive_visuals.financial_scenario_baseline(uuid,date) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+grant execute on function executive_visuals.financial_scenario_baseline(uuid,date) to service_role;
+
+  or p_model_version<>'deterministic_monthly_scenario_v1'
+  or jsonb_typeof(p_input_payload)<>'object' or jsonb_typeof(p_result_payload)<>'object'
+  or jsonb_typeof(p_evidence_references)<>'array'
+  or p_input_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+ or p_result_sha256 !~ '^[0-9a-f]{64}
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ if octet_length(p_input_payload::text)>32768 or octet_length(p_result_payload::text)>131072
+  or jsonb_array_length(p_evidence_references)>50 then
+  raise exception 'Financial scenario snapshot exceeds configured evidence or payload limits' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
+  actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
+  evidence_references,input_sha256,result_sha256,idempotency_key
+ ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
+  p_input_payload,p_result_payload,p_evidence_references,p_input_sha256,p_result_sha256,p_idempotency_key)
+ on conflict(actor_id,idempotency_key) do nothing;
+ get diagnostics v_rows=row_count;
+ v_inserted:=v_rows>0;
+ select * into v_row from executive_visuals.financial_scenario_snapshots
+  where actor_id=p_actor_id and idempotency_key=p_idempotency_key;
+ if v_row.id is null then raise exception 'Scenario snapshot could not be persisted' using errcode='P0001'; end if;
+ if v_row.input_sha256<>p_input_sha256 or v_row.result_sha256<>p_result_sha256 then
+  raise exception 'Idempotency key was already used for a different scenario payload' using errcode='23505';
+ end if;
+ return jsonb_build_object('snapshot',jsonb_build_object(
+  'id',v_row.id,'scenarioName',v_row.scenario_name,'periodMonth',v_row.period_month,
+  'currency',v_row.currency,'modelVersion',v_row.model_version,
+  'input',v_row.input_payload,'result',v_row.result_payload,
+  'evidenceReferences',v_row.evidence_references,'inputSha256',v_row.input_sha256,
+  'resultSha256',v_row.result_sha256,'createdAt',v_row.created_at),
+  'idempotentReplay',not v_inserted);
+end $$;
+
+create or replace function executive_visuals.list_financial_scenario_snapshots(
+ p_actor_id uuid,p_limit integer default 25
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,executive_visuals,auth
+as $$
+declare v_result jsonb;
+begin
+ if p_actor_id is null or not exists(select 1 from executive_visuals.platform_admins
+  where user_id=p_actor_id and role in('owner','platform_admin','billing_admin')) then
+  raise exception 'Financial administrator access required' using errcode='42501';
+ end if;
+ if p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'Scenario snapshot limit must be between 1 and 100' using errcode='22023';
+ end if;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',id,'scenarioName',scenario_name,'periodMonth',period_month,'currency',currency,
+  'modelVersion',model_version,'input',input_payload,'result',result_payload,
+  'evidenceReferences',evidence_references,'inputSha256',input_sha256,
+  'resultSha256',result_sha256,'createdAt',created_at) order by created_at desc,id desc),'[]'::jsonb)
+ into v_result from (
+  select * from executive_visuals.financial_scenario_snapshots
+  order by created_at desc,id desc limit p_limit
+ ) s;
+ return jsonb_build_object('snapshots',v_result,'count',jsonb_array_length(v_result),'immutable',true);
+end $$;
+
+revoke all on function executive_visuals.reject_financial_scenario_snapshot_mutation() from public,anon,authenticated;
+revoke all on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) from public,anon,authenticated;
+revoke all on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.create_financial_scenario_snapshot(uuid,text,date,text,text,jsonb,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.list_financial_scenario_snapshots(uuid,integer) to service_role;
+
+  or p_idempotency_key is null or length(p_idempotency_key) not between 8 and 128 then
+  raise exception 'Invalid financial scenario snapshot payload' using errcode='22023';
+ end if;
+ insert into executive_visuals.financial_scenario_snapshots(
   actor_id,scenario_name,period_month,currency,model_version,input_payload,result_payload,
   evidence_references,input_sha256,result_sha256,idempotency_key
  ) values(p_actor_id,btrim(p_scenario_name),p_period_month,p_currency,p_model_version,
