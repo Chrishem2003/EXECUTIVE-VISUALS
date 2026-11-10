@@ -312,12 +312,18 @@ begin
    'spendMinor',net_spend_minor,'attributedNewCustomers',attributed_new_customers,'cacMinor',cac_minor,
    'cacPaybackMonths',null,'paybackAvailability','gross_margin_not_instrumented'
   ) order by period_month desc,currency,channel) from acquisition),'[]'::jsonb),
-  'forecastAccuracy',coalesce((select jsonb_agg(jsonb_build_object(
-   'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
-   'meanAbsolutePercentageError',case when sum(actual_mrr)>0
-    then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
-   'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
-  )) group by horizon_days,currency order by horizon_days,currency) from forecast_errors),'[]'::jsonb),
+  'forecastAccuracy',coalesce((
+   select jsonb_agg(row_data order by horizon_days,currency)
+   from(
+    select horizon_days,currency,jsonb_build_object(
+     'horizonDays',horizon_days,'currency',currency,'observations',count(*)::integer,
+     'meanAbsolutePercentageError',case when sum(actual_mrr)>0
+      then round(avg(abs(forecast_mrr-actual_mrr)/greatest(actual_mrr,1))*100,2) else null end,
+     'meanAbsoluteErrorMinor',round(avg(abs(forecast_mrr-actual_mrr)))::bigint
+    ) row_data
+    from forecast_errors group by horizon_days,currency
+   ) forecast_accuracy
+  ),'[]'::jsonb),
   'limitations',jsonb_build_array(
    'Retention comparisons begin only after two real monthly snapshots exist; earlier history is not reconstructed.',
    'CAC includes only acquisition spend and new paid customers with explicit channel attribution for the same currency and month.',
