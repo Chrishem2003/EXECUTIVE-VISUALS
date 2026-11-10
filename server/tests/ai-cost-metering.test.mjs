@@ -101,3 +101,39 @@ test("AI cost intelligence reporting accepts a valid month and rejects malformed
  assert.equal(good.status,200);
  assert.equal(called,true);
 });
+
+
+test("AI usage API maps GenAI attributes to a durable cost event",async()=>{
+ let payload;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_ai_usage_cost_event")){
+   payload=JSON.parse(options.body);
+   return json({id:"usage-event",costBasis:"provider_reported",costMinor:17,currency:"USD"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/ai-usage",ownerId:owner,body:{
+  attributes:{"gen_ai.provider.name":"openai","gen_ai.request.model":"gpt-test","gen_ai.response.model":"gpt-test-2026","gen_ai.operation.name":"chat"},
+  usage:{billable_input_tokens:120,billable_output_tokens:40,currency:"USD",cost_minor:17},
+  operationId:"generation-123",ownerId:owner,idempotencyKey:"usage-event-key-001"
+ }});
+ assert.equal(result.status,200);
+ assert.equal(payload.p_provider,"openai");
+ assert.equal(payload.p_requested_model,"gpt-test");
+ assert.equal(payload.p_response_model,"gpt-test-2026");
+ assert.equal(payload.p_input_tokens,120);
+ assert.equal(payload.p_output_tokens,40);
+ assert.equal(payload.p_provider_cost_minor,17);
+ assert.equal(payload.p_owner_id,owner);
+});
+
+test("AI usage API rejects invalid reporting month before calling the database",async()=>{
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Invalid date must not reach financial RPC");
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-cost-intelligence",ownerId:owner,body:{periodMonth:"2026-13-01"}});
+ assert.equal(result.status,400);
+});
