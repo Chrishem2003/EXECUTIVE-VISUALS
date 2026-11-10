@@ -1583,3 +1583,25 @@ test("reconciliation commands use the dedicated atomic audit RPC and remain admi
  assert.equal(rpcBody.p_event_envelope.eventType,"reconciliation.recorded");
  assert.deepEqual(rpcBody.p_event_envelope.payload,payload);
 });
+
+
+test("workload cost variance endpoint is admin-only and does not persist or post actual costs",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Denied workload variance must not access provider or ledger services.");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/finance/workload-variance",ownerId:owner,body:{}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Workload variance is an in-memory analysis and must not persist.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/workload-variance",ownerId:owner,body:{
+  estimate:{estimateType:"forecast_not_actual",estimateVersion:"1.0",rateCardVersion:"r1",provider:"provider-a",model:"video-model",operation:"video",currency:"UGX",costRange:{lowMinor:900,baseMinor:1000,highMinor:1100}},
+  actuals:[{sourceId:"invoice-1",sourceType:"provider_invoice",amountMinor:1050,currency:"UGX",evidenceReference:"private://invoice/1",evidenceSha256:"a".repeat(64),observedAt:"2026-11-10T10:00:00Z"}],
+  acceptedOutputs:3,rejectedOutputs:1
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.variance.variance.amountMinor,50);
+ assert.equal(result.body.variance.outputs.actualUnitCostMinor,350);
+});
