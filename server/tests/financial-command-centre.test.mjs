@@ -97,3 +97,51 @@ test("Flutterwave settlement reconciliation paginates charges and compares local
  assert.equal(auditArgs.p_action,"finance.settlements.reconcile");
  assert.ok(providerCalls.some(url=>url.includes("page=2&size=50")));
 });
+
+test("dispute queue is admin-only and returns evidence plus deadline urgency",async()=>{
+ const now=Date.now();
+ const api=service(async url=>{
+  const target=String(url);
+  if(target.includes("platform_admins"))return json([{role:"billing_admin"}]);
+  if(target.includes("chargeback_cases?"))return json([
+   {id:"22222222-2222-4222-8222-222222222222",status:"open",response_due_at:new Date(now-1000).toISOString()},
+   {id:"33333333-3333-4333-8333-333333333333",status:"under_review",response_due_at:new Date(now+3600000).toISOString()}
+  ]);
+  if(target.includes("financial_dispute_evidence_items?"))return json([{id:"e1",case_id:"22222222-2222-4222-8222-222222222222",evidence_type:"payment_receipt",status:"uploaded"}]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await api.handle({method:"GET",path:"/api/admin/finance/disputes",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.cases.length,2);
+ assert.equal(result.body.evidence.length,1);
+ assert.equal(result.body.deadlines.overdue,1);
+ assert.equal(result.body.deadlines.dueSoon,1);
+});
+
+test("support role cannot inspect dispute evidence queue",async()=>{
+ const api=service(async url=>{
+  if(String(url).includes("platform_admins"))return json([{role:"support"}]);
+  throw new Error("Dispute records must not be queried for support role");
+ });
+ const result=await api.handle({method:"GET",path:"/api/admin/finance/disputes",ownerId:owner});
+ assert.equal(result.status,403);
+});
+
+test("dispute evidence updates validate private paths and use audited database RPC",async()=>{
+ let rpcBody;
+ const api=service(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("platform_admins"))return json([{role:"owner"}]);
+  if(target.includes("/rpc/upsert_financial_dispute_evidence")){rpcBody=JSON.parse(options.body);return json({id:"evidence-id",status:"verified"});}
+  throw new Error("Unexpected request: "+target);
+ });
+ const caseId="22222222-2222-4222-8222-222222222222";
+ const bad=await api.handle({method:"POST",path:"/api/admin/finance/disputes/evidence",ownerId:owner,body:{caseId,evidenceType:"payment_receipt",status:"uploaded",storageObjectPath:"https://unsafe.example/evidence.pdf",reason:"Verified customer receipt"}});
+ assert.equal(bad.status,400);
+ const good=await api.handle({method:"POST",path:"/api/admin/finance/disputes/evidence",ownerId:owner,body:{caseId,evidenceType:"payment_receipt",status:"verified",storageObjectPath:"private-disputes/case-1/receipt.pdf",note:"Receipt checked",reason:"Verified against provider payment record"}});
+ assert.equal(good.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_case_id,caseId);
+ assert.equal(rpcBody.p_status,"verified");
+ assert.equal(rpcBody.p_storage_object_path,"private-disputes/case-1/receipt.pdf");
+});
