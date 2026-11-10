@@ -127,7 +127,7 @@ test("optimistic revision, duplicate findings and invalid evidence fail safely",
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody})).status,409);
  assert.equal((await f.api.handle({method:"PATCH",path:"/api/finance/remediations/"+id,ownerId:owner,body:{expectedRevision:9,actionPlan:"stale"}})).status,409);
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:outsider,body:{label:"No access",kind:"other",capturedAt:"2026-11-10"}})).status,404);
- assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Unattached metadata",kind:"other",capturedAt:"2026-11-10",sha256:"a".repeat(64)}})).status,404);
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Unattached metadata",kind:"other",capturedAt:"2026-11-10",sha256:"a".repeat(64)}})).status,400);
  f.db.close();
 });
 test("API ignores unrelated routes and rejects malformed owner identities",async()=>{
