@@ -192,6 +192,7 @@ begin
   raise exception 'Financial administrator access required' using errcode='42501';
  end if;
  if p_owner_id is null or coalesce(p_channel,'') !~ '^[a-z0-9][a-z0-9_-]{1,39}$'
+  or coalesce(p_currency,'') !~ '^[A-Z]{3}$'
   or coalesce(p_source_type,'') not in('self_reported','referral','partner','paid_campaign','organic','other')
   or p_acquired_at is null or p_acquired_at>now() then
   raise exception 'Invalid customer acquisition attribution' using errcode='22023';
