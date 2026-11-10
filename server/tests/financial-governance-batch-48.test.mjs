@@ -9,7 +9,7 @@ test("missing source domains are reported as evidence gaps, not clean controls",
  const a=buildFinancialGovernanceAssessment({asOf:"2026-11-10T12:00:00.000Z"});
  assert.equal(a.score,null);
  assert.equal(a.coverage.available,0);
- assert.equal(a.coverage.total,7);
+ assert.equal(a.coverage.total,8);
  assert.ok(a.summary.gaps>=4);
  assert.ok(a.findings.some(f=>f.id==="liquidity-source-gap"));
  assert.ok(a.controls.every(c=>c.status==="not_assessed"));
@@ -68,10 +68,13 @@ test("control coverage and limitations remain explicit even with no open finding
   auditVerification:{valid:true},closeWorkflow:{periods:[]},scenarioSnapshots:{snapshots:[]}
  });
  assert.equal(a.coverage.available,7);
+ assert.equal(a.coverage.total,8);
  assert.equal(a.summary.open,0);
  assert.equal(a.score,null);
  assert.ok(a.limitations.some(x=>x.includes("does not detect complete historical replacement")));
- assert.ok(a.controls.every(c=>c.status==="evidence_available"));
+ assert.ok(a.controls.filter(c=>c.id!=="CTRL-SOD-01").every(c=>c.status==="evidence_available"));
+ assert.equal(a.controls.find(c=>c.id==="CTRL-SOD-01").status,"not_assessed");
+ assert.ok(a.findings.some(f=>f.id==="sod-evidence-gap"));
 });
 
 test("Batch 48 governance panel is integrated with protected audit controls and responsive styling",()=>{
