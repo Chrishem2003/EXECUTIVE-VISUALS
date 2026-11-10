@@ -6,11 +6,12 @@ Provide a governance control room inside the Financial Command Centre. The asses
 
 ## Delivered capabilities
 
-- Seven-domain control register covering liquidity, profitability/margin, cash reconciliation, dispute deadlines, audit integrity, financial close and scenario review.
+- Eight-domain control register covering liquidity, profitability/margin, cash reconciliation, dispute deadlines, audit integrity, financial close and scenario review.
 - Priority findings for unresolved liquidity and margin alerts, cash reconciliation exceptions, overdue dispute deadlines and failed audit-chain verification.
 - Explicit evidence-gap and not-assessed findings when required sources are unavailable or an audit verification has not been run.
 - Rule-weighted triage index, critical/high/medium/low counts, source coverage and severity-ordered findings.
 - Recommended owner actions and control objectives, accountable functions and monitoring cadence.
+- Explicit not-assessed control for approval authority and segregation of duties until role/delegation conflict evidence is available.
 - Governance evidence JSON export.
 - On-demand audit history refresh and audit-chain verification using existing protected endpoints.
 - Responsive Aurora-style governance interface and mobile layouts.
