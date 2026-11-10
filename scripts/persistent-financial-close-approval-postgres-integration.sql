@@ -118,7 +118,9 @@ begin
   jsonb_build_object('periodId',v_period_id,'reason','Controller requested a documented review correction'),
   'batch32-period-reopen');
  if v_result->'period'->>'status'<>'open' then raise exception 'Period reopen failed: %',v_result; end if;
- if exists(select 1 from executive_visuals.financial_close_approvals where period_id=v_period_id and status<>'pending') then
+ v_result:=executive_visuals.get_financial_close_overview(v_owner);
+ if exists(select 1 from jsonb_array_elements(v_result->'approvals') as item(value)
+  where value->>'period_id'=v_period_id::text and value->>'status'<>'pending') then
   raise exception 'Reopening did not reset approval decisions';
  end if;
 
