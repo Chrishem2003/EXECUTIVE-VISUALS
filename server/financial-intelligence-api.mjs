@@ -946,7 +946,8 @@ export function createFinancialIntelligenceApi({
             create_period:"close_period.created",assign_task:"close_task.assigned",
             complete_task:"close_task.completed",waive_task:"close_task.waived",
             submit_for_approval:"close_period.submitted",record_approval:"close_approval.recorded",
-            reassign_approval:"close_approval.assigned",lock_period:"close_period.locked",reopen_period:"close_period.reopened"
+            reassign_approval:"close_approval.assigned",lock_period:"close_period.locked",reopen_period:"close_period.reopened",
+            record_reconciliation:"reconciliation.recorded",review_reconciliation:"reconciliation.reviewed"
           };
           const eventType=eventTypes[command];
           const payload=body.payload&&typeof body.payload==="object"&&!Array.isArray(body.payload)?body.payload:null;
@@ -963,7 +964,8 @@ export function createFinancialIntelligenceApi({
             sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
           });
           const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>!["eventHash","canonicalEvent"].includes(key)));
-          const result=await rpc("execute_financial_close_command",{
+          const reconciliationCommand=command==="record_reconciliation"||command==="review_reconciliation";
+          const result=await rpc(reconciliationCommand?"execute_financial_reconciliation_command":"execute_financial_close_command",{
             p_owner_id:subjectOwnerId,p_actor_id:ownerId,p_command:command,p_payload:payload,
             p_event_envelope:envelope,p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
           });
