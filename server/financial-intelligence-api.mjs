@@ -735,6 +735,24 @@ export function createFinancialIntelligenceApi({
         const item=await rpc("record_financial_cashflow_item",{p_actor_id:ownerId,p_payload:{direction,currency,amountMinor:amount,expectedDate,confidenceBps:confidence,status,sourceType,sourceReference,description,idempotencyKey}});
         return response(201,{item});
       }
+      if(path==="/api/admin/finance/liquidity-guardrails"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const guardrails=await rpc("financial_liquidity_guardrails_overview",{p_actor_id:ownerId});
+        return response(200,{guardrails:guardrails||{policies:[],scenarios:[],limitations:["Liquidity guardrails are not available."]}});
+      }
+      if(path==="/api/admin/finance/liquidity-policies"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const currency=String(body.currency||"").trim().toUpperCase(),floor=Number(body.minimumCashFloorMinor),reserve=Number(body.reserveTargetMinor);
+        const effectiveFrom=String(body.effectiveFrom||""),sourceReference=String(body.sourceReference||"").trim();
+        const rationale=String(body.rationale||"").trim(),idempotencyKey=String(body.idempotencyKey||"");
+        if(!/^[A-Z]{3}$/.test(currency)||!Number.isSafeInteger(floor)||floor<0||!Number.isSafeInteger(reserve)||reserve<floor||
+          !/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveFrom)||!Number.isFinite(Date.parse(effectiveFrom+"T00:00:00Z"))||
+          new Date(effectiveFrom+"T00:00:00Z").toISOString().slice(0,10)!==effectiveFrom||effectiveFrom<new Date().toISOString().slice(0,10)||
+          sourceReference.length<3||sourceReference.length>240||rationale.length<3||rationale.length>1000||idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"LIQUIDITY_POLICY_INVALID","Provide a valid currency, non-negative minimum cash floor, reserve target at least the floor, non-backdated effective date and policy evidence.");
+        const policy=await rpc("record_financial_liquidity_policy",{p_actor_id:ownerId,p_payload:{currency,minimumCashFloorMinor:floor,reserveTargetMinor:reserve,effectiveFrom,sourceReference,rationale,idempotencyKey}});
+        return response(201,{policy});
+      }
       if(path==="/api/admin/finance/cashflow-reconciliation"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const today=new Date().toISOString().slice(0,10);
