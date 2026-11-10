@@ -55,7 +55,7 @@ Official provider references:
 - All new admin routes check `platform_admins` server-side; only owner, platform_admin and billing_admin roles qualify. Support is denied.
 - Admin aggregates are calculated in a security-definer SQL function which independently validates the actor role.
 - Settlement ingestion and reconciliation exception resolution use service-role-only RPCs and actor-role validation.
-- CSV/data exports, settlement reconciliation and exception resolutions write reason-bearing audit events.
+- CSV/data exports, settlement reconciliation, exception resolutions, refund initiation and customer financial-profile views write reason-bearing audit events.
 - Financial audit rows are append-only; update/delete attempts are rejected by a database trigger.
 - Reconciliation resolution requires a reason. Customer records remain owner-scoped for customer-facing routes; admin profiles are accessible only through the privileged server.
 - No secrets, payment credentials, full card data or mobile-money PINs are returned to the browser.
