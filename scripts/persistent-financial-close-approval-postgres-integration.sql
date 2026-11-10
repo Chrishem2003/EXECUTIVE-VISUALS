@@ -43,6 +43,7 @@ begin
   when 'waive_task' then 'close_task.waived'
   when 'submit_for_approval' then 'close_period.submitted'
   when 'record_approval' then 'close_approval.recorded'
+  when 'reassign_approval' then 'close_approval.assigned'
   when 'lock_period' then 'close_period.locked'
   when 'reopen_period' then 'close_period.reopened'
  end;
