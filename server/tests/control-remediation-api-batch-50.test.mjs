@@ -204,3 +204,28 @@ test("reviewer inbox excludes archived or removed project memberships",async()=>
  assert.equal(inbox.status,200);assert.equal(inbox.body.counts.total,0);
  f.db.close();
 });
+
+
+test("audit export is access-scoped and its SHA-256 manifest detects payload changes",async()=>{
+ const {createHash}=await import("node:crypto");
+ const {verifyAuditExport}=await import("../../scripts/verify-remediation-audit-export.mjs");
+ const f=setup(),created=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:createBody});
+ const id=created.body.action.id,assetId=seedEvidenceAsset(f.db,{id:"c23e4567-e89b-42d3-a456-426614174001"});
+ assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+id+"/evidence",ownerId:editor,body:{label:"Export evidence",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,201);
+ assert.equal(f.api.recordEvidenceDownload({ownerId:reviewer,assetId}),1);
+ const denied=await f.api.handle({method:"GET",path:"/api/finance/remediations/"+id+"/audit-export",ownerId:outsider});
+ assert.equal(denied.status,404);
+ const exported=await f.api.handle({method:"GET",path:"/api/finance/remediations/"+id+"/audit-export",ownerId:reviewer});
+ assert.equal(exported.status,200);
+ assert.equal(exported.body.integrity.algorithm,"SHA-256");
+ assert.equal(exported.body.integrity.auditEventCount,3);
+ assert.equal(exported.body.integrity.historyCount,2);
+ const digest=createHash("sha256").update(JSON.stringify(exported.body.payload),"utf8").digest("hex");
+ assert.equal(exported.body.integrity.sha256,digest);
+ assert.equal(verifyAuditExport(exported.body).valid,true);
+ const altered=structuredClone(exported.body);altered.payload.history[0].note="tampered";
+ assert.equal(verifyAuditExport(altered).valid,false);
+ const countAltered=structuredClone(exported.body);countAltered.integrity.auditEventCount+=1;
+ assert.equal(verifyAuditExport(countAltered).valid,false);
+ f.db.close();
+});
