@@ -9,7 +9,7 @@ const blocked=(reason,checks=[])=>({status:"blocked",readyForApproval:false,chec
  * A shot is ready only when the exact configured model, provider state,
  * duration, framing, resolution, reference inputs and current price are verified.
  */
-export function preflightVideoProduction({shots,providerCatalog,pricingCatalog}={}){
+export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,now}={}){
  if(!Array.isArray(shots)||shots.length<1||shots.length>MAX_SHOTS)
   return blocked("Provide 1–12 planned shots for preflight.");
  const video=providerCatalog?.providers?.find(item=>item.id==="video");
@@ -74,7 +74,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog}=
   id:shot.id,provider:shot.provider,model:shot.model,durationSeconds:shot.durationSeconds,
   resolution:shot.resolution||"provider_default",audioMode:shot.audioMode||"none",
   referenceImageCount:shot.referenceImageCount||0
- }))},pricingCatalog);
+ }))},pricingCatalog,{now});
  if(!quote.available)return {
   status:"pricing_unverified",readyForApproval:false,shotCount:shots.length,shots:results,
   pricing:{status:"unavailable",reason:quote.reason},
