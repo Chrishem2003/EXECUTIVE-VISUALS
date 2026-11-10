@@ -36,7 +36,7 @@ GitHub Actions runs:
 - `node --check server/control-remediation-api.mjs`
 - `npm run typecheck`
 
-No passing CI result is claimed until the Batch 55 workflow completes.
+Batch 55 verification **passed** on commit `a51fabba344eeb0d5d7cb422015c2a68825bc124`: remediation API/role-boundary tests, lifecycle tests, API syntax check and Financial Command Centre TypeScript check all succeeded. Workflow: https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42883497830.
 
 ## Release boundary
 
