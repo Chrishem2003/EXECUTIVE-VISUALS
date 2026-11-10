@@ -185,9 +185,9 @@ begin
   if not found then raise exception using errcode='55000',message='financial_close_task_not_assignable'; end if;
  elsif p_action='task.start' then
   v_task_id:=(p_payload->>'taskId')::uuid;
-  select * into v_task from executive_visuals.financial_close_tasks
-   where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id for update;
-  if not found or v_task.status not in('assigned','in_progress') then
+  select t.* into v_task from executive_visuals.financial_close_tasks t
+   where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id for update;
+  if v_task.task_id is null or v_task.status not in('assigned','in_progress') then
    raise exception using errcode='55000',message='financial_close_task_not_startable';
   end if;
   if v_task.assigned_to<>p_actor_id then raise exception using errcode='42501',message='financial_close_assignee_required'; end if;
@@ -201,9 +201,9 @@ begin
    where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id;
  elsif p_action='task.submit' then
   v_task_id:=(p_payload->>'taskId')::uuid;
-  select * into v_task from executive_visuals.financial_close_tasks
-   where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id for update;
-  if not found or v_task.status not in('in_progress','rejected') then
+  select t.* into v_task from executive_visuals.financial_close_tasks t
+   where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id for update;
+  if v_task.task_id is null or v_task.status not in('in_progress','rejected') then
    raise exception using errcode='55000',message='financial_close_task_not_submittable';
   end if;
   if v_task.assigned_to<>p_actor_id then raise exception using errcode='42501',message='financial_close_assignee_required'; end if;
@@ -223,9 +223,9 @@ begin
    where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id;
  elsif p_action='task.approve' then
   v_task_id:=(p_payload->>'taskId')::uuid;
-  select * into v_task from executive_visuals.financial_close_tasks
-   where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id for update;
-  if not found or v_task.status<>'submitted' then raise exception using errcode='55000',message='financial_close_task_not_awaiting_approval'; end if;
+  select t.* into v_task from executive_visuals.financial_close_tasks t
+   where t.owner_id=p_owner_id and t.period_month=p_period_month and t.task_id=v_task_id for update;
+  if v_task.task_id is null or v_task.status<>'submitted' then raise exception using errcode='55000',message='financial_close_task_not_awaiting_approval'; end if;
   if p_actor_id=v_task.assigned_to then raise exception using errcode='42501',message='financial_close_self_approval'; end if;
   select count(*) into v_count from executive_visuals.financial_close_task_approvals
    where owner_id=p_owner_id and period_month=p_period_month and task_id=v_task_id
