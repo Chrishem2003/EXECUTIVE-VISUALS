@@ -112,6 +112,7 @@ begin
   when 'waive_task' then 'close_task.waived'
   when 'submit_for_approval' then 'close_period.submitted'
   when 'record_approval' then 'close_approval.recorded'
+  when 'reassign_approval' then 'close_approval.assigned'
   when 'lock_period' then 'close_period.locked'
   when 'reopen_period' then 'close_period.reopened'
   else null end;
@@ -211,6 +212,23 @@ begin
   update executive_visuals.financial_close_periods set status='in_review',updated_at=now()
    where id=v_period_id returning * into v_period;
   return jsonb_build_object('duplicate',false,'period',to_jsonb(v_period),'audit',v_audit);
+ elsif p_command='reassign_approval' then
+  if v_period.status<>'open' or nullif(p_payload->>'stageKey','') is null
+   or nullif(p_payload->>'reviewerId','') is null then
+   raise exception using errcode='22023',message='financial_close_reassignment_invalid';
+  end if;
+  v_stage:=p_payload->>'stageKey';
+  v_reviewer:=(p_payload->>'reviewerId')::uuid;
+  select * into v_approval from executive_visuals.financial_close_approvals
+   where owner_id=p_owner_id and period_id=v_period_id and stage_key=v_stage for update;
+  if not found or v_approval.status<>'pending' or v_reviewer=p_period.created_by
+   or exists(select 1 from executive_visuals.financial_close_approvals
+    where period_id=v_period_id and owner_id=p_owner_id and stage_key<>v_stage and reviewer_id=v_reviewer) then
+   raise exception using errcode='22023',message='financial_close_reassignment_conflict';
+  end if;
+  update executive_visuals.financial_close_approvals set reviewer_id=v_reviewer,assigned_by=p_actor_id
+   where id=v_approval.id returning * into v_approval;
+  return jsonb_build_object('duplicate',false,'approval',to_jsonb(v_approval),'audit',v_audit);
  elsif p_command='record_approval' then
   if v_period.status<>'in_review' then raise exception using errcode='22023',message='financial_close_approval_state_invalid'; end if;
   v_stage:=p_payload->>'stageKey';
@@ -243,7 +261,7 @@ begin
   return jsonb_build_object('duplicate',false,'period',to_jsonb(v_period),'audit',v_audit);
  elsif p_command='reopen_period' then
   v_reason:=nullif(btrim(p_payload->>'reason'),'');
-  if v_period.status<>'locked' or v_reason is null or length(v_reason)<8 then
+  if v_period.status not in('locked','in_review') or v_reason is null or length(v_reason)<8 then
    raise exception using errcode='22023',message='financial_close_reopen_reason_required';
   end if;
   update executive_visuals.financial_close_periods set status='open',locked_by=null,locked_at=null,
