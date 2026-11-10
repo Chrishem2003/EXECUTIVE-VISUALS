@@ -419,8 +419,7 @@ async function publishBriefToCloud(){
    const result=await apiRequest<{project:{id:string;name:string;revision:number}}>("/api/cloud/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:project.name,description:project.brief,settings})});
    saved=result.project;
   }
-  if(!link)trackCustomerSuccessEvent("project_created");
-  state.cloudProjectLinks[project.id]={id:saved.id,revision:saved.revision};
+   state.cloudProjectLinks[project.id]={id:saved.id,revision:saved.revision};
   state.cloudProjectId=saved.id;state.cloudMessage="Production saved. Future saves update this same cloud project using revision checks.";
   save();state.tab="cloud";await loadCloudWorkspace();
  }catch(error){state.cloudMessage=error instanceof Error?error.message:"Could not save the production to cloud.";render();}
@@ -502,4 +501,4 @@ window.addEventListener("ev:project-changed",async event=>{
   render();
  }catch(error){console.warn("Creative workspace load failed",error);}
 });
-load();trackCustomerSuccessEvent("session_started");$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS STUDIO</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Overview</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New production</button></div></header><section id="view" class="content"></section></main></div>';render();initNavigation();void initRuntime();void initTimelineWorkspace();void initWorkflowWorkspace();initKnowledgeWorkspace();
+load();window.addEventListener("ev:authenticated",()=>trackCustomerSuccessEvent("session_started"));$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS STUDIO</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Overview</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New production</button></div></header><section id="view" class="content"></section></main></div>';render();initNavigation();void initRuntime();void initTimelineWorkspace();void initWorkflowWorkspace();initKnowledgeWorkspace();
