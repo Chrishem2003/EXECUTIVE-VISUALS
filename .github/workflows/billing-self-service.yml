@@ -23,6 +23,9 @@ on:
       - feat/persistent-audit-ledger-batch-30
       - feat/persistent-close-approval-engine-batch-32
       - feat/reconciliation-backed-close-gates-batch-33
+      - feat/persistent-provider-rate-cards-batch-35
+      - feat/live-workload-telemetry-batch-36
+      - feat/subscription-customer-economics-batch-37
   pull_request:
 
 permissions:
