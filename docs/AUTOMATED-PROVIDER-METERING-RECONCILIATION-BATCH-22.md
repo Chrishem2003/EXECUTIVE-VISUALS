@@ -23,7 +23,7 @@ All routes require a finance administrator role. Invoice imports are evidence ca
 
 ## Accounting and matching rules
 1. Provider usage cost and invoice line amount must agree exactly in currency and minor units before a match is recorded.
-2. A match requires an exact provider invoice line reference, provider, model, currency and amount.
+2. A match requires an exact provider invoice line reference, provider, model, currency and amount, and the usage event must carry provider-reported actual cost (catalog estimates cannot confirm an invoice).
 3. Customer, project and job attribution comes from the matched trusted usage event, never from invoice CSV-supplied owner IDs.
 4. Multiple candidates are ambiguous; missing candidates are unmatched; amount disagreement is variance.
 5. A usage event can be matched to at most one invoice line.
