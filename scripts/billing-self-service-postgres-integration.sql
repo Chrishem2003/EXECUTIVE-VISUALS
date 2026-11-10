@@ -337,4 +337,39 @@ begin
  end if;
 end $$;
 
+do $
+declare
+ forecast_result jsonb;
+ ugx_row jsonb;
+ snapshot_id uuid;
+begin
+ forecast_result:=executive_visuals.financial_predictive_revenue_overview(
+  '11111111-1111-4111-8111-111111111111'
+ );
+ if forecast_result->>'modelVersion'<>'subscription-scenario-v1'
+  or forecast_result->>'sourceWindowDays'<>'180'
+  or not (forecast_result ? 'forecastSemantics')
+  or jsonb_array_length(forecast_result->'currencies')<1 then
+  raise exception 'Predictive revenue overview is missing its model metadata or currency rows: %',forecast_result;
+ end if;
+ select item into ugx_row from jsonb_array_elements(forecast_result->'currencies') item
+ where item->>'currency'='UGX';
+ if ugx_row is null then raise exception 'Expected UGX forecast currency row'; end if;
+ if jsonb_array_length(ugx_row->'forecast')<>4 then
+  raise exception 'Expected 30/60/90/365 day forecast horizons: %',ugx_row->'forecast';
+ end if;
+ if ugx_row->>'cacAvailability'<>'not_instrumented' then
+  raise exception 'CAC must be explicitly unavailable until acquisition costs are instrumented';
+ end if;
+ if not (ugx_row->'forecast'->0 ? 'conservative')
+  or not (ugx_row->'forecast'->0 ? 'base')
+  or not (ugx_row->'forecast'->0 ? 'upside') then
+  raise exception 'Forecast scenarios are incomplete';
+ end if;
+ snapshot_id:=(forecast_result->>'snapshotId')::uuid;
+ if not exists(select 1 from executive_visuals.financial_forecast_snapshots where id=snapshot_id) then
+  raise exception 'Forecast snapshot was not persisted';
+ end if;
+end $;
+
 reset role;
