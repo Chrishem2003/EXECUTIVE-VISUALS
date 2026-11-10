@@ -1486,7 +1486,7 @@ test("financial audit ledger enforces admin access, idempotent append and indepe
 });
 
 test("audit event API rejects unsupported event types and requires idempotency",async()=>{
- const service=api(async(url)=>{const u=String(url);if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);if(u.includes("/financial_audit_events?select=event_id"))return json([]);throw new Error("Invalid audit payload must fail before storage.");});
+ const service=api(async(url)=>{const u=String(url);if(u.includes("/platform_admins?"))return json([{role:"billing_admin"}]);if(u.includes("/financial_audit_events?select=event_id"))return json([]);if(u.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});throw new Error("Invalid audit payload must fail before storage.");});
  const missing=await service.handle({method:"POST",path:"/api/admin/finance/audit/events",ownerId:owner,body:{eventType:"close_period.created",payload:{period:"2026-10"}}});
  assert.equal(missing.status,400);
  assert.equal(missing.body.error.code,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID");
