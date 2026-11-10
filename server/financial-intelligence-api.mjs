@@ -934,9 +934,11 @@ export function createFinancialIntelligenceApi({
         try{
           const auditKey=String(body.idempotencyKey||idempotencyKey||"");
           if(!auditKey)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","An idempotency key is required.");
-          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
+          const existing=await dbRequest("financial_audit_events?select=event_id,sequence_number,event_hash,idempotency_key,event_envelope&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(auditKey)+"&limit=1");
           if(Array.isArray(existing.data)&&existing.data.length){
             const prior=existing.data[0];
+            if(prior.event_envelope?.eventType!==body.eventType||JSON.stringify(prior.event_envelope?.payload??{})!==JSON.stringify(body.payload??{}))
+              return error(409,"FINANCIAL_AUDIT_IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different audit event.");
             return response(200,{duplicate:true,event:{eventId:prior.event_id,sequence:Number(prior.sequence_number),eventHash:prior.event_hash}});
           }
           const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
@@ -952,7 +954,7 @@ export function createFinancialIntelligenceApi({
           });
           return response(201,{duplicate:Boolean(result?.duplicate),event:{eventId:event.eventId,sequence:event.sequence,eventType:event.eventType,eventHash:event.eventHash,previousHash:event.previousHash}});
         }catch(err){
-          const status=err.status||(["FINANCIAL_AUDIT_EVENT_TYPE_INVALID","FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","FINANCIAL_AUDIT_PAYLOAD_INVALID","FINANCIAL_AUDIT_NUMBER_INVALID","FINANCIAL_AUDIT_TIMESTAMP_INVALID","FINANCIAL_AUDIT_EVENT_TOO_LARGE"].includes(err.code)?400:409);
+          const status=err.status||(String(err.code||"").startsWith("FINANCIAL_AUDIT_")?400:409);
           return error(status,err.code||"FINANCIAL_AUDIT_APPEND_FAILED",err.message||"Financial audit event could not be appended.");
         }
       }
