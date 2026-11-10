@@ -10,7 +10,9 @@ Extend the existing immutable `ai_model_price_catalog` into a versioned, evidenc
 - Verification status distinguishes legacy-unverified, source-linked, contract-attested and admin-attested entries.
 - JSON pricing dimensions for model-specific surcharges and billing conditions.
 - Optional supersedes link to preserve lineage.
-- Unique provider/model/currency/version index.
+- Unique provider/model/currency/version index for newly governed entries, leaving duplicate legacy rows intact.
+- Legacy unverified rows remain available as historical fallback; active governed versions take precedence by effective date.
+- New pricing-dimension metadata is bounded and numeric-only.
 - Immutable insert-only records; overlapping effective periods are rejected under an advisory lock.
 
 ## API
