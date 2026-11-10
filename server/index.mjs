@@ -19,6 +19,7 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
+import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
@@ -512,6 +513,14 @@ export function createAppServer() {
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoProductionCost(body,pricing);
         send(res,200,quote,cors);return;
+      }
+      if(path==="/api/video-shot-preflight"&&req.method==="POST"){
+        if(!rateAllowed("video-shot-preflight:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many shot preflight requests. Try again shortly.");return;}
+        const body=await readJson(req,32*1024);
+        const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
+        const catalog=getProviderCatalog(process.env);
+        const result=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing});
+        send(res,200,result,cors);return;
       }
       if(path==="/api/capabilities"&&req.method==="GET"){
         const atlas=getProviderCapabilityAtlas({runwayModel:process.env.RUNWAY_VIDEO_MODEL||""});
