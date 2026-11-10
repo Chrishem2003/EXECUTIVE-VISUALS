@@ -20,6 +20,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
 import { preflightVideoProduction } from "./video-shot-preflight.mjs";
+import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
@@ -513,6 +514,51 @@ export function createAppServer() {
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const quote=estimateVideoProductionCost(body,pricing);
         send(res,200,quote,cors);return;
+      }
+      if(path==="/api/video-production-approvals"&&req.method==="POST"){
+        if(!rateAllowed("video-production-approval:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many production approval requests. Try again shortly.");return;}
+        const body=await readJson(req,48*1024);
+        const projectId=body.projectId?String(body.projectId):null;
+        if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
+        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").trim();
+        if(idempotencyKey.length<8||idempotencyKey.length>180){fail(res,400,"IDEMPOTENCY_KEY_REQUIRED","Provide an idempotency key between 8 and 180 characters.");return;}
+        const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
+        const catalog=getProviderCatalog(process.env);
+        const preflight=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing});
+        let approval;
+        try{
+          approval=buildVideoGenerationApproval({shots:body.shots,preflight,budget:body.budget,confirmed:body.confirm===true});
+        }catch(error){
+          const status=error.code==="VIDEO_APPROVAL_CONFIRMATION_REQUIRED"?400:error.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED"?409:error.code==="VIDEO_APPROVAL_PREFLIGHT_REQUIRED"||error.code==="VIDEO_APPROVAL_PRICE_UNVERIFIED"?409:400;
+          fail(res,status,error.code||"VIDEO_APPROVAL_INVALID",error.message||"Production approval could not be created.");return;
+        }
+        const existing=db.prepare("SELECT * FROM video_generation_approvals WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
+        if(existing){
+          if(existing.request_hash!==approval.requestHash||existing.project_id!==projectId||existing.currency!==approval.currency||existing.budget_ceiling_micros!==approval.budgetCeilingMicros){
+            fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different approval request.");return;
+          }
+          send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
+        }
+        const id=randomUUID();
+        db.prepare("INSERT INTO video_generation_approvals(id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros,status) VALUES(?,?,?,?,?,?,?,?,?,'approved_pending_submission')")
+          .run(id,user.id,projectId,idempotencyKey,approval.requestHash,approval.snapshotJson,approval.currency,approval.quotedAmountMicros,approval.budgetCeilingMicros);
+        audit(db,user.id,"video_generation.approved","video_generation_approval",id,{requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmountMicros:approval.quotedAmountMicros,budgetCeilingMicros:approval.budgetCeilingMicros,status:approval.status},projectId);
+        send(res,201,{approval:{id,status:approval.status,requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmount:approval.quotedAmountMicros/1000000,budgetCeiling:approval.budgetCeilingMicros/1000000},requestsSubmitted:false,message:"Budget approval recorded. No provider request, credit reservation or generation job was submitted."},cors);return;
+      }
+      if(path==="/api/video-production-approvals"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rows=projectId
+          ?db.prepare("SELECT id,project_id,request_hash,currency,quoted_amount_micros,budget_ceiling_micros,status,created_at,updated_at FROM video_generation_approvals WHERE owner_id=? AND project_id=? ORDER BY created_at DESC LIMIT 100").all(user.id,projectId)
+          :db.prepare("SELECT id,project_id,request_hash,currency,quoted_amount_micros,budget_ceiling_micros,status,created_at,updated_at FROM video_generation_approvals WHERE owner_id=? ORDER BY created_at DESC LIMIT 100").all(user.id);
+        send(res,200,{approvals:rows.map(row=>({...row,quoted_amount:row.quoted_amount_micros/1000000,budget_ceiling:row.budget_ceiling_micros/1000000}))},cors);return;
+      }
+      const videoApprovalMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/withdraw$/i);
+      if(videoApprovalMatch&&req.method==="POST"){
+        const changed=db.prepare("UPDATE video_generation_approvals SET status='withdrawn',updated_at=? WHERE id=? AND owner_id=? AND status='approved_pending_submission'").run(now(),videoApprovalMatch[1],user.id);
+        if(changed.changes!==1){fail(res,409,"VIDEO_APPROVAL_NOT_WITHDRAWABLE","Approval was not found, is not owned by this user, or is no longer pending.");return;}
+        audit(db,user.id,"video_generation.approval_withdrawn","video_generation_approval",videoApprovalMatch[1],{status:"withdrawn"});
+        send(res,200,{ok:true,status:"withdrawn",requestsSubmitted:false},cors);return;
       }
       if(path==="/api/video-shot-preflight"&&req.method==="POST"){
         if(!rateAllowed("video-shot-preflight:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many shot preflight requests. Try again shortly.");return;}
