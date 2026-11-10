@@ -708,6 +708,39 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
         return response(200,{intelligence:result||{retention:[],acquisition:[],forecastAccuracy:[],limitations:[]}});
       }
+      if(path==="/api/admin/finance/profitability"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
+        return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/service-cost"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(body.periodMonth||"");
+        const attributedOwnerId=body.ownerId==null||body.ownerId===""?null:String(body.ownerId);
+        const category=String(body.category||"");
+        const sourceType=String(body.sourceType||"");
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const amountMinor=Number(body.amountMinor);
+        const sourceReference=String(body.sourceReference||"").trim();
+        const description=String(body.description||"").trim();
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        const reversesEventId=body.reversesEventId==null||body.reversesEventId===""?null:String(body.reversesEventId);
+        const categories=["ai_inference","video_generation","image_generation","render_compute","storage","egress","payment_processing","support","other"];
+        const sources=["provider_invoice","provider_usage_export","cloud_invoice","payment_processor","manual_receipt","other"];
+        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||(attributedOwnerId&&!UUID.test(attributedOwnerId))||
+          !categories.includes(category)||!sources.includes(sourceType)||!/^[A-Z]{3}$/.test(currency)||
+          !Number.isSafeInteger(amountMinor)||amountMinor===0||(amountMinor<0&&!UUID.test(reversesEventId||""))||
+          (amountMinor>0&&reversesEventId!==null)||sourceReference.length>160||
+          description.length<3||description.length>500||idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"FINANCIAL_SERVICE_COST_INVALID","Provide a valid month, cost category, source, currency, non-zero minor-unit amount, description and idempotency key. Negative reversals must reference an original cost.");
+        const result=await rpc("record_financial_service_cost",{
+          p_actor_id:ownerId,p_period_month:periodMonth,p_owner_id:attributedOwnerId,
+          p_cost_category:category,p_source_type:sourceType,p_currency:currency,
+          p_amount_minor:amountMinor,p_source_reference:sourceReference,p_description:description,
+          p_idempotency_key:idempotencyKey,p_reverses_event_id:reversesEventId
+        });
+        return response(200,{cost:result});
+      }
       if(path==="/api/admin/finance/revenue-retention/snapshot"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("capture_subscription_revenue_snapshot",{p_actor_id:ownerId});
