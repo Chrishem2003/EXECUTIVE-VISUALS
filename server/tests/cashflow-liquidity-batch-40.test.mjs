@@ -207,3 +207,52 @@ test("liquidity alert endpoints deny non-finance administrators",async()=>{
  const write=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-alert-events",ownerId:owner,body:{alertId:"11111111-1111-4111-8111-111111111111",eventType:"acknowledged",note:"Reviewed alert",idempotencyKey:"alert-action-0003"}});
  assert.equal(read.status,403);assert.equal(write.status,403);assert.equal(rpcCalled,false);
 });
+
+test("treasury stress overview is finance-admin protected",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/liquidity-stress",ownerId:owner});
+ assert.equal(result.status,403);assert.equal(rpcCalled,false);
+});
+
+test("treasury stress scenario validates and records evidence-backed assumptions",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/record_financial_liquidity_stress_scenario"))return json({id:"stress-1",currency:"UGX"});
+  throw new Error("Unexpected request "+target);
+ });
+ const payload={name:"Collections and supplier shock",currency:"UGX",inflowReductionBps:2500,outflowIncreaseBps:1500,immediateCashShockMinor:500000,sourceReference:"treasury-risk-register",rationale:"Test delayed receipts and supplier cost increases.",idempotencyKey:"stress-scenario-001"};
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-stress-scenarios",ownerId:owner,body:payload});
+ assert.equal(result.status,201);assert.equal(result.body.scenario.id,"stress-1");
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/record_financial_liquidity_stress_scenario")).body,{p_actor_id:owner,p_payload:payload});
+});
+
+test("treasury stress scenario rejects impossible multipliers before RPC",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-stress-scenarios",ownerId:owner,body:{
+  name:"Invalid stress",currency:"UGX",inflowReductionBps:10001,outflowIncreaseBps:0,immediateCashShockMinor:0,
+  sourceReference:"risk-register",rationale:"Invalid inflow reduction exceeds one hundred percent.",idempotencyKey:"stress-invalid-001"
+ }});
+ assert.equal(result.status,400);assert.equal(rpcCalled,false);
+});
+
+test("treasury stress run requires a valid scenario ID and calls protected RPC",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{const target=String(url);calls.push({target,body:options.body?JSON.parse(options.body):null});
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/run_financial_liquidity_stress_test"))return json({runId:"run-1",weekly:Array(13).fill({})});
+  throw new Error("Unexpected request "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-stress-runs",ownerId:owner,body:{scenarioId:"11111111-1111-4111-8111-111111111111"}});
+ assert.equal(result.status,201);assert.equal(result.body.result.weekly.length,13);
+ assert.deepEqual(calls.find(x=>x.target.endsWith("/rpc/run_financial_liquidity_stress_test")).body,{p_actor_id:owner,p_scenario_id:"11111111-1111-4111-8111-111111111111"});
+});
+
+test("contingency option rejects unbounded lead time and unauthorized access",async()=>{
+ let rpcCalled=false;
+ const service=api(async url=>{if(String(url).includes("/platform_admins?"))return json([{role:"support_agent"}]);if(String(url).includes("/rpc/"))rpcCalled=true;throw new Error("Unexpected request "+url);});
+ const denied=await service.handle({method:"POST",path:"/api/admin/finance/liquidity-contingency-options",ownerId:owner,body:{}});
+ assert.equal(denied.status,403);assert.equal(rpcCalled,false);
+});
