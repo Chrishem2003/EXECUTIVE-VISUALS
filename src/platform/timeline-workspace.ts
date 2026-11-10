@@ -431,7 +431,7 @@ async function runAction(action:HTMLElement){
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;} 
  if(type==="media-job-check"&&state.mediaJobId){
   try{
-   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>("/api/jobs/"+state.mediaJobId);
+   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>((state.mode==="cloud"?"/api/cloud/jobs/":"/api/jobs/")+state.mediaJobId);
    state.message="Media job "+result.job.status+" · "+Number(result.job.progress||0)+"%";
    if(result.job.status==="succeeded"){
     const output=result.job.output?.outputAsset;if(!output?.id)throw new Error("The completed media job did not return an output asset.");
@@ -466,8 +466,19 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
  if(type==="generate-proxy"||type==="generate-frame-preview"){
-  if(state.mode!=="local"){state.message="Proxy and frame-preview jobs are currently available in the local media worker only.";paint();return;}
   const timeline=state.timeline;
+  if(state.mode==="cloud"){
+   if(type!=="generate-proxy"){state.message="Cloud frame extraction is not enabled yet. Cloud proxy generation is available.";paint();return;}
+   if(!timeline){state.message="Open a timeline before creating a proxy.";paint();return;}
+   const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a cloud video clip with an accessible source asset.";paint();return;}
+   try{
+    const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({operation:"proxy"})});
+    state.mediaJobId=queued.job.id;state.mediaJobType="media.proxy";state.mediaClipId=clipId;state.message="Private cloud editing proxy queued. Original source remains unchanged.";
+    window.dispatchEvent(new Event("ev:jobs-updated"));
+   }catch(error){state.message=error instanceof Error?error.message:"Cloud proxy could not be queued.";}
+   paint();return;
+  }
   if(!timeline){state.message="Open a timeline before creating a proxy or frame preview.";paint();return;}
   const clipId=action.dataset.clip||"",clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId),asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Select a video clip with an accessible source asset.";paint();return;}
