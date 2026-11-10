@@ -1067,3 +1067,61 @@ test("customer acquisition attribution validates paid customer identity and sour
  assert.equal(rpcBody.p_owner_id,owner);
  assert.equal(rpcBody.p_source_type,"referral");
 });
+
+test("profitability overview is protected and returns evidence-backed unit economics",async()=>{
+ let rpcCalled=false;
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([]);
+  throw new Error("Unauthorized finance data must not be queried");
+ });
+ const deniedResult=await denied.handle({method:"GET",path:"/api/admin/finance/profitability",ownerId:owner});
+ assert.equal(deniedResult.status,403);
+ const allowed=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/financial_profitability_overview")){
+   rpcCalled=true;assert.equal(JSON.parse(options.body).p_actor_id,owner);
+   return json({byCurrency:[{currency:"UGX",grossContributionMinor:19000,directGrossMarginPct:95}],customers:[],sharedCosts:[],limitations:[]});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await allowed.handle({method:"GET",path:"/api/admin/finance/profitability",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(rpcCalled,true);
+ assert.equal(result.body.profitability.byCurrency[0].directGrossMarginPct,95);
+});
+
+test("service cost API validates reversals and binds immutable cost evidence to the admin",async()=>{
+ let rpcBody=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/record_financial_service_cost")){
+   rpcBody=JSON.parse(options.body);return json({id:"44444444-4444-4444-8444-444444444444",entryType:rpcBody.p_reverses_event_id?"reversal":"expense"});
+  }
+  throw new Error("Unexpected request: "+target);
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/finance/service-cost",ownerId:owner,body:{
+  periodMonth:"2026-11-01",category:"ai_inference",sourceType:"provider_invoice",currency:"UGX",
+  amountMinor:-500,description:"Invalid negative cost",idempotencyKey:"invalid-cost-01"
+ }});
+ assert.equal(invalid.status,400);
+ const valid=await service.handle({method:"POST",path:"/api/admin/finance/service-cost",ownerId:owner,body:{
+  periodMonth:"2026-11-01",ownerId:owner,category:"ai_inference",sourceType:"provider_usage_export",
+  currency:"UGX",amountMinor:1500,sourceReference:"invoice-2026-11",description:"Attributed model inference cost",
+  idempotencyKey:"model-cost-2026-11"
+ }});
+ assert.equal(valid.status,200);
+ assert.equal(rpcBody.p_actor_id,owner);
+ assert.equal(rpcBody.p_owner_id,owner);
+ assert.equal(rpcBody.p_amount_minor,1500);
+ assert.equal(rpcBody.p_cost_category,"ai_inference");
+ const reversal=await service.handle({method:"POST",path:"/api/admin/finance/service-cost",ownerId:owner,body:{
+  periodMonth:"2026-11-01",ownerId:owner,category:"ai_inference",sourceType:"provider_invoice",
+  currency:"UGX",amountMinor:-500,reversesEventId:"44444444-4444-4444-8444-444444444444",
+  description:"Partial provider credit reversal",idempotencyKey:"model-cost-reversal-01"
+ }});
+ assert.equal(reversal.status,200);
+ assert.equal(rpcBody.p_amount_minor,-500);
+ assert.equal(rpcBody.p_reverses_event_id,"44444444-4444-4444-8444-444444444444");
+});
