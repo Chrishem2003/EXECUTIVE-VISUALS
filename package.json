@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "verify:capabilities": "node scripts/verify-capability-atlas.mjs",
     "verify:workload-economics": "node --test server/tests/ai-workload-economics.test.mjs",
+    "verify:workload-variance": "node --test server/tests/workload-cost-variance.test.mjs",
     "verify:financial-reconciliation": "node --test server/tests/financial-reconciliation.test.mjs",
     "verify:financial-close": "node --test server/tests/financial-close-readiness.test.mjs",
     "verify:financial-audit-ledger": "node --test server/tests/financial-audit-ledger.test.mjs",
