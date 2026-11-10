@@ -703,6 +703,54 @@ export function createFinancialIntelligenceApi({
         const result=await rpc("financial_predictive_revenue_overview",{p_actor_id:ownerId});
         return response(200,{forecast:result||{currencies:[],limitations:["Forecast data is not yet available."]}});
       }
+      if(path==="/api/admin/finance/revenue-retention"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("financial_revenue_retention_overview",{p_actor_id:ownerId});
+        return response(200,{intelligence:result||{retention:[],acquisition:[],forecastAccuracy:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/revenue-retention/snapshot"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const result=await rpc("capture_subscription_revenue_snapshot",{p_actor_id:ownerId});
+        return response(200,{snapshot:result});
+      }
+      if(path==="/api/admin/finance/acquisition-spend"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const periodMonth=String(body.periodMonth||"");
+        const channel=String(body.channel||"").trim().toLowerCase();
+        const campaign=String(body.campaign||"").trim();
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const amountMinor=Number(body.amountMinor);
+        const description=String(body.description||"").trim();
+        const idempotencyKey=String(body.idempotencyKey||"").trim();
+        if(!/^\\d{4}-\\d{2}-01$/.test(periodMonth)||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(channel)||
+          campaign.length>120||!/^[A-Z]{3}$/.test(currency)||!Number.isSafeInteger(amountMinor)||amountMinor<=0||
+          description.length<3||description.length>500||idempotencyKey.length<8||idempotencyKey.length>160)
+          return error(400,"ACQUISITION_SPEND_INVALID","Provide a month, channel, currency, positive integer minor-unit amount, description and idempotency key.");
+        const result=await rpc("record_customer_acquisition_spend",{
+          p_actor_id:ownerId,p_period_month:periodMonth,p_channel:channel,p_campaign:campaign,
+          p_currency:currency,p_amount_minor:amountMinor,p_description:description,p_idempotency_key:idempotencyKey
+        });
+        return response(200,{spend:result});
+      }
+      if(path==="/api/admin/finance/acquisition-attribution"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const attributedOwnerId=String(body.ownerId||"");
+        const channel=String(body.channel||"").trim().toLowerCase();
+        const campaign=String(body.campaign||"").trim();
+        const currency=String(body.currency||"").trim().toUpperCase();
+        const sourceType=String(body.sourceType||"");
+        const acquiredAt=String(body.acquiredAt||"");
+        if(!UUID.test(attributedOwnerId)||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(channel)||
+          campaign.length>120||!/^[A-Z]{3}$/.test(currency)||
+          !["self_reported","referral","partner","paid_campaign","organic","other"].includes(sourceType)||
+          !Number.isFinite(Date.parse(acquiredAt))||Date.parse(acquiredAt)>Date.now())
+          return error(400,"ACQUISITION_ATTRIBUTION_INVALID","Provide a valid customer ID, channel, currency, source type and acquisition timestamp.");
+        const result=await rpc("record_customer_acquisition_attribution",{
+          p_actor_id:ownerId,p_owner_id:attributedOwnerId,p_channel:channel,p_campaign:campaign,
+          p_currency:currency,p_source_type:sourceType,p_acquired_at:new Date(acquiredAt).toISOString()
+        });
+        return response(200,{attribution:result});
+      }
       if(path==="/api/admin/customer-success/experiments"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"CUSTOMER_SUCCESS_ADMIN_REQUIRED","A platform or billing administrator role is required.");
         const experimentKey=String(body.experimentKey||"").trim();
