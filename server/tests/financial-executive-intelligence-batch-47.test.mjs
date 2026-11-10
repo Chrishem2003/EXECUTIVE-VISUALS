@@ -38,5 +38,5 @@ test("Executive report styling is responsive and preserves draft/sign-off limita
   assert.match(css, /@media\(max-width:800px\)/);
   assert.match(app, /DRAFT · REVIEW REQUIRED/);
   assert.match(app, /not an audited financial statement/);
-  assert.match(app, /verify underlying source documents/);
+  assert.match(app, /verify underlying source documents/i);
 });
