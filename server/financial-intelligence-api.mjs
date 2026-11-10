@@ -6,6 +6,7 @@ import {
 import { createFlutterwaveAccessTokenProvider } from "./flutterwave-auth.mjs";
 import { normalizeGenAiUsage, parseProviderInvoiceCsv } from "./ai-cost-metering.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
+import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -924,6 +925,30 @@ export function createFinancialIntelligenceApi({
           return error(400,"FINANCIAL_TREND_RANGE_INVALID","Trend period must be an integer between 3 and 36 months.");
         const result=await rpc("financial_profitability_trend_report",{p_actor_id:ownerId,p_months:months});
         return response(200,{trends:result||{periods:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/workload-estimates"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const estimate=estimateWorkloadEconomics({
+            rateCard:body.rateCard,workload:body.workload,pricing:body.pricing,
+            uncertaintyBps:body.uncertaintyBps
+          });
+          return response(200,{estimate});
+        }catch(err){
+          return error(400,err.code||"WORKLOAD_ESTIMATE_INVALID",err.message||"Workload estimate could not be calculated.");
+        }
+      }
+      if(path==="/api/admin/finance/model-economics-comparison"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const comparison=compareWorkloadCandidates({
+            rateCards:body.rateCards,workload:body.workload,pricing:body.pricing,
+            uncertaintyBps:body.uncertaintyBps,limits:body.limits
+          });
+          return response(200,{comparison});
+        }catch(err){
+          return error(400,err.code||"MODEL_ECONOMICS_COMPARISON_INVALID",err.message||"Model comparison could not be calculated.");
+        }
       }
       if(path==="/api/admin/finance/shared-cost-allocations"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
