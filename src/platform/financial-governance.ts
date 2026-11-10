@@ -28,7 +28,6 @@ type Input = {
 };
 const isObject=(v:unknown):v is Row=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const rows=(v:unknown):Row[]=>Array.isArray(v)?v.filter(isObject):[];
-const countRows=(v:unknown)=>rows(v).length;
 const firstArray=(o:Row|null|undefined,keys:string[])=>{if(!o)return [];for(const k of keys)if(Array.isArray(o[k]))return rows(o[k]);return [];};
 const text=(v:unknown)=>typeof v==="string"?v.toLowerCase():"";
 const isResolved=(r:Row)=>["resolved","closed","matched","reconciled","complete","completed","settled"].includes(text(r.status)||text(r.state));
