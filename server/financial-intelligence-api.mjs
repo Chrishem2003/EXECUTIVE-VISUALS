@@ -942,8 +942,8 @@ export function createFinancialIntelligenceApi({
         const effectiveTo=body.effectiveTo==null||body.effectiveTo===""?null:String(body.effectiveTo);
         const minimumRecipients=body.minimumRecipients==null?2:Number(body.minimumRecipients);
         const idempotencyKey=String(body.idempotencyKey||"").trim();
-        const drivers:Record<string,string[]>={ai_inference:["inference_tokens"],image_generation:["image_count"],video_generation:["video_seconds"],render_compute:["ffmpeg_seconds","gpu_seconds","cpu_seconds"],storage:["storage_gb_days"],egress:["egress_gb"]};
-        const validMonth=(value:string)=>/^\d{4}-\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        const drivers={ai_inference:["inference_tokens"],image_generation:["image_count"],video_generation:["video_seconds"],render_compute:["ffmpeg_seconds","gpu_seconds","cpu_seconds"],storage:["storage_gb_days"],egress:["egress_gb"]};
+        const validMonth=(value)=>/^\d{4}-\d{2}-01$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
         if(!drivers[category]?.includes(driverType)||!/^[A-Z]{3}$/.test(currency)||!validMonth(effectiveFrom)||
           (effectiveTo!==null&&(!validMonth(effectiveTo)||effectiveTo<=effectiveFrom))||
           !Number.isSafeInteger(minimumRecipients)||minimumRecipients<2||minimumRecipients>100000||
