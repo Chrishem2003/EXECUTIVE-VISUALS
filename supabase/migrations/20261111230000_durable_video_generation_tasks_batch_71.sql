@@ -89,7 +89,12 @@ begin
     raise exception 'VIDEO_APPROVAL_INVALID';
   end if;
   if not exists(select 1 from executive_visuals.projects p
-    where p.id=p_project_id and p.owner_id=p_owner_id and p.archived_at is null) then
+    where p.id=p_project_id and p.archived_at is null
+      and (p.owner_id=p_owner_id or exists(
+        select 1 from executive_visuals.project_members pm
+        where pm.project_id=p.id and pm.member_id=p_owner_id
+          and pm.role in ('owner','editor')
+      ))) then
     raise exception 'VIDEO_APPROVAL_PROJECT_SCOPE_INVALID';
   end if;
   if octet_length(p_snapshot_json::text)>2097152
@@ -126,6 +131,15 @@ begin
   if not found then raise exception 'VIDEO_APPROVAL_NOT_FOUND'; end if;
   if approval.status not in ('approved_pending_submission','processing') then
     raise exception 'VIDEO_APPROVAL_NOT_EXECUTABLE';
+  end if;
+  if not exists(select 1 from executive_visuals.projects p
+    where p.id=approval.project_id and p.archived_at is null
+      and (p.owner_id=p_owner_id or exists(
+        select 1 from executive_visuals.project_members pm
+        where pm.project_id=p.id and pm.member_id=p_owner_id
+          and pm.role in ('owner','editor')
+      ))) then
+    raise exception 'VIDEO_APPROVAL_PROJECT_SCOPE_INVALID';
   end if;
   shot_count:=jsonb_array_length(approval.snapshot_json->'shots');
   for idx in 0..shot_count-1 loop
