@@ -15,6 +15,7 @@ create table auth.users(id uuid primary key);
 create table executive_visuals.subscription_plans(
  id uuid primary key default gen_random_uuid(),
  plan_code text not null unique,
+ name text not null default 'Plan',
  version integer not null default 1,
  status text not null,
  is_public boolean not null default true,
@@ -94,6 +95,7 @@ create table executive_visuals.payment_attempts(
  attempt_number integer not null,
  next_retry_at timestamptz,
  idempotency_key text not null,
+ created_at timestamptz not null default now(),
  updated_at timestamptz not null default now()
 );
 create table executive_visuals.billing_notification_outbox(
