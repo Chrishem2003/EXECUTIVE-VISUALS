@@ -67,6 +67,18 @@ begin
   or length(coalesce(p_idempotency_key,'')) not between 8 and 160 then
   raise exception 'Invalid financial service cost details' using errcode='22023';
  end if;
+ select * into v_existing from financial_service_cost_events where idempotency_key=p_idempotency_key;
+ if found then
+  if v_existing.recorded_by<>p_actor_id or v_existing.amount_minor<>p_amount_minor
+   or v_existing.currency<>p_currency or v_existing.owner_id is distinct from p_owner_id
+   or v_existing.cost_category<>p_cost_category or v_existing.period_month<>p_period_month
+   or v_existing.reverses_event_id is distinct from p_reverses_event_id then
+   raise exception 'Idempotency key was already used with different cost details' using errcode='23505';
+  end if;
+  return jsonb_build_object('id',v_existing.id,'periodMonth',v_existing.period_month,'ownerId',v_existing.owner_id,
+   'category',v_existing.cost_category,'currency',v_existing.currency,'amountMinor',v_existing.amount_minor,
+   'entryType',v_existing.entry_type,'idempotentReplay',true);
+ end if;
  if p_reverses_event_id is null and p_amount_minor<0 then
   raise exception 'A negative cost entry must reference the original expense being reversed' using errcode='22023';
  end if;
