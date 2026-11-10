@@ -29,6 +29,8 @@ Batch 46 adds a deterministic monthly scenario calculation engine and connects i
 ### Financial Command Centre UI
 
 - Interactive scenario form for currency, period, opening cash, revenue, costs, capex, growth, churn, collections, discount rate, horizon and evidence coverage.
+- Verified baseline loader reads the latest available-cash snapshot, selected-month subscription MRR and same-month direct service-cost events by currency, returning the exact source identifiers.
+- Baseline semantics are explicit: MRR is not cash collected, direct service costs are not total variable costs, and fixed costs/capex are never inferred from missing records.
 - Server-calculated scenario save and refresh actions.
 - Saved snapshot table with confidence, ending cash and break-even status.
 - Aurora visual treatment consistent with the existing Batch 45 design system.
@@ -38,7 +40,7 @@ Batch 46 adds a deterministic monthly scenario calculation engine and connects i
 - Monetary values are integer minor units and a single currency per model; no FX conversion or currency blending.
 - Evidence months, source coverage and data age are explicit. Confidence is an evidence-coverage label, not a statistical confidence interval.
 - Default downside/upside shocks are illustrative; users must replace them with approved assumptions before decision use.
-- Evidence references are user-supplied identifiers and are not independently verified by the model.
+- Evidence references can be loaded from recorded cash, subscription and direct service-cost ledgers; user-supplied references remain unverified identifiers. The baseline endpoint does not invent missing amounts.
 - Scenario snapshots are immutable evidence records, not approved budgets, accounting entries or instructions to spend.
 - The engine does not mutate payment, subscription, cost, customer or acquisition ledgers.
 - No payments, funding drawdowns, price changes, acquisition spend or provider operations are triggered.
