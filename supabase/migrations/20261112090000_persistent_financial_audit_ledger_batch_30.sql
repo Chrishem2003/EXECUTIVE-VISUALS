@@ -1,5 +1,6 @@
 -- Batch 30: persistent append-only financial audit ledger.
 -- Hash-chain integrity is computed by the application and independently checked by this database function.
+grant usage on schema executive_visuals to service_role;
 create table if not exists executive_visuals.financial_audit_events(
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references auth.users(id) on delete restrict,
