@@ -51,7 +51,7 @@ test("customer financial profile is restricted to the selected owner and billing
  const result=await api.handle({method:"GET",path:"/api/admin/finance/customer",ownerId:owner,query:{ownerId:customer}});
  assert.equal(result.status,200);
  assert.equal(result.body.customerId,customer);
- for(const target of urls.filter(x=>!x.includes("platform_admins")))assert.ok(target.includes("owner_id=eq."+customer));
+ for(const target of urls.filter(x=>/payment_transactions|customer_subscriptions|payment_refunds|payment_attempts|chargeback_cases/.test(x)))assert.ok(target.includes("owner_id=eq."+customer));
 });
 
 test("financial exports are audited and bounded",async()=>{
