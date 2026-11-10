@@ -79,7 +79,7 @@ begin
       jsonb_build_object('cancelled_at',now(),'immediate',true));
     return jsonb_build_object('subscriptionId',sub_row.id,'status','cancelled','cancelAtPeriodEnd',false,'cancelledAt',now());
   elsif action_name='resume' then
-    if sub_row.status<>'active' or not sub_row.cancel_at_period_end
+    if sub_row.status not in ('active','past_due') or not sub_row.cancel_at_period_end
        or sub_row.current_period_end is null or sub_row.current_period_end<=now() then
       raise exception 'Only an active subscription scheduled for future cancellation can be resumed' using errcode='23514';
     end if;
