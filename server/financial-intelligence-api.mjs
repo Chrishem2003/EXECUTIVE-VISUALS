@@ -740,6 +740,25 @@ export function createFinancialIntelligenceApi({
         const guardrails=await rpc("financial_liquidity_guardrails_overview",{p_actor_id:ownerId});
         return response(200,{guardrails:guardrails||{policies:[],scenarios:[],limitations:["Liquidity guardrails are not available."]}});
       }
+      if(path==="/api/admin/finance/liquidity-alerts"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const refresh=await rpc("refresh_financial_liquidity_alerts",{p_actor_id:ownerId});
+        const alerts=await rpc("financial_liquidity_alerts_overview",{p_actor_id:ownerId});
+        return response(200,{refresh:refresh||{},alerts:alerts||{alerts:[]}});
+      }
+      if(path==="/api/admin/finance/liquidity-alert-events"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const alertId=String(body.alertId||""),eventType=String(body.eventType||""),note=String(body.note||"").trim();
+        const assignedTo=String(body.assignedTo||"").trim(),dueDate=String(body.dueDate||""),idempotencyKey=String(body.idempotencyKey||"");
+        const validDate=(value:string)=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T00:00:00Z"))&&new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(alertId)||
+          !["acknowledged","action_assigned","in_progress","resolved","reopened","false_positive"].includes(eventType)||
+          note.length<3||note.length>1000||(eventType==="action_assigned"&&(assignedTo.length<2||assignedTo.length>160))||
+          (dueDate&&(!validDate(dueDate)||dueDate<new Date().toISOString().slice(0,10)))||idempotencyKey.length<8||idempotencyKey.length>180)
+          return error(400,"LIQUIDITY_ALERT_EVENT_INVALID","Provide a valid alert, supported action, note, required assignee and non-backdated due date.");
+        const event=await rpc("record_financial_liquidity_alert_event",{p_actor_id:ownerId,p_payload:{alertId,eventType,note,assignedTo:assignedTo||null,dueDate:dueDate||null,idempotencyKey}});
+        return response(201,{event});
+      }
       if(path==="/api/admin/finance/liquidity-policies"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const currency=String(body.currency||"").trim().toUpperCase(),floor=Number(body.minimumCashFloorMinor),reserve=Number(body.reserveTargetMinor);
