@@ -1167,6 +1167,10 @@ test("margin policy API is finance-admin protected and validates currency, thres
   effectiveFrom:"2026-11-01",idempotencyKey:"margin-policy-invalid"
  }});
  assert.equal(invalid.status,400);
+ const midMonth=await service.handle({method:"POST",path:"/api/admin/finance/margin-policies",ownerId:owner,body:{
+  scopeType:"global",currency:"UGX",minGrossMarginPct:25,effectiveFrom:"2026-11-15",idempotencyKey:"margin-policy-midmonth"
+ }});
+ assert.equal(midMonth.status,400);
  const valid=await service.handle({method:"POST",path:"/api/admin/finance/margin-policies",ownerId:owner,body:{
   scopeType:"customer",ownerId:owner,currency:"UGX",minGrossMarginPct:35.5,minContributionMinor:5000,
   effectiveFrom:"2026-11-01",effectiveTo:"2027-01-01",idempotencyKey:"margin-policy-0002"
