@@ -4,13 +4,13 @@ set -euo pipefail
 # Immutable BtbN FFmpeg build release and SHA-256 digest.
 # Update both values together after reviewing a new upstream release.
 release_tag="autobuild-2026-11-09-12-42"
-asset_name="ffmpeg-master-latest-linux64-gpl.tar.xz"
-expected_sha256="20ce4e84ba0da774ca84c2713f7788c3722ca199819b95a2cbdf0b30a62bcad7"
+asset_name="ffmpeg-n9.0.2-48-gd4070a14ce-linux64-gpl-9.0.tar.xz"
+expected_sha256="5df8a8fd95464cd5ff7b7abff4afe59dede6fa7af13e0914a0abc70178d87046"
 
 archive="$RUNNER_TEMP/$asset_name"
 extract_dir="$RUNNER_TEMP/ev-ffmpeg"
 bin_dir="$RUNNER_TEMP/ev-ffmpeg-bin"
-url="https://github.com/BtbN/FFmpeg-Builds/releases/download/$release_tag/$asset_name"
+url="https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/$release_tag/$asset_name"
 trap 'rm -f "$archive"' EXIT
 
 mkdir -p "$extract_dir" "$bin_dir"
