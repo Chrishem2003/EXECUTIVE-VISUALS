@@ -15,6 +15,14 @@ function pngChunk(type, data) {
 }
 
 function pngBytes(width, height, colorType = 6, options = {}) {
+  const compress = typeof deflateSync === "function" ? deflateSync : require("node:zlib").deflateSync;
+  function chunk(type, data) {
+    const name = Buffer.from(type), body = Buffer.concat([name, data]); let crc = 0xffffffff;
+    for (const byte of body) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4); tail.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, tail]);
+  }
   const bytesPerPixel = colorType === 6 ? 4 : 3;
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = colorType; ihdr[12] = options.interlace || 0;
   const interlacePasses = [[0,0,8,8],[4,0,8,8],[0,4,4,8],[2,0,4,4],[0,2,2,4],[1,0,2,2],[0,1,1,2]];
@@ -27,9 +35,9 @@ function pngBytes(width, height, colorType = 6, options = {}) {
     : height * (1 + width * bytesPerPixel);
   const scanlines = Buffer.alloc(scanlineBytes);
   if (options.filter !== undefined) scanlines[0] = options.filter;
-  const compressed = options.compressedData || deflateSync(scanlines);
+  const compressed = options.compressedData || compress(scanlines);
   const idat = options.splitIdat ? [compressed.subarray(0, Math.max(1, Math.floor(compressed.length / 2))), compressed.subarray(Math.max(1, Math.floor(compressed.length / 2)))] : [compressed];
-  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk("IHDR", ihdr), ...idat.map(data => pngChunk("IDAT", data)), pngChunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), ...idat.map(data => chunk("IDAT", data)), chunk("IEND", Buffer.alloc(0))]);
 }
 
 function pngHeader(width, height) {
@@ -63,7 +71,7 @@ const size = ${sizeExpression};
 const sourceDimensions = ${dimensionsExpression};
 const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
 const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
-${pngChunk.toString()}\n${pngBytes.toString()}
+${pngBytes.toString()}
 fs.writeFileSync(out,pngBytes(width,height,${outputColorType},${pngOptionsExpression}));
 `;
   await writeFile(path, source);
