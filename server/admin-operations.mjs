@@ -95,7 +95,7 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true",
   supabaseServiceCredentials:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
   videoProviderReady:videoProvider?.status==="ready",
-  durableWorkerAdapterReady:videoProvider?.provider==="runway"
+  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider)
  };
  const labels={
   supabaseAuth:"Verified Supabase authentication is not enabled.",
@@ -103,7 +103,7 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:"Cloud video-generation dispatch is not enabled.",
   supabaseServiceCredentials:"Server-side Supabase service credentials are not configured.",
   videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation.",
-  durableWorkerAdapterReady:videoProvider?.provider==="runway"? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Only Runway currently has a durable submit, poll and recovery adapter."
+  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider)? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Supported durable adapters: Runway and Fal."
  };
  const blockers=Object.keys(checks).filter(key=>!checks[key]).map(key=>({check:key,message:labels[key]}));
  return {
