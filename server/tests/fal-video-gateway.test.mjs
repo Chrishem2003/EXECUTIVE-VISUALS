@@ -157,6 +157,6 @@ test("Fal cancels declared oversized JSON and media bodies before reading",async
  try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(jsonCancelled,true);}
  finally{globalThis.fetch=original;restore();}
  let mediaCancelled=false;
- await assert.rejects(()=>downloadFalVideoTaskOutput({outputUrl:"https://v3.fal.media/files/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
+ await assert.rejects(()=>downloadFalVideoTaskOutput({outputUrl:"https://v3.fal.media/files/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_OUTPUT_INVALID");
  assert.equal(mediaCancelled,true);
 });
