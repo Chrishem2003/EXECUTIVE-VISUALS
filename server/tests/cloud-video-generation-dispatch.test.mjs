@@ -5,7 +5,7 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="223e4567-e89b-42d3-a456-426614174000";
 const approval="323e4567-e89b-42d3-a456-426614174000";
 const jobs=[{jobId:"423e4567-e89b-42d3-a456-426614174000",shotIndex:0,status:"queued"},{jobId:"523e4567-e89b-42d3-a456-426614174000",shotIndex:1,status:"queued"}];
-function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null}={}){
+function fixture({status="approved_pending_submission",projectId=project,canWrite=true,registerResult=null,enqueueResult=jobs,registerError=null,enqueueError=null,cancelResult=null,cancelError=null}={}){
  const row={id:approval,owner_id:owner,project_id:projectId,idempotency_key:"approval-key-001",request_hash:"a".repeat(64),snapshot_json:JSON.stringify({shots:[{prompt:"Shot one",model:"seedance2_5",estimatedCostMicros:1000000},{prompt:"Shot two",model:"seedance2_5",estimatedCostMicros:1000000}]}),currency:"USD",quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status};
  const calls=[],events=[];let localStatus=status;
  const db={prepare(sql){return{get(...args){calls.push(["get",sql,args]);return row;},run(...args){calls.push(["run",sql,args]);if(localStatus==="approved_pending_submission"){localStatus="consumed";return{changes:1};}return{changes:0};}}}};
@@ -13,7 +13,7 @@ function fixture({status="approved_pending_submission",projectId=project,canWrit
   async register(input){calls.push(["register",input]);if(registerError)throw registerError;return registerResult||{id:approval,ownerId:owner,projectId,currency:"USD",requestHash:"a".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"};},
   async enqueue(id,ownerIdArg){calls.push(["enqueue",id,ownerIdArg]);if(enqueueError)throw enqueueError;return enqueueResult;}
  }};
- const dispatch=createCloudVideoGenerationDispatch({db,repositories,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
+ const queue={async cancel(jobId,ownerIdArg){calls.push(["cancel",jobId,ownerIdArg]);if(cancelError)throw cancelError;return cancelResult||{id:jobId,owner_id:owner,status:"cancelled",job_type:"video.generate.shot",project_id:project};}};\n const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
  return{dispatch,calls,events,get localStatus(){return localStatus;}};
 }
 test("dispatch mirrors approval and atomically enqueues each shot without provider execution",async()=>{
@@ -52,4 +52,24 @@ test("dispatch rejects malformed identifiers and never trusts request-supplied o
  const f=fixture();assert.equal((await f.dispatch.submit({approvalId:"bad",ownerId:owner})).status,400);
  assert.equal((await f.dispatch.submit({approvalId:approval,ownerId:"not-an-id"})).status,400);
  assert.equal(f.calls.length,0);
+});
+
+test("cloud video job cancellation is owner-scoped and reports provider reconciliation as asynchronous",async()=>{
+ const f=fixture();
+ const result=await f.dispatch.cancelJob({jobId:jobs[0].jobId,ownerId:owner});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"cancelled");
+ assert.equal(result.body.providerCancellation,"requested");
+ assert.ok(f.calls.some(x=>x[0]==="cancel"&&x[1]===jobs[0].jobId&&x[2]===owner));
+});
+test("cloud video job cancellation rejects foreign, missing and already-terminal jobs",async()=>{
+ const f=fixture();
+ assert.equal((await f.dispatch.cancelJob({jobId:"bad",ownerId:owner})).status,400);
+ const missing=fixture({cancelResult:null});
+ missing.dispatch.cancelJob=undefined;
+ const foreign=fixture({cancelResult:null});
+ const terminal=fixture({cancelResult:{id:jobs[0].jobId,owner_id:owner,status:"succeeded",job_type:"video.generate.shot"}});
+ assert.equal((await terminal.dispatch.cancelJob({jobId:jobs[0].jobId,ownerId:owner})).status,409);
+ const unavailable=fixture({cancelError:new Error("network down")});
+ assert.equal((await unavailable.dispatch.cancelJob({jobId:jobs[0].jobId,ownerId:owner})).status,503);
 });
