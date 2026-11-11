@@ -257,6 +257,10 @@ export function createGoogleOmniPrivateOutputIngestor({
           ownerId: context.ownerId,
           projectId: context.projectId,
           jobId: context.jobId,
+          workerId: context.workerId,
+          leaseToken: context.leaseToken,
+          signal: context.signal,
+          assertLease: context.assertLease,
           metadata: {
             source: "video-generation",
             providerTaskId: interaction.interactionId,
