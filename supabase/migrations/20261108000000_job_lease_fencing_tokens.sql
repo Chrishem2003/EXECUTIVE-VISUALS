@@ -172,9 +172,19 @@ end;
 $$;
 
 -- Remove the legacy worker write surface: all current worker writes must present the attempt token.
-revoke all on function executive_visuals.claim_next_job(text,integer,text[]) from public,anon,authenticated,service_role;
-revoke all on function executive_visuals.renew_job_lease(uuid,text,integer) from public,anon,authenticated,service_role;
-revoke all on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb) from public,anon,authenticated,service_role;
+do $revoke_legacy_worker_rpc$
+begin
+  if to_regprocedure('executive_visuals.claim_next_job(text,integer,text[])') is not null then
+    execute 'revoke all on function executive_visuals.claim_next_job(text,integer,text[]) from public,anon,authenticated,service_role';
+  end if;
+  if to_regprocedure('executive_visuals.renew_job_lease(uuid,text,integer)') is not null then
+    execute 'revoke all on function executive_visuals.renew_job_lease(uuid,text,integer) from public,anon,authenticated,service_role';
+  end if;
+  if to_regprocedure('executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)') is not null then
+    execute 'revoke all on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb) from public,anon,authenticated,service_role';
+  end if;
+end;
+$revoke_legacy_worker_rpc$;
 
 revoke all on function executive_visuals.claim_next_job_v2(text,integer,text[]) from public,anon,authenticated;
 revoke all on function executive_visuals.renew_job_lease_v2(uuid,text,uuid,integer) from public,anon,authenticated;
