@@ -490,3 +490,54 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("cloud media probe adds local Silero speech regions for audio sources",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-vad-test-"));
+ const source=join(directory,"source.mp4");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"aac","sample_rate":"48000","channels":2}],"format":{"duration":"2.0"}}'`);
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`for output do :; done; printf 'RIFF' > "$output"`);
+ const previousFfprobe=process.env.FFPROBE_PATH;process.env.FFPROBE_PATH=ffprobe;
+ let analyzerArgs,cleaned=false;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffmpeg,ffprobe,
+   mediaIO:{
+    async materialize(){return {path:source,asset:{id:"asset-vad",name:"dialogue.mp4",mediaType:"video/mp4",sha256:"b".repeat(64)},async cleanup(){cleaned=true;}};},
+    async publish(){throw new Error("Probe jobs must not publish derivatives.");}
+   },
+   async analyzeVoiceActivity(args){
+    analyzerArgs=args;
+    return {method:"silero-neural-vad",model:"silero-v6.2",sampleRate:16000,threshold:0.5,holdoffMs:300,durationSeconds:2,windowCount:62,speechWindowCount:24,speechDurationSeconds:0.8,speechRatio:0.4,segments:[{start:0.4,end:1.2}]};
+   }
+  });
+  const result=await execute({job:{id:"job-vad",owner_id:"owner-vad",project_id:"project-vad",job_type:"media.probe",input:{sourceAssetId:"asset-vad"}},onProgress(){}});
+  assert.ok(analyzerArgs.filePath.endsWith("voice-activity-analysis.wav"));
+  assert.equal(analyzerArgs.durationSeconds,2);
+  assert.equal(analyzerArgs.threshold,0.5);
+  assert.equal(result.metadata.signalAnalysis.voiceActivity.model,"silero-v6.2");
+  assert.deepEqual(result.metadata.signalAnalysis.voiceActivity.segments,[{start:0.4,end:1.2}]);
+  assert.deepEqual(result.metadata.signalAnalysis.performed,["silero-vad"]);
+  assert.deepEqual(result.metadata.signalAnalysis.unavailable,[]);
+  assert.equal(cleaned,true);
+ }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
+});
+
+test("cloud media probe reports unavailable VAD without failing the media probe",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-vad-unavailable-"));
+ const source=join(directory,"source.wav");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}],"format":{"duration":"1.0"}}'`);
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`for output do :; done; printf 'RIFF' > "$output"`);
+ const previousFfprobe=process.env.FFPROBE_PATH;process.env.FFPROBE_PATH=ffprobe;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffmpeg,ffprobe,
+   mediaIO:{async materialize(){return {path:source,asset:{id:"asset-unavailable",name:"voice.wav",mediaType:"audio/wav"},async cleanup(){}};},async publish(){throw new Error("not used");}},
+   async analyzeVoiceActivity(){throw Object.assign(new Error("runtime missing"),{code:"VAD_RUNTIME_UNAVAILABLE"});}
+  });
+  const result=await execute({job:{id:"job-unavailable",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-unavailable"}},onProgress(){}});
+  assert.equal(result.metadata.signalAnalysis.voiceActivity,null);
+  assert.deepEqual(result.metadata.signalAnalysis.unavailable,[{check:"voice-activity-detection",reason:"VAD_RUNTIME_UNAVAILABLE"}]);
+ }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
+});
