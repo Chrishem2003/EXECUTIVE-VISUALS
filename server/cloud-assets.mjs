@@ -316,6 +316,21 @@ export function createCloudAssetRepository({
       if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
     },
+    async findVideoGenerationOutput({ownerId,projectId=null,providerTaskId,outputIndex}={}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
+      if(typeof providerTaskId!=="string"||!providerTaskId.trim()||providerTaskId.length>256||
+         !Number.isInteger(outputIndex)||outputIndex<0||outputIndex>9)throw new Error("Provider video output lookup scope is invalid.");
+      await allowed(ownerId,projectId,"read");
+      const scope=projectId
+        ?"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)
+        :"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
+      const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at&"+scope+
+        "&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
+        "&metadata->>outputIndex=eq."+encodeURIComponent(String(outputIndex))+"&deleted_at=is.null&limit=1");
+      const row=Array.isArray(rows)?rows[0]:null;
+      return row?publicAsset(row):null;
+    },
     async reconcilePendingStorageCleanup({limit=20,now=new Date()}={}) {
       limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
       const instant=now instanceof Date?now.toISOString():new Date(now).toISOString();
