@@ -16,9 +16,24 @@ function setup({canWrite=true,projectId=project,existing=[]}={}){
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];}},projects:{async create(input){calls.push(["project-create",input]);return{id:input.projectId||"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
  return{api,calls,created};
 }
+test("cloud project creation preserves an explicitly linked local project UUID",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/projects",ownerId:owner,body:{projectId:project,name:"Local production",description:"Shared identity"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.project.id,project);
+ assert.equal(result.body.projectIdBound,true);
+ assert.equal(f.calls.find(call=>call[0]==="project-create")[1].projectId,project);
+});
+test("cloud project creation rejects malformed explicit IDs",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/projects",ownerId:owner,body:{projectId:"not-a-uuid",name:"Bad"}});
+ assert.equal(result.status,400);
+ assert.equal(f.calls.some(call=>call[0]==="project-create"),false);
+});
+
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202);const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
@@ -410,15 +425,21 @@ test("cloud transformation mapper does not turn submitted jobs back into approve
 
 
 test("cloud workflow video quote authorizes the project and returns a non-billable exact-request quote",async()=>{
- const prepared=[],preflights=[];
+ const prepared=[],preflights=[],persisted=[];
  const routerAdapter={
   async prepareInput(input,context){prepared.push({input,context});return{...input,referenceImages:[]};},
   async preflight(input){preflights.push(input);return{billable:false,estimatedCredits:275,estimatedUsd:2.75,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
-  timelineService:{timelines:{},assets:{}},
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){
+    const args=JSON.parse(options.body);persisted.push(args);
+    return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:routerAdapter,
   env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
@@ -436,6 +457,100 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(prepared[0].context.job.owner_id,owner);
  assert.equal(preflights.length,1);
  assert.equal(preflights[0].operation,"text-to-video");
+ assert.equal(persisted.length,1,"quote must be persisted before it is returned");
+ assert.equal(persisted[0].p_owner_id,owner);
+ assert.equal(persisted[0].p_project_id,project);
+ assert.equal(persisted[0].p_request_hash,result.body.quote.requestHash);
+ assert.equal(persisted[0].p_estimated_amount,2.75);
+ assert.equal(persisted[0].p_pricing_source,"runway_model_router_dry_run");
+ assert.equal(persisted[0].p_quote_id,result.body.quote.id);
+});
+
+test("cloud workflow approval requires confirmation, revalidates inputs and atomically queues the exact quote",async()=>{
+ const calls=[],prepared=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    return{ok:true,status:200,async text(){return JSON.stringify([{
+     job_id:"823e4567-e89b-42d3-a456-426614174000",job_status:"queued",
+     idempotent_replay:false,budget_reservation_id:"923e4567-e89b-42d3-a456-426614174000",
+     approval_id:"a23e4567-e89b-42d3-a456-426614174000"
+    }]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwayRouterAdapter:{async prepareInput(input,context){prepared.push({input,context});return{...input};},async preflight(){throw new Error("approval must not call provider preflight");}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-1:video-node:1",node,values:{prompt:"A cinematic product launch"},
+  approvedMaxAmount:2.75,approvalNote:"Approved for the exact quoted video workflow"
+ }});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"queued");
+ assert.equal(result.body.idempotentReplay,false);
+ assert.equal(prepared.length,1);
+ assert.equal(calls.length,1,"approval must use one atomic database RPC and must not call the provider");
+ const rpc=calls[0];
+ assert.ok(rpc.url.endsWith("/rpc/approve_and_enqueue_video_workflow"));
+ const args=JSON.parse(rpc.options.body);
+ assert.equal(args.p_quote_id,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(args.p_owner_id,owner);
+ assert.equal(args.p_project_id,project);
+ assert.equal(args.p_config_id,"studio-video");
+ assert.equal(args.p_idempotency_key,"workflow-1:video-node:1");
+ assert.equal(args.p_approved_max_amount,2.75);
+ assert.equal(args.p_input.workflowQuoteId,args.p_quote_id);
+ assert.equal(args.p_input.workflowRequestId,args.p_idempotency_key);
+ assert.equal(args.p_input.requestHash,args.p_request_hash);
+});
+
+test("cloud workflow approval rejects missing explicit confirmation without database writes",async()=>{
+ let writes=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(input){return input;}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:false,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-1:video-node:1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"},approvedMaxAmount:2.75
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_APPROVAL_CONFIRMATION_REQUIRED");
+ assert.equal(writes,0);
+});
+
+test("cloud workflow video quote fails closed when durable persistence is unavailable",async()=>{
+ let providerCalls=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote")
+   ?{ok:false,status:503,async text(){return JSON.stringify({message:"database unavailable"});}}
+   :{ok:true,status:200,async text(){return"[]";}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true,
+  runwayRouterAdapter:{
+   async prepareInput(input){return input;},
+   async preflight(){providerCalls++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"workflow-1:video-node:persist-failure",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic launch"}
+ }});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"CLOUD_TIMELINE_API_DATABASE_ERROR");
+ assert.equal(providerCalls,1,"only the non-billable dry-run may run before quote persistence");
 });
 
 test("cloud workflow video quote rejects viewers before resolving private inputs or contacting provider",async()=>{
@@ -460,7 +575,7 @@ test("cloud workflow video quote fails closed for unsupported nodes and unavaila
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
-  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true
  });
  const unsupported=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"image.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
  assert.equal(unsupported.status,422);
@@ -475,7 +590,7 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
-  timelineService:{timelines:{},assets:{}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async()=>true,
   runwaySourceResolver:{
    async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
@@ -496,3 +611,48 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
  assert.equal(prepared,0);
  assert.equal(preflight,0);
 });
+
+
+test("cloud workflow quote requires the actual project owner before provider preflight",async()=>{
+ let prepared=0,preflight=0,writes=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(){prepared++;return{};},async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:editor,body:{
+  projectId:project,requestId:"workflow-editor-quote",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"}
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED");
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
+ assert.equal(writes,0);
+});
+
+test("cloud workflow approval requires the actual project owner before any budget or job write",async()=>{
+ let writes=0,prepared=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(){prepared++;return{};}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:editor,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-editor-approval",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"},approvedMaxAmount:2.75
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED");
+ assert.equal(prepared,0);
+ assert.equal(writes,0);
+});
+

@@ -21,6 +21,7 @@ import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRe
 import { buildMediaQualityReport } from "./media-quality.mjs";
 import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
 import { assertVideoWorkflowExecutionMode } from "./video-workflow-execution-mode.mjs";
+import { executeCloudVideoWorkflowNode } from "./workflow-cloud-video-bridge.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -90,7 +91,7 @@ function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attemp
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
   .run(status,attempt,json(input),output===null?null:json(output),error===null?null:json(error),["completed","failed","blocked","skipped"].includes(status)?now():null,runId,nodeId);
 }
-export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{}}){
+export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},cloudTimelineApi=null}){
  const input=parseJson(job.input_json),runId=String(input.runId||"");
  const run=db.prepare("SELECT * FROM workflow_runs WHERE id=?").get(runId);
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
@@ -149,8 +150,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    continue;
   }
   const nodeInput={...config,...values};
-  const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
-  saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
+  const priorNodeRun=stored.find(row=>row.node_id===nodeId);
+  const priorNodeOutput=parseJson(priorNodeRun?.output_json,{});
+  const resumeReceipt=(priorNodeRun?.status==="pending"||priorNodeRun?.status==="blocked")&&priorNodeOutput.cloudJobId?priorNodeOutput:null;
+  let cloudResumeReceipt=resumeReceipt;
+  const attempt=(priorNodeRun?.attempt||0)+1;
+  saveNode(db,runId,nodeId,"running",{input:nodeInput,output:resumeReceipt,attempt});
   try{
    let output={};
    if(node.kind==="text"||node.kind==="prompt"){
@@ -302,10 +307,41 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const assetIds=assets.map(asset=>asset.id),asset=assets[0];
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.image=asset.id;output.images=assetIds;output.assetIds=assetIds;output.assets=assetIds;output.outputCount=assetIds.length;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
-    assertVideoWorkflowExecutionMode();
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
-    let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
+    if(String(config.provider||"")==="runway"&&String(config.model||"")==="model-router"){
+     const executionMode=assertVideoWorkflowExecutionMode(undefined,{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
+     if(executionMode!=="cloud")throw Object.assign(new Error("Set VIDEO_WORKFLOW_EXECUTION_MODE=cloud only after the authenticated cloud workspace and worker release gates are ready."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
+     const cloudStarted=Date.now();
+     const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
+      onJobEnqueued:receipt=>{
+       cloudResumeReceipt=receipt;
+       const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+       saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:receipt,error:detail,attempt});
+       db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+        .run(json(detail),now(),runId);
+      },
+      onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
+     if(result.pending===true){
+      const pendingOutput={cloudJobId:result.cloudJobId,quoteId:result.quoteId,requestId:result.requestId,
+       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,status:result.status};
+      cloudResumeReceipt=pendingOutput;
+      const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+      saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:pendingOutput,error:detail,attempt});
+      db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+       .run(json(detail),now(),runId);
+      return {status:"blocked",runId,waitingNodeId:nodeId,cloudJobId:result.cloudJobId,completedNodes:completedCount,totalNodes:nodeCount};
+     }
+     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
+      provider:"runway",capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-cloudStarted});
+     output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
+     output.video=result.assetId;output.assetIds=result.assetIds;output.assets=result.assetIds;
+     output.mimeType="video/mp4";output.provider=result.provider;output.model=result.model;
+     output.cloudJobId=result.cloudJobId;output.quoteId=result.quoteId;output.costEvidenceReference=result.costEvidenceReference;
+    }else{
+     const executionMode=assertVideoWorkflowExecutionMode();
+     if(executionMode!=="legacy")throw Object.assign(new Error("Cloud workflow mode requires video.generate nodes configured with provider=runway and model=model-router."),{code:"VIDEO_WORKFLOW_CLOUD_ADAPTER_REQUIRED"});
+     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     const explicitReference=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"face-animation",explicitReference);
@@ -364,6 +400,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:generationRequest.prompt,model:result.model,provenance,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
+    }
    }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??config.text??"");
@@ -434,12 +471,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE","BILLING_INSUFFICIENT_CREDITS","BILLING_ACCOUNT_SUSPENDED","BILLING_SPEND_ALREADY_RESERVED","BILLING_CREDIT_CONFIG_INVALID"]);
-   const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
-   saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
+   const retryableCloudCodes=new Set(["VIDEO_WORKFLOW_JOB_STATUS_UNAVAILABLE","VIDEO_WORKFLOW_OUTPUT_ASSET_UNAVAILABLE","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED"]);
+   const retryableCloud=Boolean(cloudResumeReceipt&&retryableCloudCodes.has(detail.code));
+   const storedDetail=retryableCloud?{code:"CLOUD_VIDEO_JOB_PENDING",message:"Cloud output reconciliation will retry automatically: "+detail.message,cloudJobId:cloudResumeReceipt.cloudJobId,lastError:detail.code}:detail;
+   const blockedCodes=new Set(["CLOUD_VIDEO_JOB_PENDING","CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED","ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE","BILLING_INSUFFICIENT_CREDITS","BILLING_ACCOUNT_SUSPENDED","BILLING_SPEND_ALREADY_RESERVED","BILLING_CREDIT_CONFIG_INVALID","MEDIA_RIGHTS_REQUIRED","VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED","VIDEO_WORKFLOW_CLOUD_ADAPTER_REQUIRED","VIDEO_WORKFLOW_CLOUD_DISABLED","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED","VIDEO_WORKFLOW_CLOUD_PROJECT_NOT_LINKED","VIDEO_WORKFLOW_CLOUD_PROJECT_LINK_FAILED","VIDEO_WORKFLOW_CLOUD_CONFIG_INVALID","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED","VIDEO_WORKFLOW_APPROVAL_FAILED","VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED","VIDEO_WORKFLOW_CLOUD_JOB_TIMEOUT","VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT"]);
+   const blocked=retryableCloud||blockedCodes.has(storedDetail.code)||storedDetail.code.startsWith("REMOTE_USAGE_");
+   saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,output:cloudResumeReceipt,error:storedDetail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
-   db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
-   throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+detail.message),{code:detail.code});
+   db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(storedDetail),now(),now(),runId);
+   throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+storedDetail.message),{code:storedDetail.code});
   }
  }
  db.prepare("UPDATE workflow_runs SET status='completed',updated_at=?,completed_at=?,error_json=NULL WHERE id=?").run(now(),now(),runId);

@@ -137,6 +137,175 @@ select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000'
 reset role;
 set role service_role;
 
+select * from executive_visuals.grant_generation_credits(
+ '123e4567-e89b-42d3-a456-426614174000',100000,
+ 'cloud-video-workflow-credit-seed','Cloud video PostgreSQL integration seed',
+ '{"source":"disposable_ci_fixture"}'::jsonb
+);
+
+-- The workflow owner must hold a plan that explicitly entitles video generation.
+select * from executive_visuals.activate_generation_subscription(
+ '123e4567-e89b-42d3-a456-426614174000','creator','manual',null,
+ 'cloud-video-workflow-test-subscription',
+ clock_timestamp(),clock_timestamp()+interval '30 days','active',
+ '{"source":"disposable_ci_fixture"}'::jsonb
+);
+
+-- Workflow quote ledger: service-role-only immutable quote recording.
+do $workflow_quote_privileges$
+begin
+ if has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','SELECT')
+    or has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','INSERT')
+    or has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','UPDATE') then
+   raise exception 'authenticated unexpectedly has direct workflow quote table access';
+ end if;
+ if has_function_privilege('authenticated',
+   'executive_visuals.record_video_workflow_quote(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,numeric,text,text,text,timestamptz)',
+   'EXECUTE') then
+   raise exception 'authenticated unexpectedly can record workflow quotes';
+ end if;
+end
+$workflow_quote_privileges$;
+
+select executive_visuals.record_video_workflow_quote(
+ '723e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-workflow-quote-001',repeat('e',64),'runway','model-router','text-to-video',
+ 'runway','gen4.5',275,2.75,'USD','studio-video',
+ 'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+);
+
+do $workflow_quote_record$
+declare quote_row executive_visuals.video_workflow_quotes;
+begin
+ select * into quote_row from executive_visuals.video_workflow_quotes
+ where id='723e4567-e89b-42d3-a456-426614174000';
+ if quote_row.id is null or quote_row.owner_id <> '123e4567-e89b-42d3-a456-426614174000'
+    or quote_row.project_id <> '323e4567-e89b-42d3-a456-426614174000'
+    or quote_row.request_hash <> repeat('e',64)
+    or quote_row.state <> 'quoted'
+    or quote_row.estimated_amount <> 2.75
+    or quote_row.currency <> 'USD' then
+   raise exception 'workflow quote ledger did not preserve the exact quote scope';
+ end if;
+ begin
+  perform executive_visuals.record_video_workflow_quote(
+   '823e4567-e89b-42d3-a456-426614174000',
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-workflow-quote-invalid',repeat('d',64),'runway','model-router','text-to-video',
+   'runway','gen4.5',275,-1,'USD','studio-video',
+   'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+  );
+  raise exception 'invalid workflow quote amount unexpectedly recorded';
+ exception when others then
+  if sqlerrm = 'invalid workflow quote amount unexpectedly recorded' then raise; end if;
+  if sqlerrm <> 'VIDEO_WORKFLOW_QUOTE_ARGUMENTS_INVALID' then raise; end if;
+ end;
+end
+$workflow_quote_record$;
+
+-- Explicit workflow approval atomically consumes the quote, records the approval,
+-- reserves the project budget and queues one idempotent durable job.
+do $workflow_quote_approval_privileges$
+begin
+ if has_function_privilege('authenticated',
+   'executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)',
+   'EXECUTE') then
+  raise exception 'authenticated unexpectedly can approve and enqueue workflow video';
+ end if;
+end
+$workflow_quote_approval_privileges$;
+
+create temporary table workflow_approval_result as
+select * from executive_visuals.approve_and_enqueue_video_workflow(
+ '723e4567-e89b-42d3-a456-426614174000',
+ 'e23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ repeat('e',64),'studio-video','pg-workflow-quote-001',
+ jsonb_build_object(
+  'projectId','323e4567-e89b-42d3-a456-426614174000',
+  'provider','runway','model','model-router','requestHash',repeat('e',64),
+  'operation','text-to-video','durationSeconds',5,'outputFormat','mp4',
+  'workflowQuoteId','723e4567-e89b-42d3-a456-426614174000',
+  'workflowRequestId','pg-workflow-quote-001'
+ ),2.75,'Approved exact workflow quote integration test'
+);
+
+do $workflow_quote_approval_result$
+declare result_row record; quote_row executive_visuals.video_workflow_quotes;
+       reservation executive_visuals.video_generation_budget_reservations;
+       customer_reservation executive_visuals.billing_credit_reservations;
+       approval executive_visuals.video_generation_budget_approvals;
+       policy executive_visuals.video_generation_budget_policies;
+begin
+ select * into result_row from workflow_approval_result;
+ select * into quote_row from executive_visuals.video_workflow_quotes
+  where id='723e4567-e89b-42d3-a456-426614174000';
+ select * into reservation from executive_visuals.video_generation_budget_reservations
+  where job_id=result_row.job_id;
+ select * into customer_reservation from executive_visuals.billing_credit_reservations
+  where job_id=result_row.job_id;
+ select * into approval from executive_visuals.video_generation_budget_approvals
+  where id=reservation.approval_id;
+ select * into policy from executive_visuals.video_generation_budget_policies
+  where owner_id='123e4567-e89b-42d3-a456-426614174000'
+   and project_id='323e4567-e89b-42d3-a456-426614174000'
+   and provider='runway' and model='model-router';
+ if result_row.job_id is null or result_row.job_status <> 'queued'
+    or result_row.idempotent_replay
+    or result_row.budget_reservation_id is distinct from reservation.id
+    or result_row.approval_id is distinct from approval.id
+    or quote_row.state <> 'consumed'
+    or reservation.state <> 'reserved'
+    or reservation.reserved_amount <> 2.75
+    or customer_reservation.id is null
+    or customer_reservation.owner_id <> '123e4567-e89b-42d3-a456-426614174000'
+    or customer_reservation.reserved_credits <> quote_row.estimated_credits
+    or customer_reservation.state <> 'reserved'
+    or approval.consumed_at is null
+    or policy.reserved_amount <> 2.75 then
+  raise exception 'workflow approval did not atomically consume quote, approve, reserve and enqueue';
+ end if;
+end
+$workflow_quote_approval_result$;
+
+create temporary table workflow_approval_replay as
+select * from executive_visuals.approve_and_enqueue_video_workflow(
+ '723e4567-e89b-42d3-a456-426614174000',
+ 'e23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ repeat('e',64),'studio-video','pg-workflow-quote-001',
+ jsonb_build_object(
+  'projectId','323e4567-e89b-42d3-a456-426614174000',
+  'provider','runway','model','model-router','requestHash',repeat('e',64),
+  'operation','text-to-video','durationSeconds',5,'outputFormat','mp4',
+  'workflowQuoteId','723e4567-e89b-42d3-a456-426614174000',
+  'workflowRequestId','pg-workflow-quote-001'
+ ),2.75,'Idempotent replay of approved workflow quote'
+);
+
+do $workflow_quote_approval_replay$
+declare first_row record; replay_row record;
+begin
+ select * into first_row from workflow_approval_result;
+ select * into replay_row from workflow_approval_replay;
+ if not replay_row.idempotent_replay
+    or replay_row.job_id is distinct from first_row.job_id
+    or replay_row.budget_reservation_id is distinct from first_row.budget_reservation_id
+    or replay_row.approval_id is distinct from first_row.approval_id
+    or (select count(*) from executive_visuals.billing_credit_reservations
+        where job_id=first_row.job_id) <> 1
+    or (select count(*) from executive_visuals.billing_credit_ledger
+        where idempotency_key='credit-reserve:video-workflow:723e4567-e89b-42d3-a456-426614174000') <> 1 then
+  raise exception 'workflow approval retry did not return the original job and reservation';
+ end if;
+end
+$workflow_quote_approval_replay$;
+
 create temporary table test_context as
 select job_id, budget_reservation_id as reservation_id
 from executive_visuals.enqueue_video_generation_job(
@@ -377,7 +546,9 @@ insert into executive_visuals.assets(
 
 select executive_visuals.finish_video_generation_job(
  (select job_id from test_context),'video-worker-pg-test','succeeded',
- jsonb_build_object('providerTaskId','runway-task-pg-test',
+ jsonb_build_object('provider','runway','model','gen4.5',
+   'providerTaskId','runway-task-pg-test',
+   'costEvidenceReference','provider-receipt:runway-task-pg-test',
    'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000')),
  null,0.75
 );
@@ -649,5 +820,105 @@ begin
 end
 $aleph2_minimum_duration$;
 
+
+-- Model Router workflow settlement: reconcile the reserved ceiling to verified
+-- provider spend and preserve the budget ledger after durable completion.
+do $workflow_router_job_lease$
+declare queued record;
+begin
+ select * into queued from workflow_approval_result;
+ update executive_visuals.jobs
+ set status='processing',lease_owner='workflow-router-test-worker',
+     lease_expires_at=clock_timestamp()+interval '5 minutes',
+     lease_heartbeat_at=clock_timestamp()
+ where id=queued.job_id and status='queued';
+ if not found then raise exception 'workflow Model Router job could not be leased'; end if;
+end
+$workflow_router_job_lease$;
+
+select * from executive_visuals.prepare_video_generation_submission(
+ (select job_id from workflow_approval_result),
+ '123e4567-e89b-42d3-a456-426614174000',
+ 'runway','model-router',repeat('e',64)
+);
+select executive_visuals.begin_video_generation_submission(
+ (select job_id from workflow_approval_result),'workflow-router-test-worker'
+);
+select executive_visuals.record_video_generation_submission(
+ (select job_id from workflow_approval_result),
+ 'workflow-router-test-worker','router-task-pg-integration',
+ '{"route":"integration-test"}'::jsonb
+);
+
+insert into executive_visuals.assets(
+ id,owner_id,project_id,original_name,media_type,byte_size,sha256,
+ storage_bucket,object_path
+) values (
+ 'f23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'workflow-router-output.mp4','video/mp4',1,repeat('a',64),
+ 'executive-visuals-media','workflow-router/integration-output.mp4'
+);
+
+select executive_visuals.finish_video_generation_job(
+ (select job_id from workflow_approval_result),
+ 'workflow-router-test-worker','succeeded',
+ jsonb_build_object(
+  'assetIds',jsonb_build_array('f23e4567-e89b-42d3-a456-426614174001'),
+  'provider','runway',
+  'providerTaskId','router-task-pg-integration',
+  'model','model-router',
+  'costEvidenceReference','provider-receipt:router-task-pg-integration'
+ ),null,2.25
+);
+
+do $workflow_router_settlement_assertion$
+declare queued record; reservation executive_visuals.video_generation_budget_reservations;
+       policy executive_visuals.video_generation_budget_policies;
+       submission executive_visuals.video_generation_submissions;
+       job_row executive_visuals.jobs;
+       cost_row executive_visuals.video_generation_cost_ledger;
+begin
+ select * into queued from workflow_approval_result;
+ select * into reservation from executive_visuals.video_generation_budget_reservations
+  where job_id=queued.job_id;
+ select * into policy from executive_visuals.video_generation_budget_policies
+  where owner_id='123e4567-e89b-42d3-a456-426614174000'
+   and project_id='323e4567-e89b-42d3-a456-426614174000'
+   and provider='runway' and model='model-router';
+ select * into submission from executive_visuals.video_generation_submissions
+  where job_id=queued.job_id;
+ select * into job_row from executive_visuals.jobs where id=queued.job_id;
+ select * into cost_row from executive_visuals.video_generation_cost_ledger where job_id=queued.job_id;
+ if reservation.state <> 'settled' or reservation.actual_amount <> 2.25
+    or cost_row.job_id is null or cost_row.owner_id <> job_row.owner_id
+    or cost_row.provider <> 'runway' or cost_row.model <> 'model-router'
+    or cost_row.provider_task_id <> 'router-task-pg-integration'
+    or cost_row.currency <> 'USD' or cost_row.reserved_amount <> 2.75
+    or cost_row.actual_amount <> 2.25 or cost_row.unused_reservation <> 0.5
+    or cost_row.evidence_reference <> 'provider-receipt:router-task-pg-integration'
+    or policy.reserved_amount <> 4.5 or policy.spent_amount <> 2.25
+    or submission.state <> 'succeeded' or job_row.status <> 'succeeded'
+    or job_row.lease_owner is not null then
+  raise exception 'Model Router settlement mismatch: reservation state %, actual %, policy reserved %, spent %, submission state %, job status %, lease %', reservation.state, reservation.actual_amount, policy.reserved_amount, policy.spent_amount, submission.state, job_row.status, job_row.lease_owner;
+ end if;
+end
+$workflow_router_settlement_assertion$;
+
 reset role;
+
+do $workflow_router_cost_ledger_immutable$
+begin
+ begin
+  update executive_visuals.video_generation_cost_ledger
+  set evidence_reference='tampered'
+  where job_id=(select job_id from workflow_approval_result);
+  raise exception 'provider cost ledger unexpectedly allowed mutation';
+ exception when others then
+  if sqlerrm = 'provider cost ledger unexpectedly allowed mutation' then raise; end if;
+  if sqlerrm <> 'VIDEO_COST_LEDGER_IS_APPEND_ONLY' then raise; end if;
+ end;
+end
+$workflow_router_cost_ledger_immutable$;
 select 'cloud video PostgreSQL integration checks passed' as result;

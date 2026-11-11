@@ -85,8 +85,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
    if(path==="/api/cloud/projects"&&method==="POST"){
-    const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
-    return response(201,{project});
+    const requestedProjectId=body.projectId==null?null:String(body.projectId);
+    if(requestedProjectId!==null&&!safeId(requestedProjectId))return response(400,{error:{code:"PROJECT_ID_INVALID",message:"Cloud project ID must be a valid UUID."}});
+    const project=await service.projects.create({ownerId,projectId:requestedProjectId,name:body.name,description:body.description||"",settings:body.settings||{}});
+    return response(requestedProjectId?200:201,{project,projectIdBound:Boolean(requestedProjectId)});
    }
    if(path==="/api/cloud/projects"&&method==="GET"){
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
@@ -127,6 +129,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
     const projectId=String(body.projectId||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const quoteProject=await service.projects.get({ownerId,projectId});
+    if(!quoteProject)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    if(quoteProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"The project owner must create and approve paid video workflow quotes. Editors can prepare the workflow, but cannot authorize project spending."}});
     try{
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
@@ -152,8 +157,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
         typeof estimate.provider!=="string"||!estimate.provider.trim()){
       return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
      }
+     const quoteId=randomUUID();
+     const expiresAt=new Date(Date.now()+5*60*1000).toISOString();
+     const quoteRecord=await request("rpc/record_video_workflow_quote",{method:"POST",body:{
+      p_quote_id:quoteId,p_owner_id:ownerId,p_project_id:projectId,
+      p_request_id:workflowRequest.requestId,p_request_hash:workflowRequest.requestHash,
+      p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
+      p_routed_provider:estimate.provider,p_routed_model:estimate.model,
+      p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
+      p_currency:estimate.currency,p_config_id:String(estimate.configId||""),
+      p_pricing_source:"runway_model_router_dry_run",p_expires_at:expiresAt
+     }});
+     if(quoteRecord!==quoteId)throw Object.assign(new Error("The non-billable workflow quote could not be durably recorded."),{code:"VIDEO_WORKFLOW_QUOTE_PERSISTENCE_FAILED"});
      return response(200,{quote:{
-      id:randomUUID(),projectId,requestId:workflowRequest.requestId,
+      id:quoteId,projectId,requestId:workflowRequest.requestId,
       requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
       model:workflowRequest.model,operation:workflowRequest.operation,
       routedProvider:estimate.provider,routedModel:estimate.model,
@@ -161,12 +178,66 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       currency:estimate.currency,configId:estimate.configId,
       pricingSource:"runway_model_router_dry_run",billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET),
-      expiresAt:new Date(Date.now()+5*60*1000).toISOString()
+      expiresAt
      }});
     }catch(error){
      const code=String(error?.code||"VIDEO_WORKFLOW_QUOTE_FAILED");
      const status=code.includes("UNSUPPORTED")||code.includes("INVALID")||code.includes("MISMATCH")||code.includes("REQUIRED")?422:503;
      return response(status,{error:{code,message:String(error?.message||"Video workflow quote failed.").slice(0,300)}});
+    }
+   }
+   if(path==="/api/cloud/workflows/video/approve"&&method==="POST"){
+    if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_BODY_INVALID",message:"Video workflow approval must be a JSON object."}});
+    if(body.confirmed!==true)return response(403,{error:{code:"VIDEO_WORKFLOW_APPROVAL_CONFIRMATION_REQUIRED",message:"Explicit confirmation is required before approving and queueing video generation."}});
+    const projectId=String(body.projectId||""),quoteId=String(body.quoteId||""),requestId=String(body.requestId||"");
+    if(!safeId(projectId)||!safeId(quoteId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const approvalProject=await service.projects.get({ownerId,projectId});
+    if(!approvalProject)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    if(approvalProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"Only the project owner can authorize this paid video workflow. No budget reservation or job was created."}});
+    const approvedMaxAmount=body.approvedMaxAmount;
+    if(typeof approvedMaxAmount!=="number"||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||approvedMaxAmount>1000000||
+       Math.abs(approvedMaxAmount*1000000-Math.round(approvedMaxAmount*1000000))>0.0001){
+     return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID",message:"Provide a positive USD approval ceiling with at most six decimal places."}});
+    }
+    const approvalNote=typeof body.approvalNote==="string"?body.approvalNote.trim():"Approved by project editor in Video Studio";
+    if(!approvalNote||approvalNote.length>1000)return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_NOTE_INVALID",message:"Approval note must contain 1 to 1,000 characters."}});
+    const configId=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+    const remoteReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+     env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
+     env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
+     Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
+    if(!workflowRouterAdapter||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"Cloud video approval and enqueue remain disabled until the router, worker, remote-execution and gateway release gates are explicitly configured."}});
+    try{
+     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     if(workflowRequest.input.sourceVideoAssetId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video approval requires a private server-side source metadata probe."}});
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
+      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+         !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
+         metadata.durationSeconds<2||metadata.durationSeconds>30){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must remain a verified project asset between 2 and 30 seconds."}});
+      }
+      if(Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
+      }
+     }
+     const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
+     if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
+     const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId};
+     const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
+      p_quote_id:quoteId,p_approval_id:randomUUID(),p_owner_id:ownerId,p_project_id:projectId,
+      p_request_hash:workflowRequest.requestHash,p_config_id:configId,p_idempotency_key:requestId,
+      p_input:input,p_approved_max_amount:approvedMaxAmount,p_approval_note:approvalNote
+     }});
+     if(!Array.isArray(rows)||rows.length!==1||!safeId(rows[0]?.job_id)||!safeId(rows[0]?.budget_reservation_id)||!safeId(rows[0]?.approval_id)){
+      throw Object.assign(new Error("The durable workflow approval RPC returned an invalid job and reservation receipt."),{code:"VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID"});
+     }
+     const replay=rows[0].idempotent_replay===true;
+     return response(replay?200:202,{job:{id:rows[0].job_id,status:rows[0].job_status},approval:{id:rows[0].approval_id,approvedMaxAmount,currency:"USD"},budgetReservationId:rows[0].budget_reservation_id,idempotentReplay:replay});
+    }catch(error){
+     const code=String(error?.code||"VIDEO_WORKFLOW_APPROVAL_FAILED");
+     const status=code.includes("INVALID")||code.includes("MISMATCH")||code.includes("REQUIRED")?422:503;
+     return response(status,{error:{code,message:String(error?.message||"Video workflow approval could not be recorded. No provider task was submitted.").slice(0,300)}});
     }
    }
    if(path==="/api/cloud/transformations/readiness"&&method==="GET"){

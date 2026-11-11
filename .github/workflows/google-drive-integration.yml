@@ -65,8 +65,30 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108120000_aleph2_transformation_budget_approval.sql
       - name: Apply Runway Model Router enqueue contract migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108210000_runway_model_router_enqueue_contract.sql
+      - name: Apply durable video workflow quote ledger migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108230000_video_workflow_quote_ledger.sql
+      - name: Apply atomic workflow approval and enqueue migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108240000_video_workflow_approval_enqueue.sql
+      - name: Apply quote-bound Runway Model Router enqueue and owner gate migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109200000_model_router_budget_enqueue_owner_gate.sql
+      - name: Apply immutable provider cost ledger migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109213000_video_generation_cost_ledger.sql
+      - name: Apply atomic cloud customer credit reservation migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109230000_cloud_customer_credit_reservations.sql
+      - name: Bind customer credit reservation to video workflow enqueue
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109240000_video_workflow_customer_credit_gate.sql
+      - name: Apply job-scoped customer credit settlement migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109250000_cloud_customer_credit_job_settlement.sql
+      - name: Apply cloud subscription entitlement migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261109260000_cloud_subscription_entitlements.sql
+      - name: Apply cloud subscription lifecycle sync migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110230000_cloud_subscription_lifecycle_sync.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Verify cloud customer credit reservations and settlement
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-customer-credits-postgres-integration.sql
+      - name: Verify cloud subscription entitlements and period grants
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-subscription-entitlements-postgres-integration.sql
       - name: Apply Gemini Omni interaction ownership and retention migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
       - name: Verify Gemini interaction ownership and retention constraints

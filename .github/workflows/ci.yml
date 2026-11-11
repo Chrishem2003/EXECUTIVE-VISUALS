@@ -56,4 +56,15 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108120000_aleph2_transformation_budget_approval.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108210000_runway_model_router_enqueue_contract.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108230000_video_workflow_quote_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108240000_video_workflow_approval_enqueue.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109200000_model_router_budget_enqueue_owner_gate.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109213000_video_generation_cost_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109230000_cloud_customer_credit_reservations.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109240000_video_workflow_customer_credit_gate.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109250000_cloud_customer_credit_job_settlement.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261109260000_cloud_subscription_entitlements.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261110230000_cloud_subscription_lifecycle_sync.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/cloud-customer-credits-postgres-integration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/cloud-subscription-entitlements-postgres-integration.sql

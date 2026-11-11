@@ -17,7 +17,7 @@
 | Capability registry | **110 typed capabilities across 23 domains** | Contract/readiness metadata, not provider availability |
 | Cross-ecosystem capability expansion | Model evaluation/routing, structured template autofill, brand glossary, live presence, proxy review, remote recording, motion template rendering, continuity checks, semantic asset search, workflow diff/batch and analytics feedback | Specification-only until adapters and end-to-end tests exist |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
-| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, server-side graph validation, immutable run snapshots, per-node status, approval pause/resume, local adapter execution and approval-gated text-model execution | Text/data, asset references, frame extraction, audio extraction, probe, transcode, export and timeline nodes run locally; unsupported provider/model nodes are explicitly blocked |
+| Workflow graph | Draggable visual node editor, typed ports, connections, immutable run snapshots, per-node status and approval pause/resume; feature branch adds a governed Runway Model Router node bridge with quote, explicit approval, atomic budget reservation/enqueue, cloud-job polling, private input upload, SHA-256-verified output import and downstream local asset handoff | Cloud bridge is source-controlled and unit-tested but remains inactive until Supabase auth, isolated cloud storage, worker/provider gates and project budget policy are deliberately configured; legacy local adapters remain the default |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
 | Targeted execution | Full graph, single-node and selected-subgraph dependency planning; branch routing; locked-output reuse; partial reruns; immutable run snapshots; per-node state and approval pause/resume | Local adapters execute; remote generation nodes fail closed with an explicit adapter-unavailable status |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
@@ -60,7 +60,9 @@ The build pipeline runs:
 2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
-5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
+5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.
+6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.
+6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
 5. Real FFmpeg rendering and output inspection.
 6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
@@ -456,3 +458,38 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+## Governed cloud Video Studio workflow bridge — 8 November 2026
+
+**Branch:** feat/p0-workflow-quote-ledger  
+**Pull request:** #248 (draft; not merged)
+
+### Implemented in source control
+- Local/cloud project identity link: an active local owner project can be linked to the cloud workspace using the same UUID after local ownership validation; cloud-side creation is idempotent and refuses foreign-owned or archived IDs. Project documents, memberships and local asset bytes are not implicitly synchronized.
+- Durable, service-role-only workflow quote ledger, bound to verified actor, project owner, canonical request hash, operation, router config, route evidence, USD estimate and short expiry.
+- Non-billable quote API persists the quote before returning it; failed persistence fails closed.
+- Explicit approval API requires confirmed=true, actual project-owner authorization, a bounded USD approval ceiling and current private-input revalidation. Editors may prepare workflows but cannot authorize project spending in this release slice.
+- Service-role-only PostgreSQL approval/enqueue RPC binds approval to the exact quote, config, request ID/hash and project; uses a quote-bound Runway Model Router path to create the budget approval, reserve project budget, queue one durable job, and consume the quote in a single transaction.
+- Exact idempotent retries return the original job, approval and reservation; conflicting retries fail.
+- Project-scoped runway/model-router budget policy must already be enabled. No default customer policy is created.
+- Added API and disposable PostgreSQL assertions, both migration sequences, README update and platform capability matrix.
+
+### Current release boundary
+- The API handlers do not submit provider tasks.
+- Remote router, gateway and worker flags remain independently gated.
+- Interactive workflow execution remains in legacy mode; video.generate nodes are not yet mapped to cloud job status or cloud asset outputs.
+- Provider-authoritative settlement, cancellation reconciliation, workflow-node progress, private output-to-timeline handoff and isolated staging acceptance remain incomplete.
+- No shared staging/production migration or deployment was performed; no paid generation or paid upgrade occurred.
+
+### Verification checkpoint
+The first integration attempt exposed a migration-order gap in the Google Drive workflow; that workflow now applies the quote and approval migrations before reusing the cloud-video PostgreSQL script. The next exact-head CI run must verify the corrected approval migration and argument order. Do not mark this bridge complete or merge PR #248 until both build and PostgreSQL workflows pass on the current head.
+
+
+## 8 November 2026 — workflow cloud bridge
+
+The feature branch connects approved `runway/model-router` workflow nodes to the durable cloud queue and returns verified private outputs as local assets for downstream nodes. Paid quote/approval is currently project-owner-only; editors cannot authorize spending until actor-versus-budget-owner support is implemented. The bridge requires `VIDEO_WORKFLOW_EXECUTION_MODE=cloud`, an upstream human-approval node, explicit `approvedMaxAmount` USD ceiling and `rightsConfirmed=true` when source/reference assets are connected. A separate five-second resumer parks and requeues workflow runs without holding the local media worker. Source inputs are owner/project checked and checksum verified before private upload; outputs are downloaded only from the configured Supabase origin and SHA-256 verified before registration. Provider execution remains off by default; no remote flags, secrets, budget policies or hosted deployments were enabled. See `docs/P0-VIDEO-WORKFLOW-CLOUD-BRIDGE.md` for the detailed release boundary.
+
+- 9 November follow-up: corrected the workflow enqueue path so the quote-bound `runway/model-router` adapter does not pass through the generic direct-provider allowlist or its unrelated fixed per-second floor. The dedicated transaction now atomically creates the job, provider-budget reservation, usage reservation, consumed approval/quote and audit/job events.
+- Added a service-role-safe approval trigger while retaining direct authenticated owner checks and project-owner consistency.
+- Added API tests proving project editors are rejected before provider quote preflight or approval writes. This is a deliberate owner-only spending boundary; delegated editor spending remains unimplemented.
+- Extended disposable PostgreSQL integration coverage through Model Router submission receipt, private output scope validation and actual-spend settlement (reserve $2.75, settle $2.25, release the unused $0.50). Exact-head CI is running; this is not yet a passing verification claim.

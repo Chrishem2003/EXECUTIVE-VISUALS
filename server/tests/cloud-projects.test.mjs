@@ -23,6 +23,31 @@ test("creates projects with verified owner identity and validated metadata",asyn
  assert.equal(result.ownerId,owner);assert.equal(result.name,"Production");
  const body=JSON.parse(f.calls[0].options.body);assert.equal(body.owner_id,owner);assert.equal(body.name,"Production");
 });
+test("creates a cloud project using the exact active local project UUID",async()=>{
+ const f=fixture({rows:[]});
+ const result=await f.repository.create({ownerId:owner,projectId:project,name:"Production",description:"Film project"});
+ assert.equal(result.id,project);
+ assert.equal(JSON.parse(f.calls.at(-1).options.body).id,project);
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,1);
+});
+test("links an existing same-owner cloud project idempotently without overwriting it",async()=>{
+ const f=fixture();
+ const result=await f.repository.create({ownerId:owner,projectId:project,name:"Changed name",description:"Changed description"});
+ assert.equal(result.id,project);
+ assert.equal(result.name,row.name);
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,0);
+});
+test("does not link a project UUID owned by another account",async()=>{
+ const f=fixture({rows:[{...row,owner_id:editor}]});
+ await assert.rejects(()=>f.repository.create({ownerId:owner,projectId:project,name:"Production"}),e=>e.code==="CLOUD_PROJECT_ACCESS_DENIED");
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,0);
+});
+test("rejects malformed explicit cloud project IDs before database access",async()=>{
+ const f=fixture();
+ await assert.rejects(()=>f.repository.create({ownerId:owner,projectId:"not-a-uuid",name:"Production"}));
+ assert.equal(f.calls.length,0);
+});
+
 test("lists owned and shared projects without duplicates and checks membership access",async()=>{
  const f=fixture();const result=await f.repository.list({ownerId:owner});
  assert.equal(result.length,1);assert.equal(result[0].id,project);
