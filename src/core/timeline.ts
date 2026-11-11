@@ -2,7 +2,7 @@ import { evaluateAudioAutomation, type AudioAutomationPoint } from "./audio-auto
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
-export interface TimelineTransition { type:"dip-to-black"; fadeFrames:number }
+export interface TimelineTransition { type:"dip-to-black"|"crossfade"; fadeFrames:number }
 export interface TimelineClip {
   id:string; assetId:string; name:string; sourceRange:TimeRange;
   timelineStart:RationalTime; duration:RationalTime;
@@ -122,8 +122,9 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
   const ids=new Set<string>();
   for(const track of timeline.tracks){
     if(ids.has(track.id))issues.push({code:"duplicate_id",trackId:track.id,message:"Duplicate track ID."});ids.add(track.id);
-    let end=0;
-    for(const clip of [...track.clips].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
+    let end=0,previousClip:TimelineClip|undefined;
+    const orderedClips=[...track.clips].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart)),enabledClips=orderedClips.filter(item=>item.enabled);
+    for(const clip of orderedClips){
       if(ids.has(clip.id))issues.push({code:"duplicate_id",trackId:track.id,clipId:clip.id,message:"Duplicate clip ID."});ids.add(clip.id);
       const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
       if(!clip.assetId)issues.push({code:"missing_asset",trackId:track.id,clipId:clip.id,message:"Clip has no source asset."});
@@ -132,17 +133,23 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
       if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
       if(clip.transitionToNext!==undefined){
-        const transition=clip.transitionToNext,next=[...track.clips].filter(item=>item.enabled).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart)).find(item=>seconds(item.timelineStart)>start+0.000001);
-        const fadeFrames=Number(transition?.fadeFrames),fps=timeline.frameRate.numerator/timeline.frameRate.denominator,clipFrames=Math.round(duration*fps);
-        if(track.kind!=="video"||transition?.type!=="dip-to-black"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black transitions require a positive integer fade length no longer than the outgoing clip."});
-        else if(!next||Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)issues.push({code:"transition_requires_adjacent_clip",trackId:track.id,clipId:clip.id,message:"A dip-to-black transition requires the next enabled video clip to begin immediately after this clip."});
+        const transition=clip.transitionToNext,index=enabledClips.findIndex(item=>item.id===clip.id),next=enabledClips[index+1],previousTransition=index>0?enabledClips[index-1]?.transitionToNext:undefined,fps=timeline.frameRate.numerator/timeline.frameRate.denominator,fadeFrames=Number(transition?.fadeFrames),clipFrames=Math.round(duration*fps),isPrimaryVideo=track.kind==="video"&&timeline.tracks.find(item=>item.enabled&&item.kind==="video")?.id===track.id;
+        if(track.kind!=="video"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames||(transition?.type!=="dip-to-black"&&!(transition?.type==="crossfade"&&isPrimaryVideo)))issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video transitions require a positive integer fade length; crossfades are supported on the primary video track."});
+        else if(!next)issues.push({code:"transition_requires_adjacent_clip",trackId:track.id,clipId:clip.id,message:"A video transition requires a following enabled clip on the same track."});
+        else if(transition.type==="dip-to-black"&&Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)issues.push({code:"transition_requires_adjacent_clip",trackId:track.id,clipId:clip.id,message:"A dip-to-black transition requires the next clip to begin immediately after the outgoing clip."});
+        else if(transition.type==="crossfade"&&Math.abs(seconds(next.timelineStart)-(start+duration-fadeFrames/fps))>0.5/fps)issues.push({code:"crossfade_overlap_mismatch",trackId:track.id,clipId:clip.id,message:"A crossfade requires the next clip to overlap the outgoing clip by exactly the configured fade duration."});
         else if(fadeFrames>Math.round(seconds(next.duration)*fps))issues.push({code:"transition_exceeds_incoming_clip",trackId:track.id,clipId:clip.id,message:"The transition fade cannot be longer than the incoming clip."});
+        else if(transition.type==="crossfade"&&Number(previousTransition?.type==="crossfade"?previousTransition.fadeFrames:0)+fadeFrames>clipFrames)issues.push({code:"crossfade_overlap_exceeds_clip",trackId:track.id,clipId:clip.id,message:"Incoming and outgoing crossfades cannot overlap more than the duration of a clip."});
       }
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
       if(clip.audioAutomation!==undefined){try{const points=clip.audioAutomation;if(!Array.isArray(points)||points.length>256)throw new Error("Audio automation supports at most 256 keyframes per clip.");let previous=-1;for(const point of points){if(!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>duration)throw new Error("Audio automation keyframes must fall inside the clip duration.");if(point.timeSeconds<=previous)throw new Error("Audio automation keyframes must be sorted with unique times.");if(point.gainDb!==undefined&&(!Number.isFinite(point.gainDb)||point.gainDb< -60||point.gainDb>24))throw new Error("Automation gain must be between -60 and 24 dB.");if(point.pan!==undefined&&(!Number.isFinite(point.pan)||point.pan< -1||point.pan>1))throw new Error("Automation pan must be between -1 and 1.");if(point.gainDb===undefined&&point.pan===undefined)throw new Error("Automation keyframes require gain or pan.");previous=point.timeSeconds;}}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
-      if(start+0.000001<end)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use another track for overlays."});
-      end=Math.max(end,start+duration);
+      if(start+0.000001<end){
+        const fadeFrames=Number(previousClip?.transitionToNext?.fadeFrames),fps=timeline.frameRate.numerator/timeline.frameRate.denominator,expectedOverlap=fadeFrames/fps,actualOverlap=previousClip?seconds(previousClip.timelineStart)+seconds(previousClip.duration)-start:0;
+        const allowedCrossfade=track.kind==="video"&&previousClip?.transitionToNext?.type==="crossfade"&&Number.isSafeInteger(fadeFrames)&&fadeFrames>0&&Math.abs(actualOverlap-expectedOverlap)<=0.5/fps;
+        if(!allowedCrossfade)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; only explicitly configured primary-video crossfades may overlap."});
+      }
+      end=Math.max(end,start+duration);previousClip=clip;
     }
   }
   for(const marker of timeline.markers){if(ids.has(marker.id))issues.push({code:"duplicate_id",message:"Duplicate marker ID."});ids.add(marker.id);if(marker.start.value<0)issues.push({code:"invalid_marker",message:"Marker starts before the timeline."});}
@@ -185,10 +192,10 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
       const sourceTimeSeconds=seconds(clip.sourceRange.start)+(timeSeconds-clipStart);
       let opacity=1;
       if(track.kind==="video"){
-        const fadeOut=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames/fps:0;
+        const fadeOut=clip.transitionToNext&&(clip.transitionToNext.type==="dip-to-black"||clip.transitionToNext.type==="crossfade")?clip.transitionToNext.fadeFrames/fps:0;
         const orderedClips=track.clips.filter(item=>item.enabled).slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
         const index=orderedClips.findIndex(item=>item.id===clip.id),previous=orderedClips[index-1];
-        const fadeIn=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames/fps:0;
+        const fadeIn=previous?.transitionToNext&&(previous.transitionToNext.type==="dip-to-black"||previous.transitionToNext.type==="crossfade")?previous.transitionToNext.fadeFrames/fps:0;
         if(fadeIn>0&&timeSeconds<clipStart+fadeIn)opacity=Math.min(opacity,Math.max(0,(timeSeconds-clipStart)/fadeIn));
         if(fadeOut>0&&timeSeconds>clipEnd-fadeOut)opacity=Math.min(opacity,Math.max(0,(clipEnd-timeSeconds)/fadeOut));
       }
