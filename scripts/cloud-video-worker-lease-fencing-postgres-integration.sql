@@ -2,6 +2,41 @@
 
 -- Verify the additive worker-fencing migrations already applied by the CI job.
 -- This disposable harness never targets shared staging or production.
+do $generation_entitlement_fencing$
+begin
+  if not has_function_privilege('service_role','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE') then
+    raise exception 'service_role cannot execute entitlement-gated credit reservation';
+  end if;
+  if has_function_privilege('public','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE')
+     or has_function_privilege('anon','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE')
+     or has_function_privilege('authenticated','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE') then
+    raise exception 'browser roles must not execute credit reservation';
+  end if;
+end
+$generation_entitlement_fencing$;
+
+update executive_visuals.customer_subscriptions
+set entitlements_snapshot='{"ai_generation":false}'::jsonb
+where owner_id='123e4567-e89b-42d3-a456-426614174000';
+
+do $generation_entitlement_denied$
+begin
+  begin
+    perform * from executive_visuals.reserve_generation_credits(
+      '123e4567-e89b-42d3-a456-426614174000',
+      'a23e4567-e89b-42d3-a456-426614174000',1,'missing-ai-entitlement-must-fail'
+    );
+    raise exception 'generation credit reservation unexpectedly succeeded without AI entitlement';
+  exception when insufficient_privilege then
+    if sqlerrm<>'VIDEO_GENERATION_ENTITLEMENT_REQUIRED' then raise; end if;
+  end;
+end
+$generation_entitlement_denied$;
+
+update executive_visuals.customer_subscriptions
+set entitlements_snapshot='{"ai_generation":true,"video_generation":true}'::jsonb
+where owner_id='123e4567-e89b-42d3-a456-426614174000';
+
 do $video_fencing_privileges$
 begin
   if has_function_privilege('service_role','executive_visuals.reserve_video_generation_task(uuid,integer,uuid,uuid,text,text,bigint)','EXECUTE')
