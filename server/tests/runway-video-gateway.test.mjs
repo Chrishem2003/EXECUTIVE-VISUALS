@@ -260,3 +260,38 @@ test("Runway 404 task lookup is reconciled as terminal cancellation",async()=>{
   for(const [key,value] of Object.entries({VIDEO_GATEWAY_ENABLED:previous.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:previous.remote,RUNWAYML_API_SECRET:previous.key}))if(value===undefined)delete process.env[key];else process.env[key]=value;
  }
 });
+
+
+test("Runway API JSON responses are streamed with a hard 2 MiB cap",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const fetchImpl=async()=>new Response("x".repeat(2*1024*1024+1),{status:200});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
+test("Runway rejects JSON responses without a readable stream rather than buffering them",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};let textRead=false;
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const fetchImpl=async()=>({status:200,ok:true,headers:new Headers(),body:null,text:async()=>{textRead=true;return "{}";}});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(textRead,false);}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
+test("Runway cancels rejected API response bodies before parsing",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};let cancelled=false;
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const fetchImpl=async()=>({status:429,ok:false,headers:new Headers(),body:{cancel:async()=>{cancelled=true;}}});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_RATE_LIMITED");assert.equal(cancelled,true);}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
+
+test("Runway cancels declared oversized JSON and media bodies before reading",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ let jsonCancelled=false;
+ const fetchImpl=async()=>({status:200,ok:true,headers:new Headers({"content-length":String(2*1024*1024+1)}),body:{cancel:async()=>{jsonCancelled=true;}}});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(jsonCancelled,true);}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+ let mediaCancelled=false;
+ await assert.rejects(()=>downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
+ assert.equal(mediaCancelled,true);
+});
