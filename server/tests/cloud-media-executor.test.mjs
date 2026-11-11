@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { createCloudMediaExecutor, buildCloudMediaOutputPlan } from "../cloud-media-executor.mjs";
 
 const noC2paPreservation=async()=>({status:"not_present",preserved:false});
@@ -15,6 +16,20 @@ function pngHeader(width,height){
   bytes.writeUInt32BE(width,16);
   bytes.writeUInt32BE(height,20);
   return bytes;
+}
+
+function pngChunk(type,data){
+  const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;
+  for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+  const length=Buffer.alloc(4);length.writeUInt32BE(data.length);
+  const checksum=Buffer.alloc(4);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+  return Buffer.concat([length,body,checksum]);
+}
+function pngBytes(width,height,pixel=0){
+  const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr[8]=8;ihdr[9]=6;
+  const stride=1+width*4,rows=Buffer.alloc(height*stride);
+  for(let y=0;y<height;y++)rows.fill(pixel,y*stride+1,(y+1)*stride);
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),pngChunk('IHDR',ihdr),pngChunk('IDAT',deflateSync(rows)),pngChunk('IEND',Buffer.alloc(0))]);
 }
 
 async function executable(directory, name, body) {
@@ -396,7 +411,9 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
+  const generatedOutput = join(directory, "valid-output.png");
+  await writeFile(generatedOutput, pngBytes(40,40));
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", `while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; cp ${JSON.stringify(generatedOutput)} "$1"; fi; shift; done`);
   await writeFile(source, pngHeader(10,10));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
@@ -445,7 +462,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
 });
 
 
-test("cloud AI upscale blocks publication when output dimensions do not match", async () => {
+test("cloud AI upscale returns a specific dimension-mismatch error and blocks publication", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-mismatch-"));
   const previousBinary = process.env.REALESRGAN_NCNN_PATH;
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
@@ -454,7 +471,9 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
+  const generatedOutput = join(directory, "wrong-dimensions.png");
+  await writeFile(generatedOutput, pngBytes(39,40));
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", `while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; cp ${JSON.stringify(generatedOutput)} "$1"; fi; shift; done`);
   await writeFile(source, pngHeader(10,10));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
@@ -481,7 +500,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
       job: { id: "job-ai-up-mismatch", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
         input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
-    }), error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED");
+    }), error => error.code === "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
     assert.equal(published, undefined, "dimension-mismatched derivative must never be published");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
@@ -538,6 +557,7 @@ test("cloud media executor fails closed instead of publishing when C2PA lineage 
  }
 });
 
+
 test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
  const plan=buildCloudMediaOutputPlan("media.proxy",{proxyWidth:960,proxyCrf:28,preset:"veryfast"},{name:"scene.mp4"},"/tmp/source.mp4","/tmp/proxy.mp4");
  assert.deepEqual(plan.args.slice(plan.args.indexOf("-vf"),plan.args.indexOf("-vf")+2),["-vf","scale='min(960,iw)':-2"]);
@@ -550,6 +570,7 @@ test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
  assert.equal(plan.name,"scene-proxy.mp4");
  assert.equal(plan.mediaType,"video/mp4");
 });
+
 test("cloud proxy output plan rejects unbounded dimensions and encoder settings",()=>{
  assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyWidth:99999},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
  assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyCrf:99},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
