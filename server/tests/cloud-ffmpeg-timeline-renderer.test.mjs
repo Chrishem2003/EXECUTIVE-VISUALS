@@ -15,7 +15,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   const video=join(root,"source.mp4"),audio=join(root,"voice.wav");
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
-  const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+  const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},audioMastering:{enabled:true,integratedLoudness:-16,loudnessRange:11,truePeak:-1.5},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{timelineEffects:{brightness:0.05,contrast:1.1,saturation:0.9,denoise:1,sharpen:0.3}}}]},
    {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]}
   ]};
@@ -61,5 +61,20 @@ test("cloud FFmpeg renderer rejects invalid and out-of-range clip timing before 
  ];
  for(const clip of invalid){
   await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TIMING");
+ }
+});
+
+test("cloud FFmpeg renderer rejects audio mastering targets outside EBU R128 ranges",async()=>{
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
+ for(const audioMastering of [
+  {enabled:true,integratedLoudness:1},
+  {enabled:true,integratedLoudness:-71},
+  {enabled:true,loudnessRange:0},
+  {enabled:true,loudnessRange:51},
+  {enabled:true,truePeak:0.1},
+  {enabled:true,truePeak:-10}
+ ]){
+  await assert.rejects(()=>renderCloudTimeline({timeline:{audioMastering,tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_MASTERING");
  }
 });
