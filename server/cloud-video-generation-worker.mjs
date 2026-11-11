@@ -27,8 +27,8 @@ export function createCloudVideoGenerationWorker({
   recover:(...args)=>cloudQueue.recover(...args)
  });
  async function reconcilePendingCancellations(limit=20){
-  if(typeof repos.tasks?.listCancellationPending!=="function")return {examined:0,confirmed:0,pending:0,errors:[]};
-  const pending=await repos.tasks.listCancellationPending(limit),results=[];
+  if(typeof repos.tasks?.claimCancellationPending!=="function")return {examined:0,confirmed:0,pending:0,errors:[]};
+  const pending=await repos.tasks.claimCancellationPending(workerId,limit),results=[];
   for(const task of pending){
    try{
     if(!task.providerTaskId){
