@@ -558,6 +558,98 @@ test("cloud media executor fails closed instead of publishing when C2PA lineage 
 });
 
 
+test("cloud media cancellation waits for SIGKILL before reporting completion",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-cancel-escalation-"));
+ const source=join(directory,"source.mp4");
+ const pidPath=join(directory,"ffprobe.pid");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",`if [ "$1" = "-version" ]; then exit 0; fi; printf '%s' "$" > "${pidPath}"; trap '' TERM; exec sleep 30`);
+ const previousProbe=process.env.FFPROBE_PATH;
+ process.env.FFPROBE_PATH=ffprobe;
+ const controller=new AbortController();
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffprobe,timeoutMs:10000,
+   mediaIO:{async materialize(){return {path:source,asset:{id:"asset-cancel",name:"cancel.mp4",mediaType:"video/mp4"},async cleanup(){}};},async publish(){throw new Error("Cancelled probe must not publish.");}}
+  });
+  const pending=execute({job:{id:"job-cancel",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-cancel"}},signal:controller.signal,onProgress(){}});
+  let pidText="";
+  for(let attempt=0;attempt<40&&!pidText;attempt++){
+   try{pidText=await readFile(pidPath,"utf8");}catch{}
+   if(!pidText)await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  assert.ok(pidText,"ffprobe process should have started");
+  const pid=Number(pidText.trim());
+  assert.ok(Number.isInteger(pid)&&pid>0,"ffprobe PID should be recorded");
+  controller.abort();
+  await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
+  assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH","cancellation must not settle until the child has exited");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
+
+test("cloud media execution timeout kills the child before returning",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-timeout-escalation-"));
+ const source=join(directory,"source.mp4");
+ const pidPath=join(directory,"ffprobe.pid");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",`if [ "$1" = "-version" ]; then exit 0; fi; printf '%s' "$" > "${pidPath}"; exec sleep 30`);
+ const previousProbe=process.env.FFPROBE_PATH;
+ process.env.FFPROBE_PATH=ffprobe;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffprobe,timeoutMs:350,
+   mediaIO:{async materialize(){return {path:source,asset:{id:"asset-timeout",name:"timeout.mp4",mediaType:"video/mp4"},async cleanup(){}};},async publish(){throw new Error("Timed-out probe must not publish.");}}
+  });
+  const pending=execute({job:{id:"job-timeout",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-timeout"}},onProgress(){}});
+  let pidText="";
+  for(let attempt=0;attempt<40&&!pidText;attempt++){
+   try{pidText=await readFile(pidPath,"utf8");}catch{}
+   if(!pidText)await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(pidText,"ffprobe process should have started");
+  const pid=Number(pidText.trim());
+  assert.ok(Number.isInteger(pid)&&pid>0,"ffprobe PID should be recorded");
+  await assert.rejects(pending,error=>error.code==="MEDIA_TIMEOUT");
+  assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH","timeout must not settle until the child has exited");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
+
+test("cloud media executor terminates a spawned process when progress reporting throws",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-progress-failure-"));
+ const source=join(directory,"source.mp4");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe","if [ \\"$1\\" = \\"-version\\" ]; then exit 0; fi; exec sleep 30");
+ const previousProbe=process.env.FFPROBE_PATH;
+ process.env.FFPROBE_PATH=ffprobe;
+ let published=false;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffprobe,timeoutMs:10000,
+   mediaIO:{
+    async materialize(){return {path:source,asset:{id:"asset-progress",name:"progress.mp4",mediaType:"video/mp4"},async cleanup(){}};},
+    async publish(){published=true;throw new Error("Progress failure must not publish.");}
+   }
+  });
+  await assert.rejects(
+   execute({job:{id:"job-progress",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-progress"}},onProgress(){throw new Error("progress store unavailable");}}),
+   /progress store unavailable/
+  );
+  assert.equal(published,false,"a failed progress update must stop the media operation before publication");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
+
 test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
  const plan=buildCloudMediaOutputPlan("media.proxy",{proxyWidth:960,proxyCrf:28,preset:"veryfast"},{name:"scene.mp4"},"/tmp/source.mp4","/tmp/proxy.mp4");
  assert.deepEqual(plan.args.slice(plan.args.indexOf("-vf"),plan.args.indexOf("-vf")+2),["-vf","scale='min(960,iw)':-2"]);
