@@ -45,6 +45,8 @@ assert.ok(seconds(rational(48,24))===2);
 
 const webMastering=normalizeAudioMasteringSettings({enabled:true});
 assert.deepEqual(webMastering,{enabled:true,profile:"web-podcast",integratedLoudness:-16,loudnessRange:11,truePeak:-1.5,dualMono:false});
+const fixedWebMastering=normalizeAudioMasteringSettings({enabled:true,profile:"web-podcast",integratedLoudness:-23,loudnessRange:10,truePeak:-2});
+assert.equal(fixedWebMastering.integratedLoudness,-16,"Web / Podcast must override a submitted broadcast target");
 const broadcastMastering=normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true});
 assert.equal(broadcastMastering.integratedLoudness,-23,"EBU R128 must override a submitted Web target");
 assert.equal(broadcastMastering.profile,"ebu-r128");
