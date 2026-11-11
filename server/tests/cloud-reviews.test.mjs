@@ -4,10 +4,10 @@ import { createCloudReviewRepository } from "../cloud-reviews.mjs";
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",viewer="323e4567-e89b-42d3-a456-426614174000",projectId="423e4567-e89b-42d3-a456-426614174000",assetId="523e4567-e89b-42d3-a456-426614174000",timelineId="623e4567-e89b-42d3-a456-426614174000",reviewId="723e4567-e89b-42d3-a456-426614174000";
 const timeline={id:timelineId,projectId,revision:5,timeline:{frameRate:{numerator:24,denominator:1}}};
 function setup({role="editor",existing=[]}={}){
- const calls=[],rows=[...existing];
+ const calls=[],rows=[...existing],assetOwners=[],timelineOwners=[];
  const projects={async get({ownerId,projectId:id}){return id===projectId?{id,ownerId:owner, name:"Review project"}:null;}};
- const assets={async get({ownerId,assetId:id}){return{id,projectId,mediaType:"video/mp4"};}};
- const timelines={async get(){return timeline;}};
+ const assets={async get({ownerId,assetId:id}){assetOwners.push(ownerId);return{id,projectId,mediaType:"video/mp4"};}};
+ const timelines={async get({ownerId}){timelineOwners.push(ownerId);return timeline;}};
  const fetchImpl=async(url,options)=>{
   const path=url.split("/rest/v1/")[1];
   calls.push({path,method:options.method,body:options.body?JSON.parse(options.body):null});
@@ -29,7 +29,7 @@ function setup({role="editor",existing=[]}={}){
   throw new Error("Unexpected request "+options.method+" "+path);
  };
  const repo=createCloudReviewRepository({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,authorize:async({ownerId,projectId:pid,action})=>[owner,editor,viewer].includes(ownerId)&&pid===projectId&&(action==="read"||action==="write"),projects,assets,timelines});
- return{repo,calls,rows};
+ return{repo,calls,rows,assetOwners,timelineOwners};
 }
 const input={projectId,assetId,timelineId,timelineRevision:4,frameNumber:240,durationFrames:24,body:"Fix the title alignment.",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}]}]}};
 test("creates a frame-anchored review as the verified reviewer and keeps project ownership separate",async()=>{
@@ -64,4 +64,11 @@ test("rejects unauthorized review edits",async()=>{
 });
 test("rejects review payload attempts to forge ownership or author identity",async()=>{
  const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,ownerId:owner,reviewerId:owner}}),error=>error.code==="REVIEW_INVALID");
+});
+
+test("reviewer frame anchors resolve project-owned assets and timelines under owner scope",async()=>{
+ const f=setup({role:"reviewer"});
+ await f.repo.create({actorId:editor,input});
+ assert.deepEqual(f.assetOwners,[owner]);
+ assert.deepEqual(f.timelineOwners,[owner]);
 });
