@@ -81,7 +81,7 @@ begin
   if not found then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','local_subscription_not_found');
   end if;
-  if subscription_row.provider<>'flutterwave'
+  if subscription_row.provider is distinct from 'flutterwave'
      or lower(coalesce(subscription_row.customer_email,''))<>provider_customer_email then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_customer_email_mismatch');
   end if;
