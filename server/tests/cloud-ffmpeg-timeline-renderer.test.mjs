@@ -48,3 +48,18 @@ test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
  const controller=new AbortController();controller.abort();
  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[]},assets:new Map(),workDir:tmpdir(),signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
 });
+
+test("cloud FFmpeg renderer rejects invalid and out-of-range clip timing before invoking FFmpeg",async()=>{
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ const base={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
+ const invalid=[
+  {...base,timelineStart:{value:1,rate:0}},
+  {...base,duration:time(-1)},
+  {...base,sourceRange:{start:time(0),duration:time(2)}},
+  {...base,timelineStart:time(86400),duration:time(1)},
+  {...base,speed:Number.NaN}
+ ];
+ for(const clip of invalid){
+  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TIMING");
+ }
+});
