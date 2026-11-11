@@ -7,8 +7,17 @@ const boundedLimit=value=>{const parsed=value===null||value===undefined||value==
 export function getAdminOperationsOverview(db,{authMode="unknown",dataPersistence="unknown",persistentDataRequired=false,now=Date.now()}={}){
  const counts=db.prepare("SELECT (SELECT COUNT(*) FROM users) AS users,(SELECT COUNT(*) FROM projects) AS projects,(SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL) AS assets,(SELECT COUNT(*) FROM jobs) AS jobs").get();
  const jobs=db.prepare("SELECT status,COUNT(*) AS count FROM jobs GROUP BY status").all();
+ const queue=db.prepare(`SELECT
+  SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued,
+  SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running,
+  SUM(CASE WHEN status='failed' AND updated_at>=? THEN 1 ELSE 0 END) AS failed24h,
+  SUM(CASE WHEN status='running' AND lease_expires_at IS NOT NULL AND lease_expires_at<>'' AND lease_expires_at<=? THEN 1 ELSE 0 END) AS expiredLeaseJobs,
+  SUM(CASE WHEN status='running' AND (lease_expires_at IS NULL OR lease_expires_at='') THEN 1 ELSE 0 END) AS missingLeaseJobs,
+  MIN(CASE WHEN status='queued' THEN created_at END) AS oldestQueuedAt,
+  MIN(CASE WHEN status='running' THEN created_at END) AS oldestRunningAt
+ FROM jobs`).get(new Date(now-24*60*60*1000).toISOString(),new Date(now).toISOString());
  const usage=db.prepare("SELECT COUNT(*) AS operations,COALESCE(SUM(estimated_cost_micros),0) AS estimatedCostMicros FROM model_usage_events WHERE created_at>=?").get(new Date(now-30*24*60*60*1000).toISOString());
- return {users:Number(counts.users||0),projects:Number(counts.projects||0),assets:Number(counts.assets||0),jobs:Number(counts.jobs||0),jobsByStatus:Object.fromEntries(jobs.map(row=>[String(row.status),Number(row.count||0)])),usage30d:{operations:Number(usage.operations||0),estimatedCostMicros:Number(usage.estimatedCostMicros||0)},generatedAt:new Date(now).toISOString(),runtime:{authMode,dataPersistence,persistentDataRequired:Boolean(persistentDataRequired)}};
+ return {users:Number(counts.users||0),projects:Number(counts.projects||0),assets:Number(counts.assets||0),jobs:Number(counts.jobs||0),jobsByStatus:Object.fromEntries(jobs.map(row=>[String(row.status),Number(row.count||0)])),queueHealth:{queued:Number(queue.queued||0),running:Number(queue.running||0),failed24h:Number(queue.failed24h||0),expiredLeaseJobs:Number(queue.expiredLeaseJobs||0),missingLeaseJobs:Number(queue.missingLeaseJobs||0),oldestQueuedAt:queue.oldestQueuedAt||null,oldestRunningAt:queue.oldestRunningAt||null},usage30d:{operations:Number(usage.operations||0),estimatedCostMicros:Number(usage.estimatedCostMicros||0)},generatedAt:new Date(now).toISOString(),runtime:{authMode,dataPersistence,persistentDataRequired:Boolean(persistentDataRequired)}};
 }
 function escapeLikeQuery(value){return String(value||"").trim().slice(0,120).replace(/[\\%_]/g,"\\$&");}
 export function listAdminOperationUsers(db,{query="",limit=100}={}){
