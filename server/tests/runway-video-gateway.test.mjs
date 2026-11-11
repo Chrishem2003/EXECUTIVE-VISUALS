@@ -299,3 +299,19 @@ test("image-to-video applies model-specific resolution support without inventing
  assert.equal(kling1080.ratio,"auto_1080p");assert.equal("resolution" in kling1080,false);
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling3.0_pro",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
 });
+
+test("Kling 4 Flash exposes documented text and image generation limits",()=>{
+ const model=listRunwayVideoModels().find(x=>x.id==="kling_4_flash");
+ assert.ok(model);assert.equal(model.minDurationSeconds,3);assert.equal(model.maxDurationSeconds,20);
+ assert.deepEqual(model.resolutions,["provider_default","720p"]);
+ assert.deepEqual(buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A test scene",durationSeconds:20,aspectRatio:"21:9"}),{
+  model:"kling_4_flash",promptText:"A test scene",ratio:"1464:628",duration:20
+ });
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A test scene",durationSeconds:21}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A test scene",durationSeconds:5,resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Kling 4 Flash image-to-video uses the documented 720p auto ratio",()=>{
+ const image="data:image/png;base64,iVBORw0KGgo=";
+ const payload=buildRunwayImageToVideoPayload({model:"kling_4_flash",prompt:"A test scene",promptImage:image,durationSeconds:5,resolution:"720p"});
+ assert.equal(payload.ratio,"auto_720p");assert.equal("resolution" in payload,false);
+});
