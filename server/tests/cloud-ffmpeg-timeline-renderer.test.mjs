@@ -4,10 +4,26 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAudioMasteringFilter, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
+
+test("audio loudness QC parser extracts integrated loudness, LRA and encoded true peak",()=>{
+ const stderr=`[Parsed_ebur128_0] Summary:
+Integrated loudness:
+ I:         -23.4 LUFS
+ Threshold: -33.4 LUFS
+Loudness range:
+ LRA:         4.2 LU
+ Threshold: -43.4 LUFS
+Sample peak:
+ Peak:       -1.8 dBFS
+True peak:
+ Peak:       -1.2 dBFS`;
+ assert.deepEqual(parseAudioLoudnessMeasurement(stderr),{integratedLoudness:-23.4,loudnessRange:4.2,truePeak:-1.2});
+ assert.deepEqual(parseAudioLoudnessMeasurement("no loudness summary"),{integratedLoudness:null,loudnessRange:null,truePeak:null});
+});
 
 test("audio mastering filter enforces fixed named delivery profiles server-side",()=>{
  assert.match(buildAudioMasteringFilter({enabled:true,profile:"web-podcast",integratedLoudness:-23}),/loudnorm=I=-16:/);
@@ -42,7 +58,13 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.effectClips,1);
   assert.equal(result.render.audioClips,1);
-  assert.deepEqual(result.render.audioMastering,{applied:true,profile:"custom",integratedLoudness:-16,loudnessRange:11,truePeak:-1.5,dualMono:true},"render receipt must record the exact mastering settings applied");
+  assert.equal(result.render.audioMastering.applied,true);
+  assert.equal(result.render.audioMastering.profile,"custom");
+  assert.equal(result.render.audioMastering.integratedLoudness,-16);
+  assert.equal(result.render.audioMastering.dualMono,true);
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.integratedLoudness),"render receipt must include measured encoded integrated loudness");
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.truePeak),"render receipt must include measured encoded true peak");
+  assert.equal(typeof result.render.audioMastering.qualityControl.passed,"boolean","render receipt must report whether measured delivery targets passed");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
