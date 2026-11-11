@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {isPlatformAdministrator,getAdminOperationsOverview,listAdminOperationUsers,listAdminOperationJobs,listAdminOperationAudit,buildAdminProviderReadiness,buildAdminProviderReadinessSummary,buildVideoDispatchReadiness} from "../admin-operations.mjs";
 function fakeDb(){
  const calls=[];
- return {calls,prepare(sql){return {get(...args){calls.push({sql,args});if(sql.includes("SELECT (SELECT COUNT(*)"))return {users:3,projects:4,assets:5,jobs:6};if(sql.includes("SUM(estimated_cost_micros)"))return {operations:7,estimatedCostMicros:890000};throw new Error("Unexpected get query");},all(...args){calls.push({sql,args});if(sql.includes("GROUP BY status"))return [{status:"queued",count:2},{status:"failed",count:1}];if(sql.includes("FROM users u"))return [{id:"u1",email:"a@example.com",auth_source:"supabase",created_at:"2026-11-01",projects:2,jobs:3,usage30d:4}];if(sql.includes("FROM jobs j"))return [{id:"j1",email:"a@example.com",job_type:"video.generate",status:"queued",progress:0,attempt_count:1,created_at:"2026-11-01",updated_at:"2026-11-01",completed_at:null}];if(sql.includes("FROM audit_events a"))return [{id:1,owner_id:"u1",email:"a@example.com",event_type:"project.created",subject_type:"project",subject_id:"p1",created_at:"2026-11-01"}];throw new Error("Unexpected all query");}};}};
+ return {calls,prepare(sql){return {get(...args){calls.push({sql,args});if(sql.includes("SELECT (SELECT COUNT(*)"))return {users:3,projects:4,assets:5,jobs:6};if(sql.includes("SUM(estimated_cost_micros)"))return {operations:7,estimatedCostMicros:890000};if(sql.includes("FROM jobs"))return {queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-10T11:00:00Z"};throw new Error("Unexpected get query");},all(...args){calls.push({sql,args});if(sql.includes("GROUP BY status"))return [{status:"queued",count:2},{status:"failed",count:1}];if(sql.includes("FROM users u"))return [{id:"u1",email:"a@example.com",auth_source:"supabase",created_at:"2026-11-01",projects:2,jobs:3,usage30d:4}];if(sql.includes("FROM jobs j"))return [{id:"j1",email:"a@example.com",job_type:"video.generate",status:"queued",progress:0,attempt_count:1,created_at:"2026-11-01",updated_at:"2026-11-01",completed_at:null}];if(sql.includes("FROM audit_events a"))return [{id:1,owner_id:"u1",email:"a@example.com",event_type:"project.created",subject_type:"project",subject_id:"p1",created_at:"2026-11-01"}];throw new Error("Unexpected all query");}};}};
 }
 test("platform administrator access requires an explicit case-insensitive allowlist",()=>{
  assert.equal(isPlatformAdministrator({email:"ADMIN@example.com"},{ADMIN_EMAILS:"admin@example.com"}),true);
@@ -12,7 +12,7 @@ test("platform administrator access requires an explicit case-insensitive allowl
 });
 test("overview exposes aggregate operating metrics and configured runtime boundaries",()=>{
  const result=getAdminOperationsOverview(fakeDb(),{authMode:"supabase",dataPersistence:"unverified",persistentDataRequired:true,now:Date.parse("2026-11-11T00:00:00Z")});
- assert.equal(result.users,3);assert.equal(result.jobsByStatus.queued,2);assert.equal(result.usage30d.estimatedCostMicros,890000);assert.equal(result.runtime.persistentDataRequired,true);
+ assert.equal(result.users,3);assert.equal(result.jobsByStatus.queued,2);assert.equal(result.queueHealth.queued,2);assert.equal(result.queueHealth.expiredLeaseJobs,1);assert.equal(result.queueHealth.missingLeaseJobs,1);assert.equal(result.queueHealth.failed24h,1);assert.equal(result.queueHealth.oldestQueuedAt,"2026-11-10T10:00:00Z");assert.equal(result.usage30d.estimatedCostMicros,890000);assert.equal(result.runtime.persistentDataRequired,true);
 });
 test("admin account search treats SQL LIKE wildcard characters as literal text",()=>{
  const db=fakeDb();listAdminOperationUsers(db,{query:"100%_\\",limit:50});
@@ -145,4 +145,16 @@ test("administrator readiness recognizes Runway and Fal durable cloud worker ada
   assert.equal(result.canSubmit,true);
   assert.equal(result.blockers.some(item=>item.check==="durableWorkerAdapterReady"),false);
  }
+});
+
+test("administrator queue health reports stale leases and oldest outstanding work without mutating jobs",()=>{
+ const db=fakeDb();
+ const result=getAdminOperationsOverview(db,{now:Date.parse("2026-11-11T12:00:00Z")});
+ const queueQuery=db.calls.find(call=>call.sql.includes("FROM jobs"));
+ assert.ok(queueQuery);
+ assert.match(queueQuery.sql,/lease_expires_at/);
+ assert.match(queueQuery.sql,/MIN\(CASE WHEN status='queued'/);
+ assert.equal(queueQuery.args[0],"2026-11-10T12:00:00.000Z");
+ assert.equal(queueQuery.args[1],"2026-11-11T12:00:00.000Z");
+ assert.deepEqual(result.queueHealth,{queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-10T11:00:00Z"});
 });
