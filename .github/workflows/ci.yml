@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        persist-credentials: false
+        with:
+          persist-credentials: false
       - name: Check out the pinned official CAI native SDK source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-          persist-credentials: false
         with:
+          persist-credentials: false
           repository: contentauth/c2pa-js
           ref: 480975bc4103d03d1ca1705187ef46860950a5d8
           path: c2pa-js
@@ -70,8 +70,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        persist-credentials: false
+        with:
+          persist-credentials: false
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
