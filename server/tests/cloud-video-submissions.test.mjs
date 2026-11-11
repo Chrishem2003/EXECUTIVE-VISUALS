@@ -13,7 +13,7 @@ test("cloud submission ledger uses service credentials and the private schema", 
   const ledger = createCloudVideoSubmissionLedger({ ...base, fetchImpl: async (url, options) => { requests.push({ url, options }); return response([row]); } });
   const result = await ledger.prepare({ jobId: "job-1", ownerId: "owner-1", workerId: "worker-1", leaseToken, provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) });
   assert.equal(result.job_id, "job-1");
-  assert.equal(requests[0].url, "https://example.supabase.co/rest/v1/rpc/prepare_video_generation_submission");
+  assert.equal(requests[0].url, "https://example.supabase.co/rest/v1/rpc/prepare_video_generation_submission_v2");
   assert.equal(requests[0].options.headers["accept-profile"], "executive_visuals");
   assert.equal(requests[0].options.headers["content-profile"], "executive_visuals");
   assert.equal(requests[0].options.headers.apikey, base.serviceRoleKey);
