@@ -63,7 +63,9 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.audioMastering.integratedLoudness,-16);
   assert.equal(result.render.audioMastering.dualMono,true);
   assert.ok(Number.isFinite(result.render.audioMastering.measurement.integratedLoudness),"render receipt must include measured encoded integrated loudness");
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.loudnessRange),"render receipt must include measured encoded loudness range");
   assert.ok(Number.isFinite(result.render.audioMastering.measurement.truePeak),"render receipt must include measured encoded true peak");
+  assert.equal(typeof result.render.audioMastering.qualityControl.loudnessRangeWithinLimit,"boolean","render receipt must check the measured loudness-range ceiling");
   assert.equal(typeof result.render.audioMastering.qualityControl.passed,"boolean","render receipt must report whether measured delivery targets passed");
  }finally{await rm(root,{recursive:true,force:true});}
 });
