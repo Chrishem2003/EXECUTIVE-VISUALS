@@ -1,5 +1,5 @@
 const SCHEMA="executive_visuals";
-const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task","transition_video_generation_task"]);
+const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task","transition_video_generation_task","claim_video_generation_cancellations"]);
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function baseUrl(value){
  let url;try{url=new URL(value);}catch{throw new Error("Cloud video repository URL must be an absolute URL.");}
