@@ -62,6 +62,9 @@ function enforceIdentityPermission(db,job,config,values,scope){
  const profile=(document.characters||[]).find(item=>String(item.id)===profileId);
  return assertIdentityUseAllowed(profile,scope);
 }
+
+const SAFE_INTERRUPTED_REPLAY_KINDS=new Set(["text","prompt","merge","batch","branch","knowledge.search","upload","reference","quality-check","media.probe"]);
+export function canSafelyReplayInterruptedNode(node){return Boolean(node&&SAFE_INTERRUPTED_REPLAY_KINDS.has(String(node.kind||"")));}
 const nodeOutput=(node,value)=>Object.fromEntries((node.outputs||[]).map((port,index)=>[port.id,index===0?value:undefined]).filter(([,v])=>v!==undefined));
 function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attempt=0}={}){
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
@@ -76,6 +79,16 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
  const executionOrder=Array.isArray(graph.runPlan?.executionOrder)?graph.runPlan.executionOrder:validation.executionOrder;
  db.prepare("UPDATE workflow_runs SET status='running',updated_at=? WHERE id=?").run(now(),runId);
  const stored=db.prepare("SELECT * FROM workflow_node_runs WHERE run_id=?").all(runId);
+ const interrupted=stored.filter(row=>row.status==="running");
+ for(const row of interrupted){
+  const node=graph.nodes.find(item=>item.id===row.node_id);
+  if(canSafelyReplayInterruptedNode(node))continue;
+  const detail={code:"WORKFLOW_RECOVERY_REVIEW_REQUIRED",message:"This node was interrupted while executing an operation that may have external side effects. Automatic replay is paused to prevent duplicate provider requests or generated assets.",nodeId:row.node_id,nodeKind:String(node?.kind||"unknown")};
+  saveNode(db,runId,row.node_id,"blocked",{input:parseJson(row.input_json,{}),error:detail,attempt:row.attempt||0});
+  db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=? WHERE id=?").run(json(detail),now(),now(),runId);
+  onStage({id:"workflow-node:"+row.node_id,label:String(node?.label||node?.kind||"Interrupted workflow node").slice(0,160),status:"failed",attributes:{attempt:row.attempt||0,nodeKind:String(node?.kind||"unknown"),errorCode:detail.code}});
+  throw Object.assign(new Error(detail.message),{code:detail.code});
+ }
  const completed=new Map(stored.filter(row=>row.status==="completed").map(row=>[row.node_id,parseJson(row.output_json,{})]));
  const outputs=new Map(completed),nodeCount=Math.max(1,executionOrder.length);
  let completedCount=completed.size;
