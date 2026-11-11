@@ -237,7 +237,7 @@ test("executive assurance summary is access-scoped and reports portfolio exposur
  assert.equal(first.status,201);
  const assetId=seedEvidenceAsset(f.db,{id:"a23e4567-e89b-42d3-a456-426614174001"});
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations/"+first.body.action.id+"/evidence",ownerId:editor,body:{label:"Reconciliation evidence",kind:"workpaper",capturedAt:"2026-11-10",assetId}})).status,201);
- const second=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"assurance-critical",severity:"critical",reviewerId:undefined,dueAt:"2026-11-11T00:00:00.000Z"}});
+ const second=await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:{...createBody,findingId:"assurance-critical",severity:"critical",reviewerId:undefined,dueAt:new Date(Date.now()+7*24*60*60*1000).toISOString()}});
  assert.equal(second.status,201);
  const personalBody={...createBody,findingId:"assurance-personal"};delete personalBody.projectId;delete personalBody.ownerId;delete personalBody.reviewerId;
  assert.equal((await f.api.handle({method:"POST",path:"/api/finance/remediations",ownerId:owner,body:personalBody})).status,201);
