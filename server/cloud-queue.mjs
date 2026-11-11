@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","finish_job"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","finish_job","cancel_video_generation_job"]);
 
 function endpoint(value) {
   let url;
@@ -94,6 +94,15 @@ export function createCloudQueue({
       const result = await call("recover_expired_jobs", { p_limit: limit });
       if (!Number.isInteger(result) || result < 0) throw new Error("Cloud queue recovery returned an invalid count.");
       return result;
+    },
+    async cancel(jobId,ownerId){
+      if(typeof jobId!=="string"||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(jobId)||
+         typeof ownerId!=="string"||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)){
+        throw new Error("Valid job and owner IDs are required to cancel a cloud video job.");
+      }
+      const rows=await call("cancel_video_generation_job",{p_job_id:jobId,p_owner_id:ownerId});
+      if(!Array.isArray(rows)||rows.length>1)throw new Error("Cloud video cancellation returned an invalid result.");
+      return rows[0]||null;
     },
     async finish(jobId, workerId, status, output = null, error = null) {
       if (!jobId || !workerId) throw new Error("Job ID and worker ID are required to finish a job.");

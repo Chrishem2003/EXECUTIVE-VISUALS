@@ -102,7 +102,7 @@ async function readBoundedJsonText(response,maxBytes=2*1024*1024){
   finally{reader.releaseLock?.();}
   return Buffer.concat(chunks,total).toString("utf8");
 }
-async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fetchImpl=fetch}={}){
+async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fetchImpl=fetch,allowStatuses=[]}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     let response;
@@ -110,10 +110,11 @@ async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fet
     catch(error){throw fail(error?.name==="AbortError"?"Runway API request timed out.":"Runway API could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
     if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
     if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
-    if(!response.ok){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+    if(!response.ok&&!allowStatuses.includes(response.status)){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+    if(response.status===404&&allowStatuses.includes(404))return {__httpStatus:404};
     const raw=await readBoundedJsonText(response);
     let data={};try{data=raw?JSON.parse(raw):{};}catch{throw fail("Runway API returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}
-    return data;
+    return response.status===404?{...data,__httpStatus:404}:data;
   }finally{clearTimeout(timer);}
 }
 function safeOutputUrl(raw){
@@ -162,13 +163,29 @@ export async function submitRunwayVideoTask({model=process.env.RUNWAY_VIDEO_MODE
 /** Retrieve an existing provider task; polling may safely use bounded backoff. */
 export async function getRunwayVideoTask({taskId,fetchImpl=fetch}={}){
  const id=assertRunwayTaskId(taskId),headers=runwayServerConfig();
- const task=await requestJson(API_BASE+"/tasks/"+encodeURIComponent(id),{headers,timeoutMs:15000,fetchImpl});
+ const task=await requestJson(API_BASE+"/tasks/"+encodeURIComponent(id),{headers,timeoutMs:15000,fetchImpl,allowStatuses:[404]});
+ if(task.__httpStatus===404)return Object.freeze({taskId:id,status:"CANCELED",model:String(task.model||""),outputUrl:null,createdAt:null,completedAt:null,error:null});
  const statuses=new Set(["PENDING","THROTTLED","RUNNING","SUCCEEDED","FAILED","CANCELED","CANCELLED"]);
  if(!statuses.has(task.status))throw fail("Runway returned an unknown task state.","VIDEO_GATEWAY_INVALID_RESPONSE");
  if(task.id&&task.id!==id)throw fail("Runway task identity did not match the requested task.","VIDEO_GATEWAY_INVALID_RESPONSE");
  const outputUrl=Array.isArray(task.output)?task.output.find(item=>typeof item==="string"&&item.length>0)||null:null;
  if(task.status==="SUCCEEDED"&&!outputUrl)throw fail("Runway task succeeded without an output video URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return Object.freeze({taskId:id,status:task.status,model:String(task.model||""),outputUrl,createdAt:task.createdAt||null,completedAt:task.completedAt||null,error:task.failure||task.error||null});
+}
+/** Cancel or delete a persisted Runway task. A 404 is idempotent after cancellation/deletion. */
+export async function cancelRunwayVideoTask({taskId,fetchImpl=fetch}={}){
+ const id=assertRunwayTaskId(taskId),headers=runwayServerConfig();
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+ try{
+  let response;
+  try{response=await fetchImpl(API_BASE+"/tasks/"+encodeURIComponent(id),{method:"DELETE",headers,signal:controller.signal,redirect:"error"});}
+  catch(error){throw fail(error?.name==="AbortError"?"Runway cancellation timed out.":"Runway cancellation could not be confirmed.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
+  if(response.status===204)return {taskId:id,status:"CANCELLED"};
+  if(response.status===404)return {taskId:id,status:"NOT_FOUND"};
+  if(response.status===429)throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
+  if(response.status>=500)throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
+  throw fail("Runway rejected the task cancellation ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
+ }finally{clearTimeout(timer);}
 }
 export async function downloadRunwayVideoTaskOutput({outputUrl,fetchImpl=fetch,timeoutMs=60000}={}){
  return downloadMp4(outputUrl,{fetchImpl,timeoutMs});

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,uploadRunwayEphemeralAsset,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo,submitRunwayVideoTask,getRunwayVideoTask,downloadRunwayVideoTaskOutput} from "../runway-video-gateway.mjs";
+import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,uploadRunwayEphemeralAsset,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo,submitRunwayVideoTask,getRunwayVideoTask,cancelRunwayVideoTask,downloadRunwayVideoTaskOutput} from "../runway-video-gateway.mjs";
 
 test("catalog contains only models with explicit text-to-video profiles",()=>{
  const models=listRunwayVideoModels();
@@ -232,6 +232,35 @@ test("completed provider task output is bounded and MP4-validated by the separat
  const buffer=await downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/result.mp4",fetchImpl:async()=>new Response(mp4,{status:200})});
  assert.equal(buffer.toString("ascii",4,8),"ftyp");
 });
+
+test("Runway task cancellation uses DELETE and treats an already-removed task as idempotent",async()=>{
+ const previous={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"test-key"});
+ const id="123e4567-e89b-42d3-a456-426614174000",calls=[];
+ try{
+  const cancelled=await cancelRunwayVideoTask({taskId:id,fetchImpl:async(url,options)=>{calls.push({url:String(url),method:options.method,headers:options.headers});return new Response(null,{status:204});}});
+  assert.equal(cancelled.status,"CANCELLED");
+  assert.equal(calls[0].method,"DELETE");
+  assert.ok(calls[0].url.endsWith("/tasks/"+id));
+  assert.equal(calls[0].headers["X-Runway-Version"],"2024-11-06");
+  const missing=await cancelRunwayVideoTask({taskId:id,fetchImpl:async()=>new Response(null,{status:404})});
+  assert.equal(missing.status,"NOT_FOUND");
+ }finally{
+  for(const [key,value] of Object.entries({VIDEO_GATEWAY_ENABLED:previous.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:previous.remote,RUNWAYML_API_SECRET:previous.key}))if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
+});
+
+test("Runway 404 task lookup is reconciled as terminal cancellation",async()=>{
+ const previous={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"test-key"});
+ try{
+  const task=await getRunwayVideoTask({taskId:"123e4567-e89b-42d3-a456-426614174000",fetchImpl:async()=>new Response(null,{status:404})});
+  assert.equal(task.status,"CANCELED");
+ }finally{
+  for(const [key,value] of Object.entries({VIDEO_GATEWAY_ENABLED:previous.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:previous.remote,RUNWAYML_API_SECRET:previous.key}))if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
+});
+
 
 test("Runway API JSON responses are streamed with a hard 2 MiB cap",async()=>{
  const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};

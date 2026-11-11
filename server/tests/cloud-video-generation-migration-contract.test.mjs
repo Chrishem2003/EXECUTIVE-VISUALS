@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {dirname,resolve} from "node:path";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
 const sql=await readFile(resolve(root,"supabase/migrations/20261111230000_durable_video_generation_tasks_batch_71.sql"),"utf8");
+const cancellationSql=await readFile(resolve(root,"supabase/migrations/20261112000000_video_generation_task_cancellation_batch_105.sql"),"utf8");
 test("cloud video ledger migration keeps both tables server-only",()=>{
  for(const table of ["video_generation_approvals","video_generation_tasks"]){
   assert.match(sql,new RegExp("alter table executive_visuals\\."+table+" enable row level security","i"));
@@ -41,4 +42,52 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
  assert.match(sql,/provider text not null default 'runway' check \(provider in \('runway','fal'\)\)/i);
  assert.match(sql,/coalesce\(shot->>'provider',''\) not in \('runway','fal'\)/i);
  assert.match(sql,/estimated_cost_micros,provider,model\)[\s\S]*?shot->>'provider',shot->>'model'/i);
+});
+
+test("cancellation migration uses valid dollar-quoted PL/pgSQL function bodies",()=>{
+ assert.equal((cancellationSql.match(/as \$\$/g)||[]).length,3);
+ assert.equal((cancellationSql.match(/^\$\$;$/gm)||[]).length,3);
+ assert.doesNotMatch(cancellationSql,/^as \$\n/m);
+});
+
+test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
+ assert.match(cancellationSql,/state in \('reserved','submitting','submission_unknown','submitted','processing','cancel_requested','succeeded','failed','cancelled'\)/i);
+ assert.match(cancellationSql,/p_to_state='cancel_requested' and p_provider_status is null/i);
+ assert.match(cancellationSql,/p_to_state in \('succeeded','failed','cancelled'\).*clock_timestamp\(\)/is);
+ assert.match(cancellationSql,/state not in \('succeeded','failed','cancelled'\)/i);
+ assert.match(cancellationSql,/set status='withdrawn'/i);
+ assert.match(cancellationSql,/j\.input->>'approvalId'=changed\.approval_id::text[\s\S]*?j\.status not in \('succeeded','partial','failed','cancelled','blocked','expired'\)/i);
+});
+test("cancellation transition RPC remains service-role-only and preserves additive migration safety",()=>{
+ assert.match(cancellationSql,/revoke all on function executive_visuals\.transition_video_generation_task\(/i);
+ assert.match(cancellationSql,/grant execute on function executive_visuals\.transition_video_generation_task\([^;]+ to service_role/i);
+ assert.doesNotMatch(cancellationSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+});
+
+test("cloud video job cancellation is restricted to the authenticated owner and the video job type",()=>{
+ assert.match(cancellationSql,/where id=p_job_id and owner_id=p_owner_id and job_type='video\.generate\.shot'/i);
+ assert.match(cancellationSql,/status in \('queued','processing'\)/i);
+ assert.match(cancellationSql,/set status='cancelled'/i);
+ assert.match(cancellationSql,/lease_owner=null/i);
+ assert.match(cancellationSql,/insert into executive_visuals\.job_events/i);
+ assert.match(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\(uuid,uuid\) to service_role/i);
+ assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\([^;]+ to (public|anon|authenticated)/i);
+});
+
+test("cloud job cancellation marks its durable provider tasks for reconciliation without assuming submission success",()=>{
+ assert.match(cancellationSql,/update executive_visuals\.video_generation_tasks t[\s\S]*?set state='cancel_requested'[\s\S]*?provider_status='CANCEL_REQUESTED'/i);
+ assert.match(cancellationSql,/t\.approval_id=approval_key and t\.owner_id=p_owner_id/i);
+ assert.match(cancellationSql,/t\.shot_index=shot_key/i);
+ assert.match(cancellationSql,/shot_key:=nullif\(existing\.input->>'shotIndex'/i);
+ assert.match(cancellationSql,/t\.state in \('reserved','submitting','submission_unknown','submitted','processing'\)/i);
+});
+
+test("pending cancellation reconciliation uses a bounded cross-worker lease claim",()=>{
+ assert.match(cancellationSql,/cancellation_lease_owner text/i);
+ assert.match(cancellationSql,/cancellation_lease_expires_at timestamptz/i);
+ assert.match(cancellationSql,/create index if not exists ev_video_task_cancellation_claim[\s\S]*?where state='cancel_requested'/i);
+ assert.match(cancellationSql,/for update skip locked/i);
+ assert.match(cancellationSql,/state='cancel_requested'[\s\S]*?cancellation_lease_expires_at<=clock_timestamp\(\)/i);
+ assert.match(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\(text,integer,integer\) to service_role/i);
+ assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\([^;]+ to (public|anon|authenticated)/i);
 });

@@ -1356,3 +1356,10 @@ body{
 .admin-ops-user-search input{flex:1;min-width:0;font-size:14px;padding:11px 12px;border:1px solid #394550;border-radius:8px;background:#0f151a;color:var(--text)}
 .admin-ops-user-search button{white-space:nowrap}
 @media(max-width:600px){.admin-ops-user-search>div{align-items:stretch;flex-direction:column}.admin-ops-user-search button{width:100%}}
+
+/* Per-shot cloud video job controls */
+.video-generation-jobs{display:grid;gap:8px;margin:12px 0}
+.video-generation-job{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#111722}
+.video-generation-job span{font-size:13px;color:var(--muted)}
+.video-generation-job button{white-space:nowrap}
+@media(max-width:600px){.video-generation-job{align-items:stretch;flex-direction:column}.video-generation-job button{width:100%}}
