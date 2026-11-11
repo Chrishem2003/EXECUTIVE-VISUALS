@@ -76,7 +76,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
- if(id!=="seedance2_5"&&resolution!=="provider_default")throw fail("Explicit resolution is not implemented for this image-to-video model; use provider_default.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const payload={model:id,promptText:text,promptImage,duration:durationSeconds};
  if(id==="seedance2_5"){
   const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
@@ -89,6 +89,9 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
+ }else if(id==="kling_4"){
+  // Kling 4 image-to-video follows input framing; auto tokens select quality.
+  if(resolution!=="provider_default")payload.resolution=resolution==="1080p"?"auto_1080p":"auto_720p";
  }
  // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
