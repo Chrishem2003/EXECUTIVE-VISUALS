@@ -79,6 +79,7 @@ test("cloud job cancellation marks its durable provider tasks for reconciliation
 test("pending cancellation reconciliation uses a bounded cross-worker lease claim",()=>{
  assert.match(cancellationSql,/cancellation_lease_owner text/i);
  assert.match(cancellationSql,/cancellation_lease_expires_at timestamptz/i);
+ assert.match(cancellationSql,/create index if not exists ev_video_task_cancellation_claim[\s\S]*?where state='cancel_requested'/i);
  assert.match(cancellationSql,/for update skip locked/i);
  assert.match(cancellationSql,/state='cancel_requested'[\s\S]*?cancellation_lease_expires_at<=clock_timestamp\(\)/i);
  assert.match(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\(text,integer,integer\) to service_role/i);
