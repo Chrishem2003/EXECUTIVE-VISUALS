@@ -13,6 +13,16 @@ const validateClipTiming=(clip)=>{
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
  if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
 };
+export function parseAudioLoudnessMeasurement(stderr=""){
+ const integratedMatch=String(stderr).match(/^\\s*I:\\s*(-?\\d+(?:\\.\\d+)?)\\s*LUFS\\s*$/m);
+ const rangeMatch=String(stderr).match(/^\\s*LRA:\\s*(-?\\d+(?:\\.\\d+)?)\\s*LU\\s*$/m);
+ const truePeakSection=String(stderr).split(/True peak:/i).at(-1);
+ const peakMatch=truePeakSection?.match(/^\\s*Peak:\\s*(-?\\d+(?:\\.\\d+)?)\\s*dBFS\\s*$/m);
+ const integratedLoudness=integratedMatch?Number(integratedMatch[1]):null;
+ const loudnessRange=rangeMatch?Number(rangeMatch[1]):null;
+ const truePeak=peakMatch?Number(peakMatch[1]):null;
+ return{integratedLoudness:Number.isFinite(integratedLoudness)?integratedLoudness:null,loudnessRange:Number.isFinite(loudnessRange)?loudnessRange:null,truePeak:Number.isFinite(truePeak)?truePeak:null};
+}
 export function buildAudioMasteringFilter(settings){
  if(settings===undefined||settings===null||settings.enabled!==true)return "";
  const profile=settings.profile??"custom";
@@ -136,8 +146,20 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  const masteringProfile=timeline.audioMastering?.profile??"custom";
-  const masteringEvidence=masteringFilter?{applied:true,profile:masteringProfile,integratedLoudness:masteringProfile==="ebu-r128"?-23:masteringProfile==="web-podcast"?-16:Number(timeline.audioMastering?.integratedLoudness??-16),loudnessRange:Number(timeline.audioMastering?.loudnessRange??11),truePeak:Number(timeline.audioMastering?.truePeak??-1.5),dualMono:timeline.audioMastering?.dualMono===true}:{applied:false};
+  let masteringEvidence={applied:false};
+  if(masteringFilter){
+   const measurementRun=await run("ffmpeg",["-hide_banner","-nostats","-i",outputPath,"-map","0:a:0","-filter_complex","ebur128=peak=true","-f","null","-"],60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+   const measured=parseAudioLoudnessMeasurement(measurementRun.stderr);
+   if(measured.integratedLoudness===null||measured.truePeak===null)fail("The rendered audio could not be measured for loudness and true peak.","AUDIO_MASTERING_QC_UNAVAILABLE");
+   const masteringProfile=timeline.audioMastering?.profile??"custom";
+   const targetLoudness=masteringProfile==="ebu-r128"?-23:masteringProfile==="web-podcast"?-16:Number(timeline.audioMastering?.integratedLoudness??-16);
+   const targetTruePeak=Number(timeline.audioMastering?.truePeak??-1.5);
+   const loudnessTolerance=masteringProfile==="ebu-r128"?0.5:1;
+   const peakLimit=masteringProfile==="ebu-r128"?-1:targetTruePeak;
+   masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:Number(timeline.audioMastering?.loudnessRange??11),truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:{integratedLoudnessWithinTolerance:Math.abs(measured.integratedLoudness-targetLoudness)<=loudnessTolerance,truePeakWithinLimit:measured.truePeak<=peakLimit,integratedLoudnessTolerance:loudnessTolerance,truePeakLimit:peakLimit}};
+   masteringEvidence.qualityControl.passed=masteringEvidence.qualityControl.integratedLoudnessWithinTolerance&&masteringEvidence.qualityControl.truePeakWithinLimit;
+  }
   return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
