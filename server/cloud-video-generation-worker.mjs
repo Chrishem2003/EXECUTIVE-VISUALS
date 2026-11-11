@@ -24,7 +24,8 @@ export function createCloudVideoGenerationWorker({
   claim:(id,leaseSeconds)=>cloudQueue.claim(id,leaseSeconds,VIDEO_JOB_TYPES),
   renew:(...args)=>cloudQueue.renew(...args),
   finish:(...args)=>cloudQueue.finish(...args),
-  recover:(...args)=>cloudQueue.recover(...args)
+  recover:(...args)=>cloudQueue.recover(...args),
+  assertLease:(...args)=>cloudQueue.assertLease(...args)
  });
  async function reconcilePendingCancellations(limit=20){
   if(typeof repos.tasks?.claimCancellationPending!=="function")return {examined:0,confirmed:0,pending:0,errors:[]};
@@ -65,7 +66,7 @@ export function createCloudVideoGenerationWorker({
  return Object.freeze({
   workerId,
   runCycle(options={}){return runCloudWorkerCycle({queue:videoQueue,workerId,execute:executor,
-   leaseSeconds:options.leaseSeconds??90,heartbeatIntervalMs:options.heartbeatIntervalMs??15000,
+   leaseSeconds:options.leaseSeconds??90,heartbeatIntervalMs:options.heartbeatIntervalMs??15000,signal:options.signal,
    onProgress:options.onProgress??(()=>{}),onEvent:options.onEvent??(()=>{})});},
   recoverExpired(limit=100){return cloudQueue.recover(limit);},
   reconcilePendingCancellations,
