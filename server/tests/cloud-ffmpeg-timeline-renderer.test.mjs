@@ -4,10 +4,19 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
+
+test("audio mastering filter enforces fixed named delivery profiles server-side",()=>{
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"web-podcast",integratedLoudness:-23}),/loudnorm=I=-16:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16}),/loudnorm=I=-23:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"custom",integratedLoudness:-18.5}),/loudnorm=I=-18.5:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true}),/LRA=8:TP=-1:dual_mono=true/);
+ assert.throws(()=>buildAudioMasteringFilter({enabled:true,profile:"unknown"}),error=>error.code==="INVALID_AUDIO_MASTERING");
+ assert.equal(buildAudioMasteringFilter({enabled:false,profile:"ebu-r128",integratedLoudness:-16}),"");
+});
 const time=(value)=>({value,rate:1});
 test("cloud FFmpeg renderer produces a playable master from materialized video and audio", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-render-test-"));
