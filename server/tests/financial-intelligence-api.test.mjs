@@ -1514,3 +1514,67 @@ test("financial audit export is administrator-only and marks unsigned bundles ho
  assert.equal(result.body.bundle.verification.valid,true);
  assert.equal(result.body.bundle.eventCount,0);
 });
+
+
+test("persistent financial close engine protects reads and commands behind finance administrator access",async()=>{
+ const denied=api(async(url)=>{if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);throw new Error("Unauthorized close request must not reach close storage.");});
+ const read=await denied.handle({method:"GET",path:"/api/admin/finance/close/periods",ownerId:owner});
+ assert.equal(read.status,403);
+ const write=await denied.handle({method:"POST",path:"/api/admin/finance/close/periods",ownerId:owner,body:{action:"period.open",period:"2026-10",payload:{currency:"UGX"}}});
+ assert.equal(write.status,403);
+});
+
+test("financial close overview returns durable period records through the scoped RPC",async()=>{
+ let args=null;
+ const service=api(async(url,options={})=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/financial_close_overview")){args=JSON.parse(options.body);return json({periods:[{period:"2026-10",status:"open",tasks:[]}]});}
+  throw new Error("Unexpected close overview request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/close/periods",ownerId:owner,query:{period:"2026-10"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.close.periods[0].period,"2026-10");
+ assert.equal(args.p_owner_id,owner);
+ assert.equal(args.p_period_month,"2026-10-01");
+});
+
+test("financial close commands atomically pair validated state transitions with audit envelopes",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.endsWith("/rpc/get_financial_audit_head"))return json({sequence:7,headHash:"a".repeat(64)});
+  if(target.endsWith("/rpc/manage_financial_close"))return json({duplicate:false,period:{period_month:"2026-10",status:"open"}});
+  throw new Error("Unexpected close command request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/close/periods",ownerId:owner,
+  body:{action:"period.open",period:"2026-10",idempotencyKey:"close-open-2026-10",payload:{currency:"ugx",label:"October close"}}});
+ assert.equal(result.status,201);
+ const command=calls.find(x=>x.target.endsWith("/rpc/manage_financial_close")).body;
+ assert.equal(command.p_owner_id,owner);
+ assert.equal(command.p_actor_id,owner);
+ assert.equal(command.p_action,"period.open");
+ assert.equal(command.p_period_month,"2026-10-01");
+ assert.equal(command.p_idempotency_key,"close-open-2026-10");
+ assert.equal(command.p_event_envelope.sequence,8);
+ assert.equal(command.p_event_envelope.previousHash,"a".repeat(64));
+ assert.equal(command.p_event_envelope.eventType,"close_period.created");
+ assert.equal(command.p_event_envelope.payload.currency,"UGX");
+ assert.equal(command.p_event_envelope.actorId,owner);
+ assert.ok(command.p_event_hash);
+});
+
+test("invalid close commands are rejected before requesting an audit head or writing state",async()=>{
+ let rpcCalled=false;
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(String(url).includes("/rpc/"))rpcCalled=true;
+  throw new Error("Invalid close command must fail before any database RPC.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/close/periods",ownerId:owner,
+  body:{action:"task.submit",period:"2026-10",idempotencyKey:"close-submit-2026-10",payload:{taskId:"44444444-4444-4444-8444-444444444444"}}});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"FINANCIAL_CLOSE_EVIDENCE_REQUIRED");
+ assert.equal(rpcCalled,false);
+});

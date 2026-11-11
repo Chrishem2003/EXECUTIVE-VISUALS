@@ -11,6 +11,7 @@ import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoi
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
+import { prepareFinancialCloseCommand } from "./financial-close-engine.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -1003,6 +1004,44 @@ export function createFinancialIntelligenceApi({
         const result=verifyFinancialAuditChain(records,{ownerId:subjectOwnerId,expectedHead:head?.headHash||"0".repeat(64)});
         const complete=Number(head?.sequence||0)===records.length;
         return response(200,{verification:{...result,complete,valid:result.valid&&complete,storedHead:head||{sequence:0,headHash:"0".repeat(64)},limitations:[...result.limitations,...(!complete?["The full chain exceeds the 5,000-record verification limit or could not be fully retrieved; this response is not a complete verification."]:[])]}});
+      }
+      if(path==="/api/admin/finance/close/periods"&&method==="GET"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const requestedPeriod=query.period==null||query.period===""?null:String(query.period);
+        let periodDate=null;
+        if(requestedPeriod!==null){
+          if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedPeriod))return error(400,"FINANCIAL_CLOSE_PERIOD_INVALID","period must use YYYY-MM format.");
+          periodDate=requestedPeriod+"-01";
+        }
+        const overview=await rpc("financial_close_overview",{p_owner_id:ownerId,p_period_month:periodDate});
+        return response(200,{close:overview||{periods:[]}});
+      }
+      if(path==="/api/admin/finance/close/periods"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        try{
+          const command=prepareFinancialCloseCommand({action:body.action,period:body.period,payload:body.payload||{}});
+          const auditKey=String(body.idempotencyKey||idempotencyKey||"").trim();
+          if(auditKey.length<8||auditKey.length>160||!/^[A-Za-z0-9:_-]+$/.test(auditKey))
+            return error(400,"FINANCIAL_CLOSE_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key using letters, numbers, colon, underscore or hyphen.");
+          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const event=createFinancialAuditEvent({
+            ownerId,actorId:ownerId,eventType:command.eventType,payload:command.payload,
+            idempotencyKey:auditKey,occurredAt:new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([key])=>![ "eventHash","canonicalEvent" ].includes(key)));
+          const result=await rpc("manage_financial_close",{
+            p_owner_id:ownerId,p_actor_id:ownerId,p_action:command.action,p_period_month:command.period+"-01",
+            p_payload:command.payload,p_idempotency_key:auditKey,p_event_envelope:envelope,
+            p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(result?.duplicate?200:201,{result});
+        }catch(err){
+          const message=err.message||"Financial close command could not be applied.";
+          const code=err.code||"FINANCIAL_CLOSE_COMMAND_FAILED";
+          const status=err.status||(code.startsWith("FINANCIAL_CLOSE_")?400:409);
+          return error(status,code,message);
+        }
       }
       if(path==="/api/admin/finance/close/readiness"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
