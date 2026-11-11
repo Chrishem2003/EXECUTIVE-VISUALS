@@ -22,9 +22,12 @@ begin
      or not has_function_privilege('service_role','executive_visuals.assert_job_lease_v2(uuid,text,uuid)','EXECUTE') then
     raise exception 'service_role must execute all fenced worker RPCs';
   end if;
-  if has_function_privilege('service_role','executive_visuals.claim_next_job(text,integer,text[])','EXECUTE')
-     or has_function_privilege('service_role','executive_visuals.renew_job_lease(uuid,text,integer)','EXECUTE')
-     or has_function_privilege('service_role','executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)','EXECUTE') then
+  if (to_regprocedure('executive_visuals.claim_next_job(text,integer,text[])') is not null
+      and has_function_privilege('service_role','executive_visuals.claim_next_job(text,integer,text[])','EXECUTE'))
+     or (to_regprocedure('executive_visuals.renew_job_lease(uuid,text,integer)') is not null
+      and has_function_privilege('service_role','executive_visuals.renew_job_lease(uuid,text,integer)','EXECUTE'))
+     or (to_regprocedure('executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)') is not null
+      and has_function_privilege('service_role','executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)','EXECUTE')) then
     raise exception 'legacy unfenced worker RPCs must be disabled';
   end if;
 end
