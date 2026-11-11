@@ -46,11 +46,19 @@ export async function runCloudVideoWorkerCycle({
 
   const job = await queue.claim(workerId, leaseSeconds, ["video.generate"]);
   if (!job) return { claimed: false };
+  if (typeof job.lease_token !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(job.lease_token)) throw new Error("Cloud video claim is missing a valid per-attempt fencing token.");
   const controller = new AbortController();
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
-  const assertLease = async () => {\n    if (leaseLost || controller.signal.aborted) throw Object.assign(new Error("Cloud video worker lease was lost."), { code: "VIDEO_WORKER_LEASE_LOST" });\n    let valid = false;\n    try { valid = await queue.assertLease(job.id, workerId, job.lease_token); } catch {}\n    if (!valid) { leaseLost = true; controller.abort(new Error("Cloud video worker lease was lost.")); onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId }); throw Object.assign(new Error("Cloud video worker lease verification failed."), { code: "VIDEO_WORKER_LEASE_LOST" }); }\n    return true;\n  };\n  onEvent({ type: "video.job.started", jobId: job.id, workerId });
+  const assertLease = async () => {
+    if (leaseLost || controller.signal.aborted) throw Object.assign(new Error("Cloud video worker lease was lost."), { code: "VIDEO_WORKER_LEASE_LOST" });
+    let valid = false;
+    try { valid = await queue.assertLease(job.id, workerId, job.lease_token); } catch {}
+    if (!valid) { leaseLost = true; controller.abort(new Error("Cloud video worker lease was lost.")); onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId }); throw Object.assign(new Error("Cloud video worker lease verification failed."), { code: "VIDEO_WORKER_LEASE_LOST" }); }
+    return true;
+  };
+  onEvent({ type: "video.job.started", jobId: job.id, workerId });
 
   const heartbeat = setInterval(async () => {
     if (heartbeatPending || leaseLost || controller.signal.aborted) return;
@@ -73,7 +81,8 @@ export async function runCloudVideoWorkerCycle({
   heartbeat.unref?.();
 
   try {
-    await assertLease();\n    const output = await execute({ job, workerId, signal: controller.signal, assertLease });
+    await assertLease();
+    const output = await execute({ job, workerId, signal: controller.signal, assertLease });
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     if (!output || !Array.isArray(output.assetIds) || typeof output.actualAmount !== "number" ||
         !Number.isFinite(output.actualAmount) || typeof output.currency !== "string") {
@@ -86,8 +95,9 @@ export async function runCloudVideoWorkerCycle({
       costEvidenceReference: output.costEvidenceReference,
       customerCreditSettlement: output.customerCreditSettlement || null
     };
+    await assertLease();
     const finished = await enqueue.finish({
-      jobId: job.id, workerId, status: "succeeded",
+      jobId: job.id, workerId, leaseToken: job.lease_token, status: "succeeded",
       output: persistedOutput, actualAmount: output.actualAmount
     });
     if (!finished) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
@@ -109,8 +119,9 @@ export async function runCloudVideoWorkerCycle({
       onEvent({ type: "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
       return { claimed: true, finished: true, status: "needs_input", jobId: job.id, reason: code };
     }
+    await assertLease();
     const failed = await enqueue.finish({
-      jobId: job.id, workerId, status: "failed",
+      jobId: job.id, workerId, leaseToken: job.lease_token, status: "failed",
       error: { code, message }
     });
     if (!failed) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
@@ -142,9 +153,9 @@ export function createCloudVideoWorker({
     async runCycle({ leaseSeconds = 90, heartbeatIntervalMs = 15000, onEvent = () => {} } = {}) {
       return runCloudVideoWorkerCycle({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
-        execute: ({ job, workerId: activeWorker, signal }) => executeCloudVideoGenerationJob({
+        execute: ({ job, workerId: activeWorker, signal, assertLease }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
-          customerCredits, signal
+          customerCredits, signal, assertLease
         })
       });
     },
