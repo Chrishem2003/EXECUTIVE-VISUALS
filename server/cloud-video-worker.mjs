@@ -1,4 +1,4 @@
-import { executeCloudVideoGenerationJob } from "./cloud-video-generation-executor.mjs";
+import { executeCloudVideoGenerationJob } from "./cloud-video-generation-job-executor.mjs";
 
 const QUARANTINE_CODES = new Set([
   "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION",

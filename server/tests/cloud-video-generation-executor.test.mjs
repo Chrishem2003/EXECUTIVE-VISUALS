@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeCloudVideoGenerationJob } from "../cloud-video-generation-executor.mjs";
+import { executeCloudVideoGenerationJob } from "../cloud-video-generation-job-executor.mjs";
 
 const ownerId = "123e4567-e89b-42d3-a456-426614174000";
 const jobId = "223e4567-e89b-42d3-a456-426614174000";
