@@ -269,3 +269,14 @@ test("Runway cancels oversized generated-video downloads from Content-Length bef
  }),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  assert.equal(cancelled,true);
 });
+
+test("Runway generated-media downloads explicitly reject HTTP redirects",async()=>{
+ let options;
+ const bytes=Buffer.concat([Buffer.from("0000ftyp"),Buffer.alloc(16)]);
+ const result=await downloadRunwayVideoTaskOutput({
+  outputUrl:"https://cdn.example.cloudfront.net/redirect-check.mp4",
+  fetchImpl:async(_url,init)=>{options=init;return new Response(bytes,{status:200});}
+ });
+ assert.equal(result.toString("ascii",4,8),"ftyp");
+ assert.equal(options.redirect,"error");
+});
