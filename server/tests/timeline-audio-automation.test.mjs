@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline, evaluateTimelineAtFrame } from "../../src/core/timeline.ts";
-import { parseAudioAutomationEditorInput } from "../../src/core/audio-automation.ts";
+import { audioAutomationPointFromGraphPosition, parseAudioAutomationEditorInput } from "../../src/core/audio-automation.ts";
 
 test("audio automation editor parser accepts valid keyframes and normalizes ordering",()=>{
  const points=parseAudioAutomationEditorInput('[{"timeSeconds":2,"gainDb":-12},{"timeSeconds":0,"pan":-0.5}]',3);
@@ -14,6 +14,20 @@ test("audio automation editor parser rejects malformed JSON, invalid arrays and 
  assert.throws(()=>parseAudioAutomationEditorInput('{"timeSeconds":0,"gainDb":0}',3),/JSON array/);
  assert.throws(()=>parseAudioAutomationEditorInput('[{"timeSeconds":4,"gainDb":0}]',3),/clip duration/);
  assert.throws(()=>parseAudioAutomationEditorInput('[{"timeSeconds":1,"gainDb":0},{"timeSeconds":1,"pan":0}]',3),/unique/);
+});
+test("visual audio curve graph maps normalized coordinates into bounded clip keyframes",()=>{
+ const point=audioAutomationPointFromGraphPosition(0.5,0.5,10,-0.25);
+ assert.equal(point.timeSeconds,5);
+ assert.equal(point.gainDb,-18);
+ assert.equal(point.pan,-0.25);
+ assert.equal(point.interpolation,"linear");
+});
+test("visual audio curve graph clamps pointer coordinates and rejects invalid clip duration",()=>{
+ const point=audioAutomationPointFromGraphPosition(2,-1,8,4);
+ assert.equal(point.timeSeconds,8);
+ assert.equal(point.gainDb,24);
+ assert.equal(point.pan,1);
+ assert.throws(()=>audioAutomationPointFromGraphPosition(0,0,0),/duration/);
 });
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});
