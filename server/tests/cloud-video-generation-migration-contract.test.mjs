@@ -50,6 +50,7 @@ test("cancellation migration keeps intent separate from terminal provider cancel
  assert.match(cancellationSql,/p_to_state in \('succeeded','failed','cancelled'\).*clock_timestamp\(\)/is);
  assert.match(cancellationSql,/state not in \('succeeded','failed','cancelled'\)/i);
  assert.match(cancellationSql,/set status='withdrawn'/i);
+ assert.match(cancellationSql,/j\.input->>'approvalId'=changed\.approval_id::text[\s\S]*?j\.status not in \('succeeded','partial','failed','cancelled','blocked','expired'\)/i);
 });
 test("cancellation transition RPC remains service-role-only and preserves additive migration safety",()=>{
  assert.match(cancellationSql,/revoke all on function executive_visuals\.transition_video_generation_task\(/i);
