@@ -120,3 +120,15 @@ test("admin execution monitor classifies worker leases as active, expired, missi
  assert.equal(result[0].leaseHeartbeatAt,"2026-11-11T12:04:00Z");
  assert.equal(result[1].leaseExpiresAt,"2026-11-11T12:00:00Z");
 });
+
+
+test("administrator readiness blocks providers without a durable cloud worker adapter",()=>{
+ const env={AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"true",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only"};
+ for(const provider of ["fal","runway"]){
+  const result=buildVideoDispatchReadiness({env,providerCatalog:{providers:[{id:"video",provider,model:"model-1",status:"ready",remote:true}]}});
+  assert.equal(result.checks.videoProviderReady,true);
+  assert.equal(result.checks.durableWorkerAdapterReady,provider==="runway");
+  assert.equal(result.canSubmit,provider==="runway");
+  if(provider==="fal")assert.equal(result.blockers.some(item=>item.check==="durableWorkerAdapterReady"),true);
+ }
+});
