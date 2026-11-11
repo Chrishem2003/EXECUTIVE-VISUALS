@@ -59,7 +59,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
  const result=await worker.reconcilePendingCancellations(10);
  assert.equal(result.examined,4);assert.equal(result.pending,1);assert.equal(result.confirmed,2);assert.equal(result.errors.length,1);
  assert.ok(calls.some(x=>x[0]==="claim"&&x[1]==="video-worker-1"&&x[2]===10));
- assert.ok(calls.some(x=>x[0]==="requested"&&x[1]==="task-1"));
+ assert.ok(!calls.some(x=>x[0]==="requested"&&x[1]==="task-1"),"pending provider cancellation retains its lease until expiry");
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"));
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"));
  assert.ok(!calls.some(x=>x[0]==="cancelled"&&x[1]==="task-4"));
