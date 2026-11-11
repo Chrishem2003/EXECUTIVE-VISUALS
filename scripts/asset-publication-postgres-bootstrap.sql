@@ -142,3 +142,8 @@ $owner_guard$;
 
 grant all on all tables in schema executive_visuals to service_role;
 grant usage, select on all sequences in schema executive_visuals to service_role;
+
+
+-- Separate disposable database for the cloud video migration and RPC integration suite.
+DROP DATABASE IF EXISTS cloud_video_test WITH (FORCE);
+CREATE DATABASE cloud_video_test;
