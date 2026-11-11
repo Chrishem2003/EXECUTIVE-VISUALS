@@ -440,3 +440,7 @@
 .mastering-history-row:hover,.mastering-history-row.selected{background:#1b2030}
 .mastering-history-row.selected span{color:#a78bfa}
 .mastering-report-download{margin-top:12px}
+
+
+.delivery-profile-control{display:grid;gap:6px;max-width:360px;margin:12px 0;color:var(--muted);font-size:11px}
+.delivery-profile-control select{min-height:36px;width:100%;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);padding:7px 10px}

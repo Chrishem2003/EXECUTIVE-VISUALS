@@ -56,7 +56,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
         materialized.set(assetIds[i],asset);
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
-      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,...(input.mastering?{mastering:input.mastering}:{})});
+      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,...(input.mastering?{mastering:input.mastering}:{}),...(input.deliveryProfile?{deliveryProfile:input.deliveryProfile}:{})});
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       if(!output||typeof output.path!=="string"||typeof output.filename!=="string"||typeof output.mediaType!=="string")throw new Error("Cloud timeline renderer returned invalid output metadata.");
       const info=await stat(output.path);

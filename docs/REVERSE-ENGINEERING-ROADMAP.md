@@ -47,6 +47,8 @@
 - Backups, retention, restore test and monitoring.
 
 ### M4 — Professional collaboration and delivery
+- [x] Cloud mastering controls, measured output report and durable render history (draft PR chain #130–#132; merge order and release review pending).
+- [ ] Platform delivery profiles (draft PR #133): source dimensions, YouTube 1080p landscape, vertical 1080p and square 1080p; server allow-list, durable job input, H.264/AAC render settings and output-dimension tests. HDR tone mapping remains explicitly out of scope.
 - Review links, timestamped comments, drawing annotations, approvals and revision comparison.
 - Project/sequence locking, presence and publish checkpoints.
 - Asset version lineage, shared libraries, metadata search and content provenance.
