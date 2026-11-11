@@ -749,6 +749,7 @@ if(storyboardRefreshJobs){void (async()=>{
   state.videoApproval={...approval,status:complete?"succeeded":failed?"failed":"processing",jobStatuses:results.map((result,index)=>({jobId:result.job.id,shotIndex:index,status:result.job.status,progress:Math.max(0,Math.min(100,Number(result.job.progress)||0))})),statusSummary:lines.join(" | ")};save();
   panel.textContent=lines.join(" | ");panel.dataset.status=complete?"succeeded":failed?"failed":"processing";
   if(complete){await loadCloudWorkspace();panel.textContent+=" · All shots complete. Refresh the cloud asset library to inspect the generated media.";}
+  render();
  }catch(error){panel.textContent=error instanceof Error?error.message:"Could not refresh generation progress. Retry shortly.";panel.dataset.status="error";}
  finally{storyboardRefreshJobs.removeAttribute("disabled");}
 })();return;}
