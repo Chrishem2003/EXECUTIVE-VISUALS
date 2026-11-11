@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Immutable BtbN FFmpeg build release and SHA-256 digest.
+# Pinned FFmpeg build release and SHA-256 digest.
 # Update both values together after reviewing a new upstream release.
 release_tag="autobuild-2026-11-09-12-42"
 asset_name="ffmpeg-n9.0.2-48-gd4070a14ce-linux64-gpl-9.0.tar.xz"
