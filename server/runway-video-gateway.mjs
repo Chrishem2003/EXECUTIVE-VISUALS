@@ -5,6 +5,7 @@ const MODEL_PROFILES=Object.freeze({
   "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
   "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","4:3","3:4","3:2","2:3","21:9"],resolutions:["provider_default","480p","720p","1080p"],defaultResolution:"480p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
+  "kling_4_flash":Object.freeze({label:"Kling 4.0 Flash",minDurationSeconds:3,maxDurationSeconds:20,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p"],defaultResolution:"720p"}),
   "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
   "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
 });
@@ -29,6 +30,7 @@ const ratioFor=(model,ratio,resolution)=>{
       "1:1":resolution==="1080p"?"1440:1440":"940:940",
       "21:9":resolution==="1080p"?"2200:940":"1460:624"
     },
+    "kling_4_flash":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960","21:9":"1464:628"},
     "kling3.0_standard":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960"},
     "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"}
   };
@@ -93,6 +95,9 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   // Kling 4 image-to-video follows input framing; ratio selects output quality.
   const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
   payload.ratio=effectiveResolution==="1080p"?"auto_1080p":"auto_720p";
+ }else if(id==="kling_4_flash"){
+  // Kling 4 Flash is 720p-only; input image controls framing.
+  payload.ratio="auto_720p";
  }
  // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
