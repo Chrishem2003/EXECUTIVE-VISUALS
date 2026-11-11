@@ -13,12 +13,12 @@ export function getAdminOperationsOverview(db,{authMode="unknown",dataPersistenc
 function escapeLikeQuery(value){return String(value||"").trim().slice(0,120).replace(/[\\%_]/g,"\\$&");}
 export function listAdminOperationUsers(db,{query="",limit=100}={}){
  const q=escapeLikeQuery(query),n=boundedLimit(limit);
- return db.prepare(\`SELECT u.id,u.email,u.auth_source,u.created_at,
+ return db.prepare(`SELECT u.id,u.email,u.auth_source,u.created_at,
  (SELECT COUNT(*) FROM projects p WHERE p.owner_id=u.id) AS projects,
  (SELECT COUNT(*) FROM jobs j WHERE j.owner_id=u.id) AS jobs,
  (SELECT COUNT(*) FROM model_usage_events m WHERE m.owner_id=u.id AND m.created_at>=?) AS usage30d
  FROM users u WHERE (?='' OR u.email LIKE '%'||?||'%' ESCAPE '\\' OR u.id LIKE '%'||?||'%' ESCAPE '\\')
- ORDER BY u.created_at DESC LIMIT ?\`).all(new Date(Date.now()-30*24*60*60*1000).toISOString(),q,q,q,n).map(row=>({id:row.id,email:row.email,authSource:row.auth_source,createdAt:row.created_at,projects:Number(row.projects||0),jobs:Number(row.jobs||0),usage30d:Number(row.usage30d||0)}));
+ ORDER BY u.created_at DESC LIMIT ?`).all(new Date(Date.now()-30*24*60*60*1000).toISOString(),q,q,q,n).map(row=>({id:row.id,email:row.email,authSource:row.auth_source,createdAt:row.created_at,projects:Number(row.projects||0),jobs:Number(row.jobs||0),usage30d:Number(row.usage30d||0)}));
 }
 export function listAdminOperationJobs(db,{limit=100}={}){
  return db.prepare(`SELECT j.id,u.email,j.job_type,j.status,j.progress,j.attempt_count,j.created_at,j.updated_at,j.completed_at
