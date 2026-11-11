@@ -176,7 +176,7 @@ export function createGoogleOmniCloudVideoIntegration({
     }
   });
 
-  async function ingestOutputs({ job, task, providerTaskId } = {}) {
+  async function ingestOutputs({ job, task, providerTaskId, signal, assertLease } = {}) {
     if (!job?.id || !job?.owner_id || !task?.rawInteraction ||
         task.taskId !== providerTaskId || task.provider !== PROVIDER || task.model !== MODEL) {
       throw fail("Google Omni output is missing its authorized raw interaction.", "GEMINI_OMNI_OUTPUT_CONTEXT_INVALID");
@@ -185,7 +185,11 @@ export function createGoogleOmniCloudVideoIntegration({
       ownerId: job.owner_id,
       projectId: job.project_id || null,
       jobId: job.id,
-      requestHash: job.input?.requestHash || null
+      requestHash: job.input?.requestHash || null,
+      workerId: job.lease_owner,
+      leaseToken: job.lease_token,
+      signal,
+      assertLease
     });
     if (!result || typeof result.assetId !== "string" || !result.assetId) {
       throw fail("Google Omni private output ingestion did not return an asset ID.", "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
