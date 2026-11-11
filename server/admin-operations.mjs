@@ -95,7 +95,8 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true",
   supabaseServiceCredentials:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
   videoProviderReady:videoProvider?.status==="ready",
-  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider)
+  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider),
+  appDataPersistence:dataPersistence==="operator-confirmed-volume"
  };
  const labels={
   supabaseAuth:"Verified Supabase authentication is not enabled.",
@@ -103,7 +104,8 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:"Cloud video-generation dispatch is not enabled.",
   supabaseServiceCredentials:"Server-side Supabase service credentials are not configured.",
   videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation.",
-  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider)? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Supported durable adapters: Runway and Fal."
+  durableWorkerAdapterReady:["runway","fal"].includes(videoProvider?.provider)? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Supported durable adapters: Runway and Fal.",
+  appDataPersistence:"Application database persistence is not confirmed as a durable volume; cloud generation must remain blocked until an operator confirms durable storage."
  };
  const blockers=Object.keys(checks).filter(key=>!checks[key]).map(key=>({check:key,message:labels[key]}));
  return {
