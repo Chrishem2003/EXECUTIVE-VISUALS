@@ -82,18 +82,42 @@ test("cloud FFmpeg renderer rejects overlapping clips within a secondary video t
  ]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
 });
-test("cloud FFmpeg renderer rejects transitions on secondary video tracks until secondary transition parity is implemented",async()=>{
- const timeline={tracks:[
+test("cloud FFmpeg renderer applies secondary-track fades through transparency while preserving the primary picture", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-secondary-fade-test-"));
+ try{
+  const blue=join(root,"blue.mp4"),red=join(root,"red.mp4"),green=join(root,"green.mp4");
+  for(const [color,path] of [["blue",blue],["red",red],["green",green]])execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i",`color=c=${color}:s=320x240:r=24:d=2`,"-c:v","libx264","-pix_fmt","yuv420p",path]);
+  const timeline={name:"Secondary fade test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"primary",kind:"video",clips:[{id:"base",assetId:"blue",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
+   {id:"secondary",kind:"video",clips:[
+    {id:"red-layer",assetId:"red",timelineStart:time(.5),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}},
+    {id:"green-layer",assetId:"green",timelineStart:time(1.5),duration:time(.5),sourceRange:{start:time(0),duration:time(.5)}}
+   ]}
+  ]};
+  const assets=new Map([
+   ["blue",{path:blue,asset:{id:"blue",mediaType:"video/mp4",originalName:"blue.mp4"}}],
+   ["red",{path:red,asset:{id:"red",mediaType:"video/mp4",originalName:"red.mp4"}}],
+   ["green",{path:green,asset:{id:"green",mediaType:"video/mp4",originalName:"green.mp4"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  assert.equal(result.render.transitions,1);
+  const pixels=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select='eq(n,30)+eq(n,35)+eq(n,42)',crop=2:2:10:10,scale=1:1","-vsync","0","-frames:v","3","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]);
+  assert.equal(pixels.length,9);
+  const samples=[0,1,2].map(index=>[pixels[index*3],pixels[index*3+1],pixels[index*3+2]]);
+  assert.ok(samples[0][0]>samples[0][2]*2,"the outgoing red secondary layer should initially cover the blue primary");
+  assert.ok(samples[1][2]>samples[1][0]*2,"the outgoing layer should fade to transparency and reveal the blue primary");
+  assert.ok(samples[2][1]>samples[2][2]*1.5,"the incoming green secondary layer should fade in above the primary");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test("cloud FFmpeg renderer rejects invalid secondary-track transition metadata",async()=>{
+ const timeline={frameRate:{numerator:24,denominator:1},tracks:[
   {kind:"video",clips:[{assetId:"primary",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
   {kind:"video",clips:[
-   {assetId:"secondary",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}},
+   {assetId:"secondary",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:0}},
    {assetId:"secondary",timelineStart:time(1),duration:time(1),sourceRange:{start:time(1),duration:time(1)}}
   ]}
  ]};
- const assets=new Map([
-  ["primary",{path:"/not-used-primary.mp4",asset:{id:"primary",mediaType:"video/mp4",originalName:"primary.mp4"}}],
-  ["secondary",{path:"/not-used-secondary.mp4",asset:{id:"secondary",mediaType:"video/mp4",originalName:"secondary.mp4"}}]
- ]);
+ const assets=new Map([["secondary",{path:"/not-used-secondary.mp4",asset:{id:"secondary",mediaType:"video/mp4",originalName:"secondary.mp4"}}]]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
 });
 test("cloud FFmpeg renderer mixes audio and accepts automation beyond the picture tail", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{

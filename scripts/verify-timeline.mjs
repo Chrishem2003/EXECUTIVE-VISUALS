@@ -102,6 +102,15 @@ const multiVideoWithClip=addClip(multiVideoTimeline,"transition-video-secondary"
 const multiVideoFrame=evaluateTimelineAtFrame(multiVideoWithClip,12);
 assert.equal(multiVideoFrame.activeClips.filter(clip=>clip.trackKind==="video").length,2);
 assert.deepEqual(multiVideoFrame.activeClips.filter(clip=>clip.trackKind==="video").map(clip=>clip.trackIndex),[0,1]);
+const secondaryFadeBase=addTrack(transitionBase,{id:"secondary-fade-track",name:"B-roll fades",kind:"video",enabled:true,locked:false,clips:[]});
+let secondaryFadeTimeline=addClip(secondaryFadeBase,"secondary-fade-track",{id:"secondary-fade-a",assetId:"asset-b",name:"Outgoing layer",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true});
+secondaryFadeTimeline=addClip(secondaryFadeTimeline,"secondary-fade-track",{id:"secondary-fade-b",assetId:"asset-c",name:"Incoming layer",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(24,24),duration:rational(24,24),enabled:true});
+secondaryFadeTimeline.tracks.find(track=>track.id==="secondary-fade-track").clips[0].transitionToNext={type:"dip-to-black",fadeFrames:6};
+assert.equal(validateTimeline(secondaryFadeTimeline).valid,true);
+assert.ok(Math.abs(evaluateTimelineAtFrame(secondaryFadeTimeline,21).activeClips.find(clip=>clip.clipId==="secondary-fade-a").opacity-0.5)<0.001);
+assert.equal(evaluateTimelineAtFrame(secondaryFadeTimeline,24).activeClips.find(clip=>clip.clipId==="secondary-fade-b").opacity,0);
+assert.ok(Math.abs(evaluateTimelineAtFrame(secondaryFadeTimeline,27).activeClips.find(clip=>clip.clipId==="secondary-fade-b").opacity-0.5)<0.001);
+
 
 
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
