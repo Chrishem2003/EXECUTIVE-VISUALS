@@ -47,7 +47,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
  const tasks={
   async claimCancellationPending(workerId,limit){calls.push(["claim",workerId,limit]);return pending;},
   async markCancellationRequested(id,value){calls.push(["requested",id,value]);},
-  async markCancelled(id,value){calls.push(["cancelled",id,value]);}
+  async markCancelledByReconciler(id,value,workerId){calls.push(["cancelled",id,value,workerId]);}
  };
  const worker=createCloudVideoGenerationWorker({
   workerId:"video-worker-1",queue:{async claim(){return null;},async renew(){return true;},async assertLease(){return true;},async finish(){return true;},async recover(){return 0;}},
@@ -61,7 +61,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
  assert.equal(result.examined,4);assert.equal(result.pending,1);assert.equal(result.confirmed,2);assert.equal(result.errors.length,1);
  assert.ok(calls.some(x=>x[0]==="claim"&&x[1]==="video-worker-1"&&x[2]===10));
  assert.ok(!calls.some(x=>x[0]==="requested"&&x[1]==="task-1"),"pending provider cancellation retains its lease until expiry");
- assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"));
- assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"));
+ assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"&&x[3]==="video-worker-1"));
+ assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"&&x[3]==="video-worker-1"));
  assert.ok(!calls.some(x=>x[0]==="cancelled"&&x[1]==="task-4"));
 });
