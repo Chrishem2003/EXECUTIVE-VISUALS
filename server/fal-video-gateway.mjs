@@ -16,15 +16,15 @@ async function readBoundedJsonText(response,maxBytes=2*1024*1024){
  finally{reader.releaseLock?.();}
  return Buffer.concat(chunks,total).toString("utf8");
 }
-async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch){
+async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch,allowStatuses=[]){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   let response;try{response=await fetchImpl(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
   if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
   if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
-  if(!response.ok){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+  if(!response.ok&&!allowStatuses.includes(response.status)){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
   const raw=await readBoundedJsonText(response);
-  try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
+  let data={};try{data=raw?JSON.parse(raw):{};}catch{if(response.status===404&&allowStatuses.includes(404))return {__httpStatus:404};throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}return response.status===404?{...data,__httpStatus:404}:data
  }finally{clearTimeout(timer)}
 }
 const IMAGE_INPUT_FIELDS=new Set(["image_url","start_image_url","first_frame_image_url"]);
@@ -82,7 +82,8 @@ export async function submitFalVideoTask({model=process.env.FAL_VIDEO_MODEL,prom
 export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
  const {key}=falWorkerConfig(model);
  const statusUrl=falTaskUrl(model,taskId,"/status");
- const status=await jsonRequest(statusUrl,{headers:{authorization:"Key "+key}},15000,fetchImpl);
+ const status=await jsonRequest(statusUrl,{headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ if(status.__httpStatus===404||status.status==="NOT_FOUND")return Object.freeze({taskId,status:"CANCELLED",model:String(model),outputUrl:null,error:null});
  if(status.request_id&&status.request_id!==taskId)throw fail("Fal task identity did not match the requested task.","VIDEO_GATEWAY_INVALID_RESPONSE");
  if(status.status==="IN_QUEUE")return {taskId,status:"PENDING"};
  if(status.status==="IN_PROGRESS")return {taskId,status:"RUNNING"};
@@ -94,6 +95,15 @@ export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,
  if(url.protocol!=="https:"||!(url.hostname==="fal.media"||url.hostname.endsWith(".fal.media"))||url.username||url.password||url.port||url.hash||url.search)
   throw fail("Fal returned an untrusted output URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return {taskId,status:"SUCCEEDED",outputUrl};
+}
+/** Request cancellation for a persisted Fal queue request. CANCELLATION_REQUESTED is not treated as terminal. */
+export async function cancelFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
+ const {key}=falWorkerConfig(model);
+ const response=await jsonRequest(falTaskUrl(model,taskId,"/cancel"),{method:"PUT",headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ const status=String(response.status||"");
+ if(!["OK","CANCELLATION_REQUESTED","ALREADY_COMPLETED","NOT_FOUND"].includes(status))
+  throw fail("Fal returned an unknown cancellation state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return {taskId,status};
 }
 /** Download a completed Fal result from its allowlisted media host with strict size and MP4 checks. */
 export async function downloadFalVideoTaskOutput({outputUrl,fetchImpl=fetch,timeoutMs=60000,maxOutputBytes=MAX_OUTPUT_BYTES}={}){
