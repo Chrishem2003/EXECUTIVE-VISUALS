@@ -563,7 +563,7 @@ test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGT
  const source=join(directory,"source.mp4");
  const pidPath=join(directory,"ffprobe.pid");
  await writeFile(source,"fixture");
- const ffprobe=await executable(directory,"ffprobe",`if [ "$1" = "-version" ]; then exit 0; fi; printf '%s' "$" > "${pidPath}"; trap '' TERM; exec sleep 30`);
+ const ffprobe=await executable(directory,"ffprobe",`if [ "$1" = "-version" ]; then exit 0; fi; printf '%s' "$$" > "${pidPath}"; trap '' TERM; exec sleep 30`);
  const ffmpeg=await executable(directory,"ffmpeg","exit 0");
  const previousProbe=process.env.FFPROBE_PATH;
  process.env.FFPROBE_PATH=ffprobe;
