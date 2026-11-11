@@ -92,3 +92,48 @@ export function audioPanExpressions(points:readonly AudioAutomationPoint[]|undef
 export function decibelsToLinearGain(value:number):number{
  const db=clamp(Number.isFinite(value)?value:0,-60,24);return Math.pow(10,db/20);
 }
+
+export interface DialogueActivityRange {startSeconds:number;endSeconds:number;}
+export interface DialogueDuckingOptions {
+ musicStartSeconds:number;
+ musicDurationSeconds:number;
+ dialogueRanges:readonly DialogueActivityRange[];
+ baseGainDb?:number;
+ duckingDb?:number;
+ attackMs?:number;
+ releaseMs?:number;
+ existing?:readonly AudioAutomationPoint[];
+}
+/** Builds clip-relative gain keyframes from dialogue clip activity, preserving existing pan points. */
+export function buildDialogueDuckingAutomation(options:DialogueDuckingOptions):AudioAutomationPoint[]{
+ const {musicStartSeconds,musicDurationSeconds}=options;
+ if(!Number.isFinite(musicStartSeconds)||musicStartSeconds<0||!Number.isFinite(musicDurationSeconds)||musicDurationSeconds<=0)throw new Error("Music clip start and duration must be valid positive timeline values.");
+ const base=clamp(Number.isFinite(options.baseGainDb)?options.baseGainDb as number:0,-60,24);
+ const reduction=clamp(Number.isFinite(options.duckingDb)?options.duckingDb as number:-12,-36,0);
+ const attack=clamp(Number.isFinite(options.attackMs)?options.attackMs as number:120,0,5000)/1000;
+ const release=clamp(Number.isFinite(options.releaseMs)?options.releaseMs as number:350,0,10000)/1000;
+ const musicEnd=musicStartSeconds+musicDurationSeconds;
+ const ranges=options.dialogueRanges.map(range=>{
+  if(!range||!Number.isFinite(range.startSeconds)||!Number.isFinite(range.endSeconds)||range.startSeconds<0||range.endSeconds<=range.startSeconds)throw new Error("Dialogue activity ranges must have finite, positive timeline intervals.");
+  return {start:Math.max(musicStartSeconds,range.startSeconds),end:Math.min(musicEnd,range.endSeconds)};
+ }).filter(range=>range.end>range.start).sort((a,b)=>a.start-b.start);
+ const merged:Array<{start:number;end:number}>=[];
+ for(const range of ranges){const previous=merged[merged.length-1];if(previous&&range.start<=previous.end+release)previous.end=Math.max(previous.end,range.end);else merged.push({...range});}
+ const generated:AudioAutomationPoint[]=[];
+ const push=(time:number,gain:number)=>generated.push({timeSeconds:Number(clamp(time,0,musicDurationSeconds).toFixed(4)),gainDb:clamp(gain,-60,24),interpolation:"linear"});
+ for(const range of merged){
+  const start=range.start-musicStartSeconds,end=range.end-musicStartSeconds,target=clamp(base+reduction,-60,24);
+  if(start>0)push(start,base);else push(0,target);
+  const attackEnd=Math.min(end,start+attack);
+  if(attackEnd>start)push(attackEnd,target);
+  else if(start>0)push(start,target);
+  push(end,target);
+  if(end<musicDurationSeconds&&release>0)push(Math.min(musicDurationSeconds,end+release),base);
+  else if(end<musicDurationSeconds)push(end,base);
+ }
+ const unique=new Map<number,AudioAutomationPoint>();
+ for(const point of generated)unique.set(point.timeSeconds,point);
+ const panOnly=(options.existing??[]).filter(point=>point.pan!==undefined).map(point=>({timeSeconds:point.timeSeconds,pan:point.pan,interpolation:point.interpolation}));
+ for(const point of panOnly){const at=point.timeSeconds,existing=unique.get(at);unique.set(at,{...existing,...point});}
+ return normalizeAudioAutomation([...unique.values()]);
+}
