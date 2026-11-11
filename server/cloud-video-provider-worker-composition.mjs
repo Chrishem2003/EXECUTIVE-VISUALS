@@ -114,6 +114,31 @@ export function createProviderAwareCloudVideoWorkerComposition({
   )) {
     throw new Error("Google Omni requires both provider registration gates and both Gemini transport gates to be explicitly enabled.");
   }
+  const googleOmniAssertConnection = providerDependencies.googleOmniAssertConnection;
+  if (googleEnabled && env.GOOGLE_OMNI_CONNECTION_STATUS !== "connected") {
+    throw new Error("Google Omni remains gated until its external account connection is complete and verified.");
+  }
+  if (googleEnabled && typeof googleOmniAssertConnection !== "function") {
+    throw new Error("Google Omni requires a live connection verifier before any worker execution.");
+  }
+  async function assertGoogleOmniConnection(job, operation) {
+    let connection;
+    try {
+      connection = await googleOmniAssertConnection({
+        provider: "google", model: "gemini-omni-1.1-flash", job: job || null, operation
+      });
+    } catch {
+      throw Object.assign(new Error("Google Omni connection verification failed; remote execution remains blocked."),
+        { code: "GOOGLE_OMNI_CONNECTION_REQUIRED" });
+    }
+    if (!connection || connection.connected !== true || connection.verified !== true ||
+        typeof connection.connectionId !== "string" || !connection.connectionId.trim() ||
+        connection.connectionId.length > 200) {
+      throw Object.assign(new Error("Google Omni account connection is not verified for worker execution."),
+        { code: "GOOGLE_OMNI_CONNECTION_REQUIRED" });
+    }
+    return true;
+  }
   if (googleEnabled && !googleOmniIntegration) {
     const {
       googleOmniAssertApprovedSubmission,
@@ -206,10 +231,30 @@ export function createProviderAwareCloudVideoWorkerComposition({
     googleOmniIntegration
   })];
   if (googleOmniIntegration) {
+    const googleAdapter = googleOmniIntegration.adapter;
     adapters.push(Object.freeze({
-      ...googleOmniIntegration.adapter,
-      async ingestOutputs(args) { return googleOmniIntegration.ingestOutputs(args); },
-      async resolveActualCost(args) { return googleOmniIntegration.resolveActualCost(args); }
+      provider: googleAdapter.provider,
+      model: googleAdapter.model,
+      async prepareInput(input, context) {
+        await assertGoogleOmniConnection(context?.job, "prepare");
+        return googleAdapter.prepareInput(input, context);
+      },
+      async submit(input, context) {
+        await assertGoogleOmniConnection(context?.job, "submit");
+        return googleAdapter.submit(input, context);
+      },
+      async getStatus(taskId, context) {
+        await assertGoogleOmniConnection(context?.job, "poll");
+        return googleAdapter.getStatus(taskId, context);
+      },
+      async ingestOutputs(args) {
+        await assertGoogleOmniConnection(args?.job, "ingest");
+        return googleOmniIntegration.ingestOutputs(args);
+      },
+      async resolveActualCost(args) {
+        await assertGoogleOmniConnection(args?.job, "reconcile_cost");
+        return googleOmniIntegration.resolveActualCost(args);
+      }
     }));
   }
   if (!Array.isArray(adapters) || adapters.length < 1 || adapters.length > 100) {
