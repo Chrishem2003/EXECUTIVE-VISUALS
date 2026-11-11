@@ -2,10 +2,11 @@ import { evaluateAudioAutomation, type AudioAutomationPoint } from "./audio-auto
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
+export interface TimelineTransition { type:"dip-to-black"; fadeFrames:number }
 export interface TimelineClip {
   id:string; assetId:string; name:string; sourceRange:TimeRange;
   timelineStart:RationalTime; duration:RationalTime;
-  enabled:boolean; gainDb?:number; pan?:number; audioAutomation?:AudioAutomationPoint[]; speed?:number; metadata?:Record<string,unknown>;
+  enabled:boolean; gainDb?:number; pan?:number; audioAutomation?:AudioAutomationPoint[]; speed?:number; transitionToNext?:TimelineTransition; metadata?:Record<string,unknown>;
 }
 export interface TimelineTrack {
   id:string; name:string; kind:TrackKind; enabled:boolean; locked:boolean;
@@ -130,6 +131,13 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(!Number.isFinite(speed)||speed!==1)issues.push({code:"unsupported_speed",trackId:track.id,clipId:clip.id,message:"Clip speed changes are not supported until time remapping is implemented."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
       if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
+      if(clip.transitionToNext!==undefined){
+        const transition=clip.transitionToNext,next=[...track.clips].filter(item=>item.enabled).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart)).find(item=>seconds(item.timelineStart)>start+0.000001);
+        const fadeFrames=Number(transition?.fadeFrames),fps=timeline.frameRate.numerator/timeline.frameRate.denominator,clipFrames=Math.round(duration*fps);
+        if(track.kind!=="video"||transition?.type!=="dip-to-black"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black transitions require a positive integer fade length no longer than the outgoing clip."});
+        else if(!next||Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)issues.push({code:"transition_requires_adjacent_clip",trackId:track.id,clipId:clip.id,message:"A dip-to-black transition requires the next enabled video clip to begin immediately after this clip."});
+        else if(fadeFrames>Math.round(seconds(next.duration)*fps))issues.push({code:"transition_exceeds_incoming_clip",trackId:track.id,clipId:clip.id,message:"The transition fade cannot be longer than the incoming clip."});
+      }
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
       if(clip.audioAutomation!==undefined){try{const points=clip.audioAutomation;if(!Array.isArray(points)||points.length>256)throw new Error("Audio automation supports at most 256 keyframes per clip.");let previous=-1;for(const point of points){if(!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>duration)throw new Error("Audio automation keyframes must fall inside the clip duration.");if(point.timeSeconds<=previous)throw new Error("Audio automation keyframes must be sorted with unique times.");if(point.gainDb!==undefined&&(!Number.isFinite(point.gainDb)||point.gainDb< -60||point.gainDb>24))throw new Error("Automation gain must be between -60 and 24 dB.");if(point.pan!==undefined&&(!Number.isFinite(point.pan)||point.pan< -1||point.pan>1))throw new Error("Automation pan must be between -1 and 1.");if(point.gainDb===undefined&&point.pan===undefined)throw new Error("Automation keyframes require gain or pan.");previous=point.timeSeconds;}}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
@@ -152,6 +160,7 @@ export interface ActiveTimelineClip {
   timelineEndSeconds:number;
   sourceTimeSeconds:number;
   sourceFrame:number;
+  opacity:number;
 }
 export interface TimelineFrameEvaluation {
   frame:number;
@@ -174,6 +183,15 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
       const clipEnd=clipStart+seconds(clip.duration);
       if(timeSeconds<clipStart||timeSeconds>=clipEnd)continue;
       const sourceTimeSeconds=seconds(clip.sourceRange.start)+(timeSeconds-clipStart);
+      let opacity=1;
+      if(track.kind==="video"){
+        const fadeOut=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames/fps:0;
+        const orderedClips=track.clips.filter(item=>item.enabled).slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+        const index=orderedClips.findIndex(item=>item.id===clip.id),previous=orderedClips[index-1];
+        const fadeIn=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames/fps:0;
+        if(fadeIn>0&&timeSeconds<clipStart+fadeIn)opacity=Math.min(opacity,Math.max(0,(timeSeconds-clipStart)/fadeIn));
+        if(fadeOut>0&&timeSeconds>clipEnd-fadeOut)opacity=Math.min(opacity,Math.max(0,(clipEnd-timeSeconds)/fadeOut));
+      }
       activeClips.push({
         trackId:track.id,
         trackKind:track.kind,
@@ -185,7 +203,8 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
         timelineStartSeconds:clipStart,
         timelineEndSeconds:clipEnd,
         sourceTimeSeconds,
-        sourceFrame:sourceTimeSeconds*clip.sourceRange.start.rate
+        sourceFrame:sourceTimeSeconds*clip.sourceRange.start.rate,
+        opacity
       });
     }
   }
@@ -206,7 +225,7 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
         OTIO_SCHEMA:"Clip.2",name:clip.name,
         media_reference:{OTIO_SCHEMA:"ExternalReference.1",target_url:"asset://"+clip.assetId,available_range:otioRange(clip.sourceRange)},
         source_range:otioRange(clip.sourceRange),
-        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,pan:clip.pan??0,audioAutomation:clip.audioAutomation??[],speed:clip.speed??1,custom:clip.metadata??{}}}
+        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,pan:clip.pan??0,audioAutomation:clip.audioAutomation??[],speed:clip.speed??1,transitionToNext:clip.transitionToNext??null,custom:clip.metadata??{}}}
       });
       cursor=start+duration;
     }

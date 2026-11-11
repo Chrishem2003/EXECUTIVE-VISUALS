@@ -9,6 +9,39 @@ import { renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
 const time=(value)=>({value,rate:1});
+test("cloud FFmpeg renderer applies a frame-bounded dip-to-black transition between adjacent clips", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-transition-test-"));
+ try{
+  const red=join(root,"red.mp4"),green=join(root,"green.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=red:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",red]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=green:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",green]);
+  const timeline={name:"Transition test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[{id:"v",kind:"video",clips:[
+   {id:"v1",assetId:"red",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}},
+   {id:"v2",assetId:"green",timelineStart:time(1),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}
+  ]}]};
+  const assets=new Map([
+   ["red",{path:red,asset:{id:"red",mediaType:"video/mp4",originalName:"red.mp4"}}],
+   ["green",{path:green,asset:{id:"green",mediaType:"video/mp4",originalName:"green.mp4"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  assert.equal(result.render.transitions,1);
+  const pixels=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select='eq(n,23)+eq(n,24)+eq(n,30)',scale=1:1","-vsync","0","-frames:v","3","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]);
+  assert.equal(pixels.length,9);
+  const brightness=[0,1,2].map(index=>pixels[index*3]+pixels[index*3+1]+pixels[index*3+2]);
+  assert.ok(brightness[0]<60,"the outgoing clip should be almost black at the end of its fade");
+  assert.ok(brightness[1]<40,"the incoming clip should begin at black");
+  assert.ok(brightness[2]>100,"the incoming clip should reach full brightness after its fade");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test("cloud FFmpeg renderer rejects invalid dip-to-black transition metadata before materializing inputs",async()=>{
+ const timeline={frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[
+  {assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:0}},
+  {assetId:"v",timelineStart:time(1),duration:time(1),sourceRange:{start:time(1),duration:time(1)}}
+ ]}]};
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+});
+
 test("cloud FFmpeg renderer mixes audio and accepts automation beyond the picture tail", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-render-test-"));
  try{
@@ -66,6 +99,17 @@ test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
 });
 
+test("cloud FFmpeg renderer rejects transitions on non-video tracks",async()=>{
+ const timeline={tracks:[
+  {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+  {kind:"audio",clips:[{assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}}]}
+ ]};
+ const assets=new Map([
+  ["v",{path:"/not-used-video.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}],
+  ["a",{path:"/not-used-audio.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]
+ ]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+});
 test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
  const controller=new AbortController();controller.abort();
  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[]},assets:new Map(),workDir:tmpdir(),signal:controller.signal}),error=>error.code==="JOB_CANCELLED");

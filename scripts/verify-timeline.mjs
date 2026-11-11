@@ -80,6 +80,24 @@ assert.equal(previewFrame.activeClips[0].sourceFrame,60);
 assert.equal(evaluateTimelineAtFrame(previewTimeline,78).activeClips.length,0);
 assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,-1),/non-negative safe integer/);
 assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,1.5),/non-negative safe integer/);
+
+const transitionBase=createTimeline("project-transition","timeline-transition","Transition test",{numerator:24,denominator:1});
+let transitionTimeline=addTrack(transitionBase,{id:"transition-video",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
+transitionTimeline=addClip(transitionTimeline,"transition-video",{id:"transition-a",assetId:"asset-a",name:"Outgoing",sourceRange:{start:rational(0,24),duration:rational(48,24)},timelineStart:rational(0,24),duration:rational(48,24),enabled:true});
+transitionTimeline=addClip(transitionTimeline,"transition-video",{id:"transition-b",assetId:"asset-b",name:"Incoming",sourceRange:{start:rational(0,24),duration:rational(48,24)},timelineStart:rational(48,24),duration:rational(48,24),enabled:true});
+transitionTimeline.tracks[0].clips[0].transitionToNext={type:"dip-to-black",fadeFrames:12};
+assert.equal(validateTimeline(transitionTimeline).valid,true);
+assert.ok(Math.abs(evaluateTimelineAtFrame(transitionTimeline,42).activeClips[0].opacity-0.5)<0.001);
+assert.equal(evaluateTimelineAtFrame(transitionTimeline,48).activeClips[0].opacity,0);
+assert.ok(Math.abs(evaluateTimelineAtFrame(transitionTimeline,54).activeClips[0].opacity-0.5)<0.001);
+assert.equal(evaluateTimelineAtFrame(transitionTimeline,60).activeClips[0].opacity,1);
+const transitionOtio=toOpenTimelineIo(transitionTimeline);
+assert.ok(JSON.stringify(transitionOtio).includes('"type":"dip-to-black"'));
+const invalidTransition={...transitionTimeline,tracks:transitionTimeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>clip.id==="transition-b"?{...clip,timelineStart:rational(60,24)}:clip)}))};
+assert.ok(validateTimeline(invalidTransition).issues.some(issue=>issue.code==="transition_requires_adjacent_clip"));
+const nonVideoTransition={...transitionTimeline,tracks:transitionTimeline.tracks.map(track=>({...track,kind:"audio"}))};
+assert.ok(validateTimeline(nonVideoTransition).issues.some(issue=>issue.code==="invalid_transition"));
+
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
 
