@@ -328,7 +328,7 @@ function trackCustomerSuccessEvent(eventType:"session_started"|"workspace_opened
 async function loadBillingWorkspace(){
  billingState.loading=true;billingState.error="";render();
  try{
-  const [subscription,plans,transactions,invoices,notifications,loyalty,referrals,success]=await Promise.all([
+  const results=await Promise.allSettled([
    apiRequest<{subscription:BillingSubscription|null}>("/api/billing/subscription"),
    apiRequest<{plans:BillingPlan[]}>("/api/billing/plans"),
    apiRequest<{transactions:Array<Record<string,unknown>>}>("/api/billing/transactions?limit=20"),
@@ -338,11 +338,30 @@ async function loadBillingWorkspace(){
    apiRequest<{referrals:{code:string|null;codeStatus:string;referrals:Array<Record<string,unknown>>;rewardsEarned:number;offer:Record<string,unknown>|null}}>("/api/billing/referrals"),
    apiRequest<{success:{progress:Array<Record<string,unknown>>;milestones:Array<Record<string,unknown>>;points:number;completedCount:number;totalCount:number}}>("/api/customer-success/me")
   ]);
-  billingState.subscription=subscription.subscription;billingState.plans=plans.plans||[];
-  billingState.transactions=transactions.transactions||[];billingState.invoices=invoices.invoices||[];
-  billingState.notifications=notifications.notifications||[];billingState.loyalty=loyalty.loyalty||{rewards:[],events:[],creditBalance:0,offer:null};billingState.referrals=referrals.referrals||{code:null,codeStatus:"",referrals:[],rewardsEarned:0,offer:null};billingState.success=success.success||{progress:[],milestones:[],points:0,completedCount:0,totalCount:0};
-  billingState.events=billingState.subscription?(await apiRequest<{events:Array<Record<string,unknown>>}>("/api/billing/subscription/events?subscriptionId="+encodeURIComponent(billingState.subscription.id))).events||[]:[];
- }catch(error){billingState.error=error instanceof Error?error.message:"Could not load billing records. Sign in again and retry.";}
+  const unavailable:string[]=[];
+  const [subscription,plans,transactions,invoices,notifications,loyalty,referrals,success]=results;
+  if(subscription.status==="fulfilled")billingState.subscription=subscription.value.subscription;else unavailable.push("subscription");
+  if(plans.status==="fulfilled")billingState.plans=plans.value.plans||[];else unavailable.push("plans");
+  if(transactions.status==="fulfilled")billingState.transactions=transactions.value.transactions||[];else unavailable.push("payment history");
+  if(invoices.status==="fulfilled")billingState.invoices=invoices.value.invoices||[];else unavailable.push("invoices");
+  if(notifications.status==="fulfilled")billingState.notifications=notifications.value.notifications||[];else unavailable.push("notifications");
+  if(loyalty.status==="fulfilled")billingState.loyalty=loyalty.value.loyalty||{rewards:[],events:[],creditBalance:0,offer:null};else unavailable.push("creator rewards");
+  if(referrals.status==="fulfilled")billingState.referrals=referrals.value.referrals||{code:null,codeStatus:"",referrals:[],rewardsEarned:0,offer:null};else unavailable.push("referrals");
+  if(success.status==="fulfilled")billingState.success=success.value.success||{progress:[],milestones:[],points:0,completedCount:0,totalCount:0};else unavailable.push("creator progress");
+  if(subscription.status==="fulfilled"){
+   if(billingState.subscription){
+    try{
+     const activity=await apiRequest<{events:Array<Record<string,unknown>>}>("/api/billing/subscription/events?subscriptionId="+encodeURIComponent(billingState.subscription.id));
+     billingState.events=activity.events||[];
+    }catch{unavailable.push("subscription activity");}
+   }else billingState.events=[];
+  }
+  billingState.error=unavailable.length
+   ?"Some billing information could not be refreshed: "+unavailable.join(", ")+". Previously loaded records are retained."
+   :"";
+ }catch(error){
+  billingState.error=error instanceof Error?error.message:"Could not load billing records. Sign in again and retry.";
+ }
  finally{billingState.loading=false;if(state.tab==="billing")render();}
 }
 async function manageBilling(action:string,planCode=""){
