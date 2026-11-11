@@ -1,5 +1,5 @@
 const SCHEMA="executive_visuals";
-const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task_v2","transition_video_generation_task_v2","claim_video_generation_cancellations"]);
+const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task_v2","transition_video_generation_task_v2","transition_video_generation_task_reconciliation_v1","claim_video_generation_cancellations"]);
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function baseUrl(value){
  let url;try{url=new URL(value);}catch{throw new Error("Cloud video repository URL must be an absolute URL.");}
@@ -102,6 +102,12 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
   markFailed(id,value={},lease={}){return this.transition({id,...lease,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
   markCancellationRequested(id,value={},lease={}){return this.transition({id,...lease,from:["reserved","submitted","processing","cancel_requested"],to:"cancel_requested",providerStatus:value.providerStatus||"CANCEL_REQUESTED"});},
   markCancelled(id,value={},lease={}){return this.transition({id,...lease,from:["reserved","submitted","processing","cancel_requested"],to:"cancelled",providerStatus:value.providerStatus||"CANCELLED"});},
+  async markCancelledByReconciler(id,value={},workerId){
+   if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128)throw fail("Cancellation reconciler worker ID is invalid.","VIDEO_TASK_QUERY_INVALID");
+   const rows=await rpc("transition_video_generation_task_reconciliation_v1",{p_task_id:id,p_worker_id:workerId,p_from_states:["reserved","submitted","processing","cancel_requested"],p_to_state:"cancelled",p_provider_status:value.providerStatus||"CANCELLED"});
+   if(rows.length!==1)throw fail("Cancellation reconciliation transition was not confirmed.","VIDEO_TASK_TRANSITION_FAILED");
+   return taskRow(rows[0]);
+  },
   markSucceeded(id,value={},lease={}){return this.transition({id,...lease,from:["submitted","processing"],to:"succeeded",providerTaskId:value.providerTaskId,outputAssetId:value.asset?.id||null});}
  });
  return Object.freeze({approvals,tasks});
