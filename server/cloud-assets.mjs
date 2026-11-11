@@ -189,6 +189,7 @@ export function createCloudAssetRepository({
         object_path:uploaded.path,derivative_of:derivativeOf,metadata
       };
       try{
+        await verifyLease();
         const asset=await finalize(candidate);
         if(asset.objectPath!==uploaded.path){
           try{await storage.remove(uploaded.path);}catch{return {...asset,cleanupPending:true};}
