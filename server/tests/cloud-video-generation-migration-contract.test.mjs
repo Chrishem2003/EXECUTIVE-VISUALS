@@ -70,5 +70,7 @@ test("cloud video job cancellation is restricted to the authenticated owner and 
 test("cloud job cancellation marks its durable provider tasks for reconciliation without assuming submission success",()=>{
  assert.match(cancellationSql,/update executive_visuals\.video_generation_tasks t[\s\S]*?set state='cancel_requested'[\s\S]*?provider_status='CANCEL_REQUESTED'/i);
  assert.match(cancellationSql,/t\.approval_id=approval_key and t\.owner_id=p_owner_id/i);
+ assert.match(cancellationSql,/t\.shot_index=shot_key/i);
+ assert.match(cancellationSql,/shot_key:=nullif\(existing\.input->>'shotIndex'/i);
  assert.match(cancellationSql,/t\.state in \('reserved','submitting','submission_unknown','submitted','processing'\)/i);
 });
