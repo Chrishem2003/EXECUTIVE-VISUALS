@@ -1,5 +1,5 @@
 const SCHEMA="executive_visuals";
-const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task","transition_video_generation_task","claim_video_generation_cancellations"]);
+const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task_v2","transition_video_generation_task_v2","claim_video_generation_cancellations"]);
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function baseUrl(value){
  let url;try{url=new URL(value);}catch{throw new Error("Cloud video repository URL must be an absolute URL.");}
@@ -81,24 +81,28 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
    const rows=await rpc("claim_video_generation_cancellations",{p_worker_id:workerId,p_limit:limit,p_lease_seconds:60});
    return rows.map(taskRow);
   },
-  async reserveSubmission({approvalId,shotIndex,ownerId,projectId,requestHash,currency,estimatedCostMicros}={}){
-   const rows=await rpc("reserve_video_generation_task",{p_approval_id:approvalId,p_shot_index:shotIndex,p_owner_id:ownerId,p_project_id:projectId,p_request_hash:requestHash,p_currency:currency,p_estimated_cost_micros:estimatedCostMicros});
+  async reserveSubmission({jobId,workerId,leaseToken,approvalId,shotIndex,ownerId,projectId,requestHash,currency,estimatedCostMicros}={}){
+   if(typeof jobId!=="string"||!jobId||typeof workerId!=="string"||!workerId.trim()||typeof leaseToken!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseToken))
+    throw fail("Video task reservation requires a valid current worker lease.","VIDEO_WORKER_LEASE_LOST");
+   const rows=await rpc("reserve_video_generation_task_v2",{p_job_id:jobId,p_worker_id:workerId,p_lease_token:leaseToken,p_approval_id:approvalId,p_shot_index:shotIndex,p_owner_id:ownerId,p_project_id:projectId,p_request_hash:requestHash,p_currency:currency,p_estimated_cost_micros:estimatedCostMicros});
    if(rows.length!==1)throw fail("Atomic video task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
    return taskRow(rows[0]);
   },
-  async transition({id,from,to,providerTaskId=null,provider="runway",model=null,estimatedCostCredits=null,providerStatus=null,error=null,outputAssetId=null}={}){
-   const rows=await rpc("transition_video_generation_task",{p_task_id:id,p_from_states:from,p_to_state:to,p_provider_task_id:providerTaskId,p_provider:provider,p_model:model,p_estimated_cost_credits:estimatedCostCredits,p_provider_status:providerStatus,p_error:error,p_output_asset_id:outputAssetId});
+  async transition({id,jobId,workerId,leaseToken,from,to,providerTaskId=null,provider="runway",model=null,estimatedCostCredits=null,providerStatus=null,error=null,outputAssetId=null}={}){
+   if(typeof jobId!=="string"||!jobId||typeof workerId!=="string"||!workerId.trim()||typeof leaseToken!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseToken))
+    throw fail("Video task transition requires a valid current worker lease.","VIDEO_WORKER_LEASE_LOST");
+   const rows=await rpc("transition_video_generation_task_v2",{p_job_id:jobId,p_worker_id:workerId,p_lease_token:leaseToken,p_task_id:id,p_from_states:from,p_to_state:to,p_provider_task_id:providerTaskId,p_provider:provider,p_model:model,p_estimated_cost_credits:estimatedCostCredits,p_provider_status:providerStatus,p_error:error,p_output_asset_id:outputAssetId});
    if(rows.length!==1)throw fail("Durable video task transition was not confirmed.","VIDEO_TASK_TRANSITION_FAILED");
    return taskRow(rows[0]);
   },
-  markSubmitting(id){return this.transition({id,from:["reserved"],to:"submitting"});},
-  markSubmitted(id,value={}){return this.transition({id,from:["submitting"],to:"submitted",providerTaskId:value.providerTaskId,provider:value.provider||"runway",model:value.model,estimatedCostCredits:value.estimatedCostCredits});},
-  markSubmissionUnknown(id,value={}){return this.transition({id,from:["submitting"],to:"submission_unknown",error:{code:value.code||"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"}});},
-  markProcessing(id,value={}){return this.transition({id,from:["submitted","processing"],to:"processing",providerStatus:value.providerStatus});},
-  markFailed(id,value={}){return this.transition({id,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
-  markCancellationRequested(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancel_requested",providerStatus:value.providerStatus||"CANCEL_REQUESTED"});},
-  markCancelled(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancelled",providerStatus:value.providerStatus||"CANCELLED"});},
-  markSucceeded(id,value={}){return this.transition({id,from:["submitted","processing"],to:"succeeded",providerTaskId:value.providerTaskId,outputAssetId:value.asset?.id||null});}
+  markSubmitting(id,lease={}){return this.transition({id,...lease,from:["reserved"],to:"submitting"});},
+  markSubmitted(id,value={},lease={}){return this.transition({id,...lease,from:["submitting"],to:"submitted",providerTaskId:value.providerTaskId,provider:value.provider||"runway",model:value.model,estimatedCostCredits:value.estimatedCostCredits});},
+  markSubmissionUnknown(id,value={},lease={}){return this.transition({id,...lease,from:["submitting"],to:"submission_unknown",error:{code:value.code||"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"}});},
+  markProcessing(id,value={},lease={}){return this.transition({id,...lease,from:["submitted","processing"],to:"processing",providerStatus:value.providerStatus});},
+  markFailed(id,value={},lease={}){return this.transition({id,...lease,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
+  markCancellationRequested(id,value={},lease={}){return this.transition({id,...lease,from:["reserved","submitted","processing","cancel_requested"],to:"cancel_requested",providerStatus:value.providerStatus||"CANCEL_REQUESTED"});},
+  markCancelled(id,value={},lease={}){return this.transition({id,...lease,from:["reserved","submitted","processing","cancel_requested"],to:"cancelled",providerStatus:value.providerStatus||"CANCELLED"});},
+  markSucceeded(id,value={},lease={}){return this.transition({id,...lease,from:["submitted","processing"],to:"succeeded",providerTaskId:value.providerTaskId,outputAssetId:value.asset?.id||null});}
  });
  return Object.freeze({approvals,tasks});
 }
