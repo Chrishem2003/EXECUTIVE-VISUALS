@@ -6,6 +6,7 @@ type JobRow={id:string;email:string;jobType:string;status:string;progress:number
 type ProviderRow={id:string;provider:string;status:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;reason:string;capabilities:string[]};
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
 type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string};
+let refreshSequence=0;
 const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
 export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
@@ -37,6 +38,7 @@ export function renderAdminOperationsWorkspace(){
  '<div class="admin-ops-links"><button class="secondary" data-tab="finance">Open financial command centre</button><button class="secondary" data-tab="readiness">Open release readiness</button><button class="secondary" data-tab="engines">Open creative engines</button></div>';
 }
 export async function loadAdminOperationsWorkspace(){
+ const requestId=++refreshSequence;
  state.loading=true;state.error="";paint();
  try{
   const coreResults=await Promise.allSettled([
@@ -47,6 +49,7 @@ export async function loadAdminOperationsWorkspace(){
    apiRequest<{events:AuditRow[]}>("/api/admin/operations/audit?limit=100")
   ]);
   const [overviewResult,usersResult,jobsResult,providersResult,auditResult]=coreResults;
+  if(requestId!==refreshSequence)return;
   const unavailable:string[]=[];
   if(overviewResult.status==="fulfilled")state.overview=overviewResult.value.overview;else unavailable.push("overview");
   if(usersResult.status==="fulfilled")state.users=usersResult.value.users;else unavailable.push("account directory");
@@ -59,6 +62,7 @@ export async function loadAdminOperationsWorkspace(){
    apiRequest<any>("/api/admin/billing/recovery?limit=50")
   ]);
   const [providerBilling,subscriptionReconciliation,billingRecovery]=billingResults;
+  if(requestId!==refreshSequence)return;
   const billingUnavailable:string[]=[];
   if(providerBilling.status==="fulfilled")state.billingOps.provider=providerBilling.value;else billingUnavailable.push("provider readiness");
   if(subscriptionReconciliation.status==="fulfilled")state.billingOps.reconciliation=subscriptionReconciliation.value;else billingUnavailable.push("subscription reconciliation");
@@ -75,8 +79,8 @@ export async function loadAdminOperationsWorkspace(){
   state.error=refreshUnavailable.length
    ?"Partial refresh: "+refreshUnavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
    :"";
- }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";}
- finally{state.loading=false;paint();}
+ }catch(error){if(requestId===refreshSequence)state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";}
+ finally{if(requestId===refreshSequence){state.loading=false;paint();}}
 }
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.adminOperations==="true")view.innerHTML=renderAdminOperationsWorkspace();}
 export function initAdminOperationsWorkspace(){
