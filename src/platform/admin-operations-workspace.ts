@@ -33,7 +33,7 @@ export function renderAdminOperationsWorkspace(){
  (state.jobs.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Job</th><th>Account</th><th>Type</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Created</th></tr></thead><tbody>'+state.jobs.map(j=>'<tr><td><code>'+esc(j.id.slice(0,12))+'</code></td><td>'+esc(j.email)+'</td><td>'+esc(j.jobType)+'</td><td><span class="readiness-pill '+statusClass(j.status)+'">'+esc(j.status)+'</span></td><td>'+Math.max(0,Math.min(100,Number(j.progress)||0))+'%</td><td>'+j.attempts+'</td><td>'+esc(date(j.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty">No processing jobs found.</div>')+'</section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">GOVERNANCE</div><h2>Recent audit activity</h2></div><span class="muted">'+state.audit.length+' shown</span></div>'+
  (state.audit.length?'<div class="admin-ops-audit">'+state.audit.map(e=>'<article><b>'+esc(e.eventType.replaceAll("_"," "))+'</b><small>'+esc(e.email)+' · '+esc(e.subjectType)+' '+esc(e.subjectId)+'</small><time>'+esc(date(e.createdAt))+'</time></article>').join("")+'</div>':'<div class="empty">No audit activity recorded.</div>')+'</section>'+
- '<footer class="admin-ops-footer">Last refreshed: '+esc(state.updatedAt||"Not yet")+'. Runtime: '+esc(o?.runtime.authMode||"unknown")+'. Storage: '+esc(o?.runtime.dataPersistence||"unknown")+'. '+(o?.runtime.persistentDataRequired?"Persistent storage is required by configuration.":"Persistent storage is not enforced by configuration.")+'</footer>'+
+ '<footer class="admin-ops-footer">Last fully successful refresh: '+esc(state.updatedAt||"Not yet")+'. Runtime: '+esc(o?.runtime.authMode||"unknown")+'. Storage: '+esc(o?.runtime.dataPersistence||"unknown")+'. '+(o?.runtime.persistentDataRequired?"Persistent storage is required by configuration.":"Persistent storage is not enforced by configuration.")+'</footer>'+
  '<div class="admin-ops-links"><button class="secondary" data-tab="finance">Open financial command centre</button><button class="secondary" data-tab="readiness">Open release readiness</button><button class="secondary" data-tab="engines">Open creative engines</button></div>';
 }
 export async function loadAdminOperationsWorkspace(){
@@ -67,7 +67,7 @@ export async function loadAdminOperationsWorkspace(){
    recovery:billingRecovery.status==="fulfilled"?billingRecovery.value:null,
    message:billingSuccess===0?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role.":billingSuccess<3?"Some billing operations are unavailable; verify the billing API and administrator role.":""
   };
-  state.updatedAt=new Date().toISOString();
+  if(unavailable.length===0)state.updatedAt=new Date().toISOString();
   state.error=unavailable.length
    ?"Partial refresh: "+unavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
    :"";
