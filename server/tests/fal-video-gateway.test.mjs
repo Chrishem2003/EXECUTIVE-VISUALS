@@ -124,3 +124,11 @@ test("FAL cancels oversized generated-video downloads from Content-Length before
  try{await assert.rejects(()=>generateFalVideo({prompt:"A cinematic shot"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(cancelled,true);}
  finally{globalThis.fetch=original;restore();}
 });
+
+test("FAL cancels non-success API response bodies before parsing",async()=>{
+ const original=globalThis.fetch;let cancelled=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:429,ok:false,headers:new Headers(),body:{cancel:async()=>{cancelled=true;}}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_RATE_LIMITED");assert.equal(cancelled,true);}
+ finally{globalThis.fetch=original;restore();}
+});
