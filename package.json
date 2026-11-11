@@ -73,7 +73,8 @@
     "verify:video-generation-approval": "node --test server/tests/video-generation-approval.test.mjs",
     "verify:runway-durable-tasks": "node --test server/tests/runway-video-gateway.test.mjs",
     "verify:cloud-video-generation": "node --test server/tests/cloud-video-generation-dispatch.test.mjs server/tests/cloud-video-generation-executor.test.mjs server/tests/cloud-video-generation-migration-contract.test.mjs server/tests/cloud-video-generation-repositories.test.mjs server/tests/cloud-video-generation-dispatch-route.test.mjs server/tests/cloud-video-generation-worker.test.mjs server/tests/cloud-worker-process.test.mjs server/tests/video-generation-approval.test.mjs",
-    "verify:upscale-review-package": "node --test --test-reporter=spec server/tests/upscale-review-package.test.mjs"
+    "verify:upscale-review-package": "node --test --test-reporter=spec server/tests/upscale-review-package.test.mjs",
+    "review:upscale": "node server/scripts/create-upscale-review-package.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
