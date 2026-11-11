@@ -66,9 +66,9 @@ export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
 
 export function parseTemporalLumaSamples(stderr=""){
  const samples=[];
- for(const block of String(stderr||"").split(/(?=frame:\\s*\\d+\\s+pts:)/g)){
-  const frame=block.match(/frame:\\s*(\\d+)\\s+pts:\\s*(-?\\d+)\\s+pts_time:\\s*(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))/);
-  const read=key=>{const match=block.match(new RegExp("lavfi\\\\.signalstats\\\\."+key+"\\\\s*=\\\\s*(-?(?:\\\\d+(?:\\\\.\\\\d*)?|\\\\.\\\\d+))"));return match?Number(match[1]):null;};
+ for(const block of String(stderr||"").split(/(?=frame:\s*\d+\s+pts:)/g)){
+  const frame=block.match(/frame:\s*(\d+)\s+pts:\s*(-?\d+)\s+pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const read=key=>{const match=block.match(new RegExp("lavfi\\.signalstats\\."+key+"\\s*=\\s*(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))"));return match?Number(match[1]):null;};
   const meanLuma=read("YAVG");
   if(!frame||!Number.isFinite(meanLuma)||meanLuma<0||meanLuma>255)continue;
   const sample={frame:Number(frame[1]),pts:Number(frame[2]),timeSeconds:Number(frame[3]),meanLuma};
