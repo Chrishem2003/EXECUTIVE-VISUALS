@@ -169,8 +169,8 @@ export function buildDialogueDuckingAutomation(options:DialogueDuckingOptions):A
  const push=(time:number,gain:number)=>generated.push({timeSeconds:Number(clamp(time,0,musicDurationSeconds).toFixed(4)),gainDb:clamp(gain,-60,24),interpolation:"linear"});
  for(const range of merged){
   const start=range.start-musicStartSeconds,end=range.end-musicStartSeconds,target=clamp(base+reduction,-60,24);
-  if(start>0)push(start,base);else push(0,attack>0&&!range.alreadyActiveAtMusicStart?base:target);
-  const attackEnd=Math.min(end,start+(range.alreadyActiveAtMusicStart?0:attack));
+  if(start>0)push(start,base);else push(0,range.alreadyActiveAtMusicStart?target:(attack>0?base:target));
+  const attackEnd=Math.min(end,start+attack);
   if(attackEnd>start)push(attackEnd,target);
   else if(start>0)push(start,target);
   push(end,target);
