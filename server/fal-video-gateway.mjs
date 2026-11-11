@@ -100,7 +100,7 @@ export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,
 export async function cancelFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
  const {key}=falWorkerConfig(model);
  const response=await jsonRequest(falTaskUrl(model,taskId,"/cancel"),{method:"PUT",headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
- const status=String(response.status||"");
+ const status=String(response.__httpStatus===404?"NOT_FOUND":response.status||"");
  if(!["OK","CANCELLATION_REQUESTED","ALREADY_COMPLETED","NOT_FOUND"].includes(status))
   throw fail("Fal returned an unknown cancellation state.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return {taskId,status};
