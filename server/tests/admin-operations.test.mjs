@@ -150,7 +150,7 @@ test("administrator readiness recognizes Runway and Fal durable cloud worker ada
 test("administrator queue health reports stale leases and oldest outstanding work without mutating jobs",()=>{
  const db=fakeDb();
  const result=getAdminOperationsOverview(db,{now:Date.parse("2026-11-11T12:00:00Z")});
- const queueQuery=db.calls.find(call=>call.sql.includes("FROM jobs"));
+ const queueQuery=db.calls.find(call=>call.sql.includes("SUM(CASE WHEN status='queued'"));
  assert.ok(queueQuery);
  assert.match(queueQuery.sql,/lease_expires_at/);
  assert.match(queueQuery.sql,/MIN\(CASE WHEN status='queued'/);
