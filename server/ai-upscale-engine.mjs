@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { inflateSync } from "node:zlib";
 import { mkdtemp, rm } from "node:fs/promises";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]);
@@ -233,20 +234,173 @@ async function readImageDimensions(path) {
   } finally { await handle.close(); }
 }
 
-async function validateImageOutput(path, format) {
-  const handle = await open(path, "r");
+const PNG_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let value = n;
+    for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    table[n] = value >>> 0;
+  }
+  return table;
+})();
+function updatePngCrc(crc, bytes) {
+  for (const byte of bytes) crc = PNG_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return crc >>> 0;
+}
+async function readExact(handle, length, position) {
+  const buffer = Buffer.alloc(length);
+  let read = 0;
+  while (read < length) {
+    const result = await handle.read(buffer, read, length - read, position + read);
+    if (!result.bytesRead) throw fail("AI upscaling PNG output is truncated.", "AI_UPSCALE_OUTPUT_INVALID");
+    read += result.bytesRead;
+  }
+  return buffer;
+}
+function pngInterlacePasses(width, height, interlace) {
+  if (interlace === 0) return [{ width, height }];
+  const starts = [[0,0],[4,0],[0,4],[2,0],[0,2],[1,0],[0,1]];
+  const steps = [[8,8],[8,8],[4,8],[4,4],[2,4],[2,2],[1,2]];
+  return starts.map(([x,y], index) => {
+    const [dx,dy] = steps[index];
+    return {
+      width: width > x ? Math.ceil((width - x) / dx) : 0,
+      height: height > y ? Math.ceil((height - y) / dy) : 0
+    };
+  });
+}
+
+async function validatePngFile(path, maxBytes) {
+  const before = await lstat(path).catch(() => null);
+  if (!before?.isFile() || before.isSymbolicLink()) throw fail("AI upscaling output must be a regular, non-symlink PNG file.", "AI_UPSCALE_OUTPUT_INVALID");
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.isSymbolicLink() || info.dev !== before.dev || info.ino !== before.ino ||
+        info.size !== before.size || info.size < 57 || info.size > maxBytes) {
+      throw fail("AI upscaling PNG output changed during validation or is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
+    const signature = await readExact(handle, 8, 0);
+    if (!signature.equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw fail("AI upscaling output has an invalid PNG signature.", "AI_UPSCALE_OUTPUT_INVALID");
+    let offset = 8, index = 0, width = 0, height = 0, bitDepth = 0, colorType = -1, ihdrInterlace = 0;
+    let hasIdat = false, idatBytes = 0, idatEnded = false, hasPlte = false, hasIend = false;
+    const critical = new Set(["IHDR", "PLTE", "IDAT", "IEND"]);
+    const idatParts = [];
+    while (offset < info.size) {
+      if (info.size - offset < 12) throw fail("AI upscaling PNG output has a truncated chunk.", "AI_UPSCALE_OUTPUT_INVALID");
+      const header = await readExact(handle, 8, offset);
+      const length = header.readUInt32BE(0), typeBytes = header.subarray(4, 8), type = typeBytes.toString("ascii");
+      if (length > 0x7fffffff || length > info.size - offset - 12) throw fail("AI upscaling PNG chunk exceeds its file boundary.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (![...typeBytes].every(byte => (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)) || (typeBytes[2] & 0x20) !== 0) {
+        throw fail("AI upscaling PNG contains an invalid chunk type.", "AI_UPSCALE_OUTPUT_INVALID");
+      }
+      if (index === 0 && (type !== "IHDR" || length !== 13)) throw fail("AI upscaling PNG must begin with IHDR.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (index > 0 && type === "IHDR") throw fail("AI upscaling PNG contains duplicate IHDR chunks.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (hasIend) throw fail("AI upscaling PNG contains data after IEND.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (hasIdat && type !== "IDAT") idatEnded = true;
+      if (type === "IDAT" && idatEnded) throw fail("AI upscaling PNG IDAT chunks are not consecutive.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (type === "PLTE") {
+        if (hasPlte || hasIdat || colorType === 0 || colorType === 4 || length < 3 || length > 768 || length % 3 !== 0) {
+          throw fail("AI upscaling PNG has an invalid PLTE chunk.", "AI_UPSCALE_OUTPUT_INVALID");
+        }
+        if (colorType === 3 && length / 3 > 2 ** bitDepth) throw fail("AI upscaling PNG palette exceeds its bit depth.", "AI_UPSCALE_OUTPUT_INVALID");
+        hasPlte = true;
+      }
+      if ((typeBytes[0] & 0x20) === 0 && !critical.has(type)) throw fail("AI upscaling PNG contains an unsupported critical chunk.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (type === "IEND" && (length !== 0 || !hasIdat || idatBytes === 0)) throw fail("AI upscaling PNG is missing image data or has an invalid IEND.", "AI_UPSCALE_OUTPUT_INVALID");
+      let crc = updatePngCrc(0xffffffff, typeBytes), dataOffset = offset + 8, remaining = length;
+      const ihdr = type === "IHDR" ? Buffer.alloc(13) : null;
+      let copied = 0;
+      while (remaining > 0) {
+        const size = Math.min(64 * 1024, remaining), bytes = await readExact(handle, size, dataOffset);
+        crc = updatePngCrc(crc, bytes);
+        if (ihdr) { bytes.copy(ihdr, copied); copied += bytes.length; }
+        dataOffset += size; remaining -= size;
+      }
+      const storedCrc = (await readExact(handle, 4, dataOffset)).readUInt32BE(0);
+      if (((crc ^ 0xffffffff) >>> 0) !== storedCrc) throw fail("AI upscaling PNG contains an invalid chunk CRC.", "AI_UPSCALE_OUTPUT_INVALID");
+      if (type === "IHDR") {
+        width = ihdr.readUInt32BE(0); height = ihdr.readUInt32BE(4);
+        bitDepth = ihdr[8]; colorType = ihdr[9]; ihdrInterlace = ihdr[12];
+        const depths = ({0:[1,2,4,8,16],2:[8,16],3:[1,2,4,8],4:[8,16],6:[8,16]})[colorType] || [];
+        if (!width || !height || width > 0x7fffffff || height > 0x7fffffff ||
+            !depths.includes(bitDepth) || ihdr[10] !== 0 || ihdr[11] !== 0 || ![0,1].includes(ihdr[12])) {
+          throw fail("AI upscaling PNG has invalid dimensions or IHDR fields.", "AI_UPSCALE_OUTPUT_INVALID");
+        }
+      }
+      if (type === "IDAT") { hasIdat = true; idatBytes += length; idatParts.push(await readExact(handle, length, offset + 8)); }
+      if (type === "IEND") {
+        if (colorType === 3 && !hasPlte) throw fail("AI upscaling indexed PNG is missing PLTE.", "AI_UPSCALE_OUTPUT_INVALID");
+        hasIend = true;
+        if (dataOffset + 4 !== info.size) throw fail("AI upscaling PNG contains trailing bytes after IEND.", "AI_UPSCALE_OUTPUT_INVALID");
+      }
+      offset = dataOffset + 4; index++;
+    }
+    if (!hasIend || !hasIdat || offset !== info.size) throw fail("AI upscaling PNG output is incomplete.", "AI_UPSCALE_OUTPUT_INVALID");
+
+    // Validate the complete concatenated IDAT zlib stream and each decoded
+    // scanline. Bound decompression independently from the compressed file size.
+    const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 })[colorType];
+    const bitsPerPixel = channels * bitDepth;
+    const passes = pngInterlacePasses(width, height, ihdrInterlace);
+    let expectedBytes = 0;
+    const scanlinePasses = [];
+    for (const pass of passes) {
+      if (!pass.width || !pass.height) continue;
+      const rowBytes = Math.ceil(pass.width * bitsPerPixel / 8);
+      expectedBytes += pass.height * (rowBytes + 1);
+      scanlinePasses.push({ rows: pass.height, rowBytes });
+    }
+    const MAX_PNG_DECODE_BYTES = 128 * 1024 * 1024;
+    if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 1 || expectedBytes > MAX_PNG_DECODE_BYTES) {
+      throw fail("AI upscaling PNG decoded image exceeds the safe validation budget.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
+    let decoded;
+    try {
+      const compressed = Buffer.concat(idatParts, idatBytes);
+      const inflated = inflateSync(compressed, { maxOutputLength: expectedBytes + 1, info: true });
+      decoded = inflated.buffer;
+      if (inflated.engine.bytesWritten !== compressed.length) {
+        throw fail("AI upscaling PNG image data contains trailing bytes after its zlib stream.", "AI_UPSCALE_OUTPUT_INVALID");
+      }
+    } catch (error) {
+      if (error.code === "AI_UPSCALE_OUTPUT_INVALID") throw error;
+      throw fail("AI upscaling PNG image data is not a valid bounded zlib/DEFLATE stream.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
+    if (decoded.length !== expectedBytes) {
+      throw fail("AI upscaling PNG decoded scanline length does not match its dimensions.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
+    let scanOffset = 0;
+    for (const pass of scanlinePasses) {
+      for (let row = 0; row < pass.rows; row++) {
+        if (decoded[scanOffset] > 4) throw fail("AI upscaling PNG contains an invalid scanline filter.", "AI_UPSCALE_OUTPUT_INVALID");
+        scanOffset += pass.rowBytes + 1;
+      }
+    }
+    return { width, height };
+  } finally { await handle.close().catch(() => {}); }
+}
+
+async function validateImageOutput(path, format, maxBytes) {
+  if (format === "png") return validatePngFile(path, maxBytes);
+  const before = await lstat(path).catch(() => null);
+  if (!before?.isFile() || before.isSymbolicLink()) throw fail("AI upscaling output must be a regular, non-symlink image file.", "AI_UPSCALE_OUTPUT_INVALID");
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.isSymbolicLink() || info.dev !== before.dev || info.ino !== before.ino ||
+        info.size !== before.size || info.size < 24 || info.size > maxBytes) {
+      throw fail("AI upscaling image changed during validation or is empty, incomplete or oversized.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
     const header = Buffer.alloc(MAX_IMAGE_HEADER_BYTES);
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
     const bytes = header.subarray(0, bytesRead);
-    const valid = format === "png"
-      ? bytes.length >= 24 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR"
-      : format === "jpg"
-        ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-        : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
+    const valid = format === "jpg"
+      ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
     if (!valid) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
     return dimensionsFromHeader(bytes);
-  } finally { await handle.close(); }
+  } finally { await handle.close().catch(() => {}); }
 }
 
 export function createRealEsrganAdapter({
@@ -361,7 +515,7 @@ export function createRealEsrganAdapter({
       }
       const info = await stat(output).catch(() => null);
       if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-      const outputDimensions = await validateImageOutput(output, prepared.format);
+      const outputDimensions = await validateImageOutput(output, prepared.format, maxOutputBytes);
       const outputBitDepth = await readImageBitDepth(output);
       const outputHasAlpha = await readImageHasAlpha(output);
       if (sourceHasAlpha && !outputHasAlpha) throw fail("AI upscaling output lost source transparency; the derivative was rejected.", "AI_UPSCALE_ALPHA_LOST");
