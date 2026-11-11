@@ -74,10 +74,12 @@ export function createCloudReviewRepository({url=process.env.SUPABASE_URL,servic
    const patch=normalizeReviewPatch(input),row=await getRow(reviewId);if(!row)throw Object.assign(new Error("Review not found."),{code:"CLOUD_REVIEW_NOT_FOUND"});
    const {project,membership}=await context(actorId,row.project_id,"read");
    const ownerOrEditor=actorId===project.ownerId||membership?.role==="editor";
-   if(!ownerOrEditor&&row.reviewer_id!==actorId)throw Object.assign(new Error("Only the comment author or a project editor can change this review."),{code:"CLOUD_REVIEW_ACCESS_DENIED"});
+   const statusOnly=Object.keys(patch).length===1&&Object.hasOwn(patch,"status");
+   const canManageStatus=actorId===project.ownerId||["editor","reviewer"].includes(membership?.role);
+   if(!ownerOrEditor&&row.reviewer_id!==actorId&&!(statusOnly&&canManageStatus))throw Object.assign(new Error("Only the comment author or a project editor can edit feedback; project reviewers may change completion status."),{code:"CLOUD_REVIEW_ACCESS_DENIED"});
    if(patch.visibility==="internal"&&membership?.role==="viewer")throw Object.assign(new Error("Viewer accounts cannot create internal comments."),{code:"CLOUD_REVIEW_ACCESS_DENIED"});
    const update={...patch,updated_at:new Date().toISOString(),last_actor_id:actorId};
-   if(patch.status==="resolved"){update.resolved_at=new Date().toISOString();update.resolved_by=actorId;}
+   if(patch.status==="resolved"||patch.status==="dismissed"){update.resolved_at=new Date().toISOString();update.resolved_by=actorId;}
    if(patch.status==="open"){update.resolved_at=null;update.resolved_by=null;}
    const rows=await request("reviews?id=eq."+encodeURIComponent(reviewId)+"&updated_at=eq."+encodeURIComponent(row.updated_at||row.created_at),{method:"PATCH",body:update});
    if(!Array.isArray(rows)||rows.length!==1)throw Object.assign(new Error("Review changed while it was being edited. Refresh and retry."),{code:"CLOUD_REVIEW_CONFLICT"});

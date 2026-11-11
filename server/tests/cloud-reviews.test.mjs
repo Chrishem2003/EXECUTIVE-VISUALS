@@ -58,6 +58,15 @@ test("only comment author or project editor can edit, and optimistic concurrency
  assert.equal(result.body,"Updated note");assert.equal(result.status,"resolved");assert.equal(result.resolvedBy,editor);
  assert.ok(f.calls.some(call=>call.method==="PATCH"&&call.path.includes("updated_at=eq.")));
 });
+test("project reviewers can resolve and reopen feedback without editing its content",async()=>{
+ const row={id:reviewId,owner_id:owner,project_id:projectId,reviewer_id:owner,body:"Owner note",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
+ const f=setup({role:"reviewer",existing:[row]});
+ const resolved=await f.repo.update({actorId:editor,reviewId,input:{status:"resolved"}});
+ assert.equal(resolved.status,"resolved");assert.equal(resolved.resolvedBy,editor);
+ const reopened=await f.repo.update({actorId:editor,reviewId,input:{status:"open"}});
+ assert.equal(reopened.status,"open");assert.equal(reopened.resolvedBy,null);
+ await assert.rejects(()=>f.repo.update({actorId:editor,reviewId,input:{body:"Unauthorized edit"}}),error=>error.code==="CLOUD_REVIEW_ACCESS_DENIED");
+});
 test("rejects unauthorized review edits",async()=>{
  const row={id:reviewId,owner_id:owner,project_id:projectId,reviewer_id:owner,body:"Owner note",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
  const f=setup({role:"reviewer",existing:[row]});await assert.rejects(()=>f.repo.update({actorId:editor,reviewId,input:{body:"Tamper"}}),error=>error.code==="CLOUD_REVIEW_ACCESS_DENIED");
