@@ -606,6 +606,20 @@ declare
  v_result jsonb;
  v_replay jsonb;
 begin
+ if has_function_privilege('anon','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE')
+    or has_function_privilege('authenticated','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE')
+    or not has_function_privilege('service_role','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE') then
+  raise exception 'Subscription cancellation RPC execute privileges are not service-role-only';
+ end if;
+ if not exists(
+  select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='executive_visuals'
+     and p.proname='reconcile_flutterwave_subscription_cancellation'
+     and coalesce(array_to_string(p.proconfig,','),'') like '%search_path=""%'
+ ) then
+  raise exception 'Subscription cancellation SECURITY DEFINER function must pin an empty search_path';
+ end if;
+
  select id into v_subscription
    from executive_visuals.customer_subscriptions
   where owner_id=v_customer and status='active' and provider='flutterwave'
