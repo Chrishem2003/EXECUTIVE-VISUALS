@@ -64,7 +64,7 @@ export async function executeCloudVideoGenerationJob({
   await ensureLease();
 
   const prepared = await ledger.prepare({
-    jobId: job.id, ownerId: job.owner_id, provider: input.provider,
+    jobId: job.id, ownerId: job.owner_id, workerId, leaseToken: job.lease_token, provider: input.provider,
     model: input.model, requestHash: input.requestHash
   });
   let state = prepared.state;
