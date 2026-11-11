@@ -21,7 +21,7 @@ declare
   event_row executive_visuals.payment_webhook_events%rowtype;
   subscription_row executive_visuals.customer_subscriptions%rowtype;
   plan_row executive_visuals.subscription_plans%rowtype;
-  provider_plan_id text;
+  v_provider_plan_id text;
   provider_customer_email text;
   provider_status text;
   matching_subscriptions integer;
@@ -61,10 +61,10 @@ begin
     raise exception 'Subscription webhook event is not awaiting review' using errcode='55000';
   end if;
 
-  provider_plan_id:=nullif(btrim(event_row.payload #>> '{data,plan,id}'),'');
+  v_provider_plan_id:=nullif(btrim(event_row.payload #>> '{data,plan,id}'),'');
   provider_customer_email:=lower(nullif(btrim(event_row.payload #>> '{data,customer,email}'),''));
   provider_status:=lower(nullif(btrim(event_row.payload #>> '{data,status}'),''));
-  if provider_plan_id is null then
+  if v_provider_plan_id is null then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_plan_id_missing');
   end if;
   if provider_customer_email is null then
@@ -87,7 +87,7 @@ begin
   end if;
   select * into plan_row
     from executive_visuals.subscription_plans
-   where id=subscription_row.plan_id and provider_plan_id=provider_plan_id
+   where id=subscription_row.plan_id and provider_plan_id=v_provider_plan_id
    for update;
   if not found then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_plan_id_mismatch');
@@ -99,7 +99,7 @@ begin
    where cs.provider='flutterwave'
      and cs.status in ('active','past_due','trialing')
      and lower(coalesce(cs.customer_email,''))=provider_customer_email
-     and sp.provider_plan_id=provider_plan_id;
+     and sp.provider_plan_id=v_provider_plan_id;
   if matching_subscriptions<>1 then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','customer_plan_match_not_unique');
   end if;
@@ -122,7 +122,7 @@ begin
     jsonb_build_object(
       'webhookEventId',p_event_id,
       'payloadHash',event_row.payload_hash,
-      'providerPlanId',provider_plan_id,
+      'providerPlanId',v_provider_plan_id,
       'providerCustomerEmail',provider_customer_email,
       'manualReconciliation',true
     )
