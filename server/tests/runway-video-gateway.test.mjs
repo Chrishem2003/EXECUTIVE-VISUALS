@@ -321,3 +321,15 @@ test("Kling 4 Flash image-to-video uses the documented 720p auto ratio",()=>{
  const payload=buildRunwayImageToVideoPayload({model:"kling_4_flash",prompt:"A test scene",promptImage:image,durationSeconds:5,resolution:"720p"});
  assert.equal(payload.ratio,"auto_720p");assert.equal("resolution" in payload,false);
 });
+
+test("Kling 4 prompt limits and frame-only image requests follow the current API contract",()=>{
+ const image="data:image/png;base64,iVBORw0KGgo=";
+ const longPrompt="A".repeat(2000);
+ assert.equal(buildRunwayVideoPayload({model:"kling_4",prompt:longPrompt,durationSeconds:5}).promptText,longPrompt);
+ assert.equal(buildRunwayVideoPayload({model:"kling_4_flash",prompt:longPrompt,durationSeconds:5}).promptText,longPrompt);
+ const kling=buildRunwayImageToVideoPayload({model:"kling_4",promptImage:image,durationSeconds:5});
+ assert.equal(kling.promptImage,image);assert.equal(kling.ratio,"auto_720p");assert.equal("promptText" in kling,false);
+ const flash=buildRunwayImageToVideoPayload({model:"kling_4_flash",promptImage:image,durationSeconds:5});
+ assert.equal(flash.promptImage,image);assert.equal(flash.ratio,"auto_720p");assert.equal("promptText" in flash,false);
+ assert.throws(()=>buildRunwayVideoPayload({model:"gen4.5",prompt:"A".repeat(1001)}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+});
