@@ -2,7 +2,7 @@ import type { EditorialTimeline } from "./timeline.ts";
 import type { SourceMediaAsset } from "./source-media-evidence.ts";
 export type DeliveryEvidenceStatus="passed"|"review"|"blocked"|"not_run";
 type Finding={code:string;detail:string;assetId?:string};
-export interface DeliveryEvidenceReport{status:DeliveryEvidenceStatus;summary:string;evidenceRef:string;findings:Finding[];assetId?:string;measured?:{container:string|null;videoCodec:string|null;width:number|null;height:number|null;frameRate:number|null;durationSeconds:number|null;audioCodec:string|null};}
+export interface DeliveryEvidenceReport{status:DeliveryEvidenceStatus;summary:string;evidenceRef:string;findings:Finding[];assetId?:string;measured?:{container:string|null;videoCodec:string|null;width:number|null;height:number|null;frameRate:number|null;durationSeconds:number|null;audioCodec:string|null;audioMastering?:{profile:string|null;integratedLoudness:number|null;loudnessRange:number|null;truePeak:number|null;passed:boolean|null}|null};}
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
 function rate(value:unknown){if(typeof value==="number")return Number.isFinite(value)&&value>0?value:null;if(typeof value==="string"){const parts=value.split("/").map(Number),n=parts[0],d=parts.length>1?parts[1]:1;return Number.isFinite(n)&&Number.isFinite(d)&&n>0&&d>0?n/d:null;}return null;}
 export function assessDeliveryEvidence(timeline:EditorialTimeline|null,assets:SourceMediaAsset[]=[]):DeliveryEvidenceReport{
@@ -35,8 +35,18 @@ export function assessDeliveryEvidence(timeline:EditorialTimeline|null,assets:So
  if(spec.audioCodec&&audio&&audioCodec!==String(spec.audioCodec).toLowerCase())fail("DELIVERY_AUDIO_CODEC_MISMATCH","Expected "+spec.audioCodec+" audio codec but measured "+(audioCodec||"unknown")+".");
  const render=object(metadata.render)?metadata.render:{};
  if(Number.isFinite(Number(render.durationSeconds))&&Number(render.durationSeconds)>0&&Number.isFinite(duration)&&Math.abs(Number(render.durationSeconds)-duration)>0.25)fail("DELIVERY_DURATION_DIVERGENCE","Renderer duration and probed master duration differ by more than 250 ms.");
+ const mastering=object(render.audioMastering)?render.audioMastering:null;
+ const masteringMeasurement=mastering&&object(mastering.measurement)?mastering.measurement:null;
+ const masteringQc=mastering&&object(mastering.qualityControl)?mastering.qualityControl:null;
+ const measuredMastering=mastering?.applied===true?{profile:typeof mastering.profile==="string"?mastering.profile:null,integratedLoudness:Number.isFinite(Number(masteringMeasurement?.integratedLoudness))?Number(masteringMeasurement?.integratedLoudness):null,loudnessRange:Number.isFinite(Number(masteringMeasurement?.loudnessRange))?Number(masteringMeasurement?.loudnessRange):null,truePeak:Number.isFinite(Number(masteringMeasurement?.truePeak))?Number(masteringMeasurement?.truePeak):null,passed:typeof masteringQc?.passed==="boolean"?masteringQc.passed:null}:null;
+ if(timeline.audioMastering?.enabled===true){
+  if(mastering?.applied!==true)fail("DELIVERY_AUDIO_MASTERING_NOT_APPLIED","The timeline requests audio mastering, but the current master has no applied mastering receipt.");
+  else if(!masteringMeasurement||measuredMastering?.integratedLoudness===null||measuredMastering?.truePeak===null||measuredMastering?.passed===null)fail("DELIVERY_AUDIO_MASTERING_QC_MISSING","The master has no complete post-encode loudness and true-peak quality-control evidence.");
+  else if(masteringQc?.passed!==true)fail("DELIVERY_AUDIO_MASTERING_QC_FAILED","Measured post-encode audio does not meet the configured mastering delivery targets.");
+ }
+ const measuredWithMastering={...measured,audioMastering:measuredMastering};
  const explicit=Object.keys(spec).length>0;
  const status=findings.length?(explicit?"blocked":"review"):"passed";
  const summary=findings.length?findings.length+" delivery conformance issue(s) require "+(explicit?"correction against the specified profile.":"review against the sequence-native master profile."):"The current revision's master matches the measured container, video, frame-rate, resolution and audio requirements.";
- return{status,summary,evidenceRef:"delivery:ffprobe:"+asset.id,assetId:asset.id,measured,findings};
+ return{status,summary,evidenceRef:"delivery:ffprobe:"+asset.id,assetId:asset.id,measured:measuredWithMastering,findings};
 }
