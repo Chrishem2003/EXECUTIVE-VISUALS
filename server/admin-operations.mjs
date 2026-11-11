@@ -95,7 +95,8 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true",
   supabaseServiceCredentials:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
   videoProviderReady:videoProvider?.status==="ready",
-  durableWorkerAdapterReady:videoProvider?.provider==="runway"
+  durableWorkerAdapterReady:videoProvider?.provider==="runway",
+  appDataPersistence:dataPersistence==="operator-confirmed-volume"
  };
  const labels={
   supabaseAuth:"Verified Supabase authentication is not enabled.",
@@ -103,7 +104,8 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudDispatch:"Cloud video-generation dispatch is not enabled.",
   supabaseServiceCredentials:"Server-side Supabase service credentials are not configured.",
   videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation.",
-  durableWorkerAdapterReady:videoProvider?.provider==="runway"? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Only Runway currently has a durable submit, poll and recovery adapter."
+  durableWorkerAdapterReady:videoProvider?.provider==="runway"? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Only Runway currently has a durable submit, poll and recovery adapter.",
+  appDataPersistence:"Application database persistence is not confirmed as a durable volume; hosted project and account data may not survive a restart."
  };
  const blockers=Object.keys(checks).filter(key=>!checks[key]).map(key=>({check:key,message:labels[key]}));
  return {
@@ -113,7 +115,7 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   blockers,
   videoProvider:videoProvider?{provider:String(videoProvider.provider||"unknown"),model:typeof videoProvider.model==="string"?videoProvider.model:null,status:String(videoProvider.status||"unavailable"),remote:Boolean(videoProvider.remote)}:null,
   appDataPersistence:String(dataPersistence||"unknown"),
-  appDataPersistenceWarning:dataPersistence==="operator-confirmed-volume"?null:"Application database storage is not confirmed as a persistent volume; cloud generation readiness does not prove local application data durability.",
+  appDataPersistenceWarning:checks.appDataPersistence?null:labels.appDataPersistence,
   policy:{requestsSubmitted:false,providerCredentialsExposed:false,chargesInitiated:false}
  };
 }
