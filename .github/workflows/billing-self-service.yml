@@ -104,7 +104,7 @@ jobs:
             if [[ "$1" == "-f" ]]; then
               shift
               file="${1:?SQL file path is missing after -f}"
-              remote_path="/tmp/ev-ci-${file//\\//_}"
+              remote_path="/tmp/ev-ci-${file//\//_}"
               docker cp "$GITHUB_WORKSPACE/$file" "$POSTGRES_SERVICE_CONTAINER_ID:$remote_path" >/dev/null
               args+=("-f" "$remote_path")
               shift
