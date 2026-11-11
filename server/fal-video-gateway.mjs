@@ -6,6 +6,16 @@ function queueUrl(raw){
  if(url.protocol!=="https:"||url.hostname!=="queue.fal.run"||url.username||url.password||url.port||url.hash)throw fail("The video provider returned an unsafe job URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return url;
 }
+async function readBoundedJsonText(response,maxBytes=2*1024*1024){
+ const declared=Number(response.headers?.get?.("content-length")||0);
+ if(Number.isFinite(declared)&&declared>maxBytes)throw fail("Video provider API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ const reader=response.body?.getReader?.();
+ if(!reader){const raw=await response.text();if(Buffer.byteLength(raw)>maxBytes)throw fail("Video provider API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");return raw;}
+ const chunks=[];let total=0;
+ try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxBytes){await reader.cancel().catch(()=>{});throw fail("Video provider API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}chunks.push(Buffer.from(value));}}
+ finally{reader.releaseLock?.();}
+ return Buffer.concat(chunks,total).toString("utf8");
+}
 async function jsonRequest(url,options,timeoutMs){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
@@ -13,7 +23,7 @@ async function jsonRequest(url,options,timeoutMs){
   if(response.status===429)throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
   if(response.status>=500)throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
   if(!response.ok)throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
-  const raw=await response.text();if(Buffer.byteLength(raw)>2*1024*1024)throw fail("Video provider returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  const raw=await readBoundedJsonText(response);
   try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
  }finally{clearTimeout(timer)}
 }
