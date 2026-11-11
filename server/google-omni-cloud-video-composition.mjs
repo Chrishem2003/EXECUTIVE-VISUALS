@@ -77,7 +77,9 @@ export function createGoogleOmniCloudVideoComposition({
       }
       let directory;
       try {
-        await value.assertLease();
+        if (await value.assertLease() !== true) {
+          throw fail("Google output worker lease is no longer current.", "CLOUD_WORKER_LEASE_LOST");
+        }
         directory = await mkdtemp(join(tempRoot, "executive-visuals-google-output-"));
         const filePath = join(directory, "gemini-omni-output.mp4");
         await writeFile(filePath, value.bytes, { flag: "wx", mode: 0o600 });
