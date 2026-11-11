@@ -558,6 +558,35 @@ test("cloud media executor fails closed instead of publishing when C2PA lineage 
 });
 
 
+test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGTERM",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-cancel-escalation-"));
+ const source=join(directory,"source.mp4");
+ const pidPath=join(directory,"ffprobe.pid");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",`printf '%s' "$" > "${pidPath}"; trap '' TERM; while :; do sleep 1; done`);
+ const ffmpeg=await executable(directory,"ffmpeg","exit 0");
+ const controller=new AbortController();
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffmpeg,ffprobe,timeoutMs:10000,
+   mediaIO:{async materialize(){return {path:source,asset:{id:"asset-cancel",name:"cancel.mp4",mediaType:"video/mp4"},async cleanup(){}};},async publish(){throw new Error("Cancelled probe must not publish.");}}
+  });
+  const pending=execute({job:{id:"job-cancel",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-cancel"}},signal:controller.signal,onProgress(){}});
+  let pidText="";
+  for(let attempt=0;attempt<40&&!pidText;attempt++){
+   try{pidText=await readFile(pidPath,"utf8");}catch{}
+   if(!pidText)await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.ok(pidText,"ffprobe process should have started");
+  const pid=Number(pidText.trim());
+  assert.ok(Number.isInteger(pid)&&pid>0,"ffprobe PID should be recorded");
+  controller.abort();
+  await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
+  await new Promise(resolve=>setTimeout(resolve,3300));
+  assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH");
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
  const plan=buildCloudMediaOutputPlan("media.proxy",{proxyWidth:960,proxyCrf:28,preset:"veryfast"},{name:"scene.mp4"},"/tmp/source.mp4","/tmp/proxy.mp4");
  assert.deepEqual(plan.args.slice(plan.args.indexOf("-vf"),plan.args.indexOf("-vf")+2),["-vf","scale='min(960,iw)':-2"]);
