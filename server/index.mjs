@@ -14,6 +14,7 @@ import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
 import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
+import { createCloudQueue } from "./cloud-queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
@@ -113,7 +114,7 @@ if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error
 if(cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud video generation dispatch requires verified Supabase authentication.");
 if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
 const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createCloudVideoGenerationDispatch({
- db,repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+ db,queue:createCloudQueue(),repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(ownerId,...args)=>audit(db,ownerId,...args)
 }):null;
 const activeProcesses = new Map();
@@ -595,6 +596,12 @@ export function createAppServer() {
         if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud generation dispatch is disabled. No cloud jobs or provider requests were created.");return;}
         if(!rateAllowed("video-production-submit:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many generation submissions. Try again shortly.");return;}
         const result=await cloudVideoGenerationDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
+        send(res,result.status,result.body,cors);return;
+      }
+      const cloudVideoJobCancelMatch=path.match(/^\/api\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
+      if(cloudVideoJobCancelMatch&&req.method==="POST"){
+        if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud video job cancellation is disabled.");return;}
+        const result=await cloudVideoGenerationDispatch.cancelJob({jobId:cloudVideoJobCancelMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
       }
       const videoApprovalMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/withdraw$/i);
