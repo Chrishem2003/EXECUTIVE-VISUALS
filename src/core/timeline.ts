@@ -14,7 +14,7 @@ export interface TimelineMarker {
   id:string; name:string; start:RationalTime; duration?:RationalTime;
   color?:string; note?:string;
 }
-export interface AudioMasteringSettings { enabled:boolean; integratedLoudness?:number; loudnessRange?:number; truePeak?:number; dualMono?:boolean }
+export interface AudioMasteringSettings { enabled:boolean; profile?:"web-podcast"|"ebu-r128"|"custom"; integratedLoudness?:number; loudnessRange?:number; truePeak?:number; dualMono?:boolean }
 export interface EditorialTimeline {
   audioMastering?:AudioMasteringSettings;
   id:string; projectId:string; name:string; revision:number;
