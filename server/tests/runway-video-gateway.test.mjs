@@ -249,3 +249,14 @@ test("Runway task cancellation uses DELETE and treats an already-removed task as
   for(const [key,value] of Object.entries({VIDEO_GATEWAY_ENABLED:previous.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:previous.remote,RUNWAYML_API_SECRET:previous.key}))if(value===undefined)delete process.env[key];else process.env[key]=value;
  }
 });
+
+test("Runway 404 task lookup is reconciled as terminal cancellation",async()=>{
+ const previous={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"test-key"});
+ try{
+  const task=await getRunwayVideoTask({taskId:"123e4567-e89b-42d3-a456-426614174000",fetchImpl:async()=>new Response(null,{status:404})});
+  assert.equal(task.status,"CANCELED");
+ }finally{
+  for(const [key,value] of Object.entries({VIDEO_GATEWAY_ENABLED:previous.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:previous.remote,RUNWAYML_API_SECRET:previous.key}))if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
+});
