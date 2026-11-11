@@ -323,6 +323,25 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
   assert.equal(charge.options.headers["x-idempotency-key"],"checkout-key-0001");
 });
 
+
+test("credit checkout idempotency key cannot replay for a different customer email",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"other@example.com",tx_ref:"EVSprior",status:"pending",
+    metadata:{product_code:"creator_credits",mobile_money_network:"MTN"}}]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,
+  idempotencyKey:"credit-email-key-01",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"IDEMPOTENCY_KEY_REUSED");
+ assert.equal(providerCalled,false);
+});
+
 test("payment webhook verifies Flutterwave charge and atomically fulfils once",async()=>{
   const rawBody=Buffer.from(JSON.stringify({type:"charge.completed",data:{id:"chg_paid",status:"succeeded"}}));
   const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
@@ -610,6 +629,25 @@ test("customer-initiated subscription renewal uses V4 MTN checkout and idempoten
   assert.equal(charge.headers["x-idempotency-key"],"renewal-key-0001");
   const inserted=calls.find(x=>x.target.endsWith("/payment_transactions")&&x.method==="POST");
   assert.equal(JSON.parse(inserted.body).metadata.payment_purpose,"subscription_renewal");
+});
+
+
+test("subscription renewal idempotency key cannot replay for a different customer email",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"other@example.com",tx_ref:"EVRprior",status:"pending",
+    metadata:{payment_purpose:"subscription_renewal",subscription_id:"44444444-4444-4444-8444-444444444444",mobile_money_network:"MTN"}}]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/subscription/renewal-checkout",ownerId:owner,
+  idempotencyKey:"renewal-email-key-01",
+  body:{subscriptionId:"44444444-4444-4444-8444-444444444444",network:"MTN",email:"customer@example.com",firstName:"Test",lastName:"Customer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"IDEMPOTENCY_KEY_REUSED");
+ assert.equal(providerCalled,false);
 });
 
 test("subscription renewal checkout rejects a second pending attempt before charging provider",async()=>{
