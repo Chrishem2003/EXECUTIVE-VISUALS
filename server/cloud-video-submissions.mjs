@@ -1,12 +1,12 @@
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   prepare: "prepare_video_generation_submission",
-  begin: "begin_video_generation_submission",
-  record: "record_video_generation_submission",
-  unknown: "mark_video_generation_submission_unknown",
+  begin: "begin_video_generation_submission_v2",
+  record: "record_video_generation_submission_v2",
+  unknown: "mark_video_generation_submission_unknown_v2",
   get: "get_video_generation_submission",
   reconcile: "reconcile_unknown_video_generation_submission",
-  finish: "finish_video_generation_submission"
+  finish: "finish_video_generation_submission_v2"
 });
 
 function endpoint(value) {
@@ -76,6 +76,7 @@ export function createCloudVideoSubmissionLedger({
     if (typeof value !== "string" || !value.trim() || value.length > max) throw new Error(name + " is required and must be bounded.");
     return value;
   }
+  function leaseToken(value) { if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new Error("A valid worker lease token is required."); return value; }
   function booleanResult(value, operation) {
     if (typeof value !== "boolean") throw new Error("Cloud video ledger " + operation + " returned an invalid result.");
     return value;
@@ -95,15 +96,15 @@ export function createCloudVideoSubmissionLedger({
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128);
       return booleanResult(await call(RPC.begin, { p_job_id: jobId, p_worker_id: workerId }), "begin");
     },
-    async record(jobId, workerId, providerTaskId, metadata = {}) {
+    async record(jobId, workerId, providerTaskId, metadata = {}, token) {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128); required(providerTaskId, "Provider task ID");
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("Submission metadata must be an object.");
       if (Buffer.byteLength(JSON.stringify(metadata), "utf8") > 8000) throw new Error("Submission metadata exceeds the 8000-byte limit.");
-      return booleanResult(await call(RPC.record, { p_job_id: jobId, p_worker_id: workerId, p_provider_task_id: providerTaskId, p_metadata: metadata }), "record");
+      return booleanResult(await call(RPC.record, { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken(token), p_provider_task_id: providerTaskId, p_metadata: metadata }), "record");
     },
-    async markUnknown(jobId, workerId, errorCode = "VIDEO_SUBMISSION_AMBIGUOUS") {
+    async markUnknown(jobId, workerId, errorCode = "VIDEO_SUBMISSION_AMBIGUOUS", token) {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128); required(errorCode, "Error code", 100);
-      return booleanResult(await call(RPC.unknown, { p_job_id: jobId, p_worker_id: workerId, p_error_code: errorCode }), "mark unknown");
+      return booleanResult(await call(RPC.unknown, { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken(token), p_error_code: errorCode }), "mark unknown");
     },
     async reconcileUnknown(jobId, providerTaskId, evidenceReference, metadata = {}) {
       required(jobId, "Job ID"); required(providerTaskId, "Provider task ID"); required(evidenceReference, "Evidence reference", 1000);
@@ -111,12 +112,12 @@ export function createCloudVideoSubmissionLedger({
       if (Buffer.byteLength(JSON.stringify(metadata), "utf8") > 8000) throw new Error("Submission metadata exceeds the 8000-byte limit.");
       return booleanResult(await call(RPC.reconcile, { p_job_id: jobId, p_provider_task_id: providerTaskId, p_evidence_reference: evidenceReference, p_metadata: metadata }), "reconcile");
     },
-    async finish(jobId, workerId, state, metadata = {}) {
+    async finish(jobId, workerId, state, metadata = {}, token) {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128);
       if (!["succeeded", "failed", "cancelled"].includes(state)) throw new Error("Submission terminal state must be succeeded, failed or cancelled.");
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("Submission metadata must be an object.");
       if (Buffer.byteLength(JSON.stringify(metadata), "utf8") > 8000) throw new Error("Submission metadata exceeds the 8000-byte limit.");
-      return booleanResult(await call(RPC.finish, { p_job_id: jobId, p_worker_id: workerId, p_state: state, p_metadata: metadata }), "finish");
+      return booleanResult(await call(RPC.finish, { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken(token), p_state: state, p_metadata: metadata }), "finish");
     },
     async get(jobId) {
       required(jobId, "Job ID");
