@@ -46,6 +46,23 @@ create trigger ev_jobs_clear_lease_token_on_transition
 before update of status on executive_visuals.jobs
 for each row execute function executive_visuals.clear_job_lease_token_on_transition_v1();
 
+create or replace function executive_visuals.prepare_video_generation_submission_v2(
+  p_job_id uuid,p_owner_id uuid,p_worker_id text,p_lease_token uuid,
+  p_provider text,p_model text,p_request_hash text
+) returns setof executive_visuals.video_generation_submissions
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals
+as $prepare_video_submission_v2$
+begin
+  if not executive_visuals.assert_current_video_worker_lease_v1(p_job_id,p_worker_id,p_lease_token) then
+    raise exception 'VIDEO_WORKER_LEASE_LOST' using errcode='42501';
+  end if;
+  return query select * from executive_visuals.prepare_video_generation_submission(
+    p_job_id,p_owner_id,p_provider,p_model,p_request_hash
+  );
+end;
+$prepare_video_submission_v2$;
+
 create or replace function executive_visuals.begin_video_generation_submission_v2(
   p_job_id uuid,p_worker_id text,p_lease_token uuid
 ) returns boolean language plpgsql security definer
@@ -126,6 +143,7 @@ begin
 end;
 $quarantine_video_job_v2$;
 
+revoke all on function executive_visuals.prepare_video_generation_submission(uuid,uuid,text,text,text) from service_role;
 revoke all on function executive_visuals.begin_video_generation_submission(uuid,text) from service_role;
 revoke all on function executive_visuals.record_video_generation_submission(uuid,text,text,jsonb) from service_role;
 revoke all on function executive_visuals.mark_video_generation_submission_unknown(uuid,text,text) from service_role;
@@ -134,6 +152,7 @@ revoke all on function executive_visuals.finish_video_generation_job(uuid,text,t
 revoke all on function executive_visuals.defer_video_generation_job(uuid,text,integer,text) from service_role;
 revoke all on function executive_visuals.quarantine_video_generation_job(uuid,text,text) from service_role;
 
+revoke all on function executive_visuals.prepare_video_generation_submission_v2(uuid,uuid,text,uuid,text,text,text) from public,anon,authenticated;
 revoke all on function executive_visuals.begin_video_generation_submission_v2(uuid,text,uuid) from public,anon,authenticated;
 revoke all on function executive_visuals.record_video_generation_submission_v2(uuid,text,uuid,text,jsonb) from public,anon,authenticated;
 revoke all on function executive_visuals.mark_video_generation_submission_unknown_v2(uuid,text,uuid,text) from public,anon,authenticated;
@@ -142,6 +161,7 @@ revoke all on function executive_visuals.finish_video_generation_job_v2(uuid,tex
 revoke all on function executive_visuals.defer_video_generation_job_v2(uuid,text,uuid,integer,text) from public,anon,authenticated;
 revoke all on function executive_visuals.quarantine_video_generation_job_v2(uuid,text,uuid,text) from public,anon,authenticated;
 
+grant execute on function executive_visuals.prepare_video_generation_submission_v2(uuid,uuid,text,uuid,text,text,text) to service_role;
 grant execute on function executive_visuals.begin_video_generation_submission_v2(uuid,text,uuid) to service_role;
 grant execute on function executive_visuals.record_video_generation_submission_v2(uuid,text,uuid,text,jsonb) to service_role;
 grant execute on function executive_visuals.mark_video_generation_submission_unknown_v2(uuid,text,uuid,text) to service_role;
