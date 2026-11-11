@@ -13,12 +13,42 @@ const validateClipTiming=(clip)=>{
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
  if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
 };
-const audioMasteringFilter=(settings)=>{
+export function parseAudioLoudnessMeasurement(stderr=""){
+ const integratedMatch=String(stderr).match(/^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$/m);
+ const rangeMatch=String(stderr).match(/^\s*LRA:\s*(-?\d+(?:\.\d+)?)\s*LU\s*$/m);
+ const truePeakSection=String(stderr).split(/True peak:/i).at(-1);
+ const peakMatch=truePeakSection?.match(/^\s*Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS\s*$/m);
+ const integratedLoudness=integratedMatch?Number(integratedMatch[1]):null;
+ const loudnessRange=rangeMatch?Number(rangeMatch[1]):null;
+ const truePeak=peakMatch?Number(peakMatch[1]):null;
+ return{integratedLoudness:Number.isFinite(integratedLoudness)?integratedLoudness:null,loudnessRange:Number.isFinite(loudnessRange)?loudnessRange:null,truePeak:Number.isFinite(truePeak)?truePeak:null};
+}
+export function evaluateAudioMasteringQuality(measured,{profile="custom",integratedLoudness=-16,loudnessRange=11,truePeak=-1.5}={}){
+ const integratedLoudnessTolerance=profile==="ebu-r128"?0.5:1;
+ const loudnessRangeTolerance=1;
+ const truePeakLimit=profile==="ebu-r128"?-1:truePeak;
+ const qualityControl={
+  integratedLoudnessWithinTolerance:Math.abs(measured.integratedLoudness-integratedLoudness)<=integratedLoudnessTolerance,
+  loudnessRangeWithinLimit:measured.loudnessRange<=loudnessRange+loudnessRangeTolerance,
+  truePeakWithinLimit:measured.truePeak<=truePeakLimit,
+  integratedLoudnessTolerance,
+  loudnessRangeLimit:loudnessRange+loudnessRangeTolerance,
+  truePeakLimit
+ };
+ qualityControl.passed=qualityControl.integratedLoudnessWithinTolerance&&qualityControl.loudnessRangeWithinLimit&&qualityControl.truePeakWithinLimit;
+ return qualityControl;
+}
+export function buildAudioMasteringFilter(settings){
  if(settings===undefined||settings===null||settings.enabled!==true)return "";
- const integrated=Number(settings.integratedLoudness??-16),range=Number(settings.loudnessRange??11),truePeak=Number(settings.truePeak??-1.5);
+ const profile=settings.profile??"custom";
+ if(!["web-podcast","ebu-r128","custom"].includes(profile))fail("Audio mastering profile is not supported.","INVALID_AUDIO_MASTERING");
+ // Named delivery profiles are server-enforced; never trust client-supplied LUFS.
+ const integrated=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:Number(settings.integratedLoudness??-16);
+ const range=Number(settings.loudnessRange??11),truePeak=Number(settings.truePeak??-1.5);
+ if(profile==="ebu-r128"&&truePeak> -1)fail("EBU R128 true peak must not exceed -1 dBTP.","INVALID_AUDIO_MASTERING");
  if(!Number.isFinite(integrated)||integrated< -70||integrated> -5||!Number.isFinite(range)||range<1||range>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0)fail("Audio mastering targets are outside supported EBU R128 ranges.","INVALID_AUDIO_MASTERING");
  return `loudnorm=I=${integrated}:LRA=${range}:TP=${truePeak}:dual_mono=${settings.dualMono===true?"true":"false"}:linear=false:print_format=summary`;
-};
+}
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
@@ -31,13 +61,14 @@ const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a
 export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
- const masteringFilter=audioMasteringFilter(timeline.audioMastering);
+ const masteringFilter=buildAudioMasteringFilter(timeline.audioMastering);
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
  for(const track of tracks)for(const clip of track.clips||[])if(enabled(clip))validateClipTiming(clip);
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ if(timeline.audioMastering?.enabled===true&&!audioClips.length)fail("Audio mastering requires at least one enabled audio clip.","AUDIO_MASTERING_REQUIRES_AUDIO");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
  const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
@@ -122,7 +153,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    videoEffects.push(`${currentVideo}subtitles=filename='${escapeFilterPath(tempPath)}':force_style='${style}'[${nextLabel}]`);
    currentVideo=`[${nextLabel}]`;
   }
-  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0${masteringFilter?","+masteringFilter:""},alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
+  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95${masteringFilter?","+masteringFilter:""}[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
   if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
@@ -130,7 +161,19 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
+  let masteringEvidence={applied:false};
+  if(masteringFilter){
+   const measurementRun=await run("ffmpeg",["-hide_banner","-nostats","-i",outputPath,"-filter_complex","[0:a:0]ebur128=peak=true[audio_qc]","-map","[audio_qc]","-f","null","-"],60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+   const measured=parseAudioLoudnessMeasurement(measurementRun.stderr);
+   if(measured.integratedLoudness===null||measured.loudnessRange===null||measured.truePeak===null)fail("The rendered audio could not be measured for integrated loudness, loudness range and true peak.","AUDIO_MASTERING_QC_UNAVAILABLE");
+   const masteringProfile=timeline.audioMastering?.profile??"custom";
+   const targetLoudness=masteringProfile==="ebu-r128"?-23:masteringProfile==="web-podcast"?-16:Number(timeline.audioMastering?.integratedLoudness??-16);
+   const targetTruePeak=Number(timeline.audioMastering?.truePeak??-1.5);
+   const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
+   masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
+  }
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});

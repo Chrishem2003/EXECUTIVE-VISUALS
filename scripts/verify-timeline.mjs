@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
@@ -33,7 +33,30 @@ assert.equal(interchange.tracks.children.length,2);
 assert.equal(interchange.markers.length,1);
 assert.equal(interchange.markers[0].name,"Review hook");
 assert.ok(JSON.stringify(interchange).includes("asset://asset-a"));
+const masteredTimeline={...timeline,audioMastering:normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",loudnessRange:9,truePeak:-1})};
+const masteredInterchange=toOpenTimelineIo(masteredTimeline);
+const persistedMasteredTimeline=JSON.parse(JSON.stringify(masteredTimeline));
+assert.deepEqual(persistedMasteredTimeline.audioMastering,masteredTimeline.audioMastering,"JSON persistence must retain the selected mastering profile and targets");
+assert.deepEqual(normalizeAudioMasteringSettings(persistedMasteredTimeline.audioMastering),masteredTimeline.audioMastering,"restored mastering settings must normalize to the same saved profile and targets");
+assert.deepEqual(masteredInterchange.metadata.executiveVisuals.audioMastering,masteredTimeline.audioMastering,"OTIO export must preserve the mastering delivery contract");
+const legacyInterchange=toOpenTimelineIo(timeline);
+assert.equal(legacyInterchange.metadata.executiveVisuals.audioMastering,null,"legacy timelines export with an explicit empty mastering contract");
 assert.ok(seconds(rational(48,24))===2);
+
+const webMastering=normalizeAudioMasteringSettings({enabled:true});
+assert.deepEqual(webMastering,{enabled:true,profile:"web-podcast",integratedLoudness:-16,loudnessRange:11,truePeak:-1.5,dualMono:false});
+const fixedWebMastering=normalizeAudioMasteringSettings({enabled:true,profile:"web-podcast",integratedLoudness:-23,loudnessRange:10,truePeak:-2});
+assert.equal(fixedWebMastering.integratedLoudness,-16,"Web / Podcast must override a submitted broadcast target");
+const broadcastMastering=normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true});
+assert.equal(broadcastMastering.integratedLoudness,-23,"EBU R128 must override a submitted Web target");
+assert.equal(broadcastMastering.profile,"ebu-r128");
+assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",truePeak:-0.5}),/EBU R128 true peak must not exceed -1 dBTP/);
+assert.equal(normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",truePeak:-1}).truePeak,-1);
+const customMastering=normalizeAudioMasteringSettings({enabled:false,profile:"custom",integratedLoudness:-18.5,loudnessRange:7,truePeak:-2,dualMono:false});
+assert.equal(customMastering.integratedLoudness,-18.5,"Custom profile must preserve its explicit target");
+assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"unknown",integratedLoudness:-16}),/supported audio mastering profile/);
+assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"custom",integratedLoudness:-80}),/Mastering targets must be within/);
+assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"custom",integratedLoudness:-16,loudnessRange:0,truePeak:-1}),/Mastering targets must be within/);
 
 const overlap={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,clips:[...track.clips,{id:"overlap",assetId:"asset-x",name:"Overlap",sourceRange:{start:rational(0,24),duration:rational(60,24)},timelineStart:rational(60,24),duration:rational(60,24),enabled:true}]}:track)};
 assert.equal(validateTimeline(overlap).issues.some(x=>x.code==="overlap"),true);

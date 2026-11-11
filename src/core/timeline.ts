@@ -14,7 +14,23 @@ export interface TimelineMarker {
   id:string; name:string; start:RationalTime; duration?:RationalTime;
   color?:string; note?:string;
 }
-export interface AudioMasteringSettings { enabled:boolean; integratedLoudness?:number; loudnessRange?:number; truePeak?:number; dualMono?:boolean }
+export interface AudioMasteringSettings { enabled:boolean; profile?:"web-podcast"|"ebu-r128"|"custom"; integratedLoudness?:number; loudnessRange?:number; truePeak?:number; dualMono?:boolean }
+
+export interface AudioMasteringSettingsInput {
+  enabled:boolean; profile?:unknown; integratedLoudness?:unknown;
+  loudnessRange?:unknown; truePeak?:unknown; dualMono?:boolean;
+}
+export function normalizeAudioMasteringSettings(input:AudioMasteringSettingsInput):AudioMasteringSettings {
+  const profile=input.profile??"web-podcast";
+  if(profile!=="web-podcast"&&profile!=="ebu-r128"&&profile!=="custom")throw new Error("Select a supported audio mastering profile.");
+  const integratedLoudness=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:Number(input.integratedLoudness);
+  const loudnessRange=Number(input.loudnessRange??11),truePeak=Number(input.truePeak??-1.5);
+  if(profile==="ebu-r128"&&truePeak> -1)throw new Error("EBU R128 true peak must not exceed -1 dBTP.");
+  if(!Number.isFinite(integratedLoudness)||integratedLoudness< -70||integratedLoudness> -5||!Number.isFinite(loudnessRange)||loudnessRange<1||loudnessRange>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0) {
+    throw new Error("Mastering targets must be within -70 to -5 LUFS, 1 to 50 LU LRA and -9 to 0 dBTP.");
+  }
+  return {enabled:Boolean(input.enabled),profile,integratedLoudness,loudnessRange,truePeak,dualMono:Boolean(input.dualMono)};
+}
 export interface EditorialTimeline {
   audioMastering?:AudioMasteringSettings;
   id:string; projectId:string; name:string; revision:number;
@@ -152,5 +168,5 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
     }
     return {OTIO_SCHEMA:"Track.1",name:track.name,kind:track.kind==="audio"?"Audio":"Video",children,metadata:{executiveVisuals:{trackId:track.id,role:track.kind,enabled:track.enabled,locked:track.locked}}};
   });
-  return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},markers:timeline.markers.map(marker=>({OTIO_SCHEMA:"Marker.2",name:marker.name,marked_range:otioRange({start:marker.start,duration:marker.duration||rational(0,marker.start.rate)}),color:marker.color||"GREEN",metadata:{executiveVisuals:{id:marker.id,note:marker.note||""}}})),metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio,timelineMetadata:timeline.metadata||{}}}};
+  return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},markers:timeline.markers.map(marker=>({OTIO_SCHEMA:"Marker.2",name:marker.name,marked_range:otioRange({start:marker.start,duration:marker.duration||rational(0,marker.start.rate)}),color:marker.color||"GREEN",metadata:{executiveVisuals:{id:marker.id,note:marker.note||""}}})),metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio,timelineMetadata:timeline.metadata||{},audioMastering:timeline.audioMastering??null}}};
 }

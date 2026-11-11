@@ -4,10 +4,50 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
+
+test("audio loudness QC parser extracts integrated loudness, LRA and encoded true peak",()=>{
+ const stderr=`[Parsed_ebur128_0] Summary:
+Integrated loudness:
+ I:         -23.4 LUFS
+ Threshold: -33.4 LUFS
+Loudness range:
+ LRA:         4.2 LU
+ Threshold: -43.4 LUFS
+Sample peak:
+ Peak:       -1.8 dBFS
+True peak:
+ Peak:       -1.2 dBFS`;
+ assert.deepEqual(parseAudioLoudnessMeasurement(stderr),{integratedLoudness:-23.4,loudnessRange:4.2,truePeak:-1.2});
+ assert.deepEqual(parseAudioLoudnessMeasurement("no loudness summary"),{integratedLoudness:null,loudnessRange:null,truePeak:null});
+});
+
+test("audio mastering QC enforces integrated loudness, LRA ceiling and true peak",()=>{
+ const targets={profile:"ebu-r128",integratedLoudness:-23,loudnessRange:7,truePeak:-1.5};
+ const passing=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:7.5,truePeak:-1.2},targets);
+ assert.equal(passing.passed,true);
+ assert.equal(passing.loudnessRangeWithinLimit,true);
+ assert.equal(passing.loudnessRangeLimit,8);
+ const excessiveRange=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:8.1,truePeak:-1.2},targets);
+ assert.equal(excessiveRange.loudnessRangeWithinLimit,false);
+ assert.equal(excessiveRange.passed,false,"a master exceeding its configured LRA ceiling cannot pass QC");
+ const excessivePeak=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:4,truePeak:-0.8},targets);
+ assert.equal(excessivePeak.truePeakWithinLimit,false);
+ assert.equal(excessivePeak.passed,false);
+});
+
+test("audio mastering filter enforces fixed named delivery profiles server-side",()=>{
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"web-podcast",integratedLoudness:-23}),/loudnorm=I=-16:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16}),/loudnorm=I=-23:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"custom",integratedLoudness:-18.5}),/loudnorm=I=-18.5:/);
+ assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true}),/LRA=8:TP=-1:dual_mono=true/);
+ assert.throws(()=>buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",truePeak:-0.5}),error=>error.code==="INVALID_AUDIO_MASTERING");
+ assert.throws(()=>buildAudioMasteringFilter({enabled:true,profile:"unknown"}),error=>error.code==="INVALID_AUDIO_MASTERING");
+ assert.equal(buildAudioMasteringFilter({enabled:false,profile:"ebu-r128",integratedLoudness:-16}),"");
+});
 const time=(value)=>({value,rate:1});
 test("cloud FFmpeg renderer produces a playable master from materialized video and audio", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-render-test-"));
@@ -32,6 +72,15 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.effectClips,1);
   assert.equal(result.render.audioClips,1);
+  assert.equal(result.render.audioMastering.applied,true);
+  assert.equal(result.render.audioMastering.profile,"custom");
+  assert.equal(result.render.audioMastering.integratedLoudness,-16);
+  assert.equal(result.render.audioMastering.dualMono,true);
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.integratedLoudness),"render receipt must include measured encoded integrated loudness");
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.loudnessRange),"render receipt must include measured encoded loudness range");
+  assert.ok(Number.isFinite(result.render.audioMastering.measurement.truePeak),"render receipt must include measured encoded true peak");
+  assert.equal(typeof result.render.audioMastering.qualityControl.loudnessRangeWithinLimit,"boolean","render receipt must check the measured loudness-range ceiling");
+  assert.equal(typeof result.render.audioMastering.qualityControl.passed,"boolean","render receipt must report whether measured delivery targets passed");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
@@ -42,6 +91,12 @@ test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  ]}]};
  const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
+});
+
+test("cloud FFmpeg renderer refuses enabled mastering when no audio clips exist",async()=>{
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
+ await assert.rejects(()=>renderCloudTimeline({timeline:{audioMastering:{enabled:true,profile:"web-podcast"},tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="AUDIO_MASTERING_REQUIRES_AUDIO");
 });
 
 test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
