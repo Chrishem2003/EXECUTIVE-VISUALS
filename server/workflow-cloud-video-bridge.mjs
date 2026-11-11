@@ -156,6 +156,12 @@ export async function executeCloudVideoWorkflowNode({
   if(status?.status!==200)throw cloudResultError(status,"VIDEO_WORKFLOW_JOB_STATUS_UNAVAILABLE");
   const cloudJob=status.body?.job;
   if(!cloudJob||cloudJob.id!==cloudJobId)throw fail("Cloud job status response did not match the approved job.","VIDEO_WORKFLOW_JOB_STATUS_INVALID");
+  const approvedInput=cloudJob.input||{};
+  if(cloudJob.owner_id!==job.owner_id||cloudJob.project_id!==projectId||cloudJob.job_type!=="video.generate"||
+     approvedInput.workflowQuoteId!==quoteId||approvedInput.workflowRequestId!==requestId||
+     approvedInput.requestHash!==cloudRequest.requestHash){
+   throw fail("Cloud job receipt does not match the owner, project and exact approved workflow quote.","VIDEO_WORKFLOW_JOB_RECEIPT_MISMATCH");
+  }
   if(cloudJob.status==="succeeded") {
    const cloudAssetIds=cloudJob.output?.assetIds;
    if(!Array.isArray(cloudAssetIds)||cloudAssetIds.length<1||cloudAssetIds.length>10)throw fail("Cloud video job completed without a valid private asset collection.","VIDEO_WORKFLOW_OUTPUT_INVALID");
@@ -195,7 +201,7 @@ export async function executeCloudVideoWorkflowNode({
    throw fail(String(detail.message||"Cloud video job ended with status "+cloudJob.status).slice(0,500),
     cloudJob.status==="needs_input"?"VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT":"VIDEO_WORKFLOW_CLOUD_JOB_FAILED");
   }
-  if(!waitForCompletion)return {pending:true,cloudJobId,quoteId,requestId,routedModel,approvedMaxAmount,status:cloudJob.status};
+  if(!waitForCompletion)return {pending:true,cloudJobId,quoteId,requestId,requestHash:cloudRequest.requestHash,routedModel,approvedMaxAmount,status:cloudJob.status};
   onProgress(cloudJob.status==="running"?80:72);
   await new Promise(resolve=>setTimeout(resolve,pollIntervalMs));
  }

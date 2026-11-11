@@ -129,8 +129,10 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    continue;
   }
   const nodeInput={...config,...values};
-  const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
-  saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
+  const priorNodeRun=stored.find(row=>row.node_id===nodeId);
+  const priorOutput=parseJson(priorNodeRun?.output_json,{});
+  const attempt=(priorNodeRun?.attempt||0)+1;
+  saveNode(db,runId,nodeId,"running",{input:nodeInput,output:priorOutput,attempt});
   try{
    let output={};
    if(node.kind==="text"||node.kind==="prompt"){
@@ -259,12 +261,19 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
     enforceIdentityPermission(db,job,config,values,"face-animation");
-    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
-    if(String(config.provider||"")==="runway"&&String(config.model||"")==="model-router"){
+    const cloudRouterNode=String(config.provider||"")==="runway"&&String(config.model||"")==="model-router";
+    if(!cloudRouterNode&&!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
+    if(cloudRouterNode){
      const executionMode=assertVideoWorkflowExecutionMode(undefined,{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
      if(executionMode!=="cloud")throw Object.assign(new Error("Set VIDEO_WORKFLOW_EXECUTION_MODE=cloud only after the authenticated cloud workspace and worker release gates are ready."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
      const cloudStarted=Date.now();
      const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
+      onApprovalRequired:receipt=>{
+       const detail={code:"VIDEO_WORKFLOW_APPROVAL_REQUIRED",message:"A fresh, non-billable quote is ready. The project owner must approve the exact quote and spending ceiling before any provider job is queued."};
+       saveNode(db,runId,nodeId,"awaiting_approval",{input:nodeInput,output:{videoQuote:receipt},error:detail,attempt});
+       db.prepare("UPDATE workflow_runs SET status='awaiting_approval',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+        .run(json(detail),now(),runId);
+      },
       onJobEnqueued:receipt=>{
        const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
        saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:receipt,error:detail,attempt});
@@ -272,9 +281,13 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
         .run(json(detail),now(),runId);
       },
       onProgress:value=>onProgress(value)});
+     if(result.awaitingApproval===true){
+      return {status:"awaiting_approval",runId,waitingNodeId:nodeId,quoteId:result.quoteId,
+       completedNodes:completedCount,totalNodes:nodeCount};
+     }
      if(result.pending===true){
       const pendingOutput={cloudJobId:result.cloudJobId,quoteId:result.quoteId,requestId:result.requestId,
-       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,status:result.status};
+       requestHash:result.requestHash,routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,status:result.status};
       const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
       saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:pendingOutput,error:detail,attempt});
       db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
