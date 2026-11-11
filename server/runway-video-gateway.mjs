@@ -94,7 +94,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
 }
 async function readBoundedJsonText(response,maxBytes=2*1024*1024){
  const declared=Number(response.headers?.get?.("content-length")||0);
- if(Number.isFinite(declared)&&declared>maxBytes)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ if(Number.isFinite(declared)&&declared>maxBytes){try{await response.body?.cancel?.()}catch{}throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}
  const reader=response.body?.getReader?.();
  if(!reader)throw fail("Runway API response did not provide a readable stream.","VIDEO_GATEWAY_INVALID_RESPONSE");
  const chunks=[];let total=0;
