@@ -79,3 +79,22 @@ test("preflight permits explicit no-audio and provider-default modes but rejects
  assert.equal(invalid.status,"blocked");
  assert.equal(invalid.shots[0].checks.find(check=>check.id==="audio_mode").status,"failed");
 });
+
+
+test("preflight blocks Fal until a durable restart-safe cloud task adapter exists",()=>{
+ const falVideo={...video,provider:"fal",model:"fal-video-model",availableModels:[],modelCapabilities:{
+  minDurationSeconds:1,maxDurationSeconds:30,aspectRatios:["16:9"],resolutions:["provider_default"],referenceImages:false,audioModes:[]
+ }};
+ const falShot={...shot,provider:"fal",model:"fal-video-model",durationSeconds:5,resolution:"provider_default",referenceImageCount:0,audioMode:"none"};
+ const result=preflightVideoProduction({shots:[falShot],providerCatalog:{providers:[falVideo]},pricingCatalog:pricing,now});
+ assert.equal(result.status,"blocked");
+ assert.equal(result.readyForApproval,false);
+ assert.equal(result.shots[0].checks.find(check=>check.id==="worker_adapter").status,"failed");
+ assert.match(result.shots[0].checks.find(check=>check.id==="worker_adapter").reason,/restart-safe task adapter/);
+ assert.equal(result.requestsSubmitted,false);
+});
+test("preflight explicitly records the durable Runway worker adapter as supported",()=>{
+ const result=preflightVideoProduction({shots:[shot],providerCatalog,pricingCatalog:pricing,now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.shots[0].checks.find(check=>check.id==="worker_adapter").status,"passed");
+});
