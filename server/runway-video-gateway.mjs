@@ -108,11 +108,11 @@ async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fet
     let response;
     try{response=await fetchImpl(url,{method,headers,body,signal:controller.signal,redirect:"error"});}
     catch(error){throw fail(error?.name==="AbortError"?"Runway API request timed out.":"Runway API could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
+    if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
+    if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
+    if(!response.ok){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
     const raw=await readBoundedJsonText(response);
     let data={};try{data=raw?JSON.parse(raw):{};}catch{throw fail("Runway API returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}
-    if(response.status===429)throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
-    if(response.status>=500)throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
-    if(!response.ok)throw fail("Runway API rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
     return data;
   }finally{clearTimeout(timer);}
 }
