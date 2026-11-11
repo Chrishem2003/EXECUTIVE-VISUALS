@@ -294,8 +294,8 @@ test("image-to-video applies model-specific resolution support without inventing
  const image="data:image/png;base64,iVBORw0KGgo=";
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"gen4.5",prompt:"A moving camera",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const kling720=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16",resolution:"720p"});
- assert.equal(kling720.resolution,"auto_720p");assert.equal("ratio" in kling720,false);
+ assert.equal(kling720.ratio,"auto_720p");assert.equal("resolution" in kling720,false);
  const kling1080=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"});
- assert.equal(kling1080.resolution,"auto_1080p");assert.equal("ratio" in kling1080,false);
+ assert.equal(kling1080.ratio,"auto_1080p");assert.equal("resolution" in kling1080,false);
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling3.0_pro",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
 });
