@@ -18,6 +18,9 @@ test("missing or failed mastering QC cannot certify an enabled mastering deliver
  const missing=assessDeliveryEvidence(t,[master(t)]);
  assert.equal(missing.status,"review");
  assert.ok(missing.findings.some(x=>x.code==="DELIVERY_AUDIO_MASTERING_NOT_APPLIED"));
+ const missingMeasurement=assessDeliveryEvidence(t,[master(t,{render:{durationSeconds:2,audioMastering:{applied:true,profile:"ebu-r128",measurement:{integratedLoudness:null,loudnessRange:null,truePeak:null},qualityControl:{passed:true}}}})]);
+ assert.equal(missingMeasurement.status,"review","null measurements must never be coerced to zero and accepted");
+ assert.ok(missingMeasurement.findings.some(x=>x.code==="DELIVERY_AUDIO_MASTERING_QC_MISSING"));
  const failed=assessDeliveryEvidence(t,[master(t,{render:{durationSeconds:2,audioMastering:{applied:true,profile:"ebu-r128",measurement:{integratedLoudness:-21,loudnessRange:4,truePeak:-0.4},qualityControl:{passed:false}}}})]);
  assert.equal(failed.status,"review");
  assert.ok(failed.findings.some(x=>x.code==="DELIVERY_AUDIO_MASTERING_QC_FAILED"));
