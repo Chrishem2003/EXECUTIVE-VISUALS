@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createVideoProviderExecutionRouter } from "../video-provider-execution-router.mjs";
-import { executeCloudVideoGenerationJob } from "../cloud-video-generation-executor.mjs";
+import { executeCloudVideoGenerationJob } from "../cloud-video-generation-job-executor.mjs";
 
 const requestHash = "a".repeat(64);
 const job = {
