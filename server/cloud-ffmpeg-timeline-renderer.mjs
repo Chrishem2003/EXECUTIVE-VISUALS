@@ -14,10 +14,10 @@ const validateClipTiming=(clip)=>{
  if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
 };
 export function parseAudioLoudnessMeasurement(stderr=""){
- const integratedMatch=String(stderr).match(/^\\s*I:\\s*(-?\\d+(?:\\.\\d+)?)\\s*LUFS\\s*$/m);
- const rangeMatch=String(stderr).match(/^\\s*LRA:\\s*(-?\\d+(?:\\.\\d+)?)\\s*LU\\s*$/m);
+ const integratedMatch=String(stderr).match(/^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$/m);
+ const rangeMatch=String(stderr).match(/^\s*LRA:\s*(-?\d+(?:\.\d+)?)\s*LU\s*$/m);
  const truePeakSection=String(stderr).split(/True peak:/i).at(-1);
- const peakMatch=truePeakSection?.match(/^\\s*Peak:\\s*(-?\\d+(?:\\.\\d+)?)\\s*dBFS\\s*$/m);
+ const peakMatch=truePeakSection?.match(/^\s*Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS\s*$/m);
  const integratedLoudness=integratedMatch?Number(integratedMatch[1]):null;
  const loudnessRange=rangeMatch?Number(rangeMatch[1]):null;
  const truePeak=peakMatch?Number(peakMatch[1]):null;
