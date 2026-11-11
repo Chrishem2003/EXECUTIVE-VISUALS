@@ -45,6 +45,8 @@ assert.deepEqual(webMastering,{enabled:true,profile:"web-podcast",integratedLoud
 const broadcastMastering=normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true});
 assert.equal(broadcastMastering.integratedLoudness,-23,"EBU R128 must override a submitted Web target");
 assert.equal(broadcastMastering.profile,"ebu-r128");
+assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",truePeak:-0.5}),/EBU R128 true peak must not exceed -1 dBTP/);
+assert.equal(normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",truePeak:-1}).truePeak,-1);
 const customMastering=normalizeAudioMasteringSettings({enabled:false,profile:"custom",integratedLoudness:-18.5,loudnessRange:7,truePeak:-2,dualMono:false});
 assert.equal(customMastering.integratedLoudness,-18.5,"Custom profile must preserve its explicit target");
 assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"unknown",integratedLoudness:-16}),/supported audio mastering profile/);
