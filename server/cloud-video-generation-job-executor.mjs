@@ -34,7 +34,7 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provide either a fixed adapter or an adapter resolver, not both.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
   }
 
-  const input = jobInput(job);
+  if (typeof job.lease_token !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(job.lease_token)) {\n    throw fail("Cloud video job is missing its per-attempt fencing token.", "VIDEO_WORKER_LEASE_LOST");\n  }\n  const ensureLease = async () => {\n    if (signal?.aborted || await assertLease() !== true) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");\n  };\n  const input = jobInput(job);
   let selectedAdapter = adapter;
   if (typeof resolveAdapter === "function") {
     try { selectedAdapter = await resolveAdapter({ provider: input.provider, model: input.model, job }); }
@@ -91,17 +91,17 @@ export async function executeCloudVideoGenerationJob({
         throw fail("Provider preflight quote is invalid or exceeds the approved reservation; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
       }
     }
-    const began = await ledger.begin(job.id, workerId);
+    await ensureLease();\n    const began = await ledger.begin(job.id, workerId, job.lease_token);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
     let submitted;
     try {
-      submitted = await selectedAdapter.submit(providerInput, { job, preflightQuote });
+      await ensureLease();\n      submitted = await selectedAdapter.submit(providerInput, { job, preflightQuote, signal });
     } catch (error) {
-      try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN"); } catch {}
+      try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN", job.lease_token); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
     if (!submitted || typeof submitted.taskId !== "string" || !submitted.taskId.trim()) {
-      try { await ledger.markUnknown(job.id, workerId, "PROVIDER_TASK_ID_MISSING"); } catch {}
+      try { await ledger.markUnknown(job.id, workerId, "PROVIDER_TASK_ID_MISSING", job.lease_token); } catch {}
       throw fail("Provider did not return a durable task ID; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
     let recordMetadata;
@@ -117,7 +117,7 @@ export async function executeCloudVideoGenerationJob({
       }
       recordMetadata = { acceptedStatus: submitted.status || "queued", ...(preflightQuote ? { preflightQuote: { configId: preflightQuote.configId, model: preflightQuote.model, provider: preflightQuote.provider, estimatedCredits: preflightQuote.estimatedCredits, estimatedUsd: preflightQuote.estimatedUsd, currency: preflightQuote.currency } } : {}), ...submittedMetadata };
       if (Buffer.byteLength(JSON.stringify(recordMetadata)) > 7000) throw fail("Durable provider submission metadata exceeded the ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
-      const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata);
+      await ensureLease();\n      const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata, job.lease_token);
       if (!recorded) throw new Error("Provider task ID was not recorded.");
     } catch {
       // The RPC may have committed despite a lost response. The job is held
