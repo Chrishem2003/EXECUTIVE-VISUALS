@@ -138,7 +138,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    videoEffects.push(`${currentVideo}subtitles=filename='${escapeFilterPath(tempPath)}':force_style='${style}'[${nextLabel}]`);
    currentVideo=`[${nextLabel}]`;
   }
-  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0${masteringFilter?","+masteringFilter:""},alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
+  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95${masteringFilter?","+masteringFilter:""}[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
   if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
