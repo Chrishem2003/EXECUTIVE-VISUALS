@@ -600,6 +600,7 @@ export function createAppServer() {
       }
       const cloudVideoJobCancelMatch=path.match(/^\/api\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
       if(cloudVideoJobCancelMatch&&req.method==="POST"){
+        if(!rateAllowed("video-job-cancel:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many video cancellation requests. Try again shortly.");return;}
         if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud video job cancellation is disabled.");return;}
         const result=await cloudVideoGenerationDispatch.cancelJob({jobId:cloudVideoJobCancelMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
