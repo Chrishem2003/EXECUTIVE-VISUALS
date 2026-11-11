@@ -5,7 +5,7 @@ import { createCloudVideoGenerationExecutor } from "../cloud-video-generation-ex
 const job={id:"job-1",owner_id:"owner-1",project_id:"project-1",job_type:"video.generate.shot",input:{approvalId:"approval-1",shotIndex:0}};
 const approval={id:"approval-1",ownerId:"owner-1",projectId:"project-1",status:"approved_pending_submission",currency:"USD",budgetCeilingMicros:5000000,requestHash:"a".repeat(64),shots:[{provider:"runway",model:"seedance2_5",prompt:"A cinematic sunrise",durationSeconds:5,aspectRatio:"16:9",estimatedCostMicros:2500000,name:"sunrise"}]};
 const mp4=Buffer.concat([Buffer.from("0000ftyp"),Buffer.alloc(32)]);
-function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCEEDED",outputAssetId=taskState==="succeeded"?"asset-1":null,provider="runway"}={}){
+function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCEEDED",outputAssetId=taskState==="succeeded"?"asset-1":null,provider="runway",cancelStatus="OK",signalController=null,abortOnSubmit=false}={}){
  const calls=[],record={id:"task-1",state:taskState,providerTaskId,outputAssetId};
  const approved={...approval,shots:[{...approval.shots[0],provider}]};
  const tasks={
@@ -15,6 +15,8 @@ function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCE
   async markSubmissionUnknown(id,value){calls.push(["unknown",value]);record.state="submission_unknown";},
   async markProcessing(id,value){calls.push(["processing",value]);record.state="processing";},
   async markFailed(id,value){calls.push(["failed",value]);record.state="failed";},
+  async markCancellationRequested(id,value){calls.push(["cancel-requested",value]);record.state="cancel_requested";record.providerStatus=value.providerStatus;},
+  async markCancelled(id,value){calls.push(["cancelled",value]);record.state="cancelled";record.providerStatus=value.providerStatus;},
   async markSucceeded(id,value){calls.push(["succeeded",value]);record.state="succeeded";record.outputAssetId=value.asset?.id||null;}
  };
  const approvals={async get(id){calls.push(["approval",id]);return approved;}};
@@ -24,7 +26,7 @@ function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCE
   submitTask:async value=>{calls.push(["submit",value]);return{taskId:"123e4567-e89b-42d3-a456-426614174000",estimatedCostCredits:25};},
   getTask:async value=>{calls.push(["poll",value]);return{taskId:value.taskId,status:providerStatus,outputUrl:"https://cdn.example.cloudfront.net/video.mp4"};},
   downloadOutput:async value=>{calls.push(["download",value]);return mp4;},
-  providerAdapters:provider==="fal"?{fal:{submit:async value=>{calls.push(["fal-submit",value]);return{taskId:"123e4567-e89b-42d3-a456-426614174000"};},poll:async value=>{calls.push(["fal-poll",value]);return{taskId:value.taskId,status:providerStatus,outputUrl:"https://v3.fal.media/files/output.mp4"};},download:async value=>{calls.push(["fal-download",value]);return mp4;}}}:{},
+  providerAdapters:provider==="fal"?{fal:{submit:async value=>{calls.push(["fal-submit",value]);if(abortOnSubmit)signalController?.abort();return{taskId:"123e4567-e89b-42d3-a456-426614174000"};},poll:async value=>{calls.push(["fal-poll",value]);return{taskId:value.taskId,status:providerStatus,outputUrl:"https://v3.fal.media/files/output.mp4"};},cancel:async value=>{calls.push(["fal-cancel",value]);return{taskId:value.taskId,status:cancelStatus};},download:async value=>{calls.push(["fal-download",value]);return mp4;}}}:{},
   sleepImpl:async()=>{}
  });
  return{execute,calls,record};
@@ -95,4 +97,35 @@ test("recovered Fal task resumes polling without creating a second paid submissi
  assert.equal(result.provider,"fal");
  assert.equal(f.calls.filter(x=>x[0]==="fal-submit").length,0);
  assert.ok(f.calls.some(x=>x[0]==="fal-poll"));
+});
+
+test("aborted Fal generation cancels the persisted provider task and marks the ledger terminal",async()=>{
+ const controller=new AbortController(),f=fixture({provider:"fal",signalController:controller,abortOnSubmit:true,cancelStatus:"OK"});
+ await assert.rejects(()=>f.execute({job,signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(f.record.state,"cancelled");
+ assert.equal(f.calls.filter(x=>x[0]==="fal-submit").length,1);
+ assert.equal(f.calls.filter(x=>x[0]==="fal-cancel").length,1);
+ assert.ok(f.calls.some(x=>x[0]==="cancel-requested"));
+ assert.ok(f.calls.some(x=>x[0]==="cancelled"));
+ assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
+});
+test("Fal cancellation request remains durably pending until provider termination is confirmed",async()=>{
+ const controller=new AbortController(),f=fixture({provider:"fal",signalController:controller,abortOnSubmit:true,cancelStatus:"CANCELLATION_REQUESTED"});
+ await assert.rejects(()=>f.execute({job,signal:controller.signal}),error=>error.code==="VIDEO_TASK_CANCELLATION_PENDING");
+ assert.equal(f.record.state,"cancel_requested");
+ assert.equal(f.calls.filter(x=>x[0]==="fal-cancel").length,1);
+ assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
+});
+test("recovered cancellation reconciles a completed provider task without publishing its output",async()=>{
+ const f=fixture({provider:"fal",taskState:"cancel_requested",providerTaskId:"123e4567-e89b-42d3-a456-426614174000",providerStatus:"SUCCEEDED"});
+ await assert.rejects(()=>f.execute({job}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(f.record.state,"cancelled");
+ assert.ok(f.calls.some(x=>x[0]==="fal-poll"));
+ assert.equal(f.calls.filter(x=>x[0]==="fal-submit"||x[0]==="publish").length,0);
+});
+test("provider-reported cancellation is terminal and is not misclassified as a generation failure",async()=>{
+ const f=fixture({provider:"fal",providerStatus:"CANCELLED"});
+ await assert.rejects(()=>f.execute({job}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(f.record.state,"cancelled");
+ assert.equal(f.calls.filter(x=>x[0]==="failed").length,0);
 });

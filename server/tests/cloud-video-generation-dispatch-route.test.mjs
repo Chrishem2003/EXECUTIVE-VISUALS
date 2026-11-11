@@ -18,3 +18,8 @@ test("HTTP submission route is rate limited and does not invoke a model adapter"
  assert.ok(route.includes('rateAllowed("video-production-submit:'));
  assert.doesNotMatch(route,/submitRunwayVideoTask|generateRunwayVideo|fetch\(/);
 });
+
+test("cloud video cancellation route is authenticated and delegates owner identity from the session",()=>{
+ assert.ok(source.includes('path.match(/^\\/api\\/video-generation-jobs\\/([0-9a-f-]{36})\\/cancel$/i)'));
+ assert.ok(source.includes('cloudVideoGenerationDispatch.cancelJob({jobId:cloudVideoJobCancelMatch[1],ownerId:user.id})'));
+});
