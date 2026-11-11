@@ -72,7 +72,8 @@ test("video dispatch readiness reports missing prerequisites without exposing se
  assert.equal(blocked.checks.cloudDispatch,false);
  assert.equal(blocked.checks.supabaseServiceCredentials,true);
  assert.equal(blocked.checks.videoProviderReady,true);
- assert.equal(blocked.blockers.length,1);
+ assert.equal(blocked.blockers.length,2);
+ assert.ok(blocked.blockers.some(item=>item.check==="appDataPersistence"));
  assert.equal(blocked.appDataPersistenceWarning!==null,true);
  assert.equal(JSON.stringify(blocked).includes("super-secret"),false);
  assert.equal(blocked.policy.requestsSubmitted,false);
@@ -125,7 +126,7 @@ test("admin execution monitor classifies worker leases as active, expired, missi
 test("administrator readiness recognizes Runway and Fal durable cloud worker adapters",()=>{
  const env={AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"true",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only"};
  for(const provider of ["fal","runway"]){
-  const result=buildVideoDispatchReadiness({env,providerCatalog:{providers:[{id:"video",provider,model:"model-1",status:"ready",remote:true}]}});
+  const result=buildVideoDispatchReadiness({env,providerCatalog:{providers:[{id:"video",provider,model:"model-1",status:"ready",remote:true}]},dataPersistence:"operator-confirmed-volume"});
   assert.equal(result.checks.videoProviderReady,true);
   assert.equal(result.checks.durableWorkerAdapterReady,true);
   assert.equal(result.canSubmit,true);
