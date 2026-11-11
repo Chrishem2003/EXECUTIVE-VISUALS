@@ -14,7 +14,7 @@ export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
 const money=(value:number)=>{const n=Number(value||0)/1_000_000;return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n);};
-function pricingFreshness(expiresAt:string,observedAt:string){const expiry=Date.parse(expiresAt),observed=Date.parse(observedAt);if(!Number.isFinite(expiry))return "Expiry not supplied";if(expiry<=Date.now())return "Expired";if(expiry<=Date.now()+7*24*60*60*1000)return "Expires within 7 days";return "Current until "+new Date(expiry).toLocaleDateString();}
+function pricingFreshness(expiresAt:string,observedAt:string){const expiry=Date.parse(expiresAt),observed=Date.parse(observedAt);if(!Number.isFinite(observed))return "Observation date not supplied";if(!Number.isFinite(expiry))return "Expiry not supplied";if(expiry<=Date.now())return "Expired";if(expiry<=Date.now()+7*24*60*60*1000)return "Expires within 7 days";return "Current until "+new Date(expiry).toLocaleDateString();}
 function statusClass(value:string){return ["ready","succeeded","completed","active"].includes(value)?"good":["failed","disabled","needs_configuration","remote_opt_in_required"].includes(value)?"warn":"neutral";}
 export function renderAdminOperationsWorkspace(){
  const o=state.overview;
