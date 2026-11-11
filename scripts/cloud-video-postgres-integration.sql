@@ -3088,6 +3088,7 @@ select * from executive_visuals.grant_generation_credits(
 );
 
 -- The workflow owner must hold a current plan that explicitly entitles video generation.
+reset role;
 create table if not exists executive_visuals.customer_subscriptions (
   id uuid primary key,
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -3104,6 +3105,8 @@ insert into executive_visuals.customer_subscriptions(
   'active',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '30 days',
   '{"ai_generation":true,"video_generation":true,"source":"disposable_ci_fixture"}'::jsonb
 );
+
+set role service_role;
 
 -- Workflow quote ledger: service-role-only immutable quote recording.
 do $workflow_quote_privileges$
