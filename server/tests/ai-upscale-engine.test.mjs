@@ -5,6 +5,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
+function pngBytes(width, height, colorType = 6) {
+  const { deflateSync } = require("node:zlib");
+  function chunk(type, data) {
+    const name = Buffer.from(type), body = Buffer.concat([name, data]); let crc = 0xffffffff;
+    for (const byte of body) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4); tail.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, tail]);
+  }
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = colorType;
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.alloc(height * (1 + width * bytesPerPixel)))), chunk("IEND", Buffer.alloc(0))]);
+}
+
 function pngHeader(width, height) {
   const bytes = Buffer.alloc(24);
   Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
@@ -15,21 +29,20 @@ function pngHeader(width, height) {
   return bytes;
 }
 
-async function writeFakeEngine(path, fixedDimension = null) {
+async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null) {
   const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
+  const dimensionsExpression = JSON.stringify(sourceDimensions);
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
 const size = ${sizeExpression};
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8);
-png.write("IHDR",12,"ascii");
-png.writeUInt32BE(size,16);
-png.writeUInt32BE(size,20);
-fs.writeFileSync(out,png);
+const sourceDimensions = ${dimensionsExpression};
+const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
+const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
+${pngBytes.toString()}
+fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
 `;
   await writeFile(path, source);
   await chmod(path, 0o755);
@@ -93,12 +106,9 @@ test("AI upscaler rejects a source replaced during inference and removes its der
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
+${pngBytes.toString()}
 fs.writeFileSync(${JSON.stringify(input)}, "replacement bytes");
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(2,16); png.writeUInt32BE(2,20);
-fs.writeFileSync(out,png);
+fs.writeFileSync(out,pngBytes(2,2));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
@@ -290,6 +300,7 @@ const tile = Number(value("-t"));
 const input = fs.readFileSync(value("-i"));
 const output = value("-o");
 const scale = Number(value("-s"));
+${pngBytes.toString()}
 const attemptsFile = ${JSON.stringify(attemptsFile)};
 const previous = fs.existsSync(attemptsFile) ? Number(fs.readFileSync(attemptsFile, "utf8")) : 0;
 fs.writeFileSync(attemptsFile, String(previous + 1));
@@ -298,13 +309,7 @@ if (tile === 0 || tile === 256) {
   process.stderr.write("vkAllocateMemory failed: VK_ERROR_OUT_OF_DEVICE_MEMORY");
   process.exit(2);
 }
-const png = Buffer.alloc(24);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png, 0);
-png.writeUInt32BE(13, 8);
-png.write("IHDR", 12, "ascii");
-png.writeUInt32BE(input.readUInt32BE(16) * scale, 16);
-png.writeUInt32BE(input.readUInt32BE(20) * scale, 20);
-fs.writeFileSync(output, png);
+fs.writeFileSync(output, pngBytes(input.readUInt32BE(16) * scale, input.readUInt32BE(20) * scale));
 `;
   await writeFile(binary, source);
   await chmod(binary, 0o755);
@@ -468,7 +473,7 @@ test("AI upscaler rejects and removes an output that loses source alpha transpar
   const input = join(directory, "transparent.png");
   const output = join(directory, "opaque.png");
   await writeFile(input, pngHeaderWithColorType(8, 6, 6));
-  await writeFakeEngine(binary);
+  await writeFakeEngine(binary, null, 2, [8, 6]);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   try {
@@ -494,11 +499,8 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-const png = Buffer.alloc(26);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20); png[25]=6;
-fs.writeFileSync(out,png);
+${pngBytes.toString()}
+fs.writeFileSync(out,pngBytes(8*scale,6*scale,6));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
@@ -563,12 +565,8 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-const png = Buffer.alloc(26);
-Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
-png.writeUInt32BE(13,8); png.write("IHDR",12,"ascii");
-png.writeUInt32BE(8*scale,16); png.writeUInt32BE(6*scale,20);
-png[24]=8; png[25]=2;
-fs.writeFileSync(out,png);
+${pngBytes.toString()}
+fs.writeFileSync(out,pngBytes(8*scale,6*scale,2));
 `;
   await writeFile(binary, script);
   await chmod(binary, 0o755);
@@ -608,5 +606,93 @@ require("node:fs").writeFileSync(${JSON.stringify(attemptsFile)}, "invoked");
     );
     const { access } = await import("node:fs/promises");
     await assert.rejects(access(attemptsFile));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("AI upscaler rejects a checksum-invalid PNG output even when its dimensions look correct", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-bad-png-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "corrupt.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), zlib = require("node:zlib");
+const out = process.argv[process.argv.indexOf("-o") + 1];
+function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}
+const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;
+const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",zlib.deflateSync(Buffer.alloc(18))),chunk("IEND",Buffer.alloc(0))]);png[png.length-5]^=0xff;fs.writeFileSync(out,png);
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("AI upscaler rejects symlinked PNG output instead of validating a target file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-symlink-png-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "linked.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2);
+const out = args[args.indexOf("-o") + 1];
+fs.symlinkSync(${JSON.stringify(input)}, out);
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { lstat, access } = await import("node:fs/promises");
+    await assert.rejects(lstat(output));
+    await access(input);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+
+for (const format of ["jpg", "webp"]) {
+  test(`AI upscaler rejects symlinked ${format.toUpperCase()} output paths`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), `ev-ai-upscale-symlink-${format}-`));
+    const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+    const input = join(directory, "source.png"), output = join(directory, `linked.${format}`);
+    await writeFile(input, pngHeader(1, 1));
+    const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2), out = args[args.indexOf("-o") + 1];
+fs.symlinkSync(${JSON.stringify(input)}, out);
+`;
+    await writeFile(binary, generator); await chmod(binary, 0o755);
+    await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+    try {
+      const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+      await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+      const { lstat, access } = await import("node:fs/promises");
+      await assert.rejects(lstat(output));
+      await access(input);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+}
+
+test("AI upscaler rejects PNG containers with empty image-data chunks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-empty-idat-"));
+  const binary = join(directory, "engine"), model = "realesrgan-x4plus";
+  const input = join(directory, "source.png"), output = join(directory, "empty-idat.png");
+  await writeFile(input, pngHeader(1, 1));
+  const generator = `#!/usr/bin/env node
+const fs = require("node:fs"), args = process.argv.slice(2), out = args[args.indexOf("-o") + 1];
+function chunk(type,data){const name=Buffer.from(type),body=Buffer.concat([name,data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const tail=Buffer.alloc(4);tail.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([len,body,tail]);}
+const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(2,0);ihdr.writeUInt32BE(2,4);ihdr[8]=8;ihdr[9]=6;
+fs.writeFileSync(out,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",ihdr),chunk("IDAT",Buffer.alloc(0)),chunk("IEND",Buffer.alloc(0))]));
+`;
+  await writeFile(binary, generator); await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model"); await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }), error => error.code === "AI_UPSCALE_OUTPUT_INVALID");
+    const { access } = await import("node:fs/promises"); await assert.rejects(access(output));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
