@@ -63,11 +63,18 @@ begin
     update executive_visuals.video_generation_approvals
       set status='failed',updated_at=clock_timestamp()
       where id=changed.approval_id;
-  elsif p_to_state='cancelled' and not exists(
-    select 1 from executive_visuals.video_generation_tasks t
-    where t.approval_id=changed.approval_id
-      and t.state not in ('succeeded','failed','cancelled')
-  ) then
+  elsif p_to_state='cancelled'
+    and not exists(
+      select 1 from executive_visuals.video_generation_tasks t
+      where t.approval_id=changed.approval_id
+        and t.state not in ('succeeded','failed','cancelled')
+    )
+    and not exists(
+      select 1 from executive_visuals.jobs j
+      where j.owner_id=changed.owner_id and j.job_type='video.generate.shot'
+        and j.input->>'approvalId'=changed.approval_id::text
+        and j.status not in ('succeeded','partial','failed','cancelled','blocked','expired')
+    ) then
     update executive_visuals.video_generation_approvals
       set status='withdrawn',updated_at=clock_timestamp()
       where id=changed.approval_id;
