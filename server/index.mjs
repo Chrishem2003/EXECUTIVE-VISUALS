@@ -18,6 +18,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
@@ -547,8 +548,18 @@ export function createAppServer() {
         }
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
-          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
-          createReadStream(file).pipe(res);return;
+          const size=Number(asset.byte_size);
+          const range=parseByteRange(req.headers.range,size);
+          if(range?.unsatisfiable){
+            res.writeHead(416,{"content-range":`bytes */${size}`,"accept-ranges":"bytes",...SECURITY_HEADERS,...cors});
+            res.end();return;
+          }
+          const start=range?.start??0,end=range?.end??Math.max(0,size-1),length=range?end-start+1:size;
+          const headers={"content-type":asset.media_type,"content-length":length,"accept-ranges":"bytes","content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors};
+          if(range)headers["content-range"]=`bytes ${start}-${end}/${size}`;
+          res.writeHead(range?206:200,headers);
+          if(length===0){res.end();return;}
+          createReadStream(file,range?{start,end}:undefined).pipe(res);return;
         }
         if(req.method==="DELETE"){
           const changed=db.prepare("UPDATE assets SET deleted_at=? WHERE id=? AND deleted_at IS NULL").run(now(),asset.id);
