@@ -478,3 +478,14 @@
 .review-reply p{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .review-thread form{display:grid;gap:8px;margin-top:12px}
 .review-thread textarea{width:100%;min-height:58px}
+
+
+.review-reactions-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0}
+.review-reactions-tools button{min-width:34px;padding:6px 9px}
+
+
+.review-history{margin:12px 0 4px 14px;padding:12px;border-left:2px solid var(--line);background:var(--panel-soft,transparent);border-radius:0 8px 8px 0}
+.review-event{padding:8px 0;border-bottom:1px solid var(--line)}
+.review-event:last-child{border-bottom:0}
+.review-event p{margin:4px 0;overflow-wrap:anywhere}
+.review-event small{color:var(--muted)}
