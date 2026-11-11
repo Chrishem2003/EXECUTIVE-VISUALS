@@ -1363,3 +1363,5 @@ body{
 .video-generation-job span{font-size:13px;color:var(--muted)}
 .video-generation-job button{white-space:nowrap}
 @media(max-width:600px){.video-generation-job{align-items:stretch;flex-direction:column}.video-generation-job button{width:100%}}
+
+.auth-forgot{display:block;margin:-5px 0 12px auto;padding:4px 0;border:0;background:transparent;color:#c4b5fd;font-size:10px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.auth-forgot:hover{color:#fff}.auth-back{width:100%;margin-top:4px}
