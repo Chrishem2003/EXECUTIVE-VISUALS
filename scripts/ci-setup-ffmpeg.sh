@@ -11,6 +11,7 @@ archive="$RUNNER_TEMP/$asset_name"
 extract_dir="$RUNNER_TEMP/ev-ffmpeg"
 bin_dir="$RUNNER_TEMP/ev-ffmpeg-bin"
 url="https://github.com/BtbN/FFmpeg-Builds/releases/download/$release_tag/$asset_name"
+trap 'rm -f "$archive"' EXIT
 
 mkdir -p "$extract_dir" "$bin_dir"
 curl --fail --location --show-error \
@@ -18,7 +19,7 @@ curl --fail --location --show-error \
   --connect-timeout 20 --max-time 600 \
   "$url" --output "$archive"
 
-echo "$expected_sha256  $archive" | sha256sum --check --status || {
+printf '%s  %s\n' "$expected_sha256" "$archive" | sha256sum --check --strict || {
   echo "FFmpeg archive SHA-256 verification failed" >&2
   exit 1
 }
