@@ -48,8 +48,8 @@ begin
     raise exception 'first video worker claim did not issue a database fencing token';
   end if;
 
-  perform * from executive_visuals.prepare_video_generation_submission(
-    v_job_id,'123e4567-e89b-42d3-a456-426614174000',
+  perform * from executive_visuals.prepare_video_generation_submission_v2(
+    v_job_id,'123e4567-e89b-42d3-a456-426614174000','video-worker-a',first_claim.lease_token,
     'runway','gen4.5',repeat('f',64)
   );
   update executive_visuals.jobs
