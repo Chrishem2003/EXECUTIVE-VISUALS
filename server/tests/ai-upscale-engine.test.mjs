@@ -45,8 +45,17 @@ function pngHeader(width, height) {
 async function writeFakeEngine(path, fixedDimension = null, outputColorType = 6, sourceDimensions = null, delayMs = 0, pngOptions = {}) {
   const sizeExpression = fixedDimension === null ? "requestedScale" : String(fixedDimension);
   const dimensionsExpression = JSON.stringify(sourceDimensions);
+  const safePngOptions = { ...pngOptions };
+  const compressedExpression = Buffer.isBuffer(safePngOptions.compressedData)
+    ? `Buffer.from(${JSON.stringify([...safePngOptions.compressedData])})`
+    : null;
+  delete safePngOptions.compressedData;
+  const pngOptionsExpression = compressedExpression
+    ? `Object.assign(${JSON.stringify(safePngOptions)}, { compressedData: ${compressedExpression} })`
+    : JSON.stringify(safePngOptions);
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
+const { deflateSync } = require("node:zlib");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
@@ -55,7 +64,7 @@ const sourceDimensions = ${dimensionsExpression};
 const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
 const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
 ${pngBytes.toString()}
-fs.writeFileSync(out,pngBytes(width,height,${outputColorType}));
+fs.writeFileSync(out,pngBytes(width,height,${outputColorType},${pngOptionsExpression}));
 `;
   await writeFile(path, source);
   await chmod(path, 0o755);
