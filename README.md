@@ -1,3 +1,15 @@
+# Current release status — 11 November 2026
+
+The merged application now includes Content Credentials/provenance, signed-in account and project-membership UI, the in-app **Manage → Release readiness** inventory, idempotent subscription checkout, and a durable Runway/Fal video-generation worker with server-side approval and task-ledger integration. Batch 105 adds owner-scoped provider cancellation and restart reconciliation and is still undergoing verification in [PR #387](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/387); it is not yet part of the released application. The detailed, continuously maintained status is in [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md).
+
+**Important distinction:** account identity and owner-managed membership display are implemented; emailed invitations, hosted password recovery, and a complete account/session lifecycle are not yet release-approved. Password recovery is being developed in draft PR [#251](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251) and must not be described as live until a dedicated Executive Visuals identity project, redirect configuration, email delivery, and hosted acceptance are available.
+
+**Storage is not yet durable for hosted customer data.** The existing Render Free service uses ephemeral local storage. The isolated Cloudflare D1 staging database is not yet connected to the application Worker, and R2 has not been activated. The two existing Supabase projects contain NEMA/platform data and must not be reused. See [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md).
+
+The older Render Blueprint section below describes a paid-compute/persistent-disk deployment option, not an approved free staging environment. Do not provision it or incur charges as part of this plan. No production resources, credentials, database migrations, paid services, or provider execution should be changed without explicit approval.
+
+---
+
 ## Storage persistence and deployment checks
 
 See [Storage persistence status and deployment truth](docs/STORAGE-PERSISTENCE-TRUTH.md). Configure an operator-confirmed volume only after verifying the host mount, and test backup/restore separately.
