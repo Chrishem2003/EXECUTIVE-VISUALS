@@ -202,6 +202,19 @@ export function openDatabase(filename) {
       resolved_at TEXT
     );
     CREATE INDEX IF NOT EXISTS reviews_project_created_idx ON reviews(project_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      read_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS notifications_project_idx ON notifications(project_id,user_id);
     CREATE TABLE IF NOT EXISTS consents (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),

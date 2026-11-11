@@ -496,6 +496,47 @@ test("project activity feed is scoped, attributed and cursor-paginated",async()=
   assert.equal((await invalidCursor.json()).error.code,"INVALID_AUDIT_CURSOR");
 });
 
+test("review activity creates private in-app notifications with read state",async()=>{
+  const owner=await register("notify-owner@example.test");
+  const reviewer=await register("notify-reviewer@example.test");
+  const outsider=await register("notify-outsider@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Notification project"})},owner);
+  assert.equal(created.status,201);
+  const project=(await created.json()).project;
+  const added=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"notify-reviewer@example.test",role:"reviewer"})},owner);
+  assert.equal(added.status,201);
+  const reviewerMember=(await added.json()).member;
+
+  const review=await request("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,decision:"request_changes",body:"Please revise the opening sequence."})},owner);
+  assert.equal(review.status,201);
+
+  assert.equal((await fetch(base+"/api/notifications")).status,401);
+  const inbox=await request("/api/notifications?limit=20",{},reviewer);
+  assert.equal(inbox.status,200);
+  const inboxBody=await inbox.json();
+  assert.equal(inboxBody.notifications.length,1);
+  assert.equal(inboxBody.notifications[0].eventType,"review.created");
+  assert.equal(inboxBody.notifications[0].projectId,project.id);
+  assert.equal(inboxBody.unreadCount,1);
+
+  const ownerInbox=await request("/api/notifications",{},owner);
+  assert.equal((await ownerInbox.json()).notifications.length,0);
+  const outsiderInbox=await request("/api/notifications",{},outsider);
+  assert.equal((await outsiderInbox.json()).notifications.length,0);
+
+  const marked=await request("/api/notifications/"+inboxBody.notifications[0].id+"/read",{method:"POST"},reviewer);
+  assert.equal(marked.status,200);
+  const after=await request("/api/notifications",{},reviewer);
+  assert.equal((await after.json()).unreadCount,0);
+
+  const revoked=await request("/api/projects/"+project.id+"/members/"+reviewerMember.id,{method:"DELETE"},owner);
+  assert.equal(revoked.status,200);
+  const revokedInbox=await request("/api/notifications",{},reviewer);
+  assert.equal((await revokedInbox.json()).notifications.length,0);
+  const staleRead=await request("/api/notifications/"+inboxBody.notifications[0].id+"/read",{method:"POST"},reviewer);
+  assert.equal(staleRead.status,404);
+});
+
 test("workflow approval requires reviewer permissions and cannot be replayed",async()=>{
   const owner=await register("approval-owner@example.test");
   const viewer=await register("approval-viewer@example.test");
