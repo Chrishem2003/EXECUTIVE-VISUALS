@@ -114,6 +114,9 @@ create table executive_visuals.reviews (
   status text not null default 'open',
   created_at timestamptz not null default now()
 );
+alter table executive_visuals.reviews enable row level security;
+grant select on executive_visuals.reviews to authenticated;
+
 create table executive_visuals.job_events (
   id bigint generated always as identity primary key,
   job_id uuid not null references executive_visuals.jobs(id),
