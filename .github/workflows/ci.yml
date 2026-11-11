@@ -193,10 +193,6 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
       - name: Apply database-issued worker lease fencing
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
-      - name: Apply atomic publication and cleanup claim fencing
-        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
-      - name: Apply immutable publication cleanup path constraints
-        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
       - name: Apply cloud-video submission and terminal-write fencing
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111250000_cloud_video_worker_lease_fencing.sql
       - name: Apply approved-shot task ledger worker fencing
