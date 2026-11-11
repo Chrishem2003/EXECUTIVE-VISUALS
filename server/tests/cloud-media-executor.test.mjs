@@ -565,6 +565,8 @@ test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGT
  await writeFile(source,"fixture");
  const ffprobe=await executable(directory,"ffprobe",`printf '%s' "$" > "${pidPath}"; trap '' TERM; while :; do sleep 1; done`);
  const ffmpeg=await executable(directory,"ffmpeg","exit 0");
+ const previousProbe=process.env.FFPROBE_PATH;
+ process.env.FFPROBE_PATH=ffprobe;
  const controller=new AbortController();
  try{
   const execute=createCloudMediaExecutor({
@@ -584,7 +586,10 @@ test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGT
   await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
   await new Promise(resolve=>setTimeout(resolve,3300));
   assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH");
- }finally{await rm(directory,{recursive:true,force:true});}
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
 });
 
 test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
