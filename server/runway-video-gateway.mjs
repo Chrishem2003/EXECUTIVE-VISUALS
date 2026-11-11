@@ -90,8 +90,9 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
  }else if(id==="kling_4"){
-  // Kling 4 image-to-video follows input framing; auto tokens select quality.
-  if(resolution!=="provider_default")payload.resolution=resolution==="1080p"?"auto_1080p":"auto_720p";
+  // Kling 4 image-to-video follows input framing; ratio selects output quality.
+  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  payload.ratio=effectiveResolution==="1080p"?"auto_1080p":"auto_720p";
  }
  // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
