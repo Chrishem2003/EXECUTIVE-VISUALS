@@ -144,3 +144,12 @@ test("Fal cancellation validates the persisted request and distinguishes request
   assert.equal(missing.status,"NOT_FOUND");
  }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
 });
+
+test("Fal NOT_FOUND task status is reconciled as terminal cancellation",async()=>{
+ const previous={VIDEO_GATEWAY_ENABLED:process.env.VIDEO_GATEWAY_ENABLED,VIDEO_GATEWAY_ALLOW_REMOTE:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,FAL_KEY:process.env.FAL_KEY,FAL_VIDEO_MODEL:process.env.FAL_VIDEO_MODEL};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ try{
+  const task=await getFalVideoTask({taskId:"019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b",model:"fal-ai/example-video",fetchImpl:async()=>json(404,{status:"NOT_FOUND"})});
+  assert.equal(task.status,"CANCELLED");
+ }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
+});
