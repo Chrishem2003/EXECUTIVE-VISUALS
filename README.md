@@ -144,3 +144,8 @@ AI upscale integrity now detects alpha-bearing PNG/WebP sources, rejects JPEG ou
 
 
 The NCNN/Vulkan adapter rejects high-bit-depth PNG and JPEG sources until that execution path has passed independent precision-preservation tests. Source/output sample depth is recorded in derivative provenance when available. The Python Real-ESRGAN implementation's documented 16-bit capability is not assumed to apply to the separate NCNN executable.
+
+
+## Governed video workflow contract
+
+The current-main implementation defines the immutable `video.generate` request and owner/project-scoped private source resolver. It is a preparatory security boundary only; it does not enable paid generation or claim the full workflow-to-cloud job lifecycle is complete. See [the contract and verification boundary](docs/VIDEO-WORKFLOW-CLOUD-CONTRACT.md).
