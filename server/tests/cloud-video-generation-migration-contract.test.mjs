@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {dirname,resolve} from "node:path";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
 const sql=await readFile(resolve(root,"supabase/migrations/20261111230000_durable_video_generation_tasks_batch_71.sql"),"utf8");
+const cancellationSql=await readFile(resolve(root,"supabase/migrations/20261112000000_video_generation_task_cancellation_batch_105.sql"),"utf8");
 test("cloud video ledger migration keeps both tables server-only",()=>{
  for(const table of ["video_generation_approvals","video_generation_tasks"]){
   assert.match(sql,new RegExp("alter table executive_visuals\\."+table+" enable row level security","i"));
@@ -41,4 +42,17 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
  assert.match(sql,/provider text not null default 'runway' check \(provider in \('runway','fal'\)\)/i);
  assert.match(sql,/coalesce\(shot->>'provider',''\) not in \('runway','fal'\)/i);
  assert.match(sql,/estimated_cost_micros,provider,model\)[\s\S]*?shot->>'provider',shot->>'model'/i);
+});
+
+test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
+ assert.match(cancellationSql,/state in \('reserved','submitting','submission_unknown','submitted','processing','cancel_requested','succeeded','failed','cancelled'\)/i);
+ assert.match(cancellationSql,/p_to_state='cancel_requested' and p_provider_status is null/i);
+ assert.match(cancellationSql,/p_to_state in \('succeeded','failed','cancelled'\).*clock_timestamp\(\)/is);
+ assert.match(cancellationSql,/state not in \('succeeded','failed','cancelled'\)/i);
+ assert.match(cancellationSql,/set status='withdrawn'/i);
+});
+test("cancellation transition RPC remains service-role-only and preserves additive migration safety",()=>{
+ assert.match(cancellationSql,/revoke all on function executive_visuals\.transition_video_generation_task\(/i);
+ assert.match(cancellationSql,/grant execute on function executive_visuals\.transition_video_generation_task\([^;]+ to service_role/i);
+ assert.doesNotMatch(cancellationSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
 });
