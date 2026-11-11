@@ -11,8 +11,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;auditCursor:number|null;auditHasMore:boolean;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],auditCursor:null,auditHasMore:false,members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -71,7 +71,7 @@ export function renderRuntimeWorkspace(){
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ASYNC PROCESSING</div><h3>Job queue</h3></div><span>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+' active</span></div>'+renderJobs()+'</section>'+
  '<section class="panel"><div class="eyebrow">COLLABORATIVE REVIEW</div><h3>Comments and decisions</h3>'+(state.projectId&&["owner","editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<form id="ev-review-form"><input type="hidden" name="assetId" value=""><p class="review-target" id="ev-review-target">Project-level review · choose “Review asset” on a media item to attach feedback to that asset.</p><label>Decision</label><select name="decision"><option value="comment">Comment</option><option value="request_changes">Request changes</option><option value="approve">Approve</option></select><label>Timecode (seconds, optional)</label><input name="timecode" type="number" min="0" step="0.001" placeholder="12.500"><label>Review note</label><textarea name="body" rows="3" required maxlength="10000" placeholder="Describe the issue, requested change or approval."></textarea><button class="primary">Submit review</button></form>':'<small>Select a project and use an owner, editor or reviewer account to comment or approve.</small>')+
  '<div class="review-list">'+state.reviews.map(r=>'<article><div><b>'+esc(r.decision.replace("_"," "))+(r.asset_id?' · '+esc(state.assets.find(a=>a.id===r.asset_id)?.name||"media asset"):' · project')+'</b><span class="job-status">'+esc(r.status)+'</span></div><p>'+esc(r.body)+'</p><small>'+(r.timecode_seconds===null||r.timecode_seconds===undefined?"No timecode":r.timecode_seconds.toFixed(3)+"s")+' · '+esc(r.created_at)+'</small>'+(state.projects.find(p=>p.id===state.projectId)?.access_role==="owner"||["editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<div><button data-ev-review-status="resolved" data-ev-review-id="'+esc(r.id)+'">Resolve</button><button data-ev-review-status="open" data-ev-review-id="'+esc(r.id)+'">Reopen</button></div>':'')+'</article>').join("")+'</div></section>'+
- '<section class="panel"><div class="eyebrow">AUDIT TRAIL</div><h3>Recent workspace events</h3>'+(state.audit.length?'<div class="audit-list">'+state.audit.slice(0,25).map(e=>'<div><b>'+esc(e.type)+'</b><small>'+esc(e.subjectType)+' · '+esc(e.subjectId)+' · '+esc(e.createdAt)+'</small></div>').join("")+'</div>':'<div class="empty">No events recorded yet.</div>')+'</section></div>';
+ '<section class="panel"><div class="eyebrow">AUDIT TRAIL</div><h3>Project activity</h3><p>Recent project events, attributed to the acting account.</p>'+(state.audit.length?'<div class="audit-list">'+state.audit.map(e=>'<div><b>'+esc(e.type)+'</b><small>'+esc(e.actorEmail||"Unknown actor")+' · '+esc(e.subjectType)+' · '+esc(e.subjectId)+' · '+esc(e.createdAt)+'</small></div>').join("")+'</div>':'<div class="empty">No events recorded for this project yet.</div>')+(state.auditHasMore?'<button class="secondary" data-ev-audit-more="true">Load older activity</button>':'')+'</section></div>';
 }
 
 export function renderAssetLibrary(){
@@ -135,15 +135,14 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,audit,providerCatalog,usageResponse]=await Promise.all([
+ const [projects,assets,jobs,providerCatalog,usageResponse]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
   apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
-  apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit"),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
   const recentJobs=state.jobs.slice(0,12);
   const timelines=await Promise.all(recentJobs.map(async job=>{
    try{const response=await apiRequest<{stages:RuntimeJobStage[]}>("/api/jobs/"+encodeURIComponent(job.id)+"/stages");return [job.id,response.stages||[]] as const;}
@@ -153,10 +152,11 @@ async function refresh(){
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
- if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
+ if(state.projectId){try{const response=await apiRequest<{events:Array<Record<string,unknown>>;nextCursor:number|null;hasMore:boolean}>("/api/audit?projectId="+encodeURIComponent(state.projectId)+"&limit=50");state.audit=response.events;state.auditCursor=response.nextCursor;state.auditHasMore=response.hasMore;}catch{state.audit=[];state.auditCursor=null;state.auditHasMore=false;}
+  try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
- else {state.members=[];state.reviews=[];}
+ else {state.audit=[];state.auditCursor=null;state.auditHasMore=false;state.members=[];state.reviews=[];}
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
@@ -202,6 +202,15 @@ document.addEventListener("change",event=>{
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
+ const auditMore=target.closest<HTMLElement>("[data-ev-audit-more]");
+ if(auditMore&&state.projectId&&state.auditCursor){
+  auditMore.setAttribute("disabled","true");
+  const query="/api/audit?projectId="+encodeURIComponent(state.projectId)+"&limit=50&beforeId="+state.auditCursor;
+  void apiRequest<{events:Array<Record<string,unknown>>;nextCursor:number|null;hasMore:boolean}>(query).then(response=>{
+   state.audit=[...state.audit,...response.events];state.auditCursor=response.nextCursor;state.auditHasMore=response.hasMore;paint();
+  }).catch(error=>alert(error.message||error));
+  return;
+ }
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
