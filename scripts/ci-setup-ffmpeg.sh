@@ -38,7 +38,6 @@ ffmpeg_version="$("$bin_dir/ffmpeg" -version)"
 ffprobe_version="$("$bin_dir/ffprobe" -version)"
 grep -Fq "N-128790-g9bee1e603c" <<< "$ffmpeg_version"
 grep -Fq "N-128790-g9bee1e603c" <<< "$ffprobe_version"
-printf "%s\n" "${ffmpeg_version%%
 echo "$bin_dir" >> "$GITHUB_PATH"
 \n'*}" "${ffprobe_version%%
 echo "$bin_dir" >> "$GITHUB_PATH"
