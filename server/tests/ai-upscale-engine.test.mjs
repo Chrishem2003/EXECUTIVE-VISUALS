@@ -63,7 +63,7 @@ const size = ${sizeExpression};
 const sourceDimensions = ${dimensionsExpression};
 const width = sourceDimensions ? sourceDimensions[0] * requestedScale : size;
 const height = sourceDimensions ? sourceDimensions[1] * requestedScale : size;
-${pngBytes.toString()}
+${pngChunk.toString()}\n${pngBytes.toString()}
 fs.writeFileSync(out,pngBytes(width,height,${outputColorType},${pngOptionsExpression}));
 `;
   await writeFile(path, source);
