@@ -3,8 +3,9 @@ import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type Medi
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null};
-const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[]}={
- graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[]
+type VideoCostEstimate={available:boolean;estimated:boolean;reason?:string;provider?:string;model?:string;currency?:string;amount?:number;billableSeconds?:number;breakdown?:{video:number;audio:number;references:number;minimumApplied:number};pricing?:{sourceUrl:string;observedAt:string;expiresAt:string};disclaimer?:string};
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
@@ -37,7 +38,7 @@ function addNode(definition:keyof typeof palette){
  const spec=palette[definition],id=crypto.randomUUID();
  const node:WorkflowNode={id,kind:spec.kind,label:spec.label,inputs:spec.inputs.map(x=>({...x})),outputs:spec.outputs.map(x=>({...x})),config:{},position:nodePosition(state.graph.nodes.length)};
  state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,node]};
- state.selectedNode=id;state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ state.selectedNode=id;state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});
 }
 function options(values:Array<{id:string;label:string}> ,selected=""){return values.map(x=>'<option value="'+esc(x.id)+'" '+(selected===x.id?"selected":"")+'>'+esc(x.label)+'</option>').join("");}
 function portOptions(node:WorkflowNode|undefined,side:"inputs"|"outputs"){
@@ -65,6 +66,13 @@ function renderCanvas(){
  if(!state.graph)return '<div class="empty">'+esc(state.message)+'</div>';
  return '<div class="wf-canvas-scroll"><div id="wf-canvas" class="wf-canvas">'+renderGraphSvg()+state.graph.nodes.map(renderNode).join("")+'</div></div>';
 }
+function renderVideoCostEstimate(){
+ const quote=state.costEstimate;
+ if(!quote)return '<section class="wf-cost-estimate"><b>Cost preflight</b><p>Configure an exact provider, model and duration, then estimate against a current source-attributed pricing schedule. This check never submits a generation job or reserves credits.</p></section>';
+ if(!quote.available)return '<section class="wf-cost-estimate is-unavailable"><b>Estimate unavailable</b><p>'+esc(quote.reason||"No verified pricing is available for this configuration.")+'</p></section>';
+ const breakdown=quote.breakdown||{video:0,audio:0,references:0,minimumApplied:0};
+ return '<section class="wf-cost-estimate"><div class="wf-cost-heading"><b>Estimated generation cost</b><strong>'+esc(Number(quote.amount||0).toFixed(4))+' '+esc(quote.currency||"")+'</strong></div><p>'+esc(quote.provider||"")+' · '+esc(quote.model||"")+' · '+esc(String(quote.billableSeconds||0))+' billable seconds</p><dl><div><dt>Video</dt><dd>'+esc(breakdown.video.toFixed(4))+'</dd></div><div><dt>Audio</dt><dd>'+esc(breakdown.audio.toFixed(4))+'</dd></div><div><dt>References</dt><dd>'+esc(breakdown.references.toFixed(4))+'</dd></div><div><dt>Minimum applied</dt><dd>'+esc(breakdown.minimumApplied.toFixed(4))+'</dd></div></dl><small>Source: <a href="'+esc(quote.pricing?.sourceUrl||"#")+'" target="_blank" rel="noopener noreferrer">pricing schedule</a> · observed '+esc(quote.pricing?.observedAt||"")+' · expires '+esc(quote.pricing?.expiresAt||"")+'</small><p class="wf-cost-disclaimer">'+esc(quote.disclaimer||"Estimate only; the provider invoice is authoritative.")+'</p></section>';
+}
 export function renderWorkflowWorkspace(){
  const nodes=state.graph?.nodes||[];
  const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
@@ -73,7 +81,7 @@ export function renderWorkflowWorkspace(){
  '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
  '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
- '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?'<p>Image-to-video: connect a JPEG, PNG or WebP asset to the Start Frame port. The server must set FAL_VIDEO_IMAGE_INPUT_FIELD to the exact input field documented by the selected model. For saved shot continuity, add a shotId to node configuration.</p>':selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model. For saved shot continuity, add a shotId to node configuration.</p>':"")+'<button class="secondary">Apply configuration</button></form>':'<div class="empty">Select a node to configure it.</div>')+
+ '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?'<p>Image-to-video: connect a JPEG, PNG or WebP asset to the Start Frame port. The server must set FAL_VIDEO_IMAGE_INPUT_FIELD to the exact input field documented by the selected model. For saved shot continuity, add a shotId to node configuration.</p>':selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model. For saved shot continuity, add a shotId to node configuration.</p>':"")+'<button class="secondary">Apply configuration</button>'+(selected.kind==="video.generate"?'<button type="button" class="secondary" data-wf-action="estimate-cost">Estimate generation cost</button>':"")+'</form>'+(selected.kind==="video.generate"?renderVideoCostEstimate():""):'<div class="empty">Select a node to configure it.</div>')+
  '<div class="wf-run-status">'+(state.latestRunId?'<div><b>Latest run</b> · '+esc(state.runStatus)+' <button data-wf-action="refresh-run">Refresh</button>'+(state.runStatus==="awaiting_approval"?'<button data-wf-action="approve">Approve step</button>':'')+'</div>'+state.runNodes.map(n=>'<span>'+esc(n.node_id)+' · '+esc(n.status)+(n.error?.message?' · '+esc(n.error.message):'')+'</span>').join(""):'No workflow runs yet.')+'</div><div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Run planning uses registered local adapters only. Unsupported provider nodes are blocked; no paid provider calls are made.</p>')+'</div></aside></div></div>';
 }
 async function refresh(){
@@ -108,7 +116,7 @@ async function persist(){
 async function createNew(){
  const graph=createEmptyWorkflow("","local-workflow");
  const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
- state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
+ state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
 }
 export async function initWorkflowWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Workflow service unavailable.";}
@@ -120,6 +128,16 @@ async function action(actionName:string){
  if(actionName==="refresh-run"){await loadRun();paint();return;}
  if(actionName==="approve"){if(!state.latestRunId)return;const result=await apiRequest<{status:string}>("/api/workflow-runs/"+state.latestRunId+"/approve",{method:"POST"});state.runStatus=result.status;await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));paint();return;}
  if(!state.graph)return;
+ if(actionName==="estimate-cost"){
+  const node=state.graph.nodes.find(item=>item.id===state.selectedNode)||state.graph.nodes.find(item=>item.kind==="video.generate");
+  if(!node||node.kind!=="video.generate"){state.message="Select a video-generation node before estimating cost.";paint();return;}
+  const config=node.config||{};
+  try{
+   state.costEstimate=await apiRequest<VideoCostEstimate>("/api/video-cost-estimate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:String(config.provider||""),model:String(config.model||""),durationSeconds:Number(config.durationSeconds),resolution:String(config.resolution||"provider_default"),audioMode:String(config.audioMode||"provider_default"),referenceImageCount:Number(config.referenceImageCount??0)})});
+   state.message=state.costEstimate.available?"Read-only estimate calculated. No provider request or charge was made.":state.costEstimate.reason||"A verified estimate is unavailable.";
+  }catch(error){state.costEstimate={available:false,estimated:false,reason:error instanceof Error?error.message:"Cost estimation request failed."};state.message="Cost preflight could not be completed.";}
+  paint();return;
+ }
  if(actionName==="save"){await persist();paint();return;}
  if(actionName==="run"){await persist();const result=await apiRequest<{runId:string;status:string}>("/api/workflows/"+state.graph.id+"/run",{method:"POST"});state.latestRunId=result.runId;state.runStatus=result.status;await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));state.message="Workflow run queued. Only registered local adapters execute; unsupported provider nodes are blocked.";paint();return;}
  if(actionName==="validate"||actionName==="plan"){
@@ -139,7 +157,7 @@ document.addEventListener("click",event=>{
  const removeEdge=target.closest<HTMLElement>("[data-wf-remove-edge]");
  if(removeEdge&&state.graph){const id=removeEdge.dataset.wfRemoveEdge||"";state.graph={...state.graph,revision:state.graph.revision+1,edges:state.graph.edges.filter(e=>e.id!==id)};void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
  const node=target.closest<HTMLElement>("[data-wf-node]");
- if(node){state.selectedNode=node.dataset.wfNode||"";paint();}
+ if(node){state.selectedNode=node.dataset.wfNode||"";state.costEstimate=null;paint();}
 });
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;if(!state.graph)return;
@@ -150,13 +168,13 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="wf-config-form"){
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
-  try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
+  try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.costEstimate=null;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
   catch(error){alert(error instanceof Error?error.message:String(error));}
  }
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
- if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";paint();}).catch(error=>alert(error.message||error));}
+ if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
 document.addEventListener("dragstart",event=>{
