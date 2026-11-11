@@ -234,6 +234,7 @@ export function createCloudAssetRepository({
       return publicAsset(row);
     },
     async createSignedUrl({ownerId,assetId,expiresIn=300}) {
+      if(!Number.isInteger(expiresIn)||expiresIn<30||expiresIn>3600){const error=new Error("Signed URL expiry must be between 30 and 3600 seconds.");error.code="CLOUD_ASSET_SIGNED_URL_EXPIRY_INVALID";throw error;}
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
       const row=Array.isArray(rows)?rows[0]:null;
