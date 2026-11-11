@@ -7,7 +7,7 @@ test("provider cancellation without verified refund is quarantined and keeps its
     id: "223e4567-e89b-42d3-a456-426614174000",
     owner_id: "123e4567-e89b-42d3-a456-426614174000",
     job_type: "video.generate",
-    status: "processing"
+    status: "processing", lease_token: "923e4567-e89b-42d3-a456-426614174000"
   };
   const calls = [];
   const queue = {
@@ -15,7 +15,8 @@ test("provider cancellation without verified refund is quarantined and keeps its
       calls.push(["claim", workerId, leaseSeconds, jobTypes]);
       return job;
     },
-    async renew() { return true; }
+    async renew() { return true; },
+    async assertLease() { return true; }
   };
   const enqueue = {
     async finish(args) { calls.push(["finish", args]); return true; },
@@ -38,6 +39,7 @@ test("provider cancellation without verified refund is quarantined and keeps its
   assert.deepEqual(calls.filter(call => call[0] === "quarantine").map(call => call[1]), [{
     jobId: job.id,
     workerId: "video-worker",
+    leaseToken: "923e4567-e89b-42d3-a456-426614174000",
     reasonCode: "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED"
   }]);
   assert.equal(calls.some(call => call[0] === "finish"), false,
