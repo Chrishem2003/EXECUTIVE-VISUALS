@@ -14,6 +14,12 @@ test("overview exposes aggregate operating metrics and configured runtime bounda
  const result=getAdminOperationsOverview(fakeDb(),{authMode:"supabase",dataPersistence:"unverified",persistentDataRequired:true,now:Date.parse("2026-11-11T00:00:00Z")});
  assert.equal(result.users,3);assert.equal(result.jobsByStatus.queued,2);assert.equal(result.usage30d.estimatedCostMicros,890000);assert.equal(result.runtime.persistentDataRequired,true);
 });
+test("admin account search treats SQL LIKE wildcard characters as literal text",()=>{
+ const db=fakeDb();listAdminOperationUsers(db,{query:"100%_\\",limit:50});
+ assert.equal(db.calls[0].args[1],"100\\%\\_\\\\");
+ assert.match(db.calls[0].sql,/ESCAPE/);
+ assert.equal(db.calls[0].args[4],50);
+});
 test("admin directory and execution feeds return bounded, redacted operational fields",()=>{
  const db=fakeDb();const users=listAdminOperationUsers(db,{query:"a@",limit:500});const jobs=listAdminOperationJobs(db,{limit:10});const audit=listAdminOperationAudit(db,{limit:10});listAdminOperationJobs(db,{limit:null});
  assert.equal(users[0].email,"a@example.com");assert.equal(users[0].usage30d,4);assert.equal(jobs[0].jobType,"video.generate");assert.equal(audit[0].eventType,"project.created");
