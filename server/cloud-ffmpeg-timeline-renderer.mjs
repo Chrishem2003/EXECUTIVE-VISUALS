@@ -20,6 +20,7 @@ export function buildAudioMasteringFilter(settings){
  // Named delivery profiles are server-enforced; never trust client-supplied LUFS.
  const integrated=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:Number(settings.integratedLoudness??-16);
  const range=Number(settings.loudnessRange??11),truePeak=Number(settings.truePeak??-1.5);
+ if(profile==="ebu-r128"&&truePeak> -1)fail("EBU R128 true peak must not exceed -1 dBTP.","INVALID_AUDIO_MASTERING");
  if(!Number.isFinite(integrated)||integrated< -70||integrated> -5||!Number.isFinite(range)||range<1||range>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0)fail("Audio mastering targets are outside supported EBU R128 ranges.","INVALID_AUDIO_MASTERING");
  return `loudnorm=I=${integrated}:LRA=${range}:TP=${truePeak}:dual_mono=${settings.dualMono===true?"true":"false"}:linear=false:print_format=summary`;
 }
