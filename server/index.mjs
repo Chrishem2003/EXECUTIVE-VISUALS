@@ -17,6 +17,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { buildAdminProviderReadiness } from "./admin-operations.mjs";
 import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
 import { preflightVideoProduction } from "./video-shot-preflight.mjs";
@@ -443,7 +444,7 @@ export function createAppServer() {
           const upscaleModels=modelProbes.map(model=>({...model,qualityVerified:qualityEvidence.models[model.model]?.qualityVerified===true,qualityEvidence:qualityEvidence.models[model.model]?.qualityEvidence||null,qualityReason:qualityEvidence.models[model.model]?.reason||qualityEvidence.reason}));
           const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
           const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
-          send(res,200,{providers:catalog.providers.map(item=>({id:item.id,provider:item.provider,status:item.status,enabled:item.enabled,configured:item.configured,remote:item.remote,model:item.model,reason:item.reason,capabilities:item.capabilities}))},cors);return;
+          send(res,200,{providers:buildAdminProviderReadiness(catalog)},cors);return;
         }
         if(path==="/api/admin/operations/audit"&&req.method==="GET"){
           send(res,200,{events:listAdminOperationAudit(db,{limit:url.searchParams.get("limit")})},cors);return;
