@@ -2,27 +2,15 @@ import { apiRequest } from "../core/api";
 
 type Overview={users:number;projects:number;assets:number;jobs:number;jobsByStatus:Record<string,number>;usage30d:{operations:number;estimatedCostMicros:number};generatedAt:string;runtime:{authMode:string;dataPersistence:string;persistentDataRequired:boolean}};
 type UserRow={id:string;email:string;authSource:string;createdAt:string;projects:number;jobs:number;usage30d:number};
-type JobRow={id:string;email:string;jobType:string;status:string;progress:number;attempts:number;createdAt:string;updatedAt:string;completedAt:string|null;leaseExpiresAt?:string|null;leaseHeartbeatAt?:string|null;leaseState?:"active"|"expired"|"missing"|"not_running"};
-type ProviderModelRow={id:string;label:string;readiness?:string;available?:boolean;executionVerified?:boolean;qualityVerified?:boolean;reason?:string;resolutions?:string[];aspectRatios?:string[];inputModes?:string[];minDurationSeconds?:number;maxDurationSeconds?:number};
-type ProviderRow={id:string;provider:string;status:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;reason:string;capabilities:string[];availableModels?:ProviderModelRow[];modelCapabilities?:{startFrame?:boolean;endFrame?:boolean;referenceImages?:boolean;audioModes?:string[];resolutions?:string[];aspectRatios?:string[];minDurationSeconds?:number;maxDurationSeconds?:number}|null;pricing?:{configured:boolean;rejectedCount:number;models:Array<{provider:string;model:string;currency:string;sourceUrl:string;observedAt:string;expiresAt:string}>}|null};
-type ProviderSummary={total:number;ready:number;disabled:number;unverified:number;needsConfiguration:number;remoteOptInRequired:number;unavailable:number;models:number;qualityVerifiedModels:number};
-type GenerationReadiness={status:"ready"|"blocked";canSubmit:boolean;checks:Record<string,boolean>;blockers:Array<{check:string;message:string}>;videoProvider:{provider:string;model:string|null;status:string;remote:boolean}|null;appDataPersistence:string;appDataPersistenceWarning:string|null;policy:{requestsSubmitted:boolean;providerCredentialsExposed:boolean;chargesInitiated:boolean}};
+type JobRow={id:string;email:string;jobType:string;status:string;progress:number;attempts:number;createdAt:string;updatedAt:string;completedAt:string|null};
+type ProviderRow={id:string;provider:string;status:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;reason:string;capabilities:string[]};
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
 type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string};
-let refreshSequence=0;
-const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];providerSummary:ProviderSummary;generationReadiness:GenerationReadiness|null;audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],providerSummary:{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0},generationReadiness:null,audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
+const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],audit:[],billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
 export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
 const money=(value:number)=>{const n=Number(value||0)/1_000_000;return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n);};
-function pricingFreshness(expiresAt:string,observedAt:string){const expiry=Date.parse(expiresAt),observed=Date.parse(observedAt);if(!Number.isFinite(observed))return "Observation date not supplied";if(!Number.isFinite(expiry))return "Expiry not supplied";if(expiry<=Date.now())return "Expired";if(expiry<=Date.now()+7*24*60*60*1000)return "Expires within 7 days";return "Current until "+new Date(expiry).toLocaleDateString();}
-function renderGenerationReadiness(){
- const readiness=state.generationReadiness;
- if(!readiness)return '<div class="notice warning">Video generation readiness has not been loaded.</div>';
- const checks=Object.entries(readiness.checks).map(([key,ok])=>'<span class="readiness-pill '+(ok?"good":"warn")+'">'+esc(key.replace(/([A-Z])/g," $1").replace(/^./,value=>value.toUpperCase()))+": "+(ok?"passed":"blocked")+'</span>').join("");
- const blockers=readiness.blockers.length?'<ul>'+readiness.blockers.map(item=>'<li>'+esc(item.message)+'</li>').join("")+'</ul>':'<p class="muted">Infrastructure gates are ready. Each generation still requires user authorization, a valid cost estimate and a recorded budget approval.</p>';
- return '<article class="admin-ops-provider admin-ops-generation-readiness"><div><b>Video generation execution gate</b><span class="readiness-pill '+(readiness.canSubmit?"good":"warn")+'">'+(readiness.canSubmit?"Ready for approved submissions":"Blocked · prerequisites missing")+'</span></div><p>'+esc(readiness.videoProvider?readiness.videoProvider.provider+" · "+(readiness.videoProvider.model||"model not selected")+" · "+readiness.videoProvider.status:"No ready video provider")+'</p><div class="admin-ops-tags">'+checks+'</div>'+blockers+(readiness.appDataPersistenceWarning?'<p class="notice warning">'+esc(readiness.appDataPersistenceWarning)+'</p>':'')+'<small>Diagnostic only · no provider request, generation job or charge was submitted.</small></article>';
-}
 function statusClass(value:string){return ["ready","succeeded","completed","active"].includes(value)?"good":["failed","disabled","needs_configuration","remote_opt_in_required"].includes(value)?"warn":"neutral";}
 export function renderAdminOperationsWorkspace(){
  const o=state.overview;
@@ -33,79 +21,50 @@ export function renderAdminOperationsWorkspace(){
  '<section class="admin-ops-grid"><article class="panel"><div class="eyebrow">WORKER HEALTH</div><h2>Job queue by state</h2><div class="admin-ops-status-grid">'+Object.entries(o?.jobsByStatus||{}).map(([key,value])=>'<div><span>'+esc(key.replaceAll("_"," "))+'</span><b>'+Number(value).toLocaleString()+'</b></div>').join("")+'</div><p class="muted">Counts are read from the application job ledger. This view does not modify or retry jobs.</p></article>'+
  '<article class="panel"><div class="eyebrow">AI USAGE · LAST 30 DAYS</div><h2>'+Number(o?.usage30d.operations||0).toLocaleString()+' operations</h2><div class="admin-ops-cost">'+money(o?.usage30d.estimatedCostMicros||0)+'</div><p class="muted">Estimated provider cost from recorded usage events; not an invoice or settled charge.</p></article></section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">MODEL CONNECTIVITY</div><h2>AI provider readiness</h2></div><span class="muted">Status only · credentials remain server-side</span></div>'+
- (renderGenerationReadiness())+
- '<div class="admin-ops-status-grid">'+[["Ready",state.providerSummary.ready],["Remote opt-in",state.providerSummary.remoteOptInRequired],["Needs configuration",state.providerSummary.needsConfiguration],["Unverified",state.providerSummary.unverified],["Disabled",state.providerSummary.disabled],["Unavailable",state.providerSummary.unavailable],["Models",state.providerSummary.models],["Quality verified",state.providerSummary.qualityVerifiedModels]].map(([label,value])=>'<div><span>'+label+'</span><b>'+Number(value).toLocaleString()+'</b></div>').join("")+'</div>'+
- (state.providers.length?'<div class="admin-ops-provider-grid">'+state.providers.map(p=>'<article class="admin-ops-provider"><div><b>'+esc(p.provider||p.id)+'</b><span class="readiness-pill '+statusClass(p.status)+'">'+esc(p.status.replaceAll("_"," "))+'</span></div><small>'+esc(p.model||"No model selected")+'</small><p>'+esc(p.reason||"No additional status details.")+'</p><div class="admin-ops-tags"><span>'+ (p.enabled?"Enabled":"Disabled")+'</span><span>'+ (p.configured?"Configured":"Not configured")+'</span><span>'+ (p.remote?"Remote":"Local / unknown")+'</span></div>'+(p.capabilities?.length?'<div class="admin-ops-tags">'+p.capabilities.map(cap=>'<span>'+esc(cap)+'</span>').join("")+'</div>':'')+(p.availableModels?.length?'<div class="admin-ops-models"><small>Supported models</small>'+p.availableModels.map(model=>'<div><b>'+esc(model.label||model.id)+'</b><span>'+esc(model.readiness|| (model.qualityVerified?"Quality verified":model.executionVerified?"Execution verified":"Adapter supported"))+'</span>'+(model.resolutions?.length?'<small>Resolutions: '+esc(model.resolutions.join(" · "))+'</small>':'')+(model.aspectRatios?.length?'<small>Aspect ratios: '+esc(model.aspectRatios.join(" · "))+'</small>':'')+(model.inputModes?.length?'<small>Inputs: '+esc(model.inputModes.join(" · "))+'</small>':'')+(model.minDurationSeconds!==undefined||model.maxDurationSeconds!==undefined?'<small>Duration: '+esc(String(model.minDurationSeconds??"—"))+'–'+esc(String(model.maxDurationSeconds??"—"))+' sec</small>':'')+(model.reason?'<small>'+esc(model.reason)+'</small>':'')+'</div>').join("")+'</div>':'')+(p.modelCapabilities?'<small>Video profile: '+esc((p.modelCapabilities.resolutions||[]).join(" / ")||"Provider defaults")+' · '+esc((p.modelCapabilities.aspectRatios||[]).join(" / ")||"Provider aspect ratios")+'</small>':'')+(p.pricing?'<div class="admin-ops-pricing"><b>Pricing catalogue metadata</b><small>'+(p.pricing.configured?"Configured":"Not configured")+' · '+p.pricing.models.length+' model entries · '+p.pricing.rejectedCount+' rejected</small><small>Source and freshness metadata only; this screen does not display a price quote or guarantee provider billing rates.</small>'+(p.pricing.models.length?'<div class="admin-ops-pricing-list">'+p.pricing.models.map(item=>'<div><b>'+esc(item.provider+" · "+item.model)+'</b><span>'+esc(item.currency||"Currency not supplied")+' · '+esc(pricingFreshness(item.expiresAt,item.observedAt))+'</span><small>Observed: '+esc(date(item.observedAt))+' · Expires: '+esc(date(item.expiresAt))+'</small></div>').join("")+'</div>':'<small>No validated model pricing metadata is available.</small>')+'</div>':'')+'</article>').join("")+'</div>':'<div class="empty">No provider status has been returned.</div>')+'</section>'+
- '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">ACCOUNT DIRECTORY</div><h2>Recent application users</h2></div><span class="muted">'+state.users.length+' matching accounts</span></div>'+
- '<form class="admin-ops-user-search" data-admin-user-search><label for="admin-user-query">Find an account by email or ID</label><div><input id="admin-user-query" name="q" type="search" maxlength="120" value="'+esc(state.userQuery)+'" placeholder="Search email address or account ID" '+(state.loading?'disabled':'')+'><button class="secondary" type="submit" '+(state.loading?'disabled':'')+'>Search accounts</button><button class="secondary" type="button" data-admin-user-clear '+(!state.userQuery||state.loading?'disabled':'')+'>Clear search</button></div></form>' +
- (state.users.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Account</th><th>Auth</th><th>Projects</th><th>Jobs</th><th>Usage · 30d</th><th>Created</th></tr></thead><tbody>'+state.users.map(u=>'<tr><td><b>'+esc(u.email)+'</b><small>'+esc(u.id)+'</small></td><td>'+esc(u.authSource)+'</td><td>'+u.projects+'</td><td>'+u.jobs+'</td><td>'+u.usage30d+'</td><td>'+esc(date(u.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':state.userQuery?'<div class="empty">No accounts matched “'+esc(state.userQuery)+'”. Clear the search to view recent accounts.</div>':'<div class="empty">No application users found.</div>')+'</section>'+
+ (state.providers.length?'<div class="admin-ops-provider-grid">'+state.providers.map(p=>'<article class="admin-ops-provider"><div><b>'+esc(p.provider||p.id)+'</b><span class="readiness-pill '+statusClass(p.status)+'">'+esc(p.status.replaceAll("_"," "))+'</span></div><small>'+esc(p.model||"No model selected")+'</small><p>'+esc(p.reason||"No additional status details.")+'</p><div class="admin-ops-tags"><span>'+ (p.enabled?"Enabled":"Disabled")+'</span><span>'+ (p.configured?"Configured":"Not configured")+'</span><span>'+ (p.remote?"Remote":"Local / unknown")+'</span></div></article>').join("")+'</div>':'<div class="empty">No provider status has been returned.</div>')+'</section>'+
+ '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">ACCOUNT DIRECTORY</div><h2>Recent application users</h2></div><span class="muted">'+state.users.length+' shown</span></div>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">SUBSCRIPTION & BILLING OPERATIONS</div><h2>Billing readiness and recovery</h2></div><button class="secondary" data-tab="billing">Open customer billing</button></div>'+
  (state.billingOps.access==="ready"?'<div class="admin-ops-grid"><article class="admin-ops-provider"><b>Payment provider readiness</b><span class="readiness-pill '+(state.billingOps.provider?.liveRecurringChargesEnabled?"warn":"neutral")+'">'+(state.billingOps.provider?.liveRecurringChargesEnabled?"Recurring enabled":"Recurring charges disabled")+'</span><p>'+esc(state.billingOps.provider?.reason||state.billingOps.provider?.migrationRequired||"Provider readiness loaded.")+'</p><small>API versions: '+esc(state.billingOps.provider?.currentIntegrationApiVersion||"—")+' · plan API '+esc(state.billingOps.provider?.recurringPaymentPlansApiVersion||"—")+'</small></article><article class="admin-ops-provider"><b>Subscription reconciliation</b><strong>'+Number(state.billingOps.reconciliation?.events?.length||0).toLocaleString()+' events awaiting review</strong><p>Automated entitlement changes: '+(state.billingOps.reconciliation?.automatedEntitlementChanges?"enabled":"disabled")+'</p></article><article class="admin-ops-provider"><b>Payment recovery</b><strong>'+Number(state.billingOps.recovery?.summary?.openAttempts||0).toLocaleString()+' open attempts</strong><p>'+Number(state.billingOps.recovery?.summary?.scheduledRetries||0)+' scheduled retries · '+Number(state.billingOps.recovery?.summary?.exhausted||0)+' exhausted</p><small>'+esc(state.billingOps.recovery?.note||"Customer retry remains explicit; automatic charges are disabled.")+'</small></article></div>':'<div class="notice warning">'+esc(state.billingOps.message||"Billing admin endpoints are unavailable.")+' Billing mutations remain in the protected Financial Command Centre and require the separate Supabase platform_admins role.</div>')+
  '</section>'+
-
+ (state.users.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Account</th><th>Auth</th><th>Projects</th><th>Jobs</th><th>Usage · 30d</th><th>Created</th></tr></thead><tbody>'+state.users.map(u=>'<tr><td><b>'+esc(u.email)+'</b><small>'+esc(u.id)+'</small></td><td>'+esc(u.authSource)+'</td><td>'+u.projects+'</td><td>'+u.jobs+'</td><td>'+u.usage30d+'</td><td>'+esc(date(u.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty">No application users found.</div>')+'</section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">EXECUTION MONITOR</div><h2>Recent processing jobs</h2></div><span class="muted">'+state.jobs.length+' shown</span></div>'+
- (state.jobs.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Job</th><th>Account</th><th>Type</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Created</th></tr></thead><tbody>'+state.jobs.map(j=>'<tr><td><code>'+esc(j.id.slice(0,12))+'</code></td><td>'+esc(j.email)+'</td><td>'+esc(j.jobType)+'</td><td><span class="readiness-pill '+statusClass(j.status)+'">'+esc(j.status)+'</span>'+(j.status==="running"?'<small class="readiness-pill '+(j.leaseState==="active"?"good":"warn")+'">Lease: '+esc(j.leaseState||"unknown")+'</small>'+(j.leaseExpiresAt?'<small class="muted">Expires '+esc(date(j.leaseExpiresAt))+'</small>':''):'')+'</td><td>'+Math.max(0,Math.min(100,Number(j.progress)||0))+'%</td><td>'+j.attempts+'</td><td>'+esc(date(j.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty">No processing jobs found.</div>')+'</section>'+
+ (state.jobs.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Job</th><th>Account</th><th>Type</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Created</th></tr></thead><tbody>'+state.jobs.map(j=>'<tr><td><code>'+esc(j.id.slice(0,12))+'</code></td><td>'+esc(j.email)+'</td><td>'+esc(j.jobType)+'</td><td><span class="readiness-pill '+statusClass(j.status)+'">'+esc(j.status)+'</span></td><td>'+Math.max(0,Math.min(100,Number(j.progress)||0))+'%</td><td>'+j.attempts+'</td><td>'+esc(date(j.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty">No processing jobs found.</div>')+'</section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">GOVERNANCE</div><h2>Recent audit activity</h2></div><span class="muted">'+state.audit.length+' shown</span></div>'+
  (state.audit.length?'<div class="admin-ops-audit">'+state.audit.map(e=>'<article><b>'+esc(e.eventType.replaceAll("_"," "))+'</b><small>'+esc(e.email)+' · '+esc(e.subjectType)+' '+esc(e.subjectId)+'</small><time>'+esc(date(e.createdAt))+'</time></article>').join("")+'</div>':'<div class="empty">No audit activity recorded.</div>')+'</section>'+
- '<footer class="admin-ops-footer">Last fully successful refresh: '+esc(state.updatedAt||"Not yet")+'. Runtime: '+esc(o?.runtime.authMode||"unknown")+'. Storage: '+esc(o?.runtime.dataPersistence||"unknown")+'. '+(o?.runtime.persistentDataRequired?"Persistent storage is required by configuration.":"Persistent storage is not enforced by configuration.")+'</footer>'+
+ '<footer class="admin-ops-footer">Last refreshed: '+esc(state.updatedAt||"Not yet")+'. Runtime: '+esc(o?.runtime.authMode||"unknown")+'. Storage: '+esc(o?.runtime.dataPersistence||"unknown")+'. '+(o?.runtime.persistentDataRequired?"Persistent storage is required by configuration.":"Persistent storage is not enforced by configuration.")+'</footer>'+
  '<div class="admin-ops-links"><button class="secondary" data-tab="finance">Open financial command centre</button><button class="secondary" data-tab="readiness">Open release readiness</button><button class="secondary" data-tab="engines">Open creative engines</button></div>';
 }
 export async function loadAdminOperationsWorkspace(){
- const requestId=++refreshSequence;
  state.loading=true;state.error="";paint();
  try{
-  const coreResults=await Promise.allSettled([
+  const [overview,users,jobs,providers,audit]=await Promise.all([
    apiRequest<{overview:Overview}>("/api/admin/operations/overview"),
-   apiRequest<{users:UserRow[]}>("/api/admin/operations/users?limit=100&q="+encodeURIComponent(state.userQuery)),
+   apiRequest<{users:UserRow[]}>("/api/admin/operations/users?limit=100"),
    apiRequest<{jobs:JobRow[]}>("/api/admin/operations/jobs?limit=100"),
-   apiRequest<{providers:ProviderRow[];summary:ProviderSummary;generationReadiness:GenerationReadiness}>("/api/admin/operations/providers"),
+   apiRequest<{providers:ProviderRow[]}>("/api/admin/operations/providers"),
    apiRequest<{events:AuditRow[]}>("/api/admin/operations/audit?limit=100")
   ]);
-  const [overviewResult,usersResult,jobsResult,providersResult,auditResult]=coreResults;
-  if(requestId!==refreshSequence)return;
-  const unavailable:string[]=[];
-  if(overviewResult.status==="fulfilled")state.overview=overviewResult.value.overview;else unavailable.push("overview");
-  if(usersResult.status==="fulfilled")state.users=usersResult.value.users;else unavailable.push("account directory");
-  if(jobsResult.status==="fulfilled")state.jobs=jobsResult.value.jobs;else unavailable.push("job monitor");
-  if(providersResult.status==="fulfilled"){state.providers=providersResult.value.providers;state.providerSummary=providersResult.value.summary;state.generationReadiness=providersResult.value.generationReadiness;}else unavailable.push("provider readiness");
-  if(auditResult.status==="fulfilled")state.audit=auditResult.value.events;else unavailable.push("audit activity");
   const billingResults=await Promise.allSettled([
    apiRequest<any>("/api/admin/billing/provider-readiness"),
    apiRequest<any>("/api/admin/subscriptions/reconciliation?limit=50"),
    apiRequest<any>("/api/admin/billing/recovery?limit=50")
   ]);
   const [providerBilling,subscriptionReconciliation,billingRecovery]=billingResults;
-  if(requestId!==refreshSequence)return;
-  const billingUnavailable:string[]=[];
-  if(providerBilling.status==="fulfilled")state.billingOps.provider=providerBilling.value;else billingUnavailable.push("provider readiness");
-  if(subscriptionReconciliation.status==="fulfilled")state.billingOps.reconciliation=subscriptionReconciliation.value;else billingUnavailable.push("subscription reconciliation");
-  if(billingRecovery.status==="fulfilled")state.billingOps.recovery=billingRecovery.value;else billingUnavailable.push("billing recovery");
-  const billingAvailable=[state.billingOps.provider,state.billingOps.reconciliation,state.billingOps.recovery].filter(value=>value!==null).length;
-  state.billingOps.access=billingAvailable===3&&billingUnavailable.length===0?"ready":billingAvailable>0?"partial":"restricted";
-  state.billingOps.message=billingUnavailable.length
-   ?"Billing refresh incomplete: "+billingUnavailable.join(", ")+" unavailable. Previously loaded results are retained."
-   :billingAvailable===0
-    ?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role."
-    :"";
-  if(unavailable.length===0&&billingUnavailable.length===0)state.updatedAt=new Date().toISOString();
-  const refreshUnavailable=[...unavailable,...billingUnavailable.map(value=>"billing "+value)];
-  state.error=refreshUnavailable.length
-   ?"Partial refresh: "+refreshUnavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
-   :"";
- }catch(error){if(requestId===refreshSequence)state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";}
- finally{if(requestId===refreshSequence){state.loading=false;paint();}}
+  const billingSuccess=billingResults.filter(result=>result.status==="fulfilled").length;
+  state.billingOps={
+   access:billingSuccess===3?"ready":billingSuccess>0?"partial":"restricted",
+   provider:providerBilling.status==="fulfilled"?providerBilling.value:null,
+   reconciliation:subscriptionReconciliation.status==="fulfilled"?subscriptionReconciliation.value:null,
+   recovery:billingRecovery.status==="fulfilled"?billingRecovery.value:null,
+   message:billingSuccess===0?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role.":billingSuccess<3?"Some billing operations are unavailable; verify the billing API and administrator role.":""
+  };
+  state.overview=overview.overview;state.users=users.users;state.jobs=jobs.jobs;state.providers=providers.providers;state.audit=audit.events;state.updatedAt=new Date().toISOString();state.error="";
+ }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";state.overview=null;}
+ finally{state.loading=false;paint();}
 }
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.adminOperations==="true")view.innerHTML=renderAdminOperationsWorkspace();}
 export function initAdminOperationsWorkspace(){
- document.addEventListener("click",event=>{const target=event.target as HTMLElement;if(target.closest("[data-admin-ops-refresh]"))void loadAdminOperationsWorkspace();if(target.closest("[data-admin-user-clear]")){state.userQuery="";void loadAdminOperationsWorkspace();}});
- document.addEventListener("submit",event=>{
-  const form=(event.target as HTMLElement).closest<HTMLFormElement>("[data-admin-user-search]");
-  if(!form)return;
-  event.preventDefault();
-  const input=form.elements.namedItem("q");
-  state.userQuery=input instanceof HTMLInputElement?input.value.trim().slice(0,120):"";
-  void loadAdminOperationsWorkspace();
- });
+ document.addEventListener("click",event=>{if((event.target as HTMLElement).closest("[data-admin-ops-refresh]"))void loadAdminOperationsWorkspace();});
  void apiRequest<{capabilities:{admin:boolean}}>("/api/me").then(result=>{
   state.allowed=result.capabilities?.admin===true;
   state.error=state.allowed?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
