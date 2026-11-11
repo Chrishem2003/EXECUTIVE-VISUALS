@@ -197,5 +197,7 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
       - name: Apply cloud-video submission and terminal-write fencing
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111250000_cloud_video_worker_lease_fencing.sql
+      - name: Apply approved-shot task ledger worker fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql
       - name: Verify stale video workers cannot submit, record, defer or finalize
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-worker-lease-fencing-postgres-integration.sql
