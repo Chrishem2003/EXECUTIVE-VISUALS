@@ -364,3 +364,50 @@ test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
  const controller=new AbortController();controller.abort();
  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[]},assets:new Map(),workDir:tmpdir(),signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
 });
+test("cloud FFmpeg renderer matches Web Audio equal-power panning for mono sources", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-mono-pan-parity-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"mono.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=1","-ac","1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Mono pan parity",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"mono",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:0,pan:0}]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["mono",{path:audio,asset:{id:"mono",mediaType:"audio/wav",originalName:"mono.wav",metadata:{probe:{streams:[{codec_type:"audio",channels:1}]}}}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const input=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",audio,"-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","1","pipe:1"]);
+  const output=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const source=new Float32Array(input.buffer,input.byteOffset,input.byteLength/4),samples=new Float32Array(output.buffer,output.byteOffset,output.byteLength/4);
+  const rms=(values,channelCount,channel)=>{let sum=0,count=0;for(let frame=4800;frame<values.length/channelCount-4800;frame++){const value=values[frame*channelCount+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const sourceLevel=rms(source,1,0),left=rms(samples,2,0),right=rms(samples,2,1);
+  assert.ok(Math.abs(left/right-1)<0.06,"center mono pan should remain balanced across output channels");
+  assert.ok(Math.abs(left/sourceLevel-Math.SQRT1_2)<0.08,"center mono pan should apply the equal-power -3 dB coefficient (source="+sourceLevel+", left="+left+", right="+right+", ratio="+(left/sourceLevel)+")");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud FFmpeg renderer matches Web Audio stereo panning for stereo sources", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-stereo-pan-parity-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"stereo.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","aevalsrc=0.1*sin(2*PI*440*t)|0.1*sin(2*PI*880*t):s=48000:d=1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Stereo pan parity",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"stereo",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:0,pan:0.5}]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["stereo",{path:audio,asset:{id:"stereo",mediaType:"audio/wav",originalName:"stereo.wav",metadata:{probe:{streams:[{codec_type:"audio",channels:2}]}}}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const output=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(output.buffer,output.byteOffset,output.byteLength/4);
+  const rms=channel=>{let sum=0,count=0;for(let frame=4800;frame<samples.length/2-4800;frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const left=rms(0),right=rms(1),ratio=left/right;
+  assert.ok(Math.abs(ratio-(1/Math.sqrt(3)))<0.09,"stereo pan at +0.5 should follow the StereoPannerNode equal-power channel matrix (left/right="+ratio+")");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
