@@ -94,14 +94,16 @@ export function buildVideoDispatchReadiness({env=process.env,providerCatalog=nul
   cloudTimelineApi:env.CLOUD_TIMELINE_API_ENABLED==="true",
   cloudDispatch:env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true",
   supabaseServiceCredentials:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
-  videoProviderReady:videoProvider?.status==="ready"
+  videoProviderReady:videoProvider?.status==="ready",
+  durableWorkerAdapterReady:videoProvider?.provider==="runway"
  };
  const labels={
   supabaseAuth:"Verified Supabase authentication is not enabled.",
   cloudTimelineApi:"Cloud timeline API is not enabled.",
   cloudDispatch:"Cloud video-generation dispatch is not enabled.",
   supabaseServiceCredentials:"Server-side Supabase service credentials are not configured.",
-  videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation."
+  videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation.",
+  durableWorkerAdapterReady:videoProvider?.provider==="runway"? "The configured provider has no verified restart-safe task adapter in the cloud worker.": "The configured provider has no verified restart-safe task adapter in the cloud worker. Only Runway currently has a durable submit, poll and recovery adapter."
  };
  const blockers=Object.keys(checks).filter(key=>!checks[key]).map(key=>({check:key,message:labels[key]}));
  return {
