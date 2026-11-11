@@ -42,6 +42,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.effectClips,1);
   assert.equal(result.render.audioClips,1);
+  assert.deepEqual(result.render.audioMastering,{applied:true,profile:"custom",integratedLoudness:-16,loudnessRange:11,truePeak:-1.5,dualMono:true},"render receipt must record the exact mastering settings applied");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
@@ -52,6 +53,12 @@ test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  ]}]};
  const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
+});
+
+test("cloud FFmpeg renderer refuses enabled mastering when no audio clips exist",async()=>{
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
+ await assert.rejects(()=>renderCloudTimeline({timeline:{audioMastering:{enabled:true,profile:"web-podcast"},tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="AUDIO_MASTERING_REQUIRES_AUDIO");
 });
 
 test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
