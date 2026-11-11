@@ -42,7 +42,7 @@ export function assessDeliveryEvidence(timeline:EditorialTimeline|null,assets:So
  const measuredMastering=mastering?.applied===true?{profile:typeof mastering.profile==="string"?mastering.profile:null,integratedLoudness:measuredMetric(masteringMeasurement?.integratedLoudness),loudnessRange:measuredMetric(masteringMeasurement?.loudnessRange),truePeak:measuredMetric(masteringMeasurement?.truePeak),passed:typeof masteringQc?.passed==="boolean"?masteringQc.passed:null}:null;
  if(timeline.audioMastering?.enabled===true){
   if(mastering?.applied!==true)fail("DELIVERY_AUDIO_MASTERING_NOT_APPLIED","The timeline requests audio mastering, but the current master has no applied mastering receipt.");
-  else if(!masteringMeasurement||measuredMastering?.integratedLoudness===null||measuredMastering?.truePeak===null||measuredMastering?.passed===null)fail("DELIVERY_AUDIO_MASTERING_QC_MISSING","The master has no complete post-encode loudness and true-peak quality-control evidence.");
+  else if(!masteringMeasurement||measuredMastering?.integratedLoudness===null||measuredMastering?.loudnessRange===null||measuredMastering?.truePeak===null||measuredMastering?.passed===null)fail("DELIVERY_AUDIO_MASTERING_QC_MISSING","The master has no complete post-encode integrated loudness, loudness range and true-peak quality-control evidence.");
   else if(masteringQc?.passed!==true)fail("DELIVERY_AUDIO_MASTERING_QC_FAILED","Measured post-encode audio does not meet the configured mastering delivery targets.");
  }
  const measuredWithMastering={...measured,audioMastering:measuredMastering};
