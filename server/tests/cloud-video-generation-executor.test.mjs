@@ -8,6 +8,7 @@ const taskId = "323e4567-e89b-42d3-a456-426614174000";
 const requestHash = "a".repeat(64);
 const job = {
   id: jobId, owner_id: ownerId, project_id: null, job_type: "video.generate",
+  lease_token: "923e4567-e89b-42d3-a456-426614174000",
   input: { provider: "runway", model: "gen4.5", requestHash, prompt: "Test prompt" },
   estimated_cost: { amount: 2, currency: "USD" }
 };
