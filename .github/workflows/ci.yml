@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/idempotent-asset-publication-ledger]
+    branches: [main, feat/idempotent-asset-publication-ledger, feat/lease-fencing-tokens-v2]
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

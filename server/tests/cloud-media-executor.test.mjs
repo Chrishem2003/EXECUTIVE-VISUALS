@@ -61,6 +61,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
   let published, publishedContent, cleaned = false;
+  const publicationOrder = [];
   try {
     const execute = createCloudMediaExecutor({
       tempRoot: directory,
@@ -75,6 +76,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
           };
         },
         async publish(args) {
+          publicationOrder.push("publish");
           published = args;
           publishedContent = await readFile(args.path, "utf8");
           return { id: "asset-output", name: args.filename, mediaType: args.mediaType };
@@ -87,8 +89,10 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
         job_type: "media.color",
         input: { sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 }
       },
-      onProgress() {}
+      onProgress() {},
+      async assertLease() { publicationOrder.push("assert-lease"); }
     });
+    assert.deepEqual(publicationOrder, ["assert-lease", "publish"]);
     assert.equal(published.ownerId, "verified-owner");
     assert.equal(published.projectId, "project-2");
     assert.equal(published.derivativeOf, "asset-source");

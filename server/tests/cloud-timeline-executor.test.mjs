@@ -11,18 +11,19 @@ const timelineId="33333333-3333-4333-8333-333333333333";
 const timeline={tracks:[{id:"v1",kind:"video",clips:[{id:"c1",assetId:"asset-a",enabled:true}]},{id:"a1",kind:"audio",clips:[{id:"c2",assetId:"asset-b"}]}]};
 test("cloud timeline executor materializes all unique sources and publishes a revision-linked master",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-test-"));
- const cleanups=[],materialized=[],published=[];
+ const cleanups=[],materialized=[],published=[],publicationOrder=[];
  const executor=createCloudTimelineExecutor({
   tempRoot:root,
   timelines:{async get(args){assert.deepEqual(args,{ownerId:owner,timelineId});return{id:timelineId,ownerId:owner,projectId:project,revision:7,timeline};}},
   mediaIO:{
    async materialize(args){materialized.push(args);const path=join(root,args.assetId+".bin");await writeFile(path,args.assetId);return{path,asset:{id:args.assetId},async cleanup(){cleanups.push(args.assetId);}};},
-   async publish(args){published.push({...args,content:await readFile(args.path,"utf8")});return{id:"master-asset",name:args.filename};}
+   async publish(args){publicationOrder.push("publish");published.push({...args,content:await readFile(args.path,"utf8")});return{id:"master-asset",name:args.filename};}
   },
   async probeOutput(){return{format:{duration:"12",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12}};}
  });
- const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){}});
+ const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){},async assertLease(){publicationOrder.push("assert-lease");}});
+ assert.deepEqual(publicationOrder,["assert-lease","publish"]);
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
  assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);assert.equal(published[0].publicationKey,"job-1:output:v1");
