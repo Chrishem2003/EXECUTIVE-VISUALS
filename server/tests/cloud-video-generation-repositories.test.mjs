@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {createCloudVideoGenerationRepositories} from "../cloud-video-generation-repositories.mjs";
 
 const approvalRow={id:"approval-1",owner_id:"owner-1",project_id:"project-1",request_hash:"a".repeat(64),snapshot_json:{shots:[{model:"seedance2_5",estimatedCostMicros:1250000}]},currency:"USD",quoted_amount_micros:1250000,budget_ceiling_micros:2000000,status:"approved_pending_submission"};
+const lease={jobId:"job-1",workerId:"worker-1",leaseToken:"923e4567-e89b-42d3-a456-426614174000"};
 const taskRow={id:"task-1",state:"reserved",provider_task_id:null,provider:"runway",model:"seedance2_5",estimated_cost_credits:null,output_asset_id:null,shot_index:0,estimated_cost_micros:1250000,currency:"USD"};
 function harness(){
  const calls=[];
@@ -30,12 +31,12 @@ test("approval registration uses the atomic idempotency RPC",async()=>{
  assert.equal(h.calls[0].body.p_owner_id,"owner-1");assert.equal(h.calls[0].body.p_budget_ceiling_micros,2000000);
 });
 test("task reservation and state changes use atomic server RPCs",async()=>{
- const h=harness();const task=await h.tasks.reserveSubmission({approvalId:"approval-1",shotIndex:0,ownerId:"owner-1",projectId:"project-1",requestHash:"a".repeat(64),currency:"USD",estimatedCostMicros:1250000});
+ const h=harness();const task=await h.tasks.reserveSubmission({...lease,approvalId:"approval-1",shotIndex:0,ownerId:"owner-1",projectId:"project-1",requestHash:"a".repeat(64),currency:"USD",estimatedCostMicros:1250000});
  assert.equal(task.id,"task-1");assert.equal(task.estimatedCostMicros,1250000);
- const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",model:"seedance2_5",estimatedCostCredits:20});
+ const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",model:"seedance2_5",estimatedCostCredits:20},lease);
  assert.equal(changed.state,"submitted");assert.equal(changed.provider,"runway");
- assert.ok(h.calls[0].url.endsWith("/rpc/reserve_video_generation_task"));
- assert.ok(h.calls[1].url.endsWith("/rpc/transition_video_generation_task"));
+ assert.ok(h.calls[0].url.endsWith("/rpc/reserve_video_generation_task_v2"));
+ assert.ok(h.calls[1].url.endsWith("/rpc/transition_video_generation_task_v2"));
  assert.deepEqual(h.calls[1].body.p_from_states,["submitting"]);assert.equal(h.calls[1].body.p_to_state,"submitted");
 });
 test("enqueue returns the shot jobs from the approval-scoped enqueue RPC",async()=>{
@@ -59,9 +60,9 @@ test("Fal provider identity is persisted through the atomic submitted transition
 
 test("durable task repository records cancellation intent and confirmed cancellation",async()=>{
  const h=harness();
- const requested=await h.tasks.markCancellationRequested("task-1",{providerStatus:"CANCEL_REQUESTED"});
+ const requested=await h.tasks.markCancellationRequested("task-1",{providerStatus:"CANCEL_REQUESTED"},lease);
  assert.equal(requested.state,"cancel_requested");
- const cancelled=await h.tasks.markCancelled("task-1",{providerStatus:"OK"});
+ const cancelled=await h.tasks.markCancelled("task-1",{providerStatus:"OK"},lease);
  assert.equal(cancelled.state,"cancelled");
  const transitions=h.calls.filter(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
  assert.deepEqual(transitions.map(item=>item.body.p_to_state),["cancel_requested","cancelled"]);
