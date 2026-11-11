@@ -44,6 +44,12 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
  assert.match(sql,/estimated_cost_micros,provider,model\)[\s\S]*?shot->>'provider',shot->>'model'/i);
 });
 
+test("cancellation migration uses valid dollar-quoted PL/pgSQL function bodies",()=>{
+ assert.equal((cancellationSql.match(/as \\$\\$/g)||[]).length,3);
+ assert.equal((cancellationSql.match(/^\\$\\$;$/gm)||[]).length,3);
+ assert.doesNotMatch(cancellationSql,/^as \\$\\n/m);
+});
+
 test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
  assert.match(cancellationSql,/state in \('reserved','submitting','submission_unknown','submitted','processing','cancel_requested','succeeded','failed','cancelled'\)/i);
  assert.match(cancellationSql,/p_to_state='cancel_requested' and p_provider_status is null/i);
