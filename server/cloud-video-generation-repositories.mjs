@@ -75,10 +75,10 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
   }
  });
  const tasks=Object.freeze({
-  async listCancellationPending(limit=20){
-   if(!Number.isInteger(limit)||limit<1||limit>100)throw fail("Cancellation reconciliation limit must be between 1 and 100.","VIDEO_TASK_QUERY_INVALID");
-   const rows=await request("video_generation_tasks?select=*&state=eq.cancel_requested&order=updated_at.asc&limit="+limit);
-   if(!Array.isArray(rows))throw fail("Cancellation reconciliation query returned an invalid result.","VIDEO_REPOSITORY_INVALID_RESPONSE");
+  async claimCancellationPending(workerId,limit=20){
+   if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128||!Number.isInteger(limit)||limit<1||limit>100)
+    throw fail("Cancellation reconciliation worker and limit are invalid.","VIDEO_TASK_QUERY_INVALID");
+   const rows=await rpc("claim_video_generation_cancellations",{p_worker_id:workerId,p_limit:limit,p_lease_seconds:60});
    return rows.map(taskRow);
   },
   async reserveSubmission({approvalId,shotIndex,ownerId,projectId,requestHash,currency,estimatedCostMicros}={}){
