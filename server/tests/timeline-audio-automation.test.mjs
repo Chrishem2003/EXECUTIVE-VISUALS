@@ -1,7 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline, evaluateTimelineAtFrame } from "../../src/core/timeline.ts";
+import { parseAudioAutomationEditorInput } from "../../src/core/audio-automation.ts";
 
+test("audio automation editor parser accepts valid keyframes and normalizes ordering",()=>{
+ const points=parseAudioAutomationEditorInput('[{"timeSeconds":2,"gainDb":-12},{"timeSeconds":0,"pan":-0.5}]',3);
+ assert.deepEqual(points.map(point=>point.timeSeconds),[0,2]);
+ assert.equal(points[0].pan,-0.5);
+ assert.equal(points[1].gainDb,-12);
+});
+test("audio automation editor parser rejects malformed JSON, invalid arrays and out-of-range points",()=>{
+ assert.throws(()=>parseAudioAutomationEditorInput("{",3),/valid JSON/);
+ assert.throws(()=>parseAudioAutomationEditorInput('{"timeSeconds":0,"gainDb":0}',3),/JSON array/);
+ assert.throws(()=>parseAudioAutomationEditorInput('[{"timeSeconds":4,"gainDb":0}]',3),/clip duration/);
+ assert.throws(()=>parseAudioAutomationEditorInput('[{"timeSeconds":1,"gainDb":0},{"timeSeconds":1,"pan":0}]',3),/unique/);
+});
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});
  timeline=addTrack(timeline,{id:"audio",name:"Audio",kind:"audio",enabled:true,locked:false,clips:[]});

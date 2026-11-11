@@ -20,6 +20,15 @@ export function normalizeAudioAutomation(points:readonly AudioAutomationPoint[]|
  for(let i=1;i<sorted.length;i++)if(sorted[i].timeSeconds===sorted[i-1].timeSeconds)throw new Error("Audio automation keyframe times must be unique.");
  return sorted;
 }
+export function parseAudioAutomationEditorInput(raw:string,durationSeconds:number):AudioAutomationPoint[]{
+ let parsed:unknown;
+ try{parsed=JSON.parse(raw.trim()||"[]");}catch{throw new Error("Audio automation must be valid JSON.");}
+ if(!Array.isArray(parsed))throw new Error("Audio automation must be a JSON array.");
+ if(!Number.isFinite(durationSeconds)||durationSeconds<0)throw new Error("Audio automation clip duration is invalid.");
+ const points=normalizeAudioAutomation(parsed as AudioAutomationPoint[]);
+ if(points.some(point=>point.timeSeconds>durationSeconds))throw new Error("Audio automation keyframes must fall inside the edited clip duration.");
+ return points;
+}
 export function evaluateAudioAutomation(points:readonly AudioAutomationPoint[]|undefined,timeSeconds:number,property:AudioAutomationProperty,fallback:number):number{
  const safe=normalizeAudioAutomation(points),time=Math.max(0,Number.isFinite(timeSeconds)?timeSeconds:0);
  const relevant=safe.filter(point=>point[property]!==undefined);
