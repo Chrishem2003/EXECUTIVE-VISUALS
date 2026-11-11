@@ -47,8 +47,7 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
 test("cancellation migration uses valid dollar-quoted PL/pgSQL function bodies",()=>{
  assert.equal((cancellationSql.match(/as \$\$/g)||[]).length,3);
  assert.equal((cancellationSql.match(/^\$\$;$/gm)||[]).length,3);
- assert.doesNotMatch(cancellationSql,/^as \$
-/m);
+ assert.doesNotMatch(cancellationSql,/^as \$(?!\$)/m);
 });
 
 test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
