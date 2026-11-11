@@ -51,12 +51,13 @@ test("successful cloud video output persists authoritative actual cost and curre
     id: "323e4567-e89b-42d3-a456-426614174000",
     owner_id: "123e4567-e89b-42d3-a456-426614174000",
     job_type: "video.generate",
-    status: "processing"
+    status: "processing", lease_token: "923e4567-e89b-42d3-a456-426614174000"
   };
   const calls = [];
   const queue = {
     async claim() { return job; },
-    async renew() { return true; }
+    async renew() { return true; },
+    async assertLease() { return true; }
   };
   const enqueue = {
     async finish(args) { calls.push(args); return true; },
