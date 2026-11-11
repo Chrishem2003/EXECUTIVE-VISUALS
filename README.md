@@ -72,3 +72,6 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Additional workflow research](docs/ADDITIONAL-WORKFLOW-RESEARCH.md)
 - [Adapter contract](docs/ADAPTER-CONTRACT.md)
 - [Original creative intelligence and innovation atlas](docs/ORIGINAL-CREATIVE-INTELLIGENCE-AND-INNOVATION-ATLAS.md)
+
+## Audio render performance benchmark
+Run `npm run benchmark:cloud-audio-render` to measure 1, 4 and 16 simultaneous audio clips using generated local fixtures. See `docs/cloud-audio-render-benchmark.md` for interpretation and environment controls. The benchmark is diagnostic; it sets no unvalidated performance threshold.
