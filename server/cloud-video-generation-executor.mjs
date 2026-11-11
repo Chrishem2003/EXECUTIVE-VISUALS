@@ -101,7 +101,7 @@ export function createCloudVideoGenerationExecutor({
    }
    providerTaskId=String(submitted?.taskId||"");
    if(!providerTaskId){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_PROVIDER_TASK_ID_MISSING"});throw fail("Provider accepted a request without a usable task ID. Reconciliation is required.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
-   try{await tasks.markSubmitted(task.id,{providerTaskId,model:shot.model,estimatedCostCredits:submitted.estimatedCostCredits??null});}
+   try{await tasks.markSubmitted(task.id,{providerTaskId,provider,model:shot.model,estimatedCostCredits:submitted.estimatedCostCredits??null});}
    catch(error){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_TASK_PERSISTENCE_FAILED"}).catch(()=>{});throw fail("Provider task was created but its ID could not be durably recorded. Reconcile before retrying.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
   }
 
