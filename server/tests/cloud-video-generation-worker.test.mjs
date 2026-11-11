@@ -44,7 +44,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
   {id:"task-4",provider:"runway",providerTaskId:null,model:"seedance2_5",state:"submission_unknown"}
  ];
  const tasks={
-  async listCancellationPending(limit){calls.push(["list",limit]);return pending;},
+  async claimCancellationPending(workerId,limit){calls.push(["claim",workerId,limit]);return pending;},
   async markCancellationRequested(id,value){calls.push(["requested",id,value]);},
   async markCancelled(id,value){calls.push(["cancelled",id,value]);}
  };
@@ -58,6 +58,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
  });
  const result=await worker.reconcilePendingCancellations(10);
  assert.equal(result.examined,4);assert.equal(result.pending,1);assert.equal(result.confirmed,2);assert.equal(result.errors.length,1);
+ assert.ok(calls.some(x=>x[0]==="claim"&&x[1]==="video-worker-1"&&x[2]===10));
  assert.ok(calls.some(x=>x[0]==="requested"&&x[1]==="task-1"));
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"));
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"));
