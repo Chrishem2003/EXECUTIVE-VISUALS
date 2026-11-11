@@ -75,7 +75,7 @@ export async function loadAdminOperationsWorkspace(){
   state.error=refreshUnavailable.length
    ?"Partial refresh: "+refreshUnavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
    :"";
- }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";state.overview=null;}
+ }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";}
  finally{state.loading=false;paint();}
 }
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.adminOperations==="true")view.innerHTML=renderAdminOperationsWorkspace();}
