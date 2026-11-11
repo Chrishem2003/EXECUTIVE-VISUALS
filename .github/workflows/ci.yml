@@ -22,13 +22,20 @@ jobs:
         with:
           node-version: 22.23.4
       - uses: dtolnay/rust-toolchain@1.96.0
-      - name: Ensure media test tools are available
+      - name: Install pinned FFmpeg static build
+        shell: bash
+        run: bash scripts/ci-setup-ffmpeg.sh
+      - name: Verify media test tools and caption font
+        shell: bash
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg fonts-dejavu-core
-          fi
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
           ffmpeg -version
+          ffprobe -version
+          command -v fc-match >/dev/null 2>&1 || { echo "fontconfig is required for caption rendering tests" >&2; exit 1; }
+          font_family="$(fc-match --format='%{family}' 'DejaVu Sans')"
+          [[ "$font_family" == *"DejaVu Sans"* ]] || { echo "DejaVu Sans is unavailable: $font_family" >&2; exit 1; }
           fc-match "DejaVu Sans"
       - name: Install JavaScript dependencies without invoking the broken package-local Rust fallback
         run: npm ci
