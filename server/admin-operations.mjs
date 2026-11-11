@@ -10,14 +10,15 @@ export function getAdminOperationsOverview(db,{authMode="unknown",dataPersistenc
  const usage=db.prepare("SELECT COUNT(*) AS operations,COALESCE(SUM(estimated_cost_micros),0) AS estimatedCostMicros FROM model_usage_events WHERE created_at>=?").get(new Date(now-30*24*60*60*1000).toISOString());
  return {users:Number(counts.users||0),projects:Number(counts.projects||0),assets:Number(counts.assets||0),jobs:Number(counts.jobs||0),jobsByStatus:Object.fromEntries(jobs.map(row=>[String(row.status),Number(row.count||0)])),usage30d:{operations:Number(usage.operations||0),estimatedCostMicros:Number(usage.estimatedCostMicros||0)},generatedAt:new Date(now).toISOString(),runtime:{authMode,dataPersistence,persistentDataRequired:Boolean(persistentDataRequired)}};
 }
+function escapeLikeQuery(value){return String(value||"").trim().slice(0,120).replace(/[\\%_]/g,"\\$&");}
 export function listAdminOperationUsers(db,{query="",limit=100}={}){
- const q=String(query||"").trim().slice(0,120),n=boundedLimit(limit);
- return db.prepare(`SELECT u.id,u.email,u.auth_source,u.created_at,
+ const q=escapeLikeQuery(query),n=boundedLimit(limit);
+ return db.prepare(\`SELECT u.id,u.email,u.auth_source,u.created_at,
  (SELECT COUNT(*) FROM projects p WHERE p.owner_id=u.id) AS projects,
  (SELECT COUNT(*) FROM jobs j WHERE j.owner_id=u.id) AS jobs,
  (SELECT COUNT(*) FROM model_usage_events m WHERE m.owner_id=u.id AND m.created_at>=?) AS usage30d
- FROM users u WHERE (?='' OR u.email LIKE '%'||?||'%' OR u.id LIKE '%'||?||'%')
- ORDER BY u.created_at DESC LIMIT ?`).all(new Date(Date.now()-30*24*60*60*1000).toISOString(),q,q,q,n).map(row=>({id:row.id,email:row.email,authSource:row.auth_source,createdAt:row.created_at,projects:Number(row.projects||0),jobs:Number(row.jobs||0),usage30d:Number(row.usage30d||0)}));
+ FROM users u WHERE (?='' OR u.email LIKE '%'||?||'%' ESCAPE '\\' OR u.id LIKE '%'||?||'%' ESCAPE '\\')
+ ORDER BY u.created_at DESC LIMIT ?\`).all(new Date(Date.now()-30*24*60*60*1000).toISOString(),q,q,q,n).map(row=>({id:row.id,email:row.email,authSource:row.auth_source,createdAt:row.created_at,projects:Number(row.projects||0),jobs:Number(row.jobs||0),usage30d:Number(row.usage30d||0)}));
 }
 export function listAdminOperationJobs(db,{limit=100}={}){
  return db.prepare(`SELECT j.id,u.email,j.job_type,j.status,j.progress,j.attempt_count,j.created_at,j.updated_at,j.completed_at
