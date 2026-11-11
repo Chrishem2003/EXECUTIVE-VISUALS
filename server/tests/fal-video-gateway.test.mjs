@@ -155,6 +155,17 @@ test("Fal NOT_FOUND task status is reconciled as terminal cancellation",async()=
 });
 
 
+test("Fal completed cancellation is reconciled from a missing result without publishing output",async()=>{
+ const previous={VIDEO_GATEWAY_ENABLED:process.env.VIDEO_GATEWAY_ENABLED,VIDEO_GATEWAY_ALLOW_REMOTE:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,FAL_KEY:process.env.FAL_KEY,FAL_VIDEO_MODEL:process.env.FAL_VIDEO_MODEL};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ try{
+  const task=await getFalVideoTask({taskId:"019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b",model:"fal-ai/example-video",fetchImpl:async url=>String(url).endsWith("/status")?json(200,{status:"COMPLETED"}):new Response(null,{status:404})});
+  assert.equal(task.status,"CANCELLED");
+  const flagged=await getFalVideoTask({taskId:"019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b",model:"fal-ai/example-video",fetchImpl:async()=>json(200,{status:"COMPLETED",error_type:"request_cancelled"})});
+  assert.equal(flagged.status,"CANCELLED");
+ }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
+});
+
 test("Fal API JSON responses are streamed with a hard 2 MiB cap",async()=>{
  const original=globalThis.fetch;
  Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
