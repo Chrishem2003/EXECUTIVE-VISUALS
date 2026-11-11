@@ -197,6 +197,29 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
    }
+   if(path==="/api/cloud/jobs"&&method==="POST"){
+    if(body.jobType!=="media.probe")return response(409,{error:{code:"CLOUD_MEDIA_JOB_UNSUPPORTED",message:"Only authenticated media.probe jobs can be submitted through this endpoint."}});
+    const sourceAssetId=String(body.sourceAssetId||"");
+    if(!safeId(sourceAssetId))return response(400,{error:{code:"SOURCE_ASSET_INVALID",message:"A valid source asset ID is required."}});
+    const asset=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(!asset.mediaType?.startsWith("audio/")&&!asset.mediaType?.startsWith("video/"))return response(415,{error:{code:"MEDIA_PROBE_UNSUPPORTED",message:"Audio or video assets are required for media analysis."}});
+    if(asset.projectId){if(await allow({ownerId,projectId:asset.projectId,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Project editor access is required to analyze this asset."}});}
+    else if(asset.ownerId!==ownerId)return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Source asset not found."}});
+    const key=typeof idempotencyKey==="string"?idempotencyKey.slice(0,180):"";
+    const input={sourceAssetId};
+    if(key){
+     const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&idempotency_key=eq."+encodeURIComponent(key)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
+     if(Array.isArray(existing)&&existing[0]){
+      const row=existing[0];
+      if(row.job_type!=="media.probe"||row.project_id!==(asset.projectId||null)||stableJson(row.input||{})!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different media probe request."}});
+      return response(200,{job:row,idempotentReplay:true});
+     }
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:asset.projectId||null,job_type:"media.probe",status:"queued",progress:0,input,idempotency_key:key||null}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].job_type!=="media.probe")throw new Error("Cloud media probe job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.probe",sourceAssetId}}});
+    return response(202,{job:rows[0]});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");

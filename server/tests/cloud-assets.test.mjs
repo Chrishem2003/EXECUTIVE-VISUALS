@@ -141,3 +141,17 @@ test("reports pending cleanup when waveform sidecar removal fails after source d
  assert.equal(result.deleted,true);assert.equal(result.storageRemoved,false);assert.equal(result.cleanupPending,true);
  assert.equal(f.storageCalls.length,2);
 });
+
+test("updates cloud asset analysis metadata only after project write authorization",async()=>{
+ let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
+ const result=await f.repo.updateMetadata({ownerId,assetId,patch:{probe:{signalAnalysis:{audioActivity:{status:"completed"}}}}});
+ assert.equal(authorized.action,"write");assert.equal(authorized.projectId,projectId);
+ assert.equal(f.calls[0].options.method,"GET");
+ assert.equal(f.calls[1].options.method,"PATCH");
+ assert.deepEqual(JSON.parse(f.calls[1].options.body).metadata,{role:"master",probe:{signalAnalysis:{audioActivity:{status:"completed"}}}});
+ assert.equal(result.id,assetId);
+});
+test("rejects cloud asset metadata update without project write authorization",async()=>{
+ const f=fixture({authorize:async()=>false});
+ await assert.rejects(()=>f.repo.updateMetadata({ownerId,assetId,patch:{probe:{}}}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+});

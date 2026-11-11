@@ -72,3 +72,9 @@ test("activity analysis validates duration, silence intervals and tuning bounds"
  assert.throws(()=>buildNonSilenceActivityIntervals({durationSeconds:2,silence:[{startSeconds:2,endSeconds:1}]}),/ordered timestamps/);
  assert.throws(()=>buildNonSilenceActivityIntervals({durationSeconds:2,padSeconds:3}),/padding/);
 });
+
+test("activity interval analysis caps retained ranges at the configured safe limit",()=>{
+ const silence=Array.from({length:140},(_,index)=>({startSeconds:index*2+.5,endSeconds:index*2+1}));
+ const intervals=buildNonSilenceActivityIntervals({durationSeconds:300,silence,minActivitySeconds:.1,padSeconds:0,maxIntervals:128});
+ assert.equal(intervals.length,128);
+});

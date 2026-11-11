@@ -187,7 +187,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       }
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
-        const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        const result = await runProcess(ffprobe, ["-v", "error", "-show_entries", "format=format_name,duration,size,bit_rate:stream=index,codec_type,codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,sample_rate,channels,channel_layout,duration,bit_rate,time_base", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let metadata;
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const audioStreams=(metadata.streams||[]).filter(stream=>stream.codec_type==="audio");
@@ -198,8 +198,12 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
             const check=await runOptionalSignalCheck(()=>runProcess(ffmpeg,["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],{signal,timeoutMs,onProgress}),{isCancelled:()=>Boolean(signal?.aborted)});
             if(check.status==="completed"){
               const silence=parseSilenceEvents(check.result.stderr,durationSeconds);
-              analysis.silence=silence;
-              analysis.activityIntervals=buildNonSilenceActivityIntervals({silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08});
+              analysis.silence=silence.slice(0,128);
+              analysis.silenceTruncated=silence.length>128;
+              const rawActivity=buildNonSilenceActivityIntervals({silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08,maxIntervals:129});
+              analysis.activityIntervals=rawActivity.slice(0,128);
+              analysis.activityIntervalsTruncated=rawActivity.length>128;
+              analysis.limitations.push("At most 128 activity intervals and silence intervals are retained; truncated analysis must not be used for automatic ducking.");
               analysis.status="completed";
             }else{analysis.status="unavailable";analysis.reason=check.reason;}
           }else{analysis.status="unavailable";analysis.reason="MEDIA_ENGINE_MISSING";}
