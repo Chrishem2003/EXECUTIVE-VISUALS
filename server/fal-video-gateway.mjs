@@ -55,7 +55,7 @@ function falTaskUrl(model,taskId,suffix=""){
  if(parts.length<2||parts.some(part=>!part||part==="."||part===".."))throw fail("Fal model identity is invalid.","VIDEO_GATEWAY_INVALID_INPUT");
  const id=String(taskId||"");
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))throw fail("Fal request identity is invalid.","VIDEO_GATEWAY_INVALID_RESPONSE");
- return new URL("https://queue.fal.run/"+encodeURIComponent(parts[0])+"/"+encodeURIComponent(parts[1])+"/requests/"+id+suffix);
+ return new URL("https://queue.fal.run/"+parts.map(part=>encodeURIComponent(part)).join("/")+"/requests/"+id+suffix);
 }
 /** Submit one durable Fal queue task; the worker persists its request ID before polling. */
 export async function submitFalVideoTask({model=process.env.FAL_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",referenceImageDataUrl="",fetchImpl=fetch}={}){
