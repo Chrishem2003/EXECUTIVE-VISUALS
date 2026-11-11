@@ -418,6 +418,7 @@ export function createCloudVideoEnqueue({
     async defer({ jobId, workerId, leaseToken, delaySeconds = 30, reasonCode = "VIDEO_PROVIDER_POLL_DEFERRED" } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
+      if (typeof leaseToken !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseToken)) throw new Error("A valid worker lease token is required.");
       if (!Number.isInteger(delaySeconds) || delaySeconds < 5 || delaySeconds > 900) throw new Error("Defer delay must be between 5 and 900 seconds.");
       if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Defer reason code is invalid.");
       const result = await call(RPC.defer, {
@@ -429,6 +430,7 @@ export function createCloudVideoEnqueue({
     async quarantine({ jobId, workerId, leaseToken, reasonCode = "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION" } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
+      if (typeof leaseToken !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseToken)) throw new Error("A valid worker lease token is required.");
       if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Quarantine reason code is invalid.");
       const result = await call(RPC.quarantine, {
         p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_reason_code: reasonCode
@@ -455,6 +457,7 @@ export function createCloudVideoEnqueue({
     async finish({ jobId, workerId, leaseToken, status, output = null, error = null, actualAmount = null } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
+      if (typeof leaseToken !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseToken)) throw new Error("A valid worker lease token is required.");
       if (!["succeeded", "partial", "failed", "cancelled"].includes(status)) throw new Error("Video job status must be terminal.");
       for (const [label, value] of [["output", output], ["error", error]]) {
         if (value !== null && (!value || typeof value !== "object" || Array.isArray(value))) throw new Error("Job " + label + " must be an object or null.");
