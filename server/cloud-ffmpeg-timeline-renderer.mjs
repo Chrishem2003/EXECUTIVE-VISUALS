@@ -16,7 +16,7 @@ const validateClipTiming=(clip)=>{
 export function parseAudioLoudnessMeasurement(stderr=""){
  const integratedMatch=String(stderr).match(/^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$/m);
  const rangeMatch=String(stderr).match(/^\s*LRA:\s*(-?\d+(?:\.\d+)?)\s*LU\s*$/m);
- const truePeakSection=String(stderr).match(/True peak:\s*([\s\S]*?)(?=\n\s*(?:Summary:|Integrated loudness:|$))/i)?.[1]??"";
+ const truePeakSection=String(stderr).match(/True peak:\s*([\s\S]*)/i)?.[1]??"";
  const peakMatch=truePeakSection.match(/^\s*Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS\s*$/m);
  const integratedLoudness=integratedMatch?Number(integratedMatch[1]):null;
  const loudnessRange=rangeMatch?Number(rangeMatch[1]):null;
