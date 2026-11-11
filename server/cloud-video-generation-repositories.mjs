@@ -1,5 +1,5 @@
 const SCHEMA="executive_visuals";
-const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task","transition_video_generation_task"]);
+const RPC=new Set(["register_video_generation_approval","enqueue_approved_video_generation","reserve_video_generation_task","transition_video_generation_task","claim_video_generation_cancellations"]);
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function baseUrl(value){
  let url;try{url=new URL(value);}catch{throw new Error("Cloud video repository URL must be an absolute URL.");}
@@ -75,6 +75,12 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
   }
  });
  const tasks=Object.freeze({
+  async claimCancellationPending(workerId,limit=20){
+   if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128||!Number.isInteger(limit)||limit<1||limit>100)
+    throw fail("Cancellation reconciliation worker and limit are invalid.","VIDEO_TASK_QUERY_INVALID");
+   const rows=await rpc("claim_video_generation_cancellations",{p_worker_id:workerId,p_limit:limit,p_lease_seconds:60});
+   return rows.map(taskRow);
+  },
   async reserveSubmission({approvalId,shotIndex,ownerId,projectId,requestHash,currency,estimatedCostMicros}={}){
    const rows=await rpc("reserve_video_generation_task",{p_approval_id:approvalId,p_shot_index:shotIndex,p_owner_id:ownerId,p_project_id:projectId,p_request_hash:requestHash,p_currency:currency,p_estimated_cost_micros:estimatedCostMicros});
    if(rows.length!==1)throw fail("Atomic video task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
@@ -90,6 +96,8 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
   markSubmissionUnknown(id,value={}){return this.transition({id,from:["submitting"],to:"submission_unknown",error:{code:value.code||"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"}});},
   markProcessing(id,value={}){return this.transition({id,from:["submitted","processing"],to:"processing",providerStatus:value.providerStatus});},
   markFailed(id,value={}){return this.transition({id,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
+  markCancellationRequested(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancel_requested",providerStatus:value.providerStatus||"CANCEL_REQUESTED"});},
+  markCancelled(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancelled",providerStatus:value.providerStatus||"CANCELLED"});},
   markSucceeded(id,value={}){return this.transition({id,from:["submitted","processing"],to:"succeeded",providerTaskId:value.providerTaskId,outputAssetId:value.asset?.id||null});}
  });
  return Object.freeze({approvals,tasks});
