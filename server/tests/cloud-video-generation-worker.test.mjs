@@ -7,6 +7,7 @@ function fixture({job=null,execute=async()=>({ok:true})}={}){
  const queue={
   async claim(workerId,leaseSeconds,types){calls.push(["claim",workerId,leaseSeconds,types]);return job;},
   async renew(...args){calls.push(["renew",...args]);return true;},
+  async assertLease(){return true;},
   async finish(...args){calls.push(["finish",...args]);return true;},
   async recover(limit){calls.push(["recover",limit]);return 0;}
  };
@@ -22,7 +23,7 @@ test("video worker only claims video.generate.shot jobs",async()=>{
  assert.deepEqual(f.calls[0],["claim","video-worker-1",90,["video.generate.shot"]]);
 });
 test("video worker executes the claimed shot and completes the shared queue job",async()=>{
- const job={id:"job-1",owner_id:"owner-1",project_id:"project-1",status:"processing",lease_owner:"video-worker-1",lease_expires_at:"2099-01-01T00:00:00Z",input:{approvalId:"approval-1",shotIndex:0}};
+ const job={id:"job-1",owner_id:"owner-1",project_id:"project-1",status:"processing",lease_owner:"video-worker-1",lease_token:"923e4567-e89b-42d3-a456-426614174000",lease_expires_at:"2099-01-01T00:00:00Z",input:{approvalId:"approval-1",shotIndex:0}};
  const f=fixture({job,execute:async({job:claimed,onProgress})=>{assert.equal(claimed.id,"job-1");onProgress(100);return{outputAsset:{id:"asset-1"}};}});
  const result=await f.worker.runCycle({heartbeatIntervalMs:1000});
  assert.equal(result.finished,true);assert.equal(result.status,"succeeded");
@@ -49,7 +50,7 @@ test("video worker reconciles pending provider cancellations after restart",asyn
   async markCancelled(id,value){calls.push(["cancelled",id,value]);}
  };
  const worker=createCloudVideoGenerationWorker({
-  workerId:"video-worker-1",queue:{async claim(){return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}},
+  workerId:"video-worker-1",queue:{async claim(){return null;},async renew(){return true;},async assertLease(){return true;},async finish(){return true;},async recover(){return 0;}},
   assetService:{assets:{}},mediaIO:{},repositories:{approvals:{},tasks},execute:async()=>({}),
   cancellationAdapters:{
    fal:{poll:async({taskId})=>{calls.push(["fal-poll",taskId]);return{status:"RUNNING"};},cancel:async({taskId})=>{calls.push(["fal-cancel",taskId]);return{status:"CANCELLATION_REQUESTED"};}},
