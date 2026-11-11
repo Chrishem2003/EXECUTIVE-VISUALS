@@ -79,3 +79,14 @@ test("cancellation reconciliation claims are worker-scoped RPC leases",async()=>
  assert.deepEqual(call.body,{p_worker_id:"worker-7",p_limit:15,p_lease_seconds:60});
  await assert.rejects(()=>h.tasks.claimCancellationPending("",15),e=>e.code==="VIDEO_TASK_QUERY_INVALID");
 });
+
+test("cancellation reconciliation transitions use their independent task-row lease",async()=>{
+ const h=harness();
+ const changed=await h.tasks.markCancelledByReconciler("task-1",{providerStatus:"CANCELLED"},"cancel-worker-1");
+ assert.equal(changed.state,"cancelled");
+ const call=h.calls.find(item=>item.url.endsWith("/rpc/transition_video_generation_task_reconciliation_v1"));
+ assert.ok(call);
+ assert.equal(call.body.p_worker_id,"cancel-worker-1");
+ assert.equal(call.body.p_to_state,"cancelled");
+ assert.equal(call.body.p_provider_status,"CANCELLED");
+});
