@@ -11,7 +11,7 @@ function harness(){
   if(String(url).includes("video_generation_approvals?"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("register_video_generation_approval"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("reserve_video_generation_task"))return new Response(JSON.stringify([taskRow]),{status:200});
-  if(String(url).includes("transition_video_generation_task"))return new Response(JSON.stringify([{...taskRow,state:"submitted",provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});
+  if(String(url).includes("transition_video_generation_task"))return new Response(JSON.stringify([{...taskRow,state:"submitted",provider:options.body?.p_provider||"runway",provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});
   if(String(url).includes("enqueue_approved_video_generation"))return new Response(JSON.stringify([{job_id:"job-1",shot_index:0,job_status:"queued"}]),{status:200});
   return new Response("[]",{status:200});
  };
@@ -33,7 +33,7 @@ test("task reservation and state changes use atomic server RPCs",async()=>{
  const h=harness();const task=await h.tasks.reserveSubmission({approvalId:"approval-1",shotIndex:0,ownerId:"owner-1",projectId:"project-1",requestHash:"a".repeat(64),currency:"USD",estimatedCostMicros:1250000});
  assert.equal(task.id,"task-1");assert.equal(task.estimatedCostMicros,1250000);
  const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",model:"seedance2_5",estimatedCostCredits:20});
- assert.equal(changed.state,"submitted");
+ assert.equal(changed.state,"submitted");assert.equal(changed.provider,"runway");
  assert.ok(h.calls[0].url.endsWith("/rpc/reserve_video_generation_task"));
  assert.ok(h.calls[1].url.endsWith("/rpc/transition_video_generation_task"));
  assert.deepEqual(h.calls[1].body.p_from_states,["submitting"]);assert.equal(h.calls[1].body.p_to_state,"submitted");
@@ -46,4 +46,13 @@ test("enqueue returns the shot jobs from the approval-scoped enqueue RPC",async(
 test("repository refuses missing service credentials and invalid project-scoped lookups",async()=>{
  assert.throws(()=>createCloudVideoGenerationRepositories({url:"https://example.supabase.co",serviceRoleKey:""}),/server-side Supabase credentials/);
  const h=harness();await assert.rejects(()=>h.approvals.get("approval-1",{ownerId:"owner-1"}),e=>e.code==="VIDEO_APPROVAL_SCOPE_INVALID");
+});
+
+test("Fal provider identity is persisted through the atomic submitted transition",async()=>{
+ const h=harness();
+ const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",provider:"fal",model:"fal-ai/example-video",estimatedCostCredits:20});
+ assert.equal(changed.provider,"fal");
+ const call=h.calls.find(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
+ assert.equal(call.body.p_provider,"fal");
+ assert.equal(call.body.p_model,"fal-ai/example-video");
 });
