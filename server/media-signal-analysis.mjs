@@ -68,12 +68,56 @@ export function parseTemporalLumaSamples(stderr=""){
  const samples=[];
  for(const block of String(stderr||"").split(/(?=frame:\s*\d+\s+pts:)/g)){
   const frame=block.match(/frame:\s*(\d+)\s+pts:\s*(-?\d+)\s+pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
-  const luma=block.match(/lavfi\.signalstats\.YAVG\s*=\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
-  if(!frame||!luma)continue;
-  const sample={frame:Number(frame[1]),pts:Number(frame[2]),timeSeconds:Number(frame[3]),meanLuma:Number(luma[1])};
-  if(Object.values(sample).every(Number.isFinite)&&sample.meanLuma>=0&&sample.meanLuma<=255)samples.push(sample);
+  const read=key=>{const match=block.match(new RegExp("lavfi\\.signalstats\\."+key+"\\s*=\\s*(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))"));return match?Number(match[1]):null;};
+  const meanLuma=read("YAVG");
+  if(!frame||!Number.isFinite(meanLuma)||meanLuma<0||meanLuma>255)continue;
+  const sample={frame:Number(frame[1]),pts:Number(frame[2]),timeSeconds:Number(frame[3]),meanLuma};
+  for(const [key,property] of [["SATAVG","meanSaturation"],["UAVG","meanU"],["VAVG","meanV"],["YMIN","minLuma"],["YMAX","maxLuma"],["YDIF","lumaDifference"],["UDIF","uDifference"],["VDIF","vDifference"]]){
+   const value=read(key);if(Number.isFinite(value))sample[property]=value;
+  }
+  if(Object.values(sample).every(Number.isFinite))samples.push(sample);
  }
  return samples.sort((a,b)=>a.timeSeconds-b.timeSeconds||a.frame-b.frame);
+}
+
+export function buildTemporalColorFindings({samples=[],sceneChanges=[],minSaturationDelta=18,minChromaDelta=20,minAlternatingTransitions=3,sceneCutExclusionSeconds=0.75,maxSampleGapSeconds=0.5}={}){
+ const ordered=(Array.isArray(samples)?samples:[]).filter(sample=>sample&&Number.isFinite(sample.timeSeconds)&&Number.isFinite(sample.meanSaturation)&&Number.isFinite(sample.meanU)&&Number.isFinite(sample.meanV)).sort((a,b)=>a.timeSeconds-b.timeSeconds);
+ const cuts=(Array.isArray(sceneChanges)?sceneChanges:[]).filter(Number.isFinite);
+ const deltas=[];
+ for(let i=1;i<ordered.length;i++){
+  const previous=ordered[i-1],current=ordered[i],elapsed=current.timeSeconds-previous.timeSeconds;
+  if(elapsed<=0||elapsed>maxSampleGapSeconds)continue;
+  const midpoint=(previous.timeSeconds+current.timeSeconds)/2;
+  if(cuts.some(cut=>Math.abs(cut-midpoint)<=sceneCutExclusionSeconds))continue;
+  deltas.push({index:i-1,startSeconds:previous.timeSeconds,endSeconds:current.timeSeconds,saturation:current.meanSaturation-previous.meanSaturation,u:current.meanU-previous.meanU,v:current.meanV-previous.meanV});
+ }
+ const findings=[];
+ for(const [kind,readDelta,threshold,code,message] of [
+  ["saturation",item=>item.saturation,minSaturationDelta,"ALTERNATING_SATURATION_INSTABILITY","Repeated alternating frame-average saturation changes were detected; inspect this interval for color pumping."],
+  ["chroma",item=>Math.hypot(item.u,item.v),minChromaDelta,"ALTERNATING_CHROMA_INSTABILITY","Repeated alternating frame-average chroma shifts were detected; inspect this interval for color flicker."]
+ ]){
+  for(let i=0;i<deltas.length;){
+   const first=deltas[i],firstDelta=readDelta(first);
+   if(!Number.isFinite(firstDelta)||Math.abs(firstDelta)<threshold){i++;continue;}
+   let j=i+1,last=firstDelta,transitions=1,maxDelta=Math.abs(firstDelta);
+   while(j<deltas.length){
+    const current=deltas[j],previous=deltas[j-1],value=readDelta(current);
+    if(current.index!==previous.index+1||!Number.isFinite(value)||Math.abs(value)<threshold)break;
+    if(kind==="saturation"&&Math.sign(value)===Math.sign(last))break;
+    if(kind==="chroma"){
+     const dot=previous.u*current.u+previous.v*current.v;
+     const previousMagnitude=Math.hypot(previous.u,previous.v),currentMagnitude=Math.hypot(current.u,current.v);
+     if(dot>=-0.35*previousMagnitude*currentMagnitude)break;
+    }
+    transitions++;last=value;maxDelta=Math.max(maxDelta,Math.abs(value));j++;
+   }
+   if(transitions>=minAlternatingTransitions){
+    findings.push({code,severity:"warning",startSeconds:first.startSeconds,endSeconds:deltas[j-1].endSeconds,transitions,maxDelta:Number(maxDelta.toFixed(3)),message});
+    i=j;
+   }else i++;
+  }
+ }
+ return findings.sort((a,b)=>a.startSeconds-b.startSeconds);
 }
 
 export function buildTemporalLumaFindings({samples=[],sceneChanges=[],minJump=65,minAlternatingDelta=30,minAlternatingTransitions=3,sceneCutExclusionSeconds=0.75}={}){
