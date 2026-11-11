@@ -83,8 +83,12 @@ export function createCloudVideoGenerationExecutor({
    if(providerTaskId){
     if(typeof adapter.cancel!=="function")throw fail("The selected provider adapter cannot confirm remote cancellation; the task remains cancellation-pending.","VIDEO_TASK_CANCELLATION_PENDING");
     const cancelled=await adapter.cancel({taskId:providerTaskId,model:shot.model});
-    if(cancelled?.status==="CANCELLATION_REQUESTED")throw fail("The provider accepted cancellation but has not confirmed termination. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
-    await tasks.markCancelled(task.id,{providerStatus:String(cancelled?.status||"CANCELLED")});
+    if(cancelled?.status==="CANCELLATION_REQUESTED"){
+     await tasks.markCancellationRequested(task.id,{providerStatus:"CANCELLATION_REQUESTED"});
+     throw fail("The provider accepted cancellation but has not confirmed termination. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
+    }
+    if(!["OK","CANCELLED","NOT_FOUND","ALREADY_COMPLETED"].includes(cancelled?.status))throw fail("The provider returned an unrecognized cancellation result. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
+    await tasks.markCancelled(task.id,{providerStatus:cancelled.status});
    }else{
     await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
    }
