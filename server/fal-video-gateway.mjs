@@ -89,8 +89,10 @@ export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,
  if(status.status==="IN_QUEUE")return {taskId,status:"PENDING"};
  if(status.status==="IN_PROGRESS")return {taskId,status:"RUNNING"};
  if(status.status!=="COMPLETED")throw fail("Fal returned an unknown queue state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ if(status.error_type&&/cancel/i.test(String(status.error_type)))return Object.freeze({taskId,status:"CANCELLED",model:String(model),outputUrl:null,error:null});
  if(status.error||status.error_type)return {taskId,status:"FAILED",error:{code:String(status.error_type||"FAL_TASK_FAILED"),message:String(status.error||"Fal task failed.").slice(0,300)}};
- const result=await jsonRequest(falTaskUrl(model,taskId),{headers:{authorization:"Key "+key}},20000,fetchImpl);
+ const result=await jsonRequest(falTaskUrl(model,taskId),{headers:{authorization:"Key "+key}},20000,fetchImpl,[404]);
+ if(result.__httpStatus===404)return Object.freeze({taskId,status:"CANCELLED",model:String(model),outputUrl:null,error:null});
  const outputUrl=String(result.video?.url||result.videos?.[0]?.url||"");
  let url;try{url=new URL(outputUrl)}catch{throw fail("Fal completed the request without a valid video URL.","VIDEO_GATEWAY_INVALID_RESPONSE");}
  if(url.protocol!=="https:"||!(url.hostname==="fal.media"||url.hostname.endsWith(".fal.media"))||url.username||url.password||url.port||url.hash||url.search)
