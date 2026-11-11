@@ -11,7 +11,7 @@ function harness(){
   if(String(url).includes("video_generation_approvals?"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("register_video_generation_approval"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("reserve_video_generation_task"))return new Response(JSON.stringify([taskRow]),{status:200});
-  if(String(url).includes("transition_video_generation_task"))return new Response(JSON.stringify([{...taskRow,state:"submitted",provider:options.body?.p_provider||"runway",provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});
+  if(String(url).includes("transition_video_generation_task")){const payload=typeof options.body==="string"?JSON.parse(options.body):options.body;return new Response(JSON.stringify([{...taskRow,state:"submitted",provider:payload?.p_provider||"runway",provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});}
   if(String(url).includes("enqueue_approved_video_generation"))return new Response(JSON.stringify([{job_id:"job-1",shot_index:0,job_status:"queued"}]),{status:200});
   return new Response("[]",{status:200});
  };
