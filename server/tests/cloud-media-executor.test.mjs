@@ -584,8 +584,7 @@ test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGT
   assert.ok(Number.isInteger(pid)&&pid>0,"ffprobe PID should be recorded");
   controller.abort();
   await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
-  await new Promise(resolve=>setTimeout(resolve,3300));
-  assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH");
+  assert.throws(()=>process.kill(pid,0),error=>error.code==="ESRCH","cancellation must not settle until the child has exited");
  }finally{
   if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
   await rm(directory,{recursive:true,force:true});
