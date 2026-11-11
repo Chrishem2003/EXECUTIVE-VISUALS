@@ -189,3 +189,10 @@ test("approved-shot reservation and task transitions are fenced by the exact sha
  assert.match(shotWorkerExecutor,/tasks\.reserveSubmission\(\{\.\.\.leaseContext/);
  assert.match(shotWorkerExecutor,/assertLease:assertCurrentLease,signal,leaseContext/);
 });
+
+test("approved-shot cancellation reconciliation retains its separate bounded task lease",()=>{
+ assert.match(shotFenceSql,/transition_video_generation_task_reconciliation_v1[\s\S]*?cancellation_lease_owner=p_worker_id/i);
+ assert.match(shotFenceSql,/cancellation_lease_expires_at>pg_catalog\.clock_timestamp\(\)/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.transition_video_generation_task_reconciliation_v1\([^;]+ to service_role/i);
+ assert.match(shotWorkerRepositories,/markCancelledByReconciler/);
+});
