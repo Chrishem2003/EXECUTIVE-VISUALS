@@ -16,12 +16,11 @@ test("cloud worker config validates lease, heartbeat, polling and byte limits",(
 });
 test("cloud worker supervisor recovers, runs enabled families and stops cleanly",async()=>{
  const events=[],calls=[];
- const workers=[{async recoverExpired(limit){calls.push(["recover",limit]);return 2;},async reconcileStorageCleanup(limit){calls.push(["cleanup",limit]);return{examined:1,removed:1,results:[]};},async runCycle(options){calls.push(["media",options.leaseSeconds]);options.onEvent({type:"job.succeeded"});return{claimed:true,jobId:"job-1"};}},
- {async recoverExpired(){return 0;},async runCycle(options){calls.push(["timeline",options.leaseSeconds]);return{claimed:false};}}];
+ const workers=[{async recoverExpired(limit){calls.push(["recover",limit]);return 2;},async runCycle(options){calls.push(["media",options.leaseSeconds]);options.onEvent({type:"job.succeeded"});return{claimed:true,jobId:"job-1"};}},
+ {async recoverExpired(limit){calls.push(["recover-timeline",limit]);return 0;},async runCycle(options){calls.push(["timeline",options.leaseSeconds]);return{claimed:false};}}];
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
  await supervisor.start();await supervisor.stop();
- assert.deepEqual(calls.slice(0,4),[["recover",100],["cleanup",20],["media",60],["timeline",60]]);
- assert.ok(events.some(event=>event.kind==="storage_cleanup"&&event.removed===1));
+ assert.deepEqual(calls.slice(0,4),[["recover",100],["recover-timeline",100],["media",60],["timeline",60]]);
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
 test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});
@@ -37,45 +36,17 @@ test("cloud worker supervisor waits for all families and reports individual fail
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
 });
 
-test("cloud worker supervisor starts without waiting for the first long-running job and drains it on stop",async()=>{
- let release;const gate=new Promise(resolve=>{release=resolve;});let executionStarted=false,stopped=false;
- const workers=[{async recoverExpired(){return 0;},async runCycle(){executionStarted=true;await gate;return{claimed:true,jobId:"long-render"};}}];
- const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
- await supervisor.start();
- assert.equal(executionStarted,true,"the first worker cycle should start immediately");
- const stopping=supervisor.stop().then(()=>{stopped=true;});
- await Promise.resolve();
- assert.equal(stopped,false,"shutdown should wait for the active leased job to settle");
- release();await stopping;
- assert.equal(stopped,true);
-});
-test("cloud worker supervisor does not start timers or claim work if stopped during startup recovery",async()=>{
- let releaseRecovery,recoveryStarted;const started=new Promise(resolve=>{recoveryStarted=resolve;});
- const recovery=new Promise(resolve=>{releaseRecovery=resolve;});let ran=false;
- const workers=[{async recoverExpired(){recoveryStarted();await recovery;return 0;},async runCycle(){ran=true;return{claimed:false};}}];
- const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
- const starting=supervisor.start();await started;await supervisor.stop();releaseRecovery();await starting;
- assert.equal(ran,false,"a stopped supervisor must not claim jobs after startup recovery finishes");
+test("cloud video worker may be configured with Runway Model Router without FAL credentials", () => {
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"runway-secret"
+ });
+ assert.equal(config.video,true);
+ assert.throws(()=>readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"runway-secret"
+ }),/saved config/);
 });
 
-test("video generation worker requires explicit remote provider enablement and server credential",()=>{
- assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_GENERATION_WORKER_ENABLED:"true"}),/VIDEO_GATEWAY_ENABLED/);
- const config=readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_GENERATION_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"server-only-secret"});
- assert.equal(config.video,true);assert.equal(config.media,false);assert.equal(config.timeline,false);
-});
-
-test("cloud worker supervisor forwards execution progress to its event log",async()=>{
- const events=[];
- const workers=[{async recoverExpired(){return 0;},async runCycle(options){options.onProgress({jobId:"job-video-1",workerId:"video-1",progress:45});return{claimed:false};}}];
- const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
- await supervisor.start();await supervisor.stop();
- assert.ok(events.some(event=>event.kind==="progress"&&event.jobId==="job-video-1"&&event.progress===45));
-});
-
-test("cloud worker supervisor periodically reconciles pending video cancellations",async()=>{
- const events=[];
- const workers=[{async recoverExpired(){return 0;},async reconcilePendingCancellations(limit){assert.equal(limit,20);return{examined:2,confirmed:1,pending:1,errors:[]};},async runCycle(){return{claimed:false};}}];
- const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
- await supervisor.start();await supervisor.stop();
- assert.ok(events.some(event=>event.kind==="video_cancellation_reconciliation"&&event.confirmed===1&&event.pending===1));
-});

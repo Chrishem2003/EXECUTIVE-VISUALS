@@ -18,6 +18,8 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
+import { assertVideoWorkflowExecutionMode } from "./video-workflow-execution-mode.mjs";
+import { executeCloudVideoWorkflowNode } from "./workflow-cloud-video-bridge.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -68,7 +70,7 @@ function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attemp
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
   .run(status,attempt,json(input),output===null?null:json(output),error===null?null:json(error),["completed","failed","blocked","skipped"].includes(status)?now():null,runId,nodeId);
 }
-export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},onResourceMeasurement=null}){
+export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},onResourceMeasurement=null,cloudTimelineApi=null}){
  const input=parseJson(job.input_json),runId=String(input.runId||"");
  const run=db.prepare("SELECT * FROM workflow_runs WHERE id=?").get(runId);
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
@@ -258,6 +260,35 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    }else if(node.kind==="video.generate"){
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
+    if(String(config.provider||"")==="runway"&&String(config.model||"")==="model-router"){
+     const executionMode=assertVideoWorkflowExecutionMode(undefined,{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
+     if(executionMode!=="cloud")throw Object.assign(new Error("Set VIDEO_WORKFLOW_EXECUTION_MODE=cloud only after the authenticated cloud workspace and worker release gates are ready."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
+     const cloudStarted=Date.now();
+     const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
+      onJobEnqueued:receipt=>{
+       const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+       saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:receipt,error:detail,attempt});
+       db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+        .run(json(detail),now(),runId);
+      },
+      onProgress:value=>onProgress(value)});
+     if(result.pending===true){
+      const pendingOutput={cloudJobId:result.cloudJobId,quoteId:result.quoteId,requestId:result.requestId,
+       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,status:result.status};
+      const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+      saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:pendingOutput,error:detail,attempt});
+      db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+       .run(json(detail),now(),runId);
+      return {status:"blocked",runId,waitingNodeId:nodeId,cloudJobId:result.cloudJobId,completedNodes:completedCount,totalNodes:nodeCount};
+     }
+     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
+      provider:"runway",capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-cloudStarted});
+     output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
+     output.video=result.assetId;output.assetIds=result.assetIds;output.assets=result.assetIds;
+     output.mimeType="video/mp4";output.provider=result.provider;output.model=result.model;
+     output.cloudJobId=result.cloudJobId;output.quoteId=result.quoteId;output.costEvidenceReference=result.costEvidenceReference;
+    }else{
+
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     const explicitReference=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
@@ -310,7 +341,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:generationRequest.prompt,model:result.model,provenance,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
-   }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
+    }
+}else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??config.text??"");
     if(!prompt.trim())throw Object.assign(new Error("Text-model node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});

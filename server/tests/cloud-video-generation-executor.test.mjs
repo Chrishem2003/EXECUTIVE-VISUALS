@@ -1,131 +1,249 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCloudVideoGenerationExecutor } from "../cloud-video-generation-executor.mjs";
+import { executeCloudVideoGenerationJob } from "../cloud-video-generation-executor.mjs";
 
-const job={id:"job-1",owner_id:"owner-1",project_id:"project-1",job_type:"video.generate.shot",input:{approvalId:"approval-1",shotIndex:0}};
-const approval={id:"approval-1",ownerId:"owner-1",projectId:"project-1",status:"approved_pending_submission",currency:"USD",budgetCeilingMicros:5000000,requestHash:"a".repeat(64),shots:[{provider:"runway",model:"seedance2_5",prompt:"A cinematic sunrise",durationSeconds:5,aspectRatio:"16:9",estimatedCostMicros:2500000,name:"sunrise"}]};
-const mp4=Buffer.concat([Buffer.from("0000ftyp"),Buffer.alloc(32)]);
-function fixture({taskState="reserved",providerTaskId=null,providerStatus="SUCCEEDED",outputAssetId=taskState==="succeeded"?"asset-1":null,provider="runway",cancelStatus="OK",signalController=null,abortOnSubmit=false}={}){
- const calls=[],record={id:"task-1",state:taskState,providerTaskId,outputAssetId};
- const approved={...approval,shots:[{...approval.shots[0],provider}]};
- const tasks={
-  async reserveSubmission(input){calls.push(["reserve",input]);return record;},
-  async markSubmitting(id){calls.push(["submitting",id]);record.state="submitting";},
-  async markSubmitted(id,value){calls.push(["submitted",value]);record.state="submitted";record.providerTaskId=value.providerTaskId;},
-  async markSubmissionUnknown(id,value){calls.push(["unknown",value]);record.state="submission_unknown";},
-  async markProcessing(id,value){calls.push(["processing",value]);record.state="processing";},
-  async markFailed(id,value){calls.push(["failed",value]);record.state="failed";},
-  async markCancellationRequested(id,value){calls.push(["cancel-requested",value]);record.state="cancel_requested";record.providerStatus=value.providerStatus;},
-  async markCancelled(id,value){calls.push(["cancelled",value]);record.state="cancelled";record.providerStatus=value.providerStatus;},
-  async markSucceeded(id,value){calls.push(["succeeded",value]);record.state="succeeded";record.outputAssetId=value.asset?.id||null;}
- };
- const approvals={async get(id){calls.push(["approval",id]);return approved;}};
- const mediaIO={async publish(value){calls.push(["publish",value]);return{id:"asset-1",...value};}};
- const execute=createCloudVideoGenerationExecutor({
-  approvals,tasks,mediaIO,
-  submitTask:async value=>{calls.push(["submit",value]);return{taskId:"123e4567-e89b-42d3-a456-426614174000",estimatedCostCredits:25};},
-  getTask:async value=>{calls.push(["poll",value]);return{taskId:value.taskId,status:providerStatus,outputUrl:"https://cdn.example.cloudfront.net/video.mp4"};},
-  downloadOutput:async value=>{calls.push(["download",value]);return mp4;},
-  providerAdapters:provider==="fal"?{fal:{submit:async value=>{calls.push(["fal-submit",value]);if(abortOnSubmit)signalController?.abort();return{taskId:"123e4567-e89b-42d3-a456-426614174000"};},poll:async value=>{calls.push(["fal-poll",value]);return{taskId:value.taskId,status:providerStatus,outputUrl:"https://v3.fal.media/files/output.mp4"};},cancel:async value=>{calls.push(["fal-cancel",value]);return{taskId:value.taskId,status:cancelStatus};},download:async value=>{calls.push(["fal-download",value]);return mp4;}}}:{},
-  sleepImpl:async()=>{}
- });
- return{execute,calls,record};
+const ownerId = "123e4567-e89b-42d3-a456-426614174000";
+const jobId = "223e4567-e89b-42d3-a456-426614174000";
+const taskId = "323e4567-e89b-42d3-a456-426614174000";
+const requestHash = "a".repeat(64);
+const job = {
+  id: jobId, owner_id: ownerId, project_id: null, job_type: "video.generate",
+  input: { provider: "runway", model: "gen4.5", requestHash, prompt: "Test prompt" },
+  estimated_cost: { amount: 2, currency: "USD" }
+};
+const succeeded = { taskId, status: "succeeded", outputUrls: ["https://cdn.example.test/output.mp4"] };
+function fixture({ state = "prepared", submitError = null, recordResult = true, status = succeeded,
+  metadata = {}, submittedMetadata = {}, cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9", actualCredits: 12 },
+  costError = null, ingestError = null, creditError = null } = {}) {
+  const calls = [];
+  let currentState = state;
+  let currentTaskId = state === "submitted" ? taskId : null;
+  let currentMetadata = metadata;
+  const ledger = {
+    async prepare(value) { calls.push(["prepare", value]); return { job_id: jobId, owner_id: ownerId, state: currentState, provider_task_id: currentTaskId, metadata: currentMetadata }; },
+    async begin(id, worker) { calls.push(["begin", id, worker]); return true; },
+    async record(id, worker, idValue, metadata) {
+      calls.push(["record", id, worker, idValue, metadata]);
+      if (recordResult) { currentState = "submitted"; currentTaskId = idValue; currentMetadata = metadata; }
+      return recordResult;
+    },
+    async markUnknown(id, worker, code) { calls.push(["unknown", id, worker, code]); currentState = "unknown"; return true; }
+  };
+  const adapter = {
+    provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
+    async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued", metadata: submittedMetadata }; },
+    async getStatus(id, context) { calls.push(["poll", id, context?.job?.id, context?.workerId]); if (status instanceof Error) throw status; return status; }
+  };
+  return {
+    calls, ledger, adapter,
+    customerCredits: { async settleJob(value) { calls.push(["settleCredits", value]); if (creditError) throw creditError; return { balance: 40, adjustment: 2, replayed: false }; } },
+    ingestOutputs: async value => { calls.push(["ingest", value.providerTaskId]); if (ingestError) throw ingestError; return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } }; },
+    resolveActualCost: async value => { calls.push(["cost", value.providerTaskId, value.submissionMetadata]); if (costError) throw costError; return cost; }
+  };
 }
-test("approved shot submits once, persists task ID, downloads and publishes private MP4",async()=>{
+
+test("cloud executor submits once, records task, verifies cost and ingests private outputs", async () => {
+  const f = fixture();
+  const result = await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f, sleep: async () => {} });
+  assert.equal(result.providerTaskId, taskId);
+  assert.equal(result.actualAmount, 0.75);
+  assert.equal(result.currency, "USD");
+  assert.deepEqual(result.assetIds, ["423e4567-e89b-42d3-a456-426614174000"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "ingest"]);
+  const submission = f.calls.find(call => call[0] === "submit");
+  assert.equal(submission[2], job.id);
+  assert.equal(submission[3], ownerId);
+});
+
+
+test("workflow generation settles customer credits with provider task evidence before output ingestion", async () => {
+  const f = fixture();
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  const result = await executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f });
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "settleCredits", "ingest"]);
+  const settlement = f.calls.find(call => call[0] === "settleCredits")[1];
+  assert.equal(settlement.jobId, job.id);
+  assert.equal(settlement.ownerId, ownerId);
+  assert.equal(settlement.provider, "runway");
+  assert.equal(settlement.actualCredits, 12);
+  assert.equal(settlement.evidence.evidenceId, taskId);
+  assert.equal(settlement.evidence.evidenceReference, "provider-invoice:line-9");
+  assert.equal(result.customerCreditSettlement.balance, 40);
+});
+
+test("workflow generation refuses to guess customer credits when provider evidence omits actual credits", async () => {
+  const f = fixture({ cost: { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" } });
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "settleCredits"), false);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
+test("workflow generation quarantines settlement transport failures for idempotent reconciliation", async () => {
+  const f = fixture({ creditError: new Error("temporary database outage") });
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
+test("cloud executor runs non-billable provider preflight before the paid submission", async () => {
+  const f = fixture();
+  f.adapter.preflight = async input => {
+    f.calls.push(["preflight", input.requestHash]);
+    return { billable: false, estimatedUsd: 1.25, currency: "USD", model: "gen4.5" };
+  };
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f });
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "preflight", "begin", "submit", "record", "poll", "cost", "ingest"]);
+  const recorded = f.calls.find(call => call[0] === "record")[4];
+  assert.equal(recorded.preflightQuote.estimatedUsd, 1.25);
+});
+
+test("cloud executor refuses provider quote above the approved reservation without submitting", async () => {
+  const f = fixture();
+  f.adapter.preflight = async () => ({
+    billable: false, estimatedUsd: 2.01, currency: "USD", model: "gen4.5"
+  });
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PREFLIGHT_REJECTED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "begin"), false);
+  assert.equal(f.calls.some(call => call[0] === "submit"), false);
+});
+
+test("cloud executor resumes submitted task without a second provider POST", async () => {
+  const f = fixture({ state: "submitted" });
+  const result = await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f });
+  assert.equal(result.providerTaskId, taskId);
+  assert.equal(f.calls.some(call => call[0] === "submit"), false);
+  assert.equal(f.calls.some(call => call[0] === "begin"), false);
+});
+
+test("ambiguous provider POST is quarantined and never repeated", async () => {
+  const f = fixture({ submitError: new Error("network timeout") });
+  const options = { job, workerId: "worker-1", ...f };
+  await assert.rejects(executeCloudVideoGenerationJob(options), error => error.code === "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
+  await assert.rejects(executeCloudVideoGenerationJob(options), error => error.code === "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
+  assert.equal(f.calls.filter(call => call[0] === "submit").length, 1);
+  assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
+});
+
+test("cloud executor defers transient or active status after exactly one check per lease", async () => {
+  const f = fixture({ state: "submitted", status: new Error("provider unavailable") });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }), error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED");
+  const running = fixture({ state: "submitted", status: { taskId, status: "running" } });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...running }), error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED");
+  assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
+});
+
+test("cloud executor quarantines provider-canceled tasks until cancellation billing is reconciled", async () => {
+  const f = fixture({ state: "submitted", status: {
+    taskId, status: "canceled", failure: "Runway task was canceled.",
+    failureCode: "RUNWAY_TASK_CANCELED"
+  }});
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cost"), false,
+    "canceled task cost must not be guessed from success-only billing evidence");
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
+test("cloud executor holds reservation when actual cost is unknown or exceeds approval", async () => {
+  const unknown = fixture({ costError: new Error("no invoice") });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...unknown }), error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED");
+  const tooHigh = fixture({ cost: { amount: 2.01, currency: "USD", evidenceReference: "invoice:1" } });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...tooHigh }), error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED");
+  const wrongCurrency = fixture({ cost: { amount: 0.5, currency: "EUR", evidenceReference: "invoice:1" } });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...wrongCurrency }), error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED");
+});
+
+test("cloud executor holds completed provider task for review when private ingestion fails", async () => {
+  const f = fixture({ ingestError: new Error("private bucket unavailable") });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }), error => error.code === "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW");
+});
+
+test("cloud executor refuses ambiguous ledger states and missing execution gates", async () => {
+  const unknown = fixture({ state: "unknown" });
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...unknown }), error => error.code === "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
+  const noGate = fixture();
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...noGate, resolveActualCost: null }), error => error.code === "VIDEO_EXECUTION_GATES_MISSING");
+  assert.equal(unknown.calls.some(call => call[0] === "submit"), false);
+});
+
+test("cloud executor prepares private image inputs before beginning the one-shot provider transition",async()=>{
  const f=fixture();
- const result=await f.execute({job});
- assert.equal(result.providerTaskId,"123e4567-e89b-42d3-a456-426614174000");
- assert.equal(result.outputAsset.id,"asset-1");
- assert.equal(f.calls.filter(x=>x[0]==="submit").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="submitted").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="publish").length,1);
- assert.equal(f.record.state,"succeeded");
+ f.adapter.prepareInput=async(input,context)=>{
+  f.calls.push(["prepareInput",context.job.id,context.job.owner_id]);
+  return {...input,runwayPromptImage:"runway://uploads/private-frame"};
+ };
+ await executeCloudVideoGenerationJob({job,workerId:"worker-1",...f});
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput","begin","submit","record","poll","cost","ingest"]);
+ const prepared=f.calls.find(call=>call[0]==="prepareInput");
+ assert.equal(prepared[1],job.id);
+ assert.equal(prepared[2],ownerId);
 });
-test("ambiguous previous submission never creates another provider task",async()=>{
- const f=fixture({taskState:"submission_unknown"});
- await assert.rejects(()=>f.execute({job}),e=>e.code==="VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
- assert.equal(f.calls.filter(x=>x[0]==="submit").length,0);
-});
-test("recovered task with persisted provider ID resumes polling without POST",async()=>{
- const f=fixture({taskState:"submitted",providerTaskId:"123e4567-e89b-42d3-a456-426614174000"});
- const result=await f.execute({job});
- assert.equal(result.outputAsset.id,"asset-1");
- assert.equal(f.calls.filter(x=>x[0]==="submit").length,0);
- assert.ok(f.calls.some(x=>x[0]==="poll"));
-});
-test("approval owner and project are checked before task reservation",async()=>{
+
+test("cloud executor does not enter submitting state when private input preparation fails",async()=>{
  const f=fixture();
- const wrong={...job,owner_id:"other-owner"};
- await assert.rejects(()=>f.execute({job:wrong}),e=>e.code==="VIDEO_APPROVAL_SCOPE_INVALID");
- assert.equal(f.calls.filter(x=>x[0]==="reserve").length,0);
-});
-test("terminal provider failure is recorded and does not publish an asset",async()=>{
- const f=fixture({providerStatus:"FAILED"});
- await assert.rejects(()=>f.execute({job}),e=>e.code==="VIDEO_PROVIDER_TASK_FAILED");
- assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
- assert.equal(f.record.state,"failed");
-});
-
-test("already-succeeded shot is replayed from the ledger without polling or republishing",async()=>{
- const f=fixture({taskState:"succeeded",providerTaskId:"123e4567-e89b-42d3-a456-426614174000"});
- const result=await f.execute({job});
- assert.equal(result.replayed,true);assert.equal(result.outputAsset.id,"asset-1");
- assert.equal(f.calls.filter(x=>x[0]==="submit"||x[0]==="poll"||x[0]==="download"||x[0]==="publish").length,0);
-});
-test("previously failed shot is not silently resubmitted",async()=>{
- const f=fixture({taskState:"failed"});
- await assert.rejects(()=>f.execute({job}),e=>e.code==="VIDEO_TASK_ALREADY_FAILED");
- assert.equal(f.calls.filter(x=>x[0]==="submit").length,0);
+ f.adapter.prepareInput=async()=>{f.calls.push(["prepareInput"]);throw Object.assign(new Error("asset unavailable"),{code:"RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED"});};
+ await assert.rejects(
+  executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
+  error=>error.code==="RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED"
+ );
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput"]);
+ assert.equal(f.calls.some(call=>call[0]==="begin"),false);
+ assert.equal(f.calls.some(call=>call[0]==="submit"),false);
+ assert.equal(f.calls.some(call=>call[0]==="unknown"),false);
 });
 
-test("approved Fal shot uses persisted asynchronous task ID and publishes private MP4",async()=>{
- const f=fixture({provider:"fal"});
- const result=await f.execute({job});
- assert.equal(result.provider,"fal");
- assert.equal(result.outputAsset.id,"asset-1");
- assert.equal(f.calls.filter(x=>x[0]==="fal-submit").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="fal-poll").length,2);
- assert.equal(f.calls.filter(x=>x[0]==="fal-download").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="publish").length,1);
- assert.equal(f.calls.find(x=>x[0]==="publish")[1].metadata.provider,"fal");
- assert.equal(f.calls.find(x=>x[0]==="submitted")[1].provider,"fal");
- assert.equal(f.record.state,"succeeded");
-});
-test("recovered Fal task resumes polling without creating a second paid submission",async()=>{
- const f=fixture({provider:"fal",taskState:"submitted",providerTaskId:"123e4567-e89b-42d3-a456-426614174000"});
- const result=await f.execute({job});
- assert.equal(result.provider,"fal");
- assert.equal(f.calls.filter(x=>x[0]==="fal-submit").length,0);
- assert.ok(f.calls.some(x=>x[0]==="fal-poll"));
+test("cloud executor accepts an explicitly model-bound Luma adapter without changing its ledger gates", async () => {
+  const f = fixture();
+  f.adapter.provider = "luma";
+  f.adapter.model = "ray-3.2";
+  f.adapter.prepareInput = async input => { f.calls.push(["prepareInput"]); return { model: "ray-3.2", type: "video", prompt: input.prompt }; };
+  const lumaJob = {
+    ...job,
+    input: { ...job.input, provider: "luma", model: "ray-3.2" }
+  };
+  const result = await executeCloudVideoGenerationJob({
+    job: lumaJob, workerId: "worker-luma", ...f
+  });
+  assert.equal(result.provider, "luma");
+  assert.equal(result.model, "ray-3.2");
+  assert.equal(result.providerTaskId, taskId);
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "begin", "submit", "record", "poll", "cost", "ingest"]);
 });
 
-test("aborted Fal generation cancels the persisted provider task and marks the ledger terminal",async()=>{
- const controller=new AbortController(),f=fixture({provider:"fal",signalController:controller,abortOnSubmit:true,cancelStatus:"OK"});
- await assert.rejects(()=>f.execute({job,signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
- assert.equal(f.record.state,"cancelled");
- assert.equal(f.calls.filter(x=>x[0]==="fal-submit").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="fal-cancel").length,1);
- assert.ok(f.calls.some(x=>x[0]==="cancel-requested"));
- assert.ok(f.calls.some(x=>x[0]==="cancelled"));
- assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
+test("cloud executor passes the current leased job scope to provider status polling", async () => {
+  const f = fixture({ state: "submitted" });
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-context", ...f });
+  const poll = f.calls.find(call => call[0] === "poll");
+  assert.equal(poll[2], job.id);
+  assert.equal(poll[3], "worker-context");
 });
-test("Fal cancellation request remains durably pending until provider termination is confirmed",async()=>{
- const controller=new AbortController(),f=fixture({provider:"fal",signalController:controller,abortOnSubmit:true,cancelStatus:"CANCELLATION_REQUESTED"});
- await assert.rejects(()=>f.execute({job,signal:controller.signal}),error=>error.code==="VIDEO_TASK_CANCELLATION_PENDING");
- assert.equal(f.record.state,"cancel_requested");
- assert.equal(f.calls.filter(x=>x[0]==="fal-cancel").length,1);
- assert.equal(f.calls.filter(x=>x[0]==="publish").length,0);
-});
-test("recovered cancellation reconciles a completed provider task without publishing its output",async()=>{
- const f=fixture({provider:"fal",taskState:"cancel_requested",providerTaskId:"123e4567-e89b-42d3-a456-426614174000",providerStatus:"SUCCEEDED"});
- await assert.rejects(()=>f.execute({job}),error=>error.code==="JOB_CANCELLED");
- assert.equal(f.record.state,"cancelled");
- assert.ok(f.calls.some(x=>x[0]==="fal-poll"));
- assert.equal(f.calls.filter(x=>x[0]==="fal-submit"||x[0]==="publish").length,0);
-});
-test("provider-reported cancellation is terminal and is not misclassified as a generation failure",async()=>{
- const f=fixture({provider:"fal",providerStatus:"CANCELLED"});
- await assert.rejects(()=>f.execute({job}),error=>error.code==="JOB_CANCELLED");
- assert.equal(f.record.state,"cancelled");
- assert.equal(f.calls.filter(x=>x[0]==="failed").length,0);
+
+test("persists provider routing metadata and reuses it after a worker restart", async () => {
+  const routeEvidence = {
+    routeType: "runway-model-router", configId: "production-video",
+    routing: { configId: "production-video", model: "gen4.5", provider: "runway", realizedCost: { credits: 48 } }
+  };
+  const first = fixture({ submittedMetadata: routeEvidence });
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...first });
+  const recordCall = first.calls.find(call => call[0] === "record");
+  assert.deepEqual(recordCall[4], { acceptedStatus: "queued", ...routeEvidence });
+
+  const resumed = fixture({ state: "submitted", metadata: { acceptedStatus: "queued", ...routeEvidence } });
+  const resolved = await executeCloudVideoGenerationJob({ job, workerId: "worker-2", ...resumed });
+  const costCall = resumed.calls.find(call => call[0] === "cost");
+  assert.deepEqual(costCall[2], { acceptedStatus: "queued", ...routeEvidence });
+  assert.equal(resolved.providerTaskId, taskId);
+  assert.equal(resumed.calls.some(call => call[0] === "submit"), false);
 });

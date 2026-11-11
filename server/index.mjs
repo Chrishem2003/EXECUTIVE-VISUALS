@@ -13,6 +13,7 @@ import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
+import { resumeCompletedCloudVideoWorkflows } from "./workflow-cloud-video-resumer.mjs";
 import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
@@ -107,7 +108,7 @@ const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCL
 subscriptionLifecycleTimer?.unref();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),env:process.env}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
 if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error("Cloud video generation dispatch requires CLOUD_TIMELINE_API_ENABLED=true for authenticated job progress and asset access.");
@@ -313,7 +314,7 @@ async function processNextJob() {
   try {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
-      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,cloudTimelineApi,
       onResourceMeasurement:value=>{if(value&&typeof value==="object")resourceMeasurements.push(value);},
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
@@ -327,7 +328,17 @@ async function processNextJob() {
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
-    if(completeJob(db,job.id,WORKER_ID,result,now())){
+    if(current.job_type==="workflow.execute"&&result?.status==="blocked"){
+      const runId=String(parseJson(current.input_json,{}).runId||"");
+      const workflowError=runId?db.prepare("SELECT error_json FROM workflow_runs WHERE id=?").get(runId):null;
+      const details=parseJson(workflowError?.error_json,{code:"WORKFLOW_BLOCKED",message:"Workflow is waiting for an external job."});
+      const changed=db.prepare("UPDATE jobs SET status='blocked',output_json=?,error_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
+        .run(json(result),json(details),now(),now(),job.id,WORKER_ID,now());
+      if(changed.changes===1){
+        addJobEvent(db,job.id,job.owner_id,"job.blocked",details);
+        audit(db,job.owner_id,"job.blocked","job",job.id,{jobType:job.job_type,runId},job.project_id);
+      }
+    }else if(completeJob(db,job.id,WORKER_ID,result,now())){
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
@@ -354,6 +365,15 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let cloudWorkflowResumeBusy=false;
+const cloudWorkflowResumeTimer=cloudTimelineApi&&process.env.DISABLE_WORKER!=="true"?setInterval(async()=>{
+ if(cloudWorkflowResumeBusy)return;
+ cloudWorkflowResumeBusy=true;
+ try{await resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,onError:error=>process.stderr.write("Cloud workflow resume check failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n")});}
+ catch(error){process.stderr.write("Cloud workflow resume cycle failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n");}
+ finally{cloudWorkflowResumeBusy=false;}
+},5000):null;
+cloudWorkflowResumeTimer?.unref();
 
 export function createAppServer() {
   return createServer(async(req,res)=>{
@@ -514,8 +534,8 @@ export function createAppServer() {
         });
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
