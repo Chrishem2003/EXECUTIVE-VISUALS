@@ -11,7 +11,8 @@ const adapter = (provider, model) => ({
 });
 const queue = {
   async claim() { return null; },
-  async renew() { return true; }
+  async renew() { return true; },
+  async assertLease() { return true; }
 };
 const enqueue = {
   async finish() { return true; },
