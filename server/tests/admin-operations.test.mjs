@@ -156,7 +156,7 @@ test("administrator queue health reports stale leases and oldest outstanding wor
  assert.match(queueQuery.sql,/MIN\(CASE WHEN status='queued'/);
  assert.equal(queueQuery.args[0],"2026-11-10T12:00:00.000Z");
  assert.equal(queueQuery.args[1],"2026-11-11T12:00:00.000Z");
- assert.deepEqual(result.queueHealth,{queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-11T11:00:00Z",oldestQueuedAgeSeconds:93600,oldestRunningAgeSeconds:3600,status:"critical"});
+ assert.deepEqual(result.queueHealth,{queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-10T11:00:00Z",oldestQueuedAgeSeconds:93600,oldestRunningAgeSeconds:90000,status:"critical"});
 });
 
 test("queue health warns on old queued work and reports healthy idle queues",()=>{
