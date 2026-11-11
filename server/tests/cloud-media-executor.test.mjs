@@ -591,6 +591,34 @@ test("cloud media cancellation escalates to SIGKILL when the worker ignores SIGT
  }
 });
 
+
+test("cloud media executor terminates a spawned process when progress reporting throws",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-progress-failure-"));
+ const source=join(directory,"source.mp4");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe","sleep 30");
+ const previousProbe=process.env.FFPROBE_PATH;
+ process.env.FFPROBE_PATH=ffprobe;
+ let published=false;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffprobe,timeoutMs:10000,
+   mediaIO:{
+    async materialize(){return {path:source,asset:{id:"asset-progress",name:"progress.mp4",mediaType:"video/mp4"},async cleanup(){}};},
+    async publish(){published=true;throw new Error("Progress failure must not publish.");}
+   }
+  });
+  await assert.rejects(
+   execute({job:{id:"job-progress",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-progress"}},onProgress(){throw new Error("progress store unavailable");}}),
+   /progress store unavailable/
+  );
+  assert.equal(published,false,"a failed progress update must stop the media operation before publication");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
 test("cloud proxy output plan honors the bounded 960p preview profile",()=>{
  const plan=buildCloudMediaOutputPlan("media.proxy",{proxyWidth:960,proxyCrf:28,preset:"veryfast"},{name:"scene.mp4"},"/tmp/source.mp4","/tmp/proxy.mp4");
  assert.deepEqual(plan.args.slice(plan.args.indexOf("-vf"),plan.args.indexOf("-vf")+2),["-vf","scale='min(960,iw)':-2"]);
