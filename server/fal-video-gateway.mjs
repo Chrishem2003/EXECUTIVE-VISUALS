@@ -104,7 +104,7 @@ export async function downloadFalVideoTaskOutput({outputUrl,fetchImpl=fetch,time
  try{
   let response;try{response=await fetchImpl(url,{signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Fal output download timed out.":"Fal output could not be downloaded safely.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
   if(!response.ok)throw fail("Fal output download failed.","VIDEO_GATEWAY_INVALID_RESPONSE");
-  if(Number(response.headers.get("content-length")||0)>maxOutputBytes)throw fail("Fal output exceeds the configured size limit.","VIDEO_OUTPUT_INVALID");
+  if(Number(response.headers.get("content-length")||0)>maxOutputBytes){try{await response.body?.cancel?.()}catch{}throw fail("Fal output exceeds the configured size limit.","VIDEO_OUTPUT_INVALID");}
   if(!response.body?.getReader)throw fail("Fal output cannot be streamed safely.","VIDEO_GATEWAY_INVALID_RESPONSE");
   const reader=response.body.getReader(),chunks=[];let total=0;
   try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxOutputBytes){await reader.cancel().catch(()=>{});throw fail("Fal output exceeds the configured size limit.","VIDEO_OUTPUT_INVALID");}chunks.push(Buffer.from(value));}}finally{reader.releaseLock();}
