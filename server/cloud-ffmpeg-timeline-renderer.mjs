@@ -17,7 +17,7 @@ const audioMasteringFilter=(settings)=>{
  if(settings===undefined||settings===null||settings.enabled!==true)return "";
  const integrated=Number(settings.integratedLoudness??-16),range=Number(settings.loudnessRange??11),truePeak=Number(settings.truePeak??-1.5);
  if(!Number.isFinite(integrated)||integrated< -70||integrated> -5||!Number.isFinite(range)||range<1||range>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0)fail("Audio mastering targets are outside supported EBU R128 ranges.","INVALID_AUDIO_MASTERING");
- return `loudnorm=I=${integrated}:LRA=${range}:TP=${truePeak}:linear=false:print_format=summary`;
+ return `loudnorm=I=${integrated}:LRA=${range}:TP=${truePeak}:dual_mono=${settings.dualMono===true?"true":"false"}:linear=false:print_format=summary`;
 };
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
