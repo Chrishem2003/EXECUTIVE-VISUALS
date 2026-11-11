@@ -14,6 +14,7 @@ test("audio mastering filter enforces fixed named delivery profiles server-side"
  assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16}),/loudnorm=I=-23:/);
  assert.match(buildAudioMasteringFilter({enabled:true,profile:"custom",integratedLoudness:-18.5}),/loudnorm=I=-18.5:/);
  assert.match(buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",integratedLoudness:-16,loudnessRange:8,truePeak:-1,dualMono:true}),/LRA=8:TP=-1:dual_mono=true/);
+ assert.throws(()=>buildAudioMasteringFilter({enabled:true,profile:"ebu-r128",truePeak:-0.5}),error=>error.code==="INVALID_AUDIO_MASTERING");
  assert.throws(()=>buildAudioMasteringFilter({enabled:true,profile:"unknown"}),error=>error.code==="INVALID_AUDIO_MASTERING");
  assert.equal(buildAudioMasteringFilter({enabled:false,profile:"ebu-r128",integratedLoudness:-16}),"");
 });
