@@ -87,7 +87,7 @@ test("preflight recognizes the durable Fal worker adapter",()=>{
  }};
  const falShot={...shot,provider:"fal",model:"fal-video-model",durationSeconds:5,resolution:"provider_default",referenceImageCount:0,audioMode:"none"};
  const result=preflightVideoProduction({shots:[falShot],providerCatalog:{providers:[falVideo]},pricingCatalog:pricing,now});
- assert.equal(result.status,"blocked");
+ assert.equal(result.status,"pricing_unverified");
  assert.equal(result.readyForApproval,false);
  assert.equal(result.shots[0].checks.find(check=>check.id==="worker_adapter").status,"passed");
  assert.equal(result.requestsSubmitted,false);
