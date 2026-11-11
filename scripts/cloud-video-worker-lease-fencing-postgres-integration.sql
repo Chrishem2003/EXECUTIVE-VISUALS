@@ -69,6 +69,8 @@ declare
   second_claim executive_visuals.jobs;
   recovered integer;
 begin
+  update executive_visuals.jobs set available_at=clock_timestamp()+interval '1 hour'
+  where status='queued' and job_type='video.generate';
   insert into executive_visuals.jobs(
     owner_id,project_id,job_type,status,input,idempotency_key,max_attempts
   ) values (
@@ -170,6 +172,8 @@ declare
   task_row executive_visuals.video_generation_tasks;
   recovered integer;
 begin
+  update executive_visuals.jobs set available_at=clock_timestamp()+interval '1 hour'
+  where status='queued' and job_type='video.generate.shot';
   insert into executive_visuals.video_generation_approvals(
     id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,
     currency,quoted_amount_micros,budget_ceiling_micros,status
