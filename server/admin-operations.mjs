@@ -20,9 +20,13 @@ export function listAdminOperationUsers(db,{query="",limit=100}={}){
  FROM users u WHERE (?='' OR u.email LIKE '%'||?||'%' ESCAPE '\\' OR u.id LIKE '%'||?||'%' ESCAPE '\\')
  ORDER BY u.created_at DESC LIMIT ?`).all(new Date(Date.now()-30*24*60*60*1000).toISOString(),q,q,q,n).map(row=>({id:row.id,email:row.email,authSource:row.auth_source,createdAt:row.created_at,projects:Number(row.projects||0),jobs:Number(row.jobs||0),usage30d:Number(row.usage30d||0)}));
 }
-export function listAdminOperationJobs(db,{limit=100}={}){
- return db.prepare(`SELECT j.id,u.email,j.job_type,j.status,j.progress,j.attempt_count,j.created_at,j.updated_at,j.completed_at
- FROM jobs j LEFT JOIN users u ON u.id=j.owner_id ORDER BY j.created_at DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>({id:row.id,email:row.email||"Unknown account",jobType:row.job_type,status:row.status,progress:Number(row.progress||0),attempts:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}));
+export function listAdminOperationJobs(db,{limit=100,now=Date.now()}={}){
+ return db.prepare(`SELECT j.id,u.email,j.job_type,j.status,j.progress,j.attempt_count,j.created_at,j.updated_at,j.completed_at,j.lease_expires_at,j.lease_heartbeat_at
+ FROM jobs j LEFT JOIN users u ON u.id=j.owner_id ORDER BY j.created_at DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>{
+  const status=String(row.status||"unknown"),leaseExpiresAt=row.lease_expires_at||null;
+  const leaseState=status!=="running"?"not_running":!leaseExpiresAt?"missing":Date.parse(leaseExpiresAt)<=now?"expired":"active";
+  return {id:row.id,email:row.email||"Unknown account",jobType:row.job_type,status,progress:Number(row.progress||0),attempts:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null,leaseExpiresAt,leaseHeartbeatAt:row.lease_heartbeat_at||null,leaseState};
+ });
 }
 
 const ADMIN_PROVIDER_MODEL_FIELDS=["id","label","readiness","available","executionVerified","qualityVerified","reason","resolutions","aspectRatios","inputModes","minDurationSeconds","maxDurationSeconds"];
