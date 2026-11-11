@@ -61,5 +61,5 @@ test("configuration, arguments and HTTP failures fail closed without leaking cre
 
 test("ledger timeout is surfaced as an explicit ambiguous transport error", async () => {
   const ledger = createCloudVideoSubmissionLedger({ ...base, timeoutMs: 1000, fetchImpl: (_url, options) => new Promise((resolve, reject) => options.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))) });
-  await assert.rejects(() => ledger.begin("job-1", "worker-1"), error => error.code === "CLOUD_VIDEO_LEDGER_TIMEOUT");
+  await assert.rejects(() => ledger.begin("job-1", "worker-1", leaseToken), error => error.code === "CLOUD_VIDEO_LEDGER_TIMEOUT");
 });
