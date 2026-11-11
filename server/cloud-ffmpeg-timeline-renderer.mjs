@@ -43,6 +43,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ if(timeline.audioMastering?.enabled===true&&!audioClips.length)fail("Audio mastering requires at least one enabled audio clip.","AUDIO_MASTERING_REQUIRES_AUDIO");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
  const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
@@ -135,7 +136,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
+  const masteringProfile=timeline.audioMastering?.profile??"custom";
+  const masteringEvidence=masteringFilter?{applied:true,profile:masteringProfile,integratedLoudness:masteringProfile==="ebu-r128"?-23:masteringProfile==="web-podcast"?-16:Number(timeline.audioMastering?.integratedLoudness??-16),loudnessRange:Number(timeline.audioMastering?.loudnessRange??11),truePeak:Number(timeline.audioMastering?.truePeak??-1.5),dualMono:timeline.audioMastering?.dualMono===true}:{applied:false};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
