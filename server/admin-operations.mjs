@@ -81,3 +81,21 @@ export function listAdminOperationAudit(db,{limit=100}={}){
  return db.prepare(`SELECT a.id,a.owner_id,u.email,a.event_type,a.subject_type,a.subject_id,a.created_at
  FROM audit_events a LEFT JOIN users u ON u.id=a.owner_id ORDER BY a.id DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>({id:Number(row.id),ownerId:row.owner_id,email:row.email||"Unknown account",eventType:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,createdAt:row.created_at}));
 }
+
+export function buildAdminProviderReadinessSummary(providers){
+ const rows=Array.isArray(providers)?providers:[];
+ const summary={total:rows.length,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0};
+ for(const provider of rows){
+  const status=String(provider?.status||"unavailable");
+  if(status==="ready")summary.ready++;
+  else if(status==="disabled")summary.disabled++;
+  else if(status==="unverified")summary.unverified++;
+  else if(status==="needs_configuration")summary.needsConfiguration++;
+  else if(status==="remote_opt_in_required")summary.remoteOptInRequired++;
+  else if(status==="unavailable")summary.unavailable++;
+  const models=Array.isArray(provider?.availableModels)?provider.availableModels:[];
+  summary.models+=models.length;
+  summary.qualityVerifiedModels+=models.filter(model=>model?.qualityVerified===true).length;
+ }
+ return summary;
+}
