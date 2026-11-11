@@ -47,7 +47,8 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
 test("cancellation migration uses valid dollar-quoted PL/pgSQL function bodies",()=>{
  assert.equal((cancellationSql.match(/as \$\$/g)||[]).length,3);
  assert.equal((cancellationSql.match(/^\$\$;$/gm)||[]).length,3);
- assert.doesNotMatch(cancellationSql,/^as \$\n/m);
+ assert.doesNotMatch(cancellationSql,/^as \$
+/m);
 });
 
 test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
@@ -161,7 +162,8 @@ test("video submission, output settlement, deferral and quarantine require the c
  assert.match(videoFenceSql,/clear_job_lease_token_on_transition_v1/);
  assert.match(videoWorker,/queue\.renew\(job\.id, workerId, leaseSeconds, job\.lease_token\)/);
  assert.match(videoWorker,/enqueue\.finish\([\s\S]*?leaseToken: job\.lease_token/);
- assert.match(videoSubmissionClient,/prepare_video_generation_submission_v2/);\n assert.match(videoSubmissionClient,/begin_video_generation_submission_v2/);
+ assert.match(videoSubmissionClient,/prepare_video_generation_submission_v2/);
+ assert.match(videoSubmissionClient,/begin_video_generation_submission_v2/);
  assert.match(videoSubmissionClient,/p_lease_token: leaseToken\(token\)/);
  assert.match(videoEnqueueClient,/finish_video_generation_job_v2/);
  assert.match(videoEnqueueClient,/p_lease_token: leaseToken/);
