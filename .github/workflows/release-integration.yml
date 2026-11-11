@@ -31,10 +31,13 @@ jobs:
         env:
           SKIP_RUST_BUILD: "1"
           C2PA_LIBRARY_PATH: ${{ github.workspace }}/node_modules/@contentauth/c2pa-node/dist/index.node
-      - name: Install FFmpeg and FFprobe for media verification
+      - name: Install pinned FFmpeg static build
+        shell: bash
+        run: bash scripts/ci-setup-ffmpeg.sh
+      - name: Verify FFmpeg and FFprobe for media verification
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          set -euo pipefail
           ffmpeg -version
           ffprobe -version
       - name: Run complete product verification and production build
