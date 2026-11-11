@@ -43,11 +43,11 @@ test("dialogue ducking remains immediate at the music clip boundary when attack 
 });
 test("dialogue already active before music starts is ducked immediately without a new attack",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:2,musicDurationSeconds:5,duckingDb:-10,attackMs:100,releaseMs:250,dialogueRanges:[{startSeconds:1,endSeconds:3}]});
- assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[0.1,-10],[1,-10],[1.25,0]]);
+ assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[1,-10],[1.25,0]]);
 });
 test("dialogue ducking clips ranges to music boundaries and merges overlapping dialogue ranges",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:2,musicDurationSeconds:5,duckingDb:-10,attackMs:100,releaseMs:250,dialogueRanges:[{startSeconds:1,endSeconds:3},{startSeconds:3.1,endSeconds:4},{startSeconds:6.5,endSeconds:8}]});
- assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[0.1,-10],[2,-10],[2.25,0],[4.5,0],[4.6,-10],[5,-10]]);
+ assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[2,-10],[2.25,0],[4.5,0],[4.6,-10],[5,-10]]);
 });
 test("dialogue ducking preserves pan keyframes while replacing gain automation",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,dialogueRanges:[{startSeconds:1,endSeconds:2}],existing:[{timeSeconds:.5,pan:-.5},{timeSeconds:1.5,gainDb:-4,pan:.5}]});
