@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,parseTemporalLumaSamples,buildTemporalLumaFindings,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,parseTemporalLumaSamples,buildTemporalLumaFindings,buildTemporalColorFindings,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -82,4 +82,28 @@ test("flags a single abrupt brightness change for human review",()=>{
  const samples=[30,35,120,125].map((meanLuma,index)=>({frame:index,timeSeconds:index*0.5,meanLuma}));
  const findings=buildTemporalLumaFindings({samples});
  assert.ok(findings.some(item=>item.code==="ABRUPT_LUMINANCE_CHANGE"));
+});
+
+
+test("parses frame-average luma, saturation and chroma metadata from FFmpeg",()=>{
+ const stderr="[Parsed_metadata] frame:0 pts:0 pts_time:0.000\\n[Parsed_metadata] lavfi.signalstats.YAVG=40\\n[Parsed_metadata] lavfi.signalstats.SATAVG=50\\n[Parsed_metadata] lavfi.signalstats.UAVG=128\\n[Parsed_metadata] lavfi.signalstats.VAVG=129\\n[Parsed_metadata] frame:1 pts:11250 pts_time:0.125\\n[Parsed_metadata] lavfi.signalstats.YAVG=42\\n[Parsed_metadata] lavfi.signalstats.SATAVG=52\\n[Parsed_metadata] lavfi.signalstats.UAVG=130\\n[Parsed_metadata] lavfi.signalstats.VAVG=131";
+ const samples=parseTemporalLumaSamples(stderr);
+ assert.equal(samples.length,2);
+ assert.deepEqual({luma:samples[0].meanLuma,saturation:samples[0].meanSaturation,u:samples[0].meanU,v:samples[0].meanV},{luma:40,saturation:50,u:128,v:129});
+ assert.equal(samples[1].meanSaturation,52);
+});
+
+test("flags repeated alternating global saturation changes for review",()=>{
+ const samples=[40,70,41,72,42].map((meanSaturation,index)=>({timeSeconds:index*0.125,meanLuma:80,meanSaturation,meanU:128,meanV:128}));
+ const findings=buildTemporalColorFindings({samples});
+ assert.equal(findings.length,1);
+ assert.equal(findings[0].code,"ALTERNATING_SATURATION_INSTABILITY");
+ assert.equal(findings[0].transitions,4);
+});
+
+test("flags alternating chroma-vector reversals but excludes scene-cut neighborhoods",()=>{
+ const samples=[128,158,128,158,128].map((meanU,index)=>({timeSeconds:index*0.125,meanLuma:80,meanSaturation:60,meanU,meanV:128}));
+ const findings=buildTemporalColorFindings({samples});
+ assert.ok(findings.some(item=>item.code==="ALTERNATING_CHROMA_INSTABILITY"));
+ assert.equal(buildTemporalColorFindings({samples,sceneChanges:[0.25]}).length,0);
 });
