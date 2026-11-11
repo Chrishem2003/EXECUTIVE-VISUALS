@@ -6,6 +6,9 @@
 -- belongs to the same tenant/project. Enforce that invariant for every asset
 -- write path, not only the atomic publication RPC.
 alter table executive_visuals.assets
+  add column if not exists metadata jsonb not null default '{}'::jsonb;
+
+alter table executive_visuals.assets
   add column if not exists derivative_of uuid
   references executive_visuals.assets(id) on delete set null;
 
