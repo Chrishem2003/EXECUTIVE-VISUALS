@@ -314,7 +314,8 @@ test("Kling 4 Flash permits image-only generation without a text prompt",()=>{
  const image="data:image/png;base64,iVBORw0KGgo=";
  const payload=buildRunwayImageToVideoPayload({model:"kling_4_flash",promptImage:image,durationSeconds:5,resolution:"provider_default"});
  assert.equal(payload.promptImage,image);assert.equal(payload.ratio,"auto_720p");assert.equal("promptText" in payload,false);
- assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling_4",promptImage:image,durationSeconds:5}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ const kling4=buildRunwayImageToVideoPayload({model:"kling_4",promptImage:image,durationSeconds:5});
+ assert.equal(kling4.promptImage,image);assert.equal(kling4.ratio,"auto_720p");assert.equal("promptText" in kling4,false);
 });
 test("Kling 4 Flash image-to-video uses the documented 720p auto ratio",()=>{
  const image="data:image/png;base64,iVBORw0KGgo=";
