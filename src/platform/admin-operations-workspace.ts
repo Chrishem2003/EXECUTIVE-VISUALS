@@ -6,7 +6,7 @@ type JobRow={id:string;email:string;jobType:string;status:string;progress:number
 type ProviderRow={id:string;provider:string;status:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;reason:string;capabilities:string[]};
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
 type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string};
-const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],audit:[],billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
+const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
 export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
@@ -23,6 +23,7 @@ export function renderAdminOperationsWorkspace(){
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">MODEL CONNECTIVITY</div><h2>AI provider readiness</h2></div><span class="muted">Status only · credentials remain server-side</span></div>'+
  (state.providers.length?'<div class="admin-ops-provider-grid">'+state.providers.map(p=>'<article class="admin-ops-provider"><div><b>'+esc(p.provider||p.id)+'</b><span class="readiness-pill '+statusClass(p.status)+'">'+esc(p.status.replaceAll("_"," "))+'</span></div><small>'+esc(p.model||"No model selected")+'</small><p>'+esc(p.reason||"No additional status details.")+'</p><div class="admin-ops-tags"><span>'+ (p.enabled?"Enabled":"Disabled")+'</span><span>'+ (p.configured?"Configured":"Not configured")+'</span><span>'+ (p.remote?"Remote":"Local / unknown")+'</span></div></article>').join("")+'</div>':'<div class="empty">No provider status has been returned.</div>')+'</section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">ACCOUNT DIRECTORY</div><h2>Recent application users</h2></div><span class="muted">'+state.users.length+' shown</span></div>'+
+ '<form class="admin-ops-user-search" data-admin-user-search><label for="admin-user-query">Find an account by email or ID</label><div><input id="admin-user-query" name="q" type="search" maxlength="120" value="'+esc(state.userQuery)+'" placeholder="Search email address or account ID" '+(state.loading?'disabled':'')+'><button class="secondary" type="submit" '+(state.loading?'disabled':'')+'>Search accounts</button></div></form>' +
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">SUBSCRIPTION & BILLING OPERATIONS</div><h2>Billing readiness and recovery</h2></div><button class="secondary" data-tab="billing">Open customer billing</button></div>'+
  (state.billingOps.access==="ready"?'<div class="admin-ops-grid"><article class="admin-ops-provider"><b>Payment provider readiness</b><span class="readiness-pill '+(state.billingOps.provider?.liveRecurringChargesEnabled?"warn":"neutral")+'">'+(state.billingOps.provider?.liveRecurringChargesEnabled?"Recurring enabled":"Recurring charges disabled")+'</span><p>'+esc(state.billingOps.provider?.reason||state.billingOps.provider?.migrationRequired||"Provider readiness loaded.")+'</p><small>API versions: '+esc(state.billingOps.provider?.currentIntegrationApiVersion||"—")+' · plan API '+esc(state.billingOps.provider?.recurringPaymentPlansApiVersion||"—")+'</small></article><article class="admin-ops-provider"><b>Subscription reconciliation</b><strong>'+Number(state.billingOps.reconciliation?.events?.length||0).toLocaleString()+' events awaiting review</strong><p>Automated entitlement changes: '+(state.billingOps.reconciliation?.automatedEntitlementChanges?"enabled":"disabled")+'</p></article><article class="admin-ops-provider"><b>Payment recovery</b><strong>'+Number(state.billingOps.recovery?.summary?.openAttempts||0).toLocaleString()+' open attempts</strong><p>'+Number(state.billingOps.recovery?.summary?.scheduledRetries||0)+' scheduled retries · '+Number(state.billingOps.recovery?.summary?.exhausted||0)+' exhausted</p><small>'+esc(state.billingOps.recovery?.note||"Customer retry remains explicit; automatic charges are disabled.")+'</small></article></div>':'<div class="notice warning">'+esc(state.billingOps.message||"Billing admin endpoints are unavailable.")+' Billing mutations remain in the protected Financial Command Centre and require the separate Supabase platform_admins role.</div>')+
  '</section>'+
@@ -39,7 +40,7 @@ export async function loadAdminOperationsWorkspace(){
  try{
   const [overview,users,jobs,providers,audit]=await Promise.all([
    apiRequest<{overview:Overview}>("/api/admin/operations/overview"),
-   apiRequest<{users:UserRow[]}>("/api/admin/operations/users?limit=100"),
+   apiRequest<{users:UserRow[]}>("/api/admin/operations/users?limit=100&q="+encodeURIComponent(state.userQuery)),
    apiRequest<{jobs:JobRow[]}>("/api/admin/operations/jobs?limit=100"),
    apiRequest<{providers:ProviderRow[]}>("/api/admin/operations/providers"),
    apiRequest<{events:AuditRow[]}>("/api/admin/operations/audit?limit=100")
@@ -65,6 +66,14 @@ export async function loadAdminOperationsWorkspace(){
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.adminOperations==="true")view.innerHTML=renderAdminOperationsWorkspace();}
 export function initAdminOperationsWorkspace(){
  document.addEventListener("click",event=>{if((event.target as HTMLElement).closest("[data-admin-ops-refresh]"))void loadAdminOperationsWorkspace();});
+ document.addEventListener("submit",event=>{
+  const form=(event.target as HTMLElement).closest<HTMLFormElement>("[data-admin-user-search]");
+  if(!form)return;
+  event.preventDefault();
+  const input=form.elements.namedItem("q");
+  state.userQuery=input instanceof HTMLInputElement?input.value.trim().slice(0,120):"";
+  void loadAdminOperationsWorkspace();
+ });
  void apiRequest<{capabilities:{admin:boolean}}>("/api/me").then(result=>{
   state.allowed=result.capabilities?.admin===true;
   state.error=state.allowed?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
