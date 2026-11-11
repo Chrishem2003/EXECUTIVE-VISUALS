@@ -34,7 +34,7 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
  const seedance=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
  assert.equal(seedance.ratio,"480:854");
  const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
- assert.equal("ratio" in kling,false);
+ assert.equal(kling.ratio,"auto_720p");
 });
 test("image-to-video rejects oversized or malformed frame data",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
@@ -309,6 +309,12 @@ test("Kling 4 Flash exposes documented text and image generation limits",()=>{
  });
  assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A test scene",durationSeconds:21}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A test scene",durationSeconds:5,resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Kling 4 Flash permits image-only generation without a text prompt",()=>{
+ const image="data:image/png;base64,iVBORw0KGgo=";
+ const payload=buildRunwayImageToVideoPayload({model:"kling_4_flash",promptImage:image,durationSeconds:5,resolution:"provider_default"});
+ assert.equal(payload.promptImage,image);assert.equal(payload.ratio,"auto_720p");assert.equal("promptText" in payload,false);
+ assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling_4",promptImage:image,durationSeconds:5}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
 });
 test("Kling 4 Flash image-to-video uses the documented 720p auto ratio",()=>{
  const image="data:image/png;base64,iVBORw0KGgo=";
