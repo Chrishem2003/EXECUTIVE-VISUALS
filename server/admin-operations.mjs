@@ -24,6 +24,59 @@ export function listAdminOperationJobs(db,{limit=100}={}){
  return db.prepare(`SELECT j.id,u.email,j.job_type,j.status,j.progress,j.attempt_count,j.created_at,j.updated_at,j.completed_at
  FROM jobs j LEFT JOIN users u ON u.id=j.owner_id ORDER BY j.created_at DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>({id:row.id,email:row.email||"Unknown account",jobType:row.job_type,status:row.status,progress:Number(row.progress||0),attempts:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}));
 }
+
+const ADMIN_PROVIDER_MODEL_FIELDS=["id","label","readiness","available","executionVerified","qualityVerified","reason","resolutions","aspectRatios","inputModes","minDurationSeconds","maxDurationSeconds"];
+const ADMIN_PROVIDER_CAPABILITY_FIELDS=["startFrame","endFrame","referenceImages","audioModes","resolutions","aspectRatios","minDurationSeconds","maxDurationSeconds"];
+const safeArray=(value)=>Array.isArray(value)?value.filter(item=>typeof item==="string"||typeof item==="number"||typeof item==="boolean").slice(0,40):[];
+function adminProviderModel(model){
+ if(!model||typeof model!=="object"||Array.isArray(model))return null;
+ const result={};
+ for(const key of ADMIN_PROVIDER_MODEL_FIELDS){
+  const value=model[key];
+  if(value===undefined||value===null)continue;
+  if(["resolutions","aspectRatios","inputModes"].includes(key))result[key]=safeArray(value);
+  else if(["available","executionVerified","qualityVerified"].includes(key))result[key]=Boolean(value);
+  else if(["minDurationSeconds","maxDurationSeconds"].includes(key)&&Number.isFinite(Number(value)))result[key]=Number(value);
+  else if(typeof value==="string")result[key]=value.slice(0,500);
+ }
+ return Object.keys(result).length?result:null;
+}
+export function buildAdminProviderReadiness(catalog){
+ const providers=Array.isArray(catalog?.providers)?catalog.providers:[];
+ return providers.slice(0,40).map(item=>{
+  const models=Array.isArray(item.availableModels)?item.availableModels.map(adminProviderModel).filter(Boolean):[];
+  const rawCapabilities=item.modelCapabilities&&typeof item.modelCapabilities==="object"&&!Array.isArray(item.modelCapabilities)?item.modelCapabilities:null;
+  const modelCapabilities=rawCapabilities?Object.fromEntries(ADMIN_PROVIDER_CAPABILITY_FIELDS.filter(key=>rawCapabilities[key]!==undefined).map(key=>[key,["audioModes","resolutions","aspectRatios"].includes(key)?safeArray(rawCapabilities[key]):rawCapabilities[key]])):null;
+  const rawPricing=item.pricing&&typeof item.pricing==="object"?item.pricing:null;
+  const pricing=rawPricing?{
+   configured:Boolean(rawPricing.configured),
+   rejectedCount:Number.isFinite(Number(rawPricing.rejectedCount))?Math.max(0,Number(rawPricing.rejectedCount)):0,
+   models:(Array.isArray(rawPricing.models)?rawPricing.models:[]).slice(0,100).map(model=>({
+    provider:String(model.provider||"").slice(0,80),
+    model:String(model.model||"").slice(0,160),
+    currency:String(model.currency||"").slice(0,12),
+    sourceUrl:String(model.sourceUrl||"").slice(0,500),
+    observedAt:String(model.observedAt||"").slice(0,80),
+    expiresAt:String(model.expiresAt||"").slice(0,80)
+   }))
+  }:null;
+  return {
+   id:String(item.id||"").slice(0,80),
+   provider:String(item.provider||"").slice(0,80),
+   status:String(item.status||"unavailable").slice(0,80),
+   enabled:Boolean(item.enabled),
+   configured:Boolean(item.configured),
+   remote:Boolean(item.remote),
+   model:typeof item.model==="string"?item.model.slice(0,160):null,
+   reason:String(item.reason||"").slice(0,500),
+   capabilities:safeArray(item.capabilities),
+   availableModels:models,
+   modelCapabilities,
+   pricing
+  };
+ });
+}
+
 export function listAdminOperationAudit(db,{limit=100}={}){
  return db.prepare(`SELECT a.id,a.owner_id,u.email,a.event_type,a.subject_type,a.subject_id,a.created_at
  FROM audit_events a LEFT JOIN users u ON u.id=a.owner_id ORDER BY a.id DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>({id:Number(row.id),ownerId:row.owner_id,email:row.email||"Unknown account",eventType:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,createdAt:row.created_at}));
