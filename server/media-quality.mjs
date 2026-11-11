@@ -1,4 +1,4 @@
-import { buildMediaSignalFindings, buildAudioMetricFindings, buildTemporalLumaFindings } from "./media-signal-analysis.mjs";
+import { buildMediaSignalFindings, buildAudioMetricFindings, buildTemporalLumaFindings, buildTemporalColorFindings } from "./media-signal-analysis.mjs";
 export function buildMediaQualityReport(metadata={},options={}) {
   const streams=Array.isArray(metadata.streams)?metadata.streams:[];
   const video=streams.filter(stream=>stream.codec_type==="video");
@@ -21,7 +21,8 @@ export function buildMediaQualityReport(metadata={},options={}) {
   const signal=metadata.signalAnalysis||{};
   const signalFindings=buildMediaSignalFindings({blackFrames:signal.blackFrames||[],silence:signal.silence||[],freezes:signal.freezes||[],durationSeconds:Number.isFinite(duration)?duration:0});
   const temporalLumaFindings=buildTemporalLumaFindings({samples:signal.temporalLumaSamples||[],sceneChanges:signal.sceneChanges||[]});
-  findings.push(...signalFindings,...buildAudioMetricFindings(signal.audioMetrics||{}),...temporalLumaFindings);
+  const temporalColorFindings=buildTemporalColorFindings({samples:signal.temporalLumaSamples||[],sceneChanges:signal.sceneChanges||[]});
+  findings.push(...signalFindings,...buildAudioMetricFindings(signal.audioMetrics||{}),...temporalLumaFindings,...temporalColorFindings);
   for(const item of signal.unavailable||[])findings.push({code:"SIGNAL_ANALYSIS_UNAVAILABLE",severity:"warning",check:item.check,reason:item.reason,message:"An optional signal-analysis check could not run; this result is unknown, not a clean pass."});
   const errors=findings.filter(item=>item.severity==="error").length;
   const warnings=findings.filter(item=>item.severity==="warning").length;
@@ -30,8 +31,8 @@ export function buildMediaQualityReport(metadata={},options={}) {
     streams:{total:streams.length,video:video.length,audio:audio.length},
     video:video.map(stream=>({codec:stream.codec_name||null,width:Number(stream.width)||null,height:Number(stream.height)||null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null})),
     audio:audio.map(stream=>({codec:stream.codec_name||null,sampleRate:Number(stream.sample_rate)||null,channels:Number(stream.channels)||null})),
-    signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],unavailable:signal.unavailable||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[],freezeEvents:signal.freezes||[],sceneChangeTimes:signal.sceneChanges||[],temporalLumaSampleCount:Array.isArray(signal.temporalLumaSamples)?signal.temporalLumaSamples.length:0,temporalLumaFindings,audioMetrics:signal.audioMetrics||null},
+    signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],unavailable:signal.unavailable||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[],freezeEvents:signal.freezes||[],sceneChangeTimes:signal.sceneChanges||[],temporalSampleRateFps:signal.performed?.includes("temporal-signalstats-8fps")?8:null,temporalLumaSampleCount:Array.isArray(signal.temporalLumaSamples)?signal.temporalLumaSamples.length:0,temporalLumaFindings,temporalColorFindings,audioMetrics:signal.audioMetrics||null},
     status:errors?"needs-attention":warnings?"review":"passed",counts:{errors,warnings},findings,
-    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and peak warnings use FFmpeg astats metrics; integrated loudness is reported when available but no universal delivery target is assumed.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed.","Scene-change timestamps are heuristic edit markers, not a semantic scene understanding or edit recommendation.","Temporal luma analysis samples frame-average brightness at 2 fps; it can flag coarse exposure instability but cannot certify high-frequency flicker, local-region consistency, color stability or perceptual quality."]
+    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and peak warnings use FFmpeg astats metrics; integrated loudness is reported when available but no universal delivery target is assumed.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed.","Scene-change timestamps are heuristic edit markers, not a semantic scene understanding or edit recommendation.","Temporal luma and chroma analysis samples global frame-average statistics at 8 fps; it can flag coarse exposure or color oscillation but is not motion-compensated and cannot certify high-frequency flicker, local-region consistency or perceptual quality."]
   };
 }
