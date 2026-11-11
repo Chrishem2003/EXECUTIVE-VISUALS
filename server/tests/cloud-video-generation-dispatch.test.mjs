@@ -13,7 +13,8 @@ function fixture({status="approved_pending_submission",projectId=project,canWrit
   async register(input){calls.push(["register",input]);if(registerError)throw registerError;return registerResult||{id:approval,ownerId:owner,projectId,currency:"USD",requestHash:"a".repeat(64),quotedAmountMicros:2000000,budgetCeilingMicros:2500000,status:"approved_pending_submission"};},
   async enqueue(id,ownerIdArg){calls.push(["enqueue",id,ownerIdArg]);if(enqueueError)throw enqueueError;return enqueueResult;}
  }};
- const queue={async cancel(jobId,ownerIdArg){calls.push(["cancel",jobId,ownerIdArg]);if(cancelError)throw cancelError;return cancelResult==="default"?{id:jobId,owner_id:owner,status:"cancelled",job_type:"video.generate.shot",project_id:project}:cancelResult;}};\n const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
+ const queue={async cancel(jobId,ownerIdArg){calls.push(["cancel",jobId,ownerIdArg]);if(cancelError)throw cancelError;return cancelResult==="default"?{id:jobId,owner_id:owner,status:"cancelled",job_type:"video.generate.shot",project_id:project}:cancelResult;}};
+ const dispatch=createCloudVideoGenerationDispatch({db,repositories,queue,canWriteProject:(id,pid)=>canWrite&&id===owner&&pid===project,audit:(...args)=>events.push(args)});
  return{dispatch,calls,events,get localStatus(){return localStatus;}};
 }
 test("dispatch mirrors approval and atomically enqueues each shot without provider execution",async()=>{
