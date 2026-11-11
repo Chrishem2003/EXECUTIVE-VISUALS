@@ -8,6 +8,7 @@ test("cloud media worker composes the leased queue and injected media executor",
   const queue = {
     async claim(workerId, leaseSeconds, jobTypes) { calls.push("claim"); claimedTypes = jobTypes; return null; },
     async renew() { return true; },
+    async assertLease() { return true; },
     async finish() { return true; },
     async recover(limit) { calls.push("recover:" + limit); return 2; }
   };
