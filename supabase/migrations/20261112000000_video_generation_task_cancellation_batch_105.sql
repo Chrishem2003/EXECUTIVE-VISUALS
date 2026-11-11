@@ -4,6 +4,10 @@ alter table executive_visuals.video_generation_tasks
   add column if not exists cancellation_lease_owner text,
   add column if not exists cancellation_lease_expires_at timestamptz;
 
+create index if not exists ev_video_task_cancellation_claim
+  on executive_visuals.video_generation_tasks(cancellation_lease_expires_at,updated_at)
+  where state='cancel_requested';
+
 alter table executive_visuals.video_generation_tasks
   drop constraint if exists video_generation_tasks_state_check;
 
