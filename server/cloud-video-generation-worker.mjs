@@ -32,8 +32,11 @@ export function createCloudVideoGenerationWorker({
   for(const task of pending){
    try{
     if(!task.providerTaskId){
-     await repos.tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
-     results.push({taskId:task.id,status:"cancelled"});continue;
+     if(task.state==="reserved"){
+      await repos.tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
+      results.push({taskId:task.id,status:"cancelled"});continue;
+     }
+     throw Object.assign(new Error("Provider submission outcome is uncertain; cancellation remains pending until the task identifier can be reconciled."),{code:"VIDEO_TASK_CANCELLATION_PENDING"});
     }
     const defaults={fal:{poll:getFalVideoTask,cancel:cancelFalVideoTask},runway:{poll:getRunwayVideoTask,cancel:cancelRunwayVideoTask}};
    const adapter=(cancellationAdapters||defaults)[task.provider];
