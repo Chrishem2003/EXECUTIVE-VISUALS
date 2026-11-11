@@ -86,7 +86,7 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
    return taskRow(rows[0]);
   },
   markSubmitting(id){return this.transition({id,from:["reserved"],to:"submitting"});},
-  markSubmitted(id,value={}){return this.transition({id,from:["submitting"],to:"submitted",providerTaskId:value.providerTaskId,provider:value.provider||"runway",model:value.model,estimatedCostCredits:value.estimatedCostCredits});},
+  markSubmitted(id,value={}){return this.transition({id,from:["submitting"],to:"submitted",providerTaskId:value.providerTaskId,provider:"runway",model:value.model,estimatedCostCredits:value.estimatedCostCredits});},
   markSubmissionUnknown(id,value={}){return this.transition({id,from:["submitting"],to:"submission_unknown",error:{code:value.code||"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"}});},
   markProcessing(id,value={}){return this.transition({id,from:["submitted","processing"],to:"processing",providerStatus:value.providerStatus});},
   markFailed(id,value={}){return this.transition({id,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
