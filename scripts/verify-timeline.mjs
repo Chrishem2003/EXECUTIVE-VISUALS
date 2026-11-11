@@ -33,6 +33,11 @@ assert.equal(interchange.tracks.children.length,2);
 assert.equal(interchange.markers.length,1);
 assert.equal(interchange.markers[0].name,"Review hook");
 assert.ok(JSON.stringify(interchange).includes("asset://asset-a"));
+const masteredTimeline={...timeline,audioMastering:normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",loudnessRange:9,truePeak:-1})};
+const masteredInterchange=toOpenTimelineIo(masteredTimeline);
+assert.deepEqual(masteredInterchange.metadata.executiveVisuals.audioMastering,masteredTimeline.audioMastering,"OTIO export must preserve the mastering delivery contract");
+const legacyInterchange=toOpenTimelineIo(timeline);
+assert.equal(legacyInterchange.metadata.executiveVisuals.audioMastering,null,"legacy timelines export with an explicit empty mastering contract");
 assert.ok(seconds(rational(48,24))===2);
 
 const webMastering=normalizeAudioMasteringSettings({enabled:true});
