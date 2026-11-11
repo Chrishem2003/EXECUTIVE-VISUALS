@@ -126,7 +126,7 @@ async function downloadMp4(raw,{fetchImpl=fetch,timeoutMs=60000}={}){
   try{
     let response;try{response=await fetchImpl(url,{signal:controller.signal,redirect:"error"});}catch(error){throw fail(error?.name==="AbortError"?"Runway output download timed out.":"Runway output could not be downloaded safely.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
     if(!response.ok)throw fail("Runway output download failed.","VIDEO_GATEWAY_INVALID_RESPONSE");
-    if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES)throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE");
+    if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES){try{await response.body?.cancel?.()}catch{}throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE")};
     if(!response.body?.getReader)throw fail("Runway output cannot be streamed safely.","VIDEO_GATEWAY_INVALID_RESPONSE");
     const reader=response.body.getReader(),chunks=[];let total=0;
     try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>MAX_OUTPUT_BYTES){await reader.cancel().catch(()=>{});throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE");}chunks.push(Buffer.from(value));}}finally{reader.releaseLock();}
