@@ -1,11 +1,51 @@
 -- Batch 105: durable provider cancellation and restart reconciliation.
 -- This migration is additive; it does not execute or cancel any existing provider task.
 alter table executive_visuals.video_generation_tasks
+  add column if not exists cancellation_lease_owner text,
+  add column if not exists cancellation_lease_expires_at timestamptz;
+
+alter table executive_visuals.video_generation_tasks
   drop constraint if exists video_generation_tasks_state_check;
 
 alter table executive_visuals.video_generation_tasks
   add constraint video_generation_tasks_state_check
   check (state in ('reserved','submitting','submission_unknown','submitted','processing','cancel_requested','succeeded','failed','cancelled'));
+
+create or replace function executive_visuals.claim_video_generation_cancellations(
+  p_worker_id text,p_limit integer default 20,p_lease_seconds integer default 60
+)
+returns setof executive_visuals.video_generation_tasks
+language plpgsql security definer
+set search_path = pg_catalog, executive_visuals
+as $
+begin
+  if p_worker_id is null or length(btrim(p_worker_id)) not between 1 and 128
+     or p_limit is null or p_limit not between 1 and 100
+     or p_lease_seconds is null or p_lease_seconds not between 10 and 300 then
+    raise exception 'VIDEO_CANCELLATION_CLAIM_INVALID';
+  end if;
+  return query
+    with candidates as (
+      select t.id
+      from executive_visuals.video_generation_tasks t
+      where t.state='cancel_requested'
+        and (t.cancellation_lease_expires_at is null or t.cancellation_lease_expires_at<=clock_timestamp())
+      order by t.updated_at asc
+      for update skip locked
+      limit p_limit
+    )
+    update executive_visuals.video_generation_tasks t
+      set cancellation_lease_owner=p_worker_id,
+          cancellation_lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),
+          updated_at=clock_timestamp()
+      from candidates c
+      where t.id=c.id
+      returning t.*;
+end;
+$;
+
+revoke all on function executive_visuals.claim_video_generation_cancellations(text,integer,integer) from public,anon,authenticated;
+grant execute on function executive_visuals.claim_video_generation_cancellations(text,integer,integer) to service_role;
 
 create or replace function executive_visuals.transition_video_generation_task(
   p_task_id uuid,p_from_states text[],p_to_state text,
@@ -44,6 +84,8 @@ begin
         output_asset_id=coalesce(p_output_asset_id,output_asset_id),
         submitted_at=case when p_to_state='submitted' then coalesce(submitted_at,clock_timestamp()) else submitted_at end,
         completed_at=case when p_to_state in ('succeeded','failed','cancelled') then clock_timestamp() else completed_at end,
+        cancellation_lease_owner=case when p_to_state in ('cancel_requested','cancelled','succeeded','failed') then null else cancellation_lease_owner end,
+        cancellation_lease_expires_at=case when p_to_state in ('cancel_requested','cancelled','succeeded','failed') then null else cancellation_lease_expires_at end,
         updated_at=clock_timestamp()
     where id=p_task_id and state=any(p_from_states)
     returning * into changed;
@@ -135,6 +177,8 @@ begin
     update executive_visuals.video_generation_tasks t
       set state='cancel_requested',
           provider_status='CANCEL_REQUESTED',
+          cancellation_lease_owner=null,
+          cancellation_lease_expires_at=null,
           updated_at=clock_timestamp()
       where t.approval_id=approval_key and t.owner_id=p_owner_id and t.shot_index=shot_key
         and t.state in ('reserved','submitting','submission_unknown','submitted','processing');
