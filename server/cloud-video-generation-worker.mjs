@@ -12,7 +12,7 @@ const VIDEO_JOB_TYPES=Object.freeze(["video.generate.shot"]);
 /** Explicit opt-in cloud video worker. Importing this module makes no provider calls. */
 export function createCloudVideoGenerationWorker({
  workerId,queue,assetService,mediaIO,repositories,execute,url,serviceRoleKey,fetchImpl,tempRoot,maxBytes,timeoutMs,
- submitTask,getTask,downloadOutput,pollIntervalMs
+ submitTask,getTask,downloadOutput,pollIntervalMs,cancellationAdapters
 }={}){
  if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128)throw new Error("Cloud video worker ID must contain between 1 and 128 characters.");
  const cloudQueue=queue||createCloudQueue({url,serviceRoleKey,fetchImpl});
@@ -35,11 +35,8 @@ export function createCloudVideoGenerationWorker({
      await repos.tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
      results.push({taskId:task.id,status:"cancelled"});continue;
     }
-    const adapter=task.provider==="fal"
-     ?{poll:getFalVideoTask,cancel:cancelFalVideoTask}
-     :task.provider==="runway"
-      ?{poll:getRunwayVideoTask,cancel:cancelRunwayVideoTask}
-      :null;
+    const defaults={fal:{poll:getFalVideoTask,cancel:cancelFalVideoTask},runway:{poll:getRunwayVideoTask,cancel:cancelRunwayVideoTask}};
+   const adapter=(cancellationAdapters||defaults)[task.provider];
     if(!adapter)throw Object.assign(new Error("No cancellation reconciler is registered for this provider."),{code:"VIDEO_PROVIDER_UNSUPPORTED"});
     const current=await adapter.poll({taskId:task.providerTaskId,model:task.model});
     if(["SUCCEEDED","FAILED","CANCELED","CANCELLED"].includes(current.status)){
