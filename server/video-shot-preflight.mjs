@@ -1,7 +1,7 @@
 import { estimateVideoProductionCost } from "./video-cost-estimator.mjs";
 
 const MAX_SHOTS=12;
-const CLOUD_WORKER_VIDEO_PROVIDERS=new Set(["runway"]);
+const CLOUD_WORKER_VIDEO_PROVIDERS=new Set(["runway","fal"]);
 const text=(value,max)=>typeof value==="string"&&value.trim().length>0&&value.trim().length<=max;
 const blocked=(reason,checks=[])=>({status:"blocked",readyForApproval:false,checks,reason});
 
@@ -29,7 +29,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
   const model=String(shot.model||"");
   if(provider!==video.provider)fail("provider_match","Shot provider does not match the configured video provider.");
   else pass("provider_match","Shot provider matches the configured provider.");
-  if(!CLOUD_WORKER_VIDEO_PROVIDERS.has(provider))fail("worker_adapter","The durable cloud worker has no restart-safe task adapter for this provider yet. Select Runway or wait until this provider's asynchronous submit, poll and reconciliation adapter is verified.");
+  if(!CLOUD_WORKER_VIDEO_PROVIDERS.has(provider))fail("worker_adapter","The durable cloud worker has no restart-safe task adapter for this provider yet. Select Runway or Fal, or wait until this provider's asynchronous submit, poll and reconciliation adapter is verified.");
   else pass("worker_adapter","The durable cloud worker has a restart-safe task adapter for this provider.");
   let modelProfile=null;
   if(video.provider==="runway")modelProfile=(video.availableModels||[]).find(item=>item.id===model)||null;
