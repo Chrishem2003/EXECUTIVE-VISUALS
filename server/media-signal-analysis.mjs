@@ -56,6 +56,44 @@ export function buildAudioMetricFindings(metrics={}){
  return findings;
 }
 
+
+const LOUDNORM_TARGET_RANGES={integratedLufs:[-70,-5],loudnessRange:[1,50],truePeakDbtp:[-9,0]};
+const finiteNumber=value=>typeof value==="number"&&Number.isFinite(value);
+function assertRange(name,value,[minimum,maximum]){
+ if(!finiteNumber(value)||value<minimum||value>maximum)throw new TypeError(`${name} must be a finite number between ${minimum} and ${maximum}.`);
+}
+function formatFilterNumber(value){return Number(value.toFixed(3)).toString();}
+export function buildLoudnormAnalysisFilter({integratedLufs=-16,loudnessRange=11,truePeakDbtp=-1.5,dualMono=false}={}){
+ assertRange("integratedLufs",integratedLufs,LOUDNORM_TARGET_RANGES.integratedLufs);
+ assertRange("loudnessRange",loudnessRange,LOUDNORM_TARGET_RANGES.loudnessRange);
+ assertRange("truePeakDbtp",truePeakDbtp,LOUDNORM_TARGET_RANGES.truePeakDbtp);
+ if(typeof dualMono!=="boolean")throw new TypeError("dualMono must be a boolean.");
+ return `loudnorm=I=${formatFilterNumber(integratedLufs)}:LRA=${formatFilterNumber(loudnessRange)}:TP=${formatFilterNumber(truePeakDbtp)}:dual_mono=${dualMono}:print_format=json`;
+}
+export function parseLoudnormMeasurements(stderr=""){
+ const text=String(stderr||"");
+ const candidates=[...text.matchAll(/\{[\s\S]*?\}/g)].reverse();
+ for(const candidate of candidates){
+  let parsed;
+  try{parsed=JSON.parse(candidate[0]);}catch{continue;}
+  const numeric=value=>typeof value==="number"||typeof value==="string"&&value.trim()!==""?Number(value):NaN;
+  const fields={integratedLufs:numeric(parsed.input_i),truePeakDbtp:numeric(parsed.input_tp),loudnessRange:numeric(parsed.input_lra),thresholdDb:numeric(parsed.input_thresh),offsetDb:numeric(parsed.target_offset)};
+  if(Object.values(fields).every(Number.isFinite))return fields;
+ }
+ return null;
+}
+export function buildLoudnormNormalizationFilter({integratedLufs=-16,loudnessRange=11,truePeakDbtp=-1.5,measurements,dualMono=false}={}){
+ buildLoudnormAnalysisFilter({integratedLufs,loudnessRange,truePeakDbtp,dualMono});
+ if(!measurements||typeof measurements!=="object")throw new TypeError("Valid first-pass loudness measurements are required.");
+ const measured=measurements;
+ assertRange("measurements.integratedLufs",measured.integratedLufs,[-99,0]);
+ assertRange("measurements.truePeakDbtp",measured.truePeakDbtp,[-99,99]);
+ assertRange("measurements.loudnessRange",measured.loudnessRange,[0,99]);
+ assertRange("measurements.thresholdDb",measured.thresholdDb,[-99,0]);
+ assertRange("measurements.offsetDb",measured.offsetDb,[-99,99]);
+ return `loudnorm=I=${formatFilterNumber(integratedLufs)}:LRA=${formatFilterNumber(loudnessRange)}:TP=${formatFilterNumber(truePeakDbtp)}:measured_I=${formatFilterNumber(measured.integratedLufs)}:measured_TP=${formatFilterNumber(measured.truePeakDbtp)}:measured_LRA=${formatFilterNumber(measured.loudnessRange)}:measured_thresh=${formatFilterNumber(measured.thresholdDb)}:offset=${formatFilterNumber(measured.offsetDb)}:linear=true:dual_mono=${dualMono}:print_format=json`;
+}
+
 export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  try {
   return {status:"completed",result:await check()};
