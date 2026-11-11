@@ -41,7 +41,7 @@ insert into executive_visuals.reviews(
  'project','review-request-0001'
 );
 
-do $
+do $$
 begin
  if (select count(*) from executive_visuals.review_events where review_id='723e4567-e89b-42d3-a456-426614174000')<>1 then
   raise exception 'Review creation must append exactly one immutable audit event';
@@ -49,7 +49,7 @@ begin
  if not exists(select 1 from executive_visuals.reviews where id='723e4567-e89b-42d3-a456-426614174000' and frame_number=48 and timeline_revision=3 and timecode_seconds=2.0) then
   raise exception 'Frame-anchored review was not persisted with its timecode';
  end if;
-end $;
+end $$;
 insert into executive_visuals.reviews(
  id,owner_id,project_id,reviewer_id,last_actor_id,body,decision,status,visibility,request_id
 ) values(
@@ -63,19 +63,19 @@ insert into executive_visuals.reviews(
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','323e4567-e89b-42d3-a456-426614174000',true);
-do $
+do $$
 begin
  if (select count(*) from executive_visuals.reviews where project_id='423e4567-e89b-42d3-a456-426614174000')<>1 then
   raise exception 'Project viewers must not see internal review comments';
  end if;
-end $;
+end $$;
 select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',true);
-do $
+do $$
 begin
  if (select count(*) from executive_visuals.reviews where project_id='423e4567-e89b-42d3-a456-426614174000')<>2 then
   raise exception 'Project reviewers must see internal review comments';
  end if;
-end $;
+end $$;
 reset role;
 
 update executive_visuals.reviews
