@@ -56,3 +56,13 @@ test("cancellation transition RPC remains service-role-only and preserves additi
  assert.match(cancellationSql,/grant execute on function executive_visuals\.transition_video_generation_task\([^;]+ to service_role/i);
  assert.doesNotMatch(cancellationSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
 });
+
+test("cloud video job cancellation is restricted to the authenticated owner and the video job type",()=>{
+ assert.match(cancellationSql,/where id=p_job_id and owner_id=p_owner_id and job_type='video\.generate\.shot'/i);
+ assert.match(cancellationSql,/status in \('queued','processing'\)/i);
+ assert.match(cancellationSql,/set status='cancelled'/i);
+ assert.match(cancellationSql,/lease_owner=null/i);
+ assert.match(cancellationSql,/insert into executive_visuals\.job_events/i);
+ assert.match(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\(uuid,uuid\) to service_role/i);
+ assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\([^;]+ to (public|anon|authenticated)/i);
+});
