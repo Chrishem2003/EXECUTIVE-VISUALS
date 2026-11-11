@@ -72,7 +72,8 @@ export async function submitFalVideoTask({model=process.env.FAL_VIDEO_MODEL,prom
 export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
  const {key}=falWorkerConfig(model);
  const statusUrl=falTaskUrl(model,taskId,"/status");
- const status=await jsonRequest(statusUrl,{headers:{authorization:"Key "+key}},15000,fetchImpl);
+ const status=await jsonRequest(statusUrl,{headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ if(status.status==="NOT_FOUND")return Object.freeze({taskId,status:"CANCELLED",model:String(model),outputUrl:null,error:null});
  if(status.request_id&&status.request_id!==taskId)throw fail("Fal task identity did not match the requested task.","VIDEO_GATEWAY_INVALID_RESPONSE");
  if(status.status==="IN_QUEUE")return {taskId,status:"PENDING"};
  if(status.status==="IN_PROGRESS")return {taskId,status:"RUNNING"};
