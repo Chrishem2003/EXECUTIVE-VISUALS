@@ -3,11 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { submitRunwayVideoTask, getRunwayVideoTask, downloadRunwayVideoTaskOutput } from "./runway-video-gateway.mjs";
-import { submitFalVideoTask, getFalVideoTask, downloadFalVideoTaskOutput } from "./fal-video-gateway.mjs";
 
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const TERMINAL=new Set(["FAILED","CANCELED","CANCELLED"]);
-const PROVIDER_ADAPTERS=Object.freeze({fal:Object.freeze({submit:submitFalVideoTask,poll:getFalVideoTask,download:downloadFalVideoTaskOutput})});
 const sleep=(ms,signal)=>new Promise((resolve,reject)=>{
  if(signal?.aborted)return reject(fail("Video generation job was cancelled.","JOB_CANCELLED"));
  const timer=setTimeout(done,ms);
@@ -39,7 +37,7 @@ function safeFileName(value){return String(value||"generated-shot").replace(/[^a
 export function createCloudVideoGenerationExecutor({
  approvals,tasks,mediaIO,
  submitTask=submitRunwayVideoTask,getTask=getRunwayVideoTask,downloadOutput=downloadRunwayVideoTaskOutput,
- providerAdapters=PROVIDER_ADAPTERS,sleepImpl=sleep,pollIntervalMs=5000,maxOutputBytes=250*1024*1024,tempRoot=tmpdir()
+ sleepImpl=sleep,pollIntervalMs=5000,maxOutputBytes=250*1024*1024,tempRoot=tmpdir()
 }={}){
  if(typeof approvals?.get!=="function"||typeof tasks?.reserveSubmission!=="function"||
     typeof tasks?.markSubmitting!=="function"||typeof tasks?.markSubmitted!=="function"||
@@ -63,9 +61,7 @@ export function createCloudVideoGenerationExecutor({
   if(!["approved_pending_submission","processing"].includes(approval.status)||!Array.isArray(approval.shots)||shotIndex>=approval.shots.length)
    throw fail("A valid approved shot snapshot is required before generation.","VIDEO_APPROVAL_NOT_EXECUTABLE");
   const shot=parseObject(approval.shots[shotIndex],"Approved shot");
-  const provider=String(shot.provider||"").toLowerCase();
-  const adapter=provider==="runway"?{submit:submitTask,poll:getTask,download:downloadOutput}:providerAdapters?.[provider];
-  if(!adapter||typeof adapter.submit!=="function"||typeof adapter.poll!=="function"||typeof adapter.download!=="function")throw fail("The approved provider has no verified durable worker adapter.","VIDEO_PROVIDER_UNSUPPORTED");
+  if(String(shot.provider||"").toLowerCase()!=="runway")throw fail("This worker currently supports only the verified Runway adapter.","VIDEO_PROVIDER_UNSUPPORTED");
   if(typeof shot.prompt!=="string"||!shot.prompt.trim()||!shot.model)throw fail("Approved shot is missing its provider model or prompt.","VIDEO_JOB_INVALID_INPUT");
   const currency=String(approval.currency||"");
   const estimatedCostMicros=Number(shot.estimatedCostMicros);
@@ -79,7 +75,7 @@ export function createCloudVideoGenerationExecutor({
   if(!task||!task.id)throw fail("Durable task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
   if(task.state==="succeeded"){
    if(!task.outputAssetId)throw fail("A completed task is missing its published asset identity.","VIDEO_TASK_LEDGER_CORRUPT");
-   return {approvalId,shotIndex,provider,model:shot.model,providerTaskId:task.providerTaskId,outputAsset:{id:task.outputAssetId},replayed:true};
+   return {approvalId,shotIndex,provider:"runway",model:shot.model,providerTaskId:task.providerTaskId,outputAsset:{id:task.outputAssetId},replayed:true};
   }
   if(task.state==="failed")throw fail("This approved shot already failed. Create a new approval to authorize another paid attempt.","VIDEO_TASK_ALREADY_FAILED");
   let providerTaskId=task.providerTaskId||null;
@@ -90,7 +86,7 @@ export function createCloudVideoGenerationExecutor({
    await tasks.markSubmitting(task.id);
    onProgress(5);
    let submitted;
-   try{submitted=await adapter.submit({model:shot.model,prompt:shot.prompt,durationSeconds:shot.durationSeconds,duration:shot.durationSeconds,aspectRatio:shot.aspectRatio,resolution:shot.resolution,referenceImageDataUrl:shot.referenceImageDataUrl||""});}
+   try{submitted=await submitTask({model:shot.model,prompt:shot.prompt,durationSeconds:shot.durationSeconds,aspectRatio:shot.aspectRatio,resolution:shot.resolution,referenceImageDataUrl:shot.referenceImageDataUrl||""});}
    catch(error){
     if(error?.code==="VIDEO_GATEWAY_SUBMISSION_UNKNOWN"||["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR"].includes(error?.code)){
      await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"});
@@ -101,7 +97,7 @@ export function createCloudVideoGenerationExecutor({
    }
    providerTaskId=String(submitted?.taskId||"");
    if(!providerTaskId){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_PROVIDER_TASK_ID_MISSING"});throw fail("Provider accepted a request without a usable task ID. Reconciliation is required.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
-   try{await tasks.markSubmitted(task.id,{providerTaskId,provider,model:shot.model,estimatedCostCredits:submitted.estimatedCostCredits??null});}
+   try{await tasks.markSubmitted(task.id,{providerTaskId,model:shot.model,estimatedCostCredits:submitted.estimatedCostCredits??null});}
    catch(error){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_TASK_PERSISTENCE_FAILED"}).catch(()=>{});throw fail("Provider task was created but its ID could not be durably recorded. Reconcile before retrying.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
   }
 
@@ -109,7 +105,7 @@ export function createCloudVideoGenerationExecutor({
   while(true){
    if(signal?.aborted)throw fail("Video generation job was cancelled.","JOB_CANCELLED");
    let current;
-   try{current=await adapter.poll({taskId:providerTaskId,model:shot.model});}
+   try{current=await getTask({taskId:providerTaskId});}
    catch(error){
     if(["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR","VIDEO_GATEWAY_RATE_LIMITED"].includes(error?.code)){
      await sleepImpl(pollDelay,signal);pollDelay=Math.min(60000,Math.ceil(pollDelay*1.7));continue;
@@ -127,9 +123,9 @@ export function createCloudVideoGenerationExecutor({
    await sleepImpl(pollDelay,signal);
    pollDelay=Math.min(60000,Math.ceil(pollDelay*1.25));
   }
-  const completed=await adapter.poll({taskId:providerTaskId,model:shot.model});
+  const completed=await getTask({taskId:providerTaskId});
   if(completed.status!=="SUCCEEDED"||!completed.outputUrl)throw fail("Completed provider task did not contain a verified output URL.","VIDEO_PROVIDER_OUTPUT_MISSING");
-  const bytes=await adapter.download({outputUrl:completed.outputUrl});
+  const bytes=await downloadOutput({outputUrl:completed.outputUrl});
   if(!Buffer.isBuffer(bytes)||bytes.length<12||bytes.length>maxOutputBytes||bytes.toString("ascii",4,8)!=="ftyp")
    throw fail("Generated video failed bounded MP4 validation.","VIDEO_OUTPUT_INVALID");
   if(signal?.aborted)throw fail("Video generation job was cancelled.","JOB_CANCELLED");
@@ -140,12 +136,12 @@ export function createCloudVideoGenerationExecutor({
    const asset=await mediaIO.publish({
     ownerId:job.owner_id,projectId:job.project_id,filename:safeFileName(shot.name||("shot-"+(shotIndex+1)))+".mp4",
     mediaType:"video/mp4",path:filePath,derivativeOf:null,
-    metadata:{operation:"video.generate",provider,model:shot.model,providerTaskId,approvalId,shotIndex,approvedRequestHash:approval.requestHash||null},
+    metadata:{operation:"video.generate",provider:"runway",model:shot.model,providerTaskId,approvalId,shotIndex,approvedRequestHash:approval.requestHash||null},
     publicationKey:job.id+":video-shot:"+shotIndex+":v1"
    });
    await tasks.markSucceeded(task.id,{providerTaskId,asset});
    onProgress(100);
-   return {approvalId,shotIndex,provider,model:shot.model,providerTaskId,outputAsset:asset};
+   return {approvalId,shotIndex,provider:"runway",model:shot.model,providerTaskId,outputAsset:asset};
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
  };
 }

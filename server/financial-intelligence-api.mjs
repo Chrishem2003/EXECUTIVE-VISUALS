@@ -496,10 +496,10 @@ export function createFinancialIntelligenceApi({
           !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!first||!last||!/^7\d{8}$/.test(phone)||
           key.length<8||key.length>180)
           return error(400,"SUBSCRIPTION_RENEWAL_INPUT_INVALID","Provide a valid subscription, customer details, Ugandan mobile number, MTN/Airtel network and idempotency key.");
-        const prior=await dbRequest("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+        const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
         if(Array.isArray(prior.data)&&prior.data.length){
           const row=prior.data[0];
-          if(row.metadata?.payment_purpose!=="subscription_renewal"||row.metadata?.subscription_id!==subscriptionId||row.metadata?.mobile_money_network!==network||String(row.customer_email||"").trim().toLowerCase()!==email)
+          if(row.metadata?.payment_purpose!=="subscription_renewal"||row.metadata?.subscription_id!==subscriptionId||row.metadata?.mobile_money_network!==network)
             return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to another payment.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
@@ -564,10 +564,10 @@ export function createFinancialIntelligenceApi({
           !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!first||!last||!/^7\d{8}$/.test(phone)||
           key.length<8||key.length>180)
           return error(400,"CHECKOUT_INPUT_INVALID","Provide a valid product, customer name and email, Ugandan mobile number, MTN/Airtel network and idempotency key.");
-        const prior=await dbRequest("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+        const prior=await dbRequest("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata&owner_id=eq."+encodeURIComponent(ownerId)+"&metadata->>idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
         if(Array.isArray(prior.data)&&prior.data.length){
           const row=prior.data[0];
-          if(row.metadata?.product_code!==productCode||row.metadata?.mobile_money_network!==network||String(row.customer_email||"").trim().toLowerCase()!==email)
+          if(row.metadata?.product_code!==productCode||row.metadata?.mobile_money_network!==network)
             return error(409,"IDEMPOTENCY_KEY_REUSED","This idempotency key is already bound to a different checkout request.");
           return response(200,{payment:{id:row.id,reference:row.tx_ref,status:row.status,providerChargeId:row.provider_transaction_id,nextAction:row.metadata?.next_action||null},idempotentReplay:true});
         }
