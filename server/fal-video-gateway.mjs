@@ -6,14 +6,24 @@ function queueUrl(raw){
  if(url.protocol!=="https:"||url.hostname!=="queue.fal.run"||url.username||url.password||url.port||url.hash)throw fail("The video provider returned an unsafe job URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return url;
 }
+async function readBoundedJsonText(response,maxBytes=2*1024*1024){
+ const declared=Number(response.headers?.get?.("content-length")||0);
+ if(Number.isFinite(declared)&&declared>maxBytes){try{await response.body?.cancel?.()}catch{}throw fail("Video provider API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}
+ const reader=response.body?.getReader?.();
+ if(!reader)throw fail("Video provider API response did not provide a readable stream.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ const chunks=[];let total=0;
+ try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxBytes){await reader.cancel().catch(()=>{});throw fail("Video provider API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}chunks.push(Buffer.from(value));}}
+ finally{reader.releaseLock?.();}
+ return Buffer.concat(chunks,total).toString("utf8");
+}
 async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   let response;try{response=await fetchImpl(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
-  if(response.status===429)throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
-  if(response.status>=500)throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
-  if(!response.ok)throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
-  const raw=await response.text();if(Buffer.byteLength(raw)>2*1024*1024)throw fail("Video provider returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
+  if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
+  if(!response.ok){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+  const raw=await readBoundedJsonText(response);
   try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
  }finally{clearTimeout(timer)}
 }
@@ -133,7 +143,7 @@ export async function generateFalVideo({prompt,duration=5,aspectRatio="16:9",ref
  try{
   let response;try{response=await fetch(url,{signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Generated video download timed out.":"Generated video could not be downloaded safely.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
   if(!response.ok)throw fail("Generated video download failed.","VIDEO_GATEWAY_INVALID_RESPONSE");
-  if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES)throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES){try{await response.body?.cancel?.()}catch{}throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE");}
   if(!response.body?.getReader)throw fail("Generated video response cannot be streamed safely.","VIDEO_GATEWAY_INVALID_RESPONSE");
   const reader=response.body.getReader(),chunks=[];let total=0;
   try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>MAX_OUTPUT_BYTES){await reader.cancel().catch(()=>{});throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE")}chunks.push(Buffer.from(value))}}finally{reader.releaseLock()}
