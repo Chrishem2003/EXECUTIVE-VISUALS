@@ -29,7 +29,7 @@ export async function runCloudVideoWorkerCycle({
   deferSeconds = 30,
   onEvent = () => {}
 } = {}) {
-  if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function") {
+  if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.assertLease !== "function") {
     throw new Error("Cloud video worker requires a lease-aware cloud queue.");
   }
   if (!enqueue || typeof enqueue.finish !== "function" || typeof enqueue.defer !== "function" ||
@@ -50,13 +50,13 @@ export async function runCloudVideoWorkerCycle({
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
-  onEvent({ type: "video.job.started", jobId: job.id, workerId });
+  const assertLease = async () => {\n    if (leaseLost || controller.signal.aborted) throw Object.assign(new Error("Cloud video worker lease was lost."), { code: "VIDEO_WORKER_LEASE_LOST" });\n    let valid = false;\n    try { valid = await queue.assertLease(job.id, workerId, job.lease_token); } catch {}\n    if (!valid) { leaseLost = true; controller.abort(new Error("Cloud video worker lease was lost.")); onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId }); throw Object.assign(new Error("Cloud video worker lease verification failed."), { code: "VIDEO_WORKER_LEASE_LOST" }); }\n    return true;\n  };\n  onEvent({ type: "video.job.started", jobId: job.id, workerId });
 
   const heartbeat = setInterval(async () => {
     if (heartbeatPending || leaseLost || controller.signal.aborted) return;
     heartbeatPending = true;
     try {
-      if (!await queue.renew(job.id, workerId, leaseSeconds)) {
+      if (!await queue.renew(job.id, workerId, leaseSeconds, job.lease_token)) {
         leaseLost = true;
         controller.abort(new Error("Cloud video worker lease was lost."));
         onEvent({ type: "video.job.lease_lost", jobId: job.id, workerId });
@@ -73,7 +73,7 @@ export async function runCloudVideoWorkerCycle({
   heartbeat.unref?.();
 
   try {
-    const output = await execute({ job, workerId, signal: controller.signal });
+    await assertLease();\n    const output = await execute({ job, workerId, signal: controller.signal, assertLease });
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     if (!output || !Array.isArray(output.assetIds) || typeof output.actualAmount !== "number" ||
         !Number.isFinite(output.actualAmount) || typeof output.currency !== "string") {
@@ -98,13 +98,13 @@ export async function runCloudVideoWorkerCycle({
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
     if (code === "VIDEO_PROVIDER_POLL_DEFERRED") {
-      const deferred = await enqueue.defer({ jobId: job.id, workerId, delaySeconds: deferSeconds, reasonCode: code });
+      const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds: deferSeconds, reasonCode: code });
       if (!deferred) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "video.job.deferred", jobId: job.id, workerId, reasonCode: code });
       return { claimed: true, finished: true, status: "queued", jobId: job.id, reason: code };
     }
     if (QUARANTINE_CODES.has(code)) {
-      const quarantined = await enqueue.quarantine({ jobId: job.id, workerId, reasonCode: code });
+      const quarantined = await enqueue.quarantine({ jobId: job.id, workerId, leaseToken: job.lease_token, reasonCode: code });
       if (!quarantined) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
       return { claimed: true, finished: true, status: "needs_input", jobId: job.id, reason: code };
