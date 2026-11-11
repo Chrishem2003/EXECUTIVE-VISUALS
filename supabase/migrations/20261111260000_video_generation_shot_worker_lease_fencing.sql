@@ -96,3 +96,39 @@ grant execute on function executive_visuals.transition_video_generation_task_v2(
 
 comment on function executive_visuals.transition_video_generation_task_v2(uuid,text,uuid,uuid,text[],text,text,text,text,numeric,text,jsonb,uuid) is
   'Fenced state transition for an approved video shot task; verifies and locks its exact leased job and task lineage.';
+
+-- Cancellation reconciliation has its own task-row lease, distinct from the
+-- video job lease. Keep that worker family functional without reopening the
+-- unfenced task-transition RPC.
+create or replace function executive_visuals.transition_video_generation_task_reconciliation_v1(
+  p_task_id uuid,p_worker_id text,p_from_states text[],
+  p_to_state text,p_provider_status text
+) returns setof executive_visuals.video_generation_tasks
+language plpgsql security definer
+set search_path=pg_catalog,executive_visuals
+as $transition_video_task_reconciliation$
+declare claimed_task_id uuid;
+begin
+  if p_to_state<>'cancelled' or p_provider_status is null
+     or p_worker_id is null or pg_catalog.char_length(pg_catalog.btrim(p_worker_id)) not between 1 and 128 then
+    raise exception 'VIDEO_CANCELLATION_TRANSITION_INVALID';
+  end if;
+  select t.id into claimed_task_id
+  from executive_visuals.video_generation_tasks t
+  where t.id=p_task_id
+    and t.state=any(p_from_states)
+    and t.cancellation_lease_owner=p_worker_id
+    and t.cancellation_lease_expires_at>pg_catalog.clock_timestamp()
+  for update;
+  if claimed_task_id is null then
+    raise exception 'VIDEO_CANCELLATION_LEASE_LOST' using errcode='42501';
+  end if;
+  return query select * from executive_visuals.transition_video_generation_task(
+    p_task_id,p_from_states,'cancelled',null,null,null,null,p_provider_status,null,null
+  );
+end;
+$transition_video_task_reconciliation$;
+revoke all on function executive_visuals.transition_video_generation_task_reconciliation_v1(uuid,text,text[],text,text)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.transition_video_generation_task_reconciliation_v1(uuid,text,text[],text,text)
+  to service_role;
