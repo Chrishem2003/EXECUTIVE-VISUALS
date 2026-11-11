@@ -168,3 +168,24 @@ test("video submission, output settlement, deferral and quarantine require the c
  assert.match(videoEnqueueClient,/finish_video_generation_job_v2/);
  assert.match(videoEnqueueClient,/p_lease_token: leaseToken/);
 });
+
+const shotFenceSql=await readFile(resolve(root,"supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql"),"utf8");
+const shotWorkerExecutor=await readFile(resolve(root,"server/cloud-video-generation-executor.mjs"),"utf8");
+const shotWorkerRepositories=await readFile(resolve(root,"server/cloud-video-generation-repositories.mjs"),"utf8");
+
+test("approved-shot reservation and task transitions are fenced by the exact shared worker lease",()=>{
+ assert.match(shotFenceSql,/job_type in \('video\.generate','video\.generate\.shot'\)/i);
+ assert.match(shotFenceSql,/reserve_video_generation_task_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(shotFenceSql,/transition_video_generation_task_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(shotFenceSql,/t\.approval_id::text=linked_job\.input->>'approvalId'/i);
+ assert.match(shotFenceSql,/t\.shot_index=nullif\(linked_job\.input->>'shotIndex',''\)::integer/i);
+ assert.match(shotFenceSql,/revoke all on function executive_visuals\.reserve_video_generation_task\([^;]+ from service_role/i);
+ assert.match(shotFenceSql,/revoke all on function executive_visuals\.transition_video_generation_task\([^;]+ from service_role/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.reserve_video_generation_task_v2\([^;]+ to service_role/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.transition_video_generation_task_v2\([^;]+ to service_role/i);
+ assert.match(shotWorkerRepositories,/reserve_video_generation_task_v2/);
+ assert.match(shotWorkerRepositories,/transition_video_generation_task_v2/);
+ assert.match(shotWorkerRepositories,/p_lease_token:leaseToken/);
+ assert.match(shotWorkerExecutor,/tasks\.reserveSubmission\(\{\.\.\.leaseContext/);
+ assert.match(shotWorkerExecutor,/assertLease:assertCurrentLease,signal,leaseContext/);
+});
