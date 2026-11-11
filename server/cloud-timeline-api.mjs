@@ -109,7 +109,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const result=await reviews.create({actorId:ownerId,input:body,idempotencyKey});
     return response(result.idempotentReplay?200:201,result);
    }
-   const reviewMatch=path.match(/^\\/api\\/cloud\\/reviews\\/([0-9a-f-]+)$/i);
+   const reviewMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)$/i);
    if(reviewMatch&&safeId(reviewMatch[1])){
     if(!reviews)return response(503,{error:{code:"CLOUD_REVIEW_UNAVAILABLE",message:"The cloud review repository is not configured."}});
     if(method==="GET"){
