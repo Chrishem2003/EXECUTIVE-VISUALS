@@ -29,6 +29,16 @@ test("splitting audio clips preserves automation on both clip segments",()=>{
  assert.equal(second.audioAutomation[0].pan,1);
  assert.equal(second.audioAutomation[1].timeSeconds,4);
 });
+test("timeline validation accepts only frame-matched audio crossfade overlaps",()=>{
+ const timeline=fixture(),track=timeline.tracks[0],first={id:"out",assetId:"out",name:"Outgoing",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true,transitionToNext:{type:"crossfade",fadeFrames:6}},second={id:"in",assetId:"in",name:"Incoming",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(18,24),duration:rational(24,24),enabled:true};
+ const valid={...timeline,tracks:[{...track,clips:[first,second]}]};
+ assert.equal(validateTimeline(valid).valid,true);
+ const mismatched={...valid,tracks:[{...track,clips:[first,{...second,timelineStart:rational(12,24)}]}]};
+ assert.equal(validateTimeline(mismatched).issues[0].code,"crossfade_overlap_mismatch");
+ const invalidType={...valid,tracks:[{...track,clips:[{...first,transitionToNext:{type:"dip-to-black",fadeFrames:6}},second]}]};
+ assert.equal(validateTimeline(invalidType).issues[0].code,"invalid_transition");
+});
+
 test("timeline validation rejects malformed audio automation",()=>{
  const timeline=fixture(),clip=timeline.tracks[0].clips[0];
  clip.audioAutomation=[{timeSeconds:12,gainDb:-3}];

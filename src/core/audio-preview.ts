@@ -6,11 +6,14 @@ export interface AudioPreviewTrackInput {
  pan?:number;
  automation?:readonly AudioAutomationPoint[];
  automationTime?:number;
+ fadeInDuration?:number;
+ fadeOutStart?:number;
+ fadeOutDuration?:number;
  muted?:boolean;
  solo?:boolean;
 }
 
-type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;panner:StereoPannerNode;gainDb:number;pan:number;automation:AudioAutomationPoint[];automationTime:number;muted:boolean;solo:boolean};
+type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;fade:GainNode;panner:StereoPannerNode;gainDb:number;pan:number;automation:AudioAutomationPoint[];automationTime:number;fadeInDuration:number;fadeOutStart:number;fadeOutDuration:number;muted:boolean;solo:boolean};
 
 export function decibelsToGain(value:number,minDb=-60,maxDb=24):number{
  const db=Number.isFinite(value)?Math.max(minDb,Math.min(maxDb,value)):0;
@@ -73,17 +76,17 @@ export class AudioPreviewEngine{
  async resume():Promise<void>{if(this.context.state!=="running")await this.context.resume();}
  sync(tracks:readonly AudioPreviewTrackInput[]):void{
   const active=new Set(tracks.map(track=>track.id));
-  for(const [id,entry] of this.connected){if(!active.has(id)){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(id);}}
+  for(const [id,entry] of this.connected){if(!active.has(id)){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.fade.disconnect();entry.panner.disconnect();this.connected.delete(id);}}
   for(const track of tracks){
    let entry=this.connected.get(track.id);
-   if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(track.id);entry=undefined;}
+   if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();entry.fade.disconnect();entry.panner.disconnect();this.connected.delete(track.id);entry=undefined;}
    if(!entry){
-    const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain(),panner=this.context.createStereoPanner();
-    source.connect(gain);gain.connect(panner);panner.connect(this.master);
-    entry={media:track.media,source,gain,panner,gainDb:track.gainDb??0,pan:track.pan??0,automation:[],automationTime:0,muted:false,solo:false};
+    const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain(),fade=this.context.createGain(),panner=this.context.createStereoPanner();
+    source.connect(gain);gain.connect(fade);fade.connect(panner);panner.connect(this.master);
+    entry={media:track.media,source,gain,fade,panner,gainDb:track.gainDb??0,pan:track.pan??0,automation:[],automationTime:0,fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0,muted:false,solo:false};
     this.connected.set(track.id,entry);
    }
-   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;entry.pan=Math.max(-1,Math.min(1,Number.isFinite(track.pan)?track.pan??0:0));entry.automation=normalizeAudioAutomation(track.automation);entry.automationTime=Math.max(0,Number.isFinite(track.automationTime)?track.automationTime??0:0);
+   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;entry.pan=Math.max(-1,Math.min(1,Number.isFinite(track.pan)?track.pan??0:0));entry.automation=normalizeAudioAutomation(track.automation);entry.automationTime=Math.max(0,Number.isFinite(track.automationTime)?track.automationTime??0:0);entry.fadeInDuration=Math.max(0,Number.isFinite(track.fadeInDuration)?track.fadeInDuration??0:0);entry.fadeOutStart=Math.max(0,Number.isFinite(track.fadeOutStart)?track.fadeOutStart??0:0);entry.fadeOutDuration=Math.max(0,Number.isFinite(track.fadeOutDuration)?track.fadeOutDuration??0:0);
   }
   this.applyTrackStates();
  }
@@ -110,10 +113,17 @@ export class AudioPreviewEngine{
     if(point.gainDb!==undefined&&!suppressed){const value=decibelsToGain(point.gainDb);if(point.interpolation==="step")gainParam.setValueAtTime(value,at);else gainParam.linearRampToValueAtTime(value,at);}
     if(point.pan!==undefined){if(point.interpolation==="step")panParam.setValueAtTime(point.pan,at);else panParam.linearRampToValueAtTime(point.pan,at);}
    }
+   const fadeParam=entry.fade.gain,time=entry.automationTime,fadeIn=entry.fadeInDuration,fadeOutStart=entry.fadeOutStart,fadeOut=entry.fadeOutDuration;
+   const fadeInLevel=fadeIn>0?Math.max(0,Math.min(1,time/fadeIn)):1;
+   const fadeOutLevel=fadeOut>0&&time>fadeOutStart?Math.max(0,1-(time-fadeOutStart)/fadeOut):1;
+   fadeParam.cancelScheduledValues?.(now);fadeParam.setValueAtTime(fadeInLevel*fadeOutLevel,now);
+   if(fadeIn>time)fadeParam.linearRampToValueAtTime(1,now+(fadeIn-time));
+   if(fadeOut>0&&fadeOutStart>time){fadeParam.setValueAtTime(1,now+(fadeOutStart-time));fadeParam.linearRampToValueAtTime(0,now+(fadeOutStart+fadeOut-time));}
+   else if(fadeOut>0&&time<fadeOutStart+fadeOut)fadeParam.linearRampToValueAtTime(0,now+(fadeOutStart+fadeOut-time));
   }
  }
  dispose():void{
-  for(const entry of this.connected.values()){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();}
+  for(const entry of this.connected.values()){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.fade.disconnect();entry.panner.disconnect();}
   this.connected.clear();this.master.disconnect();this.limiter.disconnect();
   void this.context.close();
  }

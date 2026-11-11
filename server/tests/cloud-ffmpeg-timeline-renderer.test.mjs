@@ -201,6 +201,45 @@ test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
 });
 
+test("cloud FFmpeg renderer applies frame-accurate audio crossfades on audio tracks", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-audio-crossfade-test-"));
+ try{
+  const video=join(root,"picture.mp4"),first=join(root,"first.wav"),second=join(root,"second.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1.75","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",first]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=660:duration=1","-c:a","pcm_s16le",second]);
+  const timeline={name:"Audio transition test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(1.75),sourceRange:{start:time(0),duration:time(1.75)}}]},
+   {id:"a",kind:"audio",clips:[
+    {id:"a1",assetId:"first",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"crossfade",fadeFrames:6}},
+    {id:"a2",assetId:"second",timelineStart:time(0.75),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}
+   ]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["first",{path:first,asset:{id:"first",mediaType:"audio/wav",originalName:"first.wav"}}],
+   ["second",{path:second,asset:{id:"second",mediaType:"audio/wav",originalName:"second.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.equal(result.render.audioCrossfades,1);
+  assert.ok(Number(probe.format.duration)>=1.7&&Number(probe.format.duration)<=1.8);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud FFmpeg renderer rejects audio crossfades with mismatched overlap",async()=>{
+ const timeline={tracks:[
+  {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
+  {kind:"audio",clips:[
+   {assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"crossfade",fadeFrames:6}},
+   {assetId:"a",timelineStart:time(0.5),duration:time(1),sourceRange:{start:time(1),duration:time(1)}}
+  ]}
+ ]};
+ const assets=new Map([["v",{path:"/not-used-video.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}],["a",{path:"/not-used-audio.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+});
+
 test("cloud FFmpeg renderer rejects transitions on non-video tracks",async()=>{
  const timeline={tracks:[
   {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},

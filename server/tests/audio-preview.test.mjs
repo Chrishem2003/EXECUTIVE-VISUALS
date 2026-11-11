@@ -69,6 +69,17 @@ test("audio engine routes tracks, applies solo/mute, restores gain and master mu
  engine.dispose();assert.equal(context.state,"closed");
 });
 
+test("audio engine schedules complementary timeline crossfade envelopes",()=>{
+ const context=new FakeContext(),engine=new AudioPreviewEngine(context),media={pause(){}};
+ engine.sync([{id:"crossfade",media,automationTime:.1,fadeInDuration:.25,fadeOutStart:.75,fadeOutDuration:.25}]);
+ const entry=engine["connected"].get("crossfade"),events=entry.fade.gain.events;
+ assert.ok(Math.abs(entry.fade.gain.value-.4)<1e-8,"preview begins at the current fade-in level");
+ assert.ok(events.some(event=>event[0]==="ramp"&&event[1]===1&&Math.abs(event[2]-1.15)<1e-8),"incoming clip reaches full gain at the end of its fade-in");
+ assert.ok(events.some(event=>event[0]===1&&Math.abs(event[1]-1.65)<1e-8),"outgoing clip holds unity gain until its fade-out begins");
+ assert.ok(events.some(event=>event[0]==="ramp"&&event[1]===0&&Math.abs(event[2]-1.9)<1e-8),"outgoing clip reaches silence at the end of its fade-out");
+ engine.dispose();
+});
+
 test("audio engine schedules clip gain and pan keyframes from the current source position",()=>{
  const context=new FakeContext(),engine=new AudioPreviewEngine(context),media={pause(){}};
  engine.sync([{id:"automation",media,gainDb:0,pan:-0.5,automationTime:0,automation:[
