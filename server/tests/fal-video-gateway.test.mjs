@@ -100,3 +100,12 @@ test("FAL rejects response bodies without a readable stream instead of buffering
  try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(textRead,false);}
  finally{globalThis.fetch=original;restore();}
 });
+
+
+test("FAL cancels a response body immediately when declared JSON size exceeds the cap",async()=>{
+ const original=globalThis.fetch;let cancelled=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:200,ok:true,headers:new Headers({"content-length":String(2*1024*1024+1)}),body:{cancel:async()=>{cancelled=true;}}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(cancelled,true);}
+ finally{globalThis.fetch=original;restore();}
+});
