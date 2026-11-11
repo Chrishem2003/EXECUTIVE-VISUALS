@@ -161,16 +161,16 @@ export function buildDialogueDuckingAutomation(options:DialogueDuckingOptions):A
  const musicEnd=musicStartSeconds+musicDurationSeconds;
  const ranges=options.dialogueRanges.map(range=>{
   if(!range||!Number.isFinite(range.startSeconds)||!Number.isFinite(range.endSeconds)||range.startSeconds<0||range.endSeconds<=range.startSeconds)throw new Error("Dialogue activity ranges must have finite, positive timeline intervals.");
-  return {start:Math.max(musicStartSeconds,range.startSeconds),end:Math.min(musicEnd,range.endSeconds)};
+  return {start:Math.max(musicStartSeconds,range.startSeconds),end:Math.min(musicEnd,range.endSeconds),alreadyActiveAtMusicStart:range.startSeconds<musicStartSeconds};
  }).filter(range=>range.end>range.start).sort((a,b)=>a.start-b.start);
- const merged:Array<{start:number;end:number}>=[];
- for(const range of ranges){const previous=merged[merged.length-1];if(previous&&range.start<=previous.end+release)previous.end=Math.max(previous.end,range.end);else merged.push({...range});}
+ const merged:Array<{start:number;end:number;alreadyActiveAtMusicStart:boolean}>=[];
+ for(const range of ranges){const previous=merged[merged.length-1];if(previous&&range.start<=previous.end+release){previous.end=Math.max(previous.end,range.end);previous.alreadyActiveAtMusicStart=previous.alreadyActiveAtMusicStart||range.alreadyActiveAtMusicStart;}else merged.push({...range});}
  const generated:AudioAutomationPoint[]=[];
  const push=(time:number,gain:number)=>generated.push({timeSeconds:Number(clamp(time,0,musicDurationSeconds).toFixed(4)),gainDb:clamp(gain,-60,24),interpolation:"linear"});
  for(const range of merged){
   const start=range.start-musicStartSeconds,end=range.end-musicStartSeconds,target=clamp(base+reduction,-60,24);
   if(start>0)push(start,base);else push(0,attack>0?base:target);
-  const attackEnd=Math.min(end,start+attack);
+  const attackEnd=Math.min(end,start+(range.alreadyActiveAtMusicStart?0:attack));
   if(attackEnd>start)push(attackEnd,target);
   else if(start>0)push(start,target);
   push(end,target);
