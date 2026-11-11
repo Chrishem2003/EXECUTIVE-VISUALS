@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isPlatformAdministrator,getAdminOperationsOverview,listAdminOperationUsers,listAdminOperationJobs,listAdminOperationAudit,buildAdminProviderReadiness,buildAdminProviderReadinessSummary} from "../admin-operations.mjs";
+import {isPlatformAdministrator,getAdminOperationsOverview,listAdminOperationUsers,listAdminOperationJobs,listAdminOperationAudit,buildAdminProviderReadiness,buildAdminProviderReadinessSummary,buildVideoDispatchReadiness} from "../admin-operations.mjs";
 function fakeDb(){
  const calls=[];
  return {calls,prepare(sql){return {get(...args){calls.push({sql,args});if(sql.includes("SELECT (SELECT COUNT(*)"))return {users:3,projects:4,assets:5,jobs:6};if(sql.includes("SUM(estimated_cost_micros)"))return {operations:7,estimatedCostMicros:890000};throw new Error("Unexpected get query");},all(...args){calls.push({sql,args});if(sql.includes("GROUP BY status"))return [{status:"queued",count:2},{status:"failed",count:1}];if(sql.includes("FROM users u"))return [{id:"u1",email:"a@example.com",auth_source:"supabase",created_at:"2026-11-01",projects:2,jobs:3,usage30d:4}];if(sql.includes("FROM jobs j"))return [{id:"j1",email:"a@example.com",job_type:"video.generate",status:"queued",progress:0,attempt_count:1,created_at:"2026-11-01",updated_at:"2026-11-01",completed_at:null}];if(sql.includes("FROM audit_events a"))return [{id:1,owner_id:"u1",email:"a@example.com",event_type:"project.created",subject_type:"project",subject_id:"p1",created_at:"2026-11-01"}];throw new Error("Unexpected all query");}};}};
@@ -56,4 +56,49 @@ test("provider readiness summary counts status buckets and model verification fr
  ]);
  assert.deepEqual(summary,{total:6,ready:1,disabled:1,unverified:1,needsConfiguration:1,remoteOptInRequired:1,unavailable:1,models:3,qualityVerifiedModels:2});
  assert.deepEqual(buildAdminProviderReadinessSummary(null),{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0});
+});
+
+
+test("video dispatch readiness reports missing prerequisites without exposing secrets or submitting work",()=>{
+ const blocked=buildVideoDispatchReadiness({
+  env:{AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"false",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"super-secret"},
+  providerCatalog:{providers:[{id:"video",provider:"fal",model:"seedance",status:"ready",remote:true,capabilities:["video.generate"]}]},
+  dataPersistence:"unverified"
+ });
+ assert.equal(blocked.status,"blocked");
+ assert.equal(blocked.canSubmit,false);
+ assert.equal(blocked.checks.supabaseAuth,true);
+ assert.equal(blocked.checks.cloudTimelineApi,true);
+ assert.equal(blocked.checks.cloudDispatch,false);
+ assert.equal(blocked.checks.supabaseServiceCredentials,true);
+ assert.equal(blocked.checks.videoProviderReady,true);
+ assert.equal(blocked.blockers.length,1);
+ assert.equal(blocked.appDataPersistenceWarning!==null,true);
+ assert.equal(JSON.stringify(blocked).includes("super-secret"),false);
+ assert.equal(blocked.policy.requestsSubmitted,false);
+ assert.equal(blocked.policy.chargesInitiated,false);
+});
+test("video dispatch readiness is ready only when authentication, cloud storage, dispatch and provider gates pass",()=>{
+ const result=buildVideoDispatchReadiness({
+  env:{AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"true",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only"},
+  providerCatalog:{providers:[{id:"video",provider:"runway",model:"gen4.5",status:"ready",remote:true,capabilities:["video.generate"]}]},
+  dataPersistence:"operator-confirmed-volume"
+ });
+ assert.equal(result.status,"ready");
+ assert.equal(result.canSubmit,true);
+ assert.deepEqual(result.blockers,[]);
+ assert.equal(result.videoProvider.provider,"runway");
+ assert.equal(result.videoProvider.remote,true);
+ assert.equal(result.appDataPersistenceWarning,null);
+});
+test("video dispatch readiness blocks unconfigured or non-ready video providers",()=>{
+ for(const provider of [null,{id:"video",status:"remote_opt_in_required",reason:"Remote execution needs approval."}]){
+  const result=buildVideoDispatchReadiness({
+   env:{AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"true",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only"},
+   providerCatalog:{providers:provider?[provider]:[]}
+  });
+  assert.equal(result.canSubmit,false);
+  assert.equal(result.checks.videoProviderReady,false);
+  assert.equal(result.blockers.some(item=>item.check==="videoProviderReady"),true);
+ }
 });
