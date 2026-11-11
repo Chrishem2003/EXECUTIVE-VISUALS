@@ -248,7 +248,7 @@ test("AI upscaler rejects a source replaced during inference and removes its der
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
-${pngBytes.toString()}
+\${pngBytes.toString().replaceAll("deflateSync(", "require('node:zlib').deflateSync(")}
 fs.writeFileSync(${JSON.stringify(input)}, "replacement bytes");
 fs.writeFileSync(out,pngBytes(2,2));
 `;
@@ -450,7 +450,7 @@ const tile = Number(value("-t"));
 const input = fs.readFileSync(value("-i"));
 const output = value("-o");
 const scale = Number(value("-s"));
-${pngBytes.toString()}
+\${pngBytes.toString().replaceAll("deflateSync(", "require('node:zlib').deflateSync(")}
 const attemptsFile = ${JSON.stringify(attemptsFile)};
 const previous = fs.existsSync(attemptsFile) ? Number(fs.readFileSync(attemptsFile, "utf8")) : 0;
 fs.writeFileSync(attemptsFile, String(previous + 1));
@@ -699,7 +699,7 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-${pngBytes.toString()}
+\${pngBytes.toString().replaceAll("deflateSync(", "require('node:zlib').deflateSync(")}
 fs.writeFileSync(out,pngBytes(8*scale,6*scale,6));
 `;
   await writeFile(binary, script);
@@ -765,7 +765,7 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const scale = Number(args[args.indexOf("-s") + 1] || 2);
-${pngBytes.toString()}
+\${pngBytes.toString().replaceAll("deflateSync(", "require('node:zlib').deflateSync(")}
 fs.writeFileSync(out,pngBytes(8*scale,6*scale,2));
 `;
   await writeFile(binary, script);
