@@ -434,3 +434,9 @@
 .mastering-history-row b{text-align:right}
 .mastering-history-row small{text-align:right;color:var(--muted)}
 @media(max-width:480px){.mastering-history-row{grid-template-columns:1fr 42px}.mastering-history-row small{grid-column:1/-1;text-align:left}}
+
+
+.mastering-history-row{width:100%;border:0;border-top:1px solid #242a36;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.mastering-history-row:hover,.mastering-history-row.selected{background:#1b2030}
+.mastering-history-row.selected span{color:#a78bfa}
+.mastering-report-download{margin-top:12px}
