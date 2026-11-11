@@ -491,9 +491,26 @@
 .review-event small{color:var(--muted)}
 
 
-.review-intelligence-toolbar{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(130px,1fr)) auto;align-items:end;gap:12px;margin:16px 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft,transparent)}
+.review-intelligence-toolbar{display:grid;grid-template-columns:minmax(180px,2fr) repeat(3,minmax(130px,1fr)) auto;align-items:end;gap:12px;margin:16px 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft,transparent)}
 .review-intelligence-toolbar label{display:grid;gap:6px;font-size:12px;color:var(--muted)}
 .review-intelligence-toolbar input,.review-intelligence-toolbar select{width:100%;min-width:0}
 .review-export-actions{display:flex;gap:6px;flex-wrap:wrap}
 .review-intelligence-toolbar>small{grid-column:1/-1;color:var(--muted)}
 @media(max-width:760px){.review-intelligence-toolbar{grid-template-columns:1fr 1fr}.review-intelligence-toolbar label:first-child{grid-column:1/-1}.review-export-actions{grid-column:1/-1}}
+
+.revision-comparison-panel{margin:16px 0}
+.revision-comparison-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:14px 0}
+.revision-comparison-controls label{display:grid;gap:6px;min-width:220px;color:var(--muted);font-size:12px}
+.revision-comparison-controls select{width:100%}
+.revision-comparison-summary{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px}
+.revision-comparison-metrics{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
+.revision-comparison-metrics span{font-size:12px;color:var(--muted)}
+.revision-comparison-metrics strong{display:block;color:var(--text);font-size:18px}
+.revision-comparison-summary ul{list-style:none;margin:12px 0 0;padding:0}
+.revision-comparison-summary li{display:grid;grid-template-columns:76px minmax(100px,1fr);gap:4px 10px;padding:9px 0;border-top:1px solid var(--line)}
+.revision-comparison-summary li small{grid-column:2;color:var(--muted)}
+.revision-change-kind{font-size:10px;text-transform:uppercase;font-weight:700}
+.revision-change-kind.added{color:var(--success,#26855b)}
+.revision-change-kind.removed{color:var(--danger,#b54747)}
+.revision-change-kind.changed{color:var(--accent)}
+@media(max-width:680px){.revision-comparison-controls{align-items:stretch;flex-direction:column}.revision-comparison-controls label{min-width:0}.revision-comparison-summary li{grid-template-columns:68px minmax(0,1fr)}}
