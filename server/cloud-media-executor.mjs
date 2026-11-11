@@ -68,7 +68,8 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
       if (code === 0) return finish(null, { stdout, stderr });
       finish(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code: "MEDIA_PROCESS_FAILED" }));
     });
-    onProgress(10);
+    try { onProgress(10); }
+    catch (error) { terminate(error instanceof Error ? error : new Error("Media progress reporting failed.")); }
   });
 }
 
