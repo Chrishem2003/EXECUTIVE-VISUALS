@@ -38,7 +38,8 @@ export function assessDeliveryEvidence(timeline:EditorialTimeline|null,assets:So
  const mastering=object(render.audioMastering)?render.audioMastering:null;
  const masteringMeasurement=mastering&&object(mastering.measurement)?mastering.measurement:null;
  const masteringQc=mastering&&object(mastering.qualityControl)?mastering.qualityControl:null;
- const measuredMastering=mastering?.applied===true?{profile:typeof mastering.profile==="string"?mastering.profile:null,integratedLoudness:Number.isFinite(Number(masteringMeasurement?.integratedLoudness))?Number(masteringMeasurement?.integratedLoudness):null,loudnessRange:Number.isFinite(Number(masteringMeasurement?.loudnessRange))?Number(masteringMeasurement?.loudnessRange):null,truePeak:Number.isFinite(Number(masteringMeasurement?.truePeak))?Number(masteringMeasurement?.truePeak):null,passed:typeof masteringQc?.passed==="boolean"?masteringQc.passed:null}:null;
+ const measuredMetric=(value:unknown)=>typeof value==="number"&&Number.isFinite(value)?value:null;
+ const measuredMastering=mastering?.applied===true?{profile:typeof mastering.profile==="string"?mastering.profile:null,integratedLoudness:measuredMetric(masteringMeasurement?.integratedLoudness),loudnessRange:measuredMetric(masteringMeasurement?.loudnessRange),truePeak:measuredMetric(masteringMeasurement?.truePeak),passed:typeof masteringQc?.passed==="boolean"?masteringQc.passed:null}:null;
  if(timeline.audioMastering?.enabled===true){
   if(mastering?.applied!==true)fail("DELIVERY_AUDIO_MASTERING_NOT_APPLIED","The timeline requests audio mastering, but the current master has no applied mastering receipt.");
   else if(!masteringMeasurement||measuredMastering?.integratedLoudness===null||measuredMastering?.truePeak===null||measuredMastering?.passed===null)fail("DELIVERY_AUDIO_MASTERING_QC_MISSING","The master has no complete post-encode loudness and true-peak quality-control evidence.");
