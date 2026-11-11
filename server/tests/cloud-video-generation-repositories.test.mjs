@@ -64,7 +64,7 @@ test("durable task repository records cancellation intent and confirmed cancella
  assert.equal(requested.state,"cancel_requested");
  const cancelled=await h.tasks.markCancelled("task-1",{providerStatus:"OK"},lease);
  assert.equal(cancelled.state,"cancelled");
- const transitions=h.calls.filter(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
+ const transitions=h.calls.filter(item=>item.url.endsWith("/rpc/transition_video_generation_task_v2"));
  assert.deepEqual(transitions.map(item=>item.body.p_to_state),["cancel_requested","cancelled"]);
  assert.equal(transitions[0].body.p_provider_status,"CANCEL_REQUESTED");
  assert.equal(transitions[1].body.p_provider_status,"OK");
