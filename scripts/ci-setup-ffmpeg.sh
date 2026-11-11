@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Pinned FFmpeg build release and SHA-256 digest.
-# Update both values together after reviewing a new upstream release.
-release_tag="autobuild-2026-11-09-12-42"
-asset_name="ffmpeg-n9.0.2-48-gd4070a14ce-linux64-gpl-9.0.tar.xz"
-expected_sha256="5df8a8fd95464cd5ff7b7abff4afe59dede6fa7af13e0914a0abc70178d87046"
+# This master snapshot includes FFmpeg security fix 7c73707355708c846f718cca90096bc1a33c8989 (CVE-2026-120247).\n# Update all pins together only after reviewing upstream commit ancestry and checksums.
+release_tag="autobuild-2026-11-11-12-39"
+asset_name="ffmpeg-N-128790-g9bee1e603c-linux64-gpl.tar.xz"
+expected_sha256="f5752bf3597cbc9fc7a60fe5cea3522797a5ea2493d91cffb6f13e5b4c861233"
 
 archive="$RUNNER_TEMP/$asset_name"
 extract_dir="$RUNNER_TEMP/ev-ffmpeg"
