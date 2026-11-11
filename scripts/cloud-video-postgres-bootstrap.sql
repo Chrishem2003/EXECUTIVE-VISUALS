@@ -90,6 +90,30 @@ create table executive_visuals.assets (
   created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+create table executive_visuals.timelines (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  name text not null,
+  revision integer not null default 1,
+  timeline jsonb not null default '{}'::jsonb,
+  otio jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+create table executive_visuals.reviews (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid not null references executive_visuals.projects(id) on delete cascade,
+  asset_id uuid references executive_visuals.assets(id) on delete set null,
+  reviewer_id uuid references auth.users(id) on delete set null,
+  timecode_seconds numeric,
+  body text not null,
+  decision text not null default 'comment',
+  status text not null default 'open',
+  created_at timestamptz not null default now()
+);
 create table executive_visuals.job_events (
   id bigint generated always as identity primary key,
   job_id uuid not null references executive_visuals.jobs(id),
