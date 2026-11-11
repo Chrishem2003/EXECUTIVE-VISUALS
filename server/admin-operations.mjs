@@ -82,6 +82,36 @@ export function listAdminOperationAudit(db,{limit=100}={}){
  FROM audit_events a LEFT JOIN users u ON u.id=a.owner_id ORDER BY a.id DESC LIMIT ?`).all(boundedLimit(limit)).map(row=>({id:Number(row.id),ownerId:row.owner_id,email:row.email||"Unknown account",eventType:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,createdAt:row.created_at}));
 }
 
+export function buildVideoDispatchReadiness({env=process.env,providerCatalog=null,dataPersistence="unknown"}={}){
+ const providers=Array.isArray(providerCatalog?.providers)?providerCatalog.providers:[];
+ const videoProvider=providers.find(item=>item?.id==="video"||(Array.isArray(item?.capabilities)&&item.capabilities.includes("video.generate")))||null;
+ const checks={
+  supabaseAuth:env.AUTH_MODE==="supabase",
+  cloudTimelineApi:env.CLOUD_TIMELINE_API_ENABLED==="true",
+  cloudDispatch:env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true",
+  supabaseServiceCredentials:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
+  videoProviderReady:videoProvider?.status==="ready"
+ };
+ const labels={
+  supabaseAuth:"Verified Supabase authentication is not enabled.",
+  cloudTimelineApi:"Cloud timeline API is not enabled.",
+  cloudDispatch:"Cloud video-generation dispatch is not enabled.",
+  supabaseServiceCredentials:"Server-side Supabase service credentials are not configured.",
+  videoProviderReady:videoProvider?.reason||"No video provider is currently ready for generation."
+ };
+ const blockers=Object.keys(checks).filter(key=>!checks[key]).map(key=>({check:key,message:labels[key]}));
+ return {
+  status:blockers.length?"blocked":"ready",
+  canSubmit:blockers.length===0,
+  checks,
+  blockers,
+  videoProvider:videoProvider?{provider:String(videoProvider.provider||"unknown"),model:typeof videoProvider.model==="string"?videoProvider.model:null,status:String(videoProvider.status||"unavailable"),remote:Boolean(videoProvider.remote)}:null,
+  appDataPersistence:String(dataPersistence||"unknown"),
+  appDataPersistenceWarning:dataPersistence==="operator-confirmed-volume"?null:"Application database storage is not confirmed as a persistent volume; cloud generation readiness does not prove local application data durability.",
+  policy:{requestsSubmitted:false,providerCredentialsExposed:false,chargesInitiated:false}
+ };
+}
+
 export function buildAdminProviderReadinessSummary(providers){
  const rows=Array.isArray(providers)?providers:[];
  const summary={total:rows.length,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0};
