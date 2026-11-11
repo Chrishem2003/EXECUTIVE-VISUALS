@@ -23,6 +23,8 @@ True peak:
  Peak:       -1.2 dBFS`;
  assert.deepEqual(parseAudioLoudnessMeasurement(stderr),{integratedLoudness:-23.4,loudnessRange:4.2,truePeak:-1.2});
  assert.deepEqual(parseAudioLoudnessMeasurement("no loudness summary"),{integratedLoudness:null,loudnessRange:null,truePeak:null});
+ const sampleOnly="Sample peak:\\n Peak: -1.8 dBFS";
+ assert.deepEqual(parseAudioLoudnessMeasurement(sampleOnly),{integratedLoudness:null,loudnessRange:null,truePeak:null},"sample peak must never be mistaken for encoded true peak");
 });
 
 test("audio mastering QC enforces integrated loudness, LRA ceiling and true peak",()=>{
@@ -37,6 +39,11 @@ test("audio mastering QC enforces integrated loudness, LRA ceiling and true peak
  const excessivePeak=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:4,truePeak:-0.8},targets);
  assert.equal(excessivePeak.truePeakWithinLimit,false);
  assert.equal(excessivePeak.passed,false);
+ const missing=evaluateAudioMasteringQuality({integratedLoudness:-23,loudnessRange:null,truePeak:-1.2},targets);
+ assert.equal(missing.measurementComplete,false);
+ assert.equal(missing.passed,false,"missing post-encode measurements must never certify mastering");
+ const absent=evaluateAudioMasteringQuality({},targets);
+ assert.equal(absent.passed,false);
 });
 
 test("audio mastering filter enforces fixed named delivery profiles server-side",()=>{

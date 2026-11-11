@@ -16,8 +16,8 @@ const validateClipTiming=(clip)=>{
 export function parseAudioLoudnessMeasurement(stderr=""){
  const integratedMatch=String(stderr).match(/^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$/m);
  const rangeMatch=String(stderr).match(/^\s*LRA:\s*(-?\d+(?:\.\d+)?)\s*LU\s*$/m);
- const truePeakSection=String(stderr).split(/True peak:/i).at(-1);
- const peakMatch=truePeakSection?.match(/^\s*Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS\s*$/m);
+ const truePeakSection=String(stderr).match(/True peak:\s*([\s\S]*)/i)?.[1]??"";
+ const peakMatch=truePeakSection.match(/^\s*Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS\s*$/m);
  const integratedLoudness=integratedMatch?Number(integratedMatch[1]):null;
  const loudnessRange=rangeMatch?Number(rangeMatch[1]):null;
  const truePeak=peakMatch?Number(peakMatch[1]):null;
@@ -27,15 +27,18 @@ export function evaluateAudioMasteringQuality(measured,{profile="custom",integra
  const integratedLoudnessTolerance=profile==="ebu-r128"?0.5:1;
  const loudnessRangeTolerance=1;
  const truePeakLimit=profile==="ebu-r128"?-1:truePeak;
+ const measurementComplete=[measured?.integratedLoudness,measured?.loudnessRange,measured?.truePeak].every(value=>typeof value==="number"&&Number.isFinite(value));
+ const targetsValid=[integratedLoudness,loudnessRange,truePeakLimit].every(value=>typeof value==="number"&&Number.isFinite(value));
  const qualityControl={
-  integratedLoudnessWithinTolerance:Math.abs(measured.integratedLoudness-integratedLoudness)<=integratedLoudnessTolerance,
-  loudnessRangeWithinLimit:measured.loudnessRange<=loudnessRange+loudnessRangeTolerance,
-  truePeakWithinLimit:measured.truePeak<=truePeakLimit,
+  measurementComplete,
+  integratedLoudnessWithinTolerance:measurementComplete&&targetsValid&&Math.abs(measured.integratedLoudness-integratedLoudness)<=integratedLoudnessTolerance,
+  loudnessRangeWithinLimit:measurementComplete&&targetsValid&&measured.loudnessRange<=loudnessRange+loudnessRangeTolerance,
+  truePeakWithinLimit:measurementComplete&&targetsValid&&measured.truePeak<=truePeakLimit,
   integratedLoudnessTolerance,
   loudnessRangeLimit:loudnessRange+loudnessRangeTolerance,
   truePeakLimit
  };
- qualityControl.passed=qualityControl.integratedLoudnessWithinTolerance&&qualityControl.loudnessRangeWithinLimit&&qualityControl.truePeakWithinLimit;
+ qualityControl.passed=measurementComplete&&targetsValid&&qualityControl.integratedLoudnessWithinTolerance&&qualityControl.loudnessRangeWithinLimit&&qualityControl.truePeakWithinLimit;
  return qualityControl;
 }
 export function buildAudioMasteringFilter(settings){
