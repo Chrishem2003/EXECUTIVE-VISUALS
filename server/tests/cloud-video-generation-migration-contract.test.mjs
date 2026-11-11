@@ -100,6 +100,7 @@ test("cloud video credit reservation is gated by a current subscription AI-gener
  assert.match(entitlementSql,/current_period_start <= clock_timestamp\(\)/i);
  assert.match(entitlementSql,/current_period_end > clock_timestamp\(\)/i);
  assert.match(entitlementSql,/entitlements_snapshot @> '\{"ai_generation":true\}'::jsonb/i);
+ assert.match(entitlementSql,/for share/i);
  assert.match(entitlementSql,/VIDEO_GENERATION_ENTITLEMENT_REQUIRED/);
  assert.match(entitlementSql,/alter function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+rename to reserve_generation_credits_without_entitlement/i);
  assert.match(entitlementSql,/grant execute on function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+to service_role/i);
