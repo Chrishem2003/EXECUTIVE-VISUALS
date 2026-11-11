@@ -40,10 +40,10 @@ export function createCloudReviewRepository({url=process.env.SUPABASE_URL,servic
    const normalized=normalizeReviewCreate(payload);
    const {project,membership}=await context(actorId,normalized.projectId,"read");
    if(!["owner","editor","reviewer"].includes(membership?.role))throw Object.assign(new Error("Editor or reviewer access is required to comment."),{code:"CLOUD_REVIEW_ACCESS_DENIED"});
-   if(normalized.assetId){const asset=await assets.get({ownerId:actorId,assetId:normalized.assetId});if(!asset||asset.projectId!==normalized.projectId)throw Object.assign(new Error("Asset does not belong to this project."),{code:"CLOUD_REVIEW_INVALID"});}
+   if(normalized.assetId){const asset=await assets.get({ownerId:project.ownerId,assetId:normalized.assetId});if(!asset||asset.projectId!==normalized.projectId)throw Object.assign(new Error("Asset does not belong to this project."),{code:"CLOUD_REVIEW_INVALID"});}
    let timecode=normalized.timecodeSeconds;
    if(normalized.frameNumber!==null){
-    if(normalized.timelineId){const timeline=await timelines.get({ownerId:actorId,timelineId:normalized.timelineId});if(!timeline||timeline.projectId!==normalized.projectId||normalized.timelineRevision>timeline.revision)throw Object.assign(new Error("Timeline revision is not available in this project."),{code:"CLOUD_REVIEW_INVALID"});const rate=timeline.timeline.frameRate;timecode=normalized.frameNumber*Number(rate.denominator)/Number(rate.numerator);}
+    if(normalized.timelineId){const timeline=await timelines.get({ownerId:project.ownerId,timelineId:normalized.timelineId});if(!timeline||timeline.projectId!==normalized.projectId||normalized.timelineRevision>timeline.revision)throw Object.assign(new Error("Timeline revision is not available in this project."),{code:"CLOUD_REVIEW_INVALID"});const rate=timeline.timeline.frameRate;timecode=normalized.frameNumber*Number(rate.denominator)/Number(rate.numerator);}
 
    }
    const row={id:randomUUID(),owner_id:project.ownerId,project_id:normalized.projectId,asset_id:normalized.assetId,reviewer_id:actorId,last_actor_id:actorId,timecode_seconds:timecode,body:normalized.body,decision:normalized.decision,status:"open",timeline_id:normalized.timelineId,timeline_revision:normalized.timelineRevision,frame_number:normalized.frameNumber,duration_frames:normalized.durationFrames,annotation:normalized.annotation,visibility:normalized.visibility,request_id:normalized.requestId};
