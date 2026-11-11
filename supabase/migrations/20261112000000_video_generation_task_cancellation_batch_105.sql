@@ -79,5 +79,70 @@ $$;
 revoke all on function executive_visuals.transition_video_generation_task(uuid,text[],text,text,text,text,numeric,text,jsonb,uuid) from public,anon,authenticated;
 grant execute on function executive_visuals.transition_video_generation_task(uuid,text[],text,text,text,text,numeric,text,jsonb,uuid) to service_role;
 
+-- Authenticated users cancel only their own cloud video jobs through the server API.
+create or replace function executive_visuals.cancel_video_generation_job(
+  p_job_id uuid,p_owner_id uuid
+)
+returns setof executive_visuals.jobs
+language plpgsql security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare existing executive_visuals.jobs; changed executive_visuals.jobs; approval_key uuid;
+begin
+  if p_job_id is null or p_owner_id is null then
+    raise exception 'VIDEO_JOB_CANCEL_INVALID';
+  end if;
+  select * into existing
+    from executive_visuals.jobs
+    where id=p_job_id and owner_id=p_owner_id and job_type='video.generate.shot'
+    for update;
+  if not found then return; end if;
+
+  if existing.status in ('queued','processing') then
+    update executive_visuals.jobs
+      set status='cancelled',
+          error=jsonb_build_object('code','JOB_CANCELLED','message','Cancellation was requested by the job owner.'),
+          completed_at=clock_timestamp(),
+          updated_at=clock_timestamp(),
+          lease_owner=null,
+          lease_expires_at=null,
+          lease_heartbeat_at=null
+      where id=existing.id and owner_id=p_owner_id and status in ('queued','processing')
+      returning * into changed;
+    if found then
+      existing:=changed;
+      insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+        values(existing.id,p_owner_id,'job.cancelled',jsonb_build_object('source','owner_request'));
+    end if;
+  end if;
+
+  begin
+    approval_key:=nullif(existing.input->>'approvalId','')::uuid;
+  exception when invalid_text_representation then
+    approval_key:=null;
+  end;
+  if existing.status='cancelled' and approval_key is not null then
+    update executive_visuals.video_generation_approvals a
+      set status='withdrawn',updated_at=clock_timestamp()
+      where a.id=approval_key and a.owner_id=p_owner_id
+        and a.status in ('approved_pending_submission','processing')
+        and not exists(
+          select 1 from executive_visuals.jobs j
+          where j.owner_id=p_owner_id and j.job_type='video.generate.shot'
+            and j.input->>'approvalId'=approval_key::text
+            and j.status not in ('succeeded','partial','failed','cancelled','blocked','expired')
+        )
+        and not exists(
+          select 1 from executive_visuals.video_generation_tasks t
+          where t.approval_id=approval_key and t.state not in ('succeeded','failed','cancelled')
+        );
+  end if;
+  return next existing;
+end;
+$;
+
+revoke all on function executive_visuals.cancel_video_generation_job(uuid,uuid) from public,anon,authenticated;
+grant execute on function executive_visuals.cancel_video_generation_job(uuid,uuid) to service_role;
+
 comment on column executive_visuals.video_generation_tasks.state is
   'Durable one-shot state; cancel_requested remains non-terminal until provider termination is confirmed, cancelled is terminal.';
