@@ -2,11 +2,6 @@
 
 -- Apply the same additive worker-fencing and atomic-publication migrations used
 -- by the application. This disposable harness never targets shared staging or prod.
-\i supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
-\i supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
-\i supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
-\i supabase/migrations/20261111250000_cloud_video_worker_lease_fencing.sql
-
 do $video_fencing_privileges$
 begin
   if has_function_privilege('service_role','executive_visuals.begin_video_generation_submission(uuid,text)','EXECUTE')
