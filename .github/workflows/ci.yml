@@ -189,6 +189,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Verify cloud-video submission, budget and recovery contracts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply subscription AI-generation entitlement gate
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
       - name: Apply database-issued worker lease fencing
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
       - name: Apply atomic publication and cleanup claim fencing
