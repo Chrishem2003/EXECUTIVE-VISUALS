@@ -13,6 +13,12 @@ const validateClipTiming=(clip)=>{
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
  if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
 };
+const audioMasteringFilter=(settings)=>{
+ if(settings===undefined||settings===null||settings.enabled!==true)return "";
+ const integrated=Number(settings.integratedLoudness??-16),range=Number(settings.loudnessRange??11),truePeak=Number(settings.truePeak??-1.5);
+ if(!Number.isFinite(integrated)||integrated< -70||integrated> -5||!Number.isFinite(range)||range<1||range>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0)fail("Audio mastering targets are outside supported EBU R128 ranges.","INVALID_AUDIO_MASTERING");
+ return `loudnorm=I=${integrated}:LRA=${range}:TP=${truePeak}:linear=false:print_format=summary`;
+};
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
@@ -25,6 +31,7 @@ const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a
 export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+ const masteringFilter=audioMasteringFilter(timeline.audioMastering);
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
  for(const track of tracks)for(const clip of track.clips||[])if(enabled(clip))validateClipTiming(clip);
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
@@ -115,7 +122,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    videoEffects.push(`${currentVideo}subtitles=filename='${escapeFilterPath(tempPath)}':force_style='${style}'[${nextLabel}]`);
    currentVideo=`[${nextLabel}]`;
   }
-  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
+  const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0${masteringFilter?","+masteringFilter:""},alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
   if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
