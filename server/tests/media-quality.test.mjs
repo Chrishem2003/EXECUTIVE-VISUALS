@@ -85,7 +85,7 @@ test("includes coarse temporal luminance instability in the media quality report
  assert.equal(report.status,"review");
  assert.ok(report.findings.some(item=>item.code==="ALTERNATING_LUMINANCE_INSTABILITY"));
  assert.equal(report.signalAnalysis.temporalLumaSampleCount,5);
- assert.ok(report.limitations.some(item=>item.includes("2 fps")));
+ assert.ok(report.limitations.some(item=>item.includes("8 fps")));
 });
 
 
