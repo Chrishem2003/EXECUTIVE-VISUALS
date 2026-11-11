@@ -9,6 +9,7 @@ alter table executive_visuals.reviews
   add column if not exists visibility text not null default 'project',
   add column if not exists updated_at timestamptz not null default now(),
   add column if not exists edited_at timestamptz,
+  add column if not exists resolved_at timestamptz,
   add column if not exists resolved_by uuid references auth.users(id) on delete set null,
   add column if not exists request_id text;
 
