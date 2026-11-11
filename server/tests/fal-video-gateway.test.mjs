@@ -104,8 +104,8 @@ test("durable Fal adapter submits full endpoint paths and polls the persisted re
   const result=await getFalVideoTask({taskId:requestId,model:"fal-ai/veo/v3.1",fetchImpl});
   assert.equal(result.status,"SUCCEEDED");
   assert.equal(result.outputUrl,"https://v3.fal.media/files/final.mp4");
-  assert.match(calls[1].url,/queue\.fal\.run\/fal-ai\/veo\/v3\.1\/requests\/[0-9a-f-]+\/status$/);
-  assert.match(calls[2].url,/queue\.fal\.run\/fal-ai\/veo\/v3\.1\/requests\/[0-9a-f-]+$/);
+  assert.match(calls[1].url,/queue\.fal\.run\/fal-ai\/veo\/requests\/[0-9a-f-]+\/status$/);
+  assert.match(calls[2].url,/queue\.fal\.run\/fal-ai\/veo\/requests\/[0-9a-f-]+$/);
  }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
 });
 test("durable Fal adapter surfaces completed queue failures without attempting result download",async()=>{
