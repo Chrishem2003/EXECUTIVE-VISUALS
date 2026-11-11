@@ -82,3 +82,12 @@ test("video payload preserves valid requested duration and aspect ratio without 
   prompt:"Keep the framing",duration:12,aspect_ratio:"9:16"
  });
 });
+
+
+test("FAL API JSON responses are streamed with a hard 2 MiB cap",async()=>{
+ const original=globalThis.fetch;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>new Response("x".repeat(2*1024*1024+1),{status:200});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");}
+ finally{globalThis.fetch=original;restore();}
+});
