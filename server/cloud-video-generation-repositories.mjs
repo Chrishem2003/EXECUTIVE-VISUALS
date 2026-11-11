@@ -90,6 +90,8 @@ export function createCloudVideoGenerationRepositories({url=process.env.SUPABASE
   markSubmissionUnknown(id,value={}){return this.transition({id,from:["submitting"],to:"submission_unknown",error:{code:value.code||"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"}});},
   markProcessing(id,value={}){return this.transition({id,from:["submitted","processing"],to:"processing",providerStatus:value.providerStatus});},
   markFailed(id,value={}){return this.transition({id,from:["submitting","submitted","processing"],to:"failed",error:{code:value.code||"VIDEO_PROVIDER_FAILED",message:String(value.message||"Provider task failed.").slice(0,300)}});},
+  markCancellationRequested(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancel_requested",providerStatus:value.providerStatus||"CANCEL_REQUESTED"});},
+  markCancelled(id,value={}){return this.transition({id,from:["reserved","submitted","processing","cancel_requested"],to:"cancelled",providerStatus:value.providerStatus||"CANCELLED"});},
   markSucceeded(id,value={}){return this.transition({id,from:["submitted","processing"],to:"succeeded",providerTaskId:value.providerTaskId,outputAssetId:value.asset?.id||null});}
  });
  return Object.freeze({approvals,tasks});
