@@ -49,7 +49,8 @@ export function createCloudVideoGenerationWorker({
     if(!["PENDING","THROTTLED","RUNNING"].includes(current.status))throw Object.assign(new Error("Provider returned an unknown task state during cancellation reconciliation."),{code:"VIDEO_PROVIDER_STATE_INVALID"});
     const outcome=await adapter.cancel({taskId:task.providerTaskId,model:task.model});
     if(outcome.status==="CANCELLATION_REQUESTED"){
-     await repos.tasks.markCancellationRequested(task.id,{providerStatus:"CANCELLATION_REQUESTED"});
+     // Keep the reconciliation lease until expiry to avoid repeatedly polling
+     // a provider that has accepted but not yet completed cancellation.
      results.push({taskId:task.id,status:"pending"});continue;
     }
     if(!["OK","CANCELLED","NOT_FOUND","ALREADY_COMPLETED"].includes(outcome.status))throw Object.assign(new Error("Provider returned an unknown cancellation result."),{code:"VIDEO_TASK_CANCELLATION_PENDING"});
