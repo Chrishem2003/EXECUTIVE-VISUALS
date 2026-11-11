@@ -145,7 +145,7 @@ export function createCloudVideoGenerationExecutor({
    });
    await tasks.markSucceeded(task.id,{providerTaskId,asset});
    onProgress(100);
-   return {approvalId,shotIndex,provider:"runway",model:shot.model,providerTaskId,outputAsset:asset};
+   return {approvalId,shotIndex,provider,model:shot.model,providerTaskId,outputAsset:asset};
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
  };
 }
