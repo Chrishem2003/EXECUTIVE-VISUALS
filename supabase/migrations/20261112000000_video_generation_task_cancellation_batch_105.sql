@@ -87,7 +87,7 @@ returns setof executive_visuals.jobs
 language plpgsql security definer
 set search_path = pg_catalog, executive_visuals
 as $
-declare existing executive_visuals.jobs; changed executive_visuals.jobs; approval_key uuid;
+declare existing executive_visuals.jobs; changed executive_visuals.jobs; approval_key uuid; shot_key integer;
 begin
   if p_job_id is null or p_owner_id is null then
     raise exception 'VIDEO_JOB_CANCEL_INVALID';
@@ -118,8 +118,9 @@ begin
 
   begin
     approval_key:=nullif(existing.input->>'approvalId','')::uuid;
+    shot_key:=nullif(existing.input->>'shotIndex','')::integer;
   exception when invalid_text_representation then
-    approval_key:=null;
+    approval_key:=null; shot_key:=null;
   end;
   if existing.status='cancelled' and approval_key is not null then
     -- Queue cancellation must also wake the durable provider-task reconciler.
@@ -128,7 +129,7 @@ begin
       set state='cancel_requested',
           provider_status='CANCEL_REQUESTED',
           updated_at=clock_timestamp()
-      where t.approval_id=approval_key and t.owner_id=p_owner_id
+      where t.approval_id=approval_key and t.owner_id=p_owner_id and t.shot_index=shot_key
         and t.state in ('reserved','submitting','submission_unknown','submitted','processing');
 
     update executive_visuals.video_generation_approvals a
