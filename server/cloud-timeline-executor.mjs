@@ -66,7 +66,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const sha256=await digest(output.path);
       onProgress(90);
-      await assertLease();
+      await assertLease("timeline.publish");
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
         path:output.path,publicationKey:job.id+":output:v1",metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
