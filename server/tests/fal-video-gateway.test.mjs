@@ -4,7 +4,7 @@ import {generateFalVideo, buildFalVideoPayload, getFalVideoCapabilities, submitF
 const names=["VIDEO_GATEWAY_ENABLED","VIDEO_GATEWAY_ALLOW_REMOTE","VIDEO_GATEWAY_TIMEOUT_MS","FAL_KEY","FAL_VIDEO_MODEL","FAL_VIDEO_IMAGE_INPUT_FIELD"];
 const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
 const restore=()=>{for(const name of names)saved[name]===undefined?delete process.env[name]:process.env[name]=saved[name]};
-function json(status,body){return {status,ok:status>=200&&status<300,text:async()=>JSON.stringify(body)}}
+function json(status,body){return new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json"}})}
 test("video adapter submits, polls and returns validated MP4 bytes",async()=>{
  const original=globalThis.fetch,calls=[];
  Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",VIDEO_GATEWAY_TIMEOUT_MS:"10000",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
@@ -152,4 +152,38 @@ test("Fal NOT_FOUND task status is reconciled as terminal cancellation",async()=
   const task=await getFalVideoTask({taskId:"019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b",model:"fal-ai/example-video",fetchImpl:async()=>json(404,{status:"NOT_FOUND"})});
   assert.equal(task.status,"CANCELLED");
  }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
+});
+
+
+test("Fal API JSON responses are streamed with a hard 2 MiB cap",async()=>{
+ const original=globalThis.fetch;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>new Response("x".repeat(2*1024*1024+1),{status:200});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");}
+ finally{globalThis.fetch=original;restore();}
+});
+test("Fal rejects JSON responses without a readable stream rather than buffering them",async()=>{
+ const original=globalThis.fetch;let textRead=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:200,ok:true,headers:new Headers(),body:null,text:async()=>{textRead=true;return "{}";}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(textRead,false);}
+ finally{globalThis.fetch=original;restore();}
+});
+test("Fal cancels declared oversized JSON and rejected response bodies before parsing",async()=>{
+ const original=globalThis.fetch;let cancelled=0;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:429,ok:false,headers:new Headers(),body:{cancel:async()=>{cancelled++;}}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_RATE_LIMITED");assert.equal(cancelled,1);}
+ finally{globalThis.fetch=original;restore();}
+});
+
+test("Fal cancels declared oversized JSON and media bodies before reading",async()=>{
+ const original=globalThis.fetch;let jsonCancelled=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:200,ok:true,headers:new Headers({"content-length":String(2*1024*1024+1)}),body:{cancel:async()=>{jsonCancelled=true;}}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(jsonCancelled,true);}
+ finally{globalThis.fetch=original;restore();}
+ let mediaCancelled=false;
+ await assert.rejects(()=>downloadFalVideoTaskOutput({outputUrl:"https://v3.fal.media/files/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_OUTPUT_INVALID");
+ assert.equal(mediaCancelled,true);
 });
