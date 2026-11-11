@@ -149,3 +149,14 @@ test("Fal cancels declared oversized JSON and rejected response bodies before pa
  try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_RATE_LIMITED");assert.equal(cancelled,1);}
  finally{globalThis.fetch=original;restore();}
 });
+
+test("Fal cancels declared oversized JSON and media bodies before reading",async()=>{
+ const original=globalThis.fetch;let jsonCancelled=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:200,ok:true,headers:new Headers({"content-length":String(2*1024*1024+1)}),body:{cancel:async()=>{jsonCancelled=true;}}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(jsonCancelled,true);}
+ finally{globalThis.fetch=original;restore();}
+ let mediaCancelled=false;
+ await assert.rejects(()=>downloadFalVideoTaskOutput({outputUrl:"https://v3.fal.media/files/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
+ assert.equal(mediaCancelled,true);
+});
