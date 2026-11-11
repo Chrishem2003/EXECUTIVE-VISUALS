@@ -92,9 +92,9 @@ export function createCloudVideoSubmissionLedger({
       }
       return rows[0];
     },
-    async begin(jobId, workerId) {
+    async begin(jobId, workerId, token) {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128);
-      return booleanResult(await call(RPC.begin, { p_job_id: jobId, p_worker_id: workerId }), "begin");
+      return booleanResult(await call(RPC.begin, { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken(token) }), "begin");
     },
     async record(jobId, workerId, providerTaskId, metadata = {}, token) {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128); required(providerTaskId, "Provider task ID");
