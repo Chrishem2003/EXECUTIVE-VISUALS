@@ -85,27 +85,34 @@ export function createCloudVideoGenerationExecutor({
   if(!task||!task.id)throw fail("Durable task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
   let providerTaskId=task.providerTaskId||null;
   const cancelTask=async()=>{
-   await assertCurrentLease();\n   if(task.state!=="cancel_requested")await tasks.markCancellationRequested(task.id,{providerStatus:"CANCEL_REQUESTED"},leaseContext);
+   await assertCurrentLease();
+   if(task.state!=="cancel_requested")await tasks.markCancellationRequested(task.id,{providerStatus:"CANCEL_REQUESTED"},leaseContext);
    if(providerTaskId){
     if(typeof adapter.cancel!=="function")throw fail("The selected provider adapter cannot confirm remote cancellation; the task remains cancellation-pending.","VIDEO_TASK_CANCELLATION_PENDING");
-    await assertCurrentLease();\n    const cancelled=await adapter.cancel({taskId:providerTaskId,model:shot.model});
+    await assertCurrentLease();
+    const cancelled=await adapter.cancel({taskId:providerTaskId,model:shot.model});
     if(cancelled?.status==="CANCELLATION_REQUESTED"){
-     await assertCurrentLease();\n     await tasks.markCancellationRequested(task.id,{providerStatus:"CANCELLATION_REQUESTED"},leaseContext);
+     await assertCurrentLease();
+     await tasks.markCancellationRequested(task.id,{providerStatus:"CANCELLATION_REQUESTED"},leaseContext);
      throw fail("The provider accepted cancellation but has not confirmed termination. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
     }
     if(!["OK","CANCELLED","NOT_FOUND","ALREADY_COMPLETED"].includes(cancelled?.status))throw fail("The provider returned an unrecognized cancellation result. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
-    await assertCurrentLease();\n    await tasks.markCancelled(task.id,{providerStatus:cancelled.status},leaseContext);
+    await assertCurrentLease();
+    await tasks.markCancelled(task.id,{providerStatus:cancelled.status},leaseContext);
    }else{
-    await assertCurrentLease();\n    await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"},leaseContext);
+    await assertCurrentLease();
+    await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"},leaseContext);
    }
    throw fail("Video generation job was cancelled.","JOB_CANCELLED");
   };
   if(task.state==="cancelled")throw fail("This approved shot was already cancelled.","VIDEO_TASK_ALREADY_CANCELLED");
   if(task.state==="cancel_requested"){
    if(!providerTaskId){await assertCurrentLease();await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"},leaseContext);throw fail("Video generation job was cancelled.","JOB_CANCELLED");}
-   await assertCurrentLease();\n   const current=await adapter.poll({taskId:providerTaskId,model:shot.model});
+   await assertCurrentLease();
+   const current=await adapter.poll({taskId:providerTaskId,model:shot.model});
    if(TERMINAL.has(current.status)||current.status==="SUCCEEDED"){
-    await assertCurrentLease();\n    await tasks.markCancelled(task.id,{providerStatus:current.status},leaseContext);
+    await assertCurrentLease();
+    await tasks.markCancelled(task.id,{providerStatus:current.status},leaseContext);
     throw fail("Video generation job was cancelled.","JOB_CANCELLED");
    }
    await cancelTask();
@@ -120,16 +127,19 @@ export function createCloudVideoGenerationExecutor({
    if(["submitting","submission_unknown"].includes(task.state))
     throw fail("A prior provider submission has an unknown outcome. Reconcile it before any new POST.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
    if(task.state!=="reserved")throw fail("Task ledger is not in a safe state for provider submission.","VIDEO_TASK_STATE_CONFLICT");
-   await ensureLease();\n   await tasks.markSubmitting(task.id,leaseContext);
+   await ensureLease();
+   await tasks.markSubmitting(task.id,leaseContext);
    onProgress(5);
    let submitted;
    try{await ensureLease();submitted=await adapter.submit({model:shot.model,prompt:shot.prompt,durationSeconds:shot.durationSeconds,duration:shot.durationSeconds,aspectRatio:shot.aspectRatio,resolution:shot.resolution,referenceImageDataUrl:shot.referenceImageDataUrl||"",signal});}
    catch(error){
     if(error?.code==="VIDEO_GATEWAY_SUBMISSION_UNKNOWN"||["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR"].includes(error?.code)){
-     await assertCurrentLease();\n     await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"},leaseContext);
+     await assertCurrentLease();
+     await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_GATEWAY_SUBMISSION_UNKNOWN"},leaseContext);
      throw fail("Provider submission may have been accepted. The task is held for reconciliation; it will not be submitted again automatically.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
     }
-    await assertCurrentLease();\n    await tasks.markFailed(task.id,{code:error?.code||"VIDEO_PROVIDER_REJECTED",message:String(error?.message||"Provider rejected generation.").slice(0,300)},leaseContext);
+    await assertCurrentLease();
+    await tasks.markFailed(task.id,{code:error?.code||"VIDEO_PROVIDER_REJECTED",message:String(error?.message||"Provider rejected generation.").slice(0,300)},leaseContext);
     throw error;
    }
    providerTaskId=String(submitted?.taskId||"");
@@ -152,23 +162,28 @@ export function createCloudVideoGenerationExecutor({
    }
    if(current.status==="SUCCEEDED")break;
    if(current.status==="CANCELED"||current.status==="CANCELLED"){
-    await assertCurrentLease();\n    await tasks.markCancelled(task.id,{providerStatus:current.status},leaseContext);
+    await assertCurrentLease();
+    await tasks.markCancelled(task.id,{providerStatus:current.status},leaseContext);
     throw fail("Provider task was cancelled.","JOB_CANCELLED");
    }
    if(current.status==="FAILED"){
-    await assertCurrentLease();\n    await tasks.markFailed(task.id,{code:"VIDEO_PROVIDER_TASK_FAILED",message:String(current.error?.message||current.error||"Provider task failed.").slice(0,300)},leaseContext);
+    await assertCurrentLease();
+    await tasks.markFailed(task.id,{code:"VIDEO_PROVIDER_TASK_FAILED",message:String(current.error?.message||current.error||"Provider task failed.").slice(0,300)},leaseContext);
     throw fail("Provider generation failed. Review the task record before authorizing another attempt.","VIDEO_PROVIDER_TASK_FAILED");
    }
    if(!["PENDING","THROTTLED","RUNNING"].includes(current.status))throw fail("Provider returned an unknown task state.","VIDEO_PROVIDER_STATE_INVALID");
-   await ensureLease();\n   await tasks.markProcessing(task.id,{providerStatus:current.status},leaseContext);
+   await ensureLease();
+   await tasks.markProcessing(task.id,{providerStatus:current.status},leaseContext);
    onProgress(current.status==="PENDING"||current.status==="THROTTLED"?15:45);
    try{await sleepImpl(pollDelay,signal);}catch(sleepError){if(signal?.aborted)await cancelTask();throw sleepError;}
    pollDelay=Math.min(60000,Math.ceil(pollDelay*1.25));
   }
-  await ensureLease();\n  const completed=await adapter.poll({taskId:providerTaskId,model:shot.model});
+  await ensureLease();
+  const completed=await adapter.poll({taskId:providerTaskId,model:shot.model});
   if(completed.status!=="SUCCEEDED"||!completed.outputUrl)throw fail("Completed provider task did not contain a verified output URL.","VIDEO_PROVIDER_OUTPUT_MISSING");
   if(signal?.aborted)await cancelTask();
-  await ensureLease();\n  const bytes=await adapter.download({outputUrl:completed.outputUrl,signal});
+  await ensureLease();
+  const bytes=await adapter.download({outputUrl:completed.outputUrl,signal});
   if(!Buffer.isBuffer(bytes)||bytes.length<12||bytes.length>maxOutputBytes||bytes.toString("ascii",4,8)!=="ftyp")
    throw fail("Generated video failed bounded MP4 validation.","VIDEO_OUTPUT_INVALID");
   if(signal?.aborted)await cancelTask();
@@ -176,13 +191,16 @@ export function createCloudVideoGenerationExecutor({
   try{
    const filePath=join(directory,randomUUID()+".mp4");
    await writeFile(filePath,bytes,{flag:"wx",mode:0o600});
-   await ensureLease();\n   const asset=await mediaIO.publish({
+   await ensureLease();
+   const asset=await mediaIO.publish({
     ownerId:job.owner_id,projectId:job.project_id,filename:safeFileName(shot.name||("shot-"+(shotIndex+1)))+".mp4",
     mediaType:"video/mp4",path:filePath,derivativeOf:null,
     metadata:{operation:"video.generate",provider,model:shot.model,providerTaskId,approvalId,shotIndex,approvedRequestHash:approval.requestHash||null},
-    publicationKey:job.id+":video-shot:"+shotIndex+":v1",\n    assertLease:assertCurrentLease,signal,leaseContext
+    publicationKey:job.id+":video-shot:"+shotIndex+":v1",
+    assertLease:assertCurrentLease,signal,leaseContext
    });
-   await ensureLease();\n   await tasks.markSucceeded(task.id,{providerTaskId,asset},leaseContext);
+   await ensureLease();
+   await tasks.markSucceeded(task.id,{providerTaskId,asset},leaseContext);
    onProgress(100);
    return {approvalId,shotIndex,provider,model:shot.model,providerTaskId,outputAsset:asset};
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
