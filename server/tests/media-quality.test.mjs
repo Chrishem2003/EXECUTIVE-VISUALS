@@ -85,5 +85,14 @@ test("includes coarse temporal luminance instability in the media quality report
  assert.equal(report.status,"review");
  assert.ok(report.findings.some(item=>item.code==="ALTERNATING_LUMINANCE_INSTABILITY"));
  assert.equal(report.signalAnalysis.temporalLumaSampleCount,5);
- assert.ok(report.limitations.some(item=>item.includes("2 fps")));
+ assert.ok(report.limitations.some(item=>item.includes("8 fps")));
+});
+
+
+test("surfaces temporal color-instability findings and the measured sample rate",()=>{
+ const samples=[40,70,41,72,42].map((meanSaturation,index)=>({frame:index,timeSeconds:index*0.125,meanLuma:80,meanSaturation,meanU:128,meanV:128}));
+ const report=buildMediaQualityReport({format:{duration:"1"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{temporalLumaSamples:samples,performed:["temporal-signalstats-8fps"]}});
+ assert.equal(report.signalAnalysis.temporalSampleRateFps,8);
+ assert.ok(report.findings.some(item=>item.code==="ALTERNATING_SATURATION_INSTABILITY"));
+ assert.ok(report.signalAnalysis.temporalColorFindings.length>0);
 });
