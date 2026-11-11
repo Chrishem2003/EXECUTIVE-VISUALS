@@ -610,24 +610,27 @@ begin
  if v_subscription is null then raise exception 'Expected a paid Flutterwave subscription for reconciliation test'; end if;
 
  update executive_visuals.customer_subscriptions
-    set provider_subscription_id='sub-sql-cancellation-01',customer_email='referred@example.com'
+    set customer_email='referred@example.com'
   where id=v_subscription;
+ update executive_visuals.subscription_plans
+    set provider_plan_id='10944'
+  where id=(select plan_id from executive_visuals.customer_subscriptions where id=v_subscription);
 
  insert into executive_visuals.payment_webhook_events(
   id,provider,event_key,event_type,payload_hash,signature_verified,processing_status,payload
  ) values
  (v_mismatch_event,'flutterwave','sql-sub-cancel-mismatch-01','subscription.cancelled',repeat('a',64),true,'needs_review',
-  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('id','sub-another-customer','customer',jsonb_build_object('email','referred@example.com'),'status','cancelled'))),
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10945),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated'))),
  (v_email_mismatch_event,'flutterwave','sql-sub-cancel-email-mismatch','subscription.cancelled',repeat('b',64),true,'needs_review',
-  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('id','sub-sql-cancellation-01','customer',jsonb_build_object('email','wrong@example.com'),'status','cancelled'))),
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','wrong@example.com'),'status','deactivated'))),
  (v_valid_event,'flutterwave','sql-sub-cancel-valid-01','subscription.cancelled',repeat('c',64),true,'needs_review',
-  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('id','sub-sql-cancellation-01','customer',jsonb_build_object('email','referred@example.com'),'status','cancelled')));
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated')));
 
  v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
   v_actor,v_mismatch_event,v_subscription,'Provider subscription ID did not match; retained for review'
  );
- if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_subscription_id_mismatch' then
-  raise exception 'Mismatched provider subscription must remain in review: %',v_result;
+ if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_plan_id_mismatch' then
+  raise exception 'Mismatched provider plan must remain in review: %',v_result;
  end if;
  v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
   v_actor,v_email_mismatch_event,v_subscription,'Provider customer email did not match; retained for review'

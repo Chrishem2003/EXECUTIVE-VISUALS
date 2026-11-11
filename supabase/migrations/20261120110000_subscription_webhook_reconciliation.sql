@@ -1,5 +1,11 @@
--- Resolve only exact, manually reviewed Flutterwave subscription cancellation events.
--- An ambiguous provider callback must never revoke customer access.
+-- Flutterwave subscription.cancelled callbacks identify a customer email and plan ID,
+-- not a local subscription ID. Resolve only a unique, explicitly mapped plan/customer pair.
+alter table executive_visuals.subscription_plans
+  add column if not exists provider_plan_id text;
+create unique index if not exists subscription_plans_provider_plan_id_uq
+  on executive_visuals.subscription_plans(provider_plan_id)
+  where provider_plan_id is not null;
+
 create or replace function executive_visuals.reconcile_flutterwave_subscription_cancellation(
   p_actor_id uuid,
   p_event_id uuid,
@@ -14,8 +20,10 @@ declare
   actor_role text;
   event_row executive_visuals.payment_webhook_events%rowtype;
   subscription_row executive_visuals.customer_subscriptions%rowtype;
-  provider_subscription_id text;
+  provider_plan_id text;
   provider_customer_email text;
+  provider_status text;
+  matching_subscriptions integer;
 begin
   select role into actor_role
     from executive_visuals.platform_admins
@@ -52,13 +60,17 @@ begin
     raise exception 'Subscription webhook event is not awaiting review' using errcode='55000';
   end if;
 
-  provider_subscription_id:=nullif(btrim(event_row.payload #>> '{data,id}'),'');
+  provider_plan_id:=nullif(btrim(event_row.payload #>> '{data,plan,id}'),'');
   provider_customer_email:=lower(nullif(btrim(event_row.payload #>> '{data,customer,email}'),''));
-  if provider_subscription_id is null then
-    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_subscription_id_missing');
+  provider_status:=lower(nullif(btrim(event_row.payload #>> '{data,status}'),''));
+  if provider_plan_id is null then
+    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_plan_id_missing');
   end if;
   if provider_customer_email is null then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_customer_email_missing');
+  end if;
+  if provider_status not in ('deactivated','cancelled','canceled') then
+    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_status_not_cancelled');
   end if;
 
   select * into subscription_row
@@ -69,12 +81,25 @@ begin
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','local_subscription_not_found');
   end if;
   if subscription_row.provider<>'flutterwave'
-     or subscription_row.provider_subscription_id is null
-     or subscription_row.provider_subscription_id<>provider_subscription_id then
-    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_subscription_id_mismatch');
-  end if;
-  if lower(coalesce(subscription_row.customer_email,''))<>provider_customer_email then
+     or lower(coalesce(subscription_row.customer_email,''))<>provider_customer_email then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_customer_email_mismatch');
+  end if;
+  if not exists(
+    select 1 from executive_visuals.subscription_plans sp
+     where sp.id=subscription_row.plan_id and sp.provider_plan_id=provider_plan_id
+  ) then
+    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_plan_id_mismatch');
+  end if;
+
+  select count(*) into matching_subscriptions
+    from executive_visuals.customer_subscriptions cs
+    join executive_visuals.subscription_plans sp on sp.id=cs.plan_id
+   where cs.provider='flutterwave'
+     and cs.status in ('active','past_due','trialing')
+     and lower(coalesce(cs.customer_email,''))=provider_customer_email
+     and sp.provider_plan_id=provider_plan_id;
+  if matching_subscriptions<>1 then
+    return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','customer_plan_match_not_unique');
   end if;
   if subscription_row.status not in ('active','past_due','trialing') then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','subscription_not_cancellable');
@@ -95,7 +120,7 @@ begin
     jsonb_build_object(
       'webhookEventId',p_event_id,
       'payloadHash',event_row.payload_hash,
-      'providerSubscriptionId',provider_subscription_id,
+      'providerPlanId',provider_plan_id,
       'providerCustomerEmail',provider_customer_email,
       'manualReconciliation',true
     )
