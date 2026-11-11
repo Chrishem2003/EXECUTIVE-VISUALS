@@ -42,14 +42,19 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
       signal?.removeEventListener("abort", abort);
       if (error) reject(error); else resolve(result);
     };
+    const isRunning = () => child.exitCode === null && child.signalCode === null;
     const abort = () => {
-      if (!child.killed) child.kill("SIGTERM");
-      const killTimer = setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 3000);
+      const error = Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+      if (!isRunning()) return finish(error);
+      child.kill("SIGTERM");
+      const killTimer = setTimeout(() => {
+        if (isRunning()) child.kill("SIGKILL");
+      }, 3000);
       killTimer.unref?.();
-      finish(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
+      finish(error);
     };
     const timer = setTimeout(() => {
-      if (!child.killed) child.kill("SIGKILL");
+      if (isRunning()) child.kill("SIGKILL");
       finish(Object.assign(new Error("Media operation timed out."), { code: "MEDIA_TIMEOUT" }));
     }, timeoutMs);
     timer.unref?.();
