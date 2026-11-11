@@ -10,20 +10,27 @@ language plpgsql
 security definer
 set search_path=pg_catalog,executive_visuals
 as $assert_video_generation_entitlement$
+declare
+  active_subscription_id uuid;
 begin
   if p_owner_id is null then
     raise exception 'VIDEO_GENERATION_ENTITLEMENT_OWNER_REQUIRED' using errcode='22023';
   end if;
 
-  if not exists (
-    select 1
-    from executive_visuals.customer_subscriptions s
-    where s.owner_id=p_owner_id
-      and s.status in ('active','trialing')
-      and s.current_period_start <= clock_timestamp()
-      and s.current_period_end > clock_timestamp()
-      and s.entitlements_snapshot @> '{"ai_generation":true}'::jsonb
-  ) then
+  -- Hold a shared row lock through the credit reservation so concurrent
+  -- cancellation or entitlement changes cannot race an approved generation.
+  select s.id into active_subscription_id
+  from executive_visuals.customer_subscriptions s
+  where s.owner_id=p_owner_id
+    and s.status in ('active','trialing')
+    and s.current_period_start <= clock_timestamp()
+    and s.current_period_end > clock_timestamp()
+    and s.entitlements_snapshot @> '{"ai_generation":true}'::jsonb
+  order by s.current_period_end desc
+  limit 1
+  for share;
+
+  if active_subscription_id is null then
     raise exception 'VIDEO_GENERATION_ENTITLEMENT_REQUIRED' using errcode='42501';
   end if;
 end;
