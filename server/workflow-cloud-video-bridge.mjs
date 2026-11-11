@@ -53,7 +53,7 @@ async function readBounded(response,maximum){
  */
 export async function executeCloudVideoWorkflowNode({
  db,job,run,node,values={},mediaRoot,cloudTimelineApi,
- onProgress=()=>{},onJobEnqueued=()=>{},fetchImpl=globalThis.fetch,
+ onProgress=()=>{},onJobEnqueued=()=>{},onApprovalRequired=()=>{},fetchImpl=globalThis.fetch,
  pollIntervalMs=5000,waitForCompletion=false
 }={}){
  if(!cloudTimelineApi||typeof cloudTimelineApi.handle!=="function"||typeof cloudTimelineApi.uploadAsset!=="function"){
@@ -112,6 +112,7 @@ export async function executeCloudVideoWorkflowNode({
  const cloudNode=replaceAssetReferences(node,mapping);
  const cloudValues=replaceAssetReferences(values,mapping);
  const requestId=initial.requestId;
+ const cloudRequest=createVideoWorkflowCloudRequest({node:cloudNode,values:cloudValues,projectId,requestId});
  const priorNode=db.prepare("SELECT output_json FROM workflow_node_runs WHERE run_id=? AND node_id=?").get(run.id,node.id);
  const priorOutput=parseJson(priorNode?.output_json,{});
  let cloudJobId=String(priorOutput.cloudJobId||"");
@@ -119,8 +120,9 @@ export async function executeCloudVideoWorkflowNode({
  let routedModel=String(priorOutput.routedModel||"");
  let approvedMaxAmount=Number(priorOutput.approvedMaxAmount);
  if(cloudJobId){
-  if(!UUID.test(cloudJobId)||!UUID.test(quoteId)||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0){
-   throw fail("Persisted cloud workflow receipt is incomplete or invalid.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
+  if(!UUID.test(cloudJobId)||!UUID.test(quoteId)||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||
+     priorOutput.requestId!==requestId||priorOutput.requestHash!==cloudRequest.requestHash){
+   throw fail("Persisted cloud workflow approval does not match the current immutable node request.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
   }
  }else{
   const quote=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:job.owner_id,body:{projectId,node:cloudNode,values:cloudValues,requestId}});
@@ -128,19 +130,19 @@ export async function executeCloudVideoWorkflowNode({
   if(quote.body?.quote?.billable!==false||quote.body?.quote?.requiresExplicitApproval!==true)throw fail("Cloud quote did not prove a non-billable estimate requiring explicit approval.","VIDEO_WORKFLOW_QUOTE_INVALID");
   quoteId=String(quote.body.quote.id||"");
   routedModel=String(quote.body.quote.routedModel||"");
-  approvedMaxAmount=Number(node.config?.approvedMaxAmount);
-  if(!UUID.test(quoteId)||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||approvedMaxAmount>1000000||
-     Math.round(approvedMaxAmount*1000000)<Math.ceil(Number(quote.body.quote.estimatedAmount)*1000000)){
-   throw fail("Set video.generate config.approvedMaxAmount to a USD ceiling at least as high as the current quote, then approve the workflow step.","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED");
+  if(!UUID.test(quoteId)||quote.body.quote.requestId!==requestId||
+     quote.body.quote.requestHash!==cloudRequest.requestHash||
+     !Number.isFinite(Number(quote.body.quote.estimatedAmount))||Number(quote.body.quote.estimatedAmount)<=0){
+   throw fail("Cloud quote does not match the immutable workflow node request.","VIDEO_WORKFLOW_QUOTE_INVALID");
   }
-  const approval=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:job.owner_id,body:{
-   confirmed:true,projectId,quoteId,requestId,node:cloudNode,values:cloudValues,
-   approvedMaxAmount,approvalNote:"Approved through workflow run "+run.id+" at node "+node.id
-  }});
-  if(!approval||![200,202].includes(approval.status))throw cloudResultError(approval,"VIDEO_WORKFLOW_APPROVAL_FAILED");
-  cloudJobId=String(approval.body?.job?.id||"");
-  if(!UUID.test(cloudJobId))throw fail("Cloud approval did not return a durable video job ID.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
-  onJobEnqueued({cloudJobId,quoteId,requestId,routedModel,approvedMaxAmount,status:approval.body?.job?.status||"queued"});
+  const receipt={
+   quoteId,requestId,requestHash:cloudRequest.requestHash,routedModel,
+   estimatedAmount:Number(quote.body.quote.estimatedAmount),currency:String(quote.body.quote.currency||"USD"),
+   expiresAt:String(quote.body.quote.expiresAt||""),paidExecutionEnabled:quote.body.quote.paidExecutionEnabled===true,
+   cloudNode,cloudValues
+  };
+  onApprovalRequired(receipt);
+  return {awaitingApproval:true,...receipt};
  }
 
  while(true){
