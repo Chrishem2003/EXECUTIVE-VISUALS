@@ -290,7 +290,11 @@ test("Runway cancels non-success API response bodies before parsing",async()=>{
  finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
 });
 
-test("image-to-video rejects explicit resolutions when the adapter cannot map them",()=>{
+test("image-to-video applies model-specific resolution support without inventing ratios",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"gen4.5",prompt:"A moving camera",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
- assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16",resolution:"720p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const kling720=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16",resolution:"720p"});
+ assert.equal(kling720.resolution,"auto_720p");assert.equal("ratio" in kling720,false);
+ const kling1080=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"});
+ assert.equal(kling1080.resolution,"auto_1080p");assert.equal("ratio" in kling1080,false);
+ assert.throws(()=>buildRunwayImageToVideoPayload({model:"kling3.0_pro",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"16:9",resolution:"1080p"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
 });
