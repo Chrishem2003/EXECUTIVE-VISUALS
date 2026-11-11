@@ -44,7 +44,8 @@ export function createCloudVideoGenerationExecutor({
  if(typeof approvals?.get!=="function"||typeof tasks?.reserveSubmission!=="function"||
     typeof tasks?.markSubmitting!=="function"||typeof tasks?.markSubmitted!=="function"||
     typeof tasks?.markSubmissionUnknown!=="function"||typeof tasks?.markProcessing!=="function"||
-    typeof tasks?.markFailed!=="function"||typeof tasks?.markSucceeded!=="function"||\n    typeof tasks?.markCancellationRequested!=="function"||typeof tasks?.markCancelled!=="function"||
+    typeof tasks?.markFailed!=="function"||typeof tasks?.markSucceeded!=="function"||
+    typeof tasks?.markCancellationRequested!=="function"||typeof tasks?.markCancelled!=="function"||
     typeof mediaIO?.publish!=="function")throw new Error("Cloud video generation requires approval, task-ledger and private media repositories.");
  if(typeof submitTask!=="function"||typeof getTask!=="function"||typeof downloadOutput!=="function")throw new Error("Cloud video generation requires provider task adapters.");
  if(!Number.isInteger(pollIntervalMs)||pollIntervalMs<5000||pollIntervalMs>60000)throw new Error("Provider polling interval must be between 5 and 60 seconds.");
