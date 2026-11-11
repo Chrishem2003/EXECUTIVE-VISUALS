@@ -20,6 +20,7 @@ declare
   actor_role text;
   event_row executive_visuals.payment_webhook_events%rowtype;
   subscription_row executive_visuals.customer_subscriptions%rowtype;
+  plan_row executive_visuals.subscription_plans%rowtype;
   provider_plan_id text;
   provider_customer_email text;
   provider_status text;
@@ -84,10 +85,11 @@ begin
      or lower(coalesce(subscription_row.customer_email,''))<>provider_customer_email then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_customer_email_mismatch');
   end if;
-  if not exists(
-    select 1 from executive_visuals.subscription_plans sp
-     where sp.id=subscription_row.plan_id and sp.provider_plan_id=provider_plan_id
-  ) then
+  select * into plan_row
+    from executive_visuals.subscription_plans
+   where id=subscription_row.plan_id and provider_plan_id=provider_plan_id
+   for update;
+  if not found then
     return jsonb_build_object('resolved',false,'reviewRequired',true,'reason','provider_plan_id_mismatch');
   end if;
 
