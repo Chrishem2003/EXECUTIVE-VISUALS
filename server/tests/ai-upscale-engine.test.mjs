@@ -17,7 +17,15 @@ function pngChunk(type, data) {
 function pngBytes(width, height, colorType = 6, options = {}) {
   const bytesPerPixel = colorType === 6 ? 4 : 3;
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = colorType; ihdr[12] = options.interlace || 0;
-  const scanlines = Buffer.alloc(height * (1 + width * bytesPerPixel));
+  const interlacePasses = [[0,0,8,8],[4,0,8,8],[0,4,4,8],[2,0,4,4],[0,2,2,4],[1,0,2,2],[0,1,1,2]];
+  const scanlineBytes = options.interlace === 1
+    ? interlacePasses.reduce((total,[x,y,dx,dy]) => {
+        const passWidth = width > x ? Math.ceil((width-x)/dx) : 0;
+        const passHeight = height > y ? Math.ceil((height-y)/dy) : 0;
+        return total + (passWidth && passHeight ? passHeight * (1 + Math.ceil(passWidth * bytesPerPixel)) : 0);
+      }, 0)
+    : height * (1 + width * bytesPerPixel);
+  const scanlines = Buffer.alloc(scanlineBytes);
   if (options.filter !== undefined) scanlines[0] = options.filter;
   const compressed = options.compressedData || deflateSync(scanlines);
   const idat = options.splitIdat ? [compressed.subarray(0, Math.max(1, Math.floor(compressed.length / 2))), compressed.subarray(Math.max(1, Math.floor(compressed.length / 2)))] : [compressed];
