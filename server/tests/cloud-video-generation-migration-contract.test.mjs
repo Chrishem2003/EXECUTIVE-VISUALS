@@ -35,3 +35,10 @@ test("approval completion waits until every approved shot has succeeded",()=>{
 test("migration is additive and does not drop or truncate existing production data",()=>{
  assert.doesNotMatch(sql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
 });
+
+
+test("Fal is accepted by the approval snapshot and persisted in the durable task ledger",()=>{
+ assert.match(sql,/provider text not null default 'runway' check \(provider in \('runway','fal'\)\)/i);
+ assert.match(sql,/coalesce\(shot->>'provider',''\) not in \('runway','fal'\)/i);
+ assert.match(sql,/estimated_cost_micros,provider,model\)[\s\S]*?shot->>'provider',shot->>'model'/i);
+});
