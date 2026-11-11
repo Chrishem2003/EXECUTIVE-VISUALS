@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+permissions:
+  contents: read
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -11,17 +12,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: false
       - name: Check out the pinned official CAI native SDK source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+          persist-credentials: false
         with:
           repository: contentauth/c2pa-js
           ref: 480975bc4103d03d1ca1705187ef46860950a5d8
           path: c2pa-js
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22.23.4
-      - uses: dtolnay/rust-toolchain@1.96.0
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # pinned action revision
+        with:
+          toolchain: 1.96.0
       - name: Ensure media test tools are available
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
@@ -62,7 +69,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: false
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
