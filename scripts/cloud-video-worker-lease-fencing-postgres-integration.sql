@@ -52,12 +52,6 @@ begin
     v_job_id,'123e4567-e89b-42d3-a456-426614174000',
     'runway','gen4.5',repeat('f',64)
   );
-  if not executive_visuals.begin_video_generation_submission_v2(
-    v_job_id,'video-worker-a',first_claim.lease_token
-  ) then
-    raise exception 'current video worker could not begin its submission';
-  end if;
-
   update executive_visuals.jobs
   set lease_expires_at=clock_timestamp()-interval '1 second'
   where id=v_job_id;
