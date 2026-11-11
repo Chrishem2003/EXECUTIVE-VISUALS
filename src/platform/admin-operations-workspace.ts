@@ -39,13 +39,20 @@ export function renderAdminOperationsWorkspace(){
 export async function loadAdminOperationsWorkspace(){
  state.loading=true;state.error="";paint();
  try{
-  const [overview,users,jobs,providers,audit]=await Promise.all([
+  const coreResults=await Promise.allSettled([
    apiRequest<{overview:Overview}>("/api/admin/operations/overview"),
    apiRequest<{users:UserRow[]}>("/api/admin/operations/users?limit=100&q="+encodeURIComponent(state.userQuery)),
    apiRequest<{jobs:JobRow[]}>("/api/admin/operations/jobs?limit=100"),
    apiRequest<{providers:ProviderRow[]}>("/api/admin/operations/providers"),
    apiRequest<{events:AuditRow[]}>("/api/admin/operations/audit?limit=100")
   ]);
+  const [overviewResult,usersResult,jobsResult,providersResult,auditResult]=coreResults;
+  const unavailable:string[]=[];
+  if(overviewResult.status==="fulfilled")state.overview=overviewResult.value.overview;else unavailable.push("overview");
+  if(usersResult.status==="fulfilled")state.users=usersResult.value.users;else unavailable.push("account directory");
+  if(jobsResult.status==="fulfilled")state.jobs=jobsResult.value.jobs;else unavailable.push("job monitor");
+  if(providersResult.status==="fulfilled")state.providers=providersResult.value.providers;else unavailable.push("provider readiness");
+  if(auditResult.status==="fulfilled")state.audit=auditResult.value.events;else unavailable.push("audit activity");
   const billingResults=await Promise.allSettled([
    apiRequest<any>("/api/admin/billing/provider-readiness"),
    apiRequest<any>("/api/admin/subscriptions/reconciliation?limit=50"),
@@ -60,7 +67,10 @@ export async function loadAdminOperationsWorkspace(){
    recovery:billingRecovery.status==="fulfilled"?billingRecovery.value:null,
    message:billingSuccess===0?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role.":billingSuccess<3?"Some billing operations are unavailable; verify the billing API and administrator role.":""
   };
-  state.overview=overview.overview;state.users=users.users;state.jobs=jobs.jobs;state.providers=providers.providers;state.audit=audit.events;state.updatedAt=new Date().toISOString();state.error="";
+  state.updatedAt=new Date().toISOString();
+  state.error=unavailable.length
+   ?"Partial refresh: "+unavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
+   :"";
  }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";state.overview=null;}
  finally{state.loading=false;paint();}
 }
