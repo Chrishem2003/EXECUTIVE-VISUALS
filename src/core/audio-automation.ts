@@ -172,7 +172,7 @@ export function buildDialogueDuckingAutomation(options:DialogueDuckingOptions):A
   if(start>0)push(start,base);else push(0,range.alreadyActiveAtMusicStart?target:(attack>0?base:target));
   const attackEnd=Math.min(end,start+attack);
   if(!range.alreadyActiveAtMusicStart&&attackEnd>start)push(attackEnd,target);
-  else if(start>0)push(start,target);
+  else if(range.alreadyActiveAtMusicStart&&start>0)push(start,target);
   push(end,target);
   if(end<musicDurationSeconds&&release>0)push(Math.min(musicDurationSeconds,end+release),base);
   else if(end<musicDurationSeconds)push(end,base);
