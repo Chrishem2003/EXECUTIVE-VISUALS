@@ -92,6 +92,19 @@ test("video dispatch readiness is ready only when authentication, cloud storage,
  assert.equal(result.videoProvider.remote,true);
  assert.equal(result.appDataPersistenceWarning,null);
 });
+test("video dispatch remains blocked until application data persistence is operator-confirmed",()=>{
+ const result=buildVideoDispatchReadiness({
+  env:{AUTH_MODE:"supabase",CLOUD_TIMELINE_API_ENABLED:"true",CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED:"true",SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only"},
+  providerCatalog:{providers:[{id:"video",provider:"fal",model:"seedance",status:"ready",remote:true,capabilities:["video.generate"]}]},
+  dataPersistence:"unverified"
+ });
+ assert.equal(result.checks.videoProviderReady,true);
+ assert.equal(result.checks.durableWorkerAdapterReady,true);
+ assert.equal(result.checks.appDataPersistence,false);
+ assert.equal(result.canSubmit,false);
+ assert.ok(result.blockers.some(item=>item.check==="appDataPersistence"));
+});
+
 test("video dispatch readiness blocks unconfigured or non-ready video providers",()=>{
  for(const provider of [null,{id:"video",status:"remote_opt_in_required",reason:"Remote execution needs approval."}]){
   const result=buildVideoDispatchReadiness({
