@@ -92,14 +92,23 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
 }
+async function readBoundedJsonText(response,maxBytes=2*1024*1024){
+ const declared=Number(response.headers?.get?.("content-length")||0);
+ if(Number.isFinite(declared)&&declared>maxBytes)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ const reader=response.body?.getReader?.();
+ if(!reader){const raw=await response.text();if(Buffer.byteLength(raw)>maxBytes)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");return raw;}
+ const chunks=[];let total=0;
+ try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxBytes){await reader.cancel().catch(()=>{});throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}chunks.push(Buffer.from(value));}}
+ finally{reader.releaseLock?.();}
+ return Buffer.concat(chunks,total).toString("utf8");
+}
 async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fetchImpl=fetch}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     let response;
     try{response=await fetchImpl(url,{method,headers,body,signal:controller.signal,redirect:"error"});}
     catch(error){throw fail(error?.name==="AbortError"?"Runway API request timed out.":"Runway API could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
-    const raw=await response.text();
-    if(Buffer.byteLength(raw)>2*1024*1024)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
+    const raw=await readBoundedJsonText(response);
     let data={};try{data=raw?JSON.parse(raw):{};}catch{throw fail("Runway API returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}
     if(response.status===429)throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
     if(response.status>=500)throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
