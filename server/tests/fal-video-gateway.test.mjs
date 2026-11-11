@@ -91,3 +91,12 @@ test("FAL API JSON responses are streamed with a hard 2 MiB cap",async()=>{
  try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");}
  finally{globalThis.fetch=original;restore();}
 });
+
+
+test("FAL rejects response bodies without a readable stream instead of buffering them",async()=>{
+ const original=globalThis.fetch;let textRead=false;
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ globalThis.fetch=async()=>({status:200,ok:true,headers:new Headers(),body:null,text:async()=>{textRead=true;return "{}";}});
+ try{await assert.rejects(()=>generateFalVideo({prompt:"A test scene"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(textRead,false);}
+ finally{globalThis.fetch=original;restore();}
+});
