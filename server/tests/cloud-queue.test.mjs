@@ -56,3 +56,13 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/must be an object/);
 });
+
+test("owner-scoped cloud video cancellation calls its dedicated RPC and returns the persisted job",async()=>{
+ const requests=[],job={id:"123e4567-e89b-42d3-a456-426614174000",owner_id:"223e4567-e89b-42d3-a456-426614174000",job_type:"video.generate.shot",status:"cancelled"};
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url:String(url),body:JSON.parse(options.body)});return response([job]);}});
+ const result=await queue.cancel(job.id,job.owner_id);
+ assert.equal(result.status,"cancelled");
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/cancel_video_generation_job");
+ assert.deepEqual(requests[0].body,{p_job_id:job.id,p_owner_id:job.owner_id});
+ await assert.rejects(()=>queue.cancel("bad",job.owner_id),/Valid job and owner IDs/);
+});
