@@ -14,7 +14,9 @@ export interface TimelineMarker {
   id:string; name:string; start:RationalTime; duration?:RationalTime;
   color?:string; note?:string;
 }
+export interface AudioMasteringSettings { enabled:boolean; integratedLoudness?:number; loudnessRange?:number; truePeak?:number }
 export interface EditorialTimeline {
+  audioMastering?:AudioMasteringSettings;
   id:string; projectId:string; name:string; revision:number;
   frameRate:{numerator:number;denominator:number};
   width:number;height:number;pixelAspectRatio:number;
