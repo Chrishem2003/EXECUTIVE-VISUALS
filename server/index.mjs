@@ -33,7 +33,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
-import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit } from "./admin-operations.mjs";
+import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit, buildVideoDispatchReadiness } from "./admin-operations.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -445,7 +445,8 @@ export function createAppServer() {
           const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
           const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
           const providers=buildAdminProviderReadiness(catalog);
-          send(res,200,{providers,summary:buildAdminProviderReadinessSummary(providers),policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,requestsSubmitted:false}},cors);return;
+          const generationReadiness=buildVideoDispatchReadiness({env:process.env,providerCatalog:catalog,dataPersistence:DATA_DIR_PERSISTENCE});
+          send(res,200,{providers,summary:buildAdminProviderReadinessSummary(providers),generationReadiness,policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,requestsSubmitted:false}},cors);return;
         }
         if(path==="/api/admin/operations/audit"&&req.method==="GET"){
           send(res,200,{events:listAdminOperationAudit(db,{limit:url.searchParams.get("limit")})},cors);return;
