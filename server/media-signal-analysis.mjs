@@ -62,3 +62,31 @@ export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
   return {status:"unavailable",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)};
  }
 }
+
+/**
+ * Derive non-silence activity windows from FFmpeg silence intervals.
+ * This is an amplitude heuristic, not speech recognition or voice-activity classification.
+ */
+export function buildNonSilenceActivityIntervals({silence=[],durationSeconds=0,minActivitySeconds=0.15,padSeconds=0.08}={}){
+ if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw new Error("Audio duration must be a positive finite value.");
+ if(!Number.isFinite(minActivitySeconds)||minActivitySeconds<0||minActivitySeconds>10)throw new Error("Minimum activity duration is outside the supported range.");
+ if(!Number.isFinite(padSeconds)||padSeconds<0||padSeconds>2)throw new Error("Activity padding is outside the supported range.");
+ const normalized=silence.map(event=>{
+  if(!event||!Number.isFinite(event.startSeconds)||!Number.isFinite(event.endSeconds)||event.endSeconds<event.startSeconds)throw new Error("Silence intervals must contain finite ordered timestamps.");
+  return {start:Math.max(0,Math.min(durationSeconds,event.startSeconds)),end:Math.max(0,Math.min(durationSeconds,event.endSeconds))};
+ }).filter(event=>event.end>event.start).sort((a,b)=>a.start-b.start);
+ const merged=[];
+ for(const event of normalized){const last=merged[merged.length-1];if(last&&event.start<=last.end)last.end=Math.max(last.end,event.end);else merged.push({...event});}
+ const active=[];let cursor=0;
+ for(const event of merged){if(event.start>cursor)active.push({startSeconds:cursor,endSeconds:event.start});cursor=Math.max(cursor,event.end);}
+ if(cursor<durationSeconds)active.push({startSeconds:cursor,endSeconds:durationSeconds});
+ return active.map(event=>({startSeconds:Math.max(0,Number((event.startSeconds-padSeconds).toFixed(4))),endSeconds:Math.min(durationSeconds,Number((event.endSeconds+padSeconds).toFixed(4)))}))
+  .map(event=>({...event,durationSeconds:Number((event.endSeconds-event.startSeconds).toFixed(4))}))
+  .filter(event=>event.durationSeconds>=minActivitySeconds)
+  .reduce((result,event)=>{
+   const last=result[result.length-1];
+   if(last&&event.startSeconds<=last.endSeconds){last.endSeconds=Math.max(last.endSeconds,event.endSeconds);last.durationSeconds=Number((last.endSeconds-last.startSeconds).toFixed(4));}
+   else result.push(event);
+   return result;
+  },[]);
+}

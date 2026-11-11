@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { parseSilenceEvents, buildNonSilenceActivityIntervals, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
@@ -189,6 +190,21 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let metadata;
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
+        const audioStreams=(metadata.streams||[]).filter(stream=>stream.codec_type==="audio");
+        const durationSeconds=Number(metadata.format?.duration);
+        if(audioStreams.length&&Number.isFinite(durationSeconds)&&durationSeconds>0){
+          const analysis={method:"ffmpeg-silence-envelope",thresholdDb:-50,minimumSilenceSeconds:0.5,activityMethod:"non-silence-envelope",limitations:["Non-silence activity is an amplitude heuristic, not speech recognition or a trained voice-activity detector. Music, noise and sound effects may be included; quiet speech may be classified as silence.","Review activity intervals before using them for dialogue ducking."]};
+          if(executableAvailable("ffmpeg")){
+            const check=await runOptionalSignalCheck(()=>runProcess(ffmpeg,["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],{signal,timeoutMs,onProgress}),{isCancelled:()=>Boolean(signal?.aborted)});
+            if(check.status==="completed"){
+              const silence=parseSilenceEvents(check.result.stderr,durationSeconds);
+              analysis.silence=silence;
+              analysis.activityIntervals=buildNonSilenceActivityIntervals({silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08});
+              analysis.status="completed";
+            }else{analysis.status="unavailable";analysis.reason=check.reason;}
+          }else{analysis.status="unavailable";analysis.reason="MEDIA_ENGINE_MISSING";}
+          metadata.signalAnalysis={...(metadata.signalAnalysis||{}),audioActivity:analysis};
+        }
         return { sourceAssetId: sourceId, metadata };
       }
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
