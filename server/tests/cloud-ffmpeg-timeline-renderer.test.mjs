@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAudioMasteringFilter, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
@@ -23,6 +23,20 @@ True peak:
  Peak:       -1.2 dBFS`;
  assert.deepEqual(parseAudioLoudnessMeasurement(stderr),{integratedLoudness:-23.4,loudnessRange:4.2,truePeak:-1.2});
  assert.deepEqual(parseAudioLoudnessMeasurement("no loudness summary"),{integratedLoudness:null,loudnessRange:null,truePeak:null});
+});
+
+test("audio mastering QC enforces integrated loudness, LRA ceiling and true peak",()=>{
+ const targets={profile:"ebu-r128",integratedLoudness:-23,loudnessRange:7,truePeak:-1.5};
+ const passing=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:7.5,truePeak:-1.2},targets);
+ assert.equal(passing.passed,true);
+ assert.equal(passing.loudnessRangeWithinLimit,true);
+ assert.equal(passing.loudnessRangeLimit,8);
+ const excessiveRange=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:8.1,truePeak:-1.2},targets);
+ assert.equal(excessiveRange.loudnessRangeWithinLimit,false);
+ assert.equal(excessiveRange.passed,false,"a master exceeding its configured LRA ceiling cannot pass QC");
+ const excessivePeak=evaluateAudioMasteringQuality({integratedLoudness:-23.2,loudnessRange:4,truePeak:-0.8},targets);
+ assert.equal(excessivePeak.truePeakWithinLimit,false);
+ assert.equal(excessivePeak.passed,false);
 });
 
 test("audio mastering filter enforces fixed named delivery profiles server-side",()=>{
