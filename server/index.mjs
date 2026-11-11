@@ -511,6 +511,33 @@ export function createAppServer() {
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
+      if(path==="/api/operations/summary"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rawDays=url.searchParams.get("days")||"30";
+        const days=Number(rawDays);
+        if(!Number.isInteger(days)||![7,30,90].includes(days)){fail(res,400,"OPERATIONS_PERIOD_INVALID","Operations summary days must be 7, 30 or 90.");return;}
+        const scopeWhere=projectId?"project_id=?":"((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))";
+        const scopeArgs=projectId?[projectId]:[user.id,user.id,user.id];
+        const period=db.prepare("SELECT COUNT(*) AS jobs,SUM(CASE WHEN status IN ('succeeded','partial') THEN 1 ELSE 0 END) AS completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,COALESCE(AVG(CASE WHEN status IN ('succeeded','partial') AND started_at IS NOT NULL AND completed_at IS NOT NULL THEN (julianday(completed_at)-julianday(started_at))*86400000 END),0) AS average_completion_ms FROM jobs WHERE "+scopeWhere+" AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?)").get(...scopeArgs,"-"+days+" days");
+        const queue=db.prepare("SELECT SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued,SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running,COUNT(DISTINCT CASE WHEN status='running' AND lease_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN lease_owner END) AS active_workers,SUM(CASE WHEN status='running' AND lease_expires_at IS NOT NULL AND lease_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN 1 ELSE 0 END) AS expired_leases,COALESCE(MAX(CASE WHEN status='queued' THEN (julianday('now')-julianday(created_at))*86400 END),0) AS oldest_queued_seconds FROM jobs WHERE "+scopeWhere).get(...scopeArgs);
+        send(res,200,{periodDays:days,scope:projectId?"project":"accessible_workspaces",projectId,period:{jobs:period.jobs||0,completed:period.completed||0,failed:period.failed||0,averageCompletionMs:Math.round(period.average_completion_ms||0)},queue:{queued:queue.queued||0,running:queue.running||0,activeWorkers:queue.active_workers||0,expiredLeases:queue.expired_leases||0,oldestQueuedSeconds:Math.max(0,Math.floor(queue.oldest_queued_seconds||0))}},cors);return;
+      }
+
+      if(path==="/api/usage/summary"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rawDays=url.searchParams.get("days")||"30";
+        const days=Number(rawDays);
+        if(!Number.isInteger(days)||![7,30,90].includes(days)){fail(res,400,"USAGE_PERIOD_INVALID","Usage summary days must be 7, 30 or 90.");return;}
+        const where=projectId?"project_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?)":"owner_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?)";
+        const scope=projectId?[projectId,"-"+days+" days"]:[user.id,"-"+days+" days"];
+        const totals=db.prepare("SELECT COUNT(*) AS requests,COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,COALESCE(SUM(completion_tokens),0) AS completion_tokens,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(SUM(duration_ms),0) AS duration_ms,COALESCE(AVG(duration_ms),0) AS average_duration_ms,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where).get(...scope);
+        const providers=db.prepare("SELECT provider,COUNT(*) AS requests,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(AVG(duration_ms),0) AS average_duration_ms,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where+" GROUP BY provider ORDER BY requests DESC,provider ASC LIMIT 20").all(...scope);
+        const daily=db.prepare("SELECT strftime('%Y-%m-%d',created_at) AS day,COUNT(*) AS requests,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where+" GROUP BY strftime('%Y-%m-%d',created_at) ORDER BY day ASC").all(...scope);
+        send(res,200,{periodDays:days,scope:projectId?"project":"account",projectId,totals:{requests:totals.requests,promptTokens:totals.prompt_tokens,completionTokens:totals.completion_tokens,totalTokens:totals.total_tokens,durationMs:totals.duration_ms,averageDurationMs:Math.round(totals.average_duration_ms),knownCostMicros:totals.known_cost_micros,knownCostEvents:totals.known_cost_events,unknownCostEvents:totals.unknown_cost_events},providers:providers.map(row=>({provider:row.provider,requests:row.requests,totalTokens:row.total_tokens,averageDurationMs:Math.round(row.average_duration_ms),knownCostMicros:row.known_cost_micros,knownCostEvents:row.known_cost_events,unknownCostEvents:row.unknown_cost_events})),daily:daily.map(row=>({day:row.day,requests:row.requests,totalTokens:row.total_tokens,knownCostMicros:row.known_cost_micros,knownCostEvents:row.known_cost_events,unknownCostEvents:row.unknown_cost_events})),costDisclosure:"Only persisted estimated_cost_micros values are included. Missing provider prices are counted as unknown, never treated as zero-cost."},cors);return;
+      }
+
       if(path==="/api/usage"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
         if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
