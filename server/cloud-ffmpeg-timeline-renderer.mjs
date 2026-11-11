@@ -163,7 +163,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const name=safeName(timeline.name);
   let masteringEvidence={applied:false};
   if(masteringFilter){
-   const measurementRun=await run("ffmpeg",["-hide_banner","-nostats","-i",outputPath,"-map","0:a:0","-filter_complex","ebur128=peak=true","-f","null","-"],60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   const measurementRun=await run("ffmpeg",["-hide_banner","-nostats","-i",outputPath,"-filter_complex","[0:a:0]ebur128=peak=true[audio_qc]","-map","[audio_qc]","-f","null","-"],60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const measured=parseAudioLoudnessMeasurement(measurementRun.stderr);
    if(measured.integratedLoudness===null||measured.loudnessRange===null||measured.truePeak===null)fail("The rendered audio could not be measured for integrated loudness, loudness range and true peak.","AUDIO_MASTERING_QC_UNAVAILABLE");
