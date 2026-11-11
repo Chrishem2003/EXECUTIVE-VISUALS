@@ -10,7 +10,7 @@ function fail(message,code){throw Object.assign(new Error(message),{code});}
 
 export function createDeliveryManifest({timelineId,timelineRevision,outputAsset,sha256,byteSize,mediaType,profileId=null,deliveryReport=null,renderManifest=null,createdAt=new Date().toISOString()}){
  if(typeof timelineId!=="string"||!timelineId)fail("A timeline ID is required.","DELIVERY_MANIFEST_TIMELINE_REQUIRED");
- if(!(typeof timelineRevision==="string"&&timelineRevision.length>0||Number.isSafeInteger(timelineRevision)&&timelineRevision>=1))fail("A positive timeline revision is required.","DELIVERY_MANIFEST_REVISION_INVALID");
+ if(!((typeof timelineRevision==="string"&&timelineRevision.trim().length>0&&timelineRevision.length<=128&&!/^-[0-9]+$/.test(timelineRevision.trim()))||(Number.isSafeInteger(timelineRevision)&&timelineRevision>=1)))fail("A valid positive timeline revision is required.","DELIVERY_MANIFEST_REVISION_INVALID");
  if(typeof outputAsset!=="string"||!outputAsset)fail("A published output asset ID is required.","DELIVERY_MANIFEST_ASSET_REQUIRED");
  if(!/^[a-f0-9]{64}$/i.test(String(sha256||"")))fail("A SHA-256 output checksum is required.","DELIVERY_MANIFEST_CHECKSUM_INVALID");
  if(!Number.isSafeInteger(byteSize)||byteSize<1)fail("A positive output byte size is required.","DELIVERY_MANIFEST_SIZE_INVALID");
