@@ -53,3 +53,29 @@ test("preflight validates shot count, prompt and input shape",()=>{
  assert.equal(result.status,"blocked");
  assert.equal(result.shots[0].checks.find(check=>check.id==="prompt").status,"failed");
 });
+
+
+test("preflight rejects generated or reference audio when the selected model does not advertise it",()=>{
+ for(const audioMode of ["generated","reference"]){
+  const result=preflightVideoProduction({shots:[{...shot,audioMode}],providerCatalog,pricingCatalog:pricing,now});
+  assert.equal(result.status,"blocked",audioMode);
+  assert.equal(result.shots[0].checks.find(check=>check.id==="audio_mode").status,"failed");
+  assert.match(result.shots[0].checks.find(check=>check.id==="audio_mode").reason,/does not advertise/);
+  assert.equal(result.requestsSubmitted,false);
+ }
+});
+test("preflight accepts generated audio only when the exact model advertises generated-audio support",()=>{
+ const audioProvider={providers:[{...video,availableModels:[{...video.availableModels[0],audioModes:["generate"]}]}]};
+ const result=preflightVideoProduction({shots:[{...shot,audioMode:"generated"}],providerCatalog:audioProvider,pricingCatalog:pricing,now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.shots[0].checks.find(check=>check.id==="audio_mode").status,"passed");
+});
+test("preflight permits explicit no-audio and provider-default modes but rejects unknown audio modes",()=>{
+ for(const audioMode of ["none","provider_default"]){
+  const result=preflightVideoProduction({shots:[{...shot,audioMode}],providerCatalog,pricingCatalog:pricing,now});
+  assert.equal(result.status,"ready_for_approval",audioMode);
+ }
+ const invalid=preflightVideoProduction({shots:[{...shot,audioMode:"clone_voice"}],providerCatalog,pricingCatalog:pricing,now});
+ assert.equal(invalid.status,"blocked");
+ assert.equal(invalid.shots[0].checks.find(check=>check.id==="audio_mode").status,"failed");
+});
