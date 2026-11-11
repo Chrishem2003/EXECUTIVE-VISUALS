@@ -193,12 +193,18 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const streams=Array.isArray(metadata.streams)?metadata.streams:[];
         const signalAnalysis={schemaVersion:1,method:"ffprobe-with-optional-silero-vad",voiceActivity:null,performed:[],unavailable:[],limitations:["Neural voice activity detection estimates speech presence; it does not transcribe words, identify speakers, infer emotion or certify dialogue quality."]};
-        if(streams.some(stream=>stream?.codec_type==="audio")){
+        const audioStream=streams.find(stream=>stream?.codec_type==="audio");
+        if(audioStream){
           const vadCheck=await runOptionalSignalCheck(async()=>{
             const wavPath=join(workDir,"voice-activity-analysis.wav");
             await runProcess(ffmpeg,["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",wavPath],{signal,timeoutMs:Math.min(timeoutMs,10*60*1000),onProgress});
             if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
-            return await analyzeVoiceActivity({filePath:wavPath,durationSeconds:Number(metadata.format?.duration),threshold:0.5,holdoffMs:300});
+            const sourceDurationSeconds=Number(metadata.format?.duration);
+            const parsedOffset=Number(audioStream.start_time);
+            const timestampOffsetSeconds=Number.isFinite(parsedOffset)?parsedOffset:0;
+            const parsedAudioDuration=Number(audioStream.duration);
+            const analysisDurationSeconds=Number.isFinite(parsedAudioDuration)&&parsedAudioDuration>0?parsedAudioDuration:Math.max(0.001,sourceDurationSeconds-Math.max(0,timestampOffsetSeconds));
+            return await analyzeVoiceActivity({filePath:wavPath,durationSeconds:sourceDurationSeconds,analysisDurationSeconds,timestampOffsetSeconds,threshold:0.5,holdoffMs:300});
           },{isCancelled:()=>Boolean(signal?.aborted)});
           if(vadCheck.status==="completed"){signalAnalysis.voiceActivity=vadCheck.result;signalAnalysis.performed.push("silero-vad");}
           else signalAnalysis.unavailable.push({check:"voice-activity-detection",reason:vadCheck.reason});

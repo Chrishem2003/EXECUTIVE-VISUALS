@@ -401,13 +401,19 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
         signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
+      const audioStream=streams.find(stream=>stream?.codec_type==="audio");
       const vadCheck=await runOptionalSignalCheck(async()=>{
         const tempDir=await mkdtemp(join(tmpdir(),"executive-visuals-vad-"));
         try{
           const wavPath=join(tempDir,"analysis.wav");
           await run("ffmpeg",["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",wavPath],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
           if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
-          return await analyzeVoiceActivityFile({filePath:wavPath,durationSeconds:Number(metadata.format?.duration),threshold:0.5,holdoffMs:300});
+          const sourceDurationSeconds=Number(metadata.format?.duration);
+          const parsedOffset=Number(audioStream?.start_time);
+          const timestampOffsetSeconds=Number.isFinite(parsedOffset)?parsedOffset:0;
+          const parsedAudioDuration=Number(audioStream?.duration);
+          const analysisDurationSeconds=Number.isFinite(parsedAudioDuration)&&parsedAudioDuration>0?parsedAudioDuration:Math.max(0.001,sourceDurationSeconds-Math.max(0,timestampOffsetSeconds));
+          return await analyzeVoiceActivityFile({filePath:wavPath,durationSeconds:sourceDurationSeconds,analysisDurationSeconds,timestampOffsetSeconds,threshold:0.5,holdoffMs:300});
         }finally{await rm(tempDir,{recursive:true,force:true});}
       },{isCancelled:cancelled});
       if(vadCheck.status==="completed"){signalAnalysis.voiceActivity=vadCheck.result;signalAnalysis.performed.push("silero-vad");}
