@@ -82,7 +82,7 @@ export async function generateFalVideo({prompt,duration=5,aspectRatio="16:9",ref
  try{
   let response;try{response=await fetch(url,{signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Generated video download timed out.":"Generated video could not be downloaded safely.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
   if(!response.ok)throw fail("Generated video download failed.","VIDEO_GATEWAY_INVALID_RESPONSE");
-  if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES)throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  if(Number(response.headers.get("content-length")||0)>MAX_OUTPUT_BYTES){try{await response.body?.cancel?.()}catch{}throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE")};
   if(!response.body?.getReader)throw fail("Generated video response cannot be streamed safely.","VIDEO_GATEWAY_INVALID_RESPONSE");
   const reader=response.body.getReader(),chunks=[];let total=0;
   try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>MAX_OUTPUT_BYTES){await reader.cancel().catch(()=>{});throw fail("Generated video exceeds the 250 MiB limit.","VIDEO_GATEWAY_INVALID_RESPONSE")}chunks.push(Buffer.from(value))}}finally{reader.releaseLock()}
