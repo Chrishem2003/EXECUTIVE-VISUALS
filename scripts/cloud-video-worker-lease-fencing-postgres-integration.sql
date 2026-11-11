@@ -4,14 +4,14 @@
 -- by the application. This disposable harness never targets shared staging or prod.
 do $video_fencing_privileges$
 begin
-  if has_function_privilege('service_role','executive_visuals.begin_video_generation_submission(uuid,text)','EXECUTE')
+  if has_function_privilege('service_role','executive_visuals.prepare_video_generation_submission(uuid,uuid,text,text,text)','EXECUTE')\n     or has_function_privilege('service_role','executive_visuals.begin_video_generation_submission(uuid,text)','EXECUTE')
      or has_function_privilege('service_role','executive_visuals.record_video_generation_submission(uuid,text,text,jsonb)','EXECUTE')
      or has_function_privilege('service_role','executive_visuals.finish_video_generation_job(uuid,text,text,jsonb,jsonb,numeric)','EXECUTE')
      or has_function_privilege('service_role','executive_visuals.defer_video_generation_job(uuid,text,integer,text)','EXECUTE')
      or has_function_privilege('service_role','executive_visuals.quarantine_video_generation_job(uuid,text,text)','EXECUTE') then
     raise exception 'legacy unfenced video worker RPCs remain executable';
   end if;
-  if not has_function_privilege('service_role','executive_visuals.begin_video_generation_submission_v2(uuid,text,uuid)','EXECUTE')
+  if not has_function_privilege('service_role','executive_visuals.prepare_video_generation_submission_v2(uuid,uuid,text,uuid,text,text,text)','EXECUTE')\n     or not has_function_privilege('service_role','executive_visuals.begin_video_generation_submission_v2(uuid,text,uuid)','EXECUTE')
      or not has_function_privilege('service_role','executive_visuals.record_video_generation_submission_v2(uuid,text,uuid,text,jsonb)','EXECUTE')
      or not has_function_privilege('service_role','executive_visuals.finish_video_generation_job_v2(uuid,text,uuid,text,jsonb,jsonb,numeric)','EXECUTE')
      or not has_function_privilege('service_role','executive_visuals.defer_video_generation_job_v2(uuid,text,uuid,integer,text)','EXECUTE')
