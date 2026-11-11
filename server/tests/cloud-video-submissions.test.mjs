@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createCloudVideoSubmissionLedger } from "../cloud-video-submissions.mjs";
 
 const base = { url: "https://example.supabase.co", serviceRoleKey: "server-only-ledger-secret" };
+const leaseToken = "923e4567-e89b-42d3-a456-426614174000";
 const row = { job_id: "job-1", owner_id: "owner-1", provider: "runway", model: "gen4.5", request_hash: "a".repeat(64), state: "prepared" };
 function response(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, async text() { return JSON.stringify(body); } };
