@@ -14,7 +14,7 @@ create or replace function executive_visuals.reconcile_flutterwave_subscription_
 ) returns jsonb
 language plpgsql
 security definer
-set search_path=pg_catalog,executive_visuals
+set search_path=''
 as $$
 declare
   actor_role text;

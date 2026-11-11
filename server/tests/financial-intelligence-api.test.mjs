@@ -1678,7 +1678,7 @@ test("subscription cancellation reconciliation keeps ambiguous provider identity
  const service=api(async(url,options={})=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
   if(String(url).endsWith("/rpc/reconcile_flutterwave_subscription_cancellation"))
-   return json({resolved:false,reviewRequired:true,reason:"provider_subscription_id_mismatch"});
+   return json({resolved:false,reviewRequired:true,reason:"provider_plan_id_mismatch"});
   throw new Error("Unexpected request: "+String(url));
  });
  const result=await service.handle({method:"POST",path:"/api/admin/subscriptions/reconciliation/resolve",ownerId:owner,

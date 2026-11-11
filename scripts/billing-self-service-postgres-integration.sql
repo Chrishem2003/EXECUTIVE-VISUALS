@@ -599,6 +599,9 @@ declare
  v_subscription uuid;
  v_mismatch_event uuid:=gen_random_uuid();
  v_email_mismatch_event uuid:=gen_random_uuid();
+ v_ambiguous_event uuid:=gen_random_uuid();
+ v_duplicate_owner uuid:='33333333-3333-4333-8333-333333333333';
+ v_duplicate_subscription uuid;
  v_valid_event uuid:=gen_random_uuid();
  v_result jsonb;
  v_replay jsonb;
@@ -616,6 +619,16 @@ begin
     set provider_plan_id='10944'
   where id=(select plan_id from executive_visuals.customer_subscriptions where id=v_subscription);
 
+ insert into auth.users(id,email) values(v_duplicate_owner,'referred@example.com');
+ insert into executive_visuals.customer_subscriptions(
+  owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+  included_credits,entitlements_snapshot,provider,customer_email,current_period_start,current_period_end
+ )
+ select v_duplicate_owner,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+  included_credits,entitlements_snapshot,provider,customer_email,current_period_start,current_period_end
+ from executive_visuals.customer_subscriptions where id=v_subscription
+ returning id into v_duplicate_subscription;
+
  insert into executive_visuals.payment_webhook_events(
   id,provider,event_key,event_type,payload_hash,signature_verified,processing_status,payload
  ) values
@@ -623,11 +636,13 @@ begin
   jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10945),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated'))),
  (v_email_mismatch_event,'flutterwave','sql-sub-cancel-email-mismatch','subscription.cancelled',repeat('b',64),true,'needs_review',
   jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','wrong@example.com'),'status','deactivated'))),
+ (v_ambiguous_event,'flutterwave','sql-sub-cancel-ambiguous','subscription.cancelled',repeat('d',64),true,'needs_review',
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated'))),
  (v_valid_event,'flutterwave','sql-sub-cancel-valid-01','subscription.cancelled',repeat('c',64),true,'needs_review',
   jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated')));
 
  v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
-  v_actor,v_mismatch_event,v_subscription,'Provider subscription ID did not match; retained for review'
+  v_actor,v_mismatch_event,v_subscription,'Provider plan ID did not match; retained for review'
  );
  if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_plan_id_mismatch' then
   raise exception 'Mismatched provider plan must remain in review: %',v_result;
@@ -638,12 +653,23 @@ begin
  if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_customer_email_mismatch' then
   raise exception 'Mismatched customer email must remain in review: %',v_result;
  end if;
+ v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_ambiguous_event,v_subscription,'Two active local subscriptions matched the provider plan and customer email'
+ );
+ if v_result->>'resolved'<>'false' or v_result->>'reason'<>'customer_plan_match_not_unique' then
+  raise exception 'Duplicate provider plan/customer identity must remain in review: %',v_result;
+ end if;
+ if (select status from executive_visuals.customer_subscriptions where id=v_subscription)<>'active' then
+  raise exception 'Ambiguous provider identity changed the selected subscription';
+ end if;
+ delete from executive_visuals.customer_subscriptions where id=v_duplicate_subscription;
+
  if (select status from executive_visuals.customer_subscriptions where id=v_subscription)<>'active' then
   raise exception 'Ambiguous provider callbacks must not change subscription access';
  end if;
 
  v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
-  v_actor,v_valid_event,v_subscription,'Operator verified the exact provider subscription ID and customer email'
+  v_actor,v_valid_event,v_subscription,'Operator verified the exact provider plan ID and customer email'
  );
  if v_result->>'resolved'<>'true' or v_result->>'idempotentReplay'<>'false' then
   raise exception 'Exact provider cancellation did not resolve: %',v_result;
