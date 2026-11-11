@@ -255,6 +255,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const audioTrack=audios.find(track=>(track.clips||[]).some(item=>item.id===clip.id)),trackClips=audioTrack?ordered([audioTrack]):[],clipIndex=trackClips.findIndex(item=>item.id===clip.id),previousClip=trackClips[clipIndex-1],incomingFadeFrames=previousClip?.transitionToNext?.type==="crossfade"?Number(previousClip.transitionToNext.fadeFrames):0,outgoingFadeFrames=clip.transitionToNext?.type==="crossfade"?Number(clip.transitionToNext.fadeFrames):0,incomingFade=incomingFadeFrames/fps,outgoingFade=outgoingFadeFrames/fps;
    const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),audioProbe=asset.metadata?.probe?.streams?.find(stream=>stream?.codec_type==="audio"),sourceChannels=Number(audioProbe?.channels)||2,pan=panExpressions(points,basePan,sourceChannels===1?1:2);
     const panFilter=pan?(sourceChannels>2?",aformat=channel_layouts=stereo":"")+",aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
+   const hasGainAutomation=points.some(point=>point.gainDb!==undefined),gainFilter=hasGainAutomation?",aeval=exprs='val(ch)*("+gain+")':channel_layout=same":",volume='"+gain+"':eval=frame";
    const fadeInFilter=incomingFade>0?",afade=t=in:st=0:d="+incomingFade.toFixed(6)+":curve=tri":"",fadeOutFilter=outgoingFade>0?",afade=t=out:st="+Math.max(0,seconds(clip.duration)-outgoingFade).toFixed(6)+":d="+outgoingFade.toFixed(6)+":curve=tri":"";
    let retimeFilters="";
    if(clip.speedCurve!==undefined){
@@ -265,7 +266,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     const tempoParts=[];let tempo=speed;while(tempo>2){tempoParts.push("atempo=2");tempo/=2;}while(tempo<0.5){tempoParts.push("atempo=0.5");tempo/=0.5;}if(Math.abs(tempo-1)>0.000001)tempoParts.push("atempo="+tempo.toFixed(6));
     if(tempoParts.length)retimeFilters=","+tempoParts.join(",");
    }
-   audioFilters.push("["+inputIndex+":a]atrim=duration="+sourceDuration.toFixed(6)+",asetpts=PTS-STARTPTS"+retimeFilters+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
+   audioFilters.push("["+inputIndex+":a]atrim=duration="+sourceDuration.toFixed(6)+",asetpts=PTS-STARTPTS"+retimeFilters+fadeInFilter+fadeOutFilter+gainFilter+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
    inputIndex++;
   }
   for(const clip of overlayClips){
