@@ -232,3 +232,12 @@ test("completed provider task output is bounded and MP4-validated by the separat
  const buffer=await downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/result.mp4",fetchImpl:async()=>new Response(mp4,{status:200})});
  assert.equal(buffer.toString("ascii",4,8),"ftyp");
 });
+
+
+test("Runway API JSON responses are streamed with a hard 2 MiB cap",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const fetchImpl=async()=>new Response("x".repeat(2*1024*1024+1),{status:200});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
