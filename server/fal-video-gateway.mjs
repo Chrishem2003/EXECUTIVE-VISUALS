@@ -23,6 +23,7 @@ async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch,allowStatuses=[
   if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
   if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
   if(!response.ok&&!allowStatuses.includes(response.status)){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+  if(response.status===404&&allowStatuses.includes(404))return {__httpStatus:404};
   const raw=await readBoundedJsonText(response);
   let data={};try{data=raw?JSON.parse(raw):{};}catch{if(response.status===404&&allowStatuses.includes(404))return {__httpStatus:404};throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}return response.status===404?{...data,__httpStatus:404}:data
  }finally{clearTimeout(timer)}
