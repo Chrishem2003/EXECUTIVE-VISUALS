@@ -12,6 +12,7 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
 import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
+import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -42,6 +43,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
+ const reviews=service.projects?.get&&service.assets?.get&&service.timelines?.get
+  ? createCloudReviewRepository({url,serviceRoleKey,fetchImpl,authorize:allow,projects:service.projects,assets:service.assets,timelines:service.timelines,timeoutMs})
+  : null;
  const base=new URL(url).origin;
  const sourceResolver=runwaySourceResolver || (service.assets?.get&&service.assets?.createSignedUrl
   ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url})
@@ -92,6 +96,30 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
     if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
     if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
+   }
+   if(path==="/api/cloud/reviews"&&method==="GET"){
+    if(!reviews)return response(503,{error:{code:"CLOUD_REVIEW_UNAVAILABLE",message:"The cloud review repository is not configured."}});
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"REVIEW_INVALID",message:"A valid project ID is required."}});
+    const items=await reviews.list({actorId:ownerId,projectId,assetId:query.assetId||null,limit:Number(query.limit)||100,offset:Number(query.offset)||0});
+    return response(200,{reviews:items});
+   }
+   if(path==="/api/cloud/reviews"&&method==="POST"){
+    if(!reviews)return response(503,{error:{code:"CLOUD_REVIEW_UNAVAILABLE",message:"The cloud review repository is not configured."}});
+    const result=await reviews.create({actorId:ownerId,input:body,idempotencyKey});
+    return response(result.idempotentReplay?200:201,result);
+   }
+   const reviewMatch=path.match(/^\\/api\\/cloud\\/reviews\\/([0-9a-f-]+)$/i);
+   if(reviewMatch&&safeId(reviewMatch[1])){
+    if(!reviews)return response(503,{error:{code:"CLOUD_REVIEW_UNAVAILABLE",message:"The cloud review repository is not configured."}});
+    if(method==="GET"){
+     const review=await reviews.get({actorId:ownerId,reviewId:reviewMatch[1]});
+     return review?response(200,{review}):response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
+    }
+    if(method==="PATCH"){
+     const review=await reviews.update({actorId:ownerId,reviewId:reviewMatch[1],input:body});
+     return response(200,{review});
+    }
    }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
@@ -426,6 +454,11 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="CLOUD_REVIEW_NOT_FOUND")return response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
+   if(error.code==="CLOUD_REVIEW_ACCESS_DENIED")return response(403,{error:{code:"REVIEW_ACCESS_DENIED",message:"Your project role does not permit this review action."}});
+   if(error.code==="CLOUD_REVIEW_INVALID"||error.code==="REVIEW_INVALID"||error.code==="REVIEW_ANNOTATION_INVALID")return response(422,{error:{code:error.code,message:String(error.message||"Review input is invalid.").slice(0,300)}});
+   if(error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
+   if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
