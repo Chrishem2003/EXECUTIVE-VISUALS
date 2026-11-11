@@ -66,3 +66,9 @@ test("cloud video job cancellation is restricted to the authenticated owner and 
  assert.match(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\(uuid,uuid\) to service_role/i);
  assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.cancel_video_generation_job\([^;]+ to (public|anon|authenticated)/i);
 });
+
+test("cloud job cancellation marks its durable provider tasks for reconciliation without assuming submission success",()=>{
+ assert.match(cancellationSql,/update executive_visuals\.video_generation_tasks t[\s\S]*?set state='cancel_requested'[\s\S]*?provider_status='CANCEL_REQUESTED'/i);
+ assert.match(cancellationSql,/t\.approval_id=approval_key and t\.owner_id=p_owner_id/i);
+ assert.match(cancellationSql,/t\.state in \('reserved','submitting','submission_unknown','submitted','processing'\)/i);
+});
