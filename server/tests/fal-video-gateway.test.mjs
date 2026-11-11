@@ -21,6 +21,7 @@ test("video adapter submits, polls and returns validated MP4 bytes",async()=>{
   assert.equal(result.provider,"fal");assert.equal(result.requestId,"video_123");assert.equal(result.mimeType,"video/mp4");
   assert.equal(result.buffer.toString("ascii",4,8),"ftyp");assert.equal(calls.length,4);
   assert.equal(calls[0].options.headers.authorization,"Key test-key");
+  assert.equal(calls.at(-1).options.redirect,"error");
   assert.deepEqual(JSON.parse(calls[0].options.body),{prompt:"A cinematic aerial shot",duration:7,aspect_ratio:"9:16"});
  }finally{globalThis.fetch=original;restore()}
 });
