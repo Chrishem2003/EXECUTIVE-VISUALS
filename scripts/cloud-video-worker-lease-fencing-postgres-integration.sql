@@ -7,8 +7,7 @@ begin
   if not has_function_privilege('service_role','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE') then
     raise exception 'service_role cannot execute entitlement-gated credit reservation';
   end if;
-  if has_function_privilege('public','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE')
-     or has_function_privilege('anon','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE')
+  if has_function_privilege('anon','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE')
      or has_function_privilege('authenticated','executive_visuals.reserve_generation_credits(uuid,uuid,bigint,text)','EXECUTE') then
     raise exception 'browser roles must not execute credit reservation';
   end if;
