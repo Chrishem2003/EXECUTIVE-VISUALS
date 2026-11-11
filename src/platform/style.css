@@ -1347,3 +1347,12 @@ body{
 .admin-ops-links{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
 @media(max-width:850px){.admin-ops-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-ops-grid{grid-template-columns:1fr}}
 @media(max-width:620px){.admin-ops-head{display:block}.admin-ops-head button{width:100%;margin-top:8px}.admin-ops-provider-grid{grid-template-columns:1fr}.admin-ops-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-ops-audit article{grid-template-columns:1fr}.admin-ops-audit time{grid-column:1;grid-row:auto}}
+
+
+/* Administrator account directory search */
+.admin-ops-user-search{display:grid;gap:7px;margin:14px 0 18px;padding:13px;border:1px solid var(--line);border-radius:9px;background:#111722}
+.admin-ops-user-search label{font-size:12px;font-weight:700;color:var(--text)}
+.admin-ops-user-search>div{display:flex;gap:9px;align-items:center}
+.admin-ops-user-search input{flex:1;min-width:0;font-size:14px;padding:11px 12px;border:1px solid #394550;border-radius:8px;background:#0f151a;color:var(--text)}
+.admin-ops-user-search button{white-space:nowrap}
+@media(max-width:600px){.admin-ops-user-search>div{align-items:stretch;flex-direction:column}.admin-ops-user-search button{width:100%}}

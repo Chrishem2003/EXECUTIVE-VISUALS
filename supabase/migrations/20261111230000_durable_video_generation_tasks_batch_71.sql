@@ -32,7 +32,7 @@ create table if not exists executive_visuals.video_generation_tasks (
   request_hash text not null check (request_hash ~ '^[a-f0-9]{64}$'),
   currency text not null check (currency ~ '^[A-Z]{3}$'),
   estimated_cost_micros bigint not null check (estimated_cost_micros >= 0),
-  provider text not null default 'runway' check (provider in ('runway')),
+  provider text not null default 'runway' check (provider in ('runway','fal')),
   model text,
   state text not null default 'reserved'
     check (state in ('reserved','submitting','submission_unknown','submitted','processing','succeeded','failed')),
@@ -99,7 +99,19 @@ begin
   end if;
   if octet_length(p_snapshot_json::text)>2097152
      or exists(select 1 from jsonb_array_elements(p_snapshot_json->'shots') shot
-       where coalesce(shot->>'estimatedCostMicros','') !~ '^[0-9]+  insert into executive_visuals.video_generation_approvals
+       where jsonb_typeof(shot)<>'object'
+          or coalesce(shot->>'estimatedCostMicros','') !~ '^[0-9]+$'
+          or length(shot->>'estimatedCostMicros')>19
+          or coalesce(shot->>'provider','') not in ('runway','fal')
+          or coalesce(shot->>'model','')=''
+          or coalesce(shot->'estimatedCost'->>'currency','')<>p_currency) then
+    raise exception 'VIDEO_APPROVAL_SHOT_SNAPSHOT_INVALID';
+  end if;
+  if (select coalesce(sum((shot->>'estimatedCostMicros')::numeric),0)
+      from jsonb_array_elements(p_snapshot_json->'shots') shot)<>p_quoted_amount_micros then
+    raise exception 'VIDEO_APPROVAL_SHOT_TOTAL_MISMATCH';
+  end if;
+  insert into executive_visuals.video_generation_approvals
     (id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros)
   values(p_id,p_owner_id,p_project_id,p_idempotency_key,p_request_hash,p_snapshot_json,p_currency,p_quoted_amount_micros,p_budget_ceiling_micros)
   on conflict(owner_id,idempotency_key) do nothing;
@@ -227,8 +239,8 @@ begin
     raise exception 'VIDEO_APPROVAL_BUDGET_EXCEEDED';
   end if;
   insert into executive_visuals.video_generation_tasks
-    (approval_id,owner_id,project_id,shot_index,request_hash,currency,estimated_cost_micros,model)
-  values(p_approval_id,p_owner_id,p_project_id,p_shot_index,p_request_hash,p_currency,p_estimated_cost_micros,shot->>'model')
+    (approval_id,owner_id,project_id,shot_index,request_hash,currency,estimated_cost_micros,provider,model)
+  values(p_approval_id,p_owner_id,p_project_id,p_shot_index,p_request_hash,p_currency,p_estimated_cost_micros,shot->>'provider',shot->>'model')
   returning * into existing_task;
   return next existing_task;
 end;
@@ -309,30 +321,6 @@ comment on table executive_visuals.video_generation_approvals is
   'Server-only immutable approved quote and shot snapshot for cloud video generation.';
 comment on table executive_visuals.video_generation_tasks is
   'Server-only one-row-per-approved-shot task ledger. Provider task identity survives worker restarts and prevents duplicate POSTs.';
-
-          or coalesce(shot->>'provider','')<>'runway'
-          or coalesce(shot->>'model','')=''
-          or coalesce(shot->'estimatedCost'->>'currency','')<>p_currency) then
-    raise exception 'VIDEO_APPROVAL_SHOT_SNAPSHOT_INVALID';
-  end if;
-  if (select coalesce(sum((shot->>'estimatedCostMicros')::bigint),0)
-      from jsonb_array_elements(p_snapshot_json->'shots') shot)<>p_quoted_amount_micros then
-    raise exception 'VIDEO_APPROVAL_SHOT_TOTAL_MISMATCH';
-  end if;
-  insert into executive_visuals.video_generation_approvals
-    (id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros)
-  values(p_id,p_owner_id,p_project_id,p_idempotency_key,p_request_hash,p_snapshot_json,p_currency,p_quoted_amount_micros,p_budget_ceiling_micros)
-  on conflict(owner_id,idempotency_key) do nothing;
-  select * into saved from executive_visuals.video_generation_approvals
-    where owner_id=p_owner_id and idempotency_key=p_idempotency_key for update;
-  if saved.request_hash<>p_request_hash or saved.project_id<>p_project_id
-     or saved.currency<>p_currency or saved.quoted_amount_micros<>p_quoted_amount_micros
-     or saved.budget_ceiling_micros<>p_budget_ceiling_micros then
-    raise exception 'VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT';
-  end if;
-  return next saved;
-end;
-$$;
 
 create or replace function executive_visuals.enqueue_approved_video_generation(
   p_approval_id uuid,p_owner_id uuid
