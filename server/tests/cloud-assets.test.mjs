@@ -93,6 +93,14 @@ test("signed URL lookup checks record owner and project authorization",async()=>
  assert.equal(f.storageCalls[0].op,"sign");
 });
 
+test("rejects invalid signed URL expiry before metadata lookup or storage signing",async()=>{
+ const f=fixture();
+ for(const expiresIn of [0,29,3601,30.5,Number.NaN,Number.POSITIVE_INFINITY]){
+  await assert.rejects(()=>f.repo.createSignedUrl({ownerId,assetId,expiresIn}),error=>error.code==="CLOUD_ASSET_SIGNED_URL_EXPIRY_INVALID");
+ }
+ assert.equal(f.calls.length,0);
+ assert.equal(f.storageCalls.length,0);
+});
 test("does not sign assets belonging to another owner",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.createSignedUrl({ownerId:"423e4567-e89b-42d3-a456-426614174000",assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
