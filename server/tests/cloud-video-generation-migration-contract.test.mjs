@@ -91,3 +91,25 @@ test("pending cancellation reconciliation uses a bounded cross-worker lease clai
  assert.match(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\(text,integer,integer\) to service_role/i);
  assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\([^;]+ to (public|anon|authenticated)/i);
 });
+
+const entitlementSql=await readFile(resolve(root,"supabase/migrations/20261111230000_video_generation_entitlement_gate.sql"),"utf8");
+const entitlementIntegration=await readFile(resolve(root,"scripts/asset-publication-postgres-integration.sql"),"utf8");
+
+test("cloud video credit reservation is gated by a current subscription AI-generation entitlement",()=>{
+ assert.match(entitlementSql,/status in \('active','trialing'\)/i);
+ assert.match(entitlementSql,/current_period_start <= clock_timestamp\(\)/i);
+ assert.match(entitlementSql,/current_period_end > clock_timestamp\(\)/i);
+ assert.match(entitlementSql,/entitlements_snapshot @> '\{"ai_generation":true\}'::jsonb/i);
+ assert.match(entitlementSql,/VIDEO_GENERATION_ENTITLEMENT_REQUIRED/);
+ assert.match(entitlementSql,/alter function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+rename to reserve_generation_credits_without_entitlement/i);
+ assert.match(entitlementSql,/grant execute on function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+to service_role/i);
+ assert.doesNotMatch(entitlementSql,/grant execute on function executive_visuals\.reserve_generation_credits_without_entitlement/i);
+ assert.doesNotMatch(entitlementSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+});
+
+test("disposable cloud video integration rejects credit reservation without AI entitlement and accepts an active entitled subscription",()=>{
+ assert.match(entitlementIntegration,/generation reservation unexpectedly succeeded without AI entitlement/i);
+ assert.match(entitlementIntegration,/VIDEO_GENERATION_ENTITLEMENT_REQUIRED/);
+ assert.match(entitlementIntegration,/entitlements_snapshot[\s\S]*?ai_generation/i);
+ assert.doesNotMatch(entitlementIntegration,/activate_generation_subscription/);
+});
