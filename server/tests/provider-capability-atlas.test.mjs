@@ -5,7 +5,7 @@ import { getProviderCapabilityAtlas } from "../provider-capability-atlas.mjs";
 test("capability atlas separates implemented operations from documented but unintegrated operations",()=>{
  const atlas=getProviderCapabilityAtlas({runwayModel:"seedance2_5"});
  assert.equal(atlas.version,2);
- assert.equal(atlas.summary.models,5);
+ assert.equal(atlas.summary.models,6);
  assert.equal(atlas.summary.operations,12);
  assert.equal(atlas.summary.implementedOperations,2);
  assert.equal(atlas.summary.documentedNotIntegrated,10);
