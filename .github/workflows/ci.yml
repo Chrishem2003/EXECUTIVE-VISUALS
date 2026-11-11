@@ -114,6 +114,16 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-integration.sql
+      - name: Apply per-attempt worker lease fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
+      - name: Verify stale workers cannot renew or complete reclaimed jobs
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/job-lease-fencing-postgres-integration.sql
+      - name: Apply atomic asset publication and cleanup claims
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
+      - name: Apply immutable publication cleanup path constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
+      - name: Verify lease-fenced atomic asset publication and stale attempt rejection
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
       - name: Prepare timeline revision history fixture
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-revision-history-postgres-fixture.sql
       - name: Apply timeline revision history migration
