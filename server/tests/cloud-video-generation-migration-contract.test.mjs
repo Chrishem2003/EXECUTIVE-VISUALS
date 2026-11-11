@@ -149,7 +149,7 @@ test("asset publication reservation and finalization lock the exact job attempt 
 
 test("video submission, output settlement, deferral and quarantine require the current worker fencing token",()=>{
  for(const fn of [
-  "begin_video_generation_submission_v2","record_video_generation_submission_v2",
+  "prepare_video_generation_submission_v2","begin_video_generation_submission_v2","record_video_generation_submission_v2",
   "mark_video_generation_submission_unknown_v2","finish_video_generation_submission_v2",
   "finish_video_generation_job_v2","defer_video_generation_job_v2","quarantine_video_generation_job_v2"
  ]){
@@ -161,7 +161,7 @@ test("video submission, output settlement, deferral and quarantine require the c
  assert.match(videoFenceSql,/clear_job_lease_token_on_transition_v1/);
  assert.match(videoWorker,/queue\.renew\(job\.id, workerId, leaseSeconds, job\.lease_token\)/);
  assert.match(videoWorker,/enqueue\.finish\([\s\S]*?leaseToken: job\.lease_token/);
- assert.match(videoSubmissionClient,/begin_video_generation_submission_v2/);
+ assert.match(videoSubmissionClient,/prepare_video_generation_submission_v2/);\n assert.match(videoSubmissionClient,/begin_video_generation_submission_v2/);
  assert.match(videoSubmissionClient,/p_lease_token: leaseToken\(token\)/);
  assert.match(videoEnqueueClient,/finish_video_generation_job_v2/);
  assert.match(videoEnqueueClient,/p_lease_token: leaseToken/);
