@@ -11,7 +11,7 @@ function harness(){
   if(String(url).includes("video_generation_approvals?"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("register_video_generation_approval"))return new Response(JSON.stringify([approvalRow]),{status:200});
   if(String(url).includes("reserve_video_generation_task"))return new Response(JSON.stringify([taskRow]),{status:200});
-  if(String(url).includes("transition_video_generation_task")){const payload=typeof options.body==="string"?JSON.parse(options.body):options.body;return new Response(JSON.stringify([{...taskRow,state:"submitted",provider:payload?.p_provider||"runway",provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});}
+  if(String(url).includes("transition_video_generation_task")){const payload=typeof options.body==="string"?JSON.parse(options.body):options.body;return new Response(JSON.stringify([{...taskRow,state:payload?.p_to_state||"submitted",provider:payload?.p_provider||"runway",provider_status:payload?.p_provider_status||null,provider_task_id:"123e4567-e89b-42d3-a456-426614174000"}]),{status:200});}
   if(String(url).includes("enqueue_approved_video_generation"))return new Response(JSON.stringify([{job_id:"job-1",shot_index:0,job_status:"queued"}]),{status:200});
   return new Response("[]",{status:200});
  };
@@ -55,4 +55,26 @@ test("Fal provider identity is persisted through the atomic submitted transition
  const call=h.calls.find(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
  assert.equal(call.body.p_provider,"fal");
  assert.equal(call.body.p_model,"fal-ai/example-video");
+});
+
+test("durable task repository records cancellation intent and confirmed cancellation",async()=>{
+ const h=harness();
+ const requested=await h.tasks.markCancellationRequested("task-1",{providerStatus:"CANCEL_REQUESTED"});
+ assert.equal(requested.state,"cancel_requested");
+ const cancelled=await h.tasks.markCancelled("task-1",{providerStatus:"OK"});
+ assert.equal(cancelled.state,"cancelled");
+ const transitions=h.calls.filter(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
+ assert.deepEqual(transitions.map(item=>item.body.p_to_state),["cancel_requested","cancelled"]);
+ assert.equal(transitions[0].body.p_provider_status,"CANCEL_REQUESTED");
+ assert.equal(transitions[1].body.p_provider_status,"OK");
+});
+
+test("cancellation reconciliation claims are worker-scoped RPC leases",async()=>{
+ const h=harness();
+ const rows=await h.tasks.claimCancellationPending("worker-7",15);
+ assert.deepEqual(rows,[]);
+ const call=h.calls.find(item=>item.url.includes("claim_video_generation_cancellations"));
+ assert.ok(call);
+ assert.deepEqual(call.body,{p_worker_id:"worker-7",p_limit:15,p_lease_seconds:60});
+ await assert.rejects(()=>h.tasks.claimCancellationPending("",15),e=>e.code==="VIDEO_TASK_QUERY_INVALID");
 });
