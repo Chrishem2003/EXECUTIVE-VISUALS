@@ -294,7 +294,7 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
     const target=String(url);calls.push({target,options});
     if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
       return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
-    if(target.includes("payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))
+    if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
     if(target.endsWith("/payment_transactions")&&options.method==="POST")
       return json([{id:paymentId,metadata:{product_code:"creator_credits",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
@@ -597,7 +597,7 @@ test("customer-initiated subscription renewal uses V4 MTN checkout and idempoten
   const calls=[];
   const service=api(async(url,options={})=>{
     const target=String(url);calls.push({target,method:options.method||"GET",body:options.body,headers:options.headers||{}});
-    if(target.includes("/payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("/payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))return json([]);
     if(target.includes("/payment_transactions?select=id,tx_ref&"))return json([]);
     if(target.includes("/customer_subscriptions?select=id,owner_id,status,billing_interval"))return json([{
       id:"44444444-4444-4444-8444-444444444444",owner_id:owner,status:"past_due",
@@ -654,7 +654,7 @@ test("subscription renewal checkout rejects a second pending attempt before char
   let providerCalled=false;
   const service=api(async url=>{
     const target=String(url);
-    if(target.includes("/payment_transactions?select=id,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+    if(target.includes("/payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))return json([]);
     if(target.includes("/payment_transactions?select=id,tx_ref&"))return json([{id:paymentId,tx_ref:"EVRpending"}]);
     if(target.includes("flutterwave"))providerCalled=true;
     throw new Error("Unexpected request: "+target);
