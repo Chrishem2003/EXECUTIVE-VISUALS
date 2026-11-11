@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 
--- Verify the additive worker-fencing and atomic-publication migrations already applied
--- by the CI job. This disposable harness never targets shared staging or prod.
+-- Verify the additive worker-fencing migrations already applied by the CI job.
+-- This disposable harness never targets shared staging or production.
 do $video_fencing_privileges$
 begin
   if has_function_privilege('service_role','executive_visuals.reserve_video_generation_task(uuid,integer,uuid,uuid,text,text,bigint)','EXECUTE')
