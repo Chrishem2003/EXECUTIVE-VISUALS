@@ -116,8 +116,8 @@ test("cloud timeline executor certifies requested delivery profile before publis
    async publish(args){published=args;return{id:"certified-master"};}
   },
   async probeOutput(){return{format:{format_name:"mov,mp4,m4a,3gp,3g2,mj2",duration:"12"},streams:[
-   {codec_type:"video",codec_name:"h264",pix_fmt:"yuv420p",width:1080,height:1920,avg_frame_rate:"24/1"},
-   {codec_type:"audio",codec_name:"aac",sample_rate:"48000",channels:2}
+   {codec_type:"video",codec_name:"h264",pix_fmt:"yuv420p",width:1080,height:1920,avg_frame_rate:"24/1",start_time:"0.000000"},
+   {codec_type:"audio",codec_name:"aac",sample_rate:"48000",channels:2,start_time:"0.020000"}
   ]};},
   async renderTimeline(args){const path=join(args.workDir,"master.mp4");await writeFile(path,"master");return{path,filename:"master.mp4",mediaType:"video/mp4",render:{deliveryProfile:"vertical-1080p",width:1080,height:1920,frameRate:{numerator:24,denominator:1},durationSeconds:12,audioClips:1}};}
  });
@@ -141,6 +141,27 @@ test("cloud timeline executor blocks publishing when delivery profile dimensions
   async renderTimeline(args){const path=join(args.workDir,"master.mp4");await writeFile(path,"master");return{path,filename:"master.mp4",mediaType:"video/mp4",render:{width:1080,height:1920,frameRate:{numerator:24,denominator:1},durationSeconds:12,audioClips:0}};}
  });
  await assert.rejects(()=>executor({job:{id:"job-delivery-fail",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7,deliveryProfile:"vertical-1080p"}},onProgress(){}}),error=>error.code==="DELIVERY_CERTIFICATION_FAILED"&&error.certification.summary.failed===2);
+ assert.equal(publishCount,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+
+test("cloud timeline executor blocks publishing when audio starts out of sync with video",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-av-sync-fail-"));let publishCount=0;
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:project,revision:7,timeline};}},
+  mediaIO:{
+   async materialize({assetId}){const path=join(root,assetId+".bin");await writeFile(path,assetId);return{path,asset:{id:assetId},async cleanup(){}};},
+   async publish(){publishCount++;return{id:"should-not-publish"};}
+  },
+  async probeOutput(){return{format:{format_name:"mp4",duration:"12"},streams:[
+   {codec_type:"video",codec_name:"h264",pix_fmt:"yuv420p",width:1080,height:1920,avg_frame_rate:"24/1",start_time:"0.000000"},
+   {codec_type:"audio",codec_name:"aac",sample_rate:"48000",channels:2,start_time:"0.250000"}
+  ]};},
+  async renderTimeline(args){const path=join(args.workDir,"master.mp4");await writeFile(path,"master");return{path,filename:"master.mp4",mediaType:"video/mp4",render:{width:1080,height:1920,frameRate:{numerator:24,denominator:1},durationSeconds:12,audioClips:1}};}
+ });
+ await assert.rejects(()=>executor({job:{id:"job-av-sync-fail",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7,deliveryProfile:"vertical-1080p"}},onProgress(){}}),error=>error.code==="DELIVERY_CERTIFICATION_FAILED"&&error.certification.checks.some(check=>check.id==="audio-video-start-alignment"&&!check.passed));
  assert.equal(publishCount,0);
  await rm(root,{recursive:true,force:true});
 });
