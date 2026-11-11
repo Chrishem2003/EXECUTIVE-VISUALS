@@ -151,14 +151,16 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const measurementRun=await run("ffmpeg",["-hide_banner","-nostats","-i",outputPath,"-map","0:a:0","-filter_complex","ebur128=peak=true","-f","null","-"],60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const measured=parseAudioLoudnessMeasurement(measurementRun.stderr);
-   if(measured.integratedLoudness===null||measured.truePeak===null)fail("The rendered audio could not be measured for loudness and true peak.","AUDIO_MASTERING_QC_UNAVAILABLE");
+   if(measured.integratedLoudness===null||measured.loudnessRange===null||measured.truePeak===null)fail("The rendered audio could not be measured for integrated loudness, loudness range and true peak.","AUDIO_MASTERING_QC_UNAVAILABLE");
    const masteringProfile=timeline.audioMastering?.profile??"custom";
    const targetLoudness=masteringProfile==="ebu-r128"?-23:masteringProfile==="web-podcast"?-16:Number(timeline.audioMastering?.integratedLoudness??-16);
    const targetTruePeak=Number(timeline.audioMastering?.truePeak??-1.5);
    const loudnessTolerance=masteringProfile==="ebu-r128"?0.5:1;
+   const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
+   const loudnessRangeTolerance=1;
    const peakLimit=masteringProfile==="ebu-r128"?-1:targetTruePeak;
-   masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:Number(timeline.audioMastering?.loudnessRange??11),truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:{integratedLoudnessWithinTolerance:Math.abs(measured.integratedLoudness-targetLoudness)<=loudnessTolerance,truePeakWithinLimit:measured.truePeak<=peakLimit,integratedLoudnessTolerance:loudnessTolerance,truePeakLimit:peakLimit}};
-   masteringEvidence.qualityControl.passed=masteringEvidence.qualityControl.integratedLoudnessWithinTolerance&&masteringEvidence.qualityControl.truePeakWithinLimit;
+   masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:{integratedLoudnessWithinTolerance:Math.abs(measured.integratedLoudness-targetLoudness)<=loudnessTolerance,loudnessRangeWithinLimit:measured.loudnessRange<=targetLoudnessRange+loudnessRangeTolerance,truePeakWithinLimit:measured.truePeak<=peakLimit,integratedLoudnessTolerance:loudnessTolerance,loudnessRangeLimit:targetLoudnessRange+loudnessRangeTolerance,truePeakLimit:peakLimit}};
+   masteringEvidence.qualityControl.passed=masteringEvidence.qualityControl.integratedLoudnessWithinTolerance&&masteringEvidence.qualityControl.loudnessRangeWithinLimit&&masteringEvidence.qualityControl.truePeakWithinLimit;
   }
   return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
