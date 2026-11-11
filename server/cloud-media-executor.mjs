@@ -181,7 +181,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
           metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing },
-          publicationKey: job.id + ":output:v1"
+          publicationKey: job.id + ":output:v1", signal, assertLease, leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
         });
         onProgress(100);
         return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing };
@@ -295,7 +295,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         path: outputPath,
         derivativeOf: sourceId,
         metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}) },
-        publicationKey: job.id + ":output:v1"
+        publicationKey: job.id + ":output:v1", signal, assertLease, leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
       });
       onProgress(100);
       return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };

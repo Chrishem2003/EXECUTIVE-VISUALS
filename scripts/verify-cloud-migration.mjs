@@ -5,6 +5,8 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107000000_job_lease_fencing_tokens.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
+const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
+const cleanupAuditSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107030000_publication_cleanup_audit_events.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -56,9 +58,9 @@ if (!checkpointSql.includes("revoke all on executive_visuals.video_pipeline_chec
 if (!checkpointSql.includes("grant all privileges on executive_visuals.video_pipeline_checkpoints to service_role;")) issues.push("Trusted cloud worker role needs checkpoint access.");
 if (!checkpointSql.includes("ev_video_pipeline_checkpoints_validate_scope")) issues.push("Cloud checkpoint writes must validate owner, project and source asset scope.");
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
-if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
-if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
-if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
+if (!checkpointSql.includes("output_asset.derivative_of is distinct from new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
+if (!checkpointSql.includes("output_asset.owner_id is distinct from new.owner_id") || !checkpointSql.includes("output_asset.project_id is distinct from new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
+if (!checkpointSql.includes("output_asset.sha256 is distinct from output_sha256") || !checkpointSql.includes("output_sha256 := lower(coalesce(new.output_json ->> 'sha256', ''))")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
@@ -94,7 +96,49 @@ if (!publicationSql.includes("create or replace function executive_visuals.reser
 if (!publicationSql.includes("create or replace function executive_visuals.complete_asset_publication(") || !publicationSql.includes("asset.sha256=publication.payload_sha256") || !publicationSql.includes("grant execute on function executive_visuals.complete_asset_publication(uuid,text,uuid) to service_role")) issues.push("Asset publication completion must verify the persisted asset checksum and be restricted to service_role.");
 
 
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced asset publication RPC is missing.");
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.validate_asset_derivative_scope_v1()")) issues.push("Asset derivative tenant-scope trigger function is missing.");
+if (!atomicPublicationSql.includes("as $derivative_scope$") || !atomicPublicationSql.includes("$derivative_scope$;")) issues.push("Asset derivative trigger function must use valid named dollar quoting.");
+for (const required of ["parent_asset.owner_id is distinct from new.owner_id","parent_asset.project_id is distinct from new.project_id","parent_asset.deleted_at is not null","tg_op = 'UPDATE'","new.project_id is distinct from old.project_id","where derivative_of = old.id","asset with derivatives cannot change owner/project scope","for share","create trigger ev_assets_validate_derivative_scope"]) {
+  if (!atomicPublicationSql.includes(required)) issues.push("Asset derivative source integrity check is missing: " + required + ".");
+}
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.validate_asset_derivative_scope_v1()") || !atomicPublicationSql.includes("from public, anon, authenticated, service_role")) issues.push("Asset derivative trigger function must not be directly executable by application roles.");
 
+if (!atomicPublicationSql.includes("set search_path = ''")) issues.push("Atomic publication SECURITY DEFINER RPC must pin an empty search_path.");
+const atomicJobLock = atomicPublicationSql.indexOf("from executive_visuals.jobs");
+const atomicLedgerLock = atomicPublicationSql.indexOf("from executive_visuals.asset_publications");
+if (atomicJobLock < 0 || atomicLedgerLock < 0 || atomicJobLock > atomicLedgerLock || !atomicPublicationSql.slice(atomicJobLock, atomicLedgerLock).includes("for update") || !atomicPublicationSql.slice(atomicLedgerLock).includes("for update")) issues.push("Atomic publication must lock the job before the owner-scoped publication ledger.");
+for (const required of ["job_row.owner_id is distinct from p_owner_id","job_row.project_id is distinct from p_project_id","job_row.lease_owner is distinct from p_worker_id","job_row.lease_token is distinct from p_lease_token","job_row.lease_expires_at <= pg_catalog.clock_timestamp()"]) {
+  if (!atomicPublicationSql.includes(required)) issues.push("Atomic publication lease/scope validation is missing: " + required + ".");
+}
+for (const required of ["insert into executive_visuals.assets","update executive_visuals.asset_publications","set status = 'published'","asset_row.sha256 is distinct from p_payload_sha256","asset_row.original_name is distinct from p_original_name","asset_row.metadata is distinct from p_metadata","asset_row.object_path !~ expected_path_pattern"]) {
+  if (!atomicPublicationSql.includes(required)) issues.push("Atomic asset identity/finalization invariant is missing: " + required + ".");
+}
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.finalize_asset_publication_v1") || !atomicPublicationSql.includes("from public, anon, authenticated")) issues.push("Atomic publication RPC must be unavailable to untrusted roles.");
+if (!atomicPublicationSql.includes("grant execute on function executive_visuals.finalize_asset_publication_v1") || !atomicPublicationSql.includes("to service_role")) issues.push("Atomic publication RPC must be callable by the trusted service role.");
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid)") || !atomicPublicationSql.includes("from public, anon, authenticated, service_role")) issues.push("Legacy unfenced publication completion RPC must be disabled.");
+
+
+
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAuditSql)) issues.push("Publication cleanup audit migration must not contain destructive DDL/DML.");
+if (!cleanupAuditSql.includes("create table if not exists executive_visuals.publication_cleanup_audit_events")) issues.push("Append-only publication cleanup audit ledger is missing.");
+if (!cleanupAuditSql.includes("alter table executive_visuals.publication_cleanup_audit_events enable row level security;")) issues.push("Publication cleanup audit ledger must enable RLS.");
+if (!cleanupAuditSql.includes("revoke all on executive_visuals.publication_cleanup_audit_events from public, anon, authenticated, service_role;")
+ || !cleanupAuditSql.includes("grant select, insert on executive_visuals.publication_cleanup_audit_events to service_role;")) {
+  issues.push("Publication cleanup audit ledger must be private and service-role append/read only.");
+}
+if (!cleanupAuditSql.includes("before update or delete on executive_visuals.publication_cleanup_audit_events")
+ || !cleanupAuditSql.includes("publication cleanup audit events are append-only")) {
+  issues.push("Publication cleanup audit ledger must reject row updates and deletes.");
+}
+if (/references\s+(?:auth\.users|executive_visuals\.projects)/i.test(cleanupAuditSql)) {
+  issues.push("Publication cleanup audit evidence must not cascade with tenant resource deletion.");
+}
+for (const field of ["run_id uuid not null","actor_type text not null","owner_id uuid not null","object_path text","dry_run boolean not null","details jsonb not null"]) {
+  if (!cleanupAuditSql.includes(field)) issues.push("Publication cleanup audit evidence is missing field: "+field+".");
+}
 
 if ((sql.match(/create or replace function executive_visuals\.(?:claim_next_job|renew_job_lease|recover_expired_jobs|finish_job)\(/g) || []).length !== 4) {
   issues.push("All four cloud queue RPC definitions must be present exactly once.");
@@ -133,5 +177,5 @@ if (issues.length) {
   for (const issue of issues) console.error("- " + issue);
   process.exitCode = 1;
 } else {
-  console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
+  console.log(`Cloud migration guard passed: ${tables.length} core RLS tables, append-only cleanup audit ledger, immutable run snapshots, private storage, and server-only job/audit writes.`);
 }

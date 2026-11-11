@@ -17,6 +17,8 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
+import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
@@ -54,6 +56,11 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const cloudPublicationAuditApiEnabled = process.env.CLOUD_PUBLICATION_AUDIT_API_ENABLED === "true";
+if (cloudPublicationAuditApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud publication audit API requires verified Supabase authentication.");
+const cloudPublicationAuditAuthorize = cloudPublicationAuditApiEnabled ? createCloudAssetAuthorizer() : null;
+const cloudPublicationAuditApi = cloudPublicationAuditApiEnabled ? createCloudPublicationAuditApi({authorize:cloudPublicationAuditAuthorize}) : null;
+if (cloudPublicationAuditApi) await cloudPublicationAuditApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -110,7 +117,7 @@ async function authenticate(req) {
     if(!user?.id)return null;
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
       .run(user.id,user.email||user.id+"@supabase.invalid");
-    return {id:user.id,email:user.email||""};
+    return {id:user.id,email:user.email||"",emailVerified:Boolean(user.email_confirmed_at||user.confirmed_at)};
   }
   const token=cookieValue(req,"ev_session");
   if(!token)return null;
@@ -258,8 +265,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -305,6 +312,13 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(cloudPublicationAuditApi && path==="/api/cloud/publication-audit"){
+        const auditResult=await cloudPublicationAuditApi.handle({
+          method:req.method,path,user,
+          query:Object.fromEntries(url.searchParams.entries())
+        });
+        if(auditResult){send(res,auditResult.status,auditResult.body,cors);return;}
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
