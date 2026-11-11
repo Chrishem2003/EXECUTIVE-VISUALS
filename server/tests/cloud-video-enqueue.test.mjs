@@ -115,7 +115,7 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     jobId: resultRow.job_id, workerId: "video-worker-1", leaseToken, delaySeconds: 45
   }), true);
   assert.equal(await client.quarantine({
-    jobId: resultRow.job_id, workerId: "video-worker-1"
+    jobId: resultRow.job_id, workerId: "video-worker-1", leaseToken
   }), true);
   assert.equal(await client.resumeReconciled({
     jobId: resultRow.job_id, ownerId, evidenceReference: "review-ticket:OPS-17"
