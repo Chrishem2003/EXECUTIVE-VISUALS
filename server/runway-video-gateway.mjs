@@ -96,7 +96,7 @@ async function readBoundedJsonText(response,maxBytes=2*1024*1024){
  const declared=Number(response.headers?.get?.("content-length")||0);
  if(Number.isFinite(declared)&&declared>maxBytes)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
  const reader=response.body?.getReader?.();
- if(!reader){const raw=await response.text();if(Buffer.byteLength(raw)>maxBytes)throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");return raw;}
+ if(!reader)throw fail("Runway API response did not provide a readable stream.","VIDEO_GATEWAY_INVALID_RESPONSE");
  const chunks=[];let total=0;
  try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxBytes){await reader.cancel().catch(()=>{});throw fail("Runway API returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");}chunks.push(Buffer.from(value));}}
  finally{reader.releaseLock?.();}
