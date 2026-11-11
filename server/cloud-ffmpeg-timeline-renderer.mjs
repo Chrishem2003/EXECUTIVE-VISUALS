@@ -103,16 +103,25 @@ const gainExpression=(points,baseDb)=>{
  }
  return expression;
 };
-const panExpressions=(points,basePan)=>{
+const panExpressions=(points,basePan,channels=2)=>{
  const list=points.filter(point=>point.pan!==undefined),pan=value=>Math.max(-1,Math.min(1,Number.isFinite(value)?value:0));
- if(!list.length)return pan(basePan)===0?null:{left:"if(gt("+n(pan(basePan))+",0),1-"+n(pan(basePan))+",1)",right:"if(lt("+n(pan(basePan))+",0),1+"+n(pan(basePan))+",1)"};
- let expression=n(pan(list[list.length-1].pan));
+ if(!list.length&&pan(basePan)===0&&channels!==1)return null;
+ let expression=n(pan(basePan));
  for(let i=list.length-1;i>=0;i--){
   const point=list[i],from=i?list[i-1].timeSeconds:0,to=point.timeSeconds,fromPan=i?pan(list[i-1].pan):pan(basePan),toPan=pan(point.pan);
   const segment=point.interpolation==="step"||to<=from?n(fromPan):"("+n(fromPan)+"+("+n(toPan)+"-"+n(fromPan)+")*((t-"+n(from)+")/("+n(to)+"-"+n(from)+")))";
   expression="if(lt(t,"+n(to)+"),"+segment+","+expression+")";
  }
- return{left:"if(gt(("+expression+"),0),1-("+expression+"),1)",right:"if(lt(("+expression+"),0),1+("+expression+"),1)"};
+ const p="("+expression+")",halfPi="1.5707963267948966",quarterPi="0.7853981633974483";
+ if(channels===1){
+  const angle="(("+p+"+1)*"+quarterPi+")";
+  return{left:"val(0)*cos("+angle+")",right:"val(0)*sin("+angle+")"};
+ }
+ const angle="(if(lt("+p+",0),("+p+"+1),"+p+")*"+halfPi+")";
+ return{
+  left:"if(lt("+p+",0),val(0)+val(1)*cos("+angle+"),val(0)*cos("+angle+"))",
+  right:"if(lt("+p+",0),val(1)*sin("+angle+"),val(1)+val(0)*sin("+angle+"))"
+ };
 };
 
 /**
@@ -191,7 +200,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const entry=assets.get(String(assetId));
   if(!entry||typeof entry.path!=="string"||!entry.asset)fail("A timeline source asset is missing or inaccessible.","SOURCE_ASSET_NOT_FOUND");
   const asset=entry.asset;
-  return{path:entry.path,id:asset.id,mediaType:asset.mediaType||asset.media_type,originalName:asset.originalName||asset.original_name||asset.name||"",size:asset.size,sha256:asset.sha256};
+  return{path:entry.path,id:asset.id,mediaType:asset.mediaType||asset.media_type,originalName:asset.originalName||asset.original_name||asset.name||"",size:asset.size,sha256:asset.sha256,metadata:asset.metadata||{}};
  };
  try{
   for(const [clipPosition,clip] of clips.entries()){
@@ -244,8 +253,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=sourceDurationForClip(clip,duration);
    args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    const audioTrack=audios.find(track=>(track.clips||[]).some(item=>item.id===clip.id)),trackClips=audioTrack?ordered([audioTrack]):[],clipIndex=trackClips.findIndex(item=>item.id===clip.id),previousClip=trackClips[clipIndex-1],incomingFadeFrames=previousClip?.transitionToNext?.type==="crossfade"?Number(previousClip.transitionToNext.fadeFrames):0,outgoingFadeFrames=clip.transitionToNext?.type==="crossfade"?Number(clip.transitionToNext.fadeFrames):0,incomingFade=incomingFadeFrames/fps,outgoingFade=outgoingFadeFrames/fps;
-   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),pan=panExpressions(points,basePan);
-   const panFilter=pan?",aformat=channel_layouts=stereo,aeval=exprs='val(0)*("+pan.left+")|val(1)*("+pan.right+")':channel_layout=stereo":"";
+   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),audioProbe=asset.metadata?.probe?.streams?.find(stream=>stream?.codec_type==="audio"),sourceChannels=Number(audioProbe?.channels)||2,pan=panExpressions(points,basePan,sourceChannels===1?1:2);
+    const panFilter=pan?(sourceChannels>2?",aformat=channel_layouts=stereo":"")+",aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
    const fadeInFilter=incomingFade>0?",afade=t=in:st=0:d="+incomingFade.toFixed(6)+":curve=tri":"",fadeOutFilter=outgoingFade>0?",afade=t=out:st="+Math.max(0,seconds(clip.duration)-outgoingFade).toFixed(6)+":d="+outgoingFade.toFixed(6)+":curve=tri":"";
    let retimeFilters="";
    if(clip.speedCurve!==undefined){
