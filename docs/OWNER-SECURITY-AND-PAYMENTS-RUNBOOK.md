@@ -131,3 +131,15 @@ The merchant must complete KYC and be approved for live transactions. In the Flu
 - Customer invoices, cancellation and failed-payment handling are tested.
 - Settlement bank account is confirmed in the Flutterwave dashboard.
 - Live mode remains disabled until the operator approves a separate production change.
+
+## 8. Manual reconciliation of Flutterwave subscription cancellations
+
+Signed `subscription.cancelled` callbacks are retained in the administrator reconciliation queue. They do not automatically change customer access because the provider payload may not identify a local subscription unambiguously.
+
+An owner, platform administrator or billing administrator can resolve an event only after checking both:
+- the exact provider subscription ID in the signed event matches the stored `provider_subscription_id`;
+- the provider customer email matches the local subscription's customer email.
+
+Use the administrator reconciliation endpoint to submit the webhook event ID, local subscription ID and a short review reason. The database performs the identity checks, cancellation, webhook status transition and append-only subscription event in one transaction. Replays are idempotent. Missing or mismatched provider identity/email remains in `needs_review`; no entitlement change is made. Do not manually populate provider subscription IDs from an unverified email or plan name.
+
+This workflow is available only in billing-enabled staging. It does not enable recurring charges, live billing or automatic cancellation from ambiguous callbacks.

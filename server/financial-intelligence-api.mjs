@@ -664,6 +664,17 @@ export function createFinancialIntelligenceApi({
           credentialsExposed:false
         });
       }
+      if(path==="/api/admin/subscriptions/reconciliation/resolve"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
+        const eventId=String(body.eventId||""),subscriptionId=String(body.subscriptionId||""),reason=String(body.reason||"").trim();
+        if(!UUID.test(eventId)||!UUID.test(subscriptionId)||reason.length<3||reason.length>500)
+          return error(400,"SUBSCRIPTION_RECONCILIATION_INPUT_INVALID","Provide a valid webhook event, exact subscription ID and a 3–500 character review reason.");
+        const reconciliation=await rpc("reconcile_flutterwave_subscription_cancellation",{
+          p_actor_id:ownerId,p_event_id:eventId,p_subscription_id:subscriptionId,p_reason:reason
+        });
+        if(reconciliation?.resolved!==true)return response(409,{reconciliation:reconciliation||{resolved:false,reviewRequired:true}});
+        return response(200,{reconciliation});
+      }
       if(path==="/api/admin/subscriptions/reconciliation"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"SUBSCRIPTION_ADMIN_REQUIRED","A platform owner or billing administrator role is required.");
         const limit=Math.max(1,Math.min(100,Number(query.limit)||25));

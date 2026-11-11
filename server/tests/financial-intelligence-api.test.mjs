@@ -1643,3 +1643,47 @@ test("workload cost variance endpoint is admin-only and does not persist or post
  assert.equal(result.body.variance.variance.amountMinor,50);
  assert.equal(result.body.variance.outputs.actualUnitCostMinor,350);
 });
+
+test("subscription cancellation reconciliation requires billing admin and exact review inputs",async()=>{
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("A denied reviewer must not reach reconciliation RPC.");
+ });
+ const blocked=await denied.handle({method:"POST",path:"/api/admin/subscriptions/reconciliation/resolve",ownerId:owner,
+  body:{eventId:"44444444-4444-4444-8444-444444444444",subscriptionId:"55555555-5555-4555-8555-555555555555",reason:"Verified provider cancellation"}});
+ assert.equal(blocked.status,403);
+ const service=api(async(url,options={})=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(String(url).endsWith("/rpc/reconcile_flutterwave_subscription_cancellation")){
+   const body=JSON.parse(options.body);
+   assert.equal(body.p_actor_id,owner);
+   assert.equal(body.p_event_id,"44444444-4444-4444-8444-444444444444");
+   assert.equal(body.p_subscription_id,"55555555-5555-4555-8555-555555555555");
+   assert.equal(body.p_reason,"Operator matched the provider subscription ID and customer email.");
+   return json({resolved:true,idempotentReplay:false,subscriptionId:body.p_subscription_id});
+  }
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const invalid=await service.handle({method:"POST",path:"/api/admin/subscriptions/reconciliation/resolve",ownerId:owner,
+  body:{eventId:"bad",subscriptionId:"55555555-5555-4555-8555-555555555555",reason:"too short"}});
+ assert.equal(invalid.status,400);
+ const result=await service.handle({method:"POST",path:"/api/admin/subscriptions/reconciliation/resolve",ownerId:owner,
+  body:{eventId:"44444444-4444-4444-8444-444444444444",subscriptionId:"55555555-5555-4555-8555-555555555555",
+   reason:"Operator matched the provider subscription ID and customer email."}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.reconciliation.resolved,true);
+});
+
+test("subscription cancellation reconciliation keeps ambiguous provider identity in review",async()=>{
+ const service=api(async(url,options={})=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(String(url).endsWith("/rpc/reconcile_flutterwave_subscription_cancellation"))
+   return json({resolved:false,reviewRequired:true,reason:"provider_subscription_id_mismatch"});
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/subscriptions/reconciliation/resolve",ownerId:owner,
+  body:{eventId:"44444444-4444-4444-8444-444444444444",subscriptionId:"55555555-5555-4555-8555-555555555555",
+   reason:"Operator reviewed provider event against local subscription."}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.reconciliation.reviewRequired,true);
+});
