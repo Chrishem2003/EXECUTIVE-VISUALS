@@ -62,7 +62,13 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
     signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-16000); });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });
-    child.on("error", error => finish(Object.assign(new Error("Media engine could not start."), { code: "MEDIA_ENGINE_MISSING", cause: error })));
+    child.on("error", error => {
+      // ChildProcess also emits "error" when kill() cannot deliver a signal.
+      // Once termination has started, keep waiting for "close" so callers do
+      // not clean up files while the child may still be using them.
+      if (pendingTerminationError) return;
+      finish(Object.assign(new Error("Media engine could not start."), { code: "MEDIA_ENGINE_MISSING", cause: error }));
+    });
     child.on("close", code => {
       if (pendingTerminationError) return finish(pendingTerminationError);
       if (code === 0) return finish(null, { stdout, stderr });
