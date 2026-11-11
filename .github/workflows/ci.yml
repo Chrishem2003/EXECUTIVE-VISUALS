@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+permissions:
+  contents: read
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -12,9 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Check out the pinned official CAI native SDK source
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: contentauth/c2pa-js
           ref: 480975bc4103d03d1ca1705187ef46860950a5d8
           path: c2pa-js
