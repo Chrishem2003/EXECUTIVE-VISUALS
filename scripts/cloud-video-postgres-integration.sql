@@ -3087,12 +3087,22 @@ select * from executive_visuals.grant_generation_credits(
  '{"source":"disposable_ci_fixture"}'::jsonb
 );
 
--- The workflow owner must hold a plan that explicitly entitles video generation.
-select * from executive_visuals.activate_generation_subscription(
- '123e4567-e89b-42d3-a456-426614174000','creator','manual',null,
- 'cloud-video-workflow-test-subscription',
- clock_timestamp(),clock_timestamp()+interval '30 days','active',
- '{"source":"disposable_ci_fixture"}'::jsonb
+-- The workflow owner must hold a current plan that explicitly entitles video generation.
+create table if not exists executive_visuals.customer_subscriptions (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  status text not null check(status in ('pending','trialing','active','past_due','cancelled','expired','suspended')),
+  current_period_start timestamptz not null,
+  current_period_end timestamptz not null,
+  entitlements_snapshot jsonb not null check(jsonb_typeof(entitlements_snapshot)='object')
+);
+insert into executive_visuals.customer_subscriptions(
+  id,owner_id,status,current_period_start,current_period_end,entitlements_snapshot
+) values (
+  '923e4567-e89b-42d3-a456-426614174000',
+  '123e4567-e89b-42d3-a456-426614174000',
+  'active',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '30 days',
+  '{"ai_generation":true,"video_generation":true,"source":"disposable_ci_fixture"}'::jsonb
 );
 
 -- Workflow quote ledger: service-role-only immutable quote recording.
