@@ -70,6 +70,14 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{projects});
    }
+   if(path==="/api/cloud/jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"PROJECT_REQUIRED",message:"A valid project ID is required to inspect cloud render history."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    const requestedLimit=Number(query.limit)||20,limit=Math.max(1,Math.min(50,Math.floor(requestedLimit)));
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
+    return response(200,{jobs:Array.isArray(rows)?rows:[]});
+   }
    const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
    if(projectMatch&&safeId(projectMatch[1])){
     const projectId=projectMatch[1];
