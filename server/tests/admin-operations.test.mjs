@@ -72,7 +72,9 @@ test("video dispatch readiness reports missing prerequisites without exposing se
  assert.equal(blocked.checks.cloudDispatch,false);
  assert.equal(blocked.checks.supabaseServiceCredentials,true);
  assert.equal(blocked.checks.videoProviderReady,true);
- assert.equal(blocked.blockers.length,1);
+ assert.equal(blocked.blockers.length,2);
+ assert.ok(blocked.blockers.some(item=>item.check==="cloudDispatch"));
+ assert.ok(blocked.blockers.some(item=>item.check==="durableWorkerAdapterReady"));
  assert.equal(blocked.appDataPersistenceWarning!==null,true);
  assert.equal(JSON.stringify(blocked).includes("super-secret"),false);
  assert.equal(blocked.policy.requestsSubmitted,false);
