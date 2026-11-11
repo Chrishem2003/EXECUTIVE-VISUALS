@@ -9,6 +9,7 @@ const projectId = "423e4567-e89b-42d3-a456-426614174000";
 const requestHash = "a".repeat(64);
 const input = { projectId, provider: "runway", model: "gen4.5", requestHash, durationSeconds: 5, prompt: "A test scene" };
 const approvalId = "523e4567-e89b-42d3-a456-426614174000";
+const leaseToken = "923e4567-e89b-42d3-a456-426614174000";
 const resultRow = {
   job_id: "623e4567-e89b-42d3-a456-426614174000",
   job_status: "queued",
@@ -77,25 +78,25 @@ test("enqueue preserves active-job idempotent replay and atomically finalizes bu
     ...base,
     fetchImpl: async (url, options) => {
       calls.push({ url, body: JSON.parse(options.body) });
-      return response(url.endsWith("/finish_video_generation_job") ? true : [replay]);
+      return response(url.endsWith("/finish_video_generation_job_v2") ? true : [replay]);
     }
   });
   const queued = await client.enqueue(args());
   assert.equal(queued.idempotentReplay, true);
   assert.equal(queued.status, "processing");
   assert.equal(await client.finish({
-    jobId: resultRow.job_id, workerId: "video-worker-1", status: "succeeded",
+    jobId: resultRow.job_id, workerId: "video-worker-1", leaseToken, status: "succeeded",
     output: { assetIds: ["asset-1"] }, actualAmount: 0.8
   }), true);
   assert.equal(await client.finish({
-    jobId: resultRow.job_id, workerId: "video-worker-1", status: "failed",
+    jobId: resultRow.job_id, workerId: "video-worker-1", leaseToken, status: "failed",
     error: { code: "PROVIDER_FAILED" }
   }), true);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
-    "enqueue_video_generation_job", "finish_video_generation_job", "finish_video_generation_job"
+    "enqueue_video_generation_job", "finish_video_generation_job_v2", "finish_video_generation_job_v2"
   ]);
   assert.deepEqual(calls[1].body, {
-    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_status: "succeeded",
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_lease_token: leaseToken, p_status: "succeeded",
     p_output: { assetIds: ["asset-1"] }, p_error: null, p_actual_amount: 0.8
   });
   assert.equal(calls[2].body.p_actual_amount, null);
@@ -111,7 +112,7 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     }
   });
   assert.equal(await client.defer({
-    jobId: resultRow.job_id, workerId: "video-worker-1", delaySeconds: 45
+    jobId: resultRow.job_id, workerId: "video-worker-1", leaseToken, delaySeconds: 45
   }), true);
   assert.equal(await client.quarantine({
     jobId: resultRow.job_id, workerId: "video-worker-1"
@@ -121,15 +122,15 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
   }), true);
   assert.equal(await client.recoverExpiredVideo(25), 2);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
-    "defer_video_generation_job", "quarantine_video_generation_job",
+    "defer_video_generation_job_v2", "quarantine_video_generation_job_v2",
     "resume_reconciled_video_generation_job", "recover_expired_video_generation_jobs"
   ]);
   assert.deepEqual(calls[0].body, {
-    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_lease_token: leaseToken,
     p_delay_seconds: 45, p_reason_code: "VIDEO_PROVIDER_POLL_DEFERRED"
   });
   assert.deepEqual(calls[1].body, {
-    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_lease_token: leaseToken,
     p_reason_code: "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION"
   });
   assert.deepEqual(calls[2].body, {
@@ -142,8 +143,8 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
 test("cloud video deferral and quarantine reject invalid controls before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response(true); } });
-  await assert.rejects(() => client.defer({ jobId: resultRow.job_id, workerId: "worker", delaySeconds: 1 }), /between 5 and 900/);
-  await assert.rejects(() => client.quarantine({ jobId: resultRow.job_id, workerId: "worker", reasonCode: "not safe" }), /reason code/);
+  await assert.rejects(() => client.defer({ jobId: resultRow.job_id, workerId: "worker", leaseToken, delaySeconds: 1 }), /between 5 and 900/);
+  await assert.rejects(() => client.quarantine({ jobId: resultRow.job_id, workerId: "worker", leaseToken, reasonCode: "not safe" }), /reason code/);
   await assert.rejects(() => client.resumeReconciled({ jobId: resultRow.job_id, ownerId }), /Evidence reference/);
   assert.equal(calls, 0);
 });
@@ -170,8 +171,8 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
-  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", status: "succeeded" }), /require a non-negative/);
-  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", status: "failed", actualAmount: 1 }), /must release their reservation/);
+  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", leaseToken, status: "succeeded" }), /require a non-negative/);
+  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", leaseToken, status: "failed", actualAmount: 1 }), /must release their reservation/);
   assert.equal(calls, 0);
 });
 
