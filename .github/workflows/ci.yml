@@ -118,6 +118,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
       - name: Verify stale workers cannot renew or complete reclaimed jobs
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/job-lease-fencing-postgres-integration.sql
+      - name: Apply atomic asset publication lease fencing and derivative lineage
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql
       - name: Apply atomic asset publication and cleanup claims
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
       - name: Apply immutable publication cleanup path constraints
