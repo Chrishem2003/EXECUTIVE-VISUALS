@@ -15,6 +15,21 @@ export interface TimelineMarker {
   color?:string; note?:string;
 }
 export interface AudioMasteringSettings { enabled:boolean; profile?:"web-podcast"|"ebu-r128"|"custom"; integratedLoudness?:number; loudnessRange?:number; truePeak?:number; dualMono?:boolean }
+
+export interface AudioMasteringSettingsInput {
+  enabled:boolean; profile?:unknown; integratedLoudness?:unknown;
+  loudnessRange?:unknown; truePeak?:unknown; dualMono?:boolean;
+}
+export function normalizeAudioMasteringSettings(input:AudioMasteringSettingsInput):AudioMasteringSettings {
+  const profile=input.profile??"web-podcast";
+  if(profile!=="web-podcast"&&profile!=="ebu-r128"&&profile!=="custom")throw new Error("Select a supported audio mastering profile.");
+  const integratedLoudness=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:Number(input.integratedLoudness);
+  const loudnessRange=Number(input.loudnessRange??11),truePeak=Number(input.truePeak??-1.5);
+  if(!Number.isFinite(integratedLoudness)||integratedLoudness< -70||integratedLoudness> -5||!Number.isFinite(loudnessRange)||loudnessRange<1||loudnessRange>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0) {
+    throw new Error("Mastering targets must be within -70 to -5 LUFS, 1 to 50 LU LRA and -9 to 0 dBTP.");
+  }
+  return {enabled:Boolean(input.enabled),profile,integratedLoudness,loudnessRange,truePeak,dualMono:Boolean(input.dualMono)};
+}
 export interface EditorialTimeline {
   audioMastering?:AudioMasteringSettings;
   id:string; projectId:string; name:string; revision:number;
