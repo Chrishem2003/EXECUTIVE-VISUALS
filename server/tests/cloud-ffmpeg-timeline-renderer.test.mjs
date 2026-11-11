@@ -76,6 +76,36 @@ test("cloud FFmpeg renderer matches Web Audio center panning for mono and stereo
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+test("cloud FFmpeg renderer downmixes 5.1 sources before stereo panning", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-pan-51-"));
+ try{
+  const video=join(root,"picture.mp4"),surround=join(root,"surround-51.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=black:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","aevalsrc=0.2*sin(2*PI*440*t)|0.1*sin(2*PI*550*t)|0.15*sin(2*PI*660*t)|0|0.08*sin(2*PI*770*t)|0.04*sin(2*PI*880*t):s=48000:c=5.1:d=1","-c:a","pcm_s16le",surround]);
+  const sourceInfo=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=channels,channel_layout","-of","json",surround],{encoding:"utf8"}));
+  assert.equal(sourceInfo.streams?.[0]?.channels,6,"fixture must be a six-channel source");
+  const render=async(pan)=>{
+   const timeline={name:"Surround downmix",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+    {id:"v",kind:"video",clips:[{id:"v1",assetId:"video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+    {id:"a",kind:"audio",clips:[{id:"a1",assetId:"surround",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},pan}]}
+   ]};
+   return renderCloudTimeline({timeline,assets:new Map([
+    ["video",{path:video,asset:{id:"video",mediaType:"video/mp4"}}],
+    ["surround",{path:surround,asset:{id:"surround",mediaType:"audio/wav"}}]
+   ]),workDir:root,onProgress(){}});
+  };
+  const center=await render(0),hardLeft=await render(-1);
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",center.path],{encoding:"utf8"}));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"&&stream.channels===2),"5.1 source must render as a stereo master");
+  const decode=path=>execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const rms=(buffer,from,to,channel)=>{const samples=new Float32Array(buffer.buffer,buffer.byteOffset,buffer.byteLength/4);let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const centerPcm=decode(center.path),centerLeft=rms(centerPcm,.1,.9,0),centerRight=rms(centerPcm,.1,.9,1);
+  assert.ok(centerLeft>0.01&&centerRight>0.01,"center-panned 5.1 downmix should retain audible energy in both stereo channels");
+  const leftPcm=decode(hardLeft.path),leftRms=rms(leftPcm,.1,.9,0),rightRms=rms(leftPcm,.1,.9,1);
+  assert.ok(leftRms>rightRms*20,"hard-left panning should place the downmixed surround signal in the left channel");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  const timeline={tracks:[{kind:"video",clips:[
   {assetId:"v",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}},
