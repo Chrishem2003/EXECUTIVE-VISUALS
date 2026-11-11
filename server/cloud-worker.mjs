@@ -78,6 +78,9 @@ export async function runCloudWorkerCycle({
       code: typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_JOB_FAILED",
       message: String(error?.message || "Cloud job execution failed.").slice(0, 500)
     };
+    if(error?.certification?.schemaVersion===1&&Array.isArray(error.certification.checks)){
+      details.deliveryCertification=error.certification;
+    }
     const finished = await queue.finish(job.id, workerId, "failed", null, details);
     if (!finished) {
       leaseLost = true;
