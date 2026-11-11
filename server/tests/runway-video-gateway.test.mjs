@@ -260,3 +260,12 @@ test("Runway cancels a response body immediately when declared JSON size exceeds
  try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");assert.equal(cancelled,true);}
  finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
 });
+
+test("Runway cancels oversized generated-video downloads from Content-Length before reading",async()=>{
+ let cancelled=false;
+ await assert.rejects(()=>downloadRunwayVideoTaskOutput({
+  outputUrl:"https://cdn.example.cloudfront.net/oversized.mp4",
+  fetchImpl:async()=>({ok:true,status:200,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{cancelled=true;}}})
+ }),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
+ assert.equal(cancelled,true);
+});
