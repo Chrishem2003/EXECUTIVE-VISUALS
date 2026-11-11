@@ -20,9 +20,9 @@ async function jsonRequest(url,options,timeoutMs){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   let response;try{response=await fetch(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
-  if(response.status===429)throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
-  if(response.status>=500)throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
-  if(!response.ok)throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
+  if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
+  if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
+  if(!response.ok){try{await response.body?.cancel?.()}catch{}throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
   const raw=await readBoundedJsonText(response);
   try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
  }finally{clearTimeout(timer)}
