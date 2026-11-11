@@ -59,17 +59,21 @@ export async function loadAdminOperationsWorkspace(){
    apiRequest<any>("/api/admin/billing/recovery?limit=50")
   ]);
   const [providerBilling,subscriptionReconciliation,billingRecovery]=billingResults;
-  const billingSuccess=billingResults.filter(result=>result.status==="fulfilled").length;
-  state.billingOps={
-   access:billingSuccess===3?"ready":billingSuccess>0?"partial":"restricted",
-   provider:providerBilling.status==="fulfilled"?providerBilling.value:null,
-   reconciliation:subscriptionReconciliation.status==="fulfilled"?subscriptionReconciliation.value:null,
-   recovery:billingRecovery.status==="fulfilled"?billingRecovery.value:null,
-   message:billingSuccess===0?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role.":billingSuccess<3?"Some billing operations are unavailable; verify the billing API and administrator role.":""
-  };
-  if(unavailable.length===0)state.updatedAt=new Date().toISOString();
-  state.error=unavailable.length
-   ?"Partial refresh: "+unavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
+  const billingUnavailable:string[]=[];
+  if(providerBilling.status==="fulfilled")state.billingOps.provider=providerBilling.value;else billingUnavailable.push("provider readiness");
+  if(subscriptionReconciliation.status==="fulfilled")state.billingOps.reconciliation=subscriptionReconciliation.value;else billingUnavailable.push("subscription reconciliation");
+  if(billingRecovery.status==="fulfilled")state.billingOps.recovery=billingRecovery.value;else billingUnavailable.push("billing recovery");
+  const billingAvailable=[state.billingOps.provider,state.billingOps.reconciliation,state.billingOps.recovery].filter(value=>value!==null).length;
+  state.billingOps.access=billingAvailable===3&&billingUnavailable.length===0?"ready":billingAvailable>0?"partial":"restricted";
+  state.billingOps.message=billingUnavailable.length
+   ?"Billing refresh incomplete: "+billingUnavailable.join(", ")+" unavailable. Previously loaded results are retained."
+   :billingAvailable===0
+    ?"Billing endpoints are disabled or this account lacks the separate Supabase platform_admins billing role."
+    :"";
+  if(unavailable.length===0&&billingUnavailable.length===0)state.updatedAt=new Date().toISOString();
+  const refreshUnavailable=[...unavailable,...billingUnavailable.map(value=>"billing "+value)];
+  state.error=refreshUnavailable.length
+   ?"Partial refresh: "+refreshUnavailable.join(", ")+" unavailable. Other sections remain available; previously loaded values are retained where a refresh failed."
    :"";
  }catch(error){state.error=error instanceof Error?error.message:"Administrator data could not be loaded. Check the administrator allowlist and sign-in.";state.overview=null;}
  finally{state.loading=false;paint();}
