@@ -68,3 +68,13 @@ test("durable task repository records cancellation intent and confirmed cancella
  assert.equal(transitions[0].body.p_provider_status,"CANCEL_REQUESTED");
  assert.equal(transitions[1].body.p_provider_status,"OK");
 });
+
+test("cancellation reconciliation claims are worker-scoped RPC leases",async()=>{
+ const h=harness();
+ const rows=await h.tasks.claimCancellationPending("worker-7",15);
+ assert.deepEqual(rows,[]);
+ const call=h.calls.find(item=>item.url.includes("claim_video_generation_cancellations"));
+ assert.ok(call);
+ assert.deepEqual(call.body,{p_worker_id:"worker-7",p_limit:15,p_lease_seconds:60});
+ await assert.rejects(()=>h.tasks.claimCancellationPending("",15),e=>e.code==="VIDEO_TASK_QUERY_INVALID");
+});
