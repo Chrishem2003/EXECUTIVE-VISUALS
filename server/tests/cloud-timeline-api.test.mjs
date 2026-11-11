@@ -458,3 +458,49 @@ test("cloud workflow approval requires the actual project owner before any budge
  assert.equal(writes,0);
 });
 
+
+test("cloud review routes persist frame-anchored comments through verified project membership",async()=>{
+ const assetId="823e4567-e89b-42d3-a456-426614174000";
+ const rows=[],calls=[];
+ const fetchImpl=async(url,options)=>{
+  const route=url.split("/rest/v1/")[1]||"";
+  calls.push({route,method:options.method,body:options.body?JSON.parse(options.body):null});
+  if(route.startsWith("project_members?"))return{ok:true,status:200,async text(){return JSON.stringify([{role:"reviewer"}]);}};
+  if(route.startsWith("reviews?")&&options.method==="GET"){
+   const params=new URLSearchParams(route.split("?")[1]||"");
+   const result=rows.filter(row=>(!params.has("id")||params.get("id")==="eq."+row.id)&&(!params.has("project_id")||params.get("project_id")==="eq."+row.project_id));
+   return{ok:true,status:200,async text(){return JSON.stringify(result);}};
+  }
+  if(route.startsWith("reviews?")&&options.method==="POST"){
+   const row={created_at:"2026-11-12T08:00:00.000Z",updated_at:"2026-11-12T08:00:00.000Z",...JSON.parse(options.body)};
+   rows.push(row);return{ok:true,status:201,async text(){return JSON.stringify([row]);}};
+  }
+  if(route.startsWith("reviews?")&&options.method==="PATCH"){
+   const idMatch=route.match(/id=eq\.([0-9a-f-]+)/),row=rows.find(item=>item.id===idMatch?.[1]);
+   if(!row)return{ok:true,status:200,async text(){return"[]";}};
+   Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+  }
+  throw new Error("Unexpected review request "+options.method+" "+route);
+ };
+ const timelineService={
+  projects:{async get(){return{id:project,ownerId:owner,name:"Review project"};}},
+  assets:{async get({assetId:id}){return{id,projectId:project,mediaType:"video/mp4",name:"master.mp4"};}},
+  timelines:{async get(){return{id:timelineId,projectId:project,revision:3,timeline:{frameRate:{numerator:24,denominator:1}}};}}
+ };
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,timelineService,authorize:async()=>true});
+ const created=await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:editor,idempotencyKey:"review-request-0001",body:{projectId:project,assetId,timelineId,timelineRevision:3,frameNumber:48,durationFrames:24,body:"Align the title with the product edge.",decision:"request_changes"}});
+ assert.equal(created.status,201);
+ assert.equal(created.body.review.authorId,editor);
+ assert.equal(created.body.review.frameNumber,48);
+ assert.equal(rows[0].owner_id,owner);
+ assert.equal(rows[0].reviewer_id,editor);
+ assert.equal(Number(rows[0].timecode_seconds),2);
+ const listed=await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:editor,query:{projectId:project}});
+ assert.equal(listed.status,200);
+ assert.equal(listed.body.reviews.length,1);
+ const actualId=created.body.review.id;
+ const resolved=await api.handle({method:"PATCH",path:"/api/cloud/reviews/"+actualId,ownerId:editor,body:{status:"resolved"}});
+ assert.equal(resolved.status,200);
+ assert.equal(resolved.body.review.status,"resolved");
+ assert.equal(calls.some(call=>call.method==="POST"&&call.route.startsWith("reviews?")),true);
+});
