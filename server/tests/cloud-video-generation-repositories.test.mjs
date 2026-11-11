@@ -51,9 +51,9 @@ test("repository refuses missing service credentials and invalid project-scoped 
 
 test("Fal provider identity is persisted through the atomic submitted transition",async()=>{
  const h=harness();
- const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",provider:"fal",model:"fal-ai/example-video",estimatedCostCredits:20});
+ const changed=await h.tasks.markSubmitted("task-1",{providerTaskId:"123e4567-e89b-42d3-a456-426614174000",provider:"fal",model:"fal-ai/example-video",estimatedCostCredits:20},lease);
  assert.equal(changed.provider,"fal");
- const call=h.calls.find(item=>item.url.endsWith("/rpc/transition_video_generation_task"));
+ const call=h.calls.find(item=>item.url.endsWith("/rpc/transition_video_generation_task_v2"));
  assert.equal(call.body.p_provider,"fal");
  assert.equal(call.body.p_model,"fal-ai/example-video");
 });
