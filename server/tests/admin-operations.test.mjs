@@ -102,3 +102,21 @@ test("video dispatch readiness blocks unconfigured or non-ready video providers"
   assert.equal(result.blockers.some(item=>item.check==="videoProviderReady"),true);
  }
 });
+
+
+test("admin execution monitor classifies worker leases as active, expired, missing or not running",()=>{
+ let sql="";
+ const rows=[
+  {id:"active",email:"a@example.com",job_type:"video.generate",status:"running",progress:20,attempt_count:1,created_at:"2026-11-11T11:00:00Z",updated_at:"2026-11-11T12:04:00Z",lease_expires_at:"2026-11-11T12:06:00Z",lease_heartbeat_at:"2026-11-11T12:04:00Z"},
+  {id:"expired",email:"b@example.com",job_type:"video.generate",status:"running",progress:20,attempt_count:2,created_at:"2026-11-11T11:00:00Z",updated_at:"2026-11-11T11:50:00Z",lease_expires_at:"2026-11-11T12:00:00Z",lease_heartbeat_at:"2026-11-11T11:50:00Z"},
+  {id:"missing",email:"c@example.com",job_type:"video.generate",status:"running",progress:5,attempt_count:1,created_at:"2026-11-11T11:00:00Z",updated_at:"2026-11-11T11:00:00Z",lease_expires_at:null,lease_heartbeat_at:null},
+  {id:"queued",email:"d@example.com",job_type:"video.generate",status:"queued",progress:0,attempt_count:0,created_at:"2026-11-11T11:00:00Z",updated_at:"2026-11-11T11:00:00Z",lease_expires_at:null,lease_heartbeat_at:null}
+ ];
+ const db={prepare(query){sql=query;return{all(){return rows;}};}};
+ const result=listAdminOperationJobs(db,{now:Date.parse("2026-11-11T12:05:00Z")});
+ assert.match(sql,/lease_expires_at/);
+ assert.match(sql,/lease_heartbeat_at/);
+ assert.deepEqual(result.map(row=>row.leaseState),["active","expired","missing","not_running"]);
+ assert.equal(result[0].leaseHeartbeatAt,"2026-11-11T12:04:00Z");
+ assert.equal(result[1].leaseExpiresAt,"2026-11-11T12:00:00Z");
+});
