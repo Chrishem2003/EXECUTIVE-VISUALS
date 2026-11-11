@@ -6,6 +6,7 @@ import { executeCloudVideoGenerationJob } from "../cloud-video-generation-job-ex
 const requestHash = "a".repeat(64);
 const job = {
   id: "job-google-1", owner_id: "owner-1", project_id: "project-1",
+  lease_owner: "shared-worker-1", lease_token: "923e4567-e89b-42d3-a456-426614174000",
   job_type: "video.generate", estimated_cost: { amount: 1, currency: "USD" },
   input: { provider: "google", model: "gemini-omni-1.1-flash", requestHash }
 };
