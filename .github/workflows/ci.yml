@@ -193,6 +193,12 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Apply subscription AI-generation entitlement gate
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
+      - name: Apply frame-accurate review and annotation foundation
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106130000_frame_accurate_review_foundation.sql
+      - name: Bind review audit events to the verified API actor
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106150000_review_api_actor.sql
+      - name: Verify frame-accurate review persistence and event history
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-reviews-postgres-integration.sql
       - name: Apply database-issued worker lease fencing
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
       - name: Apply cloud-video submission and terminal-write fencing
