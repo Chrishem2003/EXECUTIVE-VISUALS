@@ -601,7 +601,7 @@ test("cloud media execution timeout kills the child before returning",async()=>{
  process.env.FFPROBE_PATH=ffprobe;
  try{
   const execute=createCloudMediaExecutor({
-   tempRoot:directory,ffprobe,timeoutMs:350,
+   tempRoot:directory,ffprobe,timeoutMs:1000,
    mediaIO:{async materialize(){return {path:source,asset:{id:"asset-timeout",name:"timeout.mp4",mediaType:"video/mp4"},async cleanup(){}};},async publish(){throw new Error("Timed-out probe must not publish.");}}
   });
   const pending=execute({job:{id:"job-timeout",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-timeout"}},onProgress(){}});
