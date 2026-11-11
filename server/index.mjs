@@ -435,6 +435,42 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
+      if(path==="/api/d1"||path.startsWith("/api/d1/")){
+        const configuredWorker=String(process.env.D1_STAGING_WORKER_URL||"").trim();
+        if(!configuredWorker){fail(res,503,"D1_STAGING_DISABLED","The isolated D1 staging bridge is not enabled in this environment.");return;}
+        let workerOrigin;
+        try{
+          workerOrigin=new URL(configuredWorker);
+          const localDevelopment=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1"].includes(workerOrigin.hostname);
+          if((workerOrigin.protocol!=="https:"&&!localDevelopment)||workerOrigin.username||workerOrigin.password||workerOrigin.pathname!=="/"||workerOrigin.search||workerOrigin.hash||(!localDevelopment&&!workerOrigin.hostname.endsWith(".workers.dev"))){
+            throw new Error("D1 staging URL is not an approved HTTPS Worker origin.");
+          }
+        }catch{
+          fail(res,503,"D1_STAGING_CONFIG_INVALID","The isolated D1 staging Worker URL is invalid.");return;
+        }
+        if(!["GET","POST","PATCH","PUT"].includes(req.method)){fail(res,405,"D1_METHOD_NOT_ALLOWED","This staging endpoint does not support the requested method.");return;}
+        try{
+          const headers=new Headers();
+          for(const name of ["cookie","authorization","content-type","accept"]){
+            const value=req.headers[name];
+            if(typeof value==="string"&&value)headers.set(name,value);
+          }
+          let body;
+          if(req.method!=="GET"&&req.method!=="HEAD"){
+            const payload=await readJson(req,256*1024);
+            body=JSON.stringify(payload);
+            if(!headers.has("content-type"))headers.set("content-type","application/json");
+          }
+          const target=new URL(path+url.search,workerOrigin);
+          const upstream=await fetch(new Request(target,{method:req.method,headers,body,redirect:"manual",signal:AbortSignal.timeout(15000)}));
+          const payload=await upstream.json().catch(()=>null);
+          if(payload===null){fail(res,502,"D1_STAGING_INVALID_RESPONSE","The staging Worker returned an invalid response.");return;}
+          const cookies=typeof upstream.headers.getSetCookie==="function"?upstream.headers.getSetCookie():[upstream.headers.get("set-cookie")].filter(Boolean);
+          send(res,upstream.status,payload,{...cors,...(cookies.length?{"set-cookie":cookies}:{})});return;
+        }catch(error){
+          fail(res,502,"D1_STAGING_UNAVAILABLE",error?.name==="TimeoutError"?"The staging Worker did not respond in time.":"The isolated D1 staging Worker could not be reached.");return;
+        }
+      }
       if(path.startsWith("/api/admin/operations/")){
         if(!isPlatformAdministrator(user)){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
         if(path==="/api/admin/operations/overview"&&req.method==="GET"){
