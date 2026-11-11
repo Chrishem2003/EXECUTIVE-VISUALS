@@ -40,7 +40,8 @@ test("video worker reconciles pending provider cancellations after restart",asyn
  const calls=[],pending=[
   {id:"task-1",provider:"fal",providerTaskId:"123e4567-e89b-42d3-a456-426614174000",model:"fal-ai/example"},
   {id:"task-2",provider:"runway",providerTaskId:"223e4567-e89b-42d3-a456-426614174000",model:"seedance2_5"},
-  {id:"task-3",provider:"fal",providerTaskId:null,model:"fal-ai/example"}
+  {id:"task-3",provider:"fal",providerTaskId:null,model:"fal-ai/example",state:"reserved"},
+  {id:"task-4",provider:"runway",providerTaskId:null,model:"seedance2_5",state:"submission_unknown"}
  ];
  const tasks={
   async listCancellationPending(limit){calls.push(["list",limit]);return pending;},
@@ -56,8 +57,9 @@ test("video worker reconciles pending provider cancellations after restart",asyn
   }
  });
  const result=await worker.reconcilePendingCancellations(10);
- assert.equal(result.examined,3);assert.equal(result.pending,1);assert.equal(result.confirmed,2);
+ assert.equal(result.examined,4);assert.equal(result.pending,1);assert.equal(result.confirmed,2);assert.equal(result.errors.length,1);
  assert.ok(calls.some(x=>x[0]==="requested"&&x[1]==="task-1"));
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"));
  assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"));
+ assert.ok(!calls.some(x=>x[0]==="cancelled"&&x[1]==="task-4"));
 });
