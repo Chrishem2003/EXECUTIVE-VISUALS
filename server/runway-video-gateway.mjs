@@ -111,6 +111,7 @@ async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fet
     if(response.status===429){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");}
     if(response.status>=500){try{await response.body?.cancel?.()}catch{}throw fail("Runway API returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");}
     if(!response.ok&&!allowStatuses.includes(response.status)){try{await response.body?.cancel?.()}catch{}throw fail("Runway API rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");}
+    if(response.status===404&&allowStatuses.includes(404))return {__httpStatus:404};
     const raw=await readBoundedJsonText(response);
     let data={};try{data=raw?JSON.parse(raw):{};}catch{throw fail("Runway API returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE");}
     return response.status===404?{...data,__httpStatus:404}:data;
