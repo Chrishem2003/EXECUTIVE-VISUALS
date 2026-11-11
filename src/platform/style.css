@@ -396,3 +396,32 @@
 .editor-clip-waveform span{font-size:7px;line-height:1.2;color:#d7c6a8;white-space:normal}
 
 .editor-clip-waveform img{display:block;width:100%;height:28px;object-fit:fill;opacity:.9}
+
+
+/* Cloud timeline loudness mastering controls and measured output evidence */
+.mastering-panel{margin:18px 0;border-color:#51406f;background:linear-gradient(135deg,#171521,#121620)}
+.mastering-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.mastering-panel-head h3{margin:7px 0;font:700 16px Manrope}
+.mastering-panel-head p{margin:0;max-width:680px;line-height:1.6}
+.mastering-enable{display:flex;align-items:center;gap:8px;font-size:10px;color:#e8e2f6;white-space:nowrap}
+.mastering-enable input,.mastering-dual-mono input{width:auto;min-width:16px;accent-color:var(--purple-400)}
+.mastering-controls{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:12px;margin-top:18px}
+.mastering-controls>label{display:grid;gap:7px;color:var(--muted);font-size:9px}
+.mastering-controls input[type=number]{width:100%;min-width:0;background:#0c1018;border:1px solid #39334b;color:#f2f3f6;border-radius:6px;padding:9px;font-size:11px}
+.mastering-controls .mastering-dual-mono{display:flex;align-items:center;gap:8px;grid-column:1/-1}
+.mastering-controls.is-disabled{opacity:.55}
+.mastering-note{font-size:9px;line-height:1.7;color:var(--muted);margin:14px 0 0}
+.mastering-report{margin-top:16px;padding:14px;border:1px solid #3b4352;border-radius:8px;background:#0c1119}
+.mastering-report.verified{border-color:#2c765c}
+.mastering-report.needs-review{border-color:#8b6336}
+.mastering-report-heading{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11px}
+.mastering-report-heading span{font-size:8px;letter-spacing:1.4px;color:#c7c0d8}
+.mastering-report.verified .mastering-report-heading span{color:#7fe0b2}
+.mastering-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:13px 0}
+.mastering-metrics>div{padding:10px;background:#171d29;border-radius:6px;min-width:0}
+.mastering-metrics small,.mastering-metrics strong{display:block}
+.mastering-metrics small{font-size:8px;color:var(--muted);margin-bottom:6px}
+.mastering-metrics strong{font:700 13px Manrope;overflow-wrap:anywhere}
+.mastering-findings{padding-left:17px;color:#e5c08c;font-size:9px;line-height:1.7}
+@media(max-width:760px){.mastering-controls{grid-template-columns:1fr 1fr}.mastering-metrics{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.mastering-controls{grid-template-columns:1fr}.mastering-metrics{grid-template-columns:1fr 1fr}}
