@@ -351,7 +351,7 @@ async function validatePngFile(path, maxBytes) {
       expectedBytes += pass.height * (rowBytes + 1);
       scanlinePasses.push({ rows: pass.height, rowBytes });
     }
-    const MAX_PNG_DECODE_BYTES = 512 * 1024 * 1024;
+    const MAX_PNG_DECODE_BYTES = 128 * 1024 * 1024;
     if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 1 || expectedBytes > MAX_PNG_DECODE_BYTES) {
       throw fail("AI upscaling PNG decoded image exceeds the safe validation budget.", "AI_UPSCALE_OUTPUT_INVALID");
     }
