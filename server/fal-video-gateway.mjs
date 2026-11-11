@@ -6,13 +6,13 @@ function queueUrl(raw){
  if(url.protocol!=="https:"||url.hostname!=="queue.fal.run"||url.username||url.password||url.port||url.hash)throw fail("The video provider returned an unsafe job URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return url;
 }
-async function jsonRequest(url,options,timeoutMs){
+async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch,allowStatuses=[]){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
-  let response;try{response=await fetch(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
+  let response;try{response=await fetchImpl(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
   if(response.status===429)throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
   if(response.status>=500)throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
-  if(!response.ok)throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
+  if(!response.ok&&!allowStatuses.includes(response.status))throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
   const raw=await response.text();if(Buffer.byteLength(raw)>2*1024*1024)throw fail("Video provider returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
   try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
  }finally{clearTimeout(timer)}
@@ -41,6 +41,77 @@ export function buildFalVideoPayload({prompt,duration=5,aspectRatio="16:9",refer
   payload[field]=referenceImageDataUrl;
  }
  return payload;
+}
+function falWorkerConfig(model){
+ if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");
+ if(process.env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote video providers are disabled. Review pricing and explicitly enable remote access on the server.","VIDEO_GATEWAY_REMOTE_DISABLED");
+ const key=String(process.env.FAL_KEY||"").trim(),configured=String(process.env.FAL_VIDEO_MODEL||"").trim();
+ if(!key||!configured||configured!==model||model.length>240||!/^[a-zA-Z0-9_./:-]+$/.test(model)||model.includes("..")||model.startsWith("/")||model.endsWith("/")||model.split("/").length<2)
+  throw fail("The selected Fal model does not match the configured server-side model or credentials are missing.","VIDEO_GATEWAY_CONFIG_INVALID");
+ return {key,parts:model.split("/")};
+}
+function falTaskUrl(model,taskId,suffix=""){
+ const parts=String(model||"").split("/");
+ if(parts.length<2||parts.some(part=>!part||part==="."||part===".."))throw fail("Fal model identity is invalid.","VIDEO_GATEWAY_INVALID_INPUT");
+ const id=String(taskId||"");
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))throw fail("Fal request identity is invalid.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return new URL("https://queue.fal.run/"+encodeURIComponent(parts[0])+"/"+encodeURIComponent(parts[1])+"/requests/"+id+suffix);
+}
+/** Submit one durable Fal queue task; the worker persists its request ID before polling. */
+export async function submitFalVideoTask({model=process.env.FAL_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",referenceImageDataUrl="",fetchImpl=fetch}={}){
+ const {key,parts}=falWorkerConfig(model);
+ const payload=buildFalVideoPayload({prompt,duration:durationSeconds,aspectRatio,referenceImageDataUrl});
+ const endpoint=new URL("https://queue.fal.run/"+parts.map(part=>encodeURIComponent(part)).join("/"));
+ const submitted=await jsonRequest(endpoint,{method:"POST",headers:{authorization:"Key "+key,"content-type":"application/json","X-Fal-No-Retry":"1"},body:JSON.stringify(payload)},30000,fetchImpl);
+ const taskId=String(submitted.request_id||"");
+ falTaskUrl(model,taskId);
+ if(submitted.status!=="IN_QUEUE"&&submitted.status!=="IN_PROGRESS")throw fail("Fal did not confirm that the generation request entered its durable queue.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return {taskId,status:"PENDING",model,provider:"fal",submittedAt:new Date().toISOString()};
+}
+/** Poll only the persisted Fal request ID; this never submits a second request. */
+export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
+ const {key}=falWorkerConfig(model);
+ const statusUrl=falTaskUrl(model,taskId,"/status");
+ const status=await jsonRequest(statusUrl,{headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ if(status.status==="NOT_FOUND")return Object.freeze({taskId,status:"CANCELLED",model:String(model),outputUrl:null,error:null});
+ if(status.request_id&&status.request_id!==taskId)throw fail("Fal task identity did not match the requested task.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ if(status.status==="IN_QUEUE")return {taskId,status:"PENDING"};
+ if(status.status==="IN_PROGRESS")return {taskId,status:"RUNNING"};
+ if(status.status!=="COMPLETED")throw fail("Fal returned an unknown queue state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ if(status.error||status.error_type)return {taskId,status:"FAILED",error:{code:String(status.error_type||"FAL_TASK_FAILED"),message:String(status.error||"Fal task failed.").slice(0,300)}};
+ const result=await jsonRequest(falTaskUrl(model,taskId),{headers:{authorization:"Key "+key}},20000,fetchImpl);
+ const outputUrl=String(result.video?.url||result.videos?.[0]?.url||"");
+ let url;try{url=new URL(outputUrl)}catch{throw fail("Fal completed the request without a valid video URL.","VIDEO_GATEWAY_INVALID_RESPONSE");}
+ if(url.protocol!=="https:"||!(url.hostname==="fal.media"||url.hostname.endsWith(".fal.media"))||url.username||url.password||url.port||url.hash||url.search)
+  throw fail("Fal returned an untrusted output URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return {taskId,status:"SUCCEEDED",outputUrl};
+}
+/** Request cancellation for a persisted Fal queue request. CANCELLATION_REQUESTED is not treated as terminal. */
+export async function cancelFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
+ const {key}=falWorkerConfig(model);
+ const response=await jsonRequest(falTaskUrl(model,taskId,"/cancel"),{method:"PUT",headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ const status=String(response.status||"");
+ if(!["OK","CANCELLATION_REQUESTED","ALREADY_COMPLETED","NOT_FOUND"].includes(status))
+  throw fail("Fal returned an unknown cancellation state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return {taskId,status};
+}
+/** Download a completed Fal result from its allowlisted media host with strict size and MP4 checks. */
+export async function downloadFalVideoTaskOutput({outputUrl,fetchImpl=fetch,timeoutMs=60000,maxOutputBytes=MAX_OUTPUT_BYTES}={}){
+ let url;try{url=new URL(outputUrl)}catch{throw fail("Fal output URL is invalid.","VIDEO_GATEWAY_INVALID_RESPONSE");}
+ if(url.protocol!=="https:"||!(url.hostname==="fal.media"||url.hostname.endsWith(".fal.media"))||url.username||url.password||url.port||url.hash||url.search)
+  throw fail("Fal output URL is not on an approved media host.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(1000,Math.min(120000,timeoutMs)));
+ try{
+  let response;try{response=await fetchImpl(url,{signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Fal output download timed out.":"Fal output could not be downloaded safely.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE");}
+  if(!response.ok)throw fail("Fal output download failed.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  if(Number(response.headers.get("content-length")||0)>maxOutputBytes)throw fail("Fal output exceeds the configured size limit.","VIDEO_OUTPUT_INVALID");
+  if(!response.body?.getReader)throw fail("Fal output cannot be streamed safely.","VIDEO_GATEWAY_INVALID_RESPONSE");
+  const reader=response.body.getReader(),chunks=[];let total=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>maxOutputBytes){await reader.cancel().catch(()=>{});throw fail("Fal output exceeds the configured size limit.","VIDEO_OUTPUT_INVALID");}chunks.push(Buffer.from(value));}}finally{reader.releaseLock();}
+  const buffer=Buffer.concat(chunks,total);
+  if(buffer.length<12||buffer.toString("ascii",4,8)!=="ftyp")throw fail("Fal output is not a supported MP4 video.","VIDEO_OUTPUT_INVALID");
+  return buffer;
+ }finally{clearTimeout(timer);}
 }
 export async function generateFalVideo({prompt,duration=5,aspectRatio="16:9",referenceImageDataUrl=""}={}){
  if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");

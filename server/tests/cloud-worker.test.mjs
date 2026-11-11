@@ -70,3 +70,11 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+test("provider-reported cancellation finishes the cloud queue job as cancelled",async()=>{
+ const queue=queueFor();
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{throw Object.assign(new Error("Provider task was cancelled."),{code:"JOB_CANCELLED"});}});
+ assert.equal(result.status,"cancelled");
+ const finish=queue.calls.find(call=>call[0]==="finish");
+ assert.equal(finish[3],"cancelled");
+});

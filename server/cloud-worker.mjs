@@ -78,14 +78,15 @@ export async function runCloudWorkerCycle({
       code: typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_JOB_FAILED",
       message: String(error?.message || "Cloud job execution failed.").slice(0, 500)
     };
-    const finished = await queue.finish(job.id, workerId, "failed", null, details);
+    const terminalStatus=error?.code==="JOB_CANCELLED"?"cancelled":"failed";
+    const finished = await queue.finish(job.id, workerId, terminalStatus, null, details);
     if (!finished) {
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
-    onEvent({ type: "job.failed", jobId: job.id, workerId, error: details });
-    return { claimed: true, finished: true, status: "failed", jobId: job.id, error: details };
+    onEvent({ type: terminalStatus==="cancelled"?"job.cancelled":"job.failed", jobId: job.id, workerId, error: details });
+    return { claimed: true, finished: true, status: terminalStatus, jobId: job.id, error: details };
   } finally {
     clearInterval(heartbeat);
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });

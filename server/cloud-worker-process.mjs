@@ -53,6 +53,12 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   try{
    const count=await workers[0].recoverExpired(100);
    if(count)onLog({kind:"recovery",count});
+   for(const worker of workers){
+    if(typeof worker.reconcilePendingCancellations==="function"){
+     const cancellations=await worker.reconcilePendingCancellations(20);
+     if(cancellations?.examined)onLog({kind:"video_cancellation_reconciliation",...cancellations});
+    }
+   }
    if(typeof workers[0].reconcileStorageCleanup==="function"){
     const cleanup=await workers[0].reconcileStorageCleanup(20);
     if(cleanup?.examined)onLog({kind:"storage_cleanup",...cleanup});

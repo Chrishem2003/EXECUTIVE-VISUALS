@@ -45,6 +45,16 @@ begin
   end if;
 
   begin
+    perform executive_visuals.reserve_subscription_purchase(
+      v_owner_id,'creator-monthly','different@example.com','MTN',
+      'sql-integration-key-01','EVS-SQL-EMAIL-MISMATCH'
+    );
+    raise exception 'Checkout idempotency key unexpectedly accepted a different customer email';
+  exception when sqlstate '23505' then
+    null;
+  end;
+
+  begin
     perform executive_visuals.manage_customer_subscription(v_owner_id,sub_id,'cancel_immediately',null,'Race guard test');
     raise exception 'Pending subscription payment should block cancellation';
   exception when sqlstate '55000' then
