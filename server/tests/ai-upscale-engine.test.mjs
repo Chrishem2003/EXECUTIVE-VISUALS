@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
