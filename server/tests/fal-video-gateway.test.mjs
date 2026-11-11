@@ -4,7 +4,7 @@ import {generateFalVideo, buildFalVideoPayload, getFalVideoCapabilities} from ".
 const names=["VIDEO_GATEWAY_ENABLED","VIDEO_GATEWAY_ALLOW_REMOTE","VIDEO_GATEWAY_TIMEOUT_MS","FAL_KEY","FAL_VIDEO_MODEL","FAL_VIDEO_IMAGE_INPUT_FIELD"];
 const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
 const restore=()=>{for(const name of names)saved[name]===undefined?delete process.env[name]:process.env[name]=saved[name]};
-function json(status,body){return {status,ok:status>=200&&status<300,text:async()=>JSON.stringify(body)}}
+function json(status,body){return new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json"}})}
 test("video adapter submits, polls and returns validated MP4 bytes",async()=>{
  const original=globalThis.fetch,calls=[];
  Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",VIDEO_GATEWAY_TIMEOUT_MS:"10000",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
