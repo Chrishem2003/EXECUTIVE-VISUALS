@@ -9,7 +9,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
@@ -590,11 +590,11 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-audio-mastering"){
   event.preventDefault();
   if(state.mode!=="cloud"){state.message="Audio mastering controls are available for cloud rendering only.";paint();return;}
-  const data=new FormData(form),profile=String(data.get("profile")||"web-podcast");
-  if(!["web-podcast","ebu-r128","custom"].includes(profile)){state.message="Select a supported audio mastering profile.";paint();return;}
-  const requestedLoudness=Number(data.get("integratedLoudness")),integratedLoudness=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:requestedLoudness,loudnessRange=Number(data.get("loudnessRange")),truePeak=Number(data.get("truePeak"));
-  if(!Number.isFinite(integratedLoudness)||integratedLoudness< -70||integratedLoudness> -5||!Number.isFinite(loudnessRange)||loudnessRange<1||loudnessRange>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0){state.message="Mastering targets must be within -70 to -5 LUFS, 1 to 50 LU LRA and -9 to 0 dBTP.";paint();return;}
-  recordUndo();state.timeline.audioMastering={enabled:data.get("enabled")==="on",profile:profile==="ebu-r128"?"ebu-r128":profile==="custom"?"custom":"web-podcast",integratedLoudness,loudnessRange,truePeak,dualMono:data.get("dualMono")==="on"};
+  const data=new FormData(form);
+  let mastering;
+  try{mastering=normalizeAudioMasteringSettings({enabled:data.get("enabled")==="on",profile:data.get("profile"),integratedLoudness:data.get("integratedLoudness"),loudnessRange:data.get("loudnessRange"),truePeak:data.get("truePeak"),dualMono:data.get("dualMono")==="on"});}
+  catch(error){state.message=error instanceof Error?error.message:"Mastering settings are invalid.";paint();return;}
+  recordUndo();state.timeline.audioMastering=mastering;
   state.message="Saving cloud audio mastering settings…";
   void persist().then(()=>{state.message="Cloud audio mastering settings saved to this timeline revision.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Mastering settings could not be saved.";paint();});
   return;
