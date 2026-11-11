@@ -590,7 +590,9 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-audio-mastering"){
   event.preventDefault();
   if(state.mode!=="cloud"){state.message="Audio mastering controls are available for cloud rendering only.";paint();return;}
-  const data=new FormData(form),profile=String(data.get("profile")||"web-podcast"),requestedLoudness=Number(data.get("integratedLoudness")),integratedLoudness=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:requestedLoudness,loudnessRange=Number(data.get("loudnessRange")),truePeak=Number(data.get("truePeak"));
+  const data=new FormData(form),profile=String(data.get("profile")||"web-podcast");
+  if(!["web-podcast","ebu-r128","custom"].includes(profile)){state.message="Select a supported audio mastering profile.";paint();return;}
+  const requestedLoudness=Number(data.get("integratedLoudness")),integratedLoudness=profile==="ebu-r128"?-23:profile==="web-podcast"?-16:requestedLoudness,loudnessRange=Number(data.get("loudnessRange")),truePeak=Number(data.get("truePeak"));
   if(!Number.isFinite(integratedLoudness)||integratedLoudness< -70||integratedLoudness> -5||!Number.isFinite(loudnessRange)||loudnessRange<1||loudnessRange>50||!Number.isFinite(truePeak)||truePeak< -9||truePeak>0){state.message="Mastering targets must be within -70 to -5 LUFS, 1 to 50 LU LRA and -9 to 0 dBTP.";paint();return;}
   recordUndo();state.timeline.audioMastering={enabled:data.get("enabled")==="on",profile:profile==="ebu-r128"?"ebu-r128":profile==="custom"?"custom":"web-podcast",integratedLoudness,loudnessRange,truePeak,dualMono:data.get("dualMono")==="on"};
   state.message="Saving cloud audio mastering settings…";
