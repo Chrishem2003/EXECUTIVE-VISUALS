@@ -1,6 +1,6 @@
-# Current release status — 8 November 2026
+# Current release status — 11 November 2026
 
-The merged application now includes the Content Credentials/provenance work, signed-in account and project-membership UI, and the in-app **Manage → Release readiness** inventory. The detailed, continuously maintained status is in [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md).
+The merged application now includes Content Credentials/provenance, signed-in account and project-membership UI, the in-app **Manage → Release readiness** inventory, idempotent subscription checkout, and a durable Runway/Fal video-generation worker with server-side approval and task-ledger integration. Batch 105 adds owner-scoped provider cancellation and restart reconciliation and is still undergoing verification in [PR #387](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/387); it is not yet part of the released application. The detailed, continuously maintained status is in [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md).
 
 **Important distinction:** account identity and owner-managed membership display are implemented; emailed invitations, hosted password recovery, and a complete account/session lifecycle are not yet release-approved. Password recovery is being developed in draft PR [#251](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251) and must not be described as live until a dedicated Executive Visuals identity project, redirect configuration, email delivery, and hosted acceptance are available.
 
