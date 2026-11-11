@@ -1685,5 +1685,6 @@ test("subscription cancellation reconciliation keeps ambiguous provider identity
   body:{eventId:"44444444-4444-4444-8444-444444444444",subscriptionId:"55555555-5555-4555-8555-555555555555",
    reason:"Operator reviewed provider event against local subscription."}});
  assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_RECONCILIATION_REQUIRES_REVIEW");
  assert.equal(result.body.reconciliation.reviewRequired,true);
 });

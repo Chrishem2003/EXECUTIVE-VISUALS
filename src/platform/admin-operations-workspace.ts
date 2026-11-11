@@ -8,9 +8,9 @@ type ProviderRow={id:string;provider:string;status:string;enabled:boolean;config
 type ProviderSummary={total:number;ready:number;disabled:number;unverified:number;needsConfiguration:number;remoteOptInRequired:number;unavailable:number;models:number;qualityVerifiedModels:number};
 type GenerationReadiness={status:"ready"|"blocked";canSubmit:boolean;checks:Record<string,boolean>;blockers:Array<{check:string;message:string}>;videoProvider:{provider:string;model:string|null;status:string;remote:boolean}|null;appDataPersistence:string;appDataPersistenceWarning:string|null;policy:{requestsSubmitted:boolean;providerCredentialsExposed:boolean;chargesInitiated:boolean}};
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
-type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string};
+type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string;actionMessage:string};
 let refreshSequence=0;
-const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];providerSummary:ProviderSummary;generationReadiness:GenerationReadiness|null;audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],providerSummary:{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0},generationReadiness:null,audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked."},updatedAt:""};
+const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];providerSummary:ProviderSummary;generationReadiness:GenerationReadiness|null;audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],providerSummary:{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0},generationReadiness:null,audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked.",actionMessage:""},updatedAt:""};
 export function isAdminOperationsAllowed(){return state.allowed;}
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
@@ -41,7 +41,9 @@ export function renderAdminOperationsWorkspace(){
  '<form class="admin-ops-user-search" data-admin-user-search><label for="admin-user-query">Find an account by email or ID</label><div><input id="admin-user-query" name="q" type="search" maxlength="120" value="'+esc(state.userQuery)+'" placeholder="Search email address or account ID" '+(state.loading?'disabled':'')+'><button class="secondary" type="submit" '+(state.loading?'disabled':'')+'>Search accounts</button><button class="secondary" type="button" data-admin-user-clear '+(!state.userQuery||state.loading?'disabled':'')+'>Clear search</button></div></form>' +
  (state.users.length?'<div class="admin-ops-table-wrap"><table class="admin-ops-table"><thead><tr><th>Account</th><th>Auth</th><th>Projects</th><th>Jobs</th><th>Usage · 30d</th><th>Created</th></tr></thead><tbody>'+state.users.map(u=>'<tr><td><b>'+esc(u.email)+'</b><small>'+esc(u.id)+'</small></td><td>'+esc(u.authSource)+'</td><td>'+u.projects+'</td><td>'+u.jobs+'</td><td>'+u.usage30d+'</td><td>'+esc(date(u.createdAt))+'</td></tr>').join("")+'</tbody></table></div>':state.userQuery?'<div class="empty">No accounts matched “'+esc(state.userQuery)+'”. Clear the search to view recent accounts.</div>':'<div class="empty">No application users found.</div>')+'</section>'+
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">SUBSCRIPTION & BILLING OPERATIONS</div><h2>Billing readiness and recovery</h2></div><button class="secondary" data-tab="billing">Open customer billing</button></div>'+
- (state.billingOps.access==="ready"?'<div class="admin-ops-grid"><article class="admin-ops-provider"><b>Payment provider readiness</b><span class="readiness-pill '+(state.billingOps.provider?.liveRecurringChargesEnabled?"warn":"neutral")+'">'+(state.billingOps.provider?.liveRecurringChargesEnabled?"Recurring enabled":"Recurring charges disabled")+'</span><p>'+esc(state.billingOps.provider?.reason||state.billingOps.provider?.migrationRequired||"Provider readiness loaded.")+'</p><small>API versions: '+esc(state.billingOps.provider?.currentIntegrationApiVersion||"—")+' · plan API '+esc(state.billingOps.provider?.recurringPaymentPlansApiVersion||"—")+'</small></article><article class="admin-ops-provider"><b>Subscription reconciliation</b><strong>'+Number(state.billingOps.reconciliation?.events?.length||0).toLocaleString()+' events awaiting review</strong><p>Automated entitlement changes: '+(state.billingOps.reconciliation?.automatedEntitlementChanges?"enabled":"disabled")+'</p></article><article class="admin-ops-provider"><b>Payment recovery</b><strong>'+Number(state.billingOps.recovery?.summary?.openAttempts||0).toLocaleString()+' open attempts</strong><p>'+Number(state.billingOps.recovery?.summary?.scheduledRetries||0)+' scheduled retries · '+Number(state.billingOps.recovery?.summary?.exhausted||0)+' exhausted</p><small>'+esc(state.billingOps.recovery?.note||"Customer retry remains explicit; automatic charges are disabled.")+'</small></article></div>':'<div class="notice warning">'+esc(state.billingOps.message||"Billing admin endpoints are unavailable.")+' Billing mutations remain in the protected Financial Command Centre and require the separate Supabase platform_admins role.</div>')+
+ (state.billingOps.access==="ready"?'<div class="admin-ops-grid"><article class="admin-ops-provider"><b>Payment provider readiness</b><span class="readiness-pill '+(state.billingOps.provider?.liveRecurringChargesEnabled?"warn":"neutral")+'">'+(state.billingOps.provider?.liveRecurringChargesEnabled?"Recurring enabled":"Recurring charges disabled")+'</span><p>'+esc(state.billingOps.provider?.reason||state.billingOps.provider?.migrationRequired||"Provider readiness loaded.")+'</p><small>API versions: '+esc(state.billingOps.provider?.currentIntegrationApiVersion||"—")+' · plan API '+esc(state.billingOps.provider?.recurringPaymentPlansApiVersion||"—")+'</small></article><article class="admin-ops-provider"><b>Subscription reconciliation</b><strong>'+Number(state.billingOps.reconciliation?.events?.length||0).toLocaleString()+' events awaiting review</strong><p>Automated entitlement changes: '+(state.billingOps.reconciliation?.automatedEntitlementChanges?"enabled":"disabled")+'</p></article><article class="admin-ops-provider"><b>Payment recovery</b><strong>'+Number(state.billingOps.recovery?.summary?.openAttempts||0).toLocaleString()+' open attempts</strong><p>'+Number(state.billingOps.recovery?.summary?.scheduledRetries||0)+' scheduled retries · '+Number(state.billingOps.recovery?.summary?.exhausted||0)+' exhausted</p><small>'+esc(state.billingOps.recovery?.note||"Customer retry remains explicit; automatic charges are disabled.")+'</small></article></div>'+
+ (state.billingOps.actionMessage?'<div class="notice">'+esc(state.billingOps.actionMessage)+'</div>':'')+
+ (state.billingOps.reconciliation?.events?.length?'<div class="admin-ops-reconciliation">'+state.billingOps.reconciliation.events.map((event:any)=>'<article class="admin-ops-provider"><b>'+esc(event.eventType||"subscription.cancelled")+'</b><small>'+esc(event.customerEmail||"Customer email unavailable")+' · provider plan '+esc(event.providerPlanId??"missing")+' · status '+esc(event.providerStatus||"unknown")+'</small><small>Event '+esc(event.id)+' · received '+esc(date(event.receivedAt))+'</small><form data-admin-subscription-reconcile><input type="hidden" name="eventId" value="'+esc(event.id)+'"><label>Exact local subscription ID<input name="subscriptionId" required minlength="36" maxlength="36" placeholder="UUID from the customer subscription record"></label><label>Review reason<textarea name="reason" required minlength="3" maxlength="500" rows="2" placeholder="Explain how the provider plan and customer identity were matched"></textarea></label><button type="submit" class="secondary">Verify match and reconcile cancellation</button></form><small>Requires a configured provider plan ID, exact customer email match and exactly one current subscription. Ambiguous events remain in review.</small></article>').join("")+'</div>':'<div class="empty">No subscription cancellation events are awaiting review.</div>'):'<div class="notice warning">'+esc(state.billingOps.message||"Billing admin endpoints are unavailable.")+' Billing mutations remain in the protected Financial Command Centre and require the separate Supabase platform_admins role.</div>')+
  '</section>'+
 
  '<section class="panel"><div class="admin-ops-section"><div><div class="eyebrow">EXECUTION MONITOR</div><h2>Recent processing jobs</h2></div><span class="muted">'+state.jobs.length+' shown</span></div>'+
@@ -100,7 +102,35 @@ function paint(){const view=document.querySelector<HTMLElement>("#view");if(view
 export function initAdminOperationsWorkspace(){
  document.addEventListener("click",event=>{const target=event.target as HTMLElement;if(target.closest("[data-admin-ops-refresh]"))void loadAdminOperationsWorkspace();if(target.closest("[data-admin-user-clear]")){state.userQuery="";void loadAdminOperationsWorkspace();}});
  document.addEventListener("submit",event=>{
-  const form=(event.target as HTMLElement).closest<HTMLFormElement>("[data-admin-user-search]");
+  const target=event.target as HTMLElement;
+  const reconcileForm=target.closest<HTMLFormElement>("[data-admin-subscription-reconcile]");
+  if(reconcileForm){
+   event.preventDefault();
+   const values=new FormData(reconcileForm);
+   const submitButton=reconcileForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+   if(submitButton)submitButton.disabled=true;
+   state.billingOps.actionMessage="Checking the signed provider event against the selected subscription…";
+   paint();
+   void apiRequest<{reconciliation:{resolved:boolean}}>(
+    "/api/admin/subscriptions/reconciliation/resolve",
+    {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+     eventId:String(values.get("eventId")||""),
+     subscriptionId:String(values.get("subscriptionId")||"").trim(),
+     reason:String(values.get("reason")||"").trim()
+    })}
+   ).then(result=>{
+    state.billingOps.actionMessage=result.reconciliation?.resolved
+     ?"Subscription cancellation reconciled and audit history recorded."
+     :"The event remains in review; no subscription access was changed.";
+    return loadAdminOperationsWorkspace();
+   }).catch(error=>{
+    state.billingOps.actionMessage=error instanceof Error?error.message:"Subscription reconciliation could not be completed.";
+    if(submitButton)submitButton.disabled=false;
+    paint();
+   });
+   return;
+  }
+  const form=target.closest<HTMLFormElement>("[data-admin-user-search]");
   if(!form)return;
   event.preventDefault();
   const input=form.elements.namedItem("q");

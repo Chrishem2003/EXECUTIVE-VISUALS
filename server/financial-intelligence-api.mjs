@@ -672,7 +672,10 @@ export function createFinancialIntelligenceApi({
         const reconciliation=await rpc("reconcile_flutterwave_subscription_cancellation",{
           p_actor_id:ownerId,p_event_id:eventId,p_subscription_id:subscriptionId,p_reason:reason
         });
-        if(reconciliation?.resolved!==true)return response(409,{reconciliation:reconciliation||{resolved:false,reviewRequired:true}});
+        if(reconciliation?.resolved!==true){
+          const reason=String(reconciliation?.reason||"The provider event could not be matched uniquely to the selected subscription.");
+          return response(409,{error:{code:"SUBSCRIPTION_RECONCILIATION_REQUIRES_REVIEW",message:reason},reconciliation:reconciliation||{resolved:false,reviewRequired:true}});
+        }
         return response(200,{reconciliation});
       }
       if(path==="/api/admin/subscriptions/reconciliation"&&method==="GET"){
