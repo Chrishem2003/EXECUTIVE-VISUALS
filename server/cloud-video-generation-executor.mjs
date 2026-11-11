@@ -2,12 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { submitRunwayVideoTask, getRunwayVideoTask, downloadRunwayVideoTaskOutput } from "./runway-video-gateway.mjs";
-import { submitFalVideoTask, getFalVideoTask, downloadFalVideoTaskOutput } from "./fal-video-gateway.mjs";
+import { submitRunwayVideoTask, getRunwayVideoTask, cancelRunwayVideoTask, downloadRunwayVideoTaskOutput } from "./runway-video-gateway.mjs";
+import { submitFalVideoTask, getFalVideoTask, cancelFalVideoTask, downloadFalVideoTaskOutput } from "./fal-video-gateway.mjs";
 
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const TERMINAL=new Set(["FAILED","CANCELED","CANCELLED"]);
-const PROVIDER_ADAPTERS=Object.freeze({fal:Object.freeze({submit:submitFalVideoTask,poll:getFalVideoTask,download:downloadFalVideoTaskOutput})});
+const PROVIDER_ADAPTERS=Object.freeze({fal:Object.freeze({submit:submitFalVideoTask,poll:getFalVideoTask,cancel:cancelFalVideoTask,download:downloadFalVideoTaskOutput})});
 const sleep=(ms,signal)=>new Promise((resolve,reject)=>{
  if(signal?.aborted)return reject(fail("Video generation job was cancelled.","JOB_CANCELLED"));
  const timer=setTimeout(done,ms);
@@ -44,7 +44,7 @@ export function createCloudVideoGenerationExecutor({
  if(typeof approvals?.get!=="function"||typeof tasks?.reserveSubmission!=="function"||
     typeof tasks?.markSubmitting!=="function"||typeof tasks?.markSubmitted!=="function"||
     typeof tasks?.markSubmissionUnknown!=="function"||typeof tasks?.markProcessing!=="function"||
-    typeof tasks?.markFailed!=="function"||typeof tasks?.markSucceeded!=="function"||
+    typeof tasks?.markFailed!=="function"||typeof tasks?.markSucceeded!=="function"||\n    typeof tasks?.markCancellationRequested!=="function"||typeof tasks?.markCancelled!=="function"||
     typeof mediaIO?.publish!=="function")throw new Error("Cloud video generation requires approval, task-ledger and private media repositories.");
  if(typeof submitTask!=="function"||typeof getTask!=="function"||typeof downloadOutput!=="function")throw new Error("Cloud video generation requires provider task adapters.");
  if(!Number.isInteger(pollIntervalMs)||pollIntervalMs<5000||pollIntervalMs>60000)throw new Error("Provider polling interval must be between 5 and 60 seconds.");
@@ -64,7 +64,7 @@ export function createCloudVideoGenerationExecutor({
    throw fail("A valid approved shot snapshot is required before generation.","VIDEO_APPROVAL_NOT_EXECUTABLE");
   const shot=parseObject(approval.shots[shotIndex],"Approved shot");
   const provider=String(shot.provider||"").toLowerCase();
-  const adapter=provider==="runway"?{submit:submitTask,poll:getTask,download:downloadOutput}:providerAdapters?.[provider];
+  const adapter=provider==="runway"?{submit:submitTask,poll:getTask,cancel:cancelRunwayVideoTask,download:downloadOutput}:providerAdapters?.[provider];
   if(!adapter||typeof adapter.submit!=="function"||typeof adapter.poll!=="function"||typeof adapter.download!=="function")throw fail("The approved provider has no verified durable worker adapter.","VIDEO_PROVIDER_UNSUPPORTED");
   if(typeof shot.prompt!=="string"||!shot.prompt.trim()||!shot.model)throw fail("Approved shot is missing its provider model or prompt.","VIDEO_JOB_INVALID_INPUT");
   const currency=String(approval.currency||"");
@@ -77,12 +77,39 @@ export function createCloudVideoGenerationExecutor({
   // implemented against the same durable ledger as the approval record.
   let task=await tasks.reserveSubmission({approvalId,shotIndex,ownerId:job.owner_id,projectId:job.project_id,requestHash:String(approval.requestHash||""),currency,estimatedCostMicros});
   if(!task||!task.id)throw fail("Durable task reservation was not confirmed.","VIDEO_TASK_RESERVATION_FAILED");
+  let providerTaskId=task.providerTaskId||null;
+  const cancelTask=async()=>{
+   if(task.state!=="cancel_requested")await tasks.markCancellationRequested(task.id,{providerStatus:"CANCEL_REQUESTED"});
+   if(providerTaskId){
+    if(typeof adapter.cancel!=="function")throw fail("The selected provider adapter cannot confirm remote cancellation; the task remains cancellation-pending.","VIDEO_TASK_CANCELLATION_PENDING");
+    const cancelled=await adapter.cancel({taskId:providerTaskId,model:shot.model});
+    if(cancelled?.status==="CANCELLATION_REQUESTED"){
+     await tasks.markCancellationRequested(task.id,{providerStatus:"CANCELLATION_REQUESTED"});
+     throw fail("The provider accepted cancellation but has not confirmed termination. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
+    }
+    if(!["OK","CANCELLED","NOT_FOUND","ALREADY_COMPLETED"].includes(cancelled?.status))throw fail("The provider returned an unrecognized cancellation result. The durable task remains pending reconciliation.","VIDEO_TASK_CANCELLATION_PENDING");
+    await tasks.markCancelled(task.id,{providerStatus:cancelled.status});
+   }else{
+    await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
+   }
+   throw fail("Video generation job was cancelled.","JOB_CANCELLED");
+  };
+  if(task.state==="cancelled")throw fail("This approved shot was already cancelled.","VIDEO_TASK_ALREADY_CANCELLED");
+  if(task.state==="cancel_requested"){
+   if(!providerTaskId){await tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});throw fail("Video generation job was cancelled.","JOB_CANCELLED");}
+   const current=await adapter.poll({taskId:providerTaskId,model:shot.model});
+   if(TERMINAL.has(current.status)||current.status==="SUCCEEDED"){
+    await tasks.markCancelled(task.id,{providerStatus:current.status});
+    throw fail("Video generation job was cancelled.","JOB_CANCELLED");
+   }
+   await cancelTask();
+  }
+  if(signal?.aborted)await cancelTask();
   if(task.state==="succeeded"){
    if(!task.outputAssetId)throw fail("A completed task is missing its published asset identity.","VIDEO_TASK_LEDGER_CORRUPT");
    return {approvalId,shotIndex,provider,model:shot.model,providerTaskId:task.providerTaskId,outputAsset:{id:task.outputAssetId},replayed:true};
   }
   if(task.state==="failed")throw fail("This approved shot already failed. Create a new approval to authorize another paid attempt.","VIDEO_TASK_ALREADY_FAILED");
-  let providerTaskId=task.providerTaskId||null;
   if(!providerTaskId){
    if(["submitting","submission_unknown"].includes(task.state))
     throw fail("A prior provider submission has an unknown outcome. Reconcile it before any new POST.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");
@@ -103,36 +130,42 @@ export function createCloudVideoGenerationExecutor({
    if(!providerTaskId){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_PROVIDER_TASK_ID_MISSING"});throw fail("Provider accepted a request without a usable task ID. Reconciliation is required.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
    try{await tasks.markSubmitted(task.id,{providerTaskId,provider,model:shot.model,estimatedCostCredits:submitted.estimatedCostCredits??null});}
    catch(error){await tasks.markSubmissionUnknown(task.id,{code:"VIDEO_TASK_PERSISTENCE_FAILED"}).catch(()=>{});throw fail("Provider task was created but its ID could not be durably recorded. Reconcile before retrying.","VIDEO_GATEWAY_SUBMISSION_UNKNOWN");}
+   if(signal?.aborted)await cancelTask();
   }
 
   let pollDelay=pollIntervalMs;
   while(true){
-   if(signal?.aborted)throw fail("Video generation job was cancelled.","JOB_CANCELLED");
+   if(signal?.aborted)await cancelTask();
    let current;
    try{current=await adapter.poll({taskId:providerTaskId,model:shot.model});}
    catch(error){
     if(["VIDEO_GATEWAY_TIMEOUT","VIDEO_GATEWAY_UNAVAILABLE","VIDEO_GATEWAY_SERVER_ERROR","VIDEO_GATEWAY_RATE_LIMITED"].includes(error?.code)){
-     await sleepImpl(pollDelay,signal);pollDelay=Math.min(60000,Math.ceil(pollDelay*1.7));continue;
+     try{await sleepImpl(pollDelay,signal);}catch(sleepError){if(signal?.aborted)await cancelTask();throw sleepError;}pollDelay=Math.min(60000,Math.ceil(pollDelay*1.7));continue;
     }
     throw error;
    }
    if(current.status==="SUCCEEDED")break;
-   if(TERMINAL.has(current.status)){
+   if(current.status==="CANCELED"||current.status==="CANCELLED"){
+    await tasks.markCancelled(task.id,{providerStatus:current.status});
+    throw fail("Provider task was cancelled.","JOB_CANCELLED");
+   }
+   if(current.status==="FAILED"){
     await tasks.markFailed(task.id,{code:"VIDEO_PROVIDER_TASK_FAILED",message:String(current.error?.message||current.error||"Provider task failed.").slice(0,300)});
     throw fail("Provider generation failed. Review the task record before authorizing another attempt.","VIDEO_PROVIDER_TASK_FAILED");
    }
    if(!["PENDING","THROTTLED","RUNNING"].includes(current.status))throw fail("Provider returned an unknown task state.","VIDEO_PROVIDER_STATE_INVALID");
    await tasks.markProcessing(task.id,{providerStatus:current.status});
    onProgress(current.status==="PENDING"||current.status==="THROTTLED"?15:45);
-   await sleepImpl(pollDelay,signal);
+   try{await sleepImpl(pollDelay,signal);}catch(sleepError){if(signal?.aborted)await cancelTask();throw sleepError;}
    pollDelay=Math.min(60000,Math.ceil(pollDelay*1.25));
   }
   const completed=await adapter.poll({taskId:providerTaskId,model:shot.model});
   if(completed.status!=="SUCCEEDED"||!completed.outputUrl)throw fail("Completed provider task did not contain a verified output URL.","VIDEO_PROVIDER_OUTPUT_MISSING");
+  if(signal?.aborted)await cancelTask();
   const bytes=await adapter.download({outputUrl:completed.outputUrl});
   if(!Buffer.isBuffer(bytes)||bytes.length<12||bytes.length>maxOutputBytes||bytes.toString("ascii",4,8)!=="ftyp")
    throw fail("Generated video failed bounded MP4 validation.","VIDEO_OUTPUT_INVALID");
-  if(signal?.aborted)throw fail("Video generation job was cancelled.","JOB_CANCELLED");
+  if(signal?.aborted)await cancelTask();
   const directory=await mkdtemp(join(tempRoot,"ev-video-shot-"));
   try{
    const filePath=join(directory,randomUUID()+".mp4");

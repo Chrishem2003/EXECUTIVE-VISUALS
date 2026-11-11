@@ -71,3 +71,11 @@ test("cloud worker supervisor forwards execution progress to its event log",asyn
  await supervisor.start();await supervisor.stop();
  assert.ok(events.some(event=>event.kind==="progress"&&event.jobId==="job-video-1"&&event.progress===45));
 });
+
+test("cloud worker supervisor periodically reconciles pending video cancellations",async()=>{
+ const events=[];
+ const workers=[{async recoverExpired(){return 0;},async reconcilePendingCancellations(limit){assert.equal(limit,20);return{examined:2,confirmed:1,pending:1,errors:[]};},async runCycle(){return{claimed:false};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
+ await supervisor.start();await supervisor.stop();
+ assert.ok(events.some(event=>event.kind==="video_cancellation_reconciliation"&&event.confirmed===1&&event.pending===1));
+});

@@ -6,13 +6,13 @@ function queueUrl(raw){
  if(url.protocol!=="https:"||url.hostname!=="queue.fal.run"||url.username||url.password||url.port||url.hash)throw fail("The video provider returned an unsafe job URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return url;
 }
-async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch){
+async function jsonRequest(url,options,timeoutMs,fetchImpl=fetch,allowStatuses=[]){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   let response;try{response=await fetchImpl(url,{...options,signal:controller.signal,redirect:"error"})}catch(error){throw fail(error?.name==="AbortError"?"Video provider request timed out.":"Video provider could not be reached.",error?.name==="AbortError"?"VIDEO_GATEWAY_TIMEOUT":"VIDEO_GATEWAY_UNAVAILABLE")}
   if(response.status===429)throw fail("Video provider rate limit reached.","VIDEO_GATEWAY_RATE_LIMITED");
   if(response.status>=500)throw fail("Video provider returned a temporary server error.","VIDEO_GATEWAY_SERVER_ERROR");
-  if(!response.ok)throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
+  if(!response.ok&&!allowStatuses.includes(response.status))throw fail("Video provider rejected the request ("+response.status+").","VIDEO_GATEWAY_REQUEST_REJECTED");
   const raw=await response.text();if(Buffer.byteLength(raw)>2*1024*1024)throw fail("Video provider returned an oversized response.","VIDEO_GATEWAY_INVALID_RESPONSE");
   try{return JSON.parse(raw)}catch{throw fail("Video provider returned invalid JSON.","VIDEO_GATEWAY_INVALID_RESPONSE")}
  }finally{clearTimeout(timer)}
@@ -55,7 +55,7 @@ function falTaskUrl(model,taskId,suffix=""){
  if(parts.length<2||parts.some(part=>!part||part==="."||part===".."))throw fail("Fal model identity is invalid.","VIDEO_GATEWAY_INVALID_INPUT");
  const id=String(taskId||"");
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))throw fail("Fal request identity is invalid.","VIDEO_GATEWAY_INVALID_RESPONSE");
- return new URL("https://queue.fal.run/"+encodeURIComponent(parts[0])+"/"+encodeURIComponent(parts[1])+"/requests/"+id+suffix);
+ return new URL("https://queue.fal.run/"+parts.map(part=>encodeURIComponent(part)).join("/")+"/requests/"+id+suffix);
 }
 /** Submit one durable Fal queue task; the worker persists its request ID before polling. */
 export async function submitFalVideoTask({model=process.env.FAL_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",referenceImageDataUrl="",fetchImpl=fetch}={}){
@@ -84,6 +84,15 @@ export async function getFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,
  if(url.protocol!=="https:"||!(url.hostname==="fal.media"||url.hostname.endsWith(".fal.media"))||url.username||url.password||url.port||url.hash||url.search)
   throw fail("Fal returned an untrusted output URL.","VIDEO_GATEWAY_INVALID_RESPONSE");
  return {taskId,status:"SUCCEEDED",outputUrl};
+}
+/** Request cancellation for a persisted Fal queue request. CANCELLATION_REQUESTED is not treated as terminal. */
+export async function cancelFalVideoTask({taskId,model=process.env.FAL_VIDEO_MODEL,fetchImpl=fetch}={}){
+ const {key}=falWorkerConfig(model);
+ const response=await jsonRequest(falTaskUrl(model,taskId,"/cancel"),{method:"PUT",headers:{authorization:"Key "+key}},15000,fetchImpl,[404]);
+ const status=String(response.status||"");
+ if(!["OK","CANCELLATION_REQUESTED","ALREADY_COMPLETED","NOT_FOUND"].includes(status))
+  throw fail("Fal returned an unknown cancellation state.","VIDEO_GATEWAY_INVALID_RESPONSE");
+ return {taskId,status};
 }
 /** Download a completed Fal result from its allowlisted media host with strict size and MP4 checks. */
 export async function downloadFalVideoTaskOutput({outputUrl,fetchImpl=fetch,timeoutMs=60000,maxOutputBytes=MAX_OUTPUT_BYTES}={}){

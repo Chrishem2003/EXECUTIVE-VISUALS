@@ -35,3 +35,29 @@ test("video worker exposes queue lease recovery and private storage cleanup",asy
 test("video worker rejects invalid worker identity",()=>{
  assert.throws(()=>createCloudVideoGenerationWorker({workerId:"",queue:{},assetService:{assets:{}},mediaIO:{},repositories:{},execute:async()=>({})}),/worker ID/);
 });
+
+test("video worker reconciles pending provider cancellations after restart",async()=>{
+ const calls=[],pending=[
+  {id:"task-1",provider:"fal",providerTaskId:"123e4567-e89b-42d3-a456-426614174000",model:"fal-ai/example"},
+  {id:"task-2",provider:"runway",providerTaskId:"223e4567-e89b-42d3-a456-426614174000",model:"seedance2_5"},
+  {id:"task-3",provider:"fal",providerTaskId:null,model:"fal-ai/example"}
+ ];
+ const tasks={
+  async listCancellationPending(limit){calls.push(["list",limit]);return pending;},
+  async markCancellationRequested(id,value){calls.push(["requested",id,value]);},
+  async markCancelled(id,value){calls.push(["cancelled",id,value]);}
+ };
+ const worker=createCloudVideoGenerationWorker({
+  workerId:"video-worker-1",queue:{async claim(){return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}},
+  assetService:{assets:{}},mediaIO:{},repositories:{approvals:{},tasks},execute:async()=>({}),
+  cancellationAdapters:{
+   fal:{poll:async({taskId})=>{calls.push(["fal-poll",taskId]);return{status:"RUNNING"};},cancel:async({taskId})=>{calls.push(["fal-cancel",taskId]);return{status:"CANCELLATION_REQUESTED"};}},
+   runway:{poll:async({taskId})=>{calls.push(["runway-poll",taskId]);return{status:"CANCELLED"};},cancel:async()=>{throw new Error("must not cancel a terminal task");}}
+  }
+ });
+ const result=await worker.reconcilePendingCancellations(10);
+ assert.equal(result.examined,3);assert.equal(result.pending,1);assert.equal(result.confirmed,2);
+ assert.ok(calls.some(x=>x[0]==="requested"&&x[1]==="task-1"));
+ assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-2"&&x[2].providerStatus==="CANCELLED"));
+ assert.ok(calls.some(x=>x[0]==="cancelled"&&x[1]==="task-3"&&x[2].providerStatus==="NOT_SUBMITTED"));
+});

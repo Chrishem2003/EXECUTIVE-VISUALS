@@ -16,10 +16,26 @@ function safeError(error){
  * Mirrors a locally budget-approved snapshot into the cloud ledger and queues
  * its shots. It never calls a model provider; the separately gated worker does.
  */
-export function createCloudVideoGenerationDispatch({db,repositories,audit=()=>{},canWriteProject}={}){
+export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject}={}){
  if(typeof db?.prepare!=="function"||typeof repositories?.approvals?.register!=="function"||typeof repositories?.approvals?.enqueue!=="function"||typeof canWriteProject!=="function")
   throw new Error("Cloud video dispatch requires the local approval database, cloud repositories and project authorization.");
  return Object.freeze({
+  async cancelJob({jobId,ownerId}={}){
+   if(typeof jobId!=="string"||!UUID.test(jobId)||typeof ownerId!=="string"||!UUID.test(ownerId))
+    return {status:400,body:{error:{code:"VIDEO_JOB_ID_INVALID",message:"A valid cloud video job and authenticated account are required."}}};
+   if(typeof queue?.cancel!=="function")
+    return {status:503,body:{error:{code:"CLOUD_VIDEO_CANCELLATION_DISABLED",message:"Cloud video job cancellation is not configured."}}};
+   try{
+    const job=await queue.cancel(jobId,ownerId);
+    if(!job)return {status:404,body:{error:{code:"VIDEO_JOB_NOT_FOUND",message:"Video generation job not found."}}};
+    if(job.status!=="cancelled")
+     return {status:409,body:{error:{code:"VIDEO_JOB_TERMINAL",message:"Only queued or processing video generation jobs can be cancelled."},job:{id:job.id,status:job.status}}};
+    audit(ownerId,"video_generation.cloud_job_cancelled","job",job.id,{jobType:job.job_type,providerCancellation:"requested"},job.project_id||null);
+    return {status:202,body:{ok:true,job:{id:job.id,status:"cancelled"},providerCancellation:"requested",message:"The job is cancelled in the queue. Any active provider task is being cancelled and reconciled by its worker."}};
+   }catch(error){
+    return {status:503,body:{error:{code:"CLOUD_VIDEO_CANCELLATION_UNAVAILABLE",message:"Cloud video cancellation could not be confirmed. Retry safely."}}};
+   }
+  },
   async submit({approvalId,ownerId}={}){
    if(typeof approvalId!=="string"||!UUID.test(approvalId)||typeof ownerId!=="string"||!UUID.test(ownerId))
     return {status:400,body:{error:{code:"VIDEO_APPROVAL_ID_INVALID",message:"A valid approval and authenticated account are required."}}};

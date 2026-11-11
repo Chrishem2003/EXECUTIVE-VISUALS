@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateFalVideo, buildFalVideoPayload, getFalVideoCapabilities, submitFalVideoTask, getFalVideoTask, downloadFalVideoTaskOutput} from "../fal-video-gateway.mjs";
+import {generateFalVideo, buildFalVideoPayload, getFalVideoCapabilities, submitFalVideoTask, getFalVideoTask, cancelFalVideoTask, downloadFalVideoTaskOutput} from "../fal-video-gateway.mjs";
 const names=["VIDEO_GATEWAY_ENABLED","VIDEO_GATEWAY_ALLOW_REMOTE","VIDEO_GATEWAY_TIMEOUT_MS","FAL_KEY","FAL_VIDEO_MODEL","FAL_VIDEO_IMAGE_INPUT_FIELD"];
 const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
 const restore=()=>{for(const name of names)saved[name]===undefined?delete process.env[name]:process.env[name]=saved[name]};
@@ -104,8 +104,8 @@ test("durable Fal adapter submits full endpoint paths and polls the persisted re
   const result=await getFalVideoTask({taskId:requestId,model:"fal-ai/veo/v3.1",fetchImpl});
   assert.equal(result.status,"SUCCEEDED");
   assert.equal(result.outputUrl,"https://v3.fal.media/files/final.mp4");
-  assert.match(calls[1].url,/queue\.fal\.run\/fal-ai\/veo\/requests\/[0-9a-f-]+\/status$/);
-  assert.match(calls[2].url,/queue\.fal\.run\/fal-ai\/veo\/requests\/[0-9a-f-]+$/);
+  assert.match(calls[1].url,/queue\.fal\.run\/fal-ai\/veo\/v3\.1\/requests\/[0-9a-f-]+\/status$/);
+  assert.match(calls[2].url,/queue\.fal\.run\/fal-ai\/veo\/v3\.1\/requests\/[0-9a-f-]+$/);
  }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
 });
 test("durable Fal adapter surfaces completed queue failures without attempting result download",async()=>{
@@ -126,4 +126,21 @@ test("durable Fal output downloader rejects non-Fal hosts and validates MP4 byte
  const result=await downloadFalVideoTaskOutput({outputUrl:"https://v3.fal.media/files/final.mp4",fetchImpl});
  assert.equal(result.toString("ascii",4,8),"ftyp");
  await assert.rejects(()=>downloadFalVideoTaskOutput({outputUrl:"https://attacker.example/final.mp4",fetchImpl}),error=>error.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
+});
+
+test("Fal cancellation validates the persisted request and distinguishes requested from terminal cancellation",async()=>{
+ const previous={VIDEO_GATEWAY_ENABLED:process.env.VIDEO_GATEWAY_ENABLED,VIDEO_GATEWAY_ALLOW_REMOTE:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,FAL_KEY:process.env.FAL_KEY,FAL_VIDEO_MODEL:process.env.FAL_VIDEO_MODEL};
+ Object.assign(process.env,{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"test-key",FAL_VIDEO_MODEL:"fal-ai/example-video"});
+ const requestId="019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b",calls=[];
+ try{
+  const requested=await cancelFalVideoTask({taskId:requestId,model:"fal-ai/example-video",fetchImpl:async(url,options)=>{calls.push({url:String(url),method:options.method,authorization:options.headers.authorization});return json(202,{status:"CANCELLATION_REQUESTED"});}});
+  assert.equal(requested.status,"CANCELLATION_REQUESTED");
+  assert.equal(calls[0].method,"PUT");
+  assert.match(calls[0].url,/requests\/[0-9a-f-]+\/cancel$/);
+  assert.equal(calls[0].authorization,"Key test-key");
+  const removed=await cancelFalVideoTask({taskId:requestId,model:"fal-ai/example-video",fetchImpl:async()=>json(200,{status:"OK"})});
+  assert.equal(removed.status,"OK");
+  const missing=await cancelFalVideoTask({taskId:requestId,model:"fal-ai/example-video",fetchImpl:async()=>json(404,{status:"NOT_FOUND"})});
+  assert.equal(missing.status,"NOT_FOUND");
+ }finally{for(const [key,value] of Object.entries(previous))value===undefined?delete process.env[key]:process.env[key]=value;}
 });
