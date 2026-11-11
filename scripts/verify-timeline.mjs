@@ -97,6 +97,12 @@ const invalidTransition={...transitionTimeline,tracks:transitionTimeline.tracks.
 assert.ok(validateTimeline(invalidTransition).issues.some(issue=>issue.code==="transition_requires_adjacent_clip"));
 const nonVideoTransition={...transitionTimeline,tracks:transitionTimeline.tracks.map(track=>({...track,kind:"audio"}))};
 assert.ok(validateTimeline(nonVideoTransition).issues.some(issue=>issue.code==="invalid_transition"));
+const multiVideoTimeline=addTrack(transitionTimeline,{id:"transition-video-secondary",name:"B-roll",kind:"video",enabled:true,locked:false,clips:[]});
+const multiVideoWithClip=addClip(multiVideoTimeline,"transition-video-secondary",{id:"transition-secondary-clip",assetId:"asset-c",name:"B-roll",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true});
+const multiVideoFrame=evaluateTimelineAtFrame(multiVideoWithClip,12);
+assert.equal(multiVideoFrame.activeClips.filter(clip=>clip.trackKind==="video").length,2);
+assert.deepEqual(multiVideoFrame.activeClips.filter(clip=>clip.trackKind==="video").map(clip=>clip.trackIndex),[0,1]);
+
 
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);

@@ -57,8 +57,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
- if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
- const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ if(videos.length<1||unsupported.length)fail("The master renderer requires at least one video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
+ const clips=ordered([videos[0]]),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ for(const track of videos.slice(1))if((track.clips||[]).some(clip=>clip.transitionToNext!==undefined))fail("Transitions are currently supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
  const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
@@ -75,7 +76,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  }
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
- const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
+ const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[],videoOverlayInputs=[];
  let cursor=0,inputIndex=0,segmentIndex=0,captionIndex=0;
  const getAsset=(assetId)=>{
   const entry=assets.get(String(assetId));
@@ -108,6 +109,22 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
+  for(const [trackOrder,track] of videos.slice(1).entries()){
+   let secondaryCursor=0;
+   for(const clip of ordered([track])){
+    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+    const start=seconds(clip.timelineStart),clipDuration=seconds(clip.duration);
+    if(start+0.000001<secondaryCursor)fail("Secondary video track contains overlapping clips.","TIMELINE_OVERLAP");
+    secondaryCursor=Math.max(secondaryCursor,start+clipDuration);
+    const duration=Math.min(clipDuration,Math.max(0,cursor-start));if(duration<=0)continue;
+    if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
+    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
+    if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
+    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+    else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
+    videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder});inputIndex++;
+   }
+  }
   let audioIndex=0;
   for(const clip of audioClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
@@ -130,6 +147,14 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const concat=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
   const videoGraph=segments.map(item=>item.filter).join(";")+";"+concat;
   let currentVideo="[vbase]";
+  for(const [index,item] of videoOverlayInputs.entries()){
+   const metadata=item.clip.metadata||{},ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height)));
+   const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):0)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):0)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+   const source="video-track-source-"+index,output="video-track-composite-"+index;
+   videoEffects.push(`[${item.inputIndex}:v]trim=duration=${item.duration.toFixed(6)},setpts=PTS-STARTPTS+${item.start.toFixed(6)}/TB,scale=${ow}:${oh}:force_original_aspect_ratio=decrease,pad=${ow}:${oh}:(ow-iw)/2:(oh-ih)/2,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${source}]`);
+   videoEffects.push(`${currentVideo}[${source}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${item.start.toFixed(6)},${(item.start+item.duration).toFixed(6)})'[${output}]`);
+   currentVideo=`[${output}]`;
+  }
   for(const [index,item] of overlayInputs.entries()){
    const clip=item.clip,start=seconds(clip.timelineStart);
    if(start>=cursor)continue;
@@ -164,7 +189,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length+videoOverlayInputs.length,primaryVideoClips:clips.length,secondaryVideoClips:videoOverlayInputs.length,secondaryVideoTracks:videos.length-1,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
