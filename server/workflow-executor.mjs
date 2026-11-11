@@ -299,7 +299,9 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
      output.video=result.assetId;output.assetIds=result.assetIds;output.assets=result.assetIds;
      output.mimeType="video/mp4";output.provider=result.provider;output.model=result.model;
-     output.cloudJobId=result.cloudJobId;output.quoteId=result.quoteId;output.costEvidenceReference=result.costEvidenceReference;
+     output.cloudJobId=result.cloudJobId;output.quoteId=result.quoteId;
+     output.actualAmount=result.actualAmount;output.currency=result.currency;
+     output.costEvidenceReference=result.costEvidenceReference;
     }else{
 
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");

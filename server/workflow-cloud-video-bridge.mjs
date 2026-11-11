@@ -165,6 +165,12 @@ export async function executeCloudVideoWorkflowNode({
    throw fail("Cloud job receipt does not match the owner, project and exact approved workflow quote.","VIDEO_WORKFLOW_JOB_RECEIPT_MISMATCH");
   }
   if(cloudJob.status==="succeeded") {
+   const actualAmount=Number(cloudJob.output?.actualAmount);
+   const actualCurrency=String(cloudJob.output?.currency||"");
+   const costEvidenceReference=String(cloudJob.output?.costEvidenceReference||"");
+   if(!Number.isFinite(actualAmount)||actualAmount<0||actualCurrency!=="USD"||!costEvidenceReference||costEvidenceReference.length>1000){
+    throw fail("The completed cloud video job is missing authoritative actual-cost and settlement evidence.","VIDEO_WORKFLOW_ACTUAL_COST_EVIDENCE_MISSING");
+   }
    const cloudAssetIds=cloudJob.output?.assetIds;
    if(!Array.isArray(cloudAssetIds)||cloudAssetIds.length<1||cloudAssetIds.length>10)throw fail("Cloud video job completed without a valid private asset collection.","VIDEO_WORKFLOW_OUTPUT_INVALID");
    const imported=[];
@@ -194,7 +200,7 @@ export async function executeCloudVideoWorkflowNode({
    const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,
     provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
-    approvedMaxAmount,currency:"USD",costEvidenceReference:cloudJob.output?.costEvidenceReference||null};
+    approvedMaxAmount,actualAmount,currency:actualCurrency,costEvidenceReference};
    onProgress(95);
    return output;
   }

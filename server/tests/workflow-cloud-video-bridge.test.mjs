@@ -38,7 +38,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
    }
-   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:request.requestId,requestHash:request.requestHash},status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},costEvidenceReference:"cost:verified"}:null}}};
+   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:request.requestId,requestHash:request.requestHash},status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},actualAmount:0.72,currency:"USD",costEvidenceReference:"cost:verified"}:null}}};
    if(input.method==="GET"&&input.path==="/api/cloud/assets/"+cloudAssetId)return{status:200,body:{asset:{id:cloudAssetId,projectId,mediaType:"video/mp4",size:video.length,sha256},url:"https://supabase.example/storage/v1/object/sign/video"}};
    if(input.method==="POST"&&input.path==="/api/cloud/jobs/"+cloudJobId+"/cancel")return{status:202,body:{}};
    throw new Error("Unexpected cloud API call: "+input.method+" "+input.path);
@@ -107,6 +107,8 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(result.cloudJobId,cloudJobId);
   assert.equal(result.assetIds.length,1);
   assert.equal(result.costEvidenceReference,"cost:verified");
+  assert.equal(result.actualAmount,0.72);
+  assert.equal(result.currency,"USD");
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
   assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,1);
