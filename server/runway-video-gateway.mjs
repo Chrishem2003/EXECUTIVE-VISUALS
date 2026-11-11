@@ -59,7 +59,8 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
-  if(!text||text.length>1000)throw fail("Runway text-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+  const maxPromptLength=(id==="kling_4"||id==="kling_4_flash")?26000:1000;
+  if(!text||text.length>maxPromptLength)throw fail(`Runway ${id} text-to-video prompts must contain 1 to ${maxPromptLength} characters.`,"VIDEO_GATEWAY_INVALID_INPUT");
   if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
@@ -74,7 +75,9 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
  if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
- if((!text&&id!=="kling_4_flash")||text.length>1000)throw fail("Runway image-to-video prompts must contain 1 to 1000 characters unless the selected model permits frame-only generation.","VIDEO_GATEWAY_INVALID_INPUT");
+ const frameOnlyAllowed=id==="kling_4"||id==="kling_4_flash";
+ const maxPromptLength=frameOnlyAllowed?26000:1000;
+ if((!text&&!frameOnlyAllowed)||text.length>maxPromptLength)throw fail(`Runway ${id} image-to-video prompts must contain 1 to ${maxPromptLength} characters unless the selected model permits frame-only generation.`,"VIDEO_GATEWAY_INVALID_INPUT");
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
