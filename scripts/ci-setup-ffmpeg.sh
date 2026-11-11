@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Pinned FFmpeg build release and SHA-256 digest.
-# This master snapshot includes FFmpeg security fix 7c73707355708c846f718cca90096bc1a33c8989 (CVE-2026-120247).\n# Update all pins together only after reviewing upstream commit ancestry and checksums.
+# Verify upstream fix ancestry and published release checksum before changing these pins.
 release_tag="autobuild-2026-11-11-12-39"
 asset_name="ffmpeg-N-128790-g9bee1e603c-linux64-gpl.tar.xz"
 expected_sha256="f5752bf3597cbc9fc7a60fe5cea3522797a5ea2493d91cffb6f13e5b4c861233"
@@ -34,4 +34,6 @@ ffprobe_source="$(find "$extract_dir" -type f -path '*/bin/ffprobe' -print -quit
 
 install -m 0755 "$ffmpeg_source" "$bin_dir/ffmpeg"
 install -m 0755 "$ffprobe_source" "$bin_dir/ffprobe"
+"$bin_dir/ffmpeg" -version | head -n 1 | grep -F "N-128790-g9bee1e603c"
+"$bin_dir/ffprobe" -version | head -n 1 | grep -F "N-128790-g9bee1e603c"
 echo "$bin_dir" >> "$GITHUB_PATH"
