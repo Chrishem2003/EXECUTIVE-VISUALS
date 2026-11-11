@@ -122,6 +122,15 @@ begin
     approval_key:=null;
   end;
   if existing.status='cancelled' and approval_key is not null then
+    -- Queue cancellation must also wake the durable provider-task reconciler.
+    -- Keep ambiguous submissions pending; only the worker can confirm their outcome.
+    update executive_visuals.video_generation_tasks t
+      set state='cancel_requested',
+          provider_status='CANCEL_REQUESTED',
+          updated_at=clock_timestamp()
+      where t.approval_id=approval_key and t.owner_id=p_owner_id
+        and t.state in ('reserved','submitting','submission_unknown','submitted','processing');
+
     update executive_visuals.video_generation_approvals a
       set status='withdrawn',updated_at=clock_timestamp()
       where a.id=approval_key and a.owner_id=p_owner_id
