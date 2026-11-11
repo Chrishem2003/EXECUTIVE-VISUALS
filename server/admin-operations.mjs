@@ -46,7 +46,7 @@ export function buildAdminProviderReadiness(catalog){
  return providers.slice(0,40).map(item=>{
   const models=Array.isArray(item.availableModels)?item.availableModels.map(adminProviderModel).filter(Boolean):[];
   const rawCapabilities=item.modelCapabilities&&typeof item.modelCapabilities==="object"&&!Array.isArray(item.modelCapabilities)?item.modelCapabilities:null;
-  const modelCapabilities=rawCapabilities?Object.fromEntries(ADMIN_PROVIDER_CAPABILITY_FIELDS.filter(key=>rawCapabilities[key]!==undefined).map(key=>[key,["audioModes","resolutions","aspectRatios"].includes(key)?safeArray(rawCapabilities[key]):rawCapabilities[key]])):null;
+  const modelCapabilities=rawCapabilities?Object.fromEntries(ADMIN_PROVIDER_CAPABILITY_FIELDS.filter(key=>rawCapabilities[key]!==undefined).flatMap(key=>{const value=rawCapabilities[key];if(["audioModes","resolutions","aspectRatios"].includes(key))return [[key,safeArray(value)]];if(["minDurationSeconds","maxDurationSeconds"].includes(key))return Number.isFinite(Number(value))?[[key,Number(value)]]:[];return typeof value==="boolean"?[[key,value]]:[]})):null;
   const rawPricing=item.pricing&&typeof item.pricing==="object"?item.pricing:null;
   const pricing=rawPricing?{
    configured:Boolean(rawPricing.configured),
@@ -55,7 +55,7 @@ export function buildAdminProviderReadiness(catalog){
     provider:String(model.provider||"").slice(0,80),
     model:String(model.model||"").slice(0,160),
     currency:String(model.currency||"").slice(0,12),
-    sourceUrl:String(model.sourceUrl||"").slice(0,500),
+    sourceUrl:(()=>{try{const url=new URL(String(model.sourceUrl||""));return url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash?url.toString().slice(0,500):"";}catch{return "";}})(),
     observedAt:String(model.observedAt||"").slice(0,80),
     expiresAt:String(model.expiresAt||"").slice(0,80)
    }))
