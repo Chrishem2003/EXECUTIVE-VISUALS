@@ -1,5 +1,8 @@
 import { createGoogleOmniCloudVideoIntegration } from "./google-omni-cloud-video-adapter.mjs";
 import { createGoogleOmniPrivateOutputIngestor } from "./google-omni-private-output-ingestion.mjs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const MODEL = "gemini-omni-1.1-flash";
 const fail = (message, code) => Object.assign(new Error(message), { code });
@@ -22,10 +25,11 @@ export function createGoogleOmniCloudVideoComposition({
   fetchImpl = globalThis.fetch,
   maxOutputBytes = 250 * 1024 * 1024,
   maxInlineVideoBytes = 32 * 1024 * 1024,
-  timeoutMs = 120000
+  timeoutMs = 120000,
+  tempRoot = tmpdir()
 } = {}) {
   if (!assets || typeof assets.findVideoGenerationOutput !== "function" ||
-      typeof assets.create !== "function") {
+      typeof assets.createFromFileIdempotent !== "function") {
     throw new TypeError("Google Omni composition requires the existing private Cloud Asset repository.");
   }
   if (!interactions || typeof interactions.findInteraction !== "function") {
@@ -66,21 +70,36 @@ export function createGoogleOmniCloudVideoComposition({
     },
     findExistingOutput: args => assets.findVideoGenerationOutput(args),
     ingestPrivateOutput: async value => {
-      let asset;
+      if (typeof value.assertLease !== "function" ||
+          typeof value.workerId !== "string" || !value.workerId.trim() ||
+          typeof value.leaseToken !== "string" || !value.jobId) {
+        throw fail("Google output ingestion requires the active cloud worker lease.", "GOOGLE_OMNI_WORKER_LEASE_REQUIRED");
+      }
+      let directory;
       try {
-        asset = await assets.create({
+        await value.assertLease();
+        directory = await mkdtemp(join(tempRoot, "executive-visuals-google-output-"));
+        const filePath = join(directory, "gemini-omni-output.mp4");
+        await writeFile(filePath, value.bytes, { flag: "wx", mode: 0o600 });
+        const asset = await assets.createFromFileIdempotent({
           ownerId: value.ownerId,
           projectId: value.projectId || null,
           originalName: "gemini-omni-" + value.interactionId + ".mp4",
           mediaType: value.mimeType,
-          bytes: value.bytes,
-          metadata: value.metadata
+          filePath,
+          publicationKey: "google:" + value.jobId + ":" + value.interactionId + ":output:0",
+          metadata: value.metadata,
+          assertLease: value.assertLease,
+          signal: value.signal || null,
+          leaseContext: { jobId: value.jobId, workerId: value.workerId, leaseToken: value.leaseToken }
         });
-      } catch {
-        throw fail("Google video could not be committed to the existing private asset repository.",
-          "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
+        return asset;
+      } catch (error) {
+        throw fail("Google video could not be committed to the fenced private asset repository.",
+          error?.code || "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
+      } finally {
+        if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
       }
-      return asset;
     }
   });
 
