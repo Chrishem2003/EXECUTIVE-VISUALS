@@ -86,6 +86,7 @@ test("approved Fal shot uses persisted asynchronous task ID and publishes privat
  assert.equal(f.calls.filter(x=>x[0]==="fal-download").length,1);
  assert.equal(f.calls.filter(x=>x[0]==="publish").length,1);
  assert.equal(f.calls.find(x=>x[0]==="publish")[1].metadata.provider,"fal");
+ assert.equal(f.calls.find(x=>x[0]==="submitted")[1].provider,"fal");
  assert.equal(f.record.state,"succeeded");
 });
 test("recovered Fal task resumes polling without creating a second paid submission",async()=>{
