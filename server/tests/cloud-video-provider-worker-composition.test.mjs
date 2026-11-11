@@ -194,7 +194,7 @@ test("source-edit model registration composes server-side source metadata probin
 });
 
 
-test("Google Omni worker registration requires all explicit transport gates and approved-input callbacks", () => {
+test("Google Omni worker registration requires all transport gates, a verified connection and approved-input callbacks", () => {
   assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
     ...base, createAdapters: undefined,
     env: { ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true" }
@@ -203,7 +203,11 @@ test("Google Omni worker registration requires all explicit transport gates and 
     ...base, createAdapters: undefined,
     env: {
       ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
-      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true"
+      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true",
+      GOOGLE_OMNI_CONNECTION_STATUS: "connected"
+    },
+    providerDependencies: {
+      googleOmniAssertConnection: async () => ({ connected: true, verified: true, connectionId: "google-connection-test" })
     }
   }), /durable approval, owner\/project authorization and private-input planning callbacks/);
 });
@@ -227,9 +231,13 @@ test("Google Omni adapter can be injected only behind all explicit gates", () =>
     ...base, createAdapters: undefined,
     env: {
       ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
-      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true"
+      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true",
+      GOOGLE_OMNI_CONNECTION_STATUS: "connected"
     },
-    providerDependencies: { googleOmniIntegration }
+    providerDependencies: {
+      googleOmniIntegration,
+      googleOmniAssertConnection: async () => ({ connected: true, verified: true, connectionId: "google-connection-test" })
+    }
   });
   assert.ok(worker.listSupported().includes("google:gemini-omni-1.1-flash"));
 });
@@ -269,3 +277,19 @@ test("Runway Model Router worker can be composed without FAL credentials", () =>
  assert.deepEqual(worker.listSupported(),["runway:model-router"]);
 });
 
+
+test("Google Omni remains fail-closed until the connection status and live verifier are both present", () => {
+  const allGates = {
+    ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+    GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true"
+  };
+  const verifier = async () => ({ connected: true, verified: true, connectionId: "google-connection-test" });
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined, env: allGates,
+    providerDependencies: { googleOmniAssertConnection: verifier }
+  }), /account connection is complete and verified/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: { ...allGates, GOOGLE_OMNI_CONNECTION_STATUS: "connected" }
+  }), /live connection verifier/);
+});
