@@ -156,5 +156,16 @@ test("administrator queue health reports stale leases and oldest outstanding wor
  assert.match(queueQuery.sql,/MIN\(CASE WHEN status='queued'/);
  assert.equal(queueQuery.args[0],"2026-11-10T12:00:00.000Z");
  assert.equal(queueQuery.args[1],"2026-11-11T12:00:00.000Z");
- assert.deepEqual(result.queueHealth,{queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-10T11:00:00Z"});
+ assert.deepEqual(result.queueHealth,{queued:2,running:3,failed24h:1,expiredLeaseJobs:1,missingLeaseJobs:1,oldestQueuedAt:"2026-11-10T10:00:00Z",oldestRunningAt:"2026-11-11T11:00:00Z",oldestQueuedAgeSeconds:93600,oldestRunningAgeSeconds:3600,status:"critical"});
+});
+
+test("queue health warns on old queued work and reports healthy idle queues",()=>{
+ const makeDb=(queue)=>({prepare(sql){return{get(){if(sql.includes("SELECT (SELECT COUNT(*)"))return{users:0,projects:0,assets:0,jobs:0};if(sql.includes("FROM jobs"))return queue;if(sql.includes("estimated_cost_micros"))return{operations:0,estimatedCostMicros:0};throw new Error("Unexpected query");},all(){if(sql.includes("GROUP BY status"))return[];throw new Error("Unexpected query");}};}});
+ const warning=getAdminOperationsOverview(makeDb({queued:1,running:0,failed24h:0,expiredLeaseJobs:0,missingLeaseJobs:0,oldestQueuedAt:"2026-11-11T11:40:00Z",oldestRunningAt:null}),{now:Date.parse("2026-11-11T12:00:00Z")});
+ assert.equal(warning.queueHealth.oldestQueuedAgeSeconds,1200);
+ assert.equal(warning.queueHealth.oldestRunningAgeSeconds,null);
+ assert.equal(warning.queueHealth.status,"warning");
+ const healthy=getAdminOperationsOverview(makeDb({queued:0,running:0,failed24h:0,expiredLeaseJobs:0,missingLeaseJobs:0,oldestQueuedAt:null,oldestRunningAt:null}),{now:Date.parse("2026-11-11T12:00:00Z")});
+ assert.equal(healthy.queueHealth.status,"healthy");
+ assert.equal(healthy.queueHealth.oldestQueuedAgeSeconds,null);
 });
