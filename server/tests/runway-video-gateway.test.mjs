@@ -280,3 +280,12 @@ test("Runway generated-media downloads explicitly reject HTTP redirects",async()
  assert.equal(result.toString("ascii",4,8),"ftyp");
  assert.equal(options.redirect,"error");
 });
+
+test("Runway cancels non-success API response bodies before parsing",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ let cancelled=false;
+ const fetchImpl=async()=>({status:429,ok:false,headers:new Headers(),body:{cancel:async()=>{cancelled=true;}},});
+ try{await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A test scene",fetchImpl}),e=>e.code==="VIDEO_GATEWAY_RATE_LIMITED");assert.equal(cancelled,true);}
+ finally{for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
