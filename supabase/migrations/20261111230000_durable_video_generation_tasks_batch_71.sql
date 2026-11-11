@@ -101,7 +101,7 @@ begin
      or exists(select 1 from jsonb_array_elements(p_snapshot_json->'shots') shot
        where jsonb_typeof(shot)<>'object'
           or coalesce(shot->>'estimatedCostMicros','') !~ '^[0-9]+$'
-          or (shot->>'estimatedCostMicros')::numeric>9223372036854775807
+          or length(shot->>'estimatedCostMicros')>19
           or coalesce(shot->>'provider','') not in ('runway','fal')
           or coalesce(shot->>'model','')=''
           or coalesce(shot->'estimatedCost'->>'currency','')<>p_currency) then
