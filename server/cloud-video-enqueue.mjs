@@ -4,9 +4,9 @@ import { assertVideoCapabilities, normalizeVideoGenerationRequest } from "./vide
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
-  finish: "finish_video_generation_job",
-  defer: "defer_video_generation_job",
-  quarantine: "quarantine_video_generation_job",
+  finish: "finish_video_generation_job_v2",
+  defer: "defer_video_generation_job_v2",
+  quarantine: "quarantine_video_generation_job_v2",
   resume: "resume_reconciled_video_generation_job",
   recover: "recover_expired_video_generation_jobs"
 });
@@ -415,23 +415,23 @@ export function createCloudVideoEnqueue({
         budgetReservationId: rows[0].budget_reservation_id
       });
     },
-    async defer({ jobId, workerId, delaySeconds = 30, reasonCode = "VIDEO_PROVIDER_POLL_DEFERRED" } = {}) {
+    async defer({ jobId, workerId, leaseToken, delaySeconds = 30, reasonCode = "VIDEO_PROVIDER_POLL_DEFERRED" } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
       if (!Number.isInteger(delaySeconds) || delaySeconds < 5 || delaySeconds > 900) throw new Error("Defer delay must be between 5 and 900 seconds.");
       if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Defer reason code is invalid.");
       const result = await call(RPC.defer, {
-        p_job_id: jobId, p_worker_id: workerId, p_delay_seconds: delaySeconds, p_reason_code: reasonCode
+        p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_delay_seconds: delaySeconds, p_reason_code: reasonCode
       });
       if (typeof result !== "boolean") throw new Error("Cloud video defer returned an invalid result.");
       return result;
     },
-    async quarantine({ jobId, workerId, reasonCode = "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION" } = {}) {
+    async quarantine({ jobId, workerId, leaseToken, reasonCode = "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION" } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
       if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Quarantine reason code is invalid.");
       const result = await call(RPC.quarantine, {
-        p_job_id: jobId, p_worker_id: workerId, p_reason_code: reasonCode
+        p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_reason_code: reasonCode
       });
       if (typeof result !== "boolean") throw new Error("Cloud video quarantine returned an invalid result.");
       return result;
@@ -452,7 +452,7 @@ export function createCloudVideoEnqueue({
       if (typeof result !== "boolean") throw new Error("Cloud video resume returned an invalid result.");
       return result;
     },
-    async finish({ jobId, workerId, status, output = null, error = null, actualAmount = null } = {}) {
+    async finish({ jobId, workerId, leaseToken, status, output = null, error = null, actualAmount = null } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
       if (!["succeeded", "partial", "failed", "cancelled"].includes(status)) throw new Error("Video job status must be terminal.");
@@ -468,7 +468,7 @@ export function createCloudVideoEnqueue({
         throw new Error("Failed or cancelled video jobs must release their reservation without an actual amount.");
       }
       const result = await call(RPC.finish, {
-        p_job_id: jobId, p_worker_id: workerId, p_status: status,
+        p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_status: status,
         p_output: output, p_error: error, p_actual_amount: actualAmount
       });
       if (typeof result !== "boolean") throw new Error("Cloud video job finalization returned an invalid result.");
