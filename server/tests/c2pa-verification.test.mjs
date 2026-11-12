@@ -66,10 +66,12 @@ test("passes separately configured user trust anchors into the CAI Context",asyn
  class Context{constructor(value){settings=value;}}
  const Reader={async fromAsset(){return{isEmbedded:()=>false,json:()=>({})};}};
  try{
+  const userAnchorsPath=join(f.dir,"user-anchors.pem");
+  await writeFile(userAnchorsPath,"test user anchor PEM");
   const result=await createC2paVerifier({
-   sdkLoader:async()=>({Reader,Context}),maxBytes:1024,userAnchorsPath:"/tmp/test-user-anchors.pem"
+   sdkLoader:async()=>({Reader,Context}),maxBytes:1024,userAnchorsPath
   })({filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256,expectedSize:f.size});
-  assert.equal(settings?.trust?.userAnchors,"/tmp/test-user-anchors.pem");
+  assert.equal(settings?.trust?.userAnchors,"test user anchor PEM");
   assert.equal(settings?.trust?.trustAnchors,undefined);
   assert.equal(result.status,"not_present");
  }finally{await f.cleanup();}
