@@ -64,7 +64,9 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
   if(track.locked)throw new Error("Track is locked.");
   if(track.clips.some(item=>item.id===clip.id))throw new Error("Clip ID already exists.");
   if(clip.duration.value<=0||clip.sourceRange.duration.value<=0)throw new Error("Clip duration must be positive.");
-  if(Math.abs(seconds(clip.duration)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline and source duration must match within half a source frame for constant-speed clips.");
+  const speed=Number(clip.speed??1);if(!Number.isFinite(speed)||speed<0.25||speed>4)throw new Error("Clip speed must be between 0.25× and 4×.");
+  if(track.kind!=="video"&&track.kind!=="audio"&&speed!==1)throw new Error("Speed changes are supported only for video and audio clips.");
+  if(Math.abs(seconds(clip.duration)*speed-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Source duration must equal timeline duration multiplied by clip speed.");
   const next={...track,clips:[...track.clips,{...clip}].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?next:item)};
   const validation=validateTimeline(updated);
@@ -79,8 +81,8 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const removeLeft=Math.max(0,Math.floor(leftFrames)),removeRight=Math.max(0,Math.floor(rightFrames));
   const remaining=clip.duration.value-removeLeft-removeRight;
   if(remaining<=0)throw new Error("Trim would remove the entire clip.");
-  const sourceLeft=Math.round(removeLeft/fps*clip.sourceRange.start.rate);
-  const sourceRight=Math.round(removeRight/fps*clip.sourceRange.duration.rate);
+  const speed=Number(clip.speed??1),sourceLeft=Math.round(removeLeft/fps*speed*clip.sourceRange.start.rate);
+  const sourceRight=Math.round(removeRight/fps*speed*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceLeft-sourceRight;
   if(sourceRemaining<=0)throw new Error("Trim would remove the entire source range.");
   const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
@@ -96,7 +98,7 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   if(offset<=0||offset>=duration)throw new Error("Split point must be inside the clip.");
   if(track.clips.some(item=>item.id===newClipId))throw new Error("New clip ID already exists.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
-  const sourceOffset=Math.round(offset/fps*clip.sourceRange.start.rate);
+  const sourceOffset=Math.round(offset/fps*Number(clip.speed??1)*clip.sourceRange.start.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceOffset;
   if(sourceRemaining<=0)throw new Error("Split point is outside the source range.");
   const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)}};
@@ -140,7 +142,10 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
       if(!clip.assetId)issues.push({code:"missing_asset",trackId:track.id,clipId:clip.id,message:"Clip has no source asset."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
-      if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
+      const speed=Number(clip.speed??1);
+      if(!Number.isFinite(speed)||speed<0.25||speed>4)issues.push({code:"invalid_clip_speed",trackId:track.id,clipId:clip.id,message:"Clip speed must be between 0.25× and 4×."});
+      else if(track.kind!=="video"&&track.kind!=="audio"&&speed!==1)issues.push({code:"unsupported_clip_speed",trackId:track.id,clipId:clip.id,message:"Speed changes are supported only for video and audio clips."});
+      else if(Math.abs(duration*speed-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source duration must equal timeline duration multiplied by clip speed."});
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
       if(clip.audioAutomation!==undefined){try{const points=normalizeAudioAutomation(clip.audioAutomation);if(points.some(point=>point.timeSeconds>duration))throw new Error("Audio automation keyframes must fall inside the clip duration.");}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
