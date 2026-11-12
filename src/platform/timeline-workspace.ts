@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestBlob } from "../core/api";
+import { AudioPreviewEngine } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
@@ -22,8 +23,8 @@ type TimelineRevisionSummary={timelineId:string;revision:number;name:string;crea
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
 type CloudTimelineJobOutput={outputAsset?:{id:string;name?:string};render?:{audioMastering?:CloudAudioMasteringReceipt}};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0},audioPreviewEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{}
 };
 const history:{timelineId:string;undo:EditorialTimeline[];redo:EditorialTimeline[]}={timelineId:"",undo:[],redo:[]};
 function recordUndo(){if(!state.timeline)return;if(history.timelineId!==state.timeline.id){history.timelineId=state.timeline.id;history.undo=[];history.redo=[];}history.undo.push(structuredClone(state.timeline));if(history.undo.length>50)history.undo.shift();history.redo=[];}
@@ -86,7 +87,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small>'+(track.kind==="audio"?'<div class="audio-track-toggles"><button type="button" data-tl-audio-state="mute" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.muted)+'">M</button><button type="button" data-tl-audio-state="solo" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.solo)+'">S</button></div>':'')+'</div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
 }
 function clipInspector(){
  if(!state.timeline||!state.selectedClipId)return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR</div><p class="muted">Select a clip on the timeline to edit its timing, gain or visual properties.</p></div>';
@@ -121,6 +122,7 @@ function updatePreviewDiagnostics(){
 }
 function releaseTimelinePreview(){
  stopTimelinePlayback();
+ state.audioPreviewEngine?.dispose();state.audioPreviewEngine=null;
  for(const url of Object.values(state.previewAssetUrls))if(url.startsWith("blob:"))URL.revokeObjectURL(url);
  state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewRefreshAttemptedAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
 }
@@ -194,6 +196,17 @@ function syncPreviewAtFrame(frame:number){
  const active=new Map(playback.active.map(item=>[item.clipId,item]));
  const topVideo=playback.activeVideo[playback.activeVideo.length-1];
  const audioActive=playback.activeAudio.length>0;
+ if(state.audioPreviewEngine){
+  const audioTracks=playback.activeAudio.flatMap(item=>{
+   const track=state.timeline!.tracks.find(candidate=>candidate.clips.some(clip=>clip.id===item.clipId));
+   const clip=track?.clips.find(candidate=>candidate.id===item.clipId);
+   const media=document.querySelector<HTMLMediaElement>('#timeline-playback audio[data-preview-clip="'+CSS.escape(item.clipId)+'"]');
+   if(!track||!clip||!media)return [];
+   const trackState=state.audioTrackStates[track.id]||{muted:false,solo:false};
+   return [{id:item.clipId,media,gainDb:item.gainDb,pan:clip.pan??0,automation:clip.audioAutomation??[],automationTime:Math.max(0,seconds-clip.timelineStart.value/clip.timelineStart.rate),muted:trackState.muted,solo:trackState.solo}];
+  });
+  try{state.audioPreviewEngine.sync(audioTracks);state.audioPreviewEngine.setMasterVolume(state.audioMasterVolume);state.audioPreviewEngine.setMasterMuted(state.audioMasterMuted);state.audioPreviewEngine.setSoloMode(Object.values(state.audioTrackStates).some(track=>track.solo));}catch(error){state.message=error instanceof Error?"Audio preview: "+error.message:"Audio preview could not synchronize.";}
+ }
  const hasPicture=playback.active.some(item=>state.assets.some(asset=>asset.id===item.assetId&&((item.trackKind==="video"&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/")))||(item.trackKind==="overlay"&&asset.mediaType.startsWith("image/")))));
  const placeholder=document.querySelector<HTMLElement>("#timeline-playback .timeline-preview-placeholder");if(placeholder)placeholder.style.display=hasPicture?"none":"grid";
  document.querySelectorAll<HTMLElement>("#timeline-playback [data-preview-media]").forEach(element=>{
@@ -209,7 +222,7 @@ function syncPreviewAtFrame(frame:number){
   }
   media.playbackRate=Math.max(0.25,Math.min(4,item.speed||1));
   if(isAudio){
-   media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
+   media.volume=state.audioPreviewEngine?1:Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
   }else{
    media.muted=audioActive||item.clipId!==topVideo?.clipId;
    media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
@@ -235,6 +248,10 @@ function formatPlaybackTime(frame:number){
  return [hh,mm,ss,ff].map(value=>String(value).padStart(2,"0")).join(":");
 }
 async function startTimelinePlayback(){
+ if(!state.audioPreviewEngine&&typeof AudioContext!=="undefined"){
+  try{state.audioPreviewEngine=new AudioPreviewEngine(new AudioContext());await state.audioPreviewEngine.resume();}
+  catch(error){state.audioPreviewEngine?.dispose();state.audioPreviewEngine=null;throw new Error("Audio preview could not initialize: "+(error instanceof Error?error.message:"browser audio is unavailable."));}
+ }
  if(!state.previewLoaded)await loadTimelinePreview();
  if(!state.timeline)return;
  const endFrame=clampTimelineFrame(timelineDurationSeconds(state.timeline)*fps(),state.timeline);
@@ -271,7 +288,7 @@ function timelinePlaybackPanel(){
   }
   return '<video '+base+' playsinline preload="metadata" src="'+esc(src)+'" style="display:none;z-index:'+trackIndex+'"></video>';
  }).join(""):"").join(""):"";
- return '<section class="panel timeline-playback" id="timeline-playback"><div class="timeline-panel-heading"><div><div class="eyebrow">PROGRAM MONITOR · MULTI-TRACK TRANSPORT</div><h3>Sequence playback</h3></div><span class="muted">'+(state.mode==="local"?"LOCAL MEDIA":"PRIVATE CLOUD MEDIA")+'</span></div>'+'<div class="timeline-preview-stage" style="aspect-ratio:'+state.timeline.width+'/'+state.timeline.height+'"><div class="timeline-preview-placeholder">'+(state.previewLoaded?"No active picture at this playhead position." :"Load preview media to synchronize picture and sound tracks.")+'</div>'+elements+'</div><div class="timeline-preview-transport"><button class="secondary" data-tl-action="preview-load" '+(state.previewLoading?'disabled':'')+'>'+(state.previewLoading?"Loading media…":state.previewLoaded?"Refresh media":"Load preview media")+'</button><button class="secondary" data-tl-action="preview-step-back" '+(!state.previewLoaded?'disabled':'')+'>−1 frame</button><button class="primary" data-tl-action="preview-play" '+(state.isPlaying||!state.previewLoaded?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="preview-pause" '+(!state.isPlaying?'disabled':'')+'>Pause</button><button class="secondary" data-tl-action="preview-step-forward" '+(!state.previewLoaded?'disabled':'')+'>+1 frame</button><output id="tl-preview-time">'+formatPlaybackTime(state.playheadFrame)+'</output></div><input id="tl-preview-seek" class="timeline-preview-seek" type="range" min="0" max="'+duration+'" step="1" value="'+Math.min(duration,Math.round(state.playheadFrame))+'" '+(!state.previewLoaded?'disabled':'')+'><div class="timeline-preview-meta"><span>00:00:00:00</span><span>'+formatPlaybackTime(duration)+'</span><span>'+fps().toFixed(3)+' fps</span></div><div class="timeline-preview-diagnostics" id="tl-preview-diagnostics">Sources 0 · proxies 0 · proxy fallbacks 0 · dropped frames 0/0 · stalls 0 · media errors 0</div><p class="muted">Active video, image overlays and dedicated audio clips follow one sequence clock. Verified source-linked proxies are preferred for playback; final renders continue using canonical originals. Browser seeking remains best-effort.</p></section>';
+ return '<section class="panel timeline-playback" id="timeline-playback"><div class="timeline-panel-heading"><div><div class="eyebrow">PROGRAM MONITOR · MULTI-TRACK TRANSPORT</div><h3>Sequence playback</h3></div><span class="muted">'+(state.mode==="local"?"LOCAL MEDIA":"PRIVATE CLOUD MEDIA")+'</span></div>'+'<div class="timeline-preview-stage" style="aspect-ratio:'+state.timeline.width+'/'+state.timeline.height+'"><div class="timeline-preview-placeholder">'+(state.previewLoaded?"No active picture at this playhead position." :"Load preview media to synchronize picture and sound tracks.")+'</div>'+elements+'</div><div class="timeline-preview-transport"><button class="secondary" data-tl-action="preview-load" '+(state.previewLoading?'disabled':'')+'>'+(state.previewLoading?"Loading media…":state.previewLoaded?"Refresh media":"Load preview media")+'</button><button class="secondary" data-tl-action="preview-step-back" '+(!state.previewLoaded?'disabled':'')+'>−1 frame</button><button class="primary" data-tl-action="preview-play" '+(state.isPlaying||!state.previewLoaded?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="preview-pause" '+(!state.isPlaying?'disabled':'')+'>Pause</button><button class="secondary" data-tl-action="preview-step-forward" '+(!state.previewLoaded?'disabled':'')+'>+1 frame</button><output id="tl-preview-time">'+formatPlaybackTime(state.playheadFrame)+'</output></div><div class="audio-preview-mixer"><label for="tl-audio-master-volume">Master</label><input id="tl-audio-master-volume" type="range" min="0" max="1" step="0.01" value="'+state.audioMasterVolume+'"><button type="button" class="secondary" data-tl-audio-master-mute aria-pressed="'+state.audioMasterMuted+'">'+(state.audioMasterMuted?"Unmute":"Mute master")+'</button><span>Audio preview mixer · M mute · S solo</span></div><input id="tl-preview-seek" class="timeline-preview-seek" type="range" min="0" max="'+duration+'" step="1" value="'+Math.min(duration,Math.round(state.playheadFrame))+'" '+(!state.previewLoaded?'disabled':'')+'><div class="timeline-preview-meta"><span>00:00:00:00</span><span>'+formatPlaybackTime(duration)+'</span><span>'+fps().toFixed(3)+' fps</span></div><div class="timeline-preview-diagnostics" id="tl-preview-diagnostics">Sources 0 · proxies 0 · proxy fallbacks 0 · dropped frames 0/0 · stalls 0 · media errors 0</div><p class="muted">Active video, image overlays and dedicated audio clips follow one sequence clock. Verified source-linked proxies are preferred for playback; final renders continue using canonical originals. Browser seeking remains best-effort.</p></section>';
 }
 function variantComparisonPanel(){
  if(!state.timeline?.metadata?.variantOf)return "";
@@ -676,6 +693,13 @@ document.addEventListener("submit",event=>{
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
+document.addEventListener("input",event=>{
+ const target=event.target as HTMLInputElement;
+ if(target.id==="tl-audio-master-volume"){
+  state.audioMasterVolume=Math.max(0,Math.min(1,Number(target.value)||0));
+  state.audioPreviewEngine?.setMasterVolume(state.audioMasterVolume);
+ }
+});
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
  if(target.name==="profile"&&target.form?.id==="tl-audio-mastering"){
@@ -754,6 +778,24 @@ document.addEventListener("click",event=>{
    void persist().then(()=>{state.message="Audio automation keyframe saved.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not save audio keyframe.";paint();});
   }
   return;
+ }
+ const audioState=target.closest<HTMLElement>("[data-tl-audio-state]");
+ if(audioState){
+  const id=audioState.dataset.track||"",kind=audioState.dataset.tlAudioState||"";
+  if(id&&(kind==="mute"||kind==="solo")){
+   const current=state.audioTrackStates[id]||{muted:false,solo:false};
+   const property=kind==="mute"?"muted":"solo";
+   state.audioTrackStates={...state.audioTrackStates,[id]:{...current,[property]:!current[property]}};
+   if(state.timeline)syncPreviewAtFrame(state.playheadFrame);
+   paint();
+  }
+  return;
+ }
+ const masterMute=target.closest<HTMLElement>("[data-tl-audio-master-mute]");
+ if(masterMute){
+  state.audioMasterMuted=!state.audioMasterMuted;
+  state.audioPreviewEngine?.setMasterMuted(state.audioMasterMuted);
+  paint();return;
  }
  const resolveReview=target.closest<HTMLElement>("[data-tl-review-resolve]");
  if(resolveReview){
