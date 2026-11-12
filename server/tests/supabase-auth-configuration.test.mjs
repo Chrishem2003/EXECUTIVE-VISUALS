@@ -29,7 +29,7 @@ test("Supabase auth missing encryption secret keeps the application online but f
   const env={...process.env,NODE_ENV:"test",AUTH_MODE:"supabase",DATA_DIR:join(root,"data"),DB_FILE:join(root,"data","auth.sqlite"),MEDIA_ROOT:join(root,"media"),WEB_ROOT:join(root,"dist"),SUPABASE_URL:"https://example.supabase.co",SUPABASE_PUBLISHABLE_KEY:"sb_publishable_test"};
   delete env.SUPABASE_SESSION_ENCRYPTION_KEY;
   const {stdout,stderr}=await execFileAsync(process.execPath,["--input-type=module","-e",script],{cwd:process.cwd(),env,timeout:15000,maxBuffer:1024*1024});
-  const result=JSON.parse(stdout.trim().split(/\\r?\\n/).at(-1));
+  const result=JSON.parse(stdout.trim());
   assert.equal(result.healthStatus,200,stderr);
   assert.equal(result.authMode,"supabase");
   assert.equal(result.configurationReady,false);
