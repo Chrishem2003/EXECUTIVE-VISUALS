@@ -172,11 +172,11 @@ function createLocalSession(userId) {
 }
 function setSupabaseSessionCookies(res,token,maxAge=30*86400){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie","ev_supabase_session="+encodeURIComponent(token)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+maxAge+secure);
+ res.setHeader("set-cookie",["ev_supabase_session="+encodeURIComponent(token)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+maxAge+secure,"ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure]);
 }
 function clearSupabaseSessionCookies(res){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie","ev_supabase_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure);
+ res.setHeader("set-cookie",["ev_supabase_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure]);
 }
 function createSupabaseBrowserSession(session){
  if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions require SUPABASE_SESSION_ENCRYPTION_KEY (32 random bytes)."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
