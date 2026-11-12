@@ -787,6 +787,9 @@ document.addEventListener("submit",event=>{
    const curveText=String(data.get("speedCurve")||"").trim();
    try{const parsed=curveText?JSON.parse(curveText):[];if(!Array.isArray(parsed))throw new Error("Speed keyframes must be a JSON array.");speedCurve=parsed.length?parsed:undefined;}
    catch(error){alert(error instanceof Error?error.message:"Invalid speed curve JSON.");return;}
+   if(speedCurve&&(speedCurve.length<2||speedCurve.length>64||speedCurve[0]?.timeSeconds!==0||speedCurve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||(index>0&&point.timeSeconds<=speedCurve![index-1].timeSeconds)))){
+    alert("Speed curves require 2–64 ordered keyframes, starting at zero, with speeds from 0.25× to 4×.");return;
+   }
   }
   const originalTimeline=structuredClone(state.timeline);recordUndo();
   const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
