@@ -10,7 +10,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
@@ -480,6 +480,24 @@ async function persist(){
  }
  const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
  state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.revision);
+}
+export async function createCloudTimelineFromDocument(projectId:string,timeline:EditorialTimeline){
+ if(!projectId.trim()||timeline.projectId!==projectId)throw new Error("The storyboard timeline must belong to the selected cloud project.");
+ const validation=validateTimeline(timeline);
+ if(!validation.valid)throw new Error("Storyboard timeline failed validation: "+validation.issues.map(issue=>issue.message).join(" "));
+ if(!timeline.tracks.length)throw new Error("Storyboard timeline must include its planned picture, audio and caption tracks.");
+ releaseTimelinePreview();
+ state.mode="cloud";state.cloudProjectId=projectId;state.timeline=null;state.serverRevision=0;
+ state.recoveredDraft=null;state.recoveryStatus="idle";state.playheadFrame=0;state.selectedClipId="";
+ history.timelineId=timeline.id;history.undo=[];history.redo=[];
+ await refresh();
+ if(state.cloudProjectId!==projectId||!state.cloudProjects.some(project=>project.id===projectId))throw new Error("The selected cloud project is not available to this account.");
+ const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId,name:timeline.name,timeline,otio:toOpenTimelineIo(timeline)})});
+ state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;
+ state.cloudTimelines=[result.timeline,...state.cloudTimelines.filter(item=>item.id!==result.timeline.id)];
+ state.selectedTrack=timeline.tracks[0]?.id||"";state.selectedClipId="";state.status="ready";
+ state.message="Created a new cloud timeline from the reviewed storyboard. Scene and shot markers are ready for editing; no media clips or provider jobs were created.";
+ await loadVariantComparison();paint();
 }
 async function createCloudTimeline(){
  if(state.mode!=="cloud"||!state.cloudProjectId)throw new Error("Select a cloud project before creating a timeline.");
