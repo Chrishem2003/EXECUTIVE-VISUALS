@@ -15,6 +15,18 @@ export type RuntimeCapabilityInput = {
   billingProviderConfigured?: boolean;
   billingWebhookConfigured?: boolean;
   billingProviderMode?: "sandbox" | "live" | "unknown";
+  cloudVideoWorker?: {
+    enabled?: boolean;
+    remoteExecutionGates?: boolean;
+    modelRouterEnabled?: boolean;
+    modelRouterRemoteEnabled?: boolean;
+    modelRouterConfigPresent?: boolean;
+    providerCredentialConfigured?: boolean;
+    outputHostAllowlistConfigured?: boolean;
+    supabaseCredentialsConfigured?: boolean;
+    directRunwayModelsRequested?: boolean;
+    runtimeMode?: "separate-process" | "embedded" | "unknown";
+  };
 };
 export type RuntimeCapability = { id: string; label: string; state: CapabilityState; detail: string };
 
@@ -51,5 +63,25 @@ export function describeRuntimeCapabilities(input: RuntimeCapabilityInput = {}):
       ? { id: "billing", label: "Subscriptions and billing", state: "ready", detail: "Billing credentials and webhook secret are configured (" + (input.billingProviderMode === "live" ? "live provider" : input.billingProviderMode === "sandbox" ? "sandbox provider" : "provider mode unverified") + "). Merchant onboarding and webhook smoke tests remain separate release gates." }
       : { id: "billing", label: "Subscriptions and billing", state: "blocked", detail: "Billing is enabled but provider credentials or webhook verification configuration is incomplete." };
 
-  return [auth, cloud, gateway("text-gateway", "Text generation gateway", input.textGatewayEnabled, input.textGatewayConfigured), gateway("image-gateway", "Image generation gateway", input.imageGatewayEnabled, input.imageGatewayConfigured), media, billing];
+  const worker = input.cloudVideoWorker || {};
+  const workerChecks = [
+    worker.remoteExecutionGates === true,
+    worker.modelRouterEnabled === true,
+    worker.modelRouterRemoteEnabled === true,
+    worker.modelRouterConfigPresent === true,
+    worker.providerCredentialConfigured === true,
+    worker.outputHostAllowlistConfigured === true,
+    worker.supabaseCredentialsConfigured === true,
+    worker.directRunwayModelsRequested !== true,
+    input.authMode === "supabase" && input.authSessionReady === true && input.authSessionEncrypted === true,
+    input.cloudMediaReady === true,
+    input.ffmpeg === true && input.ffprobe === true
+  ];
+  const videoWorker: RuntimeCapability = worker.enabled !== true
+    ? { id: "cloud-video-worker", label: "Governed cloud video worker", state: "disabled", detail: "The separate provider-aware worker process is not enabled in this environment. Paid cloud generation remains unavailable." }
+    : workerChecks.some(ready => ready !== true)
+      ? { id: "cloud-video-worker", label: "Governed cloud video worker", state: "blocked", detail: "The worker launch gates are incomplete. Verify Supabase authentication, cloud API, FFmpeg/FFprobe, provider credentials, exact Runway Model Router configuration, output-host allowlist and both remote-execution approvals. No provider job should be submitted." }
+      : { id: "cloud-video-worker", label: "Governed cloud video worker", state: "limited", detail: "Worker launch configuration is complete, but the web service cannot verify that the separate worker process is running. Confirm its live logs and queue recovery before enabling paid generation." };
+
+  return [auth, cloud, videoWorker, gateway("text-gateway", "Text generation gateway", input.textGatewayEnabled, input.textGatewayConfigured), gateway("image-gateway", "Image generation gateway", input.imageGatewayEnabled, input.imageGatewayConfigured), media, billing];
 }
