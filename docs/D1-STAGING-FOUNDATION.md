@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status:** isolated D1 schema and Worker deployed to the dedicated staging subdomain. Authenticated browser sign-in and workspace round-trip remain acceptance gates.
+**Status (12 November 2026):** isolated D1 schema and Worker are deployed and read-only health checks pass. The current-main same-origin proxy and its authenticated-cookie regression test are merged. The proxy is not enabled in production; no authenticated browser workspace round-trip has been performed.
 
 ## Boundary and identity
 
@@ -21,8 +21,10 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 
 ## Staging endpoints
 
-- Worker health: `GET https://executive-visuals-d1-staging.chrishem242.workers.dev/edge-health`
-- D1 schema health: `GET https://executive-visuals-d1-staging.chrishem242.workers.dev/api/d1/health`
+- Worker health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/edge-health` — live check returned HTTP 200 with `d1Bound=true`, `apiProxyConfigured=true`, and `stagingOnly=true`.
+- D1 schema health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/health` — live check returned HTTP 200 with `metadataOnly=true` and `r2Enabled=false`.
+- Anonymous project access: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/projects` — live check returned HTTP 401 `AUTH_REQUIRED`.
+- Read-only D1 audit confirmed migration `0001_initial.sql`, all seven `ev_*` tables, and zero rows in user, project, membership, workspace-document, asset, job and audit tables.
 - Sign in: `POST /api/auth/login` (proxied only to the existing Render auth endpoint)
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
@@ -48,8 +50,8 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 4. **Completed:** apply `0001_initial.sql` to the isolated remote `executive-visuals-staging` database and record it in `d1_migrations`. Verified seven `ev_*` tables and zero user/project/asset/job rows.
 5. **Completed:** deploy `executive-visuals-d1-staging` as a separate Worker on its workers.dev subdomain, with no custom domain or production route. It permits only login/logout, `/api/me`, and `/api/d1/*`; all other application/business routes return 404. The Render API is contacted only for authentication and identity verification.
 6. **Completed:** add revisioned D1 workspace-document GET/PUT endpoints, strict body bounds, and owner/editor write authorization; viewers/reviewers remain read-only.
-7. **Completed in code, awaiting CI/deployment:** restrict browser CORS to the exact Executive Visuals app origin and Bearer authorization; cross-origin cookies are disabled.
-8. Configure `D1_STAGING_WORKER_URL` only on a separately approved isolated Executive Visuals staging service; do not set it on production.
+7. **Completed:** restrict browser CORS to the exact Executive Visuals app origin and Bearer authorization; cross-origin cookies are disabled. The deployed Worker reports the exact staging-only and D1-bound health flags.
+8. Configure `D1_STAGING_WORKER_URL` only on a separately approved isolated Executive Visuals staging service; do not set it on production. The variable is not configured on the live production service.
 9. Run a live authenticated smoke test and workspace round-trip through the same-origin proxy; confirm unauthenticated requests cannot create D1 principals or projects.
 10. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
@@ -73,7 +75,7 @@ The staging design must remain within the account's existing free allowances. As
 
 References: [Workers platform limits](https://developers.cloudflare.com/workers/platform/limits/) · [D1 platform limits](https://developers.cloudflare.com/d1/platform/limits/) · [Workers pricing and included usage](https://developers.cloudflare.com/workers/platform/pricing/).
 
-Read-only account audit on 9 November 2026 observed the existing `executive-visuals-staging` database at 126,976 bytes. The migration ledger contains exactly `0001_initial.sql`; all seven application tables (`ev_users`, `ev_projects`, `ev_project_members`, `ev_project_workspace_documents`, `ev_assets`, `ev_jobs`, `ev_audit_events`) exist and each currently contains zero rows. The only write observed was none: the audit used SELECT statements only. No user or project data was seeded.
+Read-only account audit on 9 November 2026 observed the existing `executive-visuals-staging` database at 126,976 bytes. The migration ledger contains exactly `0001_initial.sql`; all seven application tables (`ev_users`, `ev_projects`, `ev_project_members`, `ev_project_workspace_documents`, `ev_assets`, `ev_jobs`, `ev_audit_events`) exist and each currently contains zero rows. The only write observed was none: the audit used SELECT statements only. No user or project data was seeded. The direct endpoint checks were also read-only; the unauthenticated project request was rejected before any principal or project could be created.
 
 **Metadata caveat:** the Cloudflare database-list response reported `num_tables: 0` during this audit, while a direct read-only query against `sqlite_master` confirmed the seven application tables, migration ledger and indexes. Use the direct schema/migration query as the acceptance evidence; do not treat the list-response `num_tables` field as authoritative until its discrepancy is explained.
 
