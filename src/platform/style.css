@@ -1384,3 +1384,5 @@ body{
 .audio-preview-mixer button[aria-pressed=true],.audio-track-toggles button[aria-pressed=true]{border-color:var(--purple-400);color:var(--purple-300);background:rgba(139,92,246,.12)}
 .audio-track-toggles{display:flex;gap:4px;margin-top:6px}
 .audio-track-toggles button{min-width:25px;padding:2px 6px;font-size:10px}
+
+.editor-clip-waveform{display:block;width:calc(100% - 8px);height:22px;margin:3px 4px 2px;object-fit:fill;opacity:.9;pointer-events:none}
