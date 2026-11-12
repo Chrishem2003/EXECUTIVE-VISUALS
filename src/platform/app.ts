@@ -7,7 +7,7 @@ import { apiRequest } from "../core/api";
 import { planWorkflowExecution, validateWorkflow, type WorkflowGraph } from "../core/workflow";
 import { compileCreativeIntent, formatCreativeIntent, compileCreativeStoryboard, resolveCreativeDurationSeconds, type CreativeIntentPlan, type CreativeStoryboard } from "../core/creative-intent";
 import { buildSeriesProductionPlan, buildEpisodeTimelineDocument, buildEpisodeShotPackage, buildSeriesPlanFromStoryboard, upsertStoryBibleEntry, setEpisodeDirectionOverrides, setEpisodeStoryBibleBindings, updateEpisodeShotDirection, type SeriesProductionPlan } from "../core/series-production";
-import { renderRuntimeWorkspace, renderAssetLibrary, renderAiUpscaleReadiness, renderEngineStatus, renderRuntimeOverview, renderVideoModelOptions, renderVideoModelNote, renderImageModelOptions, renderImageModelNote, renderReferenceImageOptions, loadCreativeDraft, getCurrentProjectId, canEditCurrentProject, initRuntime } from "./runtime";
+import { renderRuntimeWorkspace, renderAssetLibrary, renderAiUpscaleReadiness, renderEngineStatus, renderRuntimeOverview, renderVideoModelNote, renderImageModelOptions, renderImageModelNote, renderReferenceImageOptions, loadCreativeDraft, getCurrentProjectId, canEditCurrentProject, initRuntime } from "./runtime";
 import { renderTimelineWorkspace, initTimelineWorkspace, createCloudTimelineFromDocument } from "./timeline-workspace";
 import { renderWorkflowWorkspace, initWorkflowWorkspace, refreshWorkflowWorkspace } from "./workflow-workspace";
 import { renderKnowledgeWorkspace, initKnowledgeWorkspace } from "./knowledge-workspace";
@@ -183,6 +183,7 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
  const approvalId=uid(),generationId=uid(),image=kind==="image.generate";
  const projectId=image?"":getCurrentProjectId();
  if(!image&&(!projectId||!canEditCurrentProject()))throw new Error("Select a saved project where you have owner or editor access before preparing video generation.");
+ if(!image&&String(config.referenceAssetId||"").trim()&&config.rightsConfirmed!==true)throw new Error("Confirm that you have the rights to use the selected reference media before preparing generation.");
  const generationConfig=image?config:{
   ...config,provider:"runway",model:"model-router",
   durationSeconds:Number(config.durationSeconds??config.duration??5),
