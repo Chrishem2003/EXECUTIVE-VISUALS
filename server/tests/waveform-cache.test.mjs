@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile, utimes, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -116,4 +116,22 @@ test("rebuilds a corrupted local waveform cache entry",async()=>{
   assert.equal(first,rebuilt);
   assert.deepEqual((await readFile(rebuilt)).subarray(0,8),png.subarray(0,8));
  }finally{await f.close();}
+});
+
+
+test("rejects a managed-media symlink that resolves outside the media root",async()=>{
+ const f=await fixture();
+ const outside=await mkdtemp(join(tmpdir(),"ev-waveform-outside-"));
+ try{
+  const externalSource=join(outside,"outside.wav");
+  await writeFile(externalSource,Buffer.from("outside source"));
+  await symlink(externalSource,join(f.root,"uploads","linked.wav"));
+  await assert.rejects(
+   ()=>f.cache.get({...f.asset,storage_path:"uploads/linked.wav"}),
+   error=>error.code==="WAVEFORM_INVALID_PATH"
+  );
+ }finally{
+  await f.close();
+  await rm(outside,{recursive:true,force:true});
+ }
 });
