@@ -84,3 +84,14 @@ test("audio engine schedules clip gain and pan keyframes from the current source
  assert.ok(entry.panner.pan.events.some(event=>event[0]===1&&event[1]===3));
  engine.dispose();
 });
+
+test("audio engine reuses connected media nodes when seeking away and back",()=>{
+ const context=new FakeContext(),engine=new AudioPreviewEngine(context),media={pause(){}};
+ engine.sync([{id:"same-clip",media,gainDb:0}]);
+ engine.sync([]);
+ engine.sync([{id:"same-clip",media,gainDb:-6}]);
+ assert.equal(context.sources.length,1);
+ assert.equal(engine["connected"].get("same-clip").muted,false);
+ assert.ok(Math.abs(engine["connected"].get("same-clip").gain.gain.value-decibelsToGain(-6))<1e-8);
+ engine.dispose();
+});
