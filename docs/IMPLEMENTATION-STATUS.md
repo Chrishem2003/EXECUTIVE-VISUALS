@@ -4,6 +4,18 @@
 **Branch:** `main` (studio polish PR #266, upscaling integrity PRs #268 and #271, evidence docs #269, video pricing docs #272 and reviewer validation #273 merged; quality CI passed)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
+## Supabase browser-session hardening — PR #436 (not yet merged)
+
+- The browser receives one opaque, high-entropy `HttpOnly; Secure; SameSite=Strict` session cookie; Supabase access and refresh tokens are no longer emitted as browser cookies or attached globally to ordinary API requests.
+- The opaque session identifier is stored only as a SHA-256 hash. Provider access/refresh tokens are encrypted at rest with AES-256-GCM, with authenticated additional data binding ciphertext to the session hash, user ID and token purpose.
+- Refresh-token rotation stays server-side and must resolve to the same authenticated user. Logout revokes the provider session where possible and deletes the local session record.
+- Supabase-mode state-changing requests require an exact same-origin Origin and compatible Fetch Metadata signal. The signed Flutterwave webhook remains an explicit server-to-server exception.
+- The password-recovery fragment token is held transiently in memory and sent only to the password-update endpoint through a narrow explicit bearer helper; it is not retained as a global API credential.
+- The implementation requires a dedicated 32-byte `SUPABASE_SESSION_ENCRYPTION_KEY` in the server secret manager. Supabase mode refuses to start without it.
+- Unit tests cover hashed identifiers, authenticated encryption, token rotation, expiry, revocation, malformed secrets and cross-origin mutation rejection.
+- **Release boundary:** PR #436 is code-only until exact-head CI and review pass. Do not enable Supabase auth or deploy this mode until the secret is provisioned in an approved isolated staging environment, the session database is durable and staging sign-in/refresh/logout/recovery smoke tests pass. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment.
+
+
 ## Implemented in the current branch
 
 | Area | Implemented behavior | Boundary |

@@ -33,6 +33,8 @@ import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./prov
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession, requestSupabasePasswordRecovery, updateSupabasePassword, isSupabaseRecoveryToken } from "./supabase-password-auth.mjs";
+import { createSupabaseSessionStore, assertSameOriginMutation } from "./supabase-session-store.mjs";
+import { createSupabaseSessionRefreshCoordinator } from "./supabase-session-refresh.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
 import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit, buildVideoDispatchReadiness } from "./admin-operations.mjs";
@@ -69,6 +71,8 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
+const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
 const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -168,35 +172,36 @@ function createLocalSession(userId) {
     .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString());
   return token;
 }
-function setSupabaseSessionCookies(res,session){
+function setSupabaseSessionCookies(res,token,maxAge=30*86400){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie",[
-  "ev_supabase_access="+encodeURIComponent(session.accessToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+Math.max(60,session.expiresIn||3600)+secure,
-  "ev_supabase_refresh="+encodeURIComponent(session.refreshToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"+secure
- ]);
+ res.setHeader("set-cookie",["ev_supabase_session="+encodeURIComponent(token)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+maxAge+secure,"ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure]);
 }
 function clearSupabaseSessionCookies(res){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie",[
-  "ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,
-  "ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure
- ]);
+ res.setHeader("set-cookie",["ev_supabase_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,"ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure]);
+}
+function createSupabaseBrowserSession(session){
+ if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions require SUPABASE_SESSION_ENCRYPTION_KEY (32 random bytes)."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
+ db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email,auth_source=excluded.auth_source").run(session.user.id,session.user.email||session.user.id+"@supabase.invalid");
+ return supabaseSessionStore.create({userId:session.user.id,accessToken:session.accessToken,refreshToken:session.refreshToken,expiresIn:session.expiresIn});
 }
 async function authenticate(req,res) {
  if (AUTH_MODE === "supabase") {
+  if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions are not configured. Set SUPABASE_SESSION_ENCRYPTION_KEY."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
   const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
-  let token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"")||cookieValue(req,"ev_supabase_access");
-  let user=token?await getSupabaseUser({...config,accessToken:token}):null;
+  const browserToken=cookieValue(req,"ev_supabase_session");
+  if(!browserToken){if(cookieValue(req,"ev_supabase_access")||cookieValue(req,"ev_supabase_refresh"))clearSupabaseSessionCookies(res);return null;}
+  let stored=supabaseSessionStore.get(browserToken);
+  if(!stored){clearSupabaseSessionCookies(res);return null;}
+  let user=await getSupabaseUser({...config,accessToken:stored.accessToken});
+  if(user&&user.id!==stored.userId){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
   if(!user){
-   const refreshToken=cookieValue(req,"ev_supabase_refresh");
-   if(refreshToken){
-    const session=await refreshSupabaseSession({...config,refreshToken});
-    if(session){setSupabaseSessionCookies(res,session);token=session.accessToken;user=session.user;}
-    else clearSupabaseSessionCookies(res);
-   }
+   const refreshed=await supabaseSessionRefresh.refresh({token:browserToken,config});
+   if(!refreshed){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
+   stored=refreshed.stored;user=refreshed.user;
   }
-  if(!user)return null;
-  db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(user.id,user.email||user.id+"@supabase.invalid");
+  if(!user||user.id!==stored.userId)return null;
+  db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email,auth_source=excluded.auth_source").run(user.id,user.email||user.id+"@supabase.invalid");
   return {id:user.id,email:user.email||""};
  }
  const token=cookieValue(req,"ev_session");
@@ -382,6 +387,14 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
+    if(AUTH_MODE==="supabase"&&!["GET","HEAD","OPTIONS"].includes(req.method)&&path!=="/api/webhooks/flutterwave"){
+      const forwardedProto=String(req.headers["x-forwarded-proto"]||"").split(",")[0].trim();
+      const scheme=forwardedProto==="https"||req.socket.encrypted?"https":"http";
+      try{
+        const expectedOrigin=process.env.PUBLIC_APP_URL?new URL(process.env.PUBLIC_APP_URL).origin:scheme+"://"+String(req.headers.host||"");
+        assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});
+      }catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
+    }
     const ratePath=path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
@@ -399,7 +412,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH)},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH)},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}const publicAppUrl=String(process.env.PUBLIC_APP_URL||"").trim();if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}let redirect;try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}const localRedirect=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1","::1"].includes(redirect.hostname);if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;}const body=await readJson(req);await requestSupabasePasswordRecovery({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email:String(body.email||""),redirectTo:redirect.origin+"/"});send(res,200,{ok:true,message:"If an account exists for that address, a password recovery email has been sent."},cors);return;
@@ -412,7 +425,7 @@ export function createAppServer() {
         if(AUTH_MODE==="supabase"){
           const result=await signUpWithSupabasePassword({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email,password});
           if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}
-          setSupabaseSessionCookies(res,result);send(res,201,{user:result.user,authMode:"supabase"},cors);return;
+          const stored=createSupabaseBrowserSession(result);setSupabaseSessionCookies(res,stored.token,stored.expiresIn);send(res,201,{user:result.user,authMode:"supabase"},cors);return;
         }
         if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
@@ -426,7 +439,7 @@ export function createAppServer() {
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(AUTH_MODE==="supabase"){
           const session=await signInWithSupabasePassword({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email,password});
-          setSupabaseSessionCookies(res,session);send(res,200,{user:session.user,authMode:"supabase"},cors);return;
+          const stored=createSupabaseBrowserSession(session);setSupabaseSessionCookies(res,stored.token,stored.expiresIn);send(res,200,{user:session.user,authMode:"supabase"},cors);return;
         }
         if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
@@ -438,10 +451,12 @@ export function createAppServer() {
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/logout"&&req.method==="POST"){
-        const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
+        const localToken=cookieValue(req,"ev_session");if(localToken)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(localToken));
         if(AUTH_MODE==="supabase"){
-          const accessToken=cookieValue(req,"ev_supabase_access")||(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
-          await revokeSupabaseSession({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,accessToken});
+          const browserToken=cookieValue(req,"ev_supabase_session");
+          const stored=supabaseSessionStore?.get(browserToken);
+          if(stored?.accessToken)await revokeSupabaseSession({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,accessToken:stored.accessToken});
+          supabaseSessionStore?.delete(browserToken);
           clearSupabaseSessionCookies(res);
         }else setCookie(res,"",0);
         send(res,200,{ok:true},cors);return;
@@ -1179,6 +1194,7 @@ if (AUTH_MODE==="local"&&process.env.NODE_ENV==="production") {
 if (AUTH_MODE==="supabase"&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)) {
   throw new Error("Supabase authentication requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.");
 }
+if (AUTH_MODE==="supabase"&&!supabaseSessionStore) throw new Error("Supabase authentication requires SUPABASE_SESSION_ENCRYPTION_KEY (32 random bytes encoded as hex or base64url).");
 if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
