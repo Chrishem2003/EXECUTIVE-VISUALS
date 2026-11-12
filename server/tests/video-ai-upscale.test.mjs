@@ -58,7 +58,10 @@ test("video AI upscaler enhances every frame, retains audio streams and verifies
  assert.deepEqual(result.outputDimensions,{width:128,height:128});
  assert.equal(result.audioStreams,1);
  assert.equal(result.audioHandling,"original-audio-streams-copied");
- assert.equal(result.temporalConsistency,"not-certified");\n assert.equal(result.temporalQuality.status,"completed");\n assert.equal(result.temporalQuality.sampleCount,5);\n assert.ok(result.temporalQuality.findings.some(item=>item.code==="ALTERNATING_SATURATION_INSTABILITY"));
+ assert.equal(result.temporalConsistency,"not-certified");
+ assert.equal(result.temporalQuality.status,"completed");
+ assert.equal(result.temporalQuality.sampleCount,5);
+ assert.ok(result.temporalQuality.findings.some(item=>item.code==="ALTERNATING_SATURATION_INSTABILITY"));
  assert.equal(result.qualityReviewRequired,true);
  assert.equal((await readFile(f.outputPath)).toString(),"rendered-video");
 });
