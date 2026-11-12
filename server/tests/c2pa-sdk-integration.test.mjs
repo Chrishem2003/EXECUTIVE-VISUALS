@@ -74,7 +74,7 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   const certificateChain=await readFile(join(fixtureRoot,"test-signing-chain.pem"),"utf8");
   const certificates=certificateChain.split("-----BEGIN CERTIFICATE-----").slice(1).map(part=>{
    const end=part.indexOf("-----END CERTIFICATE-----");
-   return end>=0? "-----BEGIN CERTIFICATE-----"+part.slice(0,end)+"-----END CERTIFICATE-----\\n":null;
+   return end>=0? "-----BEGIN CERTIFICATE-----"+part.slice(0,end)+"-----END CERTIFICATE-----"+String.fromCharCode(10):null;
   }).filter(Boolean);
   assert.equal(certificates.length,2,"the test signing chain must contain signer and intermediate certificates");
   const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
