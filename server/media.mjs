@@ -9,6 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
@@ -16,7 +17,7 @@ import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from
 const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -383,6 +384,49 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const cancelled = () => db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status === "cancelled";
   const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
+  if (job.job_type === "media.video-ai-upscale") {
+    if (!source.media_type.startsWith("video/")) throw Object.assign(new Error("AI video super-resolution accepts video sources only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+    const model=String(input.model||"realesrgan-x4plus");
+    const scale=Number(input.scale??2);
+    const tile=Number(input.tile??0);
+    const outputPath=join(outputDir,id+".mp4");
+    const controller=new AbortController();
+    const poll=setInterval(()=>{if(cancelled())controller.abort();},500);
+    poll.unref?.();
+    try{
+      const processor=createVideoAiUpscaleProcessor({
+        runCommand:(binary,args,options={})=>run(binary,args,options.timeoutMs||30*60*1000,job.id,activeProcesses,()=>cancelled()||options.signal?.aborted,options.maxCaptureBytes||16000,onResourceMeasurement),
+        upscalerFactory:options=>aiUpscalerFactory(options),
+        maxFrames:300,
+        maxDurationSeconds:600,
+        maxInputBytes:250*1024*1024,
+        maxOutputBytes:2*1024*1024*1024,
+        maxTempBytes:8*1024*1024*1024,
+        maxOutputPixels:40_000_000
+      });
+      const result=await processor.process({sourcePath,outputPath,model,scale,tile,expectedSourceSha256:source.sha256,signal:controller.signal,onProgress});
+      if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+      let c2paPreservation;
+      try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:"video/mp4",expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
+      catch(error){await unlink(outputPath).catch(()=>{});throw error;}
+      const fileStat=await stat(outputPath);
+      const hash=createHash("sha256");
+      await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
+      const processing={
+        engine:"framewise-ai-video-upscale",method:result.frameProcessing,model:result.model,scale:result.scale,tile:result.tile,
+        sourceSha256:result.sourceSha256,frameCount:result.frameCount,frameRate:result.frameRate,
+        inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,
+        audioHandling:result.audioHandling,subtitleHandling:result.subtitleHandling,
+        temporalQuality:result.temporalQuality,temporalConsistency:result.temporalConsistency,
+        qualityReviewRequired:true,qualityReviewReasons:result.qualityReviewReasons
+      };
+      const baseName=source.original_name.replace(/\.[^.]+$/,"")||source.original_name;
+      const outputAsset=addAsset(db,job,"derived/"+id+".mp4",baseName+"-ai-upscaled.mp4","video/mp4",fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
+      emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256,qualityReviewRequired:true});
+      onProgress(100);
+      return {outputAsset,processing,c2paPreservation};
+    }finally{clearInterval(poll);}
+  }
   if (job.job_type === "media.ai-upscale") {
     if (!source.media_type.startsWith("image/")) throw Object.assign(new Error("AI super-resolution currently accepts still images only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
     const format = String(input.format || "png");
