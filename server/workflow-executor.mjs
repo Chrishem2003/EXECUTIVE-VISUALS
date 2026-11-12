@@ -18,7 +18,7 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
-import { assertVideoWorkflowExecutionMode } from "./video-workflow-execution-mode.mjs";
+import { assertVideoWorkflowExecutionMode, assertVideoWorkflowNodeSupport } from "./video-workflow-execution-mode.mjs";
 import { executeCloudVideoWorkflowNode } from "./workflow-cloud-video-bridge.mjs";
 
 const now=()=>new Date().toISOString();
@@ -262,10 +262,11 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    }else if(node.kind==="video.generate"){
     enforceIdentityPermission(db,job,config,values,"face-animation");
     const cloudRouterNode=String(config.provider||"")==="runway"&&String(config.model||"")==="model-router";
-    if(!cloudRouterNode&&!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
-    if(cloudRouterNode){
-     const executionMode=assertVideoWorkflowExecutionMode(undefined,{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
-     if(executionMode!=="cloud")throw Object.assign(new Error("Set VIDEO_WORKFLOW_EXECUTION_MODE=cloud only after the authenticated cloud workspace and worker release gates are ready."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
+    const executionMode=assertVideoWorkflowExecutionMode(undefined,{cloudBridgeAvailable:Boolean(cloudTimelineApi)});
+    assertVideoWorkflowNodeSupport(node,executionMode);
+    if(cloudRouterNode&&executionMode!=="cloud")throw Object.assign(new Error("Runway Model Router workflow nodes require governed cloud execution."),{code:"VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED"});
+    if(executionMode==="legacy"&&!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
+    if(executionMode==="cloud"){
      const cloudStarted=Date.now();
      const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
       onApprovalRequired:receipt=>{
