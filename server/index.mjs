@@ -34,6 +34,7 @@ import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession, requestSupabasePasswordRecovery, updateSupabasePassword, isSupabaseRecoveryToken } from "./supabase-password-auth.mjs";
 import { createSupabaseSessionStore, assertSameOriginMutation } from "./supabase-session-store.mjs";
+import { createSupabaseSessionRefreshCoordinator } from "./supabase-session-refresh.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
 import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit, buildVideoDispatchReadiness } from "./admin-operations.mjs";
@@ -71,6 +72,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
+const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
 const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -194,10 +196,9 @@ async function authenticate(req,res) {
   let user=await getSupabaseUser({...config,accessToken:stored.accessToken});
   if(user&&user.id!==stored.userId){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
   if(!user){
-   const rotated=await refreshSupabaseSession({...config,refreshToken:stored.refreshToken});
-   if(!rotated||rotated.user.id!==stored.userId){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
-   if(!supabaseSessionStore.rotate(browserToken,rotated)){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
-   user=rotated.user;
+   const refreshed=await supabaseSessionRefresh.refresh({token:browserToken,config});
+   if(!refreshed){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
+   stored=refreshed.stored;user=refreshed.user;
   }
   if(!user||user.id!==stored.userId)return null;
   db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email,auth_source=excluded.auth_source").run(user.id,user.email||user.id+"@supabase.invalid");

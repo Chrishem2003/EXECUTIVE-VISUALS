@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { createSupabaseSessionStore, assertSameOriginMutation } from "../supabase-session-store.mjs";
+import { createSupabaseSessionRefreshCoordinator } from "../supabase-session-refresh.mjs";
 
 const key = Buffer.alloc(32, 23).toString("hex");
 const requireHash = value => createHash("sha256").update(value, "utf8").digest("hex");
@@ -68,4 +69,44 @@ test("authenticated encryption binds provider tokens to the session hash and use
     assert.equal(store.get(first.token), null);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM supabase_sessions WHERE token_hash=?").get(firstRow.token_hash).count, 0);
   } finally { db.close(); }
+});
+
+test("coalesces concurrent refreshes so a single-use Supabase refresh token is rotated once", async () => {
+  let stored={userId:"user-1",accessToken:"expired-access",refreshToken:"single-use-refresh"};
+  let refreshCalls=0,rotateCalls=0,release;
+  const gate=new Promise(resolve=>{release=resolve;});
+  const store={
+    get(){return stored?{...stored}:null;},
+    rotate(_token,session){rotateCalls++;stored={...stored,accessToken:session.accessToken,refreshToken:session.refreshToken};return true;}
+  };
+  const coordinator=createSupabaseSessionRefreshCoordinator({
+    store,
+    async refreshSession({refreshToken}){refreshCalls++;assert.equal(refreshToken,"single-use-refresh");await gate;return{accessToken:"fresh-access",refreshToken:"fresh-refresh",user:{id:"user-1",email:"one@example.test"}};},
+    async getUser(){return{id:"user-1"};}
+  });
+  try{
+    const first=coordinator.refresh({token:"opaque-browser-session-token",config:{supabaseUrl:"https://example.supabase.co"}});
+    const second=coordinator.refresh({token:"opaque-browser-session-token",config:{supabaseUrl:"https://example.supabase.co"}});
+    await Promise.resolve();
+    assert.equal(refreshCalls,1);
+    release();
+    const [a,b]=await Promise.all([first,second]);
+    assert.equal(rotateCalls,1);
+    assert.equal(a.stored.refreshToken,"fresh-refresh");
+    assert.equal(b.stored.refreshToken,"fresh-refresh");
+    assert.equal(a.user.id,"user-1");
+    assert.equal(b.user.id,"user-1");
+  }finally{release();}
+});
+test("accepts another process's completed rotation when this process sees the single-use refresh rejected",async()=>{
+ let stored={userId:"user-1",accessToken:"expired-access",refreshToken:"old-refresh"};
+ const store={get(){return stored?{...stored}:null;},rotate(){return false;}};
+ const coordinator=createSupabaseSessionRefreshCoordinator({
+  store,
+  async refreshSession(){stored={...stored,accessToken:"other-process-access",refreshToken:"other-process-refresh"};return null;},
+  async getUser({accessToken}){return accessToken==="other-process-access"?{id:"user-1"}:null;}
+ });
+ const result=await coordinator.refresh({token:"opaque-browser-session-token",config:{}});
+ assert.equal(result.stored.refreshToken,"other-process-refresh");
+ assert.equal(result.user.id,"user-1");
 });
