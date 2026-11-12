@@ -12,16 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Check out the pinned official CAI native SDK source
-        uses: actions/checkout@v7
-        with:
-          repository: contentauth/c2pa-js
-          ref: 480975bc4103d03d1ca1705187ef46860950a5d8
-          path: c2pa-js
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.4
-      - uses: dtolnay/rust-toolchain@1.99.1
       - name: Install pinned FFmpeg static build
         shell: bash
         run: bash scripts/ci-setup-ffmpeg.sh
@@ -37,16 +30,14 @@ jobs:
           font_family="$(fc-match --format='%{family}' 'DejaVu Sans')"
           [[ "$font_family" == *"DejaVu Sans"* ]] || { echo "DejaVu Sans is unavailable: $font_family" >&2; exit 1; }
           fc-match "DejaVu Sans"
-      - name: Install JavaScript dependencies without invoking the broken package-local Rust fallback
+      - name: Install JavaScript dependencies and official CAI prebuilt native binary
         run: npm ci
-        env:
-          SKIP_RUST_BUILD: "1"
-          C2PA_LIBRARY_PATH: ${{ github.workspace }}/node_modules/@contentauth/c2pa-node/dist/index.node
-      - name: Build the official CAI native binding from its pinned upstream workspace
+      - name: Verify official CAI native binary installation
+        shell: bash
         run: |
-          npx cargo-cp-artifact -a cdylib c2pa-node "$GITHUB_WORKSPACE/node_modules/@contentauth/c2pa-node/dist/index.node" -- cargo build --message-format=json-render-diagnostics --release --manifest-path="$GITHUB_WORKSPACE/c2pa-js/packages/c2pa-node/Cargo.toml"
-        env:
-          C2PA_LIBRARY_PATH: ${{ github.workspace }}/node_modules/@contentauth/c2pa-node/dist/index.node
+          set -euo pipefail
+          test -s node_modules/@contentauth/c2pa-node/dist/index.node
+          node --input-type=module -e "import('@contentauth/c2pa-node').then(({ Reader }) => { if (typeof Reader?.fromAsset !== 'function') process.exit(1); console.log('Official CAI Node SDK and native binary are installed.'); })"
       - run: npm run typecheck
       - run: npm run build
 
