@@ -54,6 +54,6 @@ test("publication reservations are bound to a current worker lease and cleanup c
   const sql = await readFile(cleanupMigrationUrl, "utf8");
   assert.match(sql, /create or replace function executive_visuals\.reserve_asset_publication_v2\s*\(/i);
   assert.match(sql, /job_row\.lease_token is distinct from p_lease_token/i);
-  assert.match(sql, /create or replace function executive_visuals\.claim_asset_storage_cleanup_v1\s*\(/i);
+  assert.match(sql, /create or replace function executive_visuals\.claim_asset_publication_cleanup_v1\s*\(/i);
   assert.match(sql, /lease_token/i);
 });
