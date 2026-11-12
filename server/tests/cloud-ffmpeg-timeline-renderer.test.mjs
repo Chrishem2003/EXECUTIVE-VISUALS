@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAudioMasteringFilter, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
@@ -227,3 +227,23 @@ test("cloud renderer time-remaps video and audio clips while preserving timeline
   assert.equal(result.render.audioClips,1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test("variable-speed video renderer maps the source-time ramp to the exact timeline duration", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-variable-speed-test-"));
+ try{
+  const source=join(root,"source.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=size=320x240:rate=24:duration=6","-c:v","libx264","-pix_fmt","yuv420p",source]);
+  const curve=[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}];
+  const expression=buildVariableSpeedSetptsExpression({speedCurve:curve},4);
+  assert.match(expression,/sqrt/);
+  const timeline={name:"Variable speed",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"ramp",assetId:"source",timelineStart:{value:0,rate:24},duration:{value:96,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:144,rate:24}},speed:1,speedCurve:curve}]}
+  ]};
+  const assets=new Map([["source",{path:source,asset:{id:"source",mediaType:"video/mp4",originalName:"source.mp4"}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const duration=Number(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",result.path],{encoding:"utf8"}).trim());
+  assert.ok(duration>=3.9&&duration<=4.1,"variable-speed master should retain the four-second timeline duration; received "+duration);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
