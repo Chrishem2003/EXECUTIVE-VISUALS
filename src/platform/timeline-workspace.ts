@@ -14,7 +14,7 @@ import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline,
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
-type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;derivativeOf?:string|null;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudReview={id:string;projectId:string;assetId:string|null;timelineId:string|null;timelineRevision:number|null;frameNumber:number|null;durationFrames:number|null;timecodeSeconds:number|null;body:string;decision:"comment"|"approve"|"request_changes";status:"open"|"resolved"|"dismissed";visibility:"project"|"internal";authorId:string;createdAt:string;updatedAt:string};
@@ -534,7 +534,7 @@ export async function addWorkflowVideoToCloudTimeline(input:{projectId:string;cl
  const clipId=crypto.randomUUID();
  const clip=createGeneratedVideoClip({
   id:clipId,assetId:asset.id,name:asset.name,durationSeconds,frameRate:timeline.frameRate,startFrame:endFrame,
-  metadata:{workflowRunId:String(input.workflowRunId||""),provider:String(input.provider||"runway"),model:String(input.model||"model-router"),cloudAssetId,cloudSha256:String(asset.metadata?.cloudSha256||"")}
+  metadata:{workflowRunId:String(input.workflowRunId||""),provider:String(input.provider||"runway"),model:String(input.model||"model-router"),cloudAssetId,cloudSha256:String(asset.sha256||"")}
  });
  const previous=state.timeline?structuredClone(state.timeline):null;
  recordUndo();
@@ -542,7 +542,7 @@ export async function addWorkflowVideoToCloudTimeline(input:{projectId:string;cl
   state.timeline=addClip(timeline,videoTrack.id,clip);
   state.selectedTrack=videoTrack.id;state.selectedClipId=clipId;
   await persist();
-  state.message="Generated video added to the private cloud timeline at "+(endFrame/fps).toFixed(2)+" seconds. Preview, editing and master rendering are ready.";
+  state.message="Generated video added to the private cloud timeline at "+(endFrame/fps).toFixed(2)+" seconds. Load Preview to review the clip, then edit or render the sequence.";
   paint();
   return {timelineId:timeline.id,clipId,alreadyPresent:false};
  }catch(error){
