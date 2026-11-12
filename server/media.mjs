@@ -11,6 +11,7 @@ import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
+import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
@@ -249,7 +250,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const start=safeSeconds(Number(clip.timelineStart.value)/Number(clip.timelineStart.rate));
     const duration=safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate));
     if(duration<=0)continue;
-    if(Math.abs(Number(clip.speed??1)-1)>0.000001)throw Object.assign(new Error("Speed changes require the time-remapping renderer milestone."),{code:"UNSUPPORTED_TIME_REMAP"});
+    const speed=normalizeClipSpeed(clip.speed??1);
     if(start+0.000001<cursor)throw Object.assign(new Error("Primary video track contains overlapping clips."),{code:"TIMELINE_OVERLAP"});
     if(start>cursor+0.000001){
       const gap=start-cursor;
@@ -263,11 +264,12 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const file=join(mediaRoot,asset.storage_path);
     const label="v"+segmentIndex++;
     const sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate));
-    if(asset.media_type.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",file);
-    else if(asset.media_type.startsWith("video/"))args.push("-ss",sourceStart.toFixed(6),"-t",duration.toFixed(6),"-i",file);
+    if(asset.media_type.startsWith("image/")){if(speed!==1)throw Object.assign(new Error("Still-image clips do not support speed changes."),{code:"UNSUPPORTED_IMAGE_TIME_REMAP"});args.push("-loop","1","-t",duration.toFixed(6),"-i",file);}
+    else if(asset.media_type.startsWith("video/")){const sourceDuration=sourceDurationForTimeline(duration,speed);args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);}
+    else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const effect=buildTimelineClipEffects(clip.metadata||{});
-    const filterParts=["trim=duration="+duration.toFixed(6),"setpts=PTS-STARTPTS",...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+    const filterParts=["trim=duration="+sourceDurationForTimeline(duration,speed).toFixed(6),speed===1?"setpts=PTS-STARTPTS":"setpts=(PTS-STARTPTS)/"+speed.toFixed(6),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
     const filter="["+inputIndex+":v]"+filterParts.join(",")+"["+label+"]";
     segments.push({label,filter,effectsEnabled:effect.enabled});
     inputIndex++;cursor=start+duration;
@@ -280,13 +282,13 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     if(start>=cursor)continue;
     const requested=safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate)),duration=Math.min(requested,cursor-start);
     if(duration<=0)continue;
-    if(Math.abs(Number(clip.speed??1)-1)>0.000001)throw Object.assign(new Error("Audio speed changes require the time-remapping renderer milestone."),{code:"UNSUPPORTED_TIME_REMAP"});
+    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimeline(duration,speed);
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
     if(!asset||!asset.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio tracks require accessible audio-only source assets."),{code:"UNSUPPORTED_AUDIO_SOURCE"});
     const file=join(mediaRoot,asset.storage_path),sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate));
-    args.push("-ss",sourceStart.toFixed(6),"-t",duration.toFixed(6),"-i",file);
-    const delay=Math.max(0,Math.round(start*1000)),label="a"+audioIndex++,gain=Math.pow(10,Math.max(-60,Math.min(24,Number(clip.gainDb)||0))/20);
-    audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume=${gain.toFixed(6)},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
+    args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);
+    const delay=Math.max(0,Math.round(start*1000)),label="a"+audioIndex++,tempo=buildAtempoFilter(speed),gain=Math.pow(10,Math.max(-60,Math.min(24,Number(clip.gainDb)||0))/20);
+    audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume=${gain.toFixed(6)},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
     inputIndex++;
   }
   const videoEffects=[],captionTempPaths=[];
