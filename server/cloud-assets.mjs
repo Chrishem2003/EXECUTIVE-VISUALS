@@ -246,13 +246,13 @@ export function createCloudAssetRepository({
             try{
               const finalized=await finalize(existing);
               const asset=publicAsset(finalized);
-              const asset=publicAsset(existing);
-          return cleanupPending?{...asset,cleanupPending:true}:asset;
+              return cleanupPending?{...asset,cleanupPending:true}:asset;
             }catch(finalizeError){
               finalizeError.cleanupPending=cleanupPending;
               throw finalizeError;
             }
           }
+          const asset=publicAsset(existing);
           return cleanupPending?{...asset,cleanupPending:true}:asset;
         }
         error.cleanupPending=true;
