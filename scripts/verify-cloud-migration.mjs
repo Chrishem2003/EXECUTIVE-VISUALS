@@ -121,6 +121,36 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+
+const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108000000_job_lease_fencing_tokens.sql"), "utf8");
+const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
+const cleanupClaimsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql"), "utf8");
+const cleanupAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql"), "utf8");
+if (!fencingSql.includes("add column if not exists lease_token uuid") || !fencingSql.includes("create or replace function executive_visuals.claim_next_job_v2(") || !fencingSql.includes("create or replace function executive_visuals.finish_job_v2(")) {
+  issues.push("Cloud jobs require per-attempt lease tokens and fenced claim/completion RPCs.");
+}
+if (!fencingSql.includes("revoke all on function executive_visuals.claim_next_job_v2") || !fencingSql.includes("to service_role")) {
+  issues.push("Fenced worker RPCs must remain service-role-only.");
+}
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(") || !atomicPublicationSql.includes("set search_path = ''")) {
+  issues.push("Atomic asset publication requires a pinned, server-only finalization RPC.");
+}
+if (!atomicPublicationSql.includes("from executive_visuals.jobs") || !atomicPublicationSql.includes("for update") || !atomicPublicationSql.includes("job_row.lease_token is distinct from p_lease_token") || !atomicPublicationSql.includes("job_row.lease_expires_at <= pg_catalog.clock_timestamp()")) {
+  issues.push("Atomic asset publication must lock and validate the exact unexpired worker lease.");
+}
+if (!atomicPublicationSql.includes("from executive_visuals.asset_publications") || !atomicPublicationSql.includes("for update") || !atomicPublicationSql.includes("insert into executive_visuals.assets") || !atomicPublicationSql.includes("update executive_visuals.asset_publications")) {
+  issues.push("Asset metadata and publication-ledger completion must share one transaction.");
+}
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.finalize_asset_publication_v1") || !atomicPublicationSql.includes("to service_role")) {
+  issues.push("Atomic publication finalization must be callable only by service_role.");
+}
+if (!cleanupClaimsSql.includes("create or replace function executive_visuals.reserve_asset_publication_v2(") || !cleanupClaimsSql.includes("job_row.lease_token is distinct from p_lease_token")) {
+  issues.push("Publication reservations must be bound to the exact current worker lease.");
+}
+if (!cleanupAttemptSql.includes("attempt-[0-9a-f]") || !cleanupAttemptSql.includes("ev_asset_storage_cleanup_object_path_check")) {
+  issues.push("Storage cleanup must accept only immutable, owner-scoped publication attempt paths.");
+}
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);
