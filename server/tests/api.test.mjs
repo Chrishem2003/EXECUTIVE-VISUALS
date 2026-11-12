@@ -340,6 +340,10 @@ test("batch AI upscaling validates image ownership and fails closed before queue
   assert.equal(duplicate.status,400);
   assert.equal((await duplicate.json()).error.code,"INVALID_BATCH_ITEM");
 
+  const oversized=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"x".repeat(181)},body:JSON.stringify({items:[{sourceAssetId:asset.id}]})},cookie);
+  assert.equal(oversized.status,400);
+  assert.equal((await oversized.json()).error.code,"INVALID_IDEMPOTENCY_KEY");
+
   const blocked=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"batch-quality-gate-001"},body:JSON.stringify({items:[{sourceAssetId:asset.id}]})},cookie);
   assert.equal(blocked.status,409);
   assert.equal((await blocked.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
