@@ -359,6 +359,14 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
    }
+   if(path==="/api/cloud/jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    const limit=Math.max(1,Math.min(50,Number(query.limit)||25));
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
+    return response(200,{jobs:Array.isArray(rows)?rows:[]});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
