@@ -173,3 +173,26 @@ test("cloud renderer rejects malformed or out-of-clip audio automation",async()=
  const withAudio=new Map([...assets,["a",{path:"/not-used.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets:withAudio,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_AUTOMATION");
 });
+
+test("cloud renderer time-remaps video and audio clips while preserving timeline duration", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-time-remap-"));
+ try{
+  const video=join(root,"source.mp4"),audio=join(root,"voice.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=size=320x240:rate=24:duration=2","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=2","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Time remapping",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(2)},speed:2}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(2)},speed:2}]}
+  ]};
+  const assets=new Map([
+   ["v",{path:video,asset:{id:"v",mediaType:"video/mp4",originalName:"source.mp4"}}],
+   ["a",{path:audio,asset:{id:"a",mediaType:"audio/wav",originalName:"voice.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  const duration=Number(probe.format.duration);
+  assert.ok(duration>=0.9&&duration<=1.15,"expected a one-second master, received "+duration);
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.equal(result.render.audioClips,1);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
