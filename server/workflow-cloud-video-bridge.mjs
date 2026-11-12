@@ -99,7 +99,7 @@ export async function executeCloudVideoWorkflowNode({
   if(String(local.media_type||"").startsWith("video/")){
    let mediaProbe;
    try{mediaProbe=await probeMedia(absolute);validateMediaOutputProbe(mediaProbe,local.media_type);}
-   catch(error){throw fail("Workflow video input must contain a verifiable video stream and positive duration.", "VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");}
+   catch(error){if(error?.code==="MEDIA_ENGINE_MISSING")throw error;throw fail("Workflow video input must contain a verifiable video stream and positive duration.", "VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");}
   }
   const metadata=parseJson(local.metadata_json,{});
   let cloudAssetId=metadata?.cloudWorkspace?.assetId||"";
