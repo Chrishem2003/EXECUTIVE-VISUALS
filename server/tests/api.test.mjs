@@ -325,6 +325,20 @@ test("AI upscale job submission is rejected until the selected model has its own
   assert.equal((await response.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
 });
  
+test("AI video upscale is recognized but fails closed until its model has reviewed quality evidence",async()=>{
+  const cookie=await register("video-upscale-quality-gate@example.test");
+  const mp4=Buffer.alloc(24);
+  mp4.writeUInt32BE(24,0);mp4.write("ftyp",4,"ascii");mp4.write("isom",8,"ascii");mp4.writeUInt32BE(0,12);mp4.write("isom",16,"ascii");
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":"video-quality-gate.mp4"},body:mp4},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const response=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"media.video-ai-upscale",sourceAssetId:asset.id,model:"realesrgan-x4plus",scale:2})},cookie);
+  assert.equal(response.status,409);
+  assert.equal((await response.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
+  const jobs=await request("/api/jobs",{},cookie);
+  assert.equal((await jobs.json()).jobs.filter(job=>job.jobType==="media.video-ai-upscale").length,0,"unverified video requests must not enqueue jobs");
+});
+
 test("batch AI upscaling validates image ownership and fails closed before queueing unverified models",async()=>{
   assert.equal((await fetch(base+"/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({items:[]})})).status,401);
   const cookie=await register("batch-upscale-gate@example.test");

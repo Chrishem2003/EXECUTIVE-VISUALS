@@ -30,189 +30,9 @@
   ],
   "capabilities": [
     [
-      "direction.brief-analyze",
-      "direction",
-      "Analyze creative brief"
-    ],
-    [
-      "direction.plan",
-      "direction",
-      "Build creative production plan"
-    ],
-    [
-      "direction.critique",
-      "direction",
-      "Creative critique and continuity review"
-    ],
-    [
-      "story.research",
-      "preproduction",
-      "Research story topic"
-    ],
-    [
-      "story.script",
-      "preproduction",
-      "Write and revise script"
-    ],
-    [
-      "story.storyboard",
-      "preproduction",
-      "Create storyboard"
-    ],
-    [
-      "story.shot-plan",
-      "preproduction",
-      "Create shot plan"
-    ],
-    [
-      "identity.profile",
-      "identity",
-      "Create reusable identity profile"
-    ],
-    [
-      "identity.train",
-      "identity",
-      "Train provider-scoped identity"
-    ],
-    [
-      "image.generate",
-      "image",
-      "Generate image"
-    ],
-    [
-      "image.edit",
-      "image",
-      "Edit image with instruction and mask"
-    ],
-    [
-      "image.composite",
-      "image",
-      "Composite product into generated scene"
-    ],
-    [
-      "image.restore",
-      "image",
-      "Restore and repair image"
-    ],
-    [
-      "image.upscale",
-      "image",
-      "Upscale image"
-    ],
-    [
-      "video.generate",
-      "video",
-      "Generate video from prompt"
-    ],
-    [
-      "video.image-to-video",
-      "video",
-      "Animate image"
-    ],
-    [
-      "video.extend",
-      "video",
-      "Extend video"
-    ],
-    [
-      "video.regional-edit",
-      "video",
-      "Edit selected video region"
-    ],
-    [
-      "cinema.shot-direct",
-      "cinema",
-      "Direct a cinematic shot"
-    ],
-    [
-      "editing.timeline-assemble",
-      "editing",
-      "Assemble multitrack timeline"
-    ],
-    [
-      "editing.motion-graphics",
-      "editing",
-      "Create motion graphics"
-    ],
-    [
-      "audio.transcribe",
-      "audio",
-      "Transcribe audio with timing"
-    ],
-    [
-      "audio.diarize",
-      "audio",
-      "Separate and identify speakers"
-    ],
-    [
-      "audio.speech",
-      "audio",
-      "Generate speech"
-    ],
-    [
-      "audio.clone",
-      "audio",
-      "Create authorized voice profile"
-    ],
-    [
-      "audio.sound-design",
-      "audio",
-      "Generate music and sound effects"
-    ],
-    [
-      "audio.lipsync",
-      "audio",
-      "Synchronize speech to presenter"
-    ],
-    [
-      "localization.translate",
-      "localization",
-      "Translate and localize content"
-    ],
-    [
-      "localization.dub",
-      "localization",
-      "Dub and synchronize language version"
-    ],
-    [
-      "enhance.upscale",
-      "enhancement",
-      "Upscale media"
-    ],
-    [
-      "enhance.denoise",
-      "enhancement",
-      "Denoise media"
-    ],
-    [
-      "enhance.interpolate",
-      "enhancement",
-      "Interpolate frames"
-    ],
-    [
-      "enhance.stabilize",
-      "enhancement",
-      "Stabilize video"
-    ],
-    [
-      "enhance.remove-object",
-      "enhancement",
-      "Remove object with tracked mask"
-    ],
-    [
-      "workflow.validate",
-      "workflow",
-      "Validate workflow graph"
-    ],
-    [
-      "workflow.simulate",
-      "workflow",
-      "Simulate workflow without paid execution"
-    ],
-    [
-      "workflow.execute",
-      "workflow",
-      "Execute approved workflow snapshot"
+      "agent.checkpoint",
+      "agent",
+      "Persist and resume task checkpoint"
     ],
     [
       "agent.plan",
@@ -220,24 +40,9 @@
       "Plan multi-step creative task"
     ],
     [
-      "agent.checkpoint",
+      "agent.text-generate",
       "agent",
-      "Persist and resume task checkpoint"
-    ],
-    [
-      "campaign.product-ingest",
-      "campaign",
-      "Ingest product facts and media"
-    ],
-    [
-      "campaign.variants",
-      "campaign",
-      "Generate campaign variant matrix"
-    ],
-    [
-      "design.autofill",
-      "design",
-      "Populate brand template from data"
+      "Generate and transform text"
     ],
     [
       "assets.ingest",
@@ -250,54 +55,69 @@
       "Package project for delivery"
     ],
     [
-      "collaboration.review",
-      "collaboration",
-      "Collect timecoded review"
+      "assets.proxy-cache",
+      "assets",
+      "Generate and invalidate preview proxies and caches"
     ],
     [
-      "integration.webhook",
-      "integration",
-      "Receive verified provider event"
+      "assets.retention-verify",
+      "assets",
+      "Verify output availability and retention policy"
     ],
     [
-      "operations.cost-estimate",
-      "operations",
-      "Estimate execution cost"
+      "assets.semantic-search",
+      "assets",
+      "Find media by meaning, content and production context"
     ],
     [
-      "spatial.scene",
-      "spatial",
-      "Manage 3D scene and assets"
+      "assets.verify-integrity",
+      "assets",
+      "Verify checksum and asset lineage"
     ],
     [
-      "spatial.procedural",
-      "spatial",
-      "Build procedural geometry and materials"
+      "audio.clone",
+      "audio",
+      "Create authorized voice profile"
     ],
     [
-      "spatial.animation",
-      "spatial",
-      "Rig and animate character"
+      "audio.diarize",
+      "audio",
+      "Separate and identify speakers"
     ],
     [
-      "spatial.render",
-      "spatial",
-      "Render 3D scene"
+      "audio.lipsync",
+      "audio",
+      "Synchronize speech to presenter"
     ],
     [
-      "production.track",
-      "production",
-      "Track production work"
+      "audio.sound-design",
+      "audio",
+      "Generate music and sound effects"
     ],
     [
-      "production.review",
-      "production",
-      "Review and approve versioned media"
+      "audio.speech",
+      "audio",
+      "Generate speech"
     ],
     [
-      "production.compare",
-      "production",
-      "Compare media versions"
+      "audio.transcribe",
+      "audio",
+      "Transcribe audio with timing"
+    ],
+    [
+      "campaign.product-ingest",
+      "campaign",
+      "Ingest product facts and media"
+    ],
+    [
+      "campaign.variants",
+      "campaign",
+      "Generate campaign variant matrix"
+    ],
+    [
+      "capture.live",
+      "capture",
+      "Operate live capture session"
     ],
     [
       "capture.record",
@@ -305,9 +125,179 @@
       "Capture synchronized media sources"
     ],
     [
-      "capture.live",
+      "capture.remote-recording",
       "capture",
-      "Operate live capture session"
+      "Record remote participants as synchronized isolated tracks"
+    ],
+    [
+      "capture.resumable-ingest",
+      "capture",
+      "Resume interrupted media ingest"
+    ],
+    [
+      "cinema.shot-direct",
+      "cinema",
+      "Direct a cinematic shot"
+    ],
+    [
+      "collaboration.annotation",
+      "collaboration",
+      "Attach frame-accurate review annotation"
+    ],
+    [
+      "collaboration.live-presence",
+      "collaboration",
+      "Coordinate presence and editing locks in shared sessions"
+    ],
+    [
+      "collaboration.lock",
+      "collaboration",
+      "Acquire project or sequence edit lock"
+    ],
+    [
+      "collaboration.presence",
+      "collaboration",
+      "Track collaborator presence and activity"
+    ],
+    [
+      "collaboration.publish",
+      "collaboration",
+      "Publish a reviewed revision to collaborators"
+    ],
+    [
+      "collaboration.review",
+      "collaboration",
+      "Collect timecoded review"
+    ],
+    [
+      "design.autofill",
+      "design",
+      "Populate brand template from data"
+    ],
+    [
+      "design.brand-glossary",
+      "design",
+      "Manage brand terminology and localization rules"
+    ],
+    [
+      "design.template-autofill",
+      "design",
+      "Populate reusable designs from structured data"
+    ],
+    [
+      "direction.brief-analyze",
+      "direction",
+      "Analyze creative brief"
+    ],
+    [
+      "direction.critique",
+      "direction",
+      "Creative critique and continuity review"
+    ],
+    [
+      "direction.plan",
+      "direction",
+      "Build creative production plan"
+    ],
+    [
+      "editing.motion-graphics",
+      "editing",
+      "Create motion graphics"
+    ],
+    [
+      "editing.proxy-review",
+      "editing",
+      "Review low-bandwidth proxies with source-linked annotations"
+    ],
+    [
+      "editing.timeline-assemble",
+      "editing",
+      "Assemble multitrack timeline"
+    ],
+    [
+      "enhance.ai-video-upscale",
+      "enhancement",
+      "Enhance video with AI super-resolution"
+    ],
+    [
+      "enhance.denoise",
+      "enhancement",
+      "Denoise media"
+    ],
+    [
+      "enhance.interpolate",
+      "enhancement",
+      "Interpolate frames"
+    ],
+    [
+      "enhance.remove-object",
+      "enhancement",
+      "Remove object with tracked mask"
+    ],
+    [
+      "enhance.stabilize",
+      "enhancement",
+      "Stabilize video"
+    ],
+    [
+      "enhance.upscale",
+      "enhancement",
+      "Upscale media"
+    ],
+    [
+      "identity.profile",
+      "identity",
+      "Create reusable identity profile"
+    ],
+    [
+      "identity.train",
+      "identity",
+      "Train provider-scoped identity"
+    ],
+    [
+      "image.composite",
+      "image",
+      "Composite product into generated scene"
+    ],
+    [
+      "image.edit",
+      "image",
+      "Edit image with instruction and mask"
+    ],
+    [
+      "image.generate",
+      "image",
+      "Generate image"
+    ],
+    [
+      "image.restore",
+      "image",
+      "Restore and repair image"
+    ],
+    [
+      "image.upscale",
+      "image",
+      "Upscale image"
+    ],
+    [
+      "integration.discover-model-capabilities",
+      "integration",
+      "Discover model-specific inputs, limits and costs"
+    ],
+    [
+      "integration.webhook",
+      "integration",
+      "Receive verified provider event"
+    ],
+    [
+      "localization.dub",
+      "localization",
+      "Dub and synchronize language version"
+    ],
+    [
+      "localization.translate",
+      "localization",
+      "Translate and localize content"
     ],
     [
       "media.ingest",
@@ -320,9 +310,44 @@
       "Create and link proxies"
     ],
     [
-      "timeline.interchange",
-      "capture",
-      "Import or export timeline interchange"
+      "motion.template-render",
+      "motion",
+      "Render parameterized motion-graphics templates"
+    ],
+    [
+      "operations.cost-estimate",
+      "operations",
+      "Estimate execution cost"
+    ],
+    [
+      "operations.model-benchmark",
+      "operations",
+      "Benchmark candidate models against a shared evaluation set"
+    ],
+    [
+      "operations.model-route",
+      "operations",
+      "Route a task to the best eligible model"
+    ],
+    [
+      "production.analytics-feedback",
+      "production",
+      "Turn campaign performance into creative recommendations"
+    ],
+    [
+      "production.compare",
+      "production",
+      "Compare media versions"
+    ],
+    [
+      "production.review",
+      "production",
+      "Review and approve versioned media"
+    ],
+    [
+      "production.track",
+      "production",
+      "Track production work"
     ],
     [
       "quality.preflight",
@@ -330,94 +355,14 @@
       "Validate media delivery requirements"
     ],
     [
-      "timeline.sequence",
-      "editing",
-      "Create and version an editorial sequence"
-    ],
-    [
-      "timeline.track",
-      "editing",
-      "Manage ordered media tracks"
-    ],
-    [
-      "timeline.clip",
-      "editing",
-      "Trim, split and place timeline clips"
-    ],
-    [
-      "timeline.relink",
-      "editing",
-      "Relink missing source media"
-    ],
-    [
-      "timeline.export",
-      "editing",
-      "Export editorial interchange package"
-    ],
-    [
-      "collaboration.lock",
+      "review.approval",
       "collaboration",
-      "Acquire project or sequence edit lock"
+      "Record approval or requested changes"
     ],
     [
-      "collaboration.publish",
+      "review.share-link",
       "collaboration",
-      "Publish a reviewed revision to collaborators"
-    ],
-    [
-      "collaboration.annotation",
-      "collaboration",
-      "Attach frame-accurate review annotation"
-    ],
-    [
-      "collaboration.presence",
-      "collaboration",
-      "Track collaborator presence and activity"
-    ],
-    [
-      "workflow.subgraph",
-      "workflow",
-      "Create reusable workflow subgraph"
-    ],
-    [
-      "workflow.batch",
-      "workflow",
-      "Run workflow across a batch of inputs"
-    ],
-    [
-      "workflow.partial-run",
-      "workflow",
-      "Execute selected outputs and dependencies only"
-    ],
-    [
-      "assets.proxy-cache",
-      "assets",
-      "Generate and invalidate preview proxies and caches"
-    ],
-    [
-      "assets.verify-integrity",
-      "assets",
-      "Verify checksum and asset lineage"
-    ],
-    [
-      "capture.resumable-ingest",
-      "capture",
-      "Resume interrupted media ingest"
-    ],
-    [
-      "speech.diarize",
-      "audio",
-      "Separate speakers and align transcript"
-    ],
-    [
-      "speech.remove-filler",
-      "audio",
-      "Remove filler words and long silences"
-    ],
-    [
-      "speech.glossary-apply",
-      "localization",
-      "Apply pronunciation and translation glossary"
+      "Create controlled review link"
     ],
     [
       "runtime.discover-models",
@@ -435,64 +380,34 @@
       "Schedule jobs across eligible workers"
     ],
     [
-      "review.share-link",
-      "collaboration",
-      "Create controlled review link"
+      "spatial.animation",
+      "spatial",
+      "Rig and animate character"
     ],
     [
-      "review.approval",
-      "collaboration",
-      "Record approval or requested changes"
+      "spatial.procedural",
+      "spatial",
+      "Build procedural geometry and materials"
     ],
     [
-      "timeline.render-master",
-      "editing",
-      "Render a timeline to a video master"
+      "spatial.render",
+      "spatial",
+      "Render 3D scene"
     ],
     [
-      "video.keyframe-control",
-      "video",
-      "Generate video between pinned keyframes"
+      "spatial.scene",
+      "spatial",
+      "Manage 3D scene and assets"
     ],
     [
-      "video.reference-directing",
-      "video",
-      "Direct video with subject, style and audio references"
-    ],
-    [
-      "video.extend-scene",
-      "video",
-      "Continue or extend an existing video scene"
-    ],
-    [
-      "video.conversational-edit",
-      "video",
-      "Iteratively edit video through a stateful session"
-    ],
-    [
-      "video.native-audio",
-      "video",
-      "Generate synchronized video with native audio"
-    ],
-    [
-      "speech.stream-tts",
+      "speech.diarize",
       "audio",
-      "Stream speech from incremental text"
+      "Separate speakers and align transcript"
     ],
     [
-      "speech.stream-transcription",
-      "audio",
-      "Transcribe audio with partial streaming events"
-    ],
-    [
-      "speech.word-alignment",
-      "audio",
-      "Align transcript words to audio timestamps"
-    ],
-    [
-      "speech.voice-isolation",
-      "audio",
-      "Isolate speech and suppress background noise"
+      "speech.glossary-apply",
+      "localization",
+      "Apply pronunciation and translation glossary"
     ],
     [
       "speech.live-translation",
@@ -500,64 +415,84 @@
       "Translate incoming speech in real time"
     ],
     [
-      "agent.text-generate",
-      "agent",
-      "Generate and transform text"
+      "speech.remove-filler",
+      "audio",
+      "Remove filler words and long silences"
     ],
     [
-      "integration.discover-model-capabilities",
-      "integration",
-      "Discover model-specific inputs, limits and costs"
+      "speech.stream-transcription",
+      "audio",
+      "Transcribe audio with partial streaming events"
     ],
     [
-      "assets.retention-verify",
-      "assets",
-      "Verify output availability and retention policy"
+      "speech.stream-tts",
+      "audio",
+      "Stream speech from incremental text"
     ],
     [
-      "operations.model-benchmark",
-      "operations",
-      "Benchmark candidate models against a shared evaluation set"
+      "speech.voice-isolation",
+      "audio",
+      "Isolate speech and suppress background noise"
     ],
     [
-      "operations.model-route",
-      "operations",
-      "Route a task to the best eligible model"
+      "speech.word-alignment",
+      "audio",
+      "Align transcript words to audio timestamps"
     ],
     [
-      "design.template-autofill",
-      "design",
-      "Populate reusable designs from structured data"
+      "story.research",
+      "preproduction",
+      "Research story topic"
     ],
     [
-      "design.brand-glossary",
-      "design",
-      "Manage brand terminology and localization rules"
+      "story.script",
+      "preproduction",
+      "Write and revise script"
     ],
     [
-      "collaboration.live-presence",
-      "collaboration",
-      "Coordinate presence and editing locks in shared sessions"
+      "story.shot-plan",
+      "preproduction",
+      "Create shot plan"
     ],
     [
-      "editing.proxy-review",
+      "story.storyboard",
+      "preproduction",
+      "Create storyboard"
+    ],
+    [
+      "timeline.clip",
       "editing",
-      "Review low-bandwidth proxies with source-linked annotations"
+      "Trim, split and place timeline clips"
     ],
     [
-      "capture.remote-recording",
+      "timeline.export",
+      "editing",
+      "Export editorial interchange package"
+    ],
+    [
+      "timeline.interchange",
       "capture",
-      "Record remote participants as synchronized isolated tracks"
+      "Import or export timeline interchange"
     ],
     [
-      "production.analytics-feedback",
-      "production",
-      "Turn campaign performance into creative recommendations"
+      "timeline.relink",
+      "editing",
+      "Relink missing source media"
     ],
     [
-      "motion.template-render",
-      "motion",
-      "Render parameterized motion-graphics templates"
+      "timeline.render-master",
+      "editing",
+      "Render a timeline to a video master"
+    ],
+    [
+      "timeline.sequence",
+      "editing",
+      "Create and version an editorial sequence"
+    ],
+    [
+      "timeline.track",
+      "editing",
+      "Manage ordered media tracks"
     ],
     [
       "video.continuity-check",
@@ -565,19 +500,69 @@
       "Evaluate visual and narrative continuity across shots"
     ],
     [
-      "assets.semantic-search",
-      "assets",
-      "Find media by meaning, content and production context"
+      "video.conversational-edit",
+      "video",
+      "Iteratively edit video through a stateful session"
     ],
     [
-      "workflow.version-diff",
-      "workflow",
-      "Compare two workflow revisions"
+      "video.extend",
+      "video",
+      "Extend video"
     ],
     [
-      "workflow.batch-execution",
-      "workflow",
-      "Execute a workflow against a batch of inputs"
+      "video.extend-scene",
+      "video",
+      "Continue or extend an existing video scene"
+    ],
+    [
+      "video.finish-pipeline",
+      "video",
+      "Run a checkpointed video transformation and finishing pipeline"
+    ],
+    [
+      "video.generate",
+      "video",
+      "Generate video from prompt"
+    ],
+    [
+      "video.image-to-video",
+      "video",
+      "Animate image"
+    ],
+    [
+      "video.keyframe-control",
+      "video",
+      "Generate video between pinned keyframes"
+    ],
+    [
+      "video.native-audio",
+      "video",
+      "Generate synchronized video with native audio"
+    ],
+    [
+      "video.reference-directing",
+      "video",
+      "Direct video with subject, style and audio references"
+    ],
+    [
+      "video.regional-edit",
+      "video",
+      "Edit selected video region"
+    ],
+    [
+      "video.transform-object",
+      "video",
+      "Replace or remove selected objects in existing footage"
+    ],
+    [
+      "video.transform-person",
+      "video",
+      "Replace a person in existing footage with consent"
+    ],
+    [
+      "video.transform-scene",
+      "video",
+      "Transform the background or visual style of existing footage"
     ],
     [
       "video.transform-vehicle",
@@ -590,24 +575,44 @@
       "Transform wardrobe in existing footage"
     ],
     [
-      "video.transform-object",
-      "video",
-      "Replace or remove selected objects in existing footage"
+      "workflow.batch",
+      "workflow",
+      "Run workflow across a batch of inputs"
     ],
     [
-      "video.transform-scene",
-      "video",
-      "Transform the background or visual style of existing footage"
+      "workflow.batch-execution",
+      "workflow",
+      "Execute a workflow against a batch of inputs"
     ],
     [
-      "video.transform-person",
-      "video",
-      "Replace a person in existing footage with consent"
+      "workflow.execute",
+      "workflow",
+      "Execute approved workflow snapshot"
     ],
     [
-      "video.finish-pipeline",
-      "video",
-      "Run a checkpointed video transformation and finishing pipeline"
+      "workflow.partial-run",
+      "workflow",
+      "Execute selected outputs and dependencies only"
+    ],
+    [
+      "workflow.simulate",
+      "workflow",
+      "Simulate workflow without paid execution"
+    ],
+    [
+      "workflow.subgraph",
+      "workflow",
+      "Create reusable workflow subgraph"
+    ],
+    [
+      "workflow.validate",
+      "workflow",
+      "Validate workflow graph"
+    ],
+    [
+      "workflow.version-diff",
+      "workflow",
+      "Compare two workflow revisions"
     ]
   ],
   "requiredCapabilityFields": [
@@ -657,6 +662,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 116,
+  "capabilityCount": 117,
   "domainCount": 23
 }
