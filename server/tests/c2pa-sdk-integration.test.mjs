@@ -78,7 +78,7 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   }).filter(Boolean);
   assert.equal(certificates.length,2,"the test signing chain must contain signer and root certificates");
   const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
-  await writeFile(trustAnchorPath,certificates[1]);
+  await writeFile(trustAnchorPath,certificates[0]);
   const trusted=await createC2paVerifier({
    sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,userAnchorsPath:trustAnchorPath
   })({filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length});
