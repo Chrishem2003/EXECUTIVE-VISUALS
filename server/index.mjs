@@ -1,13 +1,14 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
-import { mkdir, unlink, open, readFile } from "node:fs/promises";
+import { mkdir, unlink, open, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep, relative, isAbsolute } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
+import { createWaveformCache } from "./waveform-cache.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
@@ -129,6 +130,7 @@ const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
+const waveformCache=createWaveformCache({mediaRoot:MEDIA_ROOT});
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -840,9 +842,21 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance|c2pa))?$/i);
+      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance|c2pa|waveform))?$/i);
       if(assetMatch){
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(assetMatch[2]==="waveform"&&req.method==="GET"){
+          if(!asset.media_type.startsWith("audio/")){fail(res,415,"WAVEFORM_UNSUPPORTED_MEDIA","Waveforms are available only for audio assets.");return;}
+          try{
+            const waveformPath=await waveformCache.get(asset),waveformStat=await stat(waveformPath);
+            res.writeHead(200,{"content-type":"image/png","content-length":waveformStat.size,"cache-control":"private, max-age=31536000, immutable","vary":"cookie",...SECURITY_HEADERS,...cors});
+            createReadStream(waveformPath).pipe(res);return;
+          }catch(error){
+            const code=error.code||"WAVEFORM_FAILED";
+            const status=code==="WAVEFORM_SOURCE_MISSING"?404:code==="WAVEFORM_SIZE_LIMIT"||code==="WAVEFORM_DURATION_LIMIT"?413:code==="WAVEFORM_UNSUPPORTED_MEDIA"?415:code==="WAVEFORM_TOOL_UNAVAILABLE"?503:422;
+            fail(res,status,code,String(error.message||"Waveform generation failed.").slice(0,300));return;
+          }
+        }
         if(assetMatch[2]==="provenance"&&req.method==="GET"){
           const metadata=parseJson(asset.metadata_json,{}),provenance=metadata.provenance||null;
           const verification=verifyAssetProvenanceRecord(provenance,{id:asset.id,sha256:asset.sha256,mediaType:asset.media_type,size:Number(asset.byte_size)});
