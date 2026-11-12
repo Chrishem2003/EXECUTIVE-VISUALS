@@ -269,12 +269,10 @@ export async function initRuntime(){
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
-  else{
-   const mode=String(data.get("mode")||"login");
-   const response=await apiRequest<{user:RuntimeUser;authMode:"local"|"supabase";confirmationRequired?:boolean}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
-   if(response.confirmationRequired){state.user=null;state.status="auth-required";state.message="Account created. Check your email to confirm the address, then sign in.";paint();return;}
-   state.user=response.user;
-  }
+  const mode=String(data.get("mode")||"login");
+  const response=await apiRequest<{user:RuntimeUser;authMode:"local"|"supabase";confirmationRequired?:boolean}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
+  if(response.confirmationRequired){state.user=null;state.status="auth-required";state.message="Account created. Check your email to confirm the address, then sign in.";paint();return;}
+  state.user=response.user;
   const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
  }catch(error){state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
