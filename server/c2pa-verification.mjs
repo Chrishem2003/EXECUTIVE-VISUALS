@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 const SHA256=/^[a-f0-9]{64}$/i;
 const DEFAULT_MAX_BYTES=250*1024*1024;
@@ -90,8 +90,8 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   const settings={verify:{verifyAfterReading:true,verifyTrust:true,verifyTimestampTrust:true,ocspFetch:false,remoteManifestFetch:false}};
   if(trustAnchorsPath||userAnchorsPath){
    settings.trust={};
-   if(trustAnchorsPath)settings.trust.trustAnchors=trustAnchorsPath;
-   if(userAnchorsPath)settings.trust.userAnchors=userAnchorsPath;
+   if(trustAnchorsPath)settings.trust.trustAnchors=await readFile(trustAnchorsPath,"utf8");
+   if(userAnchorsPath)settings.trust.userAnchors=await readFile(userAnchorsPath,"utf8");
   }
   let reader;
   try{
