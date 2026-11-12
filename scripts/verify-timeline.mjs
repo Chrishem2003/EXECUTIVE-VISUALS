@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, normalizeAudioMasteringSettings, rational, seconds, sourceElapsedSeconds, splitClip, toOpenTimelineIo, timelineElapsedForSourceElapsed, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression } from "../src/core/audio-automation.ts";
 
@@ -79,6 +79,29 @@ assert.throws(()=>normalizeAudioMasteringSettings({enabled:true,profile:"custom"
 const overlap={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,clips:[...track.clips,{id:"overlap",assetId:"asset-x",name:"Overlap",sourceRange:{start:rational(0,24),duration:rational(60,24)},timelineStart:rational(60,24),duration:rational(60,24),enabled:true}]}:track)};
 assert.equal(validateTimeline(overlap).issues.some(x=>x.code==="overlap"),true);
 assert.throws(()=>toOpenTimelineIo(overlap),/overlap/);
+const speedCurve=[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}];
+assert.equal(evaluateSpeedCurve(speedCurve,1),1.5);
+assert.equal(integrateSpeedCurve(speedCurve,4),6);
+const speedTimeline=createTimeline("project-speed","timeline-speed","Variable speed",{numerator:24,denominator:1});
+const speedTrack=addTrack(speedTimeline,{id:"speed-video",name:"Speed ramp",kind:"video",enabled:true,locked:false,clips:[]});
+const speedClip={id:"speed-ramp",assetId:"speed-source",name:"Speed ramp",sourceRange:{start:rational(0,24),duration:rational(144,24)},timelineStart:rational(0,24),duration:rational(96,24),enabled:true,speed:1,speedCurve};
+const speedAdded=addClip(speedTrack,"speed-video",speedClip);
+assert.equal(validateTimeline(speedAdded).valid,true);
+assert.equal(sourceElapsedSeconds(speedClip,2),3);
+assert.ok(Math.abs(timelineElapsedForSourceElapsed(speedClip,3)-2)<1e-9);
+const splitSpeed=splitClip(speedAdded,"speed-video","speed-ramp",48,"speed-ramp-b");
+assert.equal(seconds(splitSpeed.tracks[0].clips[0].sourceRange.duration),3);
+assert.equal(seconds(splitSpeed.tracks[0].clips[1].sourceRange.start),3);
+assert.equal(splitSpeed.tracks[0].clips[1].speedCurve[0].speed,2);
+const trimmedSpeed=trimClip(speedAdded,"speed-video","speed-ramp",24,0);
+assert.ok(Math.abs(seconds(trimmedSpeed.tracks[0].clips[0].sourceRange.start)-1.25)<1e-9);
+assert.ok(Math.abs(seconds(trimmedSpeed.tracks[0].clips[0].sourceRange.duration)-4.75)<1e-9);
+assert.equal(trimmedSpeed.tracks[0].clips[0].speedCurve[0].speed,1.5);
+const invalidSpeedCurve={...speedAdded,tracks:speedAdded.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:1,speed:5}]}))}))};
+assert.ok(validateTimeline(invalidSpeedCurve).issues.some(issue=>issue.code==="invalid_speed_curve"));
+const malformedSpeedCurve={...speedAdded,tracks:speedAdded.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,speedCurve:[{timeSeconds:0,speed:1},null]}))}))};
+assert.ok(validateTimeline(malformedSpeedCurve).issues.some(issue=>issue.code==="invalid_speed_curve"));
+
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
 

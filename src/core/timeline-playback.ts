@@ -1,4 +1,4 @@
-import type { EditorialTimeline, TimelineClip, TimelineTrack } from "./timeline.ts";
+import { evaluateSpeedCurve, sourceElapsedSeconds, type EditorialTimeline, type TimelineClip, type TimelineTrack } from "./timeline.ts";
 
 export interface TimelinePlaybackItem {
   clipId: string;
@@ -49,9 +49,8 @@ export function timelineClipMediaTimeSeconds(clip: TimelineClip, timelineSeconds
   const start = clip.timelineStart.value / clip.timelineStart.rate;
   const sourceStart = clip.sourceRange.start.value / clip.sourceRange.start.rate;
   const sourceDuration = clip.sourceRange.duration.value / clip.sourceRange.duration.rate;
-  const speed = positive(clip.speed ?? 1, 1);
   const elapsed = Math.max(0, timelineSeconds - start);
-  const mediaOffset = Math.min(sourceDuration, elapsed * speed);
+  const mediaOffset = Math.min(sourceDuration, sourceElapsedSeconds(clip, elapsed));
   return sourceStart + mediaOffset;
 }
 
@@ -77,7 +76,7 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
         timelineEndSeconds: end,
         mediaTimeSeconds: timelineClipMediaTimeSeconds(clip, safeTime),
         gainDb: Math.max(-60, Math.min(24, Number.isFinite(clip.gainDb) ? clip.gainDb! : 0)),
-        speed: positive(clip.speed ?? 1, 1),
+        speed: evaluateSpeedCurve(clip.speedCurve, safeTime-start, positive(clip.speed ?? 1, 1)),
       });
     }
   });

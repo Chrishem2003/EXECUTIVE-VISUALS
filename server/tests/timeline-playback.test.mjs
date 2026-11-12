@@ -30,6 +30,19 @@ test("playback frame selects all overlapping enabled picture, audio and overlay 
  assert.equal(frame.activeVideo[1].mediaTimeSeconds,1);
 });
 
+test("variable-speed preview maps source time and current playback rate from keyframes",()=>{
+ const timeline=createTimeline("project-speed","timeline-speed","Speed preview",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const clip={id:"speed",assetId:"asset-speed",name:"Speed ramp",sourceRange:{start:rational(0,24),duration:rational(144,24)},timelineStart:rational(0,24),duration:rational(96,24),enabled:true,speed:1,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]};
+ const added=addClip(withTrack,"video",clip);
+ const frame=getTimelinePlaybackFrame(added,1);
+ assert.equal(frame.active[0].mediaTimeSeconds,1.25);
+ assert.equal(frame.active[0].speed,1.5);
+ const midpoint=getTimelinePlaybackFrame(added,2);
+ assert.equal(midpoint.active[0].mediaTimeSeconds,3);
+ assert.equal(midpoint.active[0].speed,2);
+});
+
 test("playback honors clip source in-points and half-open clip boundaries",()=>{
  const timeline=fixture();
  const atOne=getTimelinePlaybackFrame(timeline,0.9);
