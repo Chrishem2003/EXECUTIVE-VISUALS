@@ -1,4 +1,4 @@
-import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "../core/api";
+import { apiRequest, apiRequestWithBearer, ApiError } from "../core/api";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -269,7 +269,6 @@ export async function initRuntime(){
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
-  if(form.id==="ev-auth-token"){setApiAccessToken(String(data.get("token")||""));}
   else{
    const mode=String(data.get("mode")||"login");
    const response=await apiRequest<{user:RuntimeUser;authMode:"local"|"supabase";confirmationRequired?:boolean}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
@@ -277,7 +276,7 @@ async function authenticate(form:HTMLFormElement){
    state.user=response.user;
   }
   const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
- }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
+ }catch(error){state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("click",event=>{
  const button=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-auth-mode]");
@@ -296,8 +295,8 @@ document.addEventListener("click",event=>{
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
  if(form.id==="ev-auth-recover"){event.preventDefault();const email=String(new FormData(form).get("email")||"");void apiRequest<{ok:boolean;message:string}>("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(result=>{state.message=result.message;paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not request a recovery email.";paint();});return;}
- if(form.id==="ev-auth-reset"){event.preventDefault();const data=new FormData(form),password=String(data.get("password")||""),confirmPassword=String(data.get("confirmPassword")||"");if(password!==confirmPassword){state.message="The two passwords do not match.";paint();return;}if(password.length<12){state.message="Use a password with at least 12 characters.";paint();return;}if(!state.recoveryToken){state.message="Your recovery session is missing. Request a new recovery email.";state.authView="login";paint();return;}void apiRequest<{ok:boolean}>("/api/auth/password",{method:"PUT",headers:{"content-type":"application/json","authorization":"Bearer "+state.recoveryToken},body:JSON.stringify({password})}).then(()=>{state.recoveryToken="";state.authView="login";state.message="Password updated. Sign in with your new password.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not update your password.";paint();});return;}
- if(form.id==="ev-auth"||form.id==="ev-auth-token"){event.preventDefault();void authenticate(form);}
+ if(form.id==="ev-auth-reset"){event.preventDefault();const data=new FormData(form),password=String(data.get("password")||""),confirmPassword=String(data.get("confirmPassword")||"");if(password!==confirmPassword){state.message="The two passwords do not match.";paint();return;}if(password.length<12){state.message="Use a password with at least 12 characters.";paint();return;}if(!state.recoveryToken){state.message="Your recovery session is missing. Request a new recovery email.";state.authView="login";paint();return;}void apiRequestWithBearer<{ok:boolean}>("/api/auth/password",state.recoveryToken,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({password})}).then(()=>{state.recoveryToken="";state.authView="login";state.message="Password updated. Sign in with your new password.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not update your password.";paint();});return;}
+ if(form.id==="ev-auth"){event.preventDefault();void authenticate(form);}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"project_created",eventKey:"project-created:"+result.project.id})}).catch(()=>{});await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-review-form"){event.preventDefault();const data=new FormData(form),timecode=String(data.get("timecode")||"");void apiRequest("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.projectId,decision:String(data.get("decision")),body:String(data.get("body")),assetId:String(data.get("assetId")||"")||null,timecodeSeconds:timecode?Number(timecode):null})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
@@ -321,7 +320,7 @@ document.addEventListener("click",event=>{
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
- if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
+ if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
  const c2paButton=target.closest<HTMLElement>("[data-ev-c2pa]");
  if(c2paButton){
   const assetId=c2paButton.dataset.evC2pa||"";

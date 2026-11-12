@@ -4,13 +4,10 @@ export class ApiError extends Error {
     super(message); this.name="ApiError";
   }
 }
-let accessToken="";
-export function setApiAccessToken(token:string){accessToken=token.trim();}
-export function clearApiAccessToken(){accessToken="";}
 
-export async function apiRequest<T>(path:string,init:RequestInit={}):Promise<T>{
+async function request<T>(path:string,init:RequestInit={},bearerToken?:string):Promise<T>{
   const headers=new Headers(init.headers||{});
-  if(accessToken)headers.set("authorization","Bearer "+accessToken);
+  if(bearerToken)headers.set("authorization","Bearer "+bearerToken);
   const response=await fetch(path,{...init,headers,credentials:"same-origin"});
   if(response.status===204)return {} as T;
   const payload=await response.json().catch(()=>({}));
@@ -21,12 +18,17 @@ export async function apiRequest<T>(path:string,init:RequestInit={}):Promise<T>{
   return payload as T;
 }
 
+export function apiRequest<T>(path:string,init:RequestInit={}):Promise<T>{return request<T>(path,init);}
 
-/** Fetch a private asset as a Blob while preserving the same bearer-token boundary as apiRequest. */
+/** Explicit one-time bearer use is reserved for Supabase email-recovery tokens. */
+export function apiRequestWithBearer<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
+  if(!token||token.length>8192)throw new ApiError(401,"RECOVERY_SESSION_REQUIRED","A valid recovery session is required.");
+  return request<T>(path,init,token);
+}
+
+/** Fetch private media using the same-origin HttpOnly session cookie. */
 export async function apiRequestBlob(path:string,init:RequestInit={}):Promise<Blob>{
-  const headers=new Headers(init.headers||{});
-  if(accessToken)headers.set("authorization","Bearer "+accessToken);
-  const response=await fetch(path,{...init,headers,credentials:"same-origin"});
+  const response=await fetch(path,{...init,headers:new Headers(init.headers||{}),credentials:"same-origin"});
   if(!response.ok){
     const payload=await response.json().catch(()=>({}));
     const error=(payload as {error?:ApiErrorBody}).error||{};
