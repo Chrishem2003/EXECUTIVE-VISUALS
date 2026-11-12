@@ -34,6 +34,8 @@ test("Supabase auth missing encryption secret keeps the application online but f
   assert.equal(result.authMode,"supabase");
   assert.equal(result.configurationReady,false);
   assert.equal(result.encryptedServerTokens,false);
+  assert.equal(healthBody.cloudMedia?.enabled,false);
+  assert.equal(healthBody.cloudMedia?.ready,false);
   assert.equal(result.protectedStatus,503);
   assert.equal(result.protectedCode,"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED");
  }finally{await rm(root,{recursive:true,force:true});}
