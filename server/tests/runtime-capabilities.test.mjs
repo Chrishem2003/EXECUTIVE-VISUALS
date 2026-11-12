@@ -41,3 +41,50 @@ test("disabled gateways and local auth never imply production readiness", () => 
   assert.equal(byId(items, "image-gateway").state, "disabled");
   assert.equal(byId(items, "billing").state, "disabled");
 });
+
+const readyWorker = {
+  enabled: true,
+  remoteExecutionGates: true,
+  modelRouterEnabled: true,
+  modelRouterRemoteEnabled: true,
+  modelRouterConfigPresent: true,
+  providerCredentialConfigured: true,
+  outputHostAllowlistConfigured: true,
+  supabaseCredentialsConfigured: true,
+  directRunwayModelsRequested: false,
+  runtimeMode: "separate-process"
+};
+
+test("cloud video worker remains disabled unless the separate process is explicitly enabled", () => {
+  const items = describeRuntimeCapabilities({ cloudVideoWorker: { enabled: false } });
+  assert.equal(byId(items, "cloud-video-worker").state, "disabled");
+  assert.match(byId(items, "cloud-video-worker").detail, /not enabled/i);
+});
+
+test("cloud video worker is blocked when any provider, storage, auth or execution gate is incomplete", () => {
+  const items = describeRuntimeCapabilities({
+    authMode: "supabase",
+    authSessionReady: true,
+    authSessionEncrypted: true,
+    cloudMediaReady: true,
+    ffmpeg: true,
+    ffprobe: true,
+    cloudVideoWorker: { ...readyWorker, outputHostAllowlistConfigured: false }
+  });
+  assert.equal(byId(items, "cloud-video-worker").state, "blocked");
+  assert.match(byId(items, "cloud-video-worker").detail, /launch gates are incomplete/i);
+});
+
+test("fully configured cloud video worker is never reported live without a separate-process heartbeat", () => {
+  const items = describeRuntimeCapabilities({
+    authMode: "supabase",
+    authSessionReady: true,
+    authSessionEncrypted: true,
+    cloudMediaReady: true,
+    ffmpeg: true,
+    ffprobe: true,
+    cloudVideoWorker: readyWorker
+  });
+  assert.equal(byId(items, "cloud-video-worker").state, "limited");
+  assert.match(byId(items, "cloud-video-worker").detail, /cannot verify.*running/i);
+});
