@@ -11,6 +11,7 @@ import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
+import { createBatchIdempotencyKeys, inspectBatchReplay } from "./batch-idempotency.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -1133,6 +1134,18 @@ export function createAppServer() {
             format:item.format||body.format||"png",index
           });
         }
+        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"");
+        if(idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Batch idempotency keys must not exceed 180 characters.");return;}
+        const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.length);
+        if(batchKeys.length){
+          const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
+          const replay=inspectBatchReplay(existing,normalized,projectId);
+          if(replay.exists){
+            if(!replay.matches){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different or incomplete batch request.");return;}
+            const replayJobs=existing.map(recordJob);
+            send(res,200,{batchId:replay.batchId,status:"replayed",total:replayJobs.length,jobs:replayJobs,idempotentReplay:true},cors);return;
+          }
+        }
         const evidence=await loadUpscaleQualityEvidence();
         const models=[...new Set(normalized.map(item=>item.model))];
         for(const model of models){
@@ -1148,11 +1161,24 @@ export function createAppServer() {
         const jobs=[];
         db.exec("BEGIN IMMEDIATE");
         try{
+          if(batchKeys.length){
+            const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
+            const replay=inspectBatchReplay(existing,normalized,projectId);
+            if(replay.exists){
+              if(!replay.matches){
+                db.exec("ROLLBACK");
+                fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different or incomplete batch request.");return;
+              }
+              const replayJobs=existing.map(recordJob);
+              db.exec("COMMIT");
+              send(res,200,{batchId:replay.batchId,status:"replayed",total:replayJobs.length,jobs:replayJobs,idempotentReplay:true},cors);return;
+            }
+          }
           for(const item of normalized){
             const id=randomUUID();
             const input={sourceAssetId:item.sourceAssetId,model:item.model,scale:item.scale,tile:item.tile,format:item.format,batchId,batchIndex:item.index,batchTotal:normalized.length};
-            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json) VALUES(?,?,?,'media.ai-upscale','queued',?)")
-              .run(id,user.id,projectId,json(input));
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,'media.ai-upscale','queued',?,?)")
+              .run(id,user.id,projectId,json(input),batchKeys[item.index]||null);
             addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-upscale",batchId,batchIndex:item.index,batchTotal:normalized.length});
             jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
           }

@@ -322,6 +322,35 @@ test("AI upscale job submission is rejected until the selected model has its own
   assert.equal((await response.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
 });
  
+test("batch AI upscaling validates image ownership and fails closed before queueing unverified models",async()=>{
+  assert.equal((await fetch(base+"/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({items:[]})})).status,401);
+  const cookie=await register("batch-upscale-gate@example.test");
+  const empty=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({items:[]})},cookie);
+  assert.equal(empty.status,400);
+  assert.equal((await empty.json()).error.code,"INVALID_BATCH");
+
+  const png=Buffer.alloc(24);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(png);
+  png.writeUInt32BE(13,8);png.write("IHDR",12,"ascii");png.writeUInt32BE(1,16);png.writeUInt32BE(1,20);
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"batch-source.png"},body:png},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+
+  const duplicate=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({items:[{sourceAssetId:asset.id},{sourceAssetId:asset.id}]})},cookie);
+  assert.equal(duplicate.status,400);
+  assert.equal((await duplicate.json()).error.code,"INVALID_BATCH_ITEM");
+
+  const oversized=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"x".repeat(181)},body:JSON.stringify({items:[{sourceAssetId:asset.id}]})},cookie);
+  assert.equal(oversized.status,400);
+  assert.equal((await oversized.json()).error.code,"INVALID_IDEMPOTENCY_KEY");
+
+  const blocked=await request("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"batch-quality-gate-001"},body:JSON.stringify({items:[{sourceAssetId:asset.id}]})},cookie);
+  assert.equal(blocked.status,409);
+  assert.equal((await blocked.json()).error.code,"AI_UPSCALE_QUALITY_NOT_VERIFIED");
+  const jobs=await request("/api/jobs",{},cookie);
+  assert.equal((await jobs.json()).jobs.filter(job=>job.jobType==="media.ai-upscale").length,0,"unverified batch requests must not enqueue jobs");
+});
+
 test("unauthenticated requests and unsupported upload types are rejected",async()=>{
   const noAuth=await fetch(base+"/api/projects");
   assert.equal(noAuth.status,401);
