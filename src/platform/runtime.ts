@@ -317,10 +317,10 @@ async function refresh(){
    }
   }catch{state.cloudAssets=[];state.cloudProjects=[];state.cloudProjectId="";}
  }
- if(state.cloudMediaJobsEnabled&&state.cloudMediaReady){
+ if(state.cloudMediaJobsEnabled&&state.cloudMediaReady&&state.cloudProjectId){
   try{
-   const scope="?limit=25";
-   const response=await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope);
+   const scope=cloudAssetProjectQuery(state.cloudProjectId);
+   const response=scope?await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope):{jobs:[]};
    state.cloudMediaJobs=response.jobs||[];
   }catch{state.cloudMediaJobs=[];}
  }else state.cloudMediaJobs=[];
