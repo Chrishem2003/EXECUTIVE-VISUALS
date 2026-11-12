@@ -30,7 +30,7 @@ test("a complete matching batch replays its original batch identity",()=>{
 
 test("partial, cross-project or changed batches conflict instead of duplicating work",()=>{
  assert.equal(inspectBatchReplay([jobs()[0],null],items,"project-1").matches,false);
- assert.equal(inspectBatchReplay(jobs(),"different-project").matches,false);
+ assert.equal(inspectBatchReplay(jobs(),items,"different-project").matches,false);
  const changed=items.map(item=>({...item}));
  changed[1].scale=2;
  assert.equal(inspectBatchReplay(jobs(),changed,"project-1").matches,false);
