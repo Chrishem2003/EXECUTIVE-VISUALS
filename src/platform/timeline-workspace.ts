@@ -534,7 +534,7 @@ export async function addWorkflowVideoToCloudTimeline(input:{projectId:string;cl
  const clipId=crypto.randomUUID();
  const clip=createGeneratedVideoClip({
   id:clipId,assetId:asset.id,name:asset.name,durationSeconds,frameRate:timeline.frameRate,startFrame:endFrame,
-  metadata:{workflowRunId:String(input.workflowRunId||""),provider:String(input.provider||"runway"),model:String(input.model||"model-router"),cloudAssetId,cloudSha256:String(asset.metadata?.sha256||asset.sha256||"")}
+  metadata:{workflowRunId:String(input.workflowRunId||""),provider:String(input.provider||"runway"),model:String(input.model||"model-router"),cloudAssetId,cloudSha256:String(asset.metadata?.cloudSha256||"")}
  });
  const previous=state.timeline?structuredClone(state.timeline):null;
  recordUndo();
