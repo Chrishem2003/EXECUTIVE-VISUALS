@@ -134,6 +134,30 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     return response(201,{timeline});
    }
       const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
+   if(mediaJobMatch&&method==="POST"&&typeof body.operation==="string"){
+    if(!["proxy","thumbnail"].includes(String(body.operation)))return response(400,{error:{code:"MEDIA_JOB_OPERATION_INVALID",message:"Choose proxy or thumbnail preview."}});
+    const legacyAsset=await service.assets.get({ownerId,assetId:mediaJobMatch[1]});
+    if(!legacyAsset.mediaType.startsWith("video/"))return response(422,{error:{code:"MEDIA_JOB_SOURCE_INVALID",message:"Cloud preview jobs require a video source asset."}});
+    const legacyProjectId=legacyAsset.projectId||null;
+    if(await allow({ownerId,projectId:legacyProjectId,action:"write"})!==true)return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found or editor access required."}});
+    const legacyKey=typeof idempotencyKey==="string"?idempotencyKey.trim().slice(0,180):"";
+    if(legacyKey.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
+    const legacyType=body.operation==="proxy"?"media.proxy":"media.thumbnail";
+    const legacySeconds=body.operation==="thumbnail"?Number(body.seconds??1):null;
+    if(body.operation==="thumbnail"&&(!Number.isFinite(legacySeconds)||legacySeconds<0||legacySeconds>3600))return response(400,{error:{code:"MEDIA_JOB_OPTIONS_INVALID",message:"Thumbnail time must be between 0 and 3600 seconds."}});
+    const legacyInput=body.operation==="proxy"?{sourceAssetId:legacyAsset.id,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{sourceAssetId:legacyAsset.id,seconds:legacySeconds};
+    const legacyExisting=await request("jobs?select=id,owner_id,project_id,job_type,status,input,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(legacyKey)+"&limit=1");
+    if(Array.isArray(legacyExisting)&&legacyExisting[0]){
+     const row=legacyExisting[0];
+     if(row.job_type!==legacyType||stableJson(row.input)!==stableJson(legacyInput))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different media operation."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const legacyJobId=randomUUID();
+    const legacyRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,created_at,updated_at",{method:"POST",body:{id:legacyJobId,owner_id:ownerId,project_id:legacyProjectId,job_type:legacyType,status:"queued",progress:0,input:legacyInput,idempotency_key:legacyKey}});
+    if(!Array.isArray(legacyRows)||legacyRows.length!==1||legacyRows[0].id!==legacyJobId||legacyRows[0].owner_id!==ownerId||legacyRows[0].project_id!==(legacyProjectId||null)||legacyRows[0].job_type!==legacyType||legacyRows[0].status!=="queued")throw new Error("Cloud media preview job creation returned an invalid receipt.");
+    await request("job_events",{method:"POST",body:{job_id:legacyJobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:legacyType,sourceAssetId:legacyAsset.id,operation:body.operation}},prefer:"return=minimal"});
+    return response(202,{job:legacyRows[0],idempotentReplay:false});
+   }
    if(mediaJobMatch&&method==="POST"&&!mediaJobsEnabled)return response(503,{error:{code:"CLOUD_MEDIA_WORKER_DISABLED",message:"Cloud media processing is not enabled for this environment."}});
    if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
     const assetId=mediaJobMatch[1];
