@@ -168,6 +168,8 @@ test("cloud renderer applies clip gain and pan automation to the encoded audio",
 test("cloud renderer rejects malformed or out-of-clip audio automation",async()=>{
  const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
  const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
- const timeline={tracks:[{kind:"video",clips:[clip]},{kind:"audio",clips:[{...clip,audioAutomation:[{timeSeconds:2,gainDb:-3}]}]}]};
- await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="UNSUPPORTED_AUDIO_SOURCE"||error.code==="INVALID_AUDIO_AUTOMATION");
+ const audioClip={...clip,assetId:"a",audioAutomation:[{timeSeconds:2,gainDb:-3}]};
+ const timeline={tracks:[{kind:"video",clips:[clip]},{kind:"audio",clips:[audioClip]}]};
+ const withAudio=new Map([...assets,["a",{path:"/not-used.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:withAudio,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_AUTOMATION");
 });
