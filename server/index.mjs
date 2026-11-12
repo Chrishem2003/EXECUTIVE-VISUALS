@@ -192,13 +192,14 @@ async function authenticate(req,res) {
   let stored=supabaseSessionStore.get(browserToken);
   if(!stored){clearSupabaseSessionCookies(res);return null;}
   let user=await getSupabaseUser({...config,accessToken:stored.accessToken});
+  if(user&&user.id!==stored.userId){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
   if(!user){
    const rotated=await refreshSupabaseSession({...config,refreshToken:stored.refreshToken});
-   if(!rotated){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
+   if(!rotated||rotated.user.id!==stored.userId){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
    if(!supabaseSessionStore.rotate(browserToken,rotated)){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
    user=rotated.user;
   }
-  if(!user)return null;
+  if(!user||user.id!==stored.userId)return null;
   db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(user.id,user.email||user.id+"@supabase.invalid");
   return {id:user.id,email:user.email||""};
  }
@@ -388,9 +389,10 @@ export function createAppServer() {
     if(AUTH_MODE==="supabase"&&!["GET","HEAD","OPTIONS"].includes(req.method)&&path!=="/api/webhooks/flutterwave"){
       const forwardedProto=String(req.headers["x-forwarded-proto"]||"").split(",")[0].trim();
       const scheme=forwardedProto==="https"||req.socket.encrypted?"https":"http";
-      const expectedOrigin=process.env.PUBLIC_APP_URL?new URL(process.env.PUBLIC_APP_URL).origin:scheme+"://"+String(req.headers.host||"");
-      try{assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});}
-      catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
+      try{
+        const expectedOrigin=process.env.PUBLIC_APP_URL?new URL(process.env.PUBLIC_APP_URL).origin:scheme+"://"+String(req.headers.host||"");
+        assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});
+      }catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
     }
     const ratePath=path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
