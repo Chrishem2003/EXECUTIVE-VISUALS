@@ -1073,6 +1073,83 @@ export function createAppServer() {
           send(res,200,{ok:true,revision:workflow.revision+1,graphHash},cors);return;
         }
       }
+      if(path==="/api/jobs/batch"&&req.method==="POST"){
+        const body=await readJson(req);
+        const items=body.items;
+        if(!Array.isArray(items)||items.length<1||items.length>100){
+          fail(res,400,"INVALID_BATCH","Batch must contain between 1 and 100 image assets.");return;
+        }
+        let projectId=body.projectId||null;
+        if(projectId&&!canWriteProject(db,user.id,projectId)){
+          fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;
+        }
+        const normalized=[];
+        const seenAssets=new Set();
+        for(const [index,item] of items.entries()){
+          if(!item||typeof item!=="object"||Array.isArray(item)){
+            fail(res,400,"INVALID_BATCH_ITEM","Every batch item must be an object.");return;
+          }
+          const sourceAssetId=String(item.sourceAssetId||"");
+          if(!sourceAssetId||seenAssets.has(sourceAssetId)){
+            fail(res,400,"INVALID_BATCH_ITEM","Each batch item needs a unique sourceAssetId.");return;
+          }
+          seenAssets.add(sourceAssetId);
+          const source=getAccessibleAsset(db,user.id,sourceAssetId,true);
+          if(!source||!String(source.media_type||"").startsWith("image/")){
+            fail(res,404,"SOURCE_ASSET_NOT_FOUND","Every source must be an accessible image.");return;
+          }
+          const sourceProjectId=source.project_id||null;
+          if(index===0&&!body.projectId)projectId=sourceProjectId;
+          if(sourceProjectId!==projectId){
+            fail(res,400,"PROJECT_MISMATCH","All batch images must belong to the same selected project or private workspace.");return;
+          }
+          const model=String(item.model||body.model||"realesrgan-x4plus");
+          try{
+            aiUpscaleAdapter.plan({
+              inputPath:"/tmp/executive-visuals-batch-input",
+              outputPath:"/tmp/executive-visuals-batch-output",
+              model,scale:item.scale??body.scale??4,tile:item.tile??body.tile??0,
+              format:item.format||body.format||"png"
+            });
+          }catch(error){
+            fail(res,400,error.code||"INVALID_MEDIA_OPTIONS",error.message);return;
+          }
+          normalized.push({
+            sourceAssetId,model,scale:item.scale??body.scale??4,tile:item.tile??body.tile??0,
+            format:item.format||body.format||"png",index
+          });
+        }
+        const evidence=await loadUpscaleQualityEvidence();
+        const models=[...new Set(normalized.map(item=>item.model))];
+        for(const model of models){
+          if(evidence.models[model]?.qualityVerified!==true){
+            fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","Every selected model must pass its model-specific five-category human-reviewed benchmark before batch submission.");return;
+          }
+          const readiness=await aiUpscaleAdapter.probe(model);
+          if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){
+            fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","Every selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;
+          }
+        }
+        const batchId=randomUUID();
+        const jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          for(const item of normalized){
+            const id=randomUUID();
+            const input={sourceAssetId:item.sourceAssetId,model:item.model,scale:item.scale,tile:item.tile,format:item.format,batchId,batchIndex:item.index,batchTotal:normalized.length};
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json) VALUES(?,?,?,'media.ai-upscale','queued',?)")
+              .run(id,user.id,projectId,json(input));
+            addJobEvent(db,id,user.id,"job.queued",{jobType:"media.ai-upscale",batchId,batchIndex:item.index,batchTotal:normalized.length});
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+          }
+          audit(db,user.id,"upscale.batch_queued","batch",batchId,{total:jobs.length,models},projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          try{db.exec("ROLLBACK");}catch{}
+          throw error;
+        }
+        send(res,202,{batchId,status:"queued",total:jobs.length,jobs},cors);return;
+      }
       if(path==="/api/jobs"&&req.method==="GET"){
         const rows=db.prepare("SELECT * FROM jobs WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
