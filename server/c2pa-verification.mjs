@@ -66,7 +66,7 @@ function verificationState(store){
  return"validation_unavailable";
 }
 
-export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node"),maxBytes=DEFAULT_MAX_BYTES,trustAnchorsPath=process.env.C2PA_TRUST_ANCHORS_PATH||null}={}){
+export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node"),maxBytes=DEFAULT_MAX_BYTES,trustAnchorsPath=process.env.C2PA_TRUST_ANCHORS_PATH||null,userAnchorsPath=process.env.C2PA_USER_ANCHORS_PATH||null}={}){
  if(typeof sdkLoader!=="function")throw new TypeError("C2PA SDK loader must be a function.");
  if(!Number.isSafeInteger(maxBytes)||maxBytes<1024||maxBytes>2*1024*1024*1024)throw new TypeError("C2PA asset size limit is invalid.");
  return async function verifyC2paAsset({filePath,mediaType,expectedSha256,expectedSize}={}){
@@ -88,7 +88,11 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   try{sdk=await sdkLoader();}catch{throw fail("C2PA_SDK_UNAVAILABLE","The official CAI C2PA Node SDK is unavailable.",503);}
   if(!sdk?.Reader||!sdk?.Context)throw fail("C2PA_SDK_INVALID","The installed CAI C2PA SDK does not expose the required Reader and Context APIs.",503);
   const settings={verify:{verifyAfterReading:true,verifyTrust:true,verifyTimestampTrust:true,ocspFetch:false,remoteManifestFetch:false}};
-  if(trustAnchorsPath)settings.trust={trustAnchors:trustAnchorsPath,verifyTrustList:false};
+  if(trustAnchorsPath||userAnchorsPath){
+   settings.trust={};
+   if(trustAnchorsPath)Object.assign(settings.trust,{trustAnchors:trustAnchorsPath,verifyTrustList:false});
+   if(userAnchorsPath)settings.trust.userAnchors=userAnchorsPath;
+  }
   let reader;
   try{
    reader=await sdk.Reader.fromAsset({path:filePath,mimeType:normalizedMediaType},new sdk.Context(settings));
