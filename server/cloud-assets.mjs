@@ -41,7 +41,6 @@ function publicAsset(row) {
   return {
     id:row.id,ownerId:row.owner_id,projectId:row.project_id||null,name:row.original_name,
     mediaType:row.media_type,size:Number(row.byte_size),sha256:row.sha256,
-    storageBucket:row.storage_bucket,objectPath:row.object_path,
     derivativeOf:row.derivative_of||null,metadata:row.metadata||{},createdAt:row.created_at
   };
 }
@@ -186,7 +185,7 @@ export function createCloudAssetRepository({
         const suffix=typeof row?.object_path==="string"&&row.object_path.startsWith(assetPrefix)?row.object_path.slice(assetPrefix.length):"";
         const validObjectPath=suffix==="original."+EXTENSIONS.get(mediaType)||attemptPattern.test(suffix);
         if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||!validObjectPath||row.storage_bucket!=="executive-visuals-media"||row.original_name!==name||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256||canonicalJson(row.metadata||{})!==canonicalJson(metadata))throw new Error("Existing publication asset does not match its reserved identity and checksum.");
-        return publicAsset(row);
+        return row;
       };
       const finalize=async row=>{
         await verifyLease();
@@ -200,12 +199,14 @@ export function createCloudAssetRepository({
           p_metadata:metadata
         }});
         if(!Array.isArray(rows)||rows.length!==1)throw new Error("Atomic cloud asset publication returned no authoritative asset.");
-        return verifyAsset(rows[0]);
+        verifyAsset(rows[0]);
+        return rows[0];
       };
       let existing=await readAsset();
       if(existing){
         verifyAsset(existing);
-        return await finalize(existing);
+        const finalized=await finalize(existing);
+        return publicAsset(finalized);
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
       const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"attempt-"+randomUUID()+"."+EXTENSIONS.get(mediaType)});
@@ -219,12 +220,12 @@ export function createCloudAssetRepository({
       }
       const candidate={id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:uploaded.path,derivative_of:derivativeOf,metadata};
       try{
-        const asset=await finalize(candidate);
-        if(asset.objectPath!==uploaded.path){
+        const finalized=await finalize(candidate);
+        if(finalized.object_path!==uploaded.path){
           try{await storage.remove(uploaded.path);}
-          catch(error){try{await enqueueStorageCleanup(uploaded.path,"losing_publication_attempt");}catch{}return {...asset,cleanupPending:true};}
+          catch(error){try{await enqueueStorageCleanup(uploaded.path,"losing_publication_attempt");}catch{}return {...publicAsset(finalized),cleanupPending:true};}
         }
-        return asset;
+        return publicAsset(finalized);
       }catch(error){
         try{existing=await readAsset();}
         catch(readError){
@@ -235,7 +236,7 @@ export function createCloudAssetRepository({
           throw error;
         }
         if(existing){
-          const asset=verifyAsset(existing);
+          verifyAsset(existing);
           let cleanupPending=false;
           if(existing.object_path!==uploaded.path){
             try{await storage.remove(uploaded.path);}
@@ -244,7 +245,9 @@ export function createCloudAssetRepository({
           if(reservation.status!=="published"){
             try{
               const finalized=await finalize(existing);
-              return cleanupPending?{...finalized,cleanupPending:true}:finalized;
+              const asset=publicAsset(finalized);
+              const asset=publicAsset(existing);
+          return cleanupPending?{...asset,cleanupPending:true}:asset;
             }catch(finalizeError){
               finalizeError.cleanupPending=cleanupPending;
               throw finalizeError;
