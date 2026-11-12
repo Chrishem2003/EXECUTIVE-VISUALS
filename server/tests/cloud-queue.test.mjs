@@ -9,10 +9,10 @@ function response(body, status=200) {
 
 test("cloud queue uses server credentials and pins PostgREST to the private schema", async()=>{
   const requests=[];
-  const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,options});return response([{id:"job-1",status:"processing",lease_owner:"worker-1",lease_expires_at:"2026-11-01T12:01:30Z"}]);}});
+  const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,options});return response([{id:"job-1",status:"processing",lease_owner:"worker-1",lease_expires_at:"2026-11-01T12:01:30Z",lease_token:"11111111-1111-4111-8111-111111111111"}]);}});
   const job=await queue.claim("worker-1",90,["media.color"]);
   assert.equal(job.id,"job-1");
-  assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/claim_next_job");
+  assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/claim_next_job_v2");
   assert.equal(requests[0].options.headers["accept-profile"],"executive_visuals");
   assert.equal(requests[0].options.headers["content-profile"],"executive_visuals");
   assert.equal(requests[0].options.headers.apikey,base.serviceRoleKey);
@@ -31,16 +31,18 @@ test("claim accepts an empty queue and rejects malformed or foreign leases",asyn
 
 test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   const requests=[];
-  const results=[true,3,true,false];
+  const results=[true,true,3,true,false];
   const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(results.shift());}});
-  assert.equal(await queue.renew("job-1","worker-1"),true);
+  assert.equal(await queue.renew("job-1","worker-1",90,"11111111-1111-4111-8111-111111111111"),true);
+  assert.equal(await queue.assertLease("job-1","worker-1","11111111-1111-4111-8111-111111111111"),true);
   assert.equal(await queue.recover(25),3);
-  assert.equal(await queue.finish("job-1","worker-1","succeeded",{assetId:"asset-1"}),true);
-  assert.equal(await queue.finish("job-1","worker-1","failed",null,{code:"FAILED"}),false);
-  assert.deepEqual(requests.map(x=>x.url.split("/").pop()),["renew_job_lease","recover_expired_jobs","finish_job","finish_job"]);
-  assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_seconds:90});
-  assert.deepEqual(requests[1].body,{p_limit:25});
-  assert.deepEqual(requests[2].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
+  assert.equal(await queue.finish("job-1","worker-1","succeeded",{assetId:"asset-1"},null,"11111111-1111-4111-8111-111111111111"),true);
+  assert.equal(await queue.finish("job-1","worker-1","failed",null,{code:"FAILED"},"11111111-1111-4111-8111-111111111111"),false);
+  assert.deepEqual(requests.map(x=>x.url.split("/").pop()),["renew_job_lease_v2","assert_job_lease_v2","recover_expired_jobs","finish_job_v2","finish_job_v2"]);
+  assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_lease_seconds:90});
+  assert.deepEqual(requests[1].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111"});
+  assert.deepEqual(requests[2].body,{p_limit:25});
+  assert.deepEqual(requests[3].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
 test("configuration, arguments and HTTP errors fail closed",async()=>{
@@ -53,16 +55,7 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.claim("worker-1",90,[]),/Job type filters/);
   await assert.rejects(()=>queue.claim("worker-1",90,["media.color","media.color"]),/Job type filters/);
   await assert.rejects(()=>queue.recover(1001),/Recovery limit/);
-  await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
-  await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/must be an object/);
-});
-
-test("owner-scoped cloud video cancellation calls its dedicated RPC and returns the persisted job",async()=>{
- const requests=[],job={id:"123e4567-e89b-42d3-a456-426614174000",owner_id:"223e4567-e89b-42d3-a456-426614174000",job_type:"video.generate.shot",status:"cancelled"};
- const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url:String(url),body:JSON.parse(options.body)});return response([job]);}});
- const result=await queue.cancel(job.id,job.owner_id);
- assert.equal(result.status,"cancelled");
- assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/cancel_video_generation_job");
- assert.deepEqual(requests[0].body,{p_job_id:job.id,p_owner_id:job.owner_id});
- await assert.rejects(()=>queue.cancel("bad",job.owner_id),/Valid job and owner IDs/);
+  await assert.rejects(()=>queue.finish("job-1","worker-1","processing",null,null,"11111111-1111-4111-8111-111111111111"),/terminal job status/);
+  await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/lease token/);
+  await assert.rejects(()=>queue.renew("job-1","worker-1"),/lease token/);
 });

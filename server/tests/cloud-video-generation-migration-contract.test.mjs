@@ -47,7 +47,7 @@ test("Fal is accepted by the approval snapshot and persisted in the durable task
 test("cancellation migration uses valid dollar-quoted PL/pgSQL function bodies",()=>{
  assert.equal((cancellationSql.match(/as \$\$/g)||[]).length,3);
  assert.equal((cancellationSql.match(/^\$\$;$/gm)||[]).length,3);
- assert.doesNotMatch(cancellationSql,/^as \$\n/m);
+ assert.doesNotMatch(cancellationSql,/^as \$(?!\$)/m);
 });
 
 test("cancellation migration keeps intent separate from terminal provider cancellation",()=>{
@@ -90,4 +90,108 @@ test("pending cancellation reconciliation uses a bounded cross-worker lease clai
  assert.match(cancellationSql,/state='cancel_requested'[\s\S]*?cancellation_lease_expires_at<=clock_timestamp\(\)/i);
  assert.match(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\(text,integer,integer\) to service_role/i);
  assert.doesNotMatch(cancellationSql,/grant execute on function executive_visuals\.claim_video_generation_cancellations\([^;]+ to (public|anon|authenticated)/i);
+});
+
+const entitlementSql=await readFile(resolve(root,"supabase/migrations/20261111230000_video_generation_entitlement_gate.sql"),"utf8");
+const entitlementIntegration=await readFile(resolve(root,"scripts/asset-publication-postgres-integration.sql"),"utf8");
+
+test("cloud video credit reservation is gated by a current subscription AI-generation entitlement",()=>{
+ assert.match(entitlementSql,/status in \('active','trialing'\)/i);
+ assert.match(entitlementSql,/current_period_start <= clock_timestamp\(\)/i);
+ assert.match(entitlementSql,/current_period_end > clock_timestamp\(\)/i);
+ assert.match(entitlementSql,/entitlements_snapshot @> '\{"ai_generation":true\}'::jsonb/i);
+ assert.match(entitlementSql,/for share/i);
+ assert.match(entitlementSql,/VIDEO_GENERATION_ENTITLEMENT_REQUIRED/);
+ assert.match(entitlementSql,/alter function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+rename to reserve_generation_credits_without_entitlement/i);
+ assert.match(entitlementSql,/grant execute on function executive_visuals\.reserve_generation_credits\(uuid,uuid,bigint,text\)\s+to service_role/i);
+ assert.doesNotMatch(entitlementSql,/grant execute on function executive_visuals\.reserve_generation_credits_without_entitlement/i);
+ assert.doesNotMatch(entitlementSql,/\b(drop\s+table|truncate\s+table|delete\s+from)\b/i);
+});
+
+test("disposable cloud video integration rejects credit reservation without AI entitlement and accepts an active entitled subscription",()=>{
+ assert.match(entitlementIntegration,/generation reservation unexpectedly succeeded without AI entitlement/i);
+ assert.match(entitlementIntegration,/VIDEO_GENERATION_ENTITLEMENT_REQUIRED/);
+ assert.match(entitlementIntegration,/entitlements_snapshot[\s\S]*?ai_generation/i);
+ assert.doesNotMatch(entitlementIntegration,/activate_generation_subscription/);
+});
+
+
+const leaseSql=await readFile(resolve(root,"supabase/migrations/20261108000000_job_lease_fencing_tokens.sql"),"utf8");
+const publicationSql=await readFile(resolve(root,"supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql"),"utf8");
+const videoFenceSql=await readFile(resolve(root,"supabase/migrations/20261111250000_cloud_video_worker_lease_fencing.sql"),"utf8");
+const queueClient=await readFile(resolve(root,"server/cloud-queue.mjs"),"utf8");
+const videoWorker=await readFile(resolve(root,"server/cloud-video-worker.mjs"),"utf8");
+const videoSubmissionClient=await readFile(resolve(root,"server/cloud-video-submissions.mjs"),"utf8");
+const videoEnqueueClient=await readFile(resolve(root,"server/cloud-video-enqueue.mjs"),"utf8");
+
+test("cloud queue claims issue unique per-attempt tokens and fence renew, assert and finish RPCs",()=>{
+ assert.match(leaseSql,/lease_token uuid/i);
+ assert.match(leaseSql,/lease_token=gen_random_uuid\(\)/i);
+ assert.match(leaseSql,/claim_next_job_v2/i);
+ assert.match(leaseSql,/renew_job_lease_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(leaseSql,/finish_job_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(leaseSql,/lease_token=null/i);
+ assert.match(queueClient,/claim_next_job_v2/);
+ assert.match(queueClient,/renew_job_lease_v2/);
+ assert.match(queueClient,/assert_job_lease_v2/);
+ assert.match(queueClient,/finish_job_v2/);
+ assert.match(queueClient,/LEASE_TOKEN\.test\(row\.lease_token/);
+});
+
+test("asset publication reservation and finalization lock the exact job attempt and immutable ledger identity",()=>{
+ assert.match(publicationSql,/reserve_asset_publication_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(publicationSql,/job_row\.lease_token is distinct from p_lease_token/i);
+ assert.match(publicationSql,/finalize_asset_publication_v1[\s\S]*?p_lease_token uuid/i);
+ assert.match(publicationSql,/set status = 'published'/i);
+ assert.match(publicationSql,/claim_asset_publication_cleanup_v1/);
+ assert.match(publicationSql,/complete_asset_publication_cleanup_v1/);
+});
+
+test("video submission, output settlement, deferral and quarantine require the current worker fencing token",()=>{
+ for(const fn of [
+  "prepare_video_generation_submission_v2","begin_video_generation_submission_v2","record_video_generation_submission_v2",
+  "mark_video_generation_submission_unknown_v2","finish_video_generation_submission_v2",
+  "finish_video_generation_job_v2","defer_video_generation_job_v2","quarantine_video_generation_job_v2"
+ ]){
+  assert.match(videoFenceSql,new RegExp("create or replace function executive_visuals\\."+fn+"\\([\\s\\S]*?p_lease_token uuid","i"));
+  assert.match(videoFenceSql,new RegExp("grant execute on function executive_visuals\\."+fn+"\\(","i"));
+ }
+ assert.match(videoFenceSql,/assert_current_video_worker_lease_v1[\s\S]*?for update/i);
+ assert.match(videoFenceSql,/revoke all on function executive_visuals\.finish_video_generation_job\(uuid,text,text,jsonb,jsonb,numeric\) from service_role/i);
+ assert.match(videoFenceSql,/clear_job_lease_token_on_transition_v1/);
+ assert.match(videoWorker,/queue\.renew\(job\.id, workerId, leaseSeconds, job\.lease_token\)/);
+ assert.match(videoWorker,/enqueue\.finish\([\s\S]*?leaseToken: job\.lease_token/);
+ assert.match(videoSubmissionClient,/prepare_video_generation_submission_v2/);
+ assert.match(videoSubmissionClient,/begin_video_generation_submission_v2/);
+ assert.match(videoSubmissionClient,/p_lease_token: leaseToken\(token\)/);
+ assert.match(videoEnqueueClient,/finish_video_generation_job_v2/);
+ assert.match(videoEnqueueClient,/p_lease_token: leaseToken/);
+});
+
+const shotFenceSql=await readFile(resolve(root,"supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql"),"utf8");
+const shotWorkerExecutor=await readFile(resolve(root,"server/cloud-video-generation-executor.mjs"),"utf8");
+const shotWorkerRepositories=await readFile(resolve(root,"server/cloud-video-generation-repositories.mjs"),"utf8");
+
+test("approved-shot reservation and task transitions are fenced by the exact shared worker lease",()=>{
+ assert.match(shotFenceSql,/job_type in \('video\.generate','video\.generate\.shot'\)/i);
+ assert.match(shotFenceSql,/reserve_video_generation_task_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(shotFenceSql,/transition_video_generation_task_v2[\s\S]*?p_lease_token uuid/i);
+ assert.match(shotFenceSql,/t\.approval_id::text=linked_job\.input->>'approvalId'/i);
+ assert.match(shotFenceSql,/t\.shot_index=nullif\(linked_job\.input->>'shotIndex',''\)::integer/i);
+ assert.match(shotFenceSql,/revoke all on function executive_visuals\.reserve_video_generation_task\([^;]+ from service_role/i);
+ assert.match(shotFenceSql,/revoke all on function executive_visuals\.transition_video_generation_task\([^;]+ from service_role/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.reserve_video_generation_task_v2\([^;]+ to service_role/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.transition_video_generation_task_v2\([^;]+ to service_role/i);
+ assert.match(shotWorkerRepositories,/reserve_video_generation_task_v2/);
+ assert.match(shotWorkerRepositories,/transition_video_generation_task_v2/);
+ assert.match(shotWorkerRepositories,/p_lease_token:leaseToken/);
+ assert.match(shotWorkerExecutor,/tasks\.reserveSubmission\(\{\.\.\.leaseContext/);
+ assert.match(shotWorkerExecutor,/assertLease:assertCurrentLease,signal,leaseContext/);
+});
+
+test("approved-shot cancellation reconciliation retains its separate bounded task lease",()=>{
+ assert.match(shotFenceSql,/transition_video_generation_task_reconciliation_v1[\s\S]*?cancellation_lease_owner=p_worker_id/i);
+ assert.match(shotFenceSql,/cancellation_lease_expires_at>pg_catalog\.clock_timestamp\(\)/i);
+ assert.match(shotFenceSql,/grant execute on function executive_visuals\.transition_video_generation_task_reconciliation_v1\([^;]+ to service_role/i);
+ assert.match(shotWorkerRepositories,/markCancelledByReconciler/);
 });

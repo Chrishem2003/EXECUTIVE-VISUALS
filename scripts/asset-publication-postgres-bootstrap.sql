@@ -142,3 +142,10 @@ $owner_guard$;
 
 grant all on all tables in schema executive_visuals to service_role;
 grant usage, select on all sequences in schema executive_visuals to service_role;
+
+
+-- Create the separate CI database only when absent. Never destroy an existing database
+-- as a side effect of a schema bootstrap or a local developer verification command.
+SELECT 'CREATE DATABASE cloud_video_test'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname='cloud_video_test')
+\gexec

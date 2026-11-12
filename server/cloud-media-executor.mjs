@@ -151,7 +151,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
   if(typeof c2paPreserver!=="function")throw new Error("Cloud media executor requires a C2PA preservation adapter.");
 
-  return async function execute({ job, signal, onProgress = () => {} }) {
+  return async function execute({ job, signal, onProgress = () => {}, assertLease = async () => true }) {
     if (!job || typeof job.id !== "string" || typeof job.owner_id !== "string" || !SUPPORTED.has(job.job_type)) {
       throw Object.assign(new Error("Cloud media job is missing required lease-scoped fields or uses an unsupported operation."), { code: "CLOUD_MEDIA_OPERATION_UNSUPPORTED" });
     }
@@ -204,14 +204,17 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
+        await assertLease();
+      const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
         const info=await stat(outputPath);
         const digest=await checksum(outputPath);
        const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
           metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2paPreservation },
-          publicationKey: job.id + ":output:v1"
+          publicationKey: job.id + ":output:v1",
+        assertLease, signal,
+        leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
         });
         onProgress(100);
         return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2paPreservation };

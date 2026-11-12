@@ -24,7 +24,8 @@ export function createCloudVideoGenerationWorker({
   claim:(id,leaseSeconds)=>cloudQueue.claim(id,leaseSeconds,VIDEO_JOB_TYPES),
   renew:(...args)=>cloudQueue.renew(...args),
   finish:(...args)=>cloudQueue.finish(...args),
-  recover:(...args)=>cloudQueue.recover(...args)
+  recover:(...args)=>cloudQueue.recover(...args),
+  assertLease:(...args)=>cloudQueue.assertLease(...args)
  });
  async function reconcilePendingCancellations(limit=20){
   if(typeof repos.tasks?.claimCancellationPending!=="function")return {examined:0,confirmed:0,pending:0,errors:[]};
@@ -33,7 +34,7 @@ export function createCloudVideoGenerationWorker({
    try{
     if(!task.providerTaskId){
      if(task.state==="reserved"){
-      await repos.tasks.markCancelled(task.id,{providerStatus:"NOT_SUBMITTED"});
+      await repos.tasks.markCancelledByReconciler(task.id,{providerStatus:"NOT_SUBMITTED"},workerId);
       results.push({taskId:task.id,status:"cancelled"});continue;
      }
      throw Object.assign(new Error("Provider submission outcome is uncertain; cancellation remains pending until the task identifier can be reconciled."),{code:"VIDEO_TASK_CANCELLATION_PENDING"});
@@ -43,7 +44,7 @@ export function createCloudVideoGenerationWorker({
     if(!adapter)throw Object.assign(new Error("No cancellation reconciler is registered for this provider."),{code:"VIDEO_PROVIDER_UNSUPPORTED"});
     const current=await adapter.poll({taskId:task.providerTaskId,model:task.model});
     if(["SUCCEEDED","FAILED","CANCELED","CANCELLED"].includes(current.status)){
-     await repos.tasks.markCancelled(task.id,{providerStatus:current.status});
+     await repos.tasks.markCancelledByReconciler(task.id,{providerStatus:current.status},workerId);
      results.push({taskId:task.id,status:"cancelled",providerStatus:current.status});continue;
     }
     if(!["PENDING","THROTTLED","RUNNING"].includes(current.status))throw Object.assign(new Error("Provider returned an unknown task state during cancellation reconciliation."),{code:"VIDEO_PROVIDER_STATE_INVALID"});
@@ -54,7 +55,7 @@ export function createCloudVideoGenerationWorker({
      results.push({taskId:task.id,status:"pending"});continue;
     }
     if(!["OK","CANCELLED","NOT_FOUND","ALREADY_COMPLETED"].includes(outcome.status))throw Object.assign(new Error("Provider returned an unknown cancellation result."),{code:"VIDEO_TASK_CANCELLATION_PENDING"});
-    await repos.tasks.markCancelled(task.id,{providerStatus:outcome.status});
+    await repos.tasks.markCancelledByReconciler(task.id,{providerStatus:outcome.status},workerId);
     results.push({taskId:task.id,status:"cancelled",providerStatus:outcome.status});
    }catch(error){
     results.push({taskId:task.id,status:"error",code:String(error?.code||"VIDEO_CANCELLATION_RECONCILIATION_FAILED").slice(0,80)});
@@ -65,7 +66,7 @@ export function createCloudVideoGenerationWorker({
  return Object.freeze({
   workerId,
   runCycle(options={}){return runCloudWorkerCycle({queue:videoQueue,workerId,execute:executor,
-   leaseSeconds:options.leaseSeconds??90,heartbeatIntervalMs:options.heartbeatIntervalMs??15000,
+   leaseSeconds:options.leaseSeconds??90,heartbeatIntervalMs:options.heartbeatIntervalMs??15000,signal:options.signal,
    onProgress:options.onProgress??(()=>{}),onEvent:options.onEvent??(()=>{})});},
   recoverExpired(limit=100){return cloudQueue.recover(limit);},
   reconcilePendingCancellations,

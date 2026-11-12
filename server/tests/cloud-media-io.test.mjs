@@ -73,9 +73,13 @@ test("routes a stable publication key to the idempotent asset repository method"
  let call=null;
  const assets={async createSignedUrl(){},async createFromFile(){throw new Error("non-idempotent path must not be used");},async createFromFileIdempotent(args){call=args;return{id:"stable-asset"};}};
  const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
- const result=await io.publish({ownerId:"owner-1",projectId:"project-1",filename:"render.mp4",mediaType:"video/mp4",path,publicationKey:"job-1:output:v1"});
+ const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
+ let leaseChecks=0;
+ const result=await io.publish({ownerId:"owner-1",projectId:"project-1",filename:"render.mp4",mediaType:"video/mp4",path,publicationKey:"job-1:output:v1",leaseContext,assertLease:async()=>{leaseChecks++;return true;}});
  assert.equal(result.id,"stable-asset");
  assert.equal(call.publicationKey,"job-1:output:v1");
  assert.equal(call.filePath,path);
+ assert.deepEqual(call.leaseContext,leaseContext);
+ assert.equal(leaseChecks,1);
  await rm(root,{recursive:true,force:true});
 });
