@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { createSupabaseSessionStore, assertSameOriginMutation } from "../supabase-session-store.mjs";
 
 const key = Buffer.alloc(32, 23).toString("hex");
+const requireHash = value => createHash("sha256").update(value, "utf8").digest("hex");
 function setup(now = () => Date.now()) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys=ON; CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,auth_source TEXT NOT NULL DEFAULT 'supabase');");
@@ -52,4 +54,18 @@ test("cookie-authenticated mutations require an exact same-origin browser reques
   assert.equal(assertSameOriginMutation({ origin: "https://studio.example.com", expectedOrigin: "https://studio.example.com", secFetchSite: "same-origin" }), true);
   assert.throws(() => assertSameOriginMutation({ origin: "https://evil.example", expectedOrigin: "https://studio.example.com", secFetchSite: "cross-site" }), error => error.code === "CSRF_ORIGIN_DENIED" && error.status === 403);
   assert.throws(() => assertSameOriginMutation({ origin: "", expectedOrigin: "https://studio.example.com" }), error => error.code === "CSRF_ORIGIN_REQUIRED");
+});
+test("authenticated encryption binds provider tokens to the session hash and user identity", () => {
+  const { db, store } = setup();
+  try {
+    db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("user-2", "two@example.test");
+    const first = store.create({ userId: "user-1", accessToken: "first-access", refreshToken: "first-refresh" });
+    const second = store.create({ userId: "user-2", accessToken: "second-access", refreshToken: "second-refresh" });
+    const firstRow = db.prepare("SELECT * FROM supabase_sessions WHERE token_hash=?").get(requireHash(first.token));
+    const secondRow = db.prepare("SELECT * FROM supabase_sessions WHERE token_hash=?").get(requireHash(second.token));
+    db.prepare("UPDATE supabase_sessions SET access_token_ciphertext=?,refresh_token_ciphertext=? WHERE token_hash=?")
+      .run(secondRow.access_token_ciphertext, secondRow.refresh_token_ciphertext, firstRow.token_hash);
+    assert.equal(store.get(first.token), null);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM supabase_sessions WHERE token_hash=?").get(firstRow.token_hash).count, 0);
+  } finally { db.close(); }
 });
