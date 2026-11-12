@@ -75,10 +75,12 @@ function sourceRate(asset:Asset,kind:string){
 }
 function timelineMediaTools(track:TimelineTrack,clip:TimelineTrack["clips"][number],sourceIn:number,proxyAssetId:string,proxyName:string){
  if(track.kind!=="video")return "";
- if(state.mode==="cloud")return '<div class="timeline-media-tools"><div class="eyebrow">PROXY & FRAME PREVIEW</div><p class="muted">Playback prefers an accessible source-linked cloud proxy when attached. If proxy signing fails, playback falls back to the original. Cloud proxy generation and source-frame extraction remain disabled until cloud media-processing jobs are implemented.</p></div>';
  const asset=state.assets.find(item=>item.id===clip.assetId);
  if(!asset||!asset.mediaType.startsWith("video/"))return "";
- return '<div class="timeline-media-tools"><div class="eyebrow">PROXY & FRAME PREVIEW</div><p class="muted">Generate a compact editing copy for playback. Final master rendering continues to use the original source asset.</p><label>Source frame to extract</label><input id="tl-preview-source-frame" type="number" min="0" value="'+sourceIn+'"><p class="muted">'+(proxyAssetId?'Proxy linked · '+esc(proxyName||proxyAssetId.slice(0,8)):'No proxy attached')+'</p><div class="timeline-media-actions"><button type="button" class="secondary" data-tl-action="generate-proxy" data-clip="'+esc(clip.id)+'">'+(proxyAssetId?'Regenerate 960p proxy':'Generate 960p proxy')+'</button><button type="button" class="secondary" data-tl-action="generate-frame-preview" data-clip="'+esc(clip.id)+'">Extract source frame</button>'+(proxyAssetId?'<button type="button" class="secondary" data-tl-action="preview-proxy" data-clip="'+esc(clip.id)+'">Load proxy preview</button>':'')+'</div>'+(state.proxyPreviewUrl&&state.mediaClipId===clip.id?'<video class="timeline-proxy-preview" controls preload="metadata" src="'+esc(state.proxyPreviewUrl)+'"></video>':'')+(state.previewFrameUrl&&state.mediaClipId===clip.id?'<img class="timeline-frame-preview" alt="Extracted source frame" src="'+esc(state.previewFrameUrl)+'">':'')+'</div>';
+ const description=state.mode==="cloud"
+  ?"Queue a private cloud media job for a source-linked editing proxy or frame thumbnail. Signed private asset URLs are used for preview; final master renders continue to use the original source."
+  :"Generate a compact editing copy for playback. Final master rendering continues to use the original source asset.";
+ return '<div class="timeline-media-tools"><div class="eyebrow">PROXY & FRAME PREVIEW</div><p class="muted">'+description+'</p><label>Source frame to extract</label><input id="tl-preview-source-frame" type="number" min="0" value="'+sourceIn+'"><p class="muted">'+(proxyAssetId?'Proxy linked · '+esc(proxyName||proxyAssetId.slice(0,8)):'No proxy attached')+'</p><div class="timeline-media-actions"><button type="button" class="secondary" data-tl-action="generate-proxy" data-clip="'+esc(clip.id)+'">'+(proxyAssetId?'Regenerate 960p proxy':'Generate 960p proxy')+'</button><button type="button" class="secondary" data-tl-action="generate-frame-preview" data-clip="'+esc(clip.id)+'">Extract source frame</button>'+(proxyAssetId?'<button type="button" class="secondary" data-tl-action="preview-proxy" data-clip="'+esc(clip.id)+'">Load proxy preview</button>':'')+'</div>'+(state.proxyPreviewUrl&&state.mediaClipId===clip.id?'<video class="timeline-proxy-preview" controls preload="metadata" src="'+esc(state.proxyPreviewUrl)+'"></video>':'')+(state.previewFrameUrl&&state.mediaClipId===clip.id?'<img class="timeline-frame-preview" alt="Extracted source frame" src="'+esc(state.previewFrameUrl)+'">':'')+'</div>';
 }
 const assetOptions=()=>state.assets.map(a=>{const probe=a.metadata?.probe as {format?:{duration?:string}}|undefined;const duration=Number(probe?.format?.duration);return '<option value="'+esc(a.id)+'">'+esc(a.name)+' · '+esc(a.mediaType)+(Number.isFinite(duration)?' · '+duration.toFixed(1)+'s':' · inspect for duration')+'</option>';}).join("");
 function timelineCanvas(){
@@ -520,7 +522,7 @@ async function runAction(action:HTMLElement){
      if(state.mode==="cloud"){
       const proxyAsset=state.assets.find(item=>item.id===output.id);
       if(!proxyAsset)throw new Error("The completed cloud proxy is not visible in the private asset library yet.");
-      await previewUrlForAsset(proxyAsset);
+      state.proxyPreviewUrl=await previewUrlForAsset(proxyAsset);
       state.message="Private cloud proxy generated, linked to this clip and verified for preview. Master renders still use the original source.";
      }else{
       const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(output.id)+"/file");
@@ -551,7 +553,7 @@ async function runAction(action:HTMLElement){
   const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===action.dataset.clip);
   const proxyId=typeof clip?.metadata?.proxyAssetId==="string"?clip.metadata.proxyAssetId:"";
   if(!proxyId){state.message="Generate a proxy before previewing this clip.";paint();return;}
-  try{if(state.mode==="cloud"){const asset=state.assets.find(item=>item.id===proxyId);if(!asset)throw new Error("The private proxy asset is not available in this project.");await previewUrlForAsset(asset);}else{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);}state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded."; }
+  try{if(state.mode==="cloud"){const asset=state.assets.find(item=>item.id===proxyId);if(!asset)throw new Error("The private proxy asset is not available in this project.");state.proxyPreviewUrl=await previewUrlForAsset(asset);}else{const blob=await apiRequestBlob("/api/assets/"+encodeURIComponent(proxyId)+"/file");if(state.proxyPreviewUrl)URL.revokeObjectURL(state.proxyPreviewUrl);state.proxyPreviewUrl=URL.createObjectURL(blob);}state.mediaClipId=clip!.id;state.message="Proxy preview loaded. Original media remains the master-render source.";}catch(error){state.message=error instanceof Error?error.message:"Proxy preview could not be loaded."; }
   paint();return;
  }
  if(type==="generate-proxy"||type==="generate-frame-preview"){
