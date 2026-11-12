@@ -22,13 +22,34 @@ export function createCloudProjectRepository({url=process.env.SUPABASE_URL,servi
  async function allowed(ownerId,projectId,action){if(await authorize({ownerId,projectId,action})!==true){const e=new Error("Cloud project access denied.");e.code="CLOUD_PROJECT_ACCESS_DENIED";throw e;}}
  async function get({ownerId,projectId}){validId(ownerId,"Owner ID");validId(projectId,"Project ID");const rows=await request("projects?select=id,owner_id,name,description,settings,revision,created_at,updated_at,archived_at&id=eq."+encodeURIComponent(projectId)+"&archived_at=is.null&limit=1");const row=Array.isArray(rows)?rows[0]:null;if(!row)return null;await allowed(ownerId,projectId,"read");return map(row);}
  return Object.freeze({
-  async create({ownerId,name,description="",settings={}}={}){
-   validId(ownerId,"Owner ID");if(typeof name!=="string"||!name.trim()||name.trim().length>160)throw new Error("Project name must contain 1–160 characters.");
+  async create({ownerId,projectId=null,name,description="",settings={}}={}){
+   validId(ownerId,"Owner ID");if(projectId!==null)validId(projectId,"Project ID");
+   if(typeof name!=="string"||!name.trim()||name.trim().length>160)throw new Error("Project name must contain 1–160 characters.");
    if(typeof description!=="string"||description.length>4000)throw new Error("Project description is too long.");
    if(!settings||typeof settings!=="object"||Array.isArray(settings))throw new Error("Project settings must be an object.");
-   const rows=await request("projects?select=id,owner_id,name,description,settings,revision,created_at,updated_at,archived_at",{method:"POST",body:{id:randomUUID(),owner_id:ownerId,name:name.trim(),description,settings}});
-   if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud project creation returned an invalid record.");
-   return map(rows[0]);
+   const select="projects?select=id,owner_id,name,description,settings,revision,created_at,updated_at,archived_at";
+   if(projectId){
+    const existing=await request(select+"&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+    const row=Array.isArray(existing)?existing[0]:null;
+    if(row){
+     if(row.owner_id!==ownerId)throw Object.assign(new Error("Cloud project ID is not available to this account."),{code:"CLOUD_PROJECT_ACCESS_DENIED"});
+     if(row.archived_at)throw Object.assign(new Error("An archived cloud project cannot be linked to an active local project."),{code:"CLOUD_PROJECT_ARCHIVED"});
+     await allowed(ownerId,projectId,"read");
+     return map(row);
+    }
+   }
+   const id=projectId||randomUUID();
+   try{
+    const rows=await request(select,{method:"POST",body:{id,owner_id:ownerId,name:name.trim(),description,settings}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId||rows[0].id!==id)throw new Error("Cloud project creation returned an invalid record.");
+    return map(rows[0]);
+   }catch(error){
+    if(!projectId)throw error;
+    const raced=await request(select+"&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+    const row=Array.isArray(raced)?raced[0]:null;
+    if(row&&row.owner_id===ownerId&&!row.archived_at){await allowed(ownerId,projectId,"read");return map(row);}
+    throw error;
+   }
   },
   async list({ownerId,limit=50,offset=0}={}){
    validId(ownerId,"Owner ID");limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));

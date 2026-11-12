@@ -114,9 +114,100 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-integration.sql
+      - name: Apply per-attempt worker lease fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
+      - name: Verify stale workers cannot renew or complete reclaimed jobs
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/job-lease-fencing-postgres-integration.sql
+      - name: Apply atomic asset publication lease fencing and derivative lineage
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql
+      - name: Apply atomic asset publication and cleanup claims
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
+      - name: Apply immutable publication cleanup path constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
+      - name: Verify lease-fenced atomic asset publication and stale attempt rejection
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
       - name: Prepare timeline revision history fixture
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-revision-history-postgres-fixture.sql
       - name: Apply timeline revision history migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261120100000_timeline_revision_history.sql
       - name: Verify timeline revision capture, immutability and RLS
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-revision-history-postgres-integration.sql
+
+  cloud-video-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: executive_visuals_video_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_video_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_video_test
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure PostgreSQL client from the existing service container
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_id="$(docker ps --filter 'ancestor=postgres:16' --format '{{.ID}}' | head -n 1)"
+          if [[ -z "$container_id" ]]; then
+            echo "PostgreSQL 16 service container was not found." >&2
+            docker ps -a
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/ev-postgres-bin"
+          cat > "$RUNNER_TEMP/ev-postgres-bin/psql" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          : "${POSTGRES_SERVICE_CONTAINER_ID:?PostgreSQL service container ID is missing}"
+          args=()
+          while (($#)); do
+            if [[ "$1" == "-f" ]]; then
+              shift
+              file="${1:?SQL file path is missing after -f}"
+              remote_path="/tmp/ev-ci-${file//\//_}"
+              docker cp "$GITHUB_WORKSPACE/$file" "$POSTGRES_SERVICE_CONTAINER_ID:$remote_path" >/dev/null
+              args+=("-f" "$remote_path")
+              shift
+            else
+              args+=("$1")
+              shift
+            fi
+          done
+          exec docker exec -i "$POSTGRES_SERVICE_CONTAINER_ID" psql "${args[@]}"
+          EOF
+          chmod +x "$RUNNER_TEMP/ev-postgres-bin/psql"
+          echo "$RUNNER_TEMP/ev-postgres-bin" >> "$GITHUB_PATH"
+          echo "POSTGRES_SERVICE_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
+      - name: Bootstrap disposable cloud-video PostgreSQL schema
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Verify cloud-video submission, budget and recovery contracts
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply subscription AI-generation entitlement gate
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
+      - name: Apply frame-accurate review and annotation foundation
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106130000_frame_accurate_review_foundation.sql
+      - name: Bind review audit events to the verified API actor
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106150000_review_api_actor.sql
+      - name: Verify frame-accurate review persistence and event history
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-reviews-postgres-integration.sql
+      - name: Apply database-issued worker lease fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
+      - name: Apply cloud-video submission and terminal-write fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111250000_cloud_video_worker_lease_fencing.sql
+      - name: Apply durable approved-shot generation task ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_durable_video_generation_tasks_batch_71.sql
+      - name: Apply task cancellation reconciliation leases
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112000000_video_generation_task_cancellation_batch_105.sql
+      - name: Apply approved-shot task ledger worker fencing
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql
+      - name: Verify stale video workers cannot submit, record, defer or finalize
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-worker-lease-fencing-postgres-integration.sql

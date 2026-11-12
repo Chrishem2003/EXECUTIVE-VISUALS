@@ -6,7 +6,12 @@ const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
 const cleanupSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql"), "utf8");
 const timelineRevisionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261120100000_timeline_revision_history.sql"), "utf8");
+const publicationBootstrap = await readFile(resolve(process.cwd(), "scripts/asset-publication-postgres-bootstrap.sql"), "utf8");
 const issues = [];
+if (/\\bdrop\\s+database\\b/i.test(publicationBootstrap)) issues.push("Disposable database bootstrap must never drop an existing database.");
+if (!publicationBootstrap.includes("SELECT 'CREATE DATABASE cloud_video_test'") || !publicationBootstrap.includes("FROM pg_database WHERE datname='cloud_video_test'") || !publicationBootstrap.includes("\\gexec")) {
+  issues.push("Cloud video test database must be created conditionally without destructive reset.");
+}
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {

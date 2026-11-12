@@ -26,7 +26,8 @@ export function createCloudTimelineWorker({
     claim:(id,leaseSeconds)=>cloudQueue.claim(id,leaseSeconds,TIMELINE_JOB_TYPES),
     renew:(...args)=>cloudQueue.renew(...args),
     finish:(...args)=>cloudQueue.finish(...args),
-    recover:(...args)=>cloudQueue.recover(...args)
+    recover:(...args)=>cloudQueue.recover(...args),
+    assertLease:(...args)=>cloudQueue.assertLease(...args)
   });
   return Object.freeze({
     workerId,
@@ -34,6 +35,7 @@ export function createCloudTimelineWorker({
       queue:timelineQueue,workerId,execute,
       leaseSeconds:options.leaseSeconds??90,
       heartbeatIntervalMs:options.heartbeatIntervalMs??15000,
+      signal:options.signal,
       onProgress:options.onProgress??(()=>{}),
       onEvent:options.onEvent??(()=>{})
     });},

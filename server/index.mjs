@@ -13,6 +13,7 @@ import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
+import { resumeCompletedCloudVideoWorkflows } from "./workflow-cloud-video-resumer.mjs";
 import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
@@ -107,7 +108,7 @@ const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCL
 subscriptionLifecycleTimer?.unref();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),env:process.env}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
 if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error("Cloud video generation dispatch requires CLOUD_TIMELINE_API_ENABLED=true for authenticated job progress and asset access.");
@@ -313,7 +314,7 @@ async function processNextJob() {
   try {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
-      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,cloudTimelineApi,
       onResourceMeasurement:value=>{if(value&&typeof value==="object")resourceMeasurements.push(value);},
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
@@ -327,7 +328,17 @@ async function processNextJob() {
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
-    if(completeJob(db,job.id,WORKER_ID,result,now())){
+    if(current.job_type==="workflow.execute"&&result?.status==="blocked"){
+      const runId=String(parseJson(current.input_json,{}).runId||"");
+      const workflowError=runId?db.prepare("SELECT error_json FROM workflow_runs WHERE id=?").get(runId):null;
+      const details=parseJson(workflowError?.error_json,{code:"WORKFLOW_BLOCKED",message:"Workflow is waiting for an external job."});
+      const changed=db.prepare("UPDATE jobs SET status='blocked',output_json=?,error_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
+        .run(json(result),json(details),now(),now(),job.id,WORKER_ID,now());
+      if(changed.changes===1){
+        addJobEvent(db,job.id,job.owner_id,"job.blocked",details);
+        audit(db,job.owner_id,"job.blocked","job",job.id,{jobType:job.job_type,runId},job.project_id);
+      }
+    }else if(completeJob(db,job.id,WORKER_ID,result,now())){
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
@@ -354,6 +365,15 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let cloudWorkflowResumeBusy=false;
+const cloudWorkflowResumeTimer=cloudTimelineApi&&process.env.DISABLE_WORKER!=="true"?setInterval(async()=>{
+ if(cloudWorkflowResumeBusy)return;
+ cloudWorkflowResumeBusy=true;
+ try{await resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,onError:error=>process.stderr.write("Cloud workflow resume check failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n")});}
+ catch(error){process.stderr.write("Cloud workflow resume cycle failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n");}
+ finally{cloudWorkflowResumeBusy=false;}
+},5000):null;
+cloudWorkflowResumeTimer?.unref();
 
 export function createAppServer() {
   return createServer(async(req,res)=>{
@@ -514,8 +534,8 @@ export function createAppServer() {
         });
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows")||path.startsWith("/api/cloud/reviews"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/reviews")&&(req.method==="POST"||req.method==="PATCH"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
@@ -960,6 +980,50 @@ export function createAppServer() {
           const waiting=db.prepare("SELECT * FROM workflow_node_runs WHERE run_id=? AND status='awaiting_approval' ORDER BY rowid LIMIT 1").get(run.id);
           if(!waiting){fail(res,409,"APPROVAL_NODE_NOT_FOUND","No approval node is waiting.");return;}
           const graph=parseJson(run.snapshot_json),node=graph.nodes.find(item=>item.id===waiting.node_id),nodeInput=parseJson(waiting.input_json,{});
+          const waitingOutput=parseJson(waiting.output_json,{});
+          if(node?.kind==="video.generate"){
+            if(access?.access_role!=="owner"||!run.project_id||!cloudTimelineApi){fail(res,403,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED","Only the project owner with an authenticated cloud workspace can approve this paid generation quote.");return;}
+            const quote=waitingOutput.videoQuote;
+            if(!quote||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(quote.quoteId||""))||!/^[A-Za-z0-9._:-]{1,160}$/.test(String(quote.requestId||""))||!/^[a-f0-9]{64}$/.test(String(quote.requestHash||""))||
+               !Number.isFinite(Number(quote.estimatedAmount))||Number(quote.estimatedAmount)<=0||!quote.cloudNode||!quote.cloudValues){
+              fail(res,409,"VIDEO_WORKFLOW_QUOTE_NOT_PENDING","This workflow has no valid pending cloud video quote. Refresh the workflow and request a new quote.");return;
+            }
+            const approvalBody=await readJson(req,32*1024);
+            if(approvalBody.confirmed!==true){fail(res,403,"VIDEO_WORKFLOW_APPROVAL_CONFIRMATION_REQUIRED","Explicit confirmation of the exact cloud quote is required.");return;}
+            const approvedMaxAmount=Number(approvalBody.approvedMaxAmount);
+            if(!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<Number(quote.estimatedAmount)||approvedMaxAmount>1000000||
+               Math.abs(approvedMaxAmount*1000000-Math.round(approvedMaxAmount*1000000))>0.0001){
+              fail(res,400,"VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID","Approved USD ceiling must be at least the quote and have at most six decimal places.");return;
+            }
+            const approval=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:user.id,body:{
+              confirmed:true,projectId:run.project_id,quoteId:quote.quoteId,requestId:quote.requestId,
+              node:quote.cloudNode,values:quote.cloudValues,approvedMaxAmount,
+              approvalNote:String(approvalBody.approvalNote||"Approved by project owner in Video Studio").slice(0,1000)
+            }});
+            if(!approval||![200,202].includes(approval.status)){send(res,approval?.status||503,{error:approval?.body?.error||{code:"VIDEO_WORKFLOW_APPROVAL_FAILED",message:"The cloud quote could not be approved. No workflow job was queued."}},cors);return;}
+            const cloudJobId=String(approval.body?.job?.id||"");
+            if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cloudJobId)){fail(res,502,"VIDEO_WORKFLOW_JOB_RECEIPT_INVALID","Cloud approval did not return a valid durable job receipt.");return;}
+            const receipt={cloudJobId,quoteId:quote.quoteId,requestId:quote.requestId,requestHash:quote.requestHash,
+              routedModel:quote.routedModel,approvedMaxAmount,status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
+            const enqueueApprovedRun=db.transaction(()=>{
+              const claimed=db.prepare("UPDATE workflow_node_runs SET status='blocked',output_json=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='awaiting_approval'").run(json(receipt),waiting.id);
+              if(claimed.changes!==1)return null;
+              const localJobId=randomUUID();
+              db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL,completed_at=NULL WHERE id=?").run(localJobId,now(),run.id);
+              db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(localJobId,run.owner_id,run.project_id,json({runId:run.id}));
+              addJobEvent(db,localJobId,run.owner_id,"job.queued",{jobType:"workflow.execute",runId:run.id,approvedVideoQuoteId:quote.quoteId,cloudJobId});
+              audit(db,user.id,"workflow.video_generation_approved","workflow_run",run.id,{nodeId:waiting.node_id,quoteId:quote.quoteId,cloudJobId,approvedMaxAmount},run.project_id);
+              return localJobId;
+            });
+            const jobId=enqueueApprovedRun();
+            if(!jobId){
+              const current=db.prepare("SELECT status,output_json FROM workflow_node_runs WHERE id=?").get(waiting.id);
+              const currentReceipt=parseJson(current?.output_json,{});
+              if(currentReceipt.cloudJobId===cloudJobId){send(res,200,{runId:run.id,status:"queued",cloudJobId,idempotentReplay:true},cors);return;}
+              fail(res,409,"VIDEO_WORKFLOW_APPROVAL_RACE","The workflow approval changed while the cloud job was being queued. Refresh the run before retrying.");return;
+            }
+            send(res,202,{runId:run.id,jobId,status:"queued",cloudJobId},cors);return;
+          }
           const passthrough=nodeInput.media??nodeInput.asset??nodeInput.input??null;
           const output=Object.fromEntries((node?.outputs||[]).map(port=>[port.id,nodeInput[port.id]??passthrough]));
           output.approved=true;output.approvedBy=user.id;output.approvedAt=now();

@@ -38,7 +38,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
   if(!Number.isInteger(maxAssets)||maxAssets<1||maxAssets>5000)throw new Error("Cloud timeline asset limit is invalid.");
   if(!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1||maxOutputBytes>5*1024*1024*1024)throw new Error("Cloud timeline output limit is invalid.");
 
-  return async function execute({job,signal,onProgress=()=>{}}={}){
+  return async function execute({job,signal,onProgress=()=>{},assertLease=async()=>true}={}){
     if(!job||typeof job.id!=="string"||typeof job.owner_id!=="string"||job.job_type!=="timeline.render")throw Object.assign(new Error("Cloud timeline worker received an unsupported job."),{code:"CLOUD_TIMELINE_JOB_UNSUPPORTED"});
     if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
     const input=parseInput(job.input??job.input_json),timelineId=String(input.timelineId||"");
@@ -65,6 +65,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const initialInfo=await stat(output.path);
       if(!initialInfo.isFile()||initialInfo.size<1)throw Object.assign(new Error("Timeline renderer produced an empty output."),{code:"CLOUD_TIMELINE_OUTPUT_EMPTY"});
       if(initialInfo.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
+      await assertLease();
       const sourceAssets=[...materialized.values()].map(item=>({path:item.path,mediaType:item.asset.mediaType||item.asset.media_type,sha256:item.asset.sha256})).filter(item=>/^(image|video|audio)\//.test(String(item.mediaType||"")));
       const c2paPreservation=sourceAssets.length?await c2paPreserver({sources:sourceAssets,outputPath:output.path,outputMimeType:output.mediaType,signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal}):{status:"not_checked",preserved:false,reason:"NO_SUPPORTED_MEDIA_SOURCES"};
       const info=await stat(output.path);
@@ -76,7 +77,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,publicationKey:job.id+":output:v1",metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,c2paPreservation,render:output.render||{}}
+        path:output.path,publicationKey:job.id+":output:v1",signal,assertLease,leaseContext:{jobId:job.id,workerId:job.lease_owner,leaseToken:job.lease_token},metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,c2paPreservation,render:output.render||{}}
       });
       onProgress(100);
       return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,c2paPreservation,render:output.render||{}};
