@@ -190,7 +190,7 @@ async function authenticate(req,res) {
   if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions are not configured. Set SUPABASE_SESSION_ENCRYPTION_KEY."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
   const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
   const browserToken=cookieValue(req,"ev_supabase_session");
-  if(!browserToken)return null;
+  if(!browserToken){if(cookieValue(req,"ev_supabase_access")||cookieValue(req,"ev_supabase_refresh"))clearSupabaseSessionCookies(res);return null;}
   let stored=supabaseSessionStore.get(browserToken);
   if(!stored){clearSupabaseSessionCookies(res);return null;}
   let user=await getSupabaseUser({...config,accessToken:stored.accessToken});
