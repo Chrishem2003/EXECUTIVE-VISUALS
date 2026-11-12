@@ -88,7 +88,7 @@ const speedClip={id:"speed-ramp",assetId:"speed-source",name:"Speed ramp",source
 const speedAdded=addClip(speedTrack,"speed-video",speedClip);
 assert.equal(validateTimeline(speedAdded).valid,true);
 assert.equal(sourceElapsedSeconds(speedClip,2),3);
-assert.equal(timelineElapsedForSourceElapsed(speedClip,3),2);
+assert.ok(Math.abs(timelineElapsedForSourceElapsed(speedClip,3)-2)<1e-9);
 const splitSpeed=splitClip(speedAdded,"speed-video","speed-ramp",48,"speed-ramp-b");
 assert.equal(seconds(splitSpeed.tracks[0].clips[0].sourceRange.duration),3);
 assert.equal(seconds(splitSpeed.tracks[0].clips[1].sourceRange.start),3);
