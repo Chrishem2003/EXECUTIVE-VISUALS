@@ -58,6 +58,24 @@ export function addTrack(timeline:EditorialTimeline,track:TimelineTrack):Editori
   if(timeline.tracks.some(item=>item.id===track.id))throw new Error("Track ID already exists.");
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:[...timeline.tracks,{...track,clips:[...track.clips]}]};
 }
+export function createGeneratedVideoClip(input:{id:string;assetId:string;name:string;durationSeconds:number;frameRate:{numerator:number;denominator:number};startFrame?:number;metadata?:Record<string,unknown>}):TimelineClip{
+  const {id,assetId,name,durationSeconds,frameRate}=input;
+  if(!id.trim()||!assetId.trim()||!name.trim())throw new Error("Generated video clip requires an ID, asset and name.");
+  if(!Number.isFinite(durationSeconds)||durationSeconds<=0||durationSeconds>3600)throw new Error("Generated video duration must be between 0 and 3600 seconds.");
+  if(!Number.isFinite(frameRate.numerator)||!Number.isFinite(frameRate.denominator)||frameRate.numerator<=0||frameRate.denominator<=0)throw new Error("Generated video clip requires a valid timeline frame rate.");
+  const fps=frameRate.numerator/frameRate.denominator;
+  const durationFrames=Math.max(1,Math.round(durationSeconds*fps));
+  const exactDuration=durationFrames/fps;
+  const startFrame=Math.max(0,Math.floor(Number(input.startFrame)||0));
+  return {
+    id,assetId,name,
+    sourceRange:{start:rational(0,fps),duration:rational(durationFrames,fps)},
+    timelineStart:rational(startFrame,fps),
+    duration:rational(durationFrames,fps),
+    enabled:true,
+    metadata:{generated:true,source:"workflow",...input.metadata}
+  };
+}
 export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineClip):EditorialTimeline{
   const track=timeline.tracks.find(item=>item.id===trackId);
   if(!track)throw new Error("Track not found.");
