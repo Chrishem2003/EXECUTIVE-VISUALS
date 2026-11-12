@@ -63,6 +63,23 @@ test("cloud render submission requires project editor authorization",async()=>{c
 test("cloud render idempotency replays only the exact same timeline revision",async()=>{const existing=[{id:"623e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}}];const f=setup({existing});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,idempotencyKey:"render-1"});assert.equal(result.status,200);assert.equal(result.body.idempotentReplay,true);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].endsWith("/jobs")),false);});
 test("cloud timeline API rejects unverified or malformed owner IDs and ignores unrelated routes",async()=>{const f=setup();assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:"not-uuid"})).status,401);assert.equal(await f.api.handle({method:"GET",path:"/api/not-cloud",ownerId:owner}),null);});
 
+test("cloud render history lists only timeline renders for an authorized project",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"timeline.render",status:"succeeded",progress:100,input:{timelineId,timelineRevision:2},output:{outputAsset:{id:"723e4567-e89b-42d3-a456-426614174000"}},created_at:"2026-11-12T10:00:00Z"};
+ const f=setup({existing:[job]});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"10"}});
+ assert.equal(result.status,200);assert.equal(result.body.jobs[0].id,job.id);
+ const query=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
+ assert.ok(query[1].includes("project_id=eq."+project));
+ assert.ok(query[1].includes("job_type=eq.timeline.render"));
+ assert.ok(query[1].includes("limit=10"));
+});
+test("cloud render history rejects missing and unauthorized project scopes without querying jobs",async()=>{
+ const f=setup({canWrite:false});
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{}})).status,400);
+ const denied=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:editor,query:{projectId:project}});
+ assert.equal(denied.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")),false);
+});
 test("cloud render job inspection allows project reviewers and returns durable status",async()=>{
  const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"timeline.render",status:"processing",progress:45,input:{timelineId,timelineRevision:2},output:null,error:null};
  const f=setup({existing:[job]});
