@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
 **Updated:** 12 November 2026  
-**Branch:** `main` (studio polish, upscaling integrity, secure Supabase sessions, batch enhancement, private cloud Asset Library integration, cloud media-job queue integration, audio/timeline improvements, signed-MP4 provenance tests and patched Node runtime merged; latest Render main deployment is live at `b92390778e9e65cc992808fc1e2e93e297d3deda`)  
+**Branch:** `main` (studio polish, upscaling integrity, secure Supabase sessions, batch enhancement, private cloud Asset Library integration, cloud media-job queue integration, audio/timeline improvements, signed-MP4 provenance tests and patched Node runtime merged; latest Render main deployment is live at `f37a5a0e89bd90b729ccac6ce133cf78deab3eab` (includes the merged test-only waveform symlink regression))  
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
 ## Mainline delta — 12 November 2026
@@ -13,8 +13,8 @@ The following implementation slices have since merged into main and supersede ol
 - **Video enhancement:** PR #464 adds gated framewise video AI upscaling to the Asset Library. Actual inference remains dependent on configured local model weights and verified quality evidence.
 - **Audio and timeline:** PRs #446–#453 add audio gain/pan automation, live mixer and waveform preview, color preview alignment, clip speed controls/rendering, and cloud render history/output handoff.
 - **Content Credentials:** PR #467 adds real signed-MP4 verification/tamper tests; PR #468 adds explicit trusted-versus-valid-untrusted signer policy tests and is merged into main.
-- **Waveform cache path security:** PR #470 adds a regression test proving a symlinked media file cannot escape the managed media root; merged into main. Follow-up PR #471 adds the directory-symlink variant and is awaiting exact-head CI before merge.
-- **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The latest live application-code commit is `b92390778e9e65cc992808fc1e2e93e297d3deda`, which Render reports as live; the subsequent status-documentation commits were marked `[skip render]` and were not deployed.
+- **Waveform cache path security:** PR #470 adds the file-symlink escape regression and PR #472 adds the directory-symlink escape regression; both are merged into main. PR #471 was superseded by the fresh-mainline PR #472 and closed unmerged. PR #473 is a focused renderer fix for audio automation keyframes beyond the picture-sequence tail; it is awaiting exact-head CI.
+- **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The latest Render deployment is commit `f37a5a0e89bd90b729ccac6ce133cf78deab3eab`, which contains test-only regression coverage from PR #472; no production runtime behavior changed in that commit. Subsequent status-documentation commits were marked `[skip render]` and were not deployed.
 - **Staging persistence:** the isolated Cloudflare D1 metadata database has the seven ev_* tables and one migration recorded; the staging Worker has a D1 binding. The production Render service remains on local SQLite/disk, and its D1 same-origin proxy is deliberately not enabled. R2 is not activated.
 
 The broad Google Drive/billing/provider integration candidate remains draft PR #206 and is not mergeable against current main. Customer-managed subscription cancellation remains draft PR #303 on that integration branch. Do not merge either without a focused mainline reconciliation and fresh exact-head CI.
