@@ -238,6 +238,8 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(result.provider,"runway");
   assert.equal(result.cloudJobId,cloudJobId);
   assert.equal(result.assetIds.length,1);
+  assert.deepEqual(result.cloudAssetIds,[cloudAssetId]);
+  assert.equal(result.durationSeconds,5);
   assert.equal(result.costEvidenceReference,"cost:verified");
   assert.equal(result.actualAmount,0.72);
   assert.equal(result.currency,"USD");

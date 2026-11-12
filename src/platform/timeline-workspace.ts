@@ -10,11 +10,11 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
-type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudReview={id:string;projectId:string;assetId:string|null;timelineId:string|null;timelineRevision:number|null;frameNumber:number|null;durationFrames:number|null;timecodeSeconds:number|null;body:string;decision:"comment"|"approve"|"request_changes";status:"open"|"resolved"|"dismissed";visibility:"project"|"internal";authorId:string;createdAt:string;updatedAt:string};
@@ -499,6 +499,57 @@ export async function createCloudTimelineFromDocument(projectId:string,timeline:
  state.message="Created a new cloud timeline from the reviewed storyboard. Scene and shot markers are ready for editing; no media clips or provider jobs were created.";
  await loadVariantComparison();paint();
 }
+
+export async function addWorkflowVideoToCloudTimeline(input:{projectId:string;cloudAssetId:string;durationSeconds:number;workflowRunId?:string;provider?:string;model?:string}){
+ const projectId=String(input.projectId||"").trim(),cloudAssetId=String(input.cloudAssetId||"").trim();
+ if(!projectId||!cloudAssetId)throw new Error("A saved cloud project and generated cloud asset are required.");
+ const durationSeconds=Number(input.durationSeconds);
+ if(!Number.isFinite(durationSeconds)||durationSeconds<=0||durationSeconds>3600)throw new Error("The generated video duration is invalid.");
+ releaseTimelinePreview();
+ state.mode="cloud";state.cloudProjectId=projectId;
+ await refresh();
+ if(!state.cloudProjects.some(project=>project.id===projectId))throw new Error("The workflow project is not available in the cloud timeline workspace.");
+ const asset=state.assets.find(item=>item.id===cloudAssetId);
+ if(!asset||asset.projectId!==projectId||!asset.mediaType.startsWith("video/"))throw new Error("The generated video is not present in this project's private cloud asset library.");
+ let timeline=state.timeline;
+ if(!timeline){
+  let created=createTimeline(projectId,crypto.randomUUID(),"AI generated sequence",{numerator:24,denominator:1});
+  created=addTrack(created,{id:crypto.randomUUID(),name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
+  created=addTrack(created,{id:crypto.randomUUID(),name:"Audio 1",kind:"audio",enabled:true,locked:false,clips:[]});
+  const saved=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId,name:created.name,timeline:created,otio:toOpenTimelineIo(created)})});
+  timeline=saved.timeline.timeline;state.timeline=timeline;state.serverRevision=saved.timeline.revision;
+  state.cloudTimelines=[saved.timeline,...state.cloudTimelines.filter(item=>item.id!==saved.timeline.id)];
+ }
+ if(timeline.projectId!==projectId)throw new Error("The open timeline belongs to a different cloud project.");
+ const existing=timeline.tracks.flatMap(track=>track.clips.map(clip=>({trackId:track.id,clip}))).find(item=>item.clip.assetId===cloudAssetId);
+ if(existing){state.selectedTrack=existing.trackId;state.selectedClipId=existing.clip.id;state.message="This generated video is already on the open timeline.";paint();return {timelineId:timeline.id,clipId:existing.clip.id,alreadyPresent:true};}
+ let videoTrack=timeline.tracks.find(track=>track.kind==="video"&&!track.locked);
+ if(!videoTrack){
+  const track:TimelineTrack={id:crypto.randomUUID(),name:"Video "+(timeline.tracks.filter(item=>item.kind==="video").length+1),kind:"video",enabled:true,locked:false,clips:[]};
+  timeline=addTrack(timeline,track);videoTrack=track;
+ }
+ const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
+ const endFrame=timeline.tracks.flatMap(track=>track.clips).reduce((end,clip)=>Math.max(end,
+  Math.round(clip.timelineStart.value/clip.timelineStart.rate*fps)+Math.round(clip.duration.value/clip.duration.rate*fps)),0);
+ const clipId=crypto.randomUUID();
+ const clip=createGeneratedVideoClip({
+  id:clipId,assetId:asset.id,name:asset.name,durationSeconds,frameRate:timeline.frameRate,startFrame:endFrame,
+  metadata:{workflowRunId:String(input.workflowRunId||""),provider:String(input.provider||"runway"),model:String(input.model||"model-router"),cloudAssetId,cloudSha256:String(asset.sha256||"")}
+ });
+ const previous=state.timeline?structuredClone(state.timeline):null;
+ recordUndo();
+ try{
+  state.timeline=addClip(timeline,videoTrack.id,clip);
+  state.selectedTrack=videoTrack.id;state.selectedClipId=clipId;
+  await persist();
+  state.message="Generated video added to the private cloud timeline at "+(endFrame/fps).toFixed(2)+" seconds. Load Preview to review the clip, then edit or render the sequence.";
+  paint();
+  return {timelineId:timeline.id,clipId,alreadyPresent:false};
+ }catch(error){
+  if(previous)state.timeline=previous;
+  throw error;
+ }
+}
 async function createCloudTimeline(){
  if(state.mode!=="cloud"||!state.cloudProjectId)throw new Error("Select a cloud project before creating a timeline.");
  let timeline=createTimeline(state.cloudProjectId,crypto.randomUUID(),"Untitled cloud sequence",{numerator:24,denominator:1});
@@ -873,3 +924,12 @@ document.addEventListener("click",event=>{
 window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
 window.addEventListener("beforeunload",()=>releaseTimelinePreview());
 window.addEventListener("ev:assets-updated",()=>{releaseTimelinePreview();void refresh().then(paint).catch(error=>{state.message=error.message;paint();});});
+
+window.addEventListener("ev:workflow-video-ready",event=>{
+ const detail=(event as CustomEvent<{projectId:string;cloudAssetId:string;durationSeconds:number;workflowRunId?:string;provider?:string;model?:string}>).detail;
+ if(!detail)return;
+ void addWorkflowVideoToCloudTimeline(detail).catch(error=>{
+  state.message=error instanceof Error?error.message:"Generated video could not be added to the cloud timeline.";
+  paint();
+ });
+});
