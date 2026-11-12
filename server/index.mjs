@@ -1134,7 +1134,8 @@ export function createAppServer() {
             format:item.format||body.format||"png",index
           });
         }
-        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
+        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"");
+        if(idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Batch idempotency keys must not exceed 180 characters.");return;}
         const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.length);
         if(batchKeys.length){
           const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
