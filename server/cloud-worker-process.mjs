@@ -7,6 +7,8 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
 import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-provider-worker-composition.mjs";
+import { createCloudAssetRepository } from "./cloud-assets.mjs";
+import { createCloudStorage } from "./cloud-storage.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
@@ -32,16 +34,19 @@ export function readCloudWorkerConfig(env=process.env){
   media,timeline,video,
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
+  cleanupIntervalMs:integer(env.CLOUD_STORAGE_CLEANUP_INTERVAL_MS,300000,60000,3600000,"Cloud storage cleanup interval"),
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
   tempRoot:resolve(env.CLOUD_WORKER_TEMP_ROOT||tmpdir())
  });
 }
 
-export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
+export function createCloudWorkerSupervisor({workers,maintenanceTasks=[],maintenanceIntervalMs=300000,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ if(!Array.isArray(maintenanceTasks)||maintenanceTasks.some(task=>typeof task!=="function"))throw new Error("Cloud worker maintenance tasks must be functions.");
+ if(!Number.isInteger(maintenanceIntervalMs)||maintenanceIntervalMs<60000||maintenanceIntervalMs>3600000)throw new Error("Cloud worker maintenance interval is invalid.");
+ let stopped=true,timer=null,recoveryTimer=null,maintenanceTimer=null,active=null,activeMaintenance=null,busy=false,maintenanceBusy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
@@ -56,6 +61,19 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   })();
   try{return await active;}finally{active=null;busy=false;}
  }
+ async function maintain(){
+  if(stopped||maintenanceBusy||maintenanceTasks.length===0)return{skipped:true};
+  maintenanceBusy=true;
+  activeMaintenance=(async()=>{
+   const settled=await Promise.allSettled(maintenanceTasks.map(task=>task()));
+   return settled.map((item,index)=>{
+    if(item.status==="rejected"){onError(item.reason);return null;}
+    onLog({kind:"maintenance",taskIndex:index,result:item.value});
+    return item.value;
+   });
+  })();
+  try{return await activeMaintenance;}finally{activeMaintenance=null;maintenanceBusy=false;}
+ }
  async function recover(){
   if(stopped)return;
   const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
@@ -69,17 +87,20 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
+   await maintain();
    await cycle();
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
-   onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds});
+   if(maintenanceTasks.length){maintenanceTimer=setInterval(()=>{void maintain();},maintenanceIntervalMs);maintenanceTimer.unref?.();}
+   onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds,maintenanceTasks:maintenanceTasks.length,maintenanceIntervalMs});
   },
   async stop(){
    if(stopped)return;
    stopped=true;
-   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
-   timer=null;recoveryTimer=null;
+   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);if(maintenanceTimer)clearInterval(maintenanceTimer);
+   timer=null;recoveryTimer=null;maintenanceTimer=null;
    if(active)await active.catch(()=>{});
+   if(activeMaintenance)await activeMaintenance.catch(()=>{});
    onLog({kind:"stopped"});
   },
   async runOnce(){return cycle();}
@@ -101,8 +122,12 @@ export async function startCloudWorkerProcess(env=process.env){
   timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
   maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
  }));
+ const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
+ const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
+ const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];
  const supervisor=createCloudWorkerSupervisor({
-  workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
+  workers,maintenanceTasks,maintenanceIntervalMs:config.cleanupIntervalMs,
+  leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
   onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
  });
