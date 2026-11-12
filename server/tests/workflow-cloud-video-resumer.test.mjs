@@ -74,6 +74,18 @@ test("cancelled cloud job closes the parked local job and workflow",async()=>{
  assert.equal(f.jobs.length,0);
 });
 
+test("cloud job requiring input keeps the workflow blocked but closes its parked job",async()=>{
+ const f=fixture("needs_input");
+ const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi});
+ assert.deepEqual(result,{scanned:1,resumed:0,terminal:1});
+ assert.equal(f.run.status,"blocked");
+ assert.equal(f.node.status,"blocked");
+ assert.equal(f.parkedJob.status,"needs_input");
+ assert.equal(f.events.length,1);
+ assert.equal(f.events[0][2],"job.needs_input");
+ assert.equal(f.jobs.length,0);
+});
+
 test("running cloud job leaves the workflow parked without creating local jobs",async()=>{
  const f=fixture("running");
  const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi});
