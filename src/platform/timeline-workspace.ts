@@ -205,7 +205,7 @@ function syncPreviewAtFrame(frame:number){
    const trackState=state.audioTrackStates[track.id]||{muted:false,solo:false};
    return [{id:item.clipId,media,gainDb:item.gainDb,pan:clip.pan??0,automation:clip.audioAutomation??[],automationTime:Math.max(0,seconds-clip.timelineStart.value/clip.timelineStart.rate),muted:trackState.muted,solo:trackState.solo}];
   });
-  try{state.audioPreviewEngine.sync(audioTracks);state.audioPreviewEngine.setMasterVolume(state.audioMasterVolume);state.audioPreviewEngine.setMasterMuted(state.audioMasterMuted);}catch(error){state.message=error instanceof Error?"Audio preview: "+error.message:"Audio preview could not synchronize.";}
+  try{state.audioPreviewEngine.sync(audioTracks);state.audioPreviewEngine.setMasterVolume(state.audioMasterVolume);state.audioPreviewEngine.setMasterMuted(state.audioMasterMuted);state.audioPreviewEngine.setSoloMode(Object.values(state.audioTrackStates).some(track=>track.solo));}catch(error){state.message=error instanceof Error?"Audio preview: "+error.message:"Audio preview could not synchronize.";}
  }
  const hasPicture=playback.active.some(item=>state.assets.some(asset=>asset.id===item.assetId&&((item.trackKind==="video"&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/")))||(item.trackKind==="overlay"&&asset.mediaType.startsWith("image/")))));
  const placeholder=document.querySelector<HTMLElement>("#timeline-playback .timeline-preview-placeholder");if(placeholder)placeholder.style.display=hasPicture?"none":"grid";
