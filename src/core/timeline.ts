@@ -223,12 +223,14 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       const speed=Number(clip.speed??1),curve=clip.speedCurve;
       if(!Number.isFinite(speed)||speed<0.25||speed>4)issues.push({code:"invalid_clip_speed",trackId:track.id,clipId:clip.id,message:"Clip speed must be between 0.25× and 4×."});
       else if(track.kind!=="video"&&track.kind!=="audio"&&speed!==1)issues.push({code:"unsupported_clip_speed",trackId:track.id,clipId:clip.id,message:"Speed changes are supported only for video and audio clips."});
+      let speedCurveValid=true;
       if(curve!==undefined){
-        if(track.kind!=="video"||!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
-          curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
+        speedCurveValid=track.kind==="video"&&Array.isArray(curve)&&curve.length>=2&&curve.length<=64&&curve[0]?.timeSeconds===0&&
+          !curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds));
+        if(!speedCurveValid)
           issues.push({code:"invalid_speed_curve",trackId:track.id,clipId:clip.id,message:"Variable-speed curves require 2–64 ordered video keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×."});
       }
-      if(Math.abs(integrateSpeedCurve(curve,duration,speed)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))
+      if(speedCurveValid&&Math.abs(integrateSpeedCurve(curve,duration,speed)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))
         issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Timeline duration and speed curve must match the source duration."});
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
