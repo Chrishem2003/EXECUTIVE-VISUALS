@@ -38,7 +38,7 @@ const automationPoints=normalizeAudioAutomation([{timeSeconds:1,gainDb:-12,pan:-
 assert.equal(automationPoints.length,2);
 assert.ok(Math.abs(evaluateAudioAutomation(automationPoints,.5,"gainDb",0)+6)<1e-9);
 assert.equal(evaluateAudioAutomation(automationPoints,4,"pan",0),1);
-assert.match(buildGainAutomationExpression(automationPoints,0),/if\\(lt\\(t,1\\)/);
+assert.match(buildGainAutomationExpression(automationPoints,0),/if\(lt\(t,1\)/);
 const audioTimeline=createTimeline("project-audio","timeline-audio","Audio automation");
 let audioTracks=addTrack(audioTimeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
 audioTracks=addTrack(audioTracks,{id:"audio",name:"Audio",kind:"audio",enabled:true,locked:false,clips:[]});
