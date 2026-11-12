@@ -20,6 +20,7 @@ test("batch idempotency keys are deterministic, namespaced and bounded",()=>{
  assert.equal(first.length,2);
  assert.equal(new Set(first).size,2);
  assert.deepEqual(createBatchIdempotencyKeys("",2),[]);
+ assert.throws(()=>createBatchIdempotencyKeys("x".repeat(181),2),/must not exceed 180/);
  assert.throws(()=>createBatchIdempotencyKeys("request-1",101),/between 1 and 100/);
 });
 
