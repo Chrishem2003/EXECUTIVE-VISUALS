@@ -788,7 +788,7 @@ document.addEventListener("submit",event=>{
    try{const parsed=curveText?JSON.parse(curveText):[];if(!Array.isArray(parsed))throw new Error("Speed keyframes must be a JSON array.");speedCurve=parsed.length?parsed:undefined;}
    catch(error){alert(error instanceof Error?error.message:"Invalid speed curve JSON.");return;}
   }
-  recordUndo();const originalClip={...clip,sourceRange:{...clip.sourceRange},metadata:{...(clip.metadata||{})}};
+  const originalTimeline=structuredClone(state.timeline);recordUndo();
   const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   const sourceDurationSeconds=integrateSpeedCurve(speedCurve,duration/fps(),speed);
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
@@ -806,7 +806,7 @@ document.addEventListener("submit",event=>{
   clip.metadata=nextMetadata;
   const timelineValidation=validateTimeline(state.timeline);
   if(!timelineValidation.valid){
-   Object.assign(clip,originalClip);
+   state.timeline=originalTimeline;
    alert(timelineValidation.issues[0].message);
    return;
   }
