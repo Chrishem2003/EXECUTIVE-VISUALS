@@ -22,8 +22,8 @@ type TimelineRevisionSummary={timelineId:string;revision:number;name:string;crea
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
 type CloudTimelineJobOutput={outputAsset?:{id:string;name?:string};render?:{audioMastering?:CloudAudioMasteringReceipt}};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number}}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0},audioPreviewEngine:null
 };
 const history:{timelineId:string;undo:EditorialTimeline[];redo:EditorialTimeline[]}={timelineId:"",undo:[],redo:[]};
 function recordUndo(){if(!state.timeline)return;if(history.timelineId!==state.timeline.id){history.timelineId=state.timeline.id;history.undo=[];history.redo=[];}history.undo.push(structuredClone(state.timeline));if(history.undo.length>50)history.undo.shift();history.redo=[];}
@@ -121,6 +121,7 @@ function updatePreviewDiagnostics(){
 }
 function releaseTimelinePreview(){
  stopTimelinePlayback();
+ state.audioPreviewEngine?.dispose();state.audioPreviewEngine=null;
  for(const url of Object.values(state.previewAssetUrls))if(url.startsWith("blob:"))URL.revokeObjectURL(url);
  state.previewAssetUrls={};state.previewAssetUrlExpiresAt={};state.previewUnavailableAssetIds=[];state.previewRefreshAttemptedAssetIds=[];state.previewLoaded=false;state.previewLoading=false;state.playheadFrame=0;state.previewDiagnostics={droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0};
 }
@@ -194,6 +195,16 @@ function syncPreviewAtFrame(frame:number){
  const active=new Map(playback.active.map(item=>[item.clipId,item]));
  const topVideo=playback.activeVideo[playback.activeVideo.length-1];
  const audioActive=playback.activeAudio.length>0;
+ if(state.audioPreviewEngine){
+  const audioTracks=playback.activeAudio.flatMap(item=>{
+   const track=state.timeline!.tracks.find(candidate=>candidate.clips.some(clip=>clip.id===item.clipId));
+   const clip=track?.clips.find(candidate=>candidate.id===item.clipId);
+   const media=document.querySelector<HTMLMediaElement>('#timeline-playback audio[data-preview-clip="'+CSS.escape(item.clipId)+'"]');
+   if(!track||!clip||!media)return [];
+   return [{id:item.clipId,media,gainDb:item.gainDb,pan:clip.pan??0,automation:clip.audioAutomation??[],automationTime:Math.max(0,seconds-clip.timelineStart.value/clip.timelineStart.rate)}];
+  });
+  try{state.audioPreviewEngine.sync(audioTracks);}catch(error){state.message=error instanceof Error?"Audio preview: "+error.message:"Audio preview could not synchronize.";}
+ }
  const hasPicture=playback.active.some(item=>state.assets.some(asset=>asset.id===item.assetId&&((item.trackKind==="video"&&(asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("image/")))||(item.trackKind==="overlay"&&asset.mediaType.startsWith("image/")))));
  const placeholder=document.querySelector<HTMLElement>("#timeline-playback .timeline-preview-placeholder");if(placeholder)placeholder.style.display=hasPicture?"none":"grid";
  document.querySelectorAll<HTMLElement>("#timeline-playback [data-preview-media]").forEach(element=>{
@@ -209,7 +220,7 @@ function syncPreviewAtFrame(frame:number){
   }
   media.playbackRate=Math.max(0.25,Math.min(4,item.speed||1));
   if(isAudio){
-   media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
+   media.volume=state.audioPreviewEngine?1:Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
   }else{
    media.muted=audioActive||item.clipId!==topVideo?.clipId;
    media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
@@ -235,6 +246,10 @@ function formatPlaybackTime(frame:number){
  return [hh,mm,ss,ff].map(value=>String(value).padStart(2,"0")).join(":");
 }
 async function startTimelinePlayback(){
+ if(!state.audioPreviewEngine&&typeof AudioContext!=="undefined"){
+  try{state.audioPreviewEngine=new AudioPreviewEngine(new AudioContext());await state.audioPreviewEngine.resume();}
+  catch(error){state.audioPreviewEngine?.dispose();state.audioPreviewEngine=null;throw new Error("Audio preview could not initialize: "+(error instanceof Error?error.message:"browser audio is unavailable."));}
+ }
  if(!state.previewLoaded)await loadTimelinePreview();
  if(!state.timeline)return;
  const endFrame=clampTimelineFrame(timelineDurationSeconds(state.timeline)*fps(),state.timeline);
