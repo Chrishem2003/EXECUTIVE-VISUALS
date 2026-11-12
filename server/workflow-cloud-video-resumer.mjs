@@ -41,18 +41,24 @@ function transitionToTerminal({db,row,cloudJob,status,message}){
   if(run?.status!=="blocked"||node?.status!=="blocked"||error.code!=="CLOUD_VIDEO_JOB_PENDING"||output.cloudJobId!==cloudJob.id)return false;
   const nextCode=status==="needs_input"?"VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT":"VIDEO_WORKFLOW_CLOUD_JOB_FAILED";
   const detail={code:nextCode,message:String(message||"Cloud video job ended with status "+status).slice(0,500),cloudJobId:cloudJob.id};
-  if(status==="cancelled"||status==="canceled"){
-   db.prepare("UPDATE workflow_node_runs SET status='skipped',error_json=?,completed_at=? WHERE run_id=? AND node_id=? AND status='blocked'")
-    .run(json(detail),now(),run.id,row.node_id);
-   db.prepare("UPDATE workflow_runs SET status='cancelled',error_json=?,updated_at=?,completed_at=? WHERE id=? AND status='blocked'")
-    .run(json(detail),now(),now(),run.id);
-  }else{
-   db.prepare("UPDATE workflow_node_runs SET status=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=? AND status='blocked'")
-    .run(status==="needs_input"?"blocked":"failed",json(detail),now(),run.id,row.node_id);
-   db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=? AND status='blocked'")
-    .run(status==="needs_input"?"blocked":"failed",json(detail),now(),status==="needs_input"?null:now(),run.id);
-  }
-  audit(db,run.owner_id,"workflow.cloud_video_terminal","workflow_run",run.id,{nodeId:row.node_id,cloudJobId:cloudJob.id,status,code:detail.code},run.project_id);
+  const cancelled=status==="cancelled"||status==="canceled";
+  const localStatus=cancelled?"cancelled":status==="needs_input"?"needs_input":"failed";
+  const timestamp=now();
+  // Keep the durable local job row in sync with its terminal cloud workflow state.
+  // The parked job must still be blocked; never overwrite a job reclaimed elsewhere.
+  const parked=db.prepare("UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='blocked'")
+   .run(localStatus,json(detail),timestamp,timestamp,run.job_id);
+  if(parked.changes!==1)return false;
+  const nodeUpdate=cancelled
+   ?db.prepare("UPDATE workflow_node_runs SET status='skipped',error_json=?,completed_at=? WHERE run_id=? AND node_id=? AND status='blocked'").run(json(detail),timestamp,run.id,row.node_id)
+   :db.prepare("UPDATE workflow_node_runs SET status=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=? AND status='blocked'").run(status==="needs_input"?"blocked":"failed",json(detail),timestamp,run.id,row.node_id);
+  if(nodeUpdate.changes!==1)throw new Error("Workflow node changed while recording its terminal cloud video result.");
+  const runUpdate=cancelled
+   ?db.prepare("UPDATE workflow_runs SET status='cancelled',error_json=?,updated_at=?,completed_at=? WHERE id=? AND status='blocked'").run(json(detail),timestamp,timestamp,run.id)
+   :db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=? AND status='blocked'").run(status==="needs_input"?"blocked":"failed",json(detail),timestamp,status==="needs_input"?null:timestamp,run.id);
+  if(runUpdate.changes!==1)throw new Error("Workflow run changed while recording its terminal cloud video result.");
+  addJobEvent(db,run.job_id,run.owner_id,"job."+localStatus,{cloudJobId:cloudJob.id,workflowRunId:run.id,nodeId:row.node_id,code:detail.code});
+  audit(db,run.owner_id,"workflow.cloud_video_terminal","workflow_run",run.id,{nodeId:row.node_id,cloudJobId:cloudJob.id,status,localJobStatus:localStatus,code:detail.code},run.project_id);
   return true;
  })();
 }
