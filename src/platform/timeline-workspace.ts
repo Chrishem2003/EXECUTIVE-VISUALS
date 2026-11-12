@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestBlob } from "../core/api";
+import { AudioPreviewEngine } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
