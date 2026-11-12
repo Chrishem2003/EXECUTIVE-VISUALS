@@ -21,7 +21,7 @@ test("Supabase auth missing encryption secret keeps the application online but f
    const healthBody=await health.json();
    const protectedResponse=await fetch(base+"/api/me");
    const protectedBody=await protectedResponse.json();
-   process.stdout.write(JSON.stringify({healthStatus:health.status,authMode:healthBody.authMode,configurationReady:healthBody.authSession?.configurationReady,encryptedServerTokens:healthBody.authSession?.encryptedServerTokens,protectedStatus:protectedResponse.status,protectedCode:protectedBody.error?.code})+"\\n");
+   process.stdout.write(JSON.stringify({healthStatus:health.status,authMode:healthBody.authMode,configurationReady:healthBody.authSession?.configurationReady,encryptedServerTokens:healthBody.authSession?.encryptedServerTokens,cloudMedia:healthBody.cloudMedia,protectedStatus:protectedResponse.status,protectedCode:protectedBody.error?.code})+"\\n");
   }finally{await new Promise(resolve=>server.close(resolve));}
   process.exit(0);
  `;
@@ -34,8 +34,8 @@ test("Supabase auth missing encryption secret keeps the application online but f
   assert.equal(result.authMode,"supabase");
   assert.equal(result.configurationReady,false);
   assert.equal(result.encryptedServerTokens,false);
-  assert.equal(healthBody.cloudMedia?.enabled,false);
-  assert.equal(healthBody.cloudMedia?.ready,false);
+  assert.equal(result.cloudMedia?.enabled,false);
+  assert.equal(result.cloudMedia?.ready,false);
   assert.equal(result.protectedStatus,503);
   assert.equal(result.protectedCode,"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED");
  }finally{await rm(root,{recursive:true,force:true});}
