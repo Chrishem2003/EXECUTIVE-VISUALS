@@ -267,7 +267,6 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     if(asset.media_type.startsWith("image/")){if(speed!==1)throw Object.assign(new Error("Still-image clips do not support speed changes."),{code:"UNSUPPORTED_IMAGE_TIME_REMAP"});args.push("-loop","1","-t",duration.toFixed(6),"-i",file);}
     else if(asset.media_type.startsWith("video/")){const sourceDuration=sourceDurationForTimeline(duration,speed);args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);}
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const effect=buildTimelineClipEffects(clip.metadata||{});
     const filterParts=["trim=duration="+sourceDurationForTimeline(duration,speed).toFixed(6),speed===1?"setpts=PTS-STARTPTS":"setpts=(PTS-STARTPTS)/"+speed.toFixed(6),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
     const filter="["+inputIndex+":v]"+filterParts.join(",")+"["+label+"]";
