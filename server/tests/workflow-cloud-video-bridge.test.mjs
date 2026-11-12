@@ -19,10 +19,10 @@ const sha256=createHash("sha256").update(video).digest("hex");
 
 function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null}={}){
  const stored=[],calls=[];
- const localJob={status:jobStatus,lease_owner:"worker-1",lease_expires_at:new Date(Date.now()+60000).toISOString()};
+ const localJob={status:jobStatus,lease_owner:"worker-1",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
   if(sql.startsWith("SELECT id,owner_id,name,description FROM projects"))return{get:()=>({id:projectId,owner_id:owner,name:"Project",description:""})};
-  if(sql.startsWith("SELECT status,lease_owner,lease_expires_at FROM jobs"))return{get:()=>localJob};
+  if(sql.startsWith("SELECT status,lease_owner,lease_expires_at,lease_token FROM jobs"))return{get:()=>localJob};
   if(sql.startsWith("SELECT output_json FROM workflow_node_runs"))return{get:()=>priorOutput?{output_json:JSON.stringify(priorOutput)}:null};
   if(sql.startsWith("SELECT id,metadata_json FROM assets"))return{get:()=>null};
   if(sql.startsWith("INSERT INTO assets"))return{run(...args){stored.push({sql,args});}};
@@ -57,7 +57,7 @@ test("cloud workflow node creates a non-billable quote and pauses without approv
  let approvalReceipt=null;
  try{
   const result=await executeCloudVideoWorkflowNode({
-   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1"},
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
    onApprovalRequired:receipt=>{approvalReceipt=receipt;}
   });
@@ -100,6 +100,21 @@ test("expired local worker lease cannot continue polling or import cloud video o
  try{
   await assert.rejects(()=>executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+  }),error=>error.code==="WORKFLOW_WORKER_LEASE_LOST");
+  assert.equal(f.calls.some(call=>call.path==="/api/cloud/jobs/"+cloudJobId),false);
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+ }finally{await rm(mediaRoot,{recursive:true,force:true});}
+});
+
+test("replaced local worker lease token cannot continue polling or import cloud video output",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-replaced-lease-"));
+ f.localJob.lease_token="b23e4567-e89b-42d3-a456-426614174000";
+ try{
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
   }),error=>error.code==="WORKFLOW_WORKER_LEASE_LOST");
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/jobs/"+cloudJobId),false);
