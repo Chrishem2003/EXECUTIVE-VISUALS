@@ -784,7 +784,8 @@ document.addEventListener("click",event=>{
   const id=audioState.dataset.track||"",kind=audioState.dataset.tlAudioState||"";
   if(id&&(kind==="mute"||kind==="solo")){
    const current=state.audioTrackStates[id]||{muted:false,solo:false};
-   state.audioTrackStates={...state.audioTrackStates,[id]:{...current,[kind]:!current[kind]}};
+   const property=kind==="mute"?"muted":"solo";
+   state.audioTrackStates={...state.audioTrackStates,[id]:{...current,[property]:!current[property]}};
    if(state.timeline)syncPreviewAtFrame(state.playheadFrame);
    paint();
   }
