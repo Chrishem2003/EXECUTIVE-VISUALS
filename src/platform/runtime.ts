@@ -1,8 +1,10 @@
 import { apiRequest, apiRequestWithBearer, ApiError } from "../core/api";
+import { cloudAssetProjectQuery, selectCloudAssetProject } from "./cloud-asset-project";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
+type RuntimeCloudProject={id:string;name:string;revision?:number};
 type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
 type CloudRuntimeJob={id:string;owner_id:string;project_id:string|null;job_type:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;attempt_count?:number;created_at:string;updated_at:string;completed_at?:string|null};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
@@ -14,8 +16,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
- status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];cloudProjects:RuntimeCloudProject[];cloudProjectId:string;authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
+ status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],cloudProjects:[],cloudProjectId:"",authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -168,7 +170,10 @@ function renderCloudMediaJobs(){
 }
 function renderCloudAssetLibrary(){
  if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
- return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PERSONAL PRIVATE OBJECT STORAGE</div><h3>Personal cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These owner-scoped files are stored separately from local preview assets. They are not yet linked to local project memberships. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · owner-scoped access</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
+ const projectOptions=state.cloudProjects.map(project=>'<option value="'+esc(project.id)+'" '+(project.id===state.cloudProjectId?'selected':'')+'>'+esc(project.name)+'</option>').join("");
+ const projectPicker=state.cloudProjects.length?'<label>Cloud project<select id="ev-cloud-project-select"><option value="">Select a cloud project</option>'+projectOptions+'</select></label>':'<div class="notice">Create a cloud project in the Cloud Projects workspace before uploading media. Unassigned cloud uploads are disabled so assets cannot become detached from the editor project.</div>';
+ const upload=state.cloudProjectId?'<label class="upload primary">＋ Upload to selected cloud project<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>':'<button class="secondary" disabled>＋ Upload unavailable · select a cloud project</button>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
@@ -294,23 +299,28 @@ async function refresh(){
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
- state.cloudAssets=[];
+ state.cloudAssets=[];state.cloudProjects=[];
  if(state.cloudMediaReady){
   try{
-   const scope="?limit=25";
-   const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
-   state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
-    try{
-     const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
-     return {...asset,downloadUrl:signed.url};
-    }catch{return {...asset,downloadUrl:null};}
-   }));
-  }catch{state.cloudAssets=[];}
+   const projectResponse=await apiRequest<{projects:RuntimeCloudProject[]}>("/api/cloud/projects?limit=100");
+   state.cloudProjects=Array.isArray(projectResponse.projects)?projectResponse.projects.filter(project=>typeof project?.id==="string"&&typeof project?.name==="string"):[];
+   state.cloudProjectId=selectCloudAssetProject(state.cloudProjectId,state.cloudProjects);
+   const scope=cloudAssetProjectQuery(state.cloudProjectId);
+   if(scope){
+    const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
+    state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
+     try{
+      const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
+      return {...asset,downloadUrl:signed.url};
+     }catch{return {...asset,downloadUrl:null};}
+    }));
+   }
+  }catch{state.cloudAssets=[];state.cloudProjects=[];state.cloudProjectId="";}
  }
- if(state.cloudMediaJobsEnabled&&state.cloudMediaReady){
+ if(state.cloudMediaJobsEnabled&&state.cloudMediaReady&&state.cloudProjectId){
   try{
-   const scope="?limit=25";
-   const response=await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope);
+   const scope=cloudAssetProjectQuery(state.cloudProjectId);
+   const response=scope?await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope):{jobs:[]};
    state.cloudMediaJobs=response.jobs||[];
   }catch{state.cloudMediaJobs=[];}
  }else state.cloudMediaJobs=[];
@@ -378,12 +388,15 @@ document.addEventListener("input",event=>{
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
+ if(target.id==="ev-cloud-project-select"){state.cloudProjectId=target.value;void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-cloud-upload"&&target.files){
   const files=Array.from(target.files);
+  const cloudProjectId=state.cloudProjectId;
+  if(!cloudProjectId){alert("Select a cloud project before uploading private media.");target.value="";return;}
   void (async()=>{
    for(const file of files){
     try{
-     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:file});
+     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":cloudProjectId},body:file});
     }catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Private cloud upload failed."));}
    }
    await refresh();paint();
@@ -397,7 +410,7 @@ document.addEventListener("click",event=>{
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
- if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.cloudAssets=[];state.projects=[];paint();return;}
+ if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.cloudAssets=[];state.cloudProjects=[];state.cloudProjectId="";state.projects=[];paint();return;}
  const cloudRemove=target.closest<HTMLElement>("[data-ev-cloud-remove]");
  if(cloudRemove){
   const assetId=cloudRemove.dataset.evCloudRemove||"";
