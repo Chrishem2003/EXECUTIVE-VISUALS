@@ -3,6 +3,7 @@ import { apiRequest, apiRequestWithBearer, ApiError } from "../core/api";
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
+type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type C2paVerification={status:"trusted"|"valid_untrusted"|"invalid"|"not_present"|"validation_unavailable";present:boolean;valid:boolean;trusted:boolean;assetSha256:string;validationState:string|null;findings:string[];manifest:null|{title:string|null;format:string|null;claimGenerator:string|null;ingredientCount:number;ingredients:Array<{title:string|null;format:string|null;relationship:string|null;hasManifestData:boolean}>};validationStatuses:Array<{code:string;success:boolean|null;explanation:string|null}>};
@@ -12,8 +13,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
- status:"checking",authMode:"local",authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudAssets:RuntimeCloudAsset[];authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
+ status:"checking",authMode:"local",cloudMediaReady:false,cloudAssets:[],authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -149,6 +150,19 @@ function renderAssets(){
   return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(a.name)+'</b><small>'+Math.max(1,Math.round(a.size/1024))+' KB · '+esc(a.mediaType)+'</small><code>'+esc(a.sha256.slice(0,20))+'…</code>'+(a.derivativeOf?'<small>Derivative of '+esc(sourceAsset?.name||a.derivativeOf)+'</small>':'')+batchSelect+'</div>'+lineage+renderC2paInspection(a.id)+'<div class="runtime-asset-actions">'+actions+'</div></article>';
  }).join("")+'</div>';
 }
+function renderCloudAssets(){
+ if(!state.cloudAssets.length)return '<div class="empty">No private cloud assets are stored in this project yet. Cloud uploads remain separate from local preview storage.</div>';
+ return '<div class="runtime-assets">'+state.cloudAssets.map(asset=>{
+  const url=asset.downloadUrl?esc(asset.downloadUrl):"";
+  const isVideo=asset.mediaType.startsWith("video/"),isAudio=asset.mediaType.startsWith("audio/"),isImage=asset.mediaType.startsWith("image/");
+  const preview=url?(isImage?'<img loading="lazy" src="'+url+'" alt="">':isVideo?'<video controls preload="metadata" src="'+url+'"></video>':isAudio?'<audio controls preload="metadata" src="'+url+'"></audio>':'<a href="'+url+'" target="_blank" rel="noopener noreferrer">Open file</a>'):'<div class="empty">Secure download link unavailable. Refresh to retry.</div>';
+  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(asset.name)+'</b><small>'+Math.max(1,Math.round(asset.size/1024))+' KB · '+esc(asset.mediaType)+' · PRIVATE CLOUD</small><code>'+esc(asset.sha256.slice(0,20))+'…</code></div><div class="runtime-asset-actions">'+(url?'<a class="download-output" href="'+url+'" target="_blank" rel="noopener noreferrer">Open secure original</a>':'')+'<button data-ev-cloud-remove="'+esc(asset.id)+'">Archive cloud asset</button></div></article>';
+ }).join("")+'</div>';
+}
+function renderCloudAssetLibrary(){
+ if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED PRIVATE OBJECT STORAGE</div><h3>Cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These files are stored separately from local preview assets. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · project-scoped access</small>'+renderCloudAssets()+'</section>';
+}
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
  return '<div class="runtime-jobs">'+state.jobs.map(j=>{
@@ -166,7 +180,7 @@ export function renderRuntimeWorkspace(){
  '<div class="runtime-summary"><div><small>Projects</small><b>'+state.projects.length+'</b></div><div><small>Stored assets</small><b>'+state.assets.length+'</b></div><div><small>Jobs</small><b>'+state.jobs.length+'</b></div><div><small>Local media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Not detected")+'</b></div></div>'+
  '<div class="runtime-two-col"><section class="panel"><div class="eyebrow">PROJECT REGISTRY</div><h3>Persistent projects</h3><form id="ev-project-form"><label>New project name</label><input name="name" required maxlength="160" placeholder="Campaign, film, episode or client project"><button class="primary">Create project</button></form><label>Current project</label><select id="ev-project-select">'+projectOptions()+'</select><div class="runtime-project-list">'+state.projects.map(p=>'<div><b>'+esc(p.name)+'</b><small>'+esc(p.id)+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">MEDIA INGEST</div><h3>Upload original media</h3><p>Originals are stored unchanged. Uploads receive a SHA-256 checksum and remain private to this account.</p><label class="upload primary">＋ Select media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · supported image, video, audio and document types</small><p class="runtime-engine-note">FFmpeg: '+(state.ffmpeg?"available":"not detected")+' · FFprobe: '+(state.ffprobe?"available":"not detected")+'</p></section></div>'+renderProjectMembers()+
- '<section class="panel"><div class="eyebrow">REMOTE AI USAGE GUARDRAIL</div><h3>Request allowance</h3>'+(state.remoteUsage?('<div class="runtime-summary"><div><small>Used · rolling 24h</small><b>'+state.remoteUsage.used+'</b></div><div><small>Daily limit</small><b>'+(state.remoteUsage.limit===null?"Config error":state.remoteUsage.limit)+'</b></div><div><small>Remaining</small><b>'+(state.remoteUsage.remaining===null?"—":state.remoteUsage.remaining)+'</b></div><div><small>Remote execution</small><b>'+(state.remoteUsage.configurationValid?(state.remoteUsage.remoteDisabled?"Disabled by limit":"Guarded"):"Blocked · invalid config")+'</b></div></div><p class="runtime-engine-note">'+(state.remoteUsage.configurationValid?"Account-wide remote requests are counted before dispatch. Failed requests remain counted until they age out of the 24-hour window.":"Remote requests fail closed until REMOTE_AI_DAILY_REQUEST_LIMIT is corrected.")+' Cost is not estimated; check provider pricing before enabling remote services.</p>'):'<div class="empty">Usage allowance is unavailable until the API is connected.</div>')+'</section>'+'<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">SOURCE & DERIVATIVE LIBRARY</div><h3>Media assets</h3></div><span>'+state.assets.length+' items</span></div>'+renderAssets()+'</section>'+
+ '<section class="panel"><div class="eyebrow">REMOTE AI USAGE GUARDRAIL</div><h3>Request allowance</h3>'+(state.remoteUsage?('<div class="runtime-summary"><div><small>Used · rolling 24h</small><b>'+state.remoteUsage.used+'</b></div><div><small>Daily limit</small><b>'+(state.remoteUsage.limit===null?"Config error":state.remoteUsage.limit)+'</b></div><div><small>Remaining</small><b>'+(state.remoteUsage.remaining===null?"—":state.remoteUsage.remaining)+'</b></div><div><small>Remote execution</small><b>'+(state.remoteUsage.configurationValid?(state.remoteUsage.remoteDisabled?"Disabled by limit":"Guarded"):"Blocked · invalid config")+'</b></div></div><p class="runtime-engine-note">'+(state.remoteUsage.configurationValid?"Account-wide remote requests are counted before dispatch. Failed requests remain counted until they age out of the 24-hour window.":"Remote requests fail closed until REMOTE_AI_DAILY_REQUEST_LIMIT is corrected.")+' Cost is not estimated; check provider pricing before enabling remote services.</p>'):'<div class="empty">Usage allowance is unavailable until the API is connected.</div>')+'</section>'+'<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">SOURCE & DERIVATIVE LIBRARY</div><h3>Media assets</h3></div><span>'+state.assets.length+' items</span></div>'+renderAssets()+'</section>'+renderCloudAssetLibrary()+
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ASYNC PROCESSING</div><h3>Job queue</h3></div><span>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+' active</span></div>'+renderJobs()+'</section>'+
  '<section class="panel"><div class="eyebrow">COLLABORATIVE REVIEW</div><h3>Comments and decisions</h3>'+(state.projectId&&["owner","editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<form id="ev-review-form"><input type="hidden" name="assetId" value=""><p class="review-target" id="ev-review-target">Project-level review · choose “Review asset” on a media item to attach feedback to that asset.</p><label>Decision</label><select name="decision"><option value="comment">Comment</option><option value="request_changes">Request changes</option><option value="approve">Approve</option></select><label>Timecode (seconds, optional)</label><input name="timecode" type="number" min="0" step="0.001" placeholder="12.500"><label>Review note</label><textarea name="body" rows="3" required maxlength="10000" placeholder="Describe the issue, requested change or approval."></textarea><button class="primary">Submit review</button></form>':'<small>Select a project and use an owner, editor or reviewer account to comment or approve.</small>')+
  '<div class="review-list">'+state.reviews.map(r=>'<article><div><b>'+esc(r.decision.replace("_"," "))+(r.asset_id?' · '+esc(state.assets.find(a=>a.id===r.asset_id)?.name||"media asset"):' · project')+'</b><span class="job-status">'+esc(r.status)+'</span></div><p>'+esc(r.body)+'</p><small>'+(r.timecode_seconds===null||r.timecode_seconds===undefined?"No timecode":r.timecode_seconds.toFixed(3)+"s")+' · '+esc(r.created_at)+'</small>'+(state.projects.find(p=>p.id===state.projectId)?.access_role==="owner"||["editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<div><button data-ev-review-status="resolved" data-ev-review-id="'+esc(r.id)+'">Resolve</button><button data-ev-review-status="open" data-ev-review-id="'+esc(r.id)+'">Reopen</button></div>':'')+'</article>').join("")+'</div></section>'+
@@ -176,7 +190,7 @@ export function renderRuntimeWorkspace(){
 export function renderAssetLibrary(){
  return '<div id="runtime-workspace" data-runtime-view="library"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out</button>':'')+'</div>'+
  (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
- '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderBatchUpscaleControls()+renderAssets()+'</section>'+
+ '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderBatchUpscaleControls()+renderAssets()+'</section>'+renderCloudAssetLibrary()+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
 }
 export function renderReferenceImageOptions(){
@@ -273,6 +287,19 @@ async function refresh(){
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
+ state.cloudAssets=[];
+ if(state.cloudMediaReady){
+  try{
+   const scope=(state.projectId?"?projectId="+encodeURIComponent(state.projectId)+"&":"?")+"limit=25";
+   const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
+   state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
+    try{
+     const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));
+     return {...asset,downloadUrl:signed.url};
+    }catch{return {...asset,downloadUrl:null};}
+   }));
+  }catch{state.cloudAssets=[];}
+ }
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
@@ -282,8 +309,8 @@ function paint(){updateShell();renderGate();const root=document.querySelector<HT
 export async function initRuntime(){
  const fragment=new URLSearchParams(window.location.hash.startsWith("#")?window.location.hash.slice(1):window.location.hash);if(fragment.get("type")==="recovery"){const token=fragment.get("access_token")||"";if(token){state.recoveryToken=token;state.authView="reset";state.message="Recovery link verified. Choose a new password.";}else{state.message=fragment.get("error_description")||"This recovery link is invalid or expired. Request a new one.";state.authView="login";}window.history.replaceState({},document.title,window.location.pathname+window.location.search);}
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";authSession?:{configurationReady?:boolean;encryptedServerTokens?:boolean};persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
-  state.authMode=health.authMode;state.dataDirectoryPersistence=health.persistence?.dataDirectory||"unknown";state.persistentVolumeRequired=Boolean(health.persistence?.persistentVolumeRequired);state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  const health=await apiRequest<{authMode:"local"|"supabase";authSession?:{configurationReady?:boolean;encryptedServerTokens?:boolean};cloudMedia?:{enabled:boolean;ready:boolean};persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
+  state.authMode=health.authMode;state.cloudMediaReady=Boolean(health.cloudMedia?.enabled&&health.cloudMedia?.ready);state.dataDirectoryPersistence=health.persistence?.dataDirectory||"unknown";state.persistentVolumeRequired=Boolean(health.persistence?.persistentVolumeRequired);state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
   if(health.authMode==="supabase"&&health.authSession?.configurationReady===false){state.status="auth-required";state.authView="login";state.message="Account sign-in is temporarily unavailable. The operator must configure SUPABASE_SESSION_ENCRYPTION_KEY in the server secret manager before sessions can be issued. No browser token fallback is enabled.";}
   else{
    try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
@@ -337,6 +364,17 @@ document.addEventListener("input",event=>{
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
+ if(target.id==="ev-cloud-upload"&&target.files){
+  const files=Array.from(target.files);
+  void (async()=>{
+   for(const file of files){
+    try{
+     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});
+    }catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Private cloud upload failed."));}
+   }
+   await refresh();paint();
+  })();
+ }
  if(target.id==="ev-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{const uploaded=await apiRequest<{asset?:{id?:string}}>("/api/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"asset_uploaded",eventKey:"asset-upload:"+String(uploaded.asset?.id||crypto.randomUUID())})}).catch(()=>{});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Upload failed"));}}await refresh();paint();})();}
 });
 document.addEventListener("click",event=>{
@@ -345,7 +383,15 @@ document.addEventListener("click",event=>{
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
- if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
+ if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.cloudAssets=[];state.projects=[];paint();return;}
+ const cloudRemove=target.closest<HTMLElement>("[data-ev-cloud-remove]");
+ if(cloudRemove){
+  const assetId=cloudRemove.dataset.evCloudRemove||"";
+  if(!assetId)return;
+  if(!window.confirm("Archive this private cloud asset? The asset will be soft-deleted and storage cleanup will follow the configured retention policy."))return;
+  void apiRequest("/api/cloud/assets/"+encodeURIComponent(assetId),{method:"DELETE"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error instanceof Error?error.message:"Cloud asset could not be archived."));
+  return;
+ }
  const c2paButton=target.closest<HTMLElement>("[data-ev-c2pa]");
  if(c2paButton){
   const assetId=c2paButton.dataset.evC2pa||"";
