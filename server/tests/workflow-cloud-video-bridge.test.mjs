@@ -140,6 +140,23 @@ test("cloud workflow refuses source assets from a different project before uploa
  }finally{await rm(mediaRoot,{recursive:true,force:true});}
 });
 
+test("cloud workflow rejects a source file whose checksum differs from the persisted asset record",async()=>{
+ const sourceId="b23e4567-e89b-42d3-a456-426614174000";
+ const f=fixture({values:{prompt:"Transform the source clip",sourceVideoAssetId:sourceId}});
+ f.node.config.rightsConfirmed=true;
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-source-checksum-"));
+ try{
+  await mkdir(join(mediaRoot,"uploads"),{recursive:true});
+  await writeFile(join(mediaRoot,"uploads","source.mp4"),Buffer.alloc(video.length,7));
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+  }),error=>error.code==="VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
+  assert.equal(f.calls.some(call=>call.method==="UPLOAD"),false);
+  assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false);
+ }finally{await rm(mediaRoot,{recursive:true,force:true});}
+});
+
 test("cloud workflow requires explicit source/reference rights confirmation before private upload",async()=>{
  const sourceId="b23e4567-e89b-42d3-a456-426614174000";
  const f=fixture({values:{prompt:"Transform the source clip",sourceVideoAssetId:sourceId}});
