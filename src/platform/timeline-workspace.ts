@@ -11,7 +11,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview , timelineClipPreviewFilter } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
 type Asset={id:string;name:string;mediaType:string;size:number;derivativeOf?:string|null;metadata?:Record<string,unknown>};
@@ -212,6 +212,9 @@ function syncPreviewAtFrame(frame:number){
  document.querySelectorAll<HTMLElement>("#timeline-playback [data-preview-media]").forEach(element=>{
   const clipId=element.dataset.previewClip||"",item=active.get(clipId),kind=element.dataset.previewKind||"";
   const isAudio=kind==="audio",isImage=kind==="image";
+  const previewTrack=state.timeline!.tracks.find(track=>track.clips.some(clip=>clip.id===clipId));
+  const previewClip=previewTrack?.clips.find(clip=>clip.id===clipId);
+  element.style.filter=previewTrack?.kind==="video"&&previewClip?timelineClipPreviewFilter(previewClip):"none";
   if(isImage){element.style.display=item?"block":"none";return;}
   const media=element as HTMLMediaElement;
   if(!item){media.pause();media.style.display="none";return;}
