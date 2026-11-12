@@ -590,3 +590,115 @@ begin
  end if;
 end $batch24$;
 
+
+-- Batch 25: manually reconcile only exact, verified provider subscription cancellations.
+do $batch25$
+declare
+ v_actor constant uuid:='11111111-1111-4111-8111-111111111111';
+ v_customer constant uuid:='22222222-2222-4222-8222-222222222222';
+ v_subscription uuid;
+ v_mismatch_event uuid:=gen_random_uuid();
+ v_email_mismatch_event uuid:=gen_random_uuid();
+ v_ambiguous_event uuid:=gen_random_uuid();
+ v_duplicate_owner uuid:='33333333-3333-4333-8333-333333333333';
+ v_duplicate_subscription uuid;
+ v_valid_event uuid:=gen_random_uuid();
+ v_result jsonb;
+ v_replay jsonb;
+begin
+ if has_function_privilege('anon','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE')
+    or has_function_privilege('authenticated','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE')
+    or not has_function_privilege('service_role','executive_visuals.reconcile_flutterwave_subscription_cancellation(uuid,uuid,uuid,text)','EXECUTE') then
+  raise exception 'Subscription cancellation RPC execute privileges are not service-role-only';
+ end if;
+ if not exists(
+  select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='executive_visuals'
+     and p.proname='reconcile_flutterwave_subscription_cancellation'
+     and coalesce(array_to_string(p.proconfig,','),'') like '%search_path=""%'
+ ) then
+  raise exception 'Subscription cancellation SECURITY DEFINER function must pin an empty search_path';
+ end if;
+
+ select id into v_subscription
+   from executive_visuals.customer_subscriptions
+  where owner_id=v_customer and status='active' and provider='flutterwave'
+  order by created_at desc limit 1;
+ if v_subscription is null then raise exception 'Expected a paid Flutterwave subscription for reconciliation test'; end if;
+
+ update executive_visuals.customer_subscriptions
+    set customer_email='referred@example.com'
+  where id=v_subscription;
+ update executive_visuals.subscription_plans
+    set provider_plan_id='10944'
+  where id=(select plan_id from executive_visuals.customer_subscriptions where id=v_subscription);
+
+ insert into auth.users(id,email) values(v_duplicate_owner,'referred@example.com');
+ insert into executive_visuals.customer_subscriptions(
+  owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+  included_credits,entitlements_snapshot,provider,customer_email,current_period_start,current_period_end
+ )
+ select v_duplicate_owner,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+  included_credits,entitlements_snapshot,provider,customer_email,current_period_start,current_period_end
+ from executive_visuals.customer_subscriptions where id=v_subscription
+ returning id into v_duplicate_subscription;
+
+ insert into executive_visuals.payment_webhook_events(
+  id,provider,event_key,event_type,payload_hash,signature_verified,processing_status,payload
+ ) values
+ (v_mismatch_event,'flutterwave','sql-sub-cancel-mismatch-01','subscription.cancelled',repeat('a',64),true,'needs_review',
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10945),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated'))),
+ (v_email_mismatch_event,'flutterwave','sql-sub-cancel-email-mismatch','subscription.cancelled',repeat('b',64),true,'needs_review',
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','wrong@example.com'),'status','deactivated'))),
+ (v_ambiguous_event,'flutterwave','sql-sub-cancel-ambiguous','subscription.cancelled',repeat('d',64),true,'needs_review',
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated'))),
+ (v_valid_event,'flutterwave','sql-sub-cancel-valid-01','subscription.cancelled',repeat('c',64),true,'needs_review',
+  jsonb_build_object('event','subscription.cancelled','data',jsonb_build_object('plan',jsonb_build_object('id',10944),'customer',jsonb_build_object('email','referred@example.com'),'status','deactivated')));
+
+ v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_mismatch_event,v_subscription,'Provider plan ID did not match; retained for review'
+ );
+ if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_plan_id_mismatch' then
+  raise exception 'Mismatched provider plan must remain in review: %',v_result;
+ end if;
+ v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_email_mismatch_event,v_subscription,'Provider customer email did not match; retained for review'
+ );
+ if v_result->>'resolved'<>'false' or v_result->>'reason'<>'provider_customer_email_mismatch' then
+  raise exception 'Mismatched customer email must remain in review: %',v_result;
+ end if;
+ v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_ambiguous_event,v_subscription,'Two active local subscriptions matched the provider plan and customer email'
+ );
+ if v_result->>'resolved'<>'false' or v_result->>'reason'<>'customer_plan_match_not_unique' then
+  raise exception 'Duplicate provider plan/customer identity must remain in review: %',v_result;
+ end if;
+ if (select status from executive_visuals.customer_subscriptions where id=v_subscription)<>'active' then
+  raise exception 'Ambiguous provider identity changed the selected subscription';
+ end if;
+ delete from executive_visuals.customer_subscriptions where id=v_duplicate_subscription;
+
+ if (select status from executive_visuals.customer_subscriptions where id=v_subscription)<>'active' then
+  raise exception 'Ambiguous provider callbacks must not change subscription access';
+ end if;
+
+ v_result:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_valid_event,v_subscription,'Operator verified the exact provider plan ID and customer email'
+ );
+ if v_result->>'resolved'<>'true' or v_result->>'idempotentReplay'<>'false' then
+  raise exception 'Exact provider cancellation did not resolve: %',v_result;
+ end if;
+ v_replay:=executive_visuals.reconcile_flutterwave_subscription_cancellation(
+  v_actor,v_valid_event,v_subscription,'Operator verified the exact provider subscription ID and customer email'
+ );
+ if v_replay->>'idempotentReplay'<>'true' then
+  raise exception 'Subscription cancellation reconciliation was not idempotent: %',v_replay;
+ end if;
+ if (select status from executive_visuals.customer_subscriptions where id=v_subscription)<>'cancelled'
+   or (select processing_status from executive_visuals.payment_webhook_events where id=v_valid_event)<>'processed'
+   or (select count(*) from executive_visuals.subscription_events where subscription_id=v_subscription and event_data->>'webhookEventId'=v_valid_event::text)<>1 then
+  raise exception 'Verified subscription cancellation, webhook state and audit event did not commit atomically';
+ end if;
+end;
+$batch25$;
+

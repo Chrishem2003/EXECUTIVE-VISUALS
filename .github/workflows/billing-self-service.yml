@@ -158,6 +158,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111220000_verified_cost_reconciliation_profitability_trends_batch_25.sql
       - name: Apply Measured Shared-Cost Allocation Batch 26 migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_measured_shared_cost_allocation_batch_26.sql
+      - name: Apply exact-match subscription webhook reconciliation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261120110000_subscription_webhook_reconciliation.sql
       - name: Verify atomic subscription purchase, plan changes, cancellation and failed checkout
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
