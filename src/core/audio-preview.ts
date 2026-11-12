@@ -52,6 +52,7 @@ export class AudioPreviewEngine{
  private readonly connected=new Map<string,ConnectedTrack>();
  private masterVolume=0.85;
  private masterMuted=false;
+ private soloMode=false;
  constructor(context:AudioContext){
   this.context=context;
   this.master=context.createGain();
@@ -73,7 +74,7 @@ export class AudioPreviewEngine{
  async resume():Promise<void>{if(this.context.state!=="running")await this.context.resume();}
  sync(tracks:readonly AudioPreviewTrackInput[]):void{
   const active=new Set(tracks.map(track=>track.id));
-  for(const [id,entry] of this.connected){if(!active.has(id)){entry.muted=true;entry.media.pause();}}
+  for(const [id,entry] of this.connected){if(!active.has(id)){entry.muted=true;entry.solo=false;entry.media.pause();}}
   for(const track of tracks){
    let entry=this.connected.get(track.id);
    if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(track.id);entry=undefined;}
@@ -94,11 +95,12 @@ export class AudioPreviewEngine{
  }
  setMasterVolume(value:number):void{this.masterVolume=Math.max(0,Math.min(1,Number.isFinite(value)?value:0));this.applyMaster();}
  setMasterMuted(muted:boolean):void{this.masterMuted=!!muted;this.applyMaster();}
+ setSoloMode(enabled:boolean):void{this.soloMode=!!enabled;this.applyTrackStates();}
  get isMasterMuted():boolean{return this.masterMuted;}
  get masterVolumeLevel():number{return this.masterVolume;}
  private applyMaster():void{this.master.gain.setTargetAtTime(this.masterMuted?0:this.masterVolume,this.context.currentTime,0.015);}
  private applyTrackStates():void{
-  const hasSolo=[...this.connected.values()].some(entry=>entry.solo),now=this.context.currentTime;
+  const hasSolo=this.soloMode||[...this.connected.values()].some(entry=>entry.solo),now=this.context.currentTime;
   for(const entry of this.connected.values()){
    const suppressed=entry.muted||(hasSolo&&!entry.solo),gainParam=entry.gain.gain,panParam=entry.panner.pan;
    const gainDb=evaluateAudioAutomation(entry.automation,entry.automationTime,"gainDb",entry.gainDb);
