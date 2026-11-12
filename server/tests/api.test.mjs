@@ -8,11 +8,21 @@ import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
+const d1ProxyPort=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
+const d1ProxyRequests=[];
+const d1ProxyServer=createServer(async(req,res)=>{
+  const chunks=[];for await(const chunk of req)chunks.push(chunk);
+  const raw=Buffer.concat(chunks).toString("utf8");
+  d1ProxyRequests.push({method:req.method,path:req.url,cookie:req.headers.cookie||"",body:raw});
+  res.writeHead(req.method==="POST"?201:200,{"content-type":"application/json","cache-control":"no-store"});
+  res.end(JSON.stringify(req.method==="POST"?{project:{id:"staging-project",name:JSON.parse(raw).name},storage:"cloudflare-d1-staging"}:{projects:[],storage:"cloudflare-d1-staging"}));
+});
+await new Promise(resolve=>d1ProxyServer.listen(d1ProxyPort,"127.0.0.1",resolve));
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",DISABLE_WORKER:"true",D1_STAGING_WORKER_URL:"http://127.0.0.1:"+d1ProxyPort},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -49,6 +59,25 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
+});
+
+test("D1 staging bridge is same-origin, authenticated and forwards the existing session cookie",async()=>{
+  const anonymous=await fetch(base+"/api/d1/projects");
+  assert.equal(anonymous.status,401);
+  assert.equal(d1ProxyRequests.length,0,"anonymous callers must not reach the staging Worker");
+
+  const cookie=await register("d1-staging-proxy@example.test");
+  const list=await request("/api/d1/projects",{},cookie);
+  assert.equal(list.status,200);
+  assert.deepEqual(await list.json(),{projects:[],storage:"cloudflare-d1-staging"});
+  assert.equal(d1ProxyRequests.at(-1).method,"GET");
+  assert.match(d1ProxyRequests.at(-1).cookie,/ev_session=/);
+
+  const create=await request("/api/d1/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Connected staging workspace"})},cookie);
+  assert.equal(create.status,201);
+  assert.equal((await create.json()).project.name,"Connected staging workspace");
+  assert.deepEqual(JSON.parse(d1ProxyRequests.at(-1).body),{name:"Connected staging workspace"});
+  assert.match(d1ProxyRequests.at(-1).cookie,/ev_session=/);
 });
 
 test("provider catalog is authenticated, safe and read-only",async()=>{
@@ -635,6 +664,7 @@ test("transformation plans persist through the authenticated API with role, cons
 
 test.after(async()=>{
   child.kill("SIGTERM");
+  await new Promise(resolve=>d1ProxyServer.close(resolve));
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
   await rm(dataDir,{recursive:true,force:true});
 });
