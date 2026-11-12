@@ -54,6 +54,46 @@ export function buildAudioMasteringFilter(settings){
 }
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+const audioPoints=(clip,duration)=>{
+ const points=clip.audioAutomation??[];
+ if(!Array.isArray(points)||points.length>256)fail("Audio automation must contain at most 256 keyframes.","INVALID_AUDIO_AUTOMATION");
+ let previous=-1;
+ for(const point of points){
+  if(!point||!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>duration||point.timeSeconds<=previous)fail("Audio automation keyframes must be sorted, unique and inside the clip.","INVALID_AUDIO_AUTOMATION");
+  if(point.gainDb!==undefined&&(!Number.isFinite(point.gainDb)||point.gainDb< -60||point.gainDb>24))fail("Audio automation gain must be between -60 and 24 dB.","INVALID_AUDIO_AUTOMATION");
+  if(point.pan!==undefined&&(!Number.isFinite(point.pan)||point.pan< -1||point.pan>1))fail("Audio automation pan must be between -1 and 1.","INVALID_AUDIO_AUTOMATION");
+  if(point.gainDb===undefined&&point.pan===undefined)fail("Audio automation keyframes require gain or pan.","INVALID_AUDIO_AUTOMATION");
+  previous=point.timeSeconds;
+ }
+ return points;
+};
+const n=(value)=>Number(value.toFixed(9)).toString();
+const gainExpression=(points,baseDb)=>{
+ const list=points.filter(point=>point.gainDb!==undefined),gain=db=>Math.pow(10,Math.max(-60,Math.min(24,Number(db)||0))/20);
+ if(!list.length)return n(gain(baseDb));
+ let expression=n(gain(list[list.length-1].gainDb));
+ for(let i=list.length-1;i>=0;i--){
+  const point=list[i],from=i?list[i-1].timeSeconds:0,to=point.timeSeconds,fromGain=i?gain(list[i-1].gainDb):gain(baseDb),toGain=gain(point.gainDb);
+  const segment=point.interpolation==="step"||to<=from?n(fromGain):"("+n(fromGain)+"+("+n(toGain)+"-"+n(fromGain)+")*((t-"+n(from)+")/("+n(to)+"-"+n(from)+")))";
+  expression="if(lt(t,"+n(to)+"),"+segment+","+expression+")";
+ }
+ return expression;
+};
+const panExpressions=(points,basePan,channels)=>{
+ const list=points.filter(point=>point.pan!==undefined),pan=value=>Math.max(-1,Math.min(1,Number.isFinite(value)?value:0));
+ if(channels!==1&&!list.length&&pan(basePan)===0)return null;
+ let expression=n(pan(list.length?list[list.length-1].pan:basePan));
+ for(let i=list.length-1;i>=0;i--){
+  const point=list[i],from=i?list[i-1].timeSeconds:0,to=point.timeSeconds,fromPan=i?pan(list[i-1].pan):pan(basePan),toPan=pan(point.pan);
+  const segment=point.interpolation==="step"||to<=from?n(fromPan):"("+n(fromPan)+"+("+n(toPan)+"-"+n(fromPan)+")*((t-"+n(from)+")/("+n(to)+"-"+n(from)+")))";
+  expression="if(lt(t,"+n(to)+"),"+segment+","+expression+")";
+ }
+ const p="("+expression+")",halfPi=n(Math.PI/2);
+ if(channels===1){const angle="((("+p+")+1)/2)*"+halfPi;return{left:"val(0)*cos("+angle+")",right:"val(0)*sin("+angle+")"};}
+ const x="if(lte("+p+",0),("+p+")+1,"+p+")",angle="("+x+")*"+halfPi;
+ return{left:"if(lte("+p+",0),val(0)+val(1)*cos("+angle+"),val(0)*cos("+angle+"))",right:"if(lte("+p+",0),val(1)*sin("+angle+"),val(1)+val(0)*sin("+angle+"))"};
+};
+
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
 
 /**
@@ -81,6 +121,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
  let cursor=0,inputIndex=0,segmentIndex=0,captionIndex=0;
+ const audioChannelCache=new Map();
+ const getAudioChannels=async(path)=>{
+  if(audioChannelCache.has(path))return audioChannelCache.get(path);
+  const result=await run("ffprobe",["-v","error","-select_streams","a:0","-show_entries","stream=channels","-of","json",path],60000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+  let metadata;try{metadata=JSON.parse(result.stdout||"{}");}catch{fail("Audio channel metadata could not be read.","AUDIO_CHANNEL_METADATA_INVALID");}
+  const channels=Number(metadata.streams?.[0]?.channels);
+  if(!Number.isSafeInteger(channels)||channels<1)fail("Audio source has no supported audio channel layout.","AUDIO_CHANNEL_LAYOUT_UNSUPPORTED");
+  audioChannelCache.set(path,channels);return channels;
+ };
  const getAsset=(assetId)=>{
   const entry=assets.get(String(assetId));
   if(!entry||typeof entry.path!=="string"||!entry.asset)fail("A timeline source asset is missing or inaccessible.","SOURCE_ASSET_NOT_FOUND");
@@ -116,8 +165,10 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Audio speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("audio/"))fail("Audio tracks require audio source assets.","UNSUPPORTED_AUDIO_SOURCE");
    args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
-   const delay=Math.round(start*1000),label="a"+audioIndex++,gain=Math.pow(10,Math.max(-60,Math.min(24,Number(clip.gainDb)||0))/20);
-   audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume=${gain.toFixed(6)},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
+   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,duration),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
+   const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
+   const panFilter=pan?","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
+   audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
    inputIndex++;
   }
   for(const clip of overlayClips){

@@ -140,3 +140,36 @@ test("cloud FFmpeg renderer rejects audio mastering targets outside EBU R128 ran
   await assert.rejects(()=>renderCloudTimeline({timeline:{audioMastering,tracks:[{kind:"video",clips:[clip]}]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_MASTERING");
  }
 });
+
+test("cloud renderer applies clip gain and pan automation to the encoded audio", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-audio-automation-"));
+ try{
+  const video=join(root,"source.mp4"),audio=join(root,"voice.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Audio automation",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,pan:0,audioAutomation:[
+    {timeSeconds:0,gainDb:-18,pan:-1,interpolation:"linear"},
+    {timeSeconds:.5,gainDb:-6,pan:1,interpolation:"linear"}
+   ]}]}
+  ]};
+  const assets=new Map([
+   ["v",{path:video,asset:{id:"v",mediaType:"video/mp4",originalName:"source.mp4"}}],
+   ["a",{path:audio,asset:{id:"a",mediaType:"audio/wav",originalName:"voice.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"&&stream.channels===2));
+  assert.equal(result.render.audioClips,1);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud renderer rejects malformed or out-of-clip audio automation",async()=>{
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
+ const audioClip={...clip,assetId:"a",audioAutomation:[{timeSeconds:2,gainDb:-3}]};
+ const timeline={tracks:[{kind:"video",clips:[clip]},{kind:"audio",clips:[audioClip]}]};
+ const withAudio=new Map([...assets,["a",{path:"/not-used.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:withAudio,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_AUTOMATION");
+});

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, normalizeAudioMasteringSettings, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
+import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression } from "../src/core/audio-automation.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -33,6 +34,23 @@ assert.equal(interchange.tracks.children.length,2);
 assert.equal(interchange.markers.length,1);
 assert.equal(interchange.markers[0].name,"Review hook");
 assert.ok(JSON.stringify(interchange).includes("asset://asset-a"));
+const automationPoints=normalizeAudioAutomation([{timeSeconds:1,gainDb:-12,pan:-1,interpolation:"linear"},{timeSeconds:3,gainDb:-24,pan:1,interpolation:"step"}]);
+assert.equal(automationPoints.length,2);
+assert.ok(Math.abs(evaluateAudioAutomation(automationPoints,.5,"gainDb",0)+6)<1e-9);
+assert.equal(evaluateAudioAutomation(automationPoints,4,"pan",0),1);
+assert.match(buildGainAutomationExpression(automationPoints,0),/if\(lt\(t,1\)/);
+const audioTimeline=createTimeline("project-audio","timeline-audio","Audio automation");
+let audioTracks=addTrack(audioTimeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+audioTracks=addTrack(audioTracks,{id:"audio",name:"Audio",kind:"audio",enabled:true,locked:false,clips:[]});
+audioTracks=addClip(audioTracks,"audio",{id:"voice",assetId:"voice-asset",name:"Voice",sourceRange:{start:rational(0,1),duration:rational(4,1)},timelineStart:rational(0,1),duration:rational(4,1),enabled:true,gainDb:-3,pan:-.25,audioAutomation:automationPoints});
+assert.equal(validateTimeline(audioTracks).valid,true);
+const audioOtio=toOpenTimelineIo(audioTracks);
+assert.deepEqual(audioOtio.tracks.children[1].children[0].metadata.executiveVisuals.audioAutomation,automationPoints);
+assert.equal(audioOtio.tracks.children[1].children[0].metadata.executiveVisuals.pan,-.25);
+const invalidAudioTimeline={...audioTracks,tracks:audioTracks.tracks.map(track=>track.id==="audio"?{...track,clips:[{...track.clips[0],audioAutomation:[{timeSeconds:5,gainDb:-3}]}]}:track)};
+assert.equal(validateTimeline(invalidAudioTimeline).issues.some(issue=>issue.code==="invalid_audio_automation"),true);
+assert.throws(()=>normalizeAudioAutomation(Array.from({length:257},(_,index)=>({timeSeconds:index,gainDb:0}))),/256/);
+
 const masteredTimeline={...timeline,audioMastering:normalizeAudioMasteringSettings({enabled:true,profile:"ebu-r128",loudnessRange:9,truePeak:-1})};
 const masteredInterchange=toOpenTimelineIo(masteredTimeline);
 const persistedMasteredTimeline=JSON.parse(JSON.stringify(masteredTimeline));
