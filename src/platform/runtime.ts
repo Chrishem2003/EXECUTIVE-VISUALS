@@ -258,10 +258,13 @@ function paint(){updateShell();renderGate();const root=document.querySelector<HT
 export async function initRuntime(){
  const fragment=new URLSearchParams(window.location.hash.startsWith("#")?window.location.hash.slice(1):window.location.hash);if(fragment.get("type")==="recovery"){const token=fragment.get("access_token")||"";if(token){state.recoveryToken=token;state.authView="reset";state.message="Recovery link verified. Choose a new password.";}else{state.message=fragment.get("error_description")||"This recovery link is invalid or expired. Request a new one.";state.authView="login";}window.history.replaceState({},document.title,window.location.pathname+window.location.search);}
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
+  const health=await apiRequest<{authMode:"local"|"supabase";authSession?:{configurationReady?:boolean;encryptedServerTokens?:boolean};persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
   state.authMode=health.authMode;state.dataDirectoryPersistence=health.persistence?.dataDirectory||"unknown";state.persistentVolumeRequired=Boolean(health.persistence?.persistentVolumeRequired);state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
-  try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
-  catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
+  if(health.authMode==="supabase"&&health.authSession?.configurationReady===false){state.status="auth-required";state.authView="login";state.message="Account sign-in is temporarily unavailable. The operator must configure SUPABASE_SESSION_ENCRYPTION_KEY in the server secret manager before sessions can be issued. No browser token fallback is enabled.";}
+  else{
+   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
+   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
+  }
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
  window.dispatchEvent(new Event("ev:runtime-ready"));
