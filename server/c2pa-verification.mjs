@@ -90,7 +90,7 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   const settings={verify:{verifyAfterReading:true,verifyTrust:true,verifyTimestampTrust:true,ocspFetch:false,remoteManifestFetch:false}};
   if(trustAnchorsPath||userAnchorsPath){
    settings.trust={};
-   if(trustAnchorsPath)Object.assign(settings.trust,{trustAnchors:trustAnchorsPath,verifyTrustList:false});
+   if(trustAnchorsPath)settings.trust.trustAnchors=trustAnchorsPath;
    if(userAnchorsPath)settings.trust.userAnchors=userAnchorsPath;
   }
   let reader;
