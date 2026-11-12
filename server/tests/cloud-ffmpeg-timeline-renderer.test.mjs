@@ -166,6 +166,36 @@ test("cloud renderer applies clip gain and pan automation to the encoded audio",
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+
+
+test("cloud renderer accepts audio automation after the picture tail but within the full audio clip", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-audio-tail-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"long-audio.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=2","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Audio tail automation",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"a",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)},audioAutomation:[
+    {timeSeconds:0,gainDb:-3,pan:0,interpolation:"linear"},
+    {timeSeconds:.5,gainDb:-6,pan:.25,interpolation:"linear"},
+    {timeSeconds:1.5,gainDb:-18,pan:1,interpolation:"linear"}
+   ]}]}
+  ]};
+  const assets=new Map([
+   ["v",{path:video,asset:{id:"v",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["a",{path:audio,asset:{id:"a",mediaType:"audio/wav",originalName:"long-audio.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  const duration=Number(probe.format?.duration);
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.ok(duration>=.95&&duration<=1.1,"the one-second picture sequence must still bound the master output; received "+duration);
+  const invalid={...timeline,tracks:timeline.tracks.map(track=>track.id==="a"?{...track,clips:track.clips.map(clip=>({...clip,audioAutomation:[{timeSeconds:2.1,gainDb:-18}]}))}:track)};
+  await assert.rejects(()=>renderCloudTimeline({timeline:invalid,assets,workDir:root,onProgress(){}}),error=>error.code==="INVALID_AUDIO_AUTOMATION");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test("cloud renderer rejects malformed or out-of-clip audio automation",async()=>{
  const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
  const clip={assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}};
