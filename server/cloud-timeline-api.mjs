@@ -153,7 +153,6 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      "media.resize":["width","height","fit"],
      "media.interpolate":["fps"],
      "media.upscale":["width","height","fit","algorithm","sharpness"],
-     "media.ai-upscale":["format","model","scale","tile"],
      "media.transcode":["container"],
      "media.proxy":[]
     };
@@ -184,14 +183,6 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported resize algorithm."}});
     if(jobType==="media.transcode"&&options.container!==undefined&&!["mp4","webm","mov","mkv","mp3","wav"].includes(String(options.container).toLowerCase()))
      return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported transcode container."}});
-    if(jobType==="media.ai-upscale"&&options.format!==undefined&&!["png","jpg","webp"].includes(String(options.format).toLowerCase()))
-     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose PNG, JPG or WebP for AI upscale output."}});
-    if(jobType==="media.ai-upscale"&&options.model!==undefined&&!["realesrgan-x4plus","realesrgan-x4plus-anime"].includes(String(options.model)))
-     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported AI upscaling model."}});
-    if(jobType==="media.ai-upscale"&&options.tile!==undefined&&(!Number.isInteger(options.tile)||options.tile<0||options.tile>2048))
-     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"AI upscale tile size must be an integer from 0 to 2048."}});
-    if(jobType==="media.ai-upscale"&&options.scale!==undefined&&(!Number.isInteger(options.scale)||![2,3,4].includes(options.scale)))
-     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"AI upscale scale must be 2, 3 or 4."}});
     const key=typeof idempotencyKey==="string"?idempotencyKey.trim():"";
     if(key.length<8||key.length>180)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key between 8 and 180 characters is required."}});
     const input={sourceAssetId:asset.id,...options};
@@ -416,7 +407,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(projectId&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
      if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
-     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.ai-upscale,media.transcode,media.proxy";
+     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.transcode,media.proxy,timeline.render";
      const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
      return response(200,{jobs:Array.isArray(rows)?rows:[]});
     }
