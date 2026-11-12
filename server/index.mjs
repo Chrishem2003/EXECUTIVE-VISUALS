@@ -1215,7 +1215,8 @@ export function createAppServer() {
           if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
         }
-        const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
+        const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"");
+        if(key.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Job idempotency keys must not exceed 180 characters.");return;}
         const input={...body};delete input.idempotencyKey;
         const inputJson=stableJson(input);
         if(key){
