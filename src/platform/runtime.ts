@@ -168,7 +168,7 @@ function renderCloudMediaJobs(){
 }
 function renderCloudAssetLibrary(){
  if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
- return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED PRIVATE OBJECT STORAGE</div><h3>Cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These files are stored separately from local preview assets. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · project-scoped access</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PERSONAL PRIVATE OBJECT STORAGE</div><h3>Personal cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These owner-scoped files are stored separately from local preview assets. They are not yet linked to local project memberships. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · owner-scoped access</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
@@ -297,7 +297,7 @@ async function refresh(){
  state.cloudAssets=[];
  if(state.cloudMediaReady){
   try{
-   const scope=(state.projectId?"?projectId="+encodeURIComponent(state.projectId)+"&":"?")+"limit=25";
+   const scope="?limit=25";
    const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
    state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
     try{
@@ -309,7 +309,7 @@ async function refresh(){
  }
  if(state.cloudMediaJobsEnabled&&state.cloudMediaReady){
   try{
-   const scope=state.projectId?"?projectId="+encodeURIComponent(state.projectId)+"&limit=25":"?limit=25";
+   const scope="?limit=25";
    const response=await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope);
    state.cloudMediaJobs=response.jobs||[];
   }catch{state.cloudMediaJobs=[];}
@@ -383,7 +383,7 @@ document.addEventListener("change",event=>{
   void (async()=>{
    for(const file of files){
     try{
-     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});
+     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:file});
     }catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Private cloud upload failed."));}
    }
    await refresh();paint();
