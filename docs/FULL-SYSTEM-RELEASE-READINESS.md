@@ -1,9 +1,20 @@
 # Executive Visuals — full-system release readiness plan
 
-**Audit date:** 8 November 2026  
-**Baseline:** `main` at `3955955` (account identity, project membership and the in-app Release readiness workspace merged; CI #8501 passed).
+**Audit date:** 12 November 2026  
+**Baseline:** current `main` includes the 12 November release and security work recorded in `docs/IMPLEMENTATION-STATUS.md`; see that document for the authoritative merged-PR and live-deployment ledger.
 
 This plan distinguishes code that is merged, code that has passed CI but is still on a branch, and features that cannot work end-to-end until external infrastructure and credentials exist. A passing test suite does not mean a provider, persistent store or production workflow is activated.
+
+## 0. Mainline checkpoint — 12 November 2026
+
+- PR #470 and PR #472 are merged: waveform-cache file and directory symlink escape regression tests now run on main.
+- PR #468 Content Credentials trust-anchor policy and PR #469 patched Node 22.23.4 runtime are merged. The latest live application-code deployment is tracked in `docs/IMPLEMENTATION-STATUS.md`.
+- The isolated D1 staging schema and Worker are deployed and bound. Seven `ev_*` tables exist and a read-only audit found zero records. The Worker exposes project metadata and revisioned workspace-document endpoints only.
+- The Render same-origin D1 bridge exists in code but remains disabled unless `D1_STAGING_WORKER_URL` is explicitly configured. It is not configured on the live production service; authenticated browser acceptance is outstanding.
+- Production Render Free remains on ephemeral SQLite/disk. R2 remains inactive; no durable hosted media storage is available.
+- Older PRs listed below are historical branch inventory. Their mergeability and exact-head checks must be refreshed before any merge; do not infer that a previously passing workflow or old base is current.
+
+See [Persistence and Release Blockers](PERSISTENCE-AND-RELEASE-BLOCKERS.md) for the current infrastructure boundary.
 
 ## 1. Merged and live on main
 
