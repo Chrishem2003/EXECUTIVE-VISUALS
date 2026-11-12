@@ -73,7 +73,7 @@ export class AudioPreviewEngine{
  async resume():Promise<void>{if(this.context.state!=="running")await this.context.resume();}
  sync(tracks:readonly AudioPreviewTrackInput[]):void{
   const active=new Set(tracks.map(track=>track.id));
-  for(const [id,entry] of this.connected){if(!active.has(id)){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(id);}}
+  for(const [id,entry] of this.connected){if(!active.has(id)){entry.muted=true;entry.media.pause();}}
   for(const track of tracks){
    let entry=this.connected.get(track.id);
    if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(track.id);entry=undefined;}
