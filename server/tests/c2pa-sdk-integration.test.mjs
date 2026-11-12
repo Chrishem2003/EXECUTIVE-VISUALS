@@ -85,7 +85,6 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   assert.equal(trusted.status,"trusted");
 
   const tampered=Buffer.from(signed);
-  const tampered=Buffer.from(signed);
   tampered[tampered.length-1]^=0x01;
   await writeFile(signedPath,tampered);
   const tamperedHash=createHash("sha256").update(tampered).digest("hex");
