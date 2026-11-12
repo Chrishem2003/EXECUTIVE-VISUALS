@@ -4,6 +4,7 @@ type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
+type CloudRuntimeJob={id:string;owner_id:string;project_id:string|null;job_type:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;attempt_count?:number;created_at:string;updated_at:string;completed_at?:string|null};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type C2paVerification={status:"trusted"|"valid_untrusted"|"invalid"|"not_present"|"validation_unavailable";present:boolean;valid:boolean;trusted:boolean;assetSha256:string;validationState:string|null;findings:string[];manifest:null|{title:string|null;format:string|null;claimGenerator:string|null;ingredientCount:number;ingredients:Array<{title:string|null;format:string|null;relationship:string|null;hasManifestData:boolean}>};validationStatuses:Array<{code:string;success:boolean|null;explanation:string|null}>};
@@ -13,8 +14,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudAssets:RuntimeCloudAsset[];authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
- status:"checking",authMode:"local",cloudMediaReady:false,cloudAssets:[],authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean;user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>}={
+ status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",persistentVolumeRequired:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{}
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -156,12 +157,18 @@ function renderCloudAssets(){
   const url=asset.downloadUrl?esc(asset.downloadUrl):"";
   const isVideo=asset.mediaType.startsWith("video/"),isAudio=asset.mediaType.startsWith("audio/"),isImage=asset.mediaType.startsWith("image/");
   const preview=url?(isImage?'<img loading="lazy" src="'+url+'" alt="">':isVideo?'<video controls preload="metadata" src="'+url+'"></video>':isAudio?'<audio controls preload="metadata" src="'+url+'"></audio>':'<a href="'+url+'" target="_blank" rel="noopener noreferrer">Open file</a>'):'<div class="empty">Secure download link unavailable. Refresh to retry.</div>';
-  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(asset.name)+'</b><small>'+Math.max(1,Math.round(asset.size/1024))+' KB · '+esc(asset.mediaType)+' · PRIVATE CLOUD</small><code>'+esc(asset.sha256.slice(0,20))+'…</code></div><div class="runtime-asset-actions">'+(url?'<a class="download-output" href="'+url+'" target="_blank" rel="noopener noreferrer">Open secure original</a>':'')+'<button data-ev-cloud-remove="'+esc(asset.id)+'">Archive cloud asset</button></div></article>';
+  const mediaActions=state.cloudMediaJobsEnabled?'<button data-ev-cloud-job="media.probe" data-ev-cloud-asset="'+esc(asset.id)+'">Inspect</button>'+(isVideo?'<button data-ev-cloud-job="media.thumbnail" data-ev-cloud-asset="'+esc(asset.id)+'">Extract thumbnail</button><button data-ev-cloud-job="media.proxy" data-ev-cloud-asset="'+esc(asset.id)+'">Create proxy</button><button data-ev-cloud-job="media.denoise" data-ev-cloud-asset="'+esc(asset.id)+'">Denoise video</button>':'')+(isAudio?'<button data-ev-cloud-job="media.audio-clean" data-ev-cloud-asset="'+esc(asset.id)+'">Clean audio</button>':''):'';
+  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(asset.name)+'</b><small>'+Math.max(1,Math.round(asset.size/1024))+' KB · '+esc(asset.mediaType)+' · PRIVATE CLOUD</small><code>'+esc(asset.sha256.slice(0,20))+'…</code></div><div class="runtime-asset-actions">'+(url?'<a class="download-output" href="'+url+'" target="_blank" rel="noopener noreferrer">Open secure original</a>':'')+mediaActions+'<button data-ev-cloud-remove="'+esc(asset.id)+'">Archive cloud asset</button></div></article>';
  }).join("")+'</div>';
+}
+function renderCloudMediaJobs(){
+ if(!state.cloudMediaJobsEnabled)return '<div class="notice">Cloud processing remains disabled until an isolated worker is deployed and its private storage, queue and authorization checks are verified.</div>';
+ if(!state.cloudMediaJobs.length)return '<div class="empty">No cloud processing jobs yet. Choose an operation on a private cloud asset above.</div>';
+ return '<div class="runtime-jobs">'+state.cloudMediaJobs.map(job=>'<article class="runtime-job"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(job.status.toUpperCase())+' · '+Math.max(0,Math.min(100,Number(job.progress)||0))+'%</small><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+(job.error?.message?'<small class="muted">'+esc(job.error.message)+'</small>':'')+'</div></article>').join("")+'</div>';
 }
 function renderCloudAssetLibrary(){
  if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
- return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED PRIVATE OBJECT STORAGE</div><h3>Cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These files are stored separately from local preview assets. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · project-scoped access</small>'+renderCloudAssets()+'</section>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED PRIVATE OBJECT STORAGE</div><h3>Cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These files are stored separately from local preview assets. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · project-scoped access</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
@@ -300,6 +307,13 @@ async function refresh(){
    }));
   }catch{state.cloudAssets=[];}
  }
+ if(state.cloudMediaJobsEnabled&&state.cloudMediaReady){
+  try{
+   const scope=state.projectId?"?projectId="+encodeURIComponent(state.projectId)+"&limit=25":"?limit=25";
+   const response=await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope);
+   state.cloudMediaJobs=response.jobs||[];
+  }catch{state.cloudMediaJobs=[];}
+ }else state.cloudMediaJobs=[];
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
@@ -309,8 +323,8 @@ function paint(){updateShell();renderGate();const root=document.querySelector<HT
 export async function initRuntime(){
  const fragment=new URLSearchParams(window.location.hash.startsWith("#")?window.location.hash.slice(1):window.location.hash);if(fragment.get("type")==="recovery"){const token=fragment.get("access_token")||"";if(token){state.recoveryToken=token;state.authView="reset";state.message="Recovery link verified. Choose a new password.";}else{state.message=fragment.get("error_description")||"This recovery link is invalid or expired. Request a new one.";state.authView="login";}window.history.replaceState({},document.title,window.location.pathname+window.location.search);}
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";authSession?:{configurationReady?:boolean;encryptedServerTokens?:boolean};cloudMedia?:{enabled:boolean;ready:boolean};persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
-  state.authMode=health.authMode;state.cloudMediaReady=Boolean(health.cloudMedia?.enabled&&health.cloudMedia?.ready);state.dataDirectoryPersistence=health.persistence?.dataDirectory||"unknown";state.persistentVolumeRequired=Boolean(health.persistence?.persistentVolumeRequired);state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  const health=await apiRequest<{authMode:"local"|"supabase";authSession?:{configurationReady?:boolean;encryptedServerTokens?:boolean};cloudMedia?:{enabled:boolean;ready:boolean};cloudMediaJobsApi?:{enabled:boolean};persistence?:{dataDirectory:"ephemeral"|"unverified"|"operator-confirmed-volume";persistentVolumeRequired:boolean};media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
+  state.authMode=health.authMode;state.cloudMediaReady=Boolean(health.cloudMedia?.enabled&&health.cloudMedia?.ready);state.cloudMediaJobsEnabled=health.cloudMediaJobsApi?.enabled===true;state.dataDirectoryPersistence=health.persistence?.dataDirectory||"unknown";state.persistentVolumeRequired=Boolean(health.persistence?.persistentVolumeRequired);state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
   if(health.authMode==="supabase"&&health.authSession?.configurationReady===false){state.status="auth-required";state.authView="login";state.message="Account sign-in is temporarily unavailable. The operator must configure SUPABASE_SESSION_ENCRYPTION_KEY in the server secret manager before sessions can be issued. No browser token fallback is enabled.";}
   else{
    try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
@@ -390,6 +404,16 @@ document.addEventListener("click",event=>{
   if(!assetId)return;
   if(!window.confirm("Archive this private cloud asset? The asset will be soft-deleted and storage cleanup will follow the configured retention policy."))return;
   void apiRequest("/api/cloud/assets/"+encodeURIComponent(assetId),{method:"DELETE"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error instanceof Error?error.message:"Cloud asset could not be archived."));
+  return;
+ }
+ const cloudJob=target.closest<HTMLElement>("[data-ev-cloud-job]");
+ if(cloudJob){
+  const assetId=cloudJob.dataset.evCloudAsset||"",jobType=cloudJob.dataset.evCloudJob||"";
+  if(!assetId||!jobType)return;
+  cloudJob.setAttribute("disabled","true");
+  void apiRequest("/api/cloud/assets/"+encodeURIComponent(assetId)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType,options:jobType==="media.thumbnail"?{seconds:1}:{}})})
+   .then(async()=>{await refresh();paint();alert("Private cloud processing job queued. Track its status in the Cloud Worker Queue.");})
+   .catch(error=>{cloudJob.removeAttribute("disabled");alert(error instanceof Error?error.message:"Cloud media job could not be queued.");});
   return;
  }
  const c2paButton=target.closest<HTMLElement>("[data-ev-c2pa]");
