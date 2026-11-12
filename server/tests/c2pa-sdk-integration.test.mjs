@@ -65,8 +65,26 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   });
   assert.equal(verify.present,true);
   assert.equal(verify.valid,true);
-  assert.ok(["valid_untrusted","trusted"].includes(verify.status));
+  assert.equal(verify.status,"valid_untrusted","a valid test signer must not be trusted without an explicit trust anchor");
   assert.equal(verify.assetSha256,sha256);
+
+  // The test-only CAI chain is deliberately not a production trust root.
+  // Trust the intermediate CA only inside this test to prove the configured
+  // trust-anchor path changes the result from valid_untrusted to trusted.
+  const certificateChain=await readFile(join(fixtureRoot,"test-signing-chain.pem"),"utf8");
+  const certificates=certificateChain.match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/g)||[];
+  assert.equal(certificates.length,2,"the test signing chain must contain signer and intermediate certificates");
+  const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
+  await writeFile(trustAnchorPath,certificates[1]);
+  const trusted=await createC2paVerifier({
+   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:trustAnchorPath
+  })({filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length});
+  assert.equal(trusted.present,true);
+  assert.equal(trusted.valid,true);
+  assert.equal(trusted.trusted,true);
+  assert.equal(trusted.status,"trusted");
+
+  const tampered=Buffer.from(signed);
   const tampered=Buffer.from(signed);
   tampered[tampered.length-1]^=0x01;
   await writeFile(signedPath,tampered);
