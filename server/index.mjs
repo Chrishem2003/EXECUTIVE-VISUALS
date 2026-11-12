@@ -180,7 +180,7 @@ function clearSupabaseSessionCookies(res){
 }
 function createSupabaseBrowserSession(session){
  if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions require SUPABASE_SESSION_ENCRYPTION_KEY (32 random bytes)."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
- db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(session.user.id,session.user.email||session.user.id+"@supabase.invalid");
+ db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email,auth_source=excluded.auth_source").run(session.user.id,session.user.email||session.user.id+"@supabase.invalid");
  return supabaseSessionStore.create({userId:session.user.id,accessToken:session.accessToken,refreshToken:session.refreshToken,expiresIn:session.expiresIn});
 }
 async function authenticate(req,res) {
@@ -200,7 +200,7 @@ async function authenticate(req,res) {
    user=rotated.user;
   }
   if(!user||user.id!==stored.userId)return null;
-  db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(user.id,user.email||user.id+"@supabase.invalid");
+  db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email,auth_source=excluded.auth_source").run(user.id,user.email||user.id+"@supabase.invalid");
   return {id:user.id,email:user.email||""};
  }
  const token=cookieValue(req,"ev_session");
