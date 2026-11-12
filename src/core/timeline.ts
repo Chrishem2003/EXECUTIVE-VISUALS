@@ -138,7 +138,7 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
       throw new Error("Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×.");
   }
   const sourceSeconds=integrateSpeedCurve(curve,durationSeconds,speed);
-  if(Math.abs(sourceSeconds-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline duration and speed curve must match the source duration.");
+  if(Math.abs(sourceSeconds-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Source duration must equal the integrated timeline playback speed.");
   const next={...track,clips:[...track.clips,{...clip}].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?next:item)};
   const validation=validateTimeline(updated);
@@ -231,7 +231,7 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
           issues.push({code:"invalid_speed_curve",trackId:track.id,clipId:clip.id,message:"Variable-speed curves require 2–64 ordered video keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×."});
       }
       if(speedCurveValid&&Math.abs(integrateSpeedCurve(curve,duration,speed)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))
-        issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Timeline duration and speed curve must match the source duration."});
+        issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source duration must equal the integrated timeline playback speed."});
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
       if(clip.audioAutomation!==undefined){try{const points=normalizeAudioAutomation(clip.audioAutomation);if(points.some(point=>point.timeSeconds>duration))throw new Error("Audio automation keyframes must fall inside the clip duration.");}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
