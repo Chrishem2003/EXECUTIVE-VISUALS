@@ -36,10 +36,16 @@ BEGIN
   END LOOP;
 
   SELECT count(*) INTO applied_migrations
-  FROM supabase_migrations.schema_migrations;
+  FROM supabase_migrations.schema_migrations
+  WHERE version IN (
+    '20261108000000',
+    '20261108010000',
+    '20261108020000',
+    '20261108030000'
+  );
 
-  IF applied_migrations <> 8 THEN
-    RAISE EXCEPTION 'Expected 8 applied migrations, found %', applied_migrations;
+  IF applied_migrations <> 4 THEN
+    RAISE EXCEPTION 'Expected all four lease-fenced asset publication migrations, found %', applied_migrations;
   END IF;
 
   IF NOT EXISTS (
