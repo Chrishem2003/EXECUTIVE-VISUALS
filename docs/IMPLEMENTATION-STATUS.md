@@ -13,6 +13,7 @@ The following implementation slices have since merged into main and supersede ol
 - **Video enhancement:** PR #464 adds gated framewise video AI upscaling to the Asset Library. Actual inference remains dependent on configured local model weights and verified quality evidence.
 - **Audio and timeline:** PRs #446–#453 add audio gain/pan automation, live mixer and waveform preview, color preview alignment, clip speed controls/rendering, and cloud render history/output handoff.
 - **Content Credentials:** PR #467 adds real signed-MP4 verification/tamper tests; PR #468 adds explicit trusted-versus-valid-untrusted signer policy tests and is merged into main.
+- **Waveform cache path security:** PR #470 adds a regression test proving a symlinked media file cannot escape the managed media root; merged into main. Follow-up PR #471 adds the directory-symlink variant and is awaiting exact-head CI before merge.
 - **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The latest live application-code commit is `b92390778e9e65cc992808fc1e2e93e297d3deda`, which Render reports as live; the subsequent status-documentation commits were marked `[skip render]` and were not deployed.
 - **Staging persistence:** the isolated Cloudflare D1 metadata database has the seven ev_* tables and one migration recorded; the staging Worker has a D1 binding. The production Render service remains on local SQLite/disk, and its D1 same-origin proxy is deliberately not enabled. R2 is not activated.
 
