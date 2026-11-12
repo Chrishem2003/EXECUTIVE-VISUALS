@@ -14,11 +14,10 @@ test("detects changes to published asset evidence and report",()=>{
 test("rejects incomplete or unsafe output evidence",()=>{
  assert.throws(()=>createDeliveryManifest({...base,sha256:"bad"}),e=>e.code==="DELIVERY_MANIFEST_CHECKSUM_INVALID");
  assert.throws(()=>createDeliveryManifest({...base,byteSize:0}),e=>e.code==="DELIVERY_MANIFEST_SIZE_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:-1}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:0}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"-1"}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"-0"}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"   "}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
- assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"x".repeat(129)}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
+ for(const timelineRevision of [-1,0,"0"," 0 ","+0","-0","-0.0","-1","-1.5","1.5","   ","x".repeat(129)]){
+  assert.throws(()=>createDeliveryManifest({...base,timelineRevision}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID",String(timelineRevision));
+ }
+ assert.equal(createDeliveryManifest({...base,timelineRevision:"1"}).timelineRevision,"1");
+ assert.equal(createDeliveryManifest({...base,timelineRevision:"revision-abc"}).timelineRevision,"revision-abc");
 });
 test("rejects a modified fingerprint",()=>{const m=createDeliveryManifest(base);assert.equal(verifyDeliveryManifest({...m,fingerprint:"f".repeat(64)}),false);});
