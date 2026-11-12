@@ -118,6 +118,7 @@ test("video AI upscaler preserves text subtitle streams as mov_text",async t=>{
 });
 
 test("video AI upscaler rejects unsafe temporary-storage and output-pixel budgets",()=>{
- assert.throws(()=>createVideoAiUpscaleProcessor({maxTempBytes:1024}),/temporary storage budget/);
- assert.throws(()=>createVideoAiUpscaleProcessor({maxOutputPixels:100000001}),/output pixel budget/);
+ const adapters={runCommand:async()=>({stdout:"",stderr:""}),upscalerFactory:()=>({execute:async()=>({})})};
+ assert.throws(()=>createVideoAiUpscaleProcessor({...adapters,maxTempBytes:1024}),/temporary storage budget/);
+ assert.throws(()=>createVideoAiUpscaleProcessor({...adapters,maxOutputPixels:100000001}),/output pixel budget/);
 });
