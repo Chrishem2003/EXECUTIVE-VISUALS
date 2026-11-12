@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, rename, rm, stat, readFile, readdir, utimes } from "node:fs/promises";
+import { mkdir, rename, rm, stat, readFile, readdir, utimes, realpath } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep, join } from "node:path";
 
 const PNG=Buffer.from([137,80,78,71,13,10,26,10]);
@@ -59,8 +59,10 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   if(!String(asset.media_type||asset.mediaType||"").startsWith("audio/"))throw Object.assign(new Error("Waveforms are available only for audio assets."),{code:"WAVEFORM_UNSUPPORTED_MEDIA"});
   const relativePath=asset.storage_path||asset.storagePath;
   if(sourcePathOverride===null&&(typeof relativePath!=="string"||!relativePath))throw Object.assign(new Error("Audio source path is unavailable."),{code:"WAVEFORM_SOURCE_MISSING"});
-  const sourcePath=sourcePathOverride===null?resolve(root,relativePath):resolve(String(sourcePathOverride));
-  if(!inside(root,sourcePath))throw Object.assign(new Error("Audio source path is outside managed media storage."),{code:"WAVEFORM_INVALID_PATH"});
+  const candidatePath=sourcePathOverride===null?resolve(root,relativePath):resolve(String(sourcePathOverride));
+  if(!inside(root,candidatePath))throw Object.assign(new Error("Audio source path is outside managed media storage."),{code:"WAVEFORM_INVALID_PATH"});
+  const [rootReal,sourcePath]=await Promise.all([realpath(root),realpath(candidatePath).catch(()=>null)]);
+  if(!sourcePath||!inside(rootReal,sourcePath))throw Object.assign(new Error("Audio source path resolves outside managed media storage."),{code:"WAVEFORM_INVALID_PATH"});
   const source=await stat(sourcePath).catch(()=>null);
   if(!source?.isFile())throw Object.assign(new Error("Audio source is not available in managed storage."),{code:"WAVEFORM_SOURCE_MISSING"});
   if(source.size>maxSourceBytes||Number(asset.byte_size??asset.size??source.size)>maxSourceBytes)throw Object.assign(new Error("Audio source exceeds the waveform processing size limit."),{code:"WAVEFORM_SIZE_LIMIT"});
