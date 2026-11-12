@@ -43,7 +43,7 @@ test("cloud media jobs enqueue only authorized private assets with server-owned 
  assert.equal(created.job_type,"media.color");
  assert.deepEqual(created.input,{sourceAssetId:assetId,brightness:0.1,contrast:1.1,saturation:0.9});
  assert.equal(created.status,"queued");
- assert.equal(f.calls.some(call=>call.url.includes("job_events")),true);
+ assert.equal(f.calls.some(call=>call.url?.includes("job_events")),true);
 });
 
 test("cloud media jobs enforce editor authorization and media compatibility before writes",async()=>{
