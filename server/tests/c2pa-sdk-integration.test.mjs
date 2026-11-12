@@ -36,6 +36,51 @@ function onePixelPng(red=24,green=48,blue=72){
  return Buffer.concat([signature,pngChunk("IHDR",header),pngChunk("IDAT",pixels),pngChunk("IEND",Buffer.alloc(0))]);
 }
 
+
+test("official CAI SDK signs and validates a real embedded C2PA MP4 video manifest",async()=>{
+ const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
+ const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
+ const signer=LocalSigner.newSigner(cert,key,"es256");
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-video-"));
+ const sourcePath=join(dir,"source.mp4"),signedPath=join(dir,"signed.mp4");
+ try{
+  // Deterministic 32x32, one-frame H.264 MP4 test fixture.
+  const video=Buffer.from("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMObW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAjl0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAACAAAAAgAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAGxbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABXG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAARxzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAACAAIABIAAAASAAAAAAAAAABFUxhdmM2MS4xOS4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK/+EAFmdCwAraJbARAAADAAEAAAMAAg8SJqABAAVozgOcgAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABNwAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAAJuAAAAAQAAABRzdGNvAAAAAAAAAAEAAAM+AAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMwAAAAhmcmVlAAACdm1kYXQAAAJTBgX//0/cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2NrPTA6MDowIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTAgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9MCBpbnRyYV9yZWZyZXNoPTAgcmM9Y3JmIG1idHJlZT0wIGNyZj00MC4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTAAgAAAABNliIQ6EYoAAgOxwABAWjgybrde","base64");
+  assert.equal(video.length,1452,"video fixture must be a real MP4 container");
+  await writeFile(sourcePath,video);
+  const builder=await Builder.newAsync();
+  builder.setIntent({create:"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"});
+  builder.sign(signer,{path:sourcePath,mimeType:"video/mp4"},{path:signedPath});
+  const signed=await readFile(signedPath);
+  assert.ok(signed.length>video.length,"signed MP4 must contain an embedded C2PA manifest");
+  const sha256=createHash("sha256").update(signed).digest("hex");
+  const context=new Context({verify:{verifyAfterReading:true,verifyTrust:true,verifyTimestampTrust:true,ocspFetch:false,remoteManifestFetch:false}});
+  const reader=await Reader.fromAsset({path:signedPath,mimeType:"video/mp4"},context);
+  assert.equal(reader.isEmbedded(),true);
+  const store=reader.json();
+  assert.ok(store.active_manifest,"signed video must expose an active manifest");
+  assert.ok(["Valid","Trusted"].includes(store.validation_state),JSON.stringify(store.validation_status));
+  const verify=await createC2paVerifier({sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:null})({
+   filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length
+  });
+  assert.equal(verify.present,true);
+  assert.equal(verify.valid,true);
+  assert.ok(["valid_untrusted","trusted"].includes(verify.status));
+  assert.equal(verify.assetSha256,sha256);
+  const tampered=Buffer.from(signed);
+  tampered[tampered.length-1]^=0x01;
+  await writeFile(signedPath,tampered);
+  const tamperedHash=createHash("sha256").update(tampered).digest("hex");
+  const invalid=await createC2paVerifier({sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:null})({
+   filePath:signedPath,mediaType:"video/mp4",expectedSha256:tamperedHash,expectedSize:tampered.length
+  });
+  assert.equal(invalid.present,true);
+  assert.equal(invalid.valid,false);
+  assert.equal(invalid.trusted,false);
+  assert.equal(invalid.status,"invalid");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
 test("official CAI SDK signs and validates a real embedded C2PA manifest",async()=>{
  const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
  const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
