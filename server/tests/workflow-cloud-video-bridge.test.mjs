@@ -92,6 +92,21 @@ test("cloud workflow node refuses to run without an authenticated cloud API",asy
  await assert.rejects(()=>executeCloudVideoWorkflowNode({}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_DISABLED");
 });
 
+test("expired local worker lease cannot continue polling or import cloud video output",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-expired-lease-"));
+ f.localJob.lease_expires_at=new Date(Date.now()-1000).toISOString();
+ try{
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+  }),error=>error.code==="WORKFLOW_WORKER_LEASE_LOST");
+  assert.equal(f.calls.some(call=>call.path==="/api/cloud/jobs/"+cloudJobId),false);
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+ }finally{await rm(mediaRoot,{recursive:true,force:true});}
+});
+
 test("approved cloud receipt resumes polling and imports checksum-verified private output",async()=>{
  const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
   routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
