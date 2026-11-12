@@ -160,7 +160,7 @@ function renderCloudAssets(){
  }).join("")+'</div>';
 }
 function renderCloudAssetLibrary(){
- if(!state.cloudMediaReady)return '';
+ if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
  return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED PRIVATE OBJECT STORAGE</div><h3>Cloud originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>These files are stored separately from local preview assets. Downloads use short-lived signed URLs; cloud assets are not copied into local storage by this view.</p><label class="upload primary">＋ Upload to private cloud<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label><small>250 MiB maximum per file · server-side signature validation · project-scoped access</small>'+renderCloudAssets()+'</section>';
 }
 function renderJobs(){
@@ -290,7 +290,7 @@ async function refresh(){
  state.cloudAssets=[];
  if(state.cloudMediaReady){
   try{
-   const scope=state.projectId?"?projectId="+encodeURIComponent(state.projectId):"";
+   const scope=(state.projectId?"?projectId="+encodeURIComponent(state.projectId)+"&":"?")+"limit=25";
    const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
    state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
     try{
