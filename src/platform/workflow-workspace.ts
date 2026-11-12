@@ -104,10 +104,34 @@ async function refresh(){
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
  state.status="ready";state.message="";
 }
+let runPollTimer:ReturnType<typeof setTimeout>|null=null;
+let runPollInFlight=false;
+function shouldPollWorkflowRun(){
+ if(!state.latestRunId)return false;
+ if(["queued","running","awaiting_approval"].includes(state.runStatus))return true;
+ return state.runStatus==="blocked"&&state.runNodes.some(node=>node.error?.code==="CLOUD_VIDEO_JOB_PENDING");
+}
+function scheduleWorkflowRunPoll(delayMs=5000){
+ if(runPollTimer!==null){clearTimeout(runPollTimer);runPollTimer=null;}
+ if(!shouldPollWorkflowRun())return;
+ const delay=document.visibilityState==="hidden"?15000:Math.max(2000,Math.min(30000,delayMs));
+ runPollTimer=setTimeout(async()=>{
+  runPollTimer=null;
+  if(!shouldPollWorkflowRun()||runPollInFlight)return;
+  runPollInFlight=true;
+  try{await loadRun();paint();}
+  catch{/* A transient refresh failure must not erase the last known workflow state. */}
+  finally{runPollInFlight=false;scheduleWorkflowRunPoll();}
+ },delay);
+}
 async function loadRun(){
- if(!state.latestRunId)return;
- const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+state.latestRunId);
- state.runStatus=response.run.status;state.runNodes=response.nodes;if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+state.latestRunId})}).catch(()=>{});
+ const runId=state.latestRunId;
+ if(!runId){scheduleWorkflowRunPoll();return;}
+ const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+runId);
+ if(state.latestRunId!==runId)return;
+ state.runStatus=response.run.status;state.runNodes=response.nodes;
+ if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+runId})}).catch(()=>{});
+ scheduleWorkflowRunPoll();
 }
 async function persist(){
  if(!state.graph)return;
@@ -223,3 +247,4 @@ document.addEventListener("drop",event=>{
 });
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
 window.addEventListener("ev:jobs-updated",()=>{if(state.latestRunId)void loadRun().then(paint).catch(()=>{});});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")scheduleWorkflowRunPoll(1000);});
