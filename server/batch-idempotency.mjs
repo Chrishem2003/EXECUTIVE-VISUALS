@@ -1,7 +1,8 @@
 import {createHash} from "node:crypto";
 
 export function createBatchIdempotencyKeys(value,count){
- const key=String(value??"").slice(0,180);
+ const key=String(value??"");
+ if(key.length>180)throw new Error("Batch idempotency key must not exceed 180 characters.");
  if(!key)return [];
  if(!Number.isSafeInteger(count)||count<1||count>100)throw new Error("Batch idempotency count must be between 1 and 100.");
  const digest=createHash("sha256").update(key).digest("hex");
