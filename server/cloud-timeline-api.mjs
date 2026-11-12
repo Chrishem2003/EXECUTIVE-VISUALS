@@ -34,7 +34,7 @@ function timelineDurationSeconds(timeline){
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0)}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -169,6 +169,85 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
      return response(200,{asset:result});
     }
+   }
+   const mediaJobMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/media-jobs$/i);
+   if(mediaJobMatch&&method==="POST"&&!mediaJobsEnabled)return response(503,{error:{code:"CLOUD_MEDIA_WORKER_DISABLED",message:"Cloud media processing is not enabled for this environment."}});
+   if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
+    const assetId=mediaJobMatch[1];
+    let asset;
+    try{asset=await service.assets.get({ownerId,assetId});}catch{return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Private cloud asset not found."}});}
+    if(!asset)return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Private cloud asset not found."}});
+    if(asset.projectId&&await allow({ownerId,projectId:asset.projectId,action:"write"})!==true)
+     return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required to process this project asset."}});
+    const jobType=String(body.jobType||"");
+    const optionKeys={
+     "media.probe":[],
+     "media.thumbnail":["seconds"],
+     "media.audio_extract":[],
+     "media.audio-clean":["noiseFloor","targetLufs"],
+     "media.denoise":["luma","chroma"],
+     "media.color":["brightness","contrast","saturation"],
+     "media.resize":["width","height","fit"],
+     "media.interpolate":["fps"],
+     "media.upscale":["width","height","fit","algorithm","sharpness"],
+     "media.ai-upscale":["format","model","scale","tile"],
+     "media.transcode":["container"],
+     "media.proxy":[]
+    };
+    if(!Object.hasOwn(optionKeys,jobType))return response(400,{error:{code:"MEDIA_JOB_TYPE_INVALID",message:"Choose a supported cloud media operation."}});
+    const mediaType=String(asset.mediaType||"");
+    const compatible=jobType==="media.probe"?/^(image|video|audio)\\//.test(mediaType):
+     ["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
+     jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
+     jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
+     jobType==="media.transcode"?(mediaType.startsWith("video/")||mediaType.startsWith("audio/")):false;
+    if(!compatible)return response(415,{error:{code:"UNSUPPORTED_MEDIA_TYPE",message:"This media operation does not support the selected asset type."}});
+    const options=body.options===undefined?{}:body.options;
+    if(!options||typeof options!=="object"||Array.isArray(options))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options must be a JSON object."}});
+    const allowedOptions=new Set(optionKeys[jobType]);
+    if(Object.keys(options).some(key=>!allowedOptions.has(key)))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options contain unsupported fields for this operation."}});
+    const numericRanges={
+     seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],luma:[0,100],chroma:[0,100],
+     brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]
+    };
+    for(const [key,[minimum,maximum]] of Object.entries(numericRanges)){
+     if(options[key]!==undefined&&(!Number.isFinite(options[key])||options[key]<minimum||options[key]>maximum))
+      return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media option "+key+" is outside its supported range."}});
+    }
+    for(const key of ["width","height"]){
+     if(options[key]!==undefined&&(!Number.isInteger(options[key])||options[key]<1||options[key]>8192))
+      return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media dimensions must be integers from 1 to 8192."}});
+    }
+    if(options.fit!==undefined&&!["contain","cover","fill"].includes(String(options.fit)))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media fit must be contain, cover or fill."}});
+    if(options.algorithm!==undefined&&!["lanczos","bicubic","bilinear","neighbor"].includes(String(options.algorithm)))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported resize algorithm."}});
+    if(jobType==="media.transcode"&&options.container!==undefined&&!["mp4","webm","mov","mkv","mp3","wav"].includes(String(options.container).toLowerCase()))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported transcode container."}});
+    if(jobType==="media.ai-upscale"&&options.format!==undefined&&!["png","jpg","webp"].includes(String(options.format).toLowerCase()))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose PNG, JPG or WebP for AI upscale output."}});
+    if(jobType==="media.ai-upscale"&&options.model!==undefined&&!["realesrgan-x4plus","realesrgan-x4plus-anime"].includes(String(options.model)))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Choose a supported AI upscaling model."}});
+    if(jobType==="media.ai-upscale"&&options.tile!==undefined&&(!Number.isInteger(options.tile)||options.tile<0||options.tile>2048))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"AI upscale tile size must be an integer from 0 to 2048."}});
+    if(jobType==="media.ai-upscale"&&options.scale!==undefined&&(!Number.isInteger(options.scale)||![2,3,4].includes(options.scale)))
+     return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"AI upscale scale must be 2, 3 or 4."}});
+    const key=typeof idempotencyKey==="string"?idempotencyKey.trim():"";
+    if(key.length<8||key.length>180)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key between 8 and 180 characters is required."}});
+    const input={sourceAssetId:asset.id,...options};
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&idempotency_key=eq."+encodeURIComponent(key)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!==jobType||row.project_id!==(asset.projectId||null)||stableJson(row.input||{})!==stableJson(input))
+      return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different media request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID();
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:asset.projectId||null,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].project_id!==(asset.projectId||null)||rows[0].job_type!==jobType||rows[0].status!=="queued")
+     throw new Error("Cloud media job creation returned an invalid receipt.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId:asset.id}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
    }
    if(path==="/api/cloud/workflows/video/quote"&&method==="POST"){
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
@@ -361,9 +440,17 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    if(path==="/api/cloud/jobs"&&method==="GET"){
     const projectId=String(query.projectId||"");
+    const limit=Math.max(1,Math.min(50,Number(query.limit)||25));
+    if(mediaJobsEnabled){
+     if(projectId&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+     if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+     const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
+     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.ai-upscale,media.transcode,media.proxy";
+     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
+     return response(200,{jobs:Array.isArray(rows)?rows:[]});
+    }
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
-    const limit=Math.max(1,Math.min(50,Number(query.limit)||25));
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
     return response(200,{jobs:Array.isArray(rows)?rows:[]});
    }
