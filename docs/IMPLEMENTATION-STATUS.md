@@ -1,10 +1,24 @@
 # Executive Visuals — implementation status
 
-**Updated:** 9 November 2026  
-**Branch:** `main` (studio polish PR #266, upscaling integrity PRs #268 and #271, evidence docs #269, video pricing docs #272 and reviewer validation #273 merged; quality CI passed)  
-**Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
+**Updated:** 12 November 2026  
+**Branch:** `main` (studio polish, upscaling integrity, secure Supabase sessions, batch enhancement, private cloud Asset Library integration, cloud media-job queue integration, audio/timeline improvements, signed-MP4 provenance tests and patched Node runtime merged; latest Render main deployment is live at `b92390778e9e65cc992808fc1e2e93e297d3deda`)  
+**Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
-## Supabase browser-session hardening — PR #436 (not yet merged)
+## Mainline delta — 12 November 2026
+
+The following implementation slices have since merged into main and supersede older branch notes below where they cover the same feature:
+
+- **Batch image enhancement:** guarded Asset Library batch submission and progress history are merged via PRs #442 and #443; per-item idempotent replay/conflict handling is merged via PR #462. Model execution remains disabled until the model-specific installation, execution and human-reviewed quality gates pass.
+- **Private cloud assets and media jobs:** PR #465 connects the private cloud asset repository to the Asset Library; PR #466 connects authenticated private cloud media-job submission and job history to the cloud worker queue. The cloud path remains gated by the isolated storage/worker readiness configuration; it is not a claim that a durable customer media backend is active on Render.
+- **Video enhancement:** PR #464 adds gated framewise video AI upscaling to the Asset Library. Actual inference remains dependent on configured local model weights and verified quality evidence.
+- **Audio and timeline:** PRs #446–#453 add audio gain/pan automation, live mixer and waveform preview, color preview alignment, clip speed controls/rendering, and cloud render history/output handoff.
+- **Content Credentials:** PR #467 adds real signed-MP4 verification/tamper tests; PR #468 adds explicit trusted-versus-valid-untrusted signer policy tests and is merged into main.
+- **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The Render main service auto-deployed the latest mainline commit and reports the deployment as live.
+- **Staging persistence:** the isolated Cloudflare D1 metadata database has the seven ev_* tables and one migration recorded; the staging Worker has a D1 binding. The production Render service remains on local SQLite/disk, and its D1 same-origin proxy is deliberately not enabled. R2 is not activated.
+
+The broad Google Drive/billing/provider integration candidate remains draft PR #206 and is not mergeable against current main. Customer-managed subscription cancellation remains draft PR #303 on that integration branch. Do not merge either without a focused mainline reconciliation and fresh exact-head CI.
+
+## Supabase browser-session hardening — PR #436 (merged into main)
 
 - The browser receives one opaque, high-entropy `HttpOnly; Secure; SameSite=Strict` session cookie; Supabase access and refresh tokens are no longer emitted as browser cookies or attached globally to ordinary API requests.
 - The opaque session identifier is stored only as a SHA-256 hash. Provider access/refresh tokens are encrypted at rest with AES-256-GCM, with authenticated additional data binding ciphertext to the session hash, user ID and token purpose.
@@ -13,7 +27,7 @@
 - The password-recovery fragment token is held transiently in memory and sent only to the password-update endpoint through a narrow explicit bearer helper; it is not retained as a global API credential.
 - The implementation requires a dedicated 32-byte `SUPABASE_SESSION_ENCRYPTION_KEY` in the server secret manager. Supabase mode refuses to start without it.
 - Unit tests cover hashed identifiers, authenticated encryption, token rotation, expiry, revocation, malformed secrets and cross-origin mutation rejection.
-- **Release boundary:** PR #436 is code-only until exact-head CI and review pass. Do not enable Supabase auth or deploy this mode until the secret is provisioned in an approved isolated staging environment, the session database is durable and staging sign-in/refresh/logout/recovery smoke tests pass. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment.
+- **Release boundary:** the implementation is merged into main. Do not enable hosted Supabase mode in a customer-facing environment until the dedicated 32-byte encryption secret is provisioned in an approved isolated Executive Visuals staging environment, the session database is durable, and sign-in/refresh/logout/recovery smoke tests pass. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment.
 
 
 ## Implemented in the current branch
