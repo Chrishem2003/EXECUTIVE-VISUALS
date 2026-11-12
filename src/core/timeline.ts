@@ -65,7 +65,6 @@ export function createGeneratedVideoClip(input:{id:string;assetId:string;name:st
   if(!Number.isFinite(frameRate.numerator)||!Number.isFinite(frameRate.denominator)||frameRate.numerator<=0||frameRate.denominator<=0)throw new Error("Generated video clip requires a valid timeline frame rate.");
   const fps=frameRate.numerator/frameRate.denominator;
   const durationFrames=Math.max(1,Math.round(durationSeconds*fps));
-  const exactDuration=durationFrames/fps;
   const startFrame=Math.max(0,Math.floor(Number(input.startFrame)||0));
   return {
     id,assetId,name,
@@ -73,7 +72,7 @@ export function createGeneratedVideoClip(input:{id:string;assetId:string;name:st
     timelineStart:rational(startFrame,fps),
     duration:rational(durationFrames,fps),
     enabled:true,
-    metadata:{generated:true,source:"workflow",...input.metadata}
+    metadata:{generated:true,source:"workflow",...(input.metadata||{})}
   };
 }
 export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineClip):EditorialTimeline{
