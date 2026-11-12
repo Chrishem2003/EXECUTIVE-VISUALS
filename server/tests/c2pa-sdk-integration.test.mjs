@@ -38,7 +38,7 @@ function onePixelPng(red=24,green=48,blue=72){
 
 
 test("official CAI SDK signs and validates a real embedded C2PA MP4 video manifest",async()=>{
- const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
+ const cert=await readFile(join(fixtureRoot,"test-video-signing-cert.pem"));
  const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
  const signer=LocalSigner.newSigner(cert,key,"es256");
  const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-video-"));
@@ -71,16 +71,16 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   // The test-only CAI chain is deliberately not a production trust root.
   // Trust the intermediate CA only inside this test to prove the configured
   // trust-anchor path changes the result from valid_untrusted to trusted.
-  const certificateChain=await readFile(join(fixtureRoot,"test-signing-chain.pem"),"utf8");
+  const certificateChain=await readFile(join(fixtureRoot,"test-video-signing-cert.pem"),"utf8");
   const certificates=certificateChain.split("-----BEGIN CERTIFICATE-----").slice(1).map(part=>{
    const end=part.indexOf("-----END CERTIFICATE-----");
    return end>=0? "-----BEGIN CERTIFICATE-----"+part.slice(0,end)+"-----END CERTIFICATE-----\\n":null;
   }).filter(Boolean);
-  assert.equal(certificates.length,2,"the test signing chain must contain signer and root certificates");
+  assert.equal(certificates.length,1,"the video fixture must contain exactly one self-signed test signer");
   const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
-  await writeFile(trustAnchorPath,certificates[0]);
+  await writeFile(trustAnchorPath,certificateChain);
   const trusted=await createC2paVerifier({
-   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,userAnchorsPath:trustAnchorPath
+   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:trustAnchorPath
   })({filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length});
   assert.equal(trusted.present,true);
   assert.equal(trusted.valid,true);
