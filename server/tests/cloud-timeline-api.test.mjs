@@ -521,3 +521,57 @@ test("cloud review routes persist frame-anchored comments through verified proje
  assert.equal(resolved.body.review.status,"resolved");
  assert.equal(calls.some(call=>call.method==="POST"&&call.route.startsWith("reviews?")),true);
 });
+
+test("paid workflow quotes require the complete provider-aware worker launch contract", async () => {
+  const complete = {
+    CLOUD_WORKER_ENABLED: "true",
+    CLOUD_VIDEO_WORKER_ENABLED: "true",
+    VIDEO_GATEWAY_ENABLED: "true",
+    VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+    RUNWAY_MODEL_ROUTER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_VIDEO_ROUTER_CONFIG: "studio-video",
+    RUNWAY_API_KEY: "test-provider-key",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
+    CLOUD_VIDEO_OUTPUT_HOSTS: "cdn.runwayml.com"
+  };
+  async function quotePaidExecutionEnabled(env) {
+    const api = createCloudTimelineApi({
+      url: "https://example.supabase.co",
+      serviceRoleKey: "test-service-role-key",
+      env,
+      fetchImpl: async (url, options) => {
+        if (url.endsWith("/rpc/record_video_workflow_quote")) {
+          const args = JSON.parse(options.body);
+          return { ok: true, status: 200, async text() { return JSON.stringify(args.p_quote_id); } };
+        }
+        return { ok: true, status: 200, async text() { return "[]"; } };
+      },
+      timelineService: { timelines: {}, assets: {}, projects: { async get() { return { id: project, ownerId: owner }; } } },
+      authorize: async ({ ownerId, projectId, action }) => ownerId === owner && projectId === project && action === "write",
+      runwayRouterAdapter: {
+        async prepareInput(input) { return { ...input }; },
+        async preflight() { return { billable: false, estimatedCredits: 100, estimatedUsd: 1, currency: "USD", provider: "runway", model: "gen4.5", configId: "studio-video" }; }
+      }
+    });
+    const result = await api.handle({
+      method: "POST",
+      path: "/api/cloud/workflows/video/quote",
+      ownerId: owner,
+      body: {
+        projectId: project,
+        requestId: "worker-readiness-quote",
+        node: { id: "video-node", kind: "video.generate", config: { provider: "runway", model: "model-router", durationSeconds: 5 } },
+        values: { prompt: "A cinematic product launch" }
+      }
+    });
+    assert.equal(result.status, 200);
+    return result.body.quote.paidExecutionEnabled;
+  }
+
+  assert.equal(await quotePaidExecutionEnabled(complete), true);
+  assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_WORKER_ENABLED: "false" }), false);
+  assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_VIDEO_OUTPUT_HOSTS: "" }), false);
+  assert.equal(await quotePaidExecutionEnabled({ ...complete, RUNWAY_VIDEO_MODELS: "gen4.5" }), false);
+});
