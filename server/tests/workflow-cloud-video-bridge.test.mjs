@@ -17,13 +17,13 @@ const quoteId="923e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=project}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
   if(sql.startsWith("SELECT id,owner_id,name,description FROM projects"))return{get:()=>({id:projectId,owner_id:owner,name:"Project",description:""})};
   if(sql.startsWith("SELECT * FROM assets WHERE id=? AND deleted_at IS NULL"))return{get:id=>id===values.sourceVideoAssetId?{id,owner_id:owner,project_id:assetProjectId,original_name:"source.mp4",media_type:"video/mp4",byte_size:video.length,sha256,storage_path:"uploads/source.mp4",metadata_json:"{}"}:null};
-  if(sql.startsWith("SELECT * FROM projects WHERE id=? AND archived_at IS NULL"))return{get:id=>id===projectId?{id:projectId,owner_id:owner}:id===assetProjectId?{id:assetProjectId,owner_id:editor}:null};
+  if(sql.startsWith("SELECT * FROM projects WHERE id=? AND archived_at IS NULL"))return{get:id=>id===projectId?{id:projectId,owner_id:owner}:id===assetProjectId?{id:assetProjectId,owner_id:owner}:null};
   if(sql.startsWith("SELECT role FROM project_members"))return{get:()=>null};
   if(sql.startsWith("SELECT status,lease_owner,lease_expires_at,lease_token FROM jobs"))return{get:()=>localJob};
   if(sql.startsWith("SELECT output_json FROM workflow_node_runs"))return{get:()=>priorOutput?{output_json:JSON.stringify(priorOutput)}:null};
