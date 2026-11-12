@@ -19,7 +19,7 @@ const safeId=(value)=>typeof value==="string"&&UUID.test(value);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
- const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\\*\\.)?[a-z0-9.-]{1,253}$/i.test(host));
+ const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
  return env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
   env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
