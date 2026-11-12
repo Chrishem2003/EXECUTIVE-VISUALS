@@ -71,7 +71,8 @@ test("creates a cloud asset only after project authorization and verifies metada
  assert.equal(f.storageCalls[0].op,"upload");assert.equal(f.calls[0].options.method,"POST");
  assert.equal(f.calls[0].options.headers["content-profile"],"executive_visuals");
  assert.equal(f.calls[0].options.headers.authorization,"Bearer "+config.serviceRoleKey);
- assert.equal(JSON.parse(f.calls[0].options.body).object_path,asset.objectPath);
+ assert.equal(JSON.parse(f.calls[0].options.body).object_path,f.storageCalls[0].path);
+ assert.equal("objectPath" in asset,false);assert.equal("storageBucket" in asset,false);
 });
 
 test("creates a cloud asset from a file using the streaming storage boundary",async()=>{
@@ -104,6 +105,21 @@ test("signed URL lookup checks record owner and project authorization",async()=>
  assert.equal(result.url,"https://example.supabase.co/storage/signed");
  assert.equal(authorized.action,"read");assert.equal(authorized.projectId,projectId);
  assert.equal(f.storageCalls[0].op,"sign");
+});
+
+
+test("public asset records never expose private storage bucket or object paths",async()=>{
+ const f=fixture();
+ const created=await f.repo.create({ownerId,projectId,originalName:"final cut.mp4",mediaType:"video/mp4",bytes});
+ const listed=await f.repo.list({ownerId,projectId});
+ const signed=await f.repo.createSignedUrl({ownerId,assetId});
+ for(const asset of [created,listed[0],signed.asset]){
+  assert.equal("storageBucket" in asset,false);
+  assert.equal("objectPath" in asset,false);
+  assert.equal("storage_bucket" in asset,false);
+  assert.equal("object_path" in asset,false);
+ }
+ assert.equal(f.storageCalls[0].path,projectId+"/"+created.id+"/original.mp4");
 });
 
 test("does not sign assets belonging to another owner",async()=>{
@@ -166,7 +182,7 @@ test("publishes the same logical output once across repeated publication attempt
  const first=await f.repo.createFromFileIdempotent(args);
  const second=await f.repo.createFromFileIdempotent(args);
  assert.equal(first.id,second.id);
- assert.equal(first.objectPath,second.objectPath);
+ assert.equal("objectPath" in first,false);assert.equal("objectPath" in second,false);
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  assert.equal(f.storageCalls[0].options.upsert,false);
  assert.equal(f.publicationReservation.status,"published");
@@ -225,7 +241,7 @@ test("concurrent attempts for one publication key converge on the same asset ide
  const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1",leaseContext,assertLease:async()=>true};
  const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
  assert.equal(left.id,right.id);
- assert.equal(left.objectPath,right.objectPath);
+ assert.equal("objectPath" in left,false);assert.equal("objectPath" in right,false);
  const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
  assert.ok(uploads.length>=1&&uploads.length<=2);
  assert.equal(new Set(uploads.map(call=>call.path)).size,uploads.length);
