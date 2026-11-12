@@ -3,15 +3,19 @@ import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
+import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
 const rawSeconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return null;const result=value/rate;return Number.isFinite(result)?result:null;};
-const validateClipTiming=(clip)=>{
- const start=rawSeconds(clip?.timelineStart),duration=rawSeconds(clip?.duration),sourceStart=rawSeconds(clip?.sourceRange?.start),sourceDuration=rawSeconds(clip?.sourceRange?.duration),speed=Number(clip?.speed??1);
- if(start===null||duration===null||sourceStart===null||sourceDuration===null||start<0||duration<=0||sourceStart<0||sourceDuration<=0||start+duration>86400||sourceStart+sourceDuration>86400||!Number.isFinite(speed)||speed<=0)fail("Timeline clip has invalid or out-of-range timing values.","INVALID_TIMELINE_TIMING");
+const validateClipTiming=(clip,kind)=>{
+ const start=rawSeconds(clip?.timelineStart),duration=rawSeconds(clip?.duration),sourceStart=rawSeconds(clip?.sourceRange?.start),sourceDuration=rawSeconds(clip?.sourceRange?.duration);
+ if(start===null||duration===null||sourceStart===null||sourceDuration===null||start<0||duration<=0||sourceStart<0||sourceDuration<=0||start+duration>86400||sourceStart+sourceDuration>86400)fail("Timeline clip has invalid or out-of-range timing values.","INVALID_TIMELINE_TIMING");
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
- if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
+ let speed;try{speed=normalizeClipSpeed(clip?.speed??1);}catch{fail("Clip speed must be between 0.25× and 4×.","INVALID_CLIP_SPEED");}
+ if(kind!=="video"&&kind!=="audio"&&speed!==1)fail("Speed changes are supported only for video and audio clips.","UNSUPPORTED_TIME_REMAP");
+ const expected=sourceDurationForTimeline(duration,speed);
+ if(Math.abs(expected-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source duration must equal timeline duration multiplied by playback speed.","INVALID_TIMELINE_TIMING");
 };
 export function parseAudioLoudnessMeasurement(stderr=""){
  const integratedMatch=String(stderr).match(/^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$/m);
@@ -106,7 +110,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
  const masteringFilter=buildAudioMasteringFilter(timeline.audioMastering);
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
- for(const track of tracks)for(const clip of track.clips||[])if(enabled(clip))validateClipTiming(clip);
+ for(const track of tracks)for(const clip of track.clips||[])if(enabled(clip))validateClipTiming(clip,track.kind);
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
@@ -141,19 +145,19 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
    if(duration<=0)continue;
-   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
+   const speed=normalizeClipSpeed(clip.speed??1);
    if(start+0.000001<cursor)fail("Primary video track contains overlapping clips.","TIMELINE_OVERLAP");
    if(start>cursor+0.000001){
     const gap=start-cursor;args.push("-f","lavfi","-t",gap.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
     const label="v"+segmentIndex++;segments.push({label,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});inputIndex++;
    }
    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
-   if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
-   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+   if(mediaType.startsWith("image/")){if(speed!==1)fail("Still-image clips do not support speed changes.","UNSUPPORTED_IMAGE_TIME_REMAP");args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);}
+   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDurationForTimeline(duration,speed).toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
    const effect=buildTimelineClipEffects(clip.metadata||{});
-   const filters=["trim=duration="+duration.toFixed(6),"setpts=PTS-STARTPTS",...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+   const filters=["trim=duration="+sourceDurationForTimeline(duration,speed).toFixed(6),speed===1?"setpts=PTS-STARTPTS":"setpts=(PTS-STARTPTS)/"+speed.toFixed(6),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
    segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
@@ -162,13 +166,13 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   for(const clip of audioClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
-   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Audio speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
+   const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimeline(duration,speed);
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("audio/"))fail("Audio tracks require audio source assets.","UNSUPPORTED_AUDIO_SOURCE");
-   args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
-   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,duration),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
+   args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
+   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,duration),tempo=buildAtempoFilter(speed),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
    const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
    const panFilter=pan?","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
-   audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
+   audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
    inputIndex++;
   }
   for(const clip of overlayClips){
