@@ -135,3 +135,21 @@ test("rejects a managed-media symlink that resolves outside the media root",asyn
   await rm(outside,{recursive:true,force:true});
  }
 });
+
+
+test("rejects a managed-media directory symlink that resolves outside the media root",async()=>{
+ const f=await fixture();
+ const outside=await mkdtemp(join(tmpdir(),"ev-waveform-outside-dir-"));
+ try{
+  const externalSource=join(outside,"outside.wav");
+  await writeFile(externalSource,Buffer.from("outside source"));
+  await symlink(outside,join(f.root,"uploads","linked-directory"),"dir");
+  await assert.rejects(
+   ()=>f.cache.get({...f.asset,storage_path:"uploads/linked-directory/outside.wav"}),
+   error=>error.code==="WAVEFORM_INVALID_PATH"
+  );
+ }finally{
+  await f.close();
+  await rm(outside,{recursive:true,force:true});
+ }
+});
