@@ -131,3 +131,24 @@ The merchant must complete KYC and be approved for live transactions. In the Flu
 - Customer invoices, cancellation and failed-payment handling are tested.
 - Settlement bank account is confirmed in the Flutterwave dashboard.
 - Live mode remains disabled until the operator approves a separate production change.
+
+## 8. Manual reconciliation of Flutterwave subscription cancellations
+
+Signed `subscription.cancelled` callbacks are retained in the administrator reconciliation queue. Flutterwave's documented cancellation payload contains a customer email and a plan ID, but no subscription-specific ID. It therefore must not be treated as a direct local subscription identifier.
+
+An owner, platform administrator or billing administrator can resolve an event only after:
+- a trusted operator has mapped the provider plan ID to exactly one internal subscription plan in `subscription_plans.provider_plan_id`, after checking the plan in the merchant dashboard;
+- the signed event's provider plan ID and customer email match the selected local subscription;
+- the database confirms that exactly one active/past-due/trialing Flutterwave subscription matches that plan and email. The mapped plan row is locked during reconciliation to prevent a concurrent checkout from creating a second match.
+
+Use the administrator reconciliation endpoint to submit the webhook event ID, local subscription ID and a short review reason. The database performs the identity checks, cancellation, webhook status transition and append-only subscription event in one transaction. Replays are idempotent. Missing or mismatched plan/email, unsupported status, or multiple matches remain in `needs_review`; no entitlement change is made. Never populate a provider plan ID from an unverified webhook or email-only match. Example operator mapping, only after independently verifying the exact merchant plan ID and its UGX price/interval in the Flutterwave dashboard:
+
+```sql
+update executive_visuals.subscription_plans
+set provider_plan_id = '10944'
+where plan_code = 'creator-monthly';
+```
+
+Do not copy the example ID; replace it with the plan ID confirmed in the merchant account.
+
+This workflow is available only in billing-enabled staging. It does not enable recurring charges, live billing or automatic cancellation from ambiguous callbacks.
