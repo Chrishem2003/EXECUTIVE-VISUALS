@@ -88,3 +88,47 @@ test("fully configured cloud video worker is never reported live without a separ
   assert.equal(byId(items, "cloud-video-worker").state, "limited");
   assert.match(byId(items, "cloud-video-worker").detail, /cannot verify.*running/i);
 });
+
+
+test("fully configured FAL worker is recognized without Runway Model Router settings", () => {
+  const items = describeRuntimeCapabilities({
+    authMode: "supabase",
+    authSessionReady: true,
+    authSessionEncrypted: true,
+    cloudMediaReady: true,
+    ffmpeg: true,
+    ffprobe: true,
+    cloudVideoWorker: {
+      ...readyWorker,
+      modelRouterEnabled: false,
+      modelRouterRemoteEnabled: false,
+      modelRouterConfigPresent: false,
+      providerCredentialConfigured: false,
+      falAdapterConfigured: true,
+      directRunwayModelsRequested: false
+    }
+  });
+  assert.equal(byId(items, "cloud-video-worker").state, "limited");
+  assert.match(byId(items, "cloud-video-worker").detail, /cannot verify.*running/i);
+});
+
+test("FAL worker is blocked when its model, API key or billing key configuration is incomplete", () => {
+  const items = describeRuntimeCapabilities({
+    authMode: "supabase",
+    authSessionReady: true,
+    authSessionEncrypted: true,
+    cloudMediaReady: true,
+    ffmpeg: true,
+    ffprobe: true,
+    cloudVideoWorker: {
+      ...readyWorker,
+      modelRouterEnabled: false,
+      modelRouterRemoteEnabled: false,
+      modelRouterConfigPresent: false,
+      providerCredentialConfigured: false,
+      falAdapterConfigured: false,
+      directRunwayModelsRequested: false
+    }
+  });
+  assert.equal(byId(items, "cloud-video-worker").state, "blocked");
+});

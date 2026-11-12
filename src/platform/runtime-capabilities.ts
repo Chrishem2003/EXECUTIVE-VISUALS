@@ -22,6 +22,7 @@ export type RuntimeCapabilityInput = {
     modelRouterRemoteEnabled?: boolean;
     modelRouterConfigPresent?: boolean;
     providerCredentialConfigured?: boolean;
+    falAdapterConfigured?: boolean;
     outputHostAllowlistConfigured?: boolean;
     supabaseCredentialsConfigured?: boolean;
     directRunwayModelsRequested?: boolean;
@@ -64,12 +65,15 @@ export function describeRuntimeCapabilities(input: RuntimeCapabilityInput = {}):
       : { id: "billing", label: "Subscriptions and billing", state: "blocked", detail: "Billing is enabled but provider credentials or webhook verification configuration is incomplete." };
 
   const worker = input.cloudVideoWorker || {};
+  const runwayRouterReady = worker.modelRouterEnabled === true &&
+    worker.modelRouterRemoteEnabled === true &&
+    worker.modelRouterConfigPresent === true &&
+    worker.providerCredentialConfigured === true &&
+    worker.directRunwayModelsRequested !== true;
+  const providerAdapterReady = worker.falAdapterConfigured === true || runwayRouterReady;
   const workerChecks = [
     worker.remoteExecutionGates === true,
-    worker.modelRouterEnabled === true,
-    worker.modelRouterRemoteEnabled === true,
-    worker.modelRouterConfigPresent === true,
-    worker.providerCredentialConfigured === true,
+    providerAdapterReady,
     worker.outputHostAllowlistConfigured === true,
     worker.supabaseCredentialsConfigured === true,
     worker.directRunwayModelsRequested !== true,
@@ -80,7 +84,7 @@ export function describeRuntimeCapabilities(input: RuntimeCapabilityInput = {}):
   const videoWorker: RuntimeCapability = worker.enabled !== true
     ? { id: "cloud-video-worker", label: "Governed cloud video worker", state: "disabled", detail: "The separate provider-aware worker process is not enabled in this environment. Paid cloud generation remains unavailable." }
     : workerChecks.some(ready => ready !== true)
-      ? { id: "cloud-video-worker", label: "Governed cloud video worker", state: "blocked", detail: "The worker launch gates are incomplete. Verify Supabase authentication, cloud API, FFmpeg/FFprobe, provider credentials, exact Runway Model Router configuration, output-host allowlist and both remote-execution approvals. No provider job should be submitted." }
+      ? { id: "cloud-video-worker", label: "Governed cloud video worker", state: "blocked", detail: "The worker launch gates are incomplete. Verify Supabase authentication, cloud API, FFmpeg/FFprobe, either a fully configured FAL adapter or an exact Runway Model Router configuration, output-host allowlist and both remote-execution approvals. Direct Runway model execution remains disabled. No provider job should be submitted." }
       : { id: "cloud-video-worker", label: "Governed cloud video worker", state: "limited", detail: "Worker launch configuration is complete, but the web service cannot verify that the separate worker process is running. Confirm its live logs and queue recovery before enabling paid generation." };
 
   return [auth, cloud, videoWorker, gateway("text-gateway", "Text generation gateway", input.textGatewayEnabled, input.textGatewayConfigured), gateway("image-gateway", "Image generation gateway", input.imageGatewayEnabled, input.imageGatewayConfigured), media, billing];
