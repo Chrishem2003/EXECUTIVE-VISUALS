@@ -36,7 +36,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
   async handle(input){
    calls.push(input);
    if(input.method==="GET"&&input.path==="/api/cloud/projects/"+projectId)return{status:200,body:{project:{id:projectId}}};
-   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote")return{status:200,body:{quote:{id:quoteId,requestId:request.requestId,requestHash:request.requestHash,estimatedAmount:1,currency:"USD",expiresAt:"2026-11-11T23:59:00.000Z",billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model"}}};
+   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:request.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,estimatedAmount:1,currency:"USD",expiresAt:"2026-11-11T23:59:00.000Z",billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model"}}};}
    if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/approve"){
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
@@ -131,7 +131,7 @@ test("cloud workflow refuses source assets from a different project before uploa
  const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-cross-project-"));
  const originalPrepare=f.db.prepare;
  f.db.prepare=sql=>sql.startsWith("SELECT * FROM projects WHERE id=? AND archived_at IS NULL")
-  ?{get:()=>({id:"c23e4567-e89b-42d3-a456-426614174000",owner_id:owner})}
+  ?{get:()=>({id:"c23e4567-e89b-42d3-a456-426614174000",owner_id:editor})}
   :originalPrepare(sql);
  try{
   await assert.rejects(()=>executeCloudVideoWorkflowNode({
