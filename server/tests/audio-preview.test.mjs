@@ -95,3 +95,14 @@ test("audio engine reuses connected media nodes when seeking away and back",()=>
  assert.ok(Math.abs(engine["connected"].get("same-clip").gain.gain.value-decibelsToGain(-6))<1e-8);
  engine.dispose();
 });
+
+test("global solo mode suppresses other tracks while the soloed track has no active clip",()=>{
+ const context=new FakeContext(),engine=new AudioPreviewEngine(context),soloMedia={pause(){}},otherMedia={pause(){}};
+ engine.sync([{id:"solo",media:soloMedia,gainDb:0,solo:true},{id:"other",media:otherMedia,gainDb:0}]);
+ engine.setSoloMode(true);
+ engine.sync([{id:"other",media:otherMedia,gainDb:0}]);
+ assert.equal(engine["connected"].get("other").gain.gain.value,0);
+ engine.setSoloMode(false);
+ assert.equal(engine["connected"].get("other").gain.gain.value,1);
+ engine.dispose();
+});
