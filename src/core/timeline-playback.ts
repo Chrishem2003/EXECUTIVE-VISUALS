@@ -93,8 +93,10 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
   };
 }
 
-/** Convert bounded non-destructive clip color controls into a browser preview filter. */
-export function timelineClipPreviewFilter(clip:Pick<TimelineClip,"metadata">):string {
+export type TimelineClipPreviewEffectValues={brightness:number;contrast:number;saturation:number;intercept:number};
+
+/** Keep preview color controls numerically aligned with FFmpeg's eq filter. */
+export function timelineClipPreviewEffectValues(clip:Pick<TimelineClip,"metadata">):TimelineClipPreviewEffectValues {
   const effects=(clip.metadata?.timelineEffects&&typeof clip.metadata.timelineEffects==="object"?clip.metadata.timelineEffects:{}) as Record<string,unknown>;
   const bounded=(value:unknown,fallback:number,min:number,max:number)=>{
     const parsed=Number(value);
@@ -103,9 +105,15 @@ export function timelineClipPreviewFilter(clip:Pick<TimelineClip,"metadata">):st
   const brightness=bounded(effects.brightness,0,-0.5,0.5);
   const contrast=bounded(effects.contrast,1,0.5,2);
   const saturation=bounded(effects.saturation,1,0,2);
-  if(brightness===0&&contrast===1&&saturation===1)return "none";
-  return "brightness("+((1+brightness)*100).toFixed(1)+"%) contrast("+(contrast*100).toFixed(1)+"%) saturate("+(saturation*100).toFixed(1)+"%)";
+  return {brightness,contrast,saturation,intercept:0.5*(1-contrast)+brightness};
 }
+
+/** The SVG filter uses linear component transfer followed by saturation, matching FFmpeg eq semantics. */
+export function timelineClipPreviewFilter(clip:Pick<TimelineClip,"metadata">):string {
+  const {brightness,contrast,saturation}=timelineClipPreviewEffectValues(clip);
+  return brightness===0&&contrast===1&&saturation===1?"none":"url(#ev-timeline-clip-effects)";
+}
+
 
 export interface TimelinePreviewAssetRef {
   id:string;
