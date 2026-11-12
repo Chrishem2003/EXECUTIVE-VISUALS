@@ -50,3 +50,35 @@ test("cloud video worker may be configured with Runway Model Router without FAL 
  }),/saved config/);
 });
 
+test("cloud worker config validates the storage cleanup sweep interval",()=>{
+ const config=readCloudWorkerConfig(env);assert.equal(config.cleanupIntervalMs,300000);
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_STORAGE_CLEANUP_INTERVAL_MS:"1000"}),/cleanup interval/);
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_STORAGE_CLEANUP_INTERVAL_MS:"7200000"}),/cleanup interval/);
+});
+
+test("cloud worker supervisor runs maintenance on startup and on its own cadence",async()=>{
+ const calls=[],events=[],errors=[];
+ const workers=[{async recoverExpired(){calls.push("recover");return 0;},async runCycle(){calls.push("cycle");return{claimed:false};}}];
+ const maintenanceTasks=[async()=>{calls.push("cleanup");return{examined:3,removed:2};}];
+ const supervisor=createCloudWorkerSupervisor({workers,maintenanceTasks,maintenanceIntervalMs:60000,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event),onError:error=>errors.push(error)});
+ await supervisor.start();
+ assert.deepEqual(calls,["recover","cleanup","cycle"]);
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.removed===2));
+ await supervisor.stop();
+ assert.deepEqual(errors,[]);
+});
+
+test("cloud worker supervisor isolates failed maintenance tasks and still starts workers",async()=>{
+ const calls=[],errors=[];
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){calls.push("cycle");return{claimed:false};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,maintenanceTasks:[async()=>{throw new Error("cleanup unavailable");}],leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onError:error=>errors.push(error.message)});
+ await supervisor.start();await supervisor.stop();
+ assert.deepEqual(calls,["cycle"]);
+ assert.deepEqual(errors,["cleanup unavailable"]);
+});
+
+test("cloud worker supervisor rejects invalid maintenance task configuration",()=>{
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceTasks:[null]}),/maintenance tasks/);
+ assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceTasks:[async()=>{}],maintenanceIntervalMs:1000}),/maintenance interval/);
+});
