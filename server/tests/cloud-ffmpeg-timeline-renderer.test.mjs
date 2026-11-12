@@ -237,6 +237,7 @@ test("variable-speed video renderer maps the source-time ramp to the exact timel
   const curve=[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}];
   const expression=buildVariableSpeedSetptsExpression({speedCurve:curve},4);
   assert.match(expression,/sqrt/);
+  assert.throws(()=>buildVariableSpeedSetptsExpression({speedCurve:[{timeSeconds:0,speed:1},null]},4),error=>error.code==="INVALID_SPEED_CURVE");
   const timeline={name:"Variable speed",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
    {id:"v",kind:"video",clips:[{id:"ramp",assetId:"source",timelineStart:{value:0,rate:24},duration:{value:96,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:144,rate:24}},speed:1,speedCurve:curve}]}
   ]};
