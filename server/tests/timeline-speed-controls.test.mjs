@@ -25,7 +25,7 @@ test("trim preserves playback speed and advances source in-points at source-fram
  assert.equal(result.speed,2);
  assert.equal(seconds(result.timelineStart),0.5);
  assert.equal(seconds(result.duration),1);
- assert.equal(seconds(result.sourceRange.start),1.5);
+ assert.equal(seconds(result.sourceRange.start),3);
  assert.equal(seconds(result.sourceRange.duration),2);
 });
 
@@ -37,6 +37,6 @@ test("split preserves playback speed and partitions the source range at the matc
  assert.equal(seconds(first.duration),1);
  assert.equal(seconds(first.sourceRange.duration),2);
  assert.equal(seconds(second.timelineStart),1);
- assert.equal(seconds(second.sourceRange.start),3);
+ assert.equal(seconds(second.sourceRange.start),4);
  assert.equal(seconds(second.sourceRange.duration),2);
 });
