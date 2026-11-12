@@ -293,6 +293,9 @@ test("local media jobs are queued with idempotency and no duplicate execution",a
   assert.equal(upload.status,201);
   const asset=(await upload.json()).asset;
   const payload={jobType:"media.probe",sourceAssetId:asset.id};
+  const oversized=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"x".repeat(181)},body:JSON.stringify(payload)},cookie);
+  assert.equal(oversized.status,400);
+  assert.equal((await oversized.json()).error.code,"INVALID_IDEMPOTENCY_KEY");
   const first=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"probe-001"},body:JSON.stringify(payload)},cookie);
   assert.equal(first.status,202);
   const firstJob=(await first.json()).job;
