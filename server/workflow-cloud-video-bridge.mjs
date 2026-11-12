@@ -146,13 +146,13 @@ export async function executeCloudVideoWorkflowNode({
  }
 
  while(true){
-  const localJob=db.prepare("SELECT status,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
+  const localJob=db.prepare("SELECT status,lease_owner,lease_expires_at,lease_token FROM jobs WHERE id=?").get(job.id);
   if(localJob?.status==="cancelled"){
    await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/jobs/"+cloudJobId+"/cancel",ownerId:job.owner_id,body:{}});
    throw fail("Workflow was cancelled while cloud video generation was running.","WORKFLOW_CANCELLED");
   }
   const leaseExpiresAt=Date.parse(String(localJob?.lease_expires_at||""));
-  if(localJob?.status!=="running"||localJob.lease_owner!==job.lease_owner||!Number.isFinite(leaseExpiresAt)||leaseExpiresAt<=Date.now()){
+  if(localJob?.status!=="running"||localJob.lease_owner!==job.lease_owner||!UUID.test(String(job.lease_token||""))||localJob.lease_token!==job.lease_token||!Number.isFinite(leaseExpiresAt)||leaseExpiresAt<=Date.now()){
    throw fail("Workflow worker lease changed or expired while awaiting the cloud video job.","WORKFLOW_WORKER_LEASE_LOST");
   }
   const status=await cloudTimelineApi.handle({method:"GET",path:"/api/cloud/jobs/"+cloudJobId,ownerId:job.owner_id});
