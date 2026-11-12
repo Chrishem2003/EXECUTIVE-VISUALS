@@ -27,7 +27,7 @@ The broad Google Drive/billing/provider integration candidate remains draft PR #
 - The password-recovery fragment token is held transiently in memory and sent only to the password-update endpoint through a narrow explicit bearer helper; it is not retained as a global API credential.
 - The implementation requires a dedicated 32-byte `SUPABASE_SESSION_ENCRYPTION_KEY` in the server secret manager. Supabase mode refuses to start without it.
 - Unit tests cover hashed identifiers, authenticated encryption, token rotation, expiry, revocation, malformed secrets and cross-origin mutation rejection.
-- **Release boundary:** the implementation is merged into main. Do not enable hosted Supabase mode in a customer-facing environment until the dedicated 32-byte encryption secret is provisioned in an approved isolated Executive Visuals staging environment, the session database is durable, and sign-in/refresh/logout/recovery smoke tests pass. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment.
+- **Release boundary:** the implementation is merged into main. Do not enable hosted Supabase mode in a customer-facing environment until the dedicated 32-byte encryption secret is provisioned in an approved isolated Executive Visuals staging environment, the session database is durable, and sign-in/refresh/logout/recovery smoke tests pass. The current free Render runtime still uses local SQLite/disk and is not a certified durable customer environment.
 
 
 ## Implemented in the current branch
