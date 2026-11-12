@@ -46,7 +46,7 @@ test("job lease fencing migration issues per-attempt tokens and replaces unfence
   assert.match(sql, /create or replace function executive_visuals\.renew_job_lease_v2\s*\(/i);
   assert.match(sql, /create or replace function executive_visuals\.assert_job_lease_v2\s*\(/i);
   assert.match(sql, /create or replace function executive_visuals\.finish_job_v2\s*\(/i);
-  assert.match(sql, /lease_token is distinct from p_lease_token/i);
+  assert.match(sql, /lease_token=p_lease_token/i);
   assert.match(sql, /revoke all on function executive_visuals\.claim_next_job_v2/i);
 });
 
