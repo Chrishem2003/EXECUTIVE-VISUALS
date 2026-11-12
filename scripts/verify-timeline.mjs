@@ -99,6 +99,8 @@ assert.ok(Math.abs(seconds(trimmedSpeed.tracks[0].clips[0].sourceRange.duration)
 assert.equal(trimmedSpeed.tracks[0].clips[0].speedCurve[0].speed,1.5);
 const invalidSpeedCurve={...speedAdded,tracks:speedAdded.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:1,speed:5}]}))}))};
 assert.ok(validateTimeline(invalidSpeedCurve).issues.some(issue=>issue.code==="invalid_speed_curve"));
+const malformedSpeedCurve={...speedAdded,tracks:speedAdded.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,speedCurve:[{timeSeconds:0,speed:1},null]}))}))};
+assert.ok(validateTimeline(malformedSpeedCurve).issues.some(issue=>issue.code==="invalid_speed_curve"));
 
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
