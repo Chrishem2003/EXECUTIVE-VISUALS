@@ -37,7 +37,7 @@ test("cloud media jobs enqueue only authorized private assets with server-owned 
  const accepted=await f.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"media-color-002",body:{jobType:"media.color",options:{brightness:0.1,contrast:1.1,saturation:0.9}}});
  assert.equal(accepted.status,202);
  assert.equal(accepted.body.job.owner_id,owner);
- const created=JSON.parse(f.calls.find(call=>call.url.includes("/jobs?")&&call.options.method==="POST").options.body);
+ const created=JSON.parse(f.calls.find(call=>call.url?.includes("/jobs?")&&call.options.method==="POST").options.body);
  assert.equal(created.owner_id,owner);
  assert.equal(created.project_id,project);
  assert.equal(created.job_type,"media.color");
