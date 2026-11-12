@@ -10,16 +10,18 @@ function keyBytes(value) {
   return key;
 }
 function digest(value) { return createHash("sha256").update(value, "utf8").digest("hex"); }
-function seal(value, key) {
+function seal(value, key, aad) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(aad, "utf8"));
   const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
   return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
 }
-function unseal(value, key) {
+function unseal(value, key, aad) {
   const [ivPart, tagPart, dataPart] = String(value || "").split(".");
   if (!ivPart || !tagPart || !dataPart) throw new Error("Encrypted Supabase session material is malformed.");
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64url"));
+  decipher.setAAD(Buffer.from(aad, "utf8"));
   decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(dataPart, "base64url")), decipher.final()]).toString("utf8");
 }
@@ -36,9 +38,9 @@ export function createSupabaseSessionStore({ db, encryptionKey, now = () => Date
   return Object.freeze({
     create({ userId, accessToken, refreshToken, expiresIn = 3600 }) {
       if (typeof userId !== "string" || !userId || typeof accessToken !== "string" || !accessToken || typeof refreshToken !== "string" || !refreshToken) throw new TypeError("A complete Supabase identity session is required.");
-      const token = randomBytes(32).toString("base64url");
+      const token = randomBytes(32).toString("base64url"), tokenHash = digest(token);
       const timestamp = now(), createdAt = new Date(timestamp).toISOString();
-      insert.run(digest(token), userId, seal(accessToken, key), seal(refreshToken, key), new Date(timestamp + Math.max(60, Number(expiresIn) || 3600) * 1000).toISOString(), new Date(timestamp + ttlSeconds * 1000).toISOString(), createdAt, createdAt);
+      insert.run(tokenHash, userId, seal(accessToken, key, tokenHash + ":" + userId + ":access"), seal(refreshToken, key, tokenHash + ":" + userId + ":refresh"), new Date(timestamp + Math.max(60, Number(expiresIn) || 3600) * 1000).toISOString(), new Date(timestamp + ttlSeconds * 1000).toISOString(), createdAt, createdAt);
       return { token, expiresIn: ttlSeconds };
     },
     get(token) {
@@ -46,13 +48,15 @@ export function createSupabaseSessionStore({ db, encryptionKey, now = () => Date
       const tokenHash = digest(token), row = select.get(tokenHash);
       if (!row) return null;
       if (Date.parse(row.expires_at) <= now()) { remove.run(tokenHash); return null; }
-      try { return { userId: row.user_id, accessToken: unseal(row.access_token_ciphertext, key), refreshToken: unseal(row.refresh_token_ciphertext, key), accessExpiresAt: row.access_expires_at, expiresAt: row.expires_at }; }
+      try { return { userId: row.user_id, accessToken: unseal(row.access_token_ciphertext, key, row.token_hash + ":" + row.user_id + ":access"), refreshToken: unseal(row.refresh_token_ciphertext, key, row.token_hash + ":" + row.user_id + ":refresh"), accessExpiresAt: row.access_expires_at, expiresAt: row.expires_at }; }
       catch { remove.run(tokenHash); return null; }
     },
     rotate(token, { accessToken, refreshToken, expiresIn = 3600 }) {
       if (typeof token !== "string" || !TOKEN_PATTERN.test(token) || typeof accessToken !== "string" || !accessToken || typeof refreshToken !== "string" || !refreshToken) return false;
-      const timestamp = now(), iso = new Date(timestamp).toISOString();
-      const result = update.run(seal(accessToken, key), seal(refreshToken, key), new Date(timestamp + Math.max(60, Number(expiresIn) || 3600) * 1000).toISOString(), iso, digest(token), iso);
+      const timestamp = now(), iso = new Date(timestamp).toISOString(), tokenHash = digest(token);
+      const row = select.get(tokenHash);
+      if (!row || Date.parse(row.expires_at) <= timestamp) return false;
+      const result = update.run(seal(accessToken, key, tokenHash + ":" + row.user_id + ":access"), seal(refreshToken, key, tokenHash + ":" + row.user_id + ":refresh"), new Date(timestamp + Math.max(60, Number(expiresIn) || 3600) * 1000).toISOString(), iso, tokenHash, iso);
       return result.changes === 1;
     },
     delete(token) { if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return false; return remove.run(digest(token)).changes === 1; },
