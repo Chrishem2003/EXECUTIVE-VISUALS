@@ -133,44 +133,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
    }
-   const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
-   if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
-    if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"MEDIA_JOB_BODY_INVALID",message:"Media job request must be a JSON object."}});
-    const operation=String(body.operation||"");
-    if(!["proxy","thumbnail"].includes(operation))return response(400,{error:{code:"MEDIA_JOB_OPERATION_INVALID",message:"Choose proxy or thumbnail preview."}});
-    const asset=await service.assets.get({ownerId,assetId:mediaJobMatch[1]});
-    if(!asset.mediaType.startsWith("video/"))return response(422,{error:{code:"MEDIA_JOB_SOURCE_INVALID",message:"Cloud preview jobs require a video source asset."}});
-    const projectId=asset.projectId||null;
-    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found or editor access required."}});
-    const key=String(idempotencyKey||"").trim().slice(0,180);
-    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
-    const jobType=operation==="proxy"?"media.proxy":"media.thumbnail";
-    const seconds=operation==="thumbnail"?Number(body.seconds??1):null;
-    if(operation==="thumbnail"&&(!Number.isFinite(seconds)||seconds<0||seconds>3600))return response(400,{error:{code:"MEDIA_JOB_OPTIONS_INVALID",message:"Thumbnail time must be between 0 and 3600 seconds."}});
-    const input=operation==="proxy"?{sourceAssetId:asset.id,container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"veryfast",proxyWidth:960,proxyCrf:28,proxyProfile:"timeline-preview-960p"}:{sourceAssetId:asset.id,seconds};
-    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,input,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
-    if(Array.isArray(existing)&&existing[0]){
-     const row=existing[0];
-     if(row.job_type!==jobType||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different media operation."}});
-     return response(200,{job:row,idempotentReplay:true});
-    }
-    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
-    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].project_id!==(projectId||null)||rows[0].job_type!==jobType||rows[0].status!=="queued")throw new Error("Cloud media preview job creation returned an invalid receipt.");
-    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId:asset.id,operation}},prefer:"return=minimal"});
-    return response(202,{job:rows[0],idempotentReplay:false});
-   }
-   const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
-   if(assetMatch&&safeId(assetMatch[1])){
-    if(method==="GET"){
-     const signed=await service.assets.createSignedUrl({ownerId,assetId:assetMatch[1],expiresIn:3600});
-     return response(200,{asset:signed.asset,url:signed.url,expiresIn:3600});
-    }
-    if(method==="DELETE"){
-     const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
-     return response(200,{asset:result});
-    }
-   }
-   const mediaJobMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/media-jobs$/i);
+      const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
    if(mediaJobMatch&&method==="POST"&&!mediaJobsEnabled)return response(503,{error:{code:"CLOUD_MEDIA_WORKER_DISABLED",message:"Cloud media processing is not enabled for this environment."}});
    if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
     const assetId=mediaJobMatch[1];
@@ -196,7 +159,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     };
     if(!Object.hasOwn(optionKeys,jobType))return response(400,{error:{code:"MEDIA_JOB_TYPE_INVALID",message:"Choose a supported cloud media operation."}});
     const mediaType=String(asset.mediaType||"");
-    const compatible=jobType==="media.probe"?/^(image|video|audio)\\//.test(mediaType):
+    const compatible=jobType==="media.probe"?/^(image|video|audio)\//.test(mediaType):
      ["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
      jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
      jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
@@ -206,10 +169,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!options||typeof options!=="object"||Array.isArray(options))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options must be a JSON object."}});
     const allowedOptions=new Set(optionKeys[jobType]);
     if(Object.keys(options).some(key=>!allowedOptions.has(key)))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options contain unsupported fields for this operation."}});
-    const numericRanges={
-     seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],luma:[0,100],chroma:[0,100],
-     brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]
-    };
+    const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
     for(const [key,[minimum,maximum]] of Object.entries(numericRanges)){
      if(options[key]!==undefined&&(!Number.isFinite(options[key])||options[key]<minimum||options[key]>maximum))
       return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media option "+key+" is outside its supported range."}});
@@ -248,6 +208,17 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      throw new Error("Cloud media job creation returned an invalid receipt.");
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId:asset.id}},prefer:"return=minimal"});
     return response(202,{job:rows[0],idempotentReplay:false});
+   }
+const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
+   if(assetMatch&&safeId(assetMatch[1])){
+    if(method==="GET"){
+     const signed=await service.assets.createSignedUrl({ownerId,assetId:assetMatch[1],expiresIn:3600});
+     return response(200,{asset:signed.asset,url:signed.url,expiresIn:3600});
+    }
+    if(method==="DELETE"){
+     const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
+     return response(200,{asset:result});
+    }
    }
    if(path==="/api/cloud/workflows/video/quote"&&method==="POST"){
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
