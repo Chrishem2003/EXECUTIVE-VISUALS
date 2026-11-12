@@ -38,8 +38,8 @@ function onePixelPng(red=24,green=48,blue=72){
 
 
 test("official CAI SDK signs and validates a real embedded C2PA MP4 video manifest",async()=>{
- const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
- const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
+ const cert=await readFile(join(fixtureRoot,"test-video-signing-cert.pem"));
+ const key=await readFile(join(fixtureRoot,"test-video-signing-key.pem"));
  const signer=LocalSigner.newSigner(cert,key,"es256");
  const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-video-"));
  const sourcePath=join(dir,"source.mp4"),signedPath=join(dir,"signed.mp4");
@@ -65,8 +65,20 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   });
   assert.equal(verify.present,true);
   assert.equal(verify.valid,true);
-  assert.ok(["valid_untrusted","trusted"].includes(verify.status));
+  assert.equal(verify.status,"valid_untrusted","a valid test signer must not be trusted without an explicit trust anchor");
   assert.equal(verify.assetSha256,sha256);
+
+  // This self-signed fixture is used only as a temporary trust anchor in this test.
+  const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
+  await writeFile(trustAnchorPath,await readFile(join(fixtureRoot,"test-video-root-cert.pem")));
+  const trusted=await createC2paVerifier({
+   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:trustAnchorPath
+  })({filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length});
+  assert.equal(trusted.present,true);
+  assert.equal(trusted.valid,true);
+  assert.equal(trusted.trusted,true,JSON.stringify({status:trusted.status,validationState:trusted.validationState,validationStatuses:trusted.validationStatuses}));
+  assert.equal(trusted.status,"trusted");
+
   const tampered=Buffer.from(signed);
   tampered[tampered.length-1]^=0x01;
   await writeFile(signedPath,tampered);
