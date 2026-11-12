@@ -80,7 +80,7 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
   await writeFile(trustAnchorPath,certificates[1]);
   const trusted=await createC2paVerifier({
-   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,trustAnchorsPath:trustAnchorPath
+   sdkLoader:async()=>({Reader,Context}),maxBytes:1024*1024,userAnchorsPath:trustAnchorPath
   })({filePath:signedPath,mediaType:"video/mp4",expectedSha256:sha256,expectedSize:signed.length});
   assert.equal(trusted.present,true);
   assert.equal(trusted.valid,true);
