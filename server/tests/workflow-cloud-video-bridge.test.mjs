@@ -102,7 +102,8 @@ test("cloud workflow uploads a checksum-verified local source into the same priv
   await writeFile(join(mediaRoot,"uploads","source.mp4"),video);
   const result=await executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
-   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   probeMedia:async()=>({format:{duration:"1.5"},streams:[{codec_type:"video",duration:"1.5"}]})
   });
   const upload=f.calls.find(call=>call.method==="UPLOAD");
   assert.equal(result.awaitingApproval,true);
@@ -122,6 +123,24 @@ test("cloud workflow uploads a checksum-verified local source into the same priv
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
  }
+});
+
+test("cloud workflow rejects a video source without a verifiable video stream before upload or quote",async()=>{
+ const sourceId="b23e4567-e89b-42d3-a456-426614174000";
+ const f=fixture({values:{prompt:"Transform the source clip",sourceVideoAssetId:sourceId}});
+ f.node.config.rightsConfirmed=true;
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-invalid-source-media-"));
+ try{
+  await mkdir(join(mediaRoot,"uploads"),{recursive:true});
+  await writeFile(join(mediaRoot,"uploads","source.mp4"),video);
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   probeMedia:async()=>({format:{duration:"1.5"},streams:[{codec_type:"audio",duration:"1.5"}]})
+  }),error=>error.code==="VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");
+  assert.equal(f.calls.some(call=>call.method==="UPLOAD"),false);
+  assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false);
+ }finally{await rm(mediaRoot,{recursive:true,force:true});}
 });
 
 test("cloud workflow refuses source assets from a different project before upload or quote",async()=>{
