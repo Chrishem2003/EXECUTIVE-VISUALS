@@ -209,7 +209,7 @@ export async function executeCloudVideoWorkflowNode({
     const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model:cloudJob.output?.model||routedModel||"model-router",provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,buffer});
     imported.push(local.id);
    }
-   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,
+   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],durationSeconds:Number(initial.input.durationSeconds),
     provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
     approvedMaxAmount,actualAmount,currency:actualCurrency,costEvidenceReference};
