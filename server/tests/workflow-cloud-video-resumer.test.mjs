@@ -25,6 +25,8 @@ function fixture(cloudStatus="succeeded",originalJobStatus="blocked"){
    if(sql.startsWith("INSERT INTO jobs"))return{run(...args){jobs.push({id:args[0],owner_id:args[1],project_id:args[2],idempotency_key:args[4]});}};
    if(sql.startsWith("UPDATE workflow_node_runs SET status='pending'"))return{run(){if(node.status!=="blocked")return{changes:0};node.status="pending";node.error_json=null;return{changes:1};}};
    if(sql.startsWith("UPDATE workflow_runs SET status='queued'"))return{run(...args){if(run.status!=="blocked")return{changes:0};run.status="queued";run.job_id=args[0];run.error_json=null;return{changes:1};}};
+   if(sql.startsWith("UPDATE workflow_node_runs SET status='skipped'"))return{run(...args){if(node.status!=="blocked")return{changes:0};node.status="skipped";node.error_json=args[0];return{changes:1};}};
+   if(sql.startsWith("UPDATE workflow_runs SET status='cancelled'"))return{run(...args){if(run.status!=="blocked")return{changes:0};run.status="cancelled";run.error_json=args[0];return{changes:1};}};
    if(sql.startsWith("UPDATE workflow_node_runs SET status=?"))return{run(...args){node.status=args[0];node.error_json=args[1];return{changes:1};}};
    if(sql.startsWith("UPDATE workflow_runs SET status=?"))return{run(...args){run.status=args[0];run.error_json=args[1];return{changes:1};}};
    if(sql.startsWith("INSERT INTO job_events"))return{run(...args){events.push(args);}};
