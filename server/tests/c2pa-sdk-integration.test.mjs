@@ -72,8 +72,11 @@ test("official CAI SDK signs and validates a real embedded C2PA MP4 video manife
   // Trust the intermediate CA only inside this test to prove the configured
   // trust-anchor path changes the result from valid_untrusted to trusted.
   const certificateChain=await readFile(join(fixtureRoot,"test-signing-chain.pem"),"utf8");
-  const certificates=certificateChain.match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/g)||[];
-  assert.equal(certificates.length,2,"the test signing chain must contain signer and intermediate certificates");
+  const certificates=certificateChain.split("-----BEGIN CERTIFICATE-----").slice(1).map(part=>{
+   const body=part.split("-----END CERTIFICATE-----")[0]?.trim();
+   return body? "-----BEGIN CERTIFICATE-----\\n"+body+"\\n-----END CERTIFICATE-----\\n":null;
+  }).filter(Boolean);
+  assert.equal(certificates.length,2,"the test signing chain must contain signer and root certificates");
   const trustAnchorPath=join(dir,"test-only-trust-anchor.pem");
   await writeFile(trustAnchorPath,certificates[1]);
   const trusted=await createC2paVerifier({
