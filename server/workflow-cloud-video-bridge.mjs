@@ -6,6 +6,7 @@ import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { storeGeneratedVideo } from "./generated-assets.mjs";
 import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
 import { createVideoRequestProvenance } from "./video-generation-contract.mjs";
+import { executableAvailable, run as runMediaProcess, validateMediaOutputProbe } from "./media.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_VIDEO_BYTES=250*1024*1024;
@@ -25,6 +26,11 @@ function replaceAssetReferences(value,mapping){
 function cloudResultError(result,fallback){
  const code=result?.body?.error?.code||fallback;
  return fail(result?.body?.error?.message||"Cloud workflow request failed.",code);
+}
+async function probeLocalMedia(filePath){
+ if(!executableAvailable("ffprobe"))throw fail("FFprobe is required to validate cloud video workflow source media.","MEDIA_ENGINE_MISSING");
+ const result=await runMediaProcess("ffprobe",["-v","error","-show_format","-show_streams","-of","json",filePath],15000);
+ try{return JSON.parse(result.stdout);}catch{throw fail("Workflow source media probe returned invalid metadata.","VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");}
 }
 async function readBounded(response,maximum){
  const declared=Number(response.headers?.get?.("content-length")||0);
@@ -53,7 +59,7 @@ async function readBounded(response,maximum){
  */
 export async function executeCloudVideoWorkflowNode({
  db,job,run,node,values={},mediaRoot,cloudTimelineApi,
- onProgress=()=>{},onJobEnqueued=()=>{},onApprovalRequired=()=>{},fetchImpl=globalThis.fetch,
+ onProgress=()=>{},onJobEnqueued=()=>{},onApprovalRequired=()=>{},fetchImpl=globalThis.fetch,probeMedia=probeLocalMedia,
  pollIntervalMs=5000,waitForCompletion=false
 }={}){
  if(!cloudTimelineApi||typeof cloudTimelineApi.handle!=="function"||typeof cloudTimelineApi.uploadAsset!=="function"){
@@ -89,6 +95,11 @@ export async function executeCloudVideoWorkflowNode({
   if(buffer.length<1||buffer.length>MAX_VIDEO_BYTES||buffer.length!==Number(local.byte_size)||
      createHash("sha256").update(buffer).digest("hex")!==local.sha256){
    throw fail("A workflow input asset changed or failed checksum verification.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
+  }
+  if(String(local.media_type||"").startsWith("video/")){
+   let mediaProbe;
+   try{mediaProbe=await probeMedia(absolute);validateMediaOutputProbe(mediaProbe,local.media_type);}
+   catch(error){throw fail("Workflow video input must contain a verifiable video stream and positive duration.", "VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");}
   }
   const metadata=parseJson(local.metadata_json,{});
   let cloudAssetId=metadata?.cloudWorkspace?.assetId||"";
