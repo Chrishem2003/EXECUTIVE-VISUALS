@@ -1134,6 +1134,17 @@ export function createAppServer() {
             format:item.format||body.format||"png",index
           });
         }
+        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
+        const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.length);
+        if(batchKeys.length){
+          const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
+          const replay=inspectBatchReplay(existing,normalized,projectId);
+          if(replay.exists){
+            if(!replay.matches){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different or incomplete batch request.");return;}
+            const replayJobs=existing.map(recordJob);
+            send(res,200,{batchId:replay.batchId,status:"replayed",total:replayJobs.length,jobs:replayJobs,idempotentReplay:true},cors);return;
+          }
+        }
         const evidence=await loadUpscaleQualityEvidence();
         const models=[...new Set(normalized.map(item=>item.model))];
         for(const model of models){
@@ -1146,8 +1157,6 @@ export function createAppServer() {
           }
         }
         const batchId=randomUUID();
-        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
-        const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.length);
         const jobs=[];
         db.exec("BEGIN IMMEDIATE");
         try{
