@@ -8,13 +8,62 @@ import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
 const rawSeconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return null;const result=value/rate;return Number.isFinite(result)?result:null;};
+const n=(value)=>Number(value.toFixed(9)).toString();
+const speedSegments=(clip,duration)=>{
+ const curve=clip.speedCurve;
+ if(curve===undefined)return null;
+ if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
+    curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||
+      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||
+      (index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
+  fail("Variable-speed keyframes require 2–64 ordered points, start at zero and stay within the clip at 0.25×–4×.","INVALID_SPEED_CURVE");
+ const evaluate=time=>{
+  if(time<=curve[0].timeSeconds)return curve[0].speed;
+  for(let index=1;index<curve.length;index++){
+   const left=curve[index-1],right=curve[index];
+   if(time<=right.timeSeconds){
+    const span=right.timeSeconds-left.timeSeconds,ratio=span>0?(time-left.timeSeconds)/span:1;
+    return left.speed+(right.speed-left.speed)*ratio;
+   }
+  }
+  return curve[curve.length-1].speed;
+ };
+ const points=curve.filter(point=>point.timeSeconds<duration).map(point=>({time:point.timeSeconds,speed:point.speed}));
+ if(!points.length||points[0].time!==0)fail("Variable-speed keyframes must start at zero.","INVALID_SPEED_CURVE");
+ points.push({time:duration,speed:evaluate(duration)});
+ let source=0;
+ return points.slice(1).map((point,index)=>{
+  const previous=points[index],elapsed=point.time-previous.time,sourceStart=source;
+  if(elapsed<=0)fail("Variable-speed keyframe intervals must have positive duration.","INVALID_SPEED_CURVE");
+  source+=(previous.speed+point.speed)*0.5*elapsed;
+  return{timelineStart:previous.time,timelineEnd:point.time,sourceStart,sourceEnd:source,startSpeed:previous.speed,endSpeed:point.speed,slope:(point.speed-previous.speed)/elapsed};
+ });
+};
+export const sourceDurationForClip=(clip,duration)=>{
+ const segments=speedSegments(clip,duration);
+ return segments?segments.reduce((total,segment)=>total+segment.sourceEnd-segment.sourceStart,0):sourceDurationForTimeline(duration,normalizeClipSpeed(clip?.speed??1));
+};
+export const buildVariableSpeedSetptsExpression=(clip,duration)=>{
+ const segments=speedSegments(clip,duration);
+ if(!segments)return null;
+ let expression="("+n(duration)+"+(T-"+n(segments[segments.length-1].sourceEnd)+")/"+n(segments[segments.length-1].endSpeed)+")";
+ for(let index=segments.length-1;index>=0;index--){
+  const segment=segments[index],delta="(T-"+n(segment.sourceStart)+")";
+  const local=Math.abs(segment.slope)<1e-9?delta+"/"+n(segment.startSpeed):
+   "2*"+delta+"/("+n(segment.startSpeed)+"+sqrt("+n(segment.startSpeed*segment.startSpeed)+"+2*"+n(segment.slope)+"*"+delta+"))";
+  expression="if(lt(T,"+n(segment.sourceEnd)+"),("+n(segment.timelineStart)+"+("+local+")),"+expression+")";
+ }
+ return expression;
+};
+
 const validateClipTiming=(clip,kind)=>{
  const start=rawSeconds(clip?.timelineStart),duration=rawSeconds(clip?.duration),sourceStart=rawSeconds(clip?.sourceRange?.start),sourceDuration=rawSeconds(clip?.sourceRange?.duration);
  if(start===null||duration===null||sourceStart===null||sourceDuration===null||start<0||duration<=0||sourceStart<0||sourceDuration<=0||start+duration>86400||sourceStart+sourceDuration>86400)fail("Timeline clip has invalid or out-of-range timing values.","INVALID_TIMELINE_TIMING");
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
  let speed;try{speed=normalizeClipSpeed(clip?.speed??1);}catch{fail("Clip speed must be between 0.25× and 4×.","INVALID_CLIP_SPEED");}
  if(kind!=="video"&&kind!=="audio"&&speed!==1)fail("Speed changes are supported only for video and audio clips.","UNSUPPORTED_TIME_REMAP");
- const expected=sourceDurationForTimeline(duration,speed);
+ if(clip?.speedCurve!==undefined&&kind!=="video")fail("Variable-speed curves are currently supported only for video clips.","UNSUPPORTED_SPEED_CURVE");
+ const expected=clip?.speedCurve!==undefined?sourceDurationForClip(clip,duration):sourceDurationForTimeline(duration,speed);
  if(Math.abs(expected-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source duration must equal timeline duration multiplied by playback speed.","INVALID_TIMELINE_TIMING");
 };
 export function parseAudioLoudnessMeasurement(stderr=""){
@@ -145,19 +194,20 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
    if(duration<=0)continue;
-   const speed=normalizeClipSpeed(clip.speed??1);
+   const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForClip(clip,duration),speedExpression=buildVariableSpeedSetptsExpression(clip,duration);
    if(start+0.000001<cursor)fail("Primary video track contains overlapping clips.","TIMELINE_OVERLAP");
    if(start>cursor+0.000001){
     const gap=start-cursor;args.push("-f","lavfi","-t",gap.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
     const label="v"+segmentIndex++;segments.push({label,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});inputIndex++;
    }
    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
-   if(mediaType.startsWith("image/")){if(speed!==1)fail("Still-image clips do not support speed changes.","UNSUPPORTED_IMAGE_TIME_REMAP");args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);}
-   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDurationForTimeline(duration,speed).toFixed(6),"-i",asset.path);
+   if(mediaType.startsWith("image/")){if(speed!==1||clip.speedCurve!==undefined)fail("Still-image clips do not support speed changes.","UNSUPPORTED_IMAGE_TIME_REMAP");args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);}
+   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
    const effect=buildTimelineClipEffects(clip.metadata||{});
-   const filters=["trim=duration="+sourceDurationForTimeline(duration,speed).toFixed(6),speed===1?"setpts=PTS-STARTPTS":"setpts=(PTS-STARTPTS)/"+speed.toFixed(6),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+   const retimeFilter=speedExpression ? "setpts='"+speedExpression+"/TB'" : speed===1 ? null : "setpts=(PTS-STARTPTS)/"+speed.toFixed(6);
+    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
    segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
