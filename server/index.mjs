@@ -33,6 +33,7 @@ import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./prov
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession, requestSupabasePasswordRecovery, updateSupabasePassword, isSupabaseRecoveryToken } from "./supabase-password-auth.mjs";
+import { createSupabaseSessionStore, assertSameOriginMutation } from "./supabase-session-store.mjs";
 import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs";
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
 import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit, buildVideoDispatchReadiness } from "./admin-operations.mjs";
@@ -69,6 +70,7 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -168,32 +170,33 @@ function createLocalSession(userId) {
     .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString());
   return token;
 }
-function setSupabaseSessionCookies(res,session){
+function setSupabaseSessionCookies(res,token,maxAge=30*86400){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie",[
-  "ev_supabase_access="+encodeURIComponent(session.accessToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+Math.max(60,session.expiresIn||3600)+secure,
-  "ev_supabase_refresh="+encodeURIComponent(session.refreshToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"+secure
- ]);
+ res.setHeader("set-cookie","ev_supabase_session="+encodeURIComponent(token)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+maxAge+secure);
 }
 function clearSupabaseSessionCookies(res){
  const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
- res.setHeader("set-cookie",[
-  "ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,
-  "ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure
- ]);
+ res.setHeader("set-cookie","ev_supabase_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure);
+}
+function createSupabaseBrowserSession(session){
+ if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions require SUPABASE_SESSION_ENCRYPTION_KEY (32 random bytes)."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
+ db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(session.user.id,session.user.email||session.user.id+"@supabase.invalid");
+ return supabaseSessionStore.create({userId:session.user.id,accessToken:session.accessToken,refreshToken:session.refreshToken,expiresIn:session.expiresIn});
 }
 async function authenticate(req,res) {
  if (AUTH_MODE === "supabase") {
+  if(!supabaseSessionStore)throw Object.assign(new Error("Supabase browser sessions are not configured. Set SUPABASE_SESSION_ENCRYPTION_KEY."),{code:"SUPABASE_SESSION_ENCRYPTION_NOT_CONFIGURED",status:503});
   const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
-  let token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"")||cookieValue(req,"ev_supabase_access");
-  let user=token?await getSupabaseUser({...config,accessToken:token}):null;
+  const browserToken=cookieValue(req,"ev_supabase_session");
+  if(!browserToken)return null;
+  let stored=supabaseSessionStore.get(browserToken);
+  if(!stored){clearSupabaseSessionCookies(res);return null;}
+  let user=await getSupabaseUser({...config,accessToken:stored.accessToken});
   if(!user){
-   const refreshToken=cookieValue(req,"ev_supabase_refresh");
-   if(refreshToken){
-    const session=await refreshSupabaseSession({...config,refreshToken});
-    if(session){setSupabaseSessionCookies(res,session);token=session.accessToken;user=session.user;}
-    else clearSupabaseSessionCookies(res);
-   }
+   const rotated=await refreshSupabaseSession({...config,refreshToken:stored.refreshToken});
+   if(!rotated){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
+   if(!supabaseSessionStore.rotate(browserToken,rotated)){supabaseSessionStore.delete(browserToken);clearSupabaseSessionCookies(res);return null;}
+   user=rotated.user;
   }
   if(!user)return null;
   db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(user.id,user.email||user.id+"@supabase.invalid");
