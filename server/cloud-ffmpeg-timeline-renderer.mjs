@@ -8,7 +8,7 @@ import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
 const rawSeconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return null;const result=value/rate;return Number.isFinite(result)?result:null;};
-const n=(value)=>Number(value.toFixed(9)).toString();
+const speedNumber=(value)=>Number(value.toFixed(9)).toString();
 const speedSegments=(clip,duration)=>{
  const curve=clip.speedCurve;
  if(curve===undefined)return null;
@@ -46,12 +46,12 @@ export const sourceDurationForClip=(clip,duration)=>{
 export const buildVariableSpeedSetptsExpression=(clip,duration)=>{
  const segments=speedSegments(clip,duration);
  if(!segments)return null;
- let expression="("+n(duration)+"+(T-"+n(segments[segments.length-1].sourceEnd)+")/"+n(segments[segments.length-1].endSpeed)+")";
+ let expression="("+speedNumber(duration)+"+(T-"+speedNumber(segments[segments.length-1].sourceEnd)+")/"+speedNumber(segments[segments.length-1].endSpeed)+")";
  for(let index=segments.length-1;index>=0;index--){
-  const segment=segments[index],delta="(T-"+n(segment.sourceStart)+")";
-  const local=Math.abs(segment.slope)<1e-9?delta+"/"+n(segment.startSpeed):
-   "2*"+delta+"/("+n(segment.startSpeed)+"+sqrt("+n(segment.startSpeed*segment.startSpeed)+"+2*"+n(segment.slope)+"*"+delta+"))";
-  expression="if(lt(T,"+n(segment.sourceEnd)+"),("+n(segment.timelineStart)+"+("+local+")),"+expression+")";
+  const segment=segments[index],delta="(T-"+speedNumber(segment.sourceStart)+")";
+  const local=Math.abs(segment.slope)<1e-9?delta+"/"+speedNumber(segment.startSpeed):
+   "2*"+delta+"/("+speedNumber(segment.startSpeed)+"+sqrt("+speedNumber(segment.startSpeed*segment.startSpeed)+"+2*"+speedNumber(segment.slope)+"*"+delta+"))";
+  expression="if(lt(T,"+speedNumber(segment.sourceEnd)+"),("+speedNumber(segment.timelineStart)+"+("+local+")),"+expression+")";
  }
  return expression;
 };
