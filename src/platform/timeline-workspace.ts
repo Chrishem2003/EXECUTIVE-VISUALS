@@ -544,7 +544,7 @@ export async function addWorkflowVideoToCloudTimeline(input:{projectId:string;cl
   await persist();
   state.message="Generated video added to the private cloud timeline at "+(endFrame/fps).toFixed(2)+" seconds. Preview, editing and master rendering are ready.";
   paint();
-  return {timelineId:state.timeline.id,clipId,alreadyPresent:false};
+  return {timelineId:timeline.id,clipId,alreadyPresent:false};
  }catch(error){
   if(previous)state.timeline=previous;
   throw error;
