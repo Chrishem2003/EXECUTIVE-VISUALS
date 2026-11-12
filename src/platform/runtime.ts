@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestWithBearer, ApiError } from "../core/api";
+import { cloudAssetProjectQuery, selectCloudAssetProject } from "./cloud-asset-project";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -303,9 +304,9 @@ async function refresh(){
   try{
    const projectResponse=await apiRequest<{projects:RuntimeCloudProject[]}>("/api/cloud/projects?limit=100");
    state.cloudProjects=Array.isArray(projectResponse.projects)?projectResponse.projects.filter(project=>typeof project?.id==="string"&&typeof project?.name==="string"):[];
-   if(!state.cloudProjects.some(project=>project.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
-   if(state.cloudProjectId){
-    const scope="?projectId="+encodeURIComponent(state.cloudProjectId)+"&limit=25";
+   state.cloudProjectId=selectCloudAssetProject(state.cloudProjectId,state.cloudProjects);
+   const scope=cloudAssetProjectQuery(state.cloudProjectId);
+   if(scope){
     const response=await apiRequest<{assets:RuntimeCloudAsset[]}>("/api/cloud/assets"+scope);
     state.cloudAssets=await Promise.all(response.assets.map(async asset=>{
      try{
