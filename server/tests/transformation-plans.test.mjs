@@ -42,3 +42,16 @@ test("rejects malformed requests and unsupported preservation or parameter field
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,preservation:["camera_motion","invented_constraint"]},idempotencyKey:"transform-key-010"}),e=>e.code==="TRANSFORMATION_PRESERVATION_INVALID");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,referenceAssetIds:"not-an-array"},idempotencyKey:"transform-key-011"}),e=>e.code==="REFERENCE_ASSET_INVALID");
 }finally{await f.close();}});
+
+test("rejects coercion, truncation and duplicate transformation values",async()=>{const f=await fixture();try{
+ const invalid=[
+  [{...f.body,projectId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,sourceAssetId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,operation:42},"TRANSFORMATION_OPERATION_INVALID"],
+  [{...f.body,prompt:"x".repeat(8001)},"TRANSFORMATION_PROMPT_INVALID"],
+  [{...f.body,durationSeconds:"8"},"TRANSFORMATION_DURATION_INVALID"],
+  [{...f.body,referenceAssetIds:["44444444-4444-4444-8444-444444444444","44444444-4444-4444-8444-444444444444"]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,preservation:["camera_motion","camera_motion"]},"TRANSFORMATION_PRESERVATION_INVALID"]
+ ];
+ for(let i=0;i<invalid.length;i++)assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:invalid[i][0],idempotencyKey:"strict-transform-"+String(i).padStart(3,"0")}),error=>error.code===invalid[i][1]);
+}finally{await f.close();}});

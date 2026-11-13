@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
-import { createCloudMediaExecutor, buildCloudMediaOutputPlan } from "../cloud-media-executor.mjs";
+import { createCloudMediaExecutor, buildCloudMediaOutputPlan, aiUpscaleMediaType } from "../cloud-media-executor.mjs";
 
 const noC2paPreservation=async()=>({status:"not_present",preserved:false});
 
@@ -667,4 +667,11 @@ test("cloud proxy output plan rejects unbounded dimensions and encoder settings"
  assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyWidth:99999},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
  assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{proxyCrf:99},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
  assert.throws(()=>buildCloudMediaOutputPlan("media.proxy",{preset:"slow"},{name:"scene.mp4"},"source.mp4","proxy.mp4"),error=>error.code==="INVALID_MEDIA_OPTIONS");
+});
+
+test("AI upscale output MIME type is canonical and rejects unsupported formats",()=>{
+ assert.equal(aiUpscaleMediaType("png"),"image/png");
+ assert.equal(aiUpscaleMediaType("jpg"),"image/jpeg");
+ assert.equal(aiUpscaleMediaType("webp"),"image/webp");
+ for(const format of ["jpeg","gif","svg",""])assert.throws(()=>aiUpscaleMediaType(format),error=>error.code==="INVALID_MEDIA_OPTIONS");
 });

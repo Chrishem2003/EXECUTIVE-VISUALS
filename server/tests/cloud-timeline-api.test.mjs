@@ -575,3 +575,24 @@ test("paid workflow quotes require the complete provider-aware worker launch con
   assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_VIDEO_OUTPUT_HOSTS: "" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, RUNWAY_VIDEO_MODELS: "gen4.5" }), false);
 });
+
+test("cloud transformation API rejects unknown, coerced and oversized inputs before writes",async()=>{
+ const f=setup();
+ const valid={projectId:project,sourceAssetId:"623e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the parked car with a red electric coupe.",durationSeconds:8,rightsConfirmed:true,subjectConsentConfirmed:false};
+ const invalid=[
+  [{...valid,unexpectedProviderParameter:"ignored"},"TRANSFORMATION_FIELD_UNSUPPORTED"],
+  [{...valid,projectId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...valid,sourceAssetId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...valid,operation:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...valid,prompt:"x".repeat(8001)},"TRANSFORMATION_INPUT_INVALID"],
+  [{...valid,durationSeconds:"8"},"TRANSFORMATION_INPUT_INVALID"],
+  [{...valid,referenceAssetIds:["723e4567-e89b-42d3-a456-426614174000","723e4567-e89b-42d3-a456-426614174000"]},"REFERENCE_ASSET_INVALID"],
+  [{...valid,preservation:["camera_motion","camera_motion"]},"TRANSFORMATION_PRESERVATION_INVALID"]
+ ];
+ for(let i=0;i<invalid.length;i++){
+  const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,idempotencyKey:"strict-cloud-transform-"+i,body:invalid[i][0]});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,invalid[i][1]);
+ }
+ assert.equal(f.calls.some(call=>call[0]==="fetch"),false,"invalid requests must not write jobs or events");
+});
