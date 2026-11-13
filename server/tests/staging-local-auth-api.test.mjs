@@ -113,7 +113,7 @@ test("production staging local auth enforces origin and allowlist through real H
     body: { email: ALLOWED_EMAIL, password: TEST_PASSWORD }
   });
   assert.equal(foreignOrigin.status, 403);
-  assert.equal((await foreignOrigin.json()).error.code, "CSRF_ORIGIN_DENIED");
+  assert.equal((await foreignOrigin.json()).error.code, "ORIGIN_DENIED");
 
   const disallowedEmail = await request("/api/auth/register", {
     method: "POST",
@@ -157,7 +157,7 @@ test("production staging local auth enforces origin and allowlist through real H
     body: { email: ALLOWED_EMAIL, password: TEST_PASSWORD }
   });
   assert.equal(foreignLogin.status, 403);
-  assert.equal((await foreignLogin.json()).error.code, "CSRF_ORIGIN_DENIED");
+  assert.equal((await foreignLogin.json()).error.code, "ORIGIN_DENIED");
 
   const login = await request("/api/auth/login", {
     method: "POST",
