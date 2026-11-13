@@ -120,7 +120,7 @@ function scheduleWorkflowRunPoll(delayMs=5000){
   if(!shouldPollWorkflowRun()||runPollInFlight)return;
   runPollInFlight=true;
   try{await loadRun();paint();}
-  catch{/* A transient refresh failure must not erase the last known workflow state. */}
+  catch(error){state.message=error instanceof Error?"Workflow status refresh failed: "+error.message:"Workflow status refresh failed. The last known run state is still shown.";paint();}
   finally{runPollInFlight=false;scheduleWorkflowRunPoll();}
  },delay);
 }
