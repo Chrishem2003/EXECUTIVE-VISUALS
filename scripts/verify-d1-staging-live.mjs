@@ -161,3 +161,73 @@ console.log("PASS: allowlisted staging registration/login and /api/me session ve
 console.log("PASS: authenticated D1 project create/list and revisioned workspace save/reload succeeded.");
 console.log("PASS: anonymous project access remains rejected.");
 
+const isolationEmail = "ev-staging-isolation@example.com";
+const isolationPassword = "Staging-isolation-password-2026!";
+const isolationAuth = await postJson("Second staging identity registration", stagingOrigin + "/api/auth/register", {
+  body: { email: isolationEmail, password: isolationPassword },
+  expectedStatus: 201
+}).catch(async error => {
+  if (!String(error.message).includes("HTTP 409")) throw error;
+  return postJson("Second staging identity login", stagingOrigin + "/api/auth/login", {
+    body: { email: isolationEmail, password: isolationPassword },
+    expectedStatus: 200
+  });
+});
+assert.ok(isolationAuth.cookie, "Second staging identity must receive an independent session cookie.");
+
+const secondIdentityResponse = await fetch(stagingOrigin + "/api/me", {
+  headers: { cookie: isolationAuth.cookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(secondIdentityResponse.status, 200);
+assert.equal((await secondIdentityResponse.json()).user?.email, isolationEmail);
+
+const secondUserProjects = await getJson("Second account project list", stagingOrigin + "/api/d1/projects?limit=50", {
+  expectedStatus: 200,
+  cookie: isolationAuth.cookie
+});
+assert.equal(secondUserProjects.body.projects?.some(item => item.id === project.id), false,
+  "A second account must not see the first account's project.");
+
+const foreignProject = await getJson("Cross-account project read", stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id), {
+  expectedStatus: 404,
+  cookie: isolationAuth.cookie
+});
+assert.equal(foreignProject.body.error?.code, "D1_PROJECT_NOT_FOUND");
+
+const foreignWorkspaceRead = await fetch(workspaceUrl, {
+  headers: { cookie: isolationAuth.cookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(foreignWorkspaceRead.status, 404, "A second account must not read another account's workspace.");
+
+const foreignWorkspaceWrite = await fetch(workspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { unauthorized: true } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(foreignWorkspaceWrite.status, 404, "A second account must not write another account's workspace.");
+
+const secondProject = await postJson("Second account D1 project creation", stagingOrigin + "/api/d1/projects", {
+  body: { name: `CI tenant isolation ${runLabel}`, description: "Second isolated staging account", settings: { source: "github-actions", runId: runLabel } },
+  cookie: isolationAuth.cookie,
+  expectedStatus: 201
+});
+const secondProjectId = secondProject.payload.project?.id;
+assert.match(secondProjectId || "", /^[0-9a-f-]{36}$/i);
+const secondOwnProject = await getJson("Second account own project read", stagingOrigin + "/api/d1/projects/" + encodeURIComponent(secondProjectId), {
+  expectedStatus: 200,
+  cookie: isolationAuth.cookie
+});
+assert.equal(secondOwnProject.body.project.id, secondProjectId);
+
+const firstAccountForeignRead = await getJson("First account cannot read second account project", stagingOrigin + "/api/d1/projects/" + encodeURIComponent(secondProjectId), {
+  expectedStatus: 404,
+  cookie: sessionCookie
+});
+assert.equal(firstAccountForeignRead.body.error?.code, "D1_PROJECT_NOT_FOUND");
+
+console.log("PASS: two independent staging identities cannot list, read or write each other's projects/workspaces.");
+
+
