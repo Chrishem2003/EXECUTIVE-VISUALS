@@ -155,13 +155,13 @@ test("D1 worker leases reclaim expired claims and fail jobs after the attempt ce
   });
 
   const first = await repo.claimNextJob({ leaseMs: 5000 });
-  assert.equal(first.job.id, job.id);
+  assert.equal(first.job.id, job.job.id);
   assert.equal(first.job.attemptCount, 1);
   now += 5001;
-  assert.equal(await repo.heartbeatJob({ jobId: job.id, leaseToken: first.leaseToken }), null);
+  assert.equal(await repo.heartbeatJob({ jobId: job.job.id, leaseToken: first.leaseToken }), null);
 
   const reclaimed = await repo.claimNextJob({ leaseMs: 5000 });
-  assert.equal(reclaimed.job.id, job.id);
+  assert.equal(reclaimed.job.id, job.job.id);
   assert.equal(reclaimed.job.status, "running");
   assert.equal(reclaimed.job.attemptCount, 2);
   assert.notEqual(reclaimed.leaseToken, first.leaseToken);
@@ -169,7 +169,7 @@ test("D1 worker leases reclaim expired claims and fail jobs after the attempt ce
 
   now += 5001;
   assert.equal(await repo.claimNextJob({ leaseMs: 5000 }), null);
-  const exhausted = await repo.getJob({ actorId: principal.id, jobId: job.id });
+  const exhausted = await repo.getJob({ actorId: principal.id, jobId: job.job.id });
   assert.equal(exhausted.status, "failed");
   assert.equal(exhausted.error.code, "LEASE_EXHAUSTED");
   db.close();
