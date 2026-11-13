@@ -698,7 +698,7 @@ async function refreshCloudRenderJobs(manual=false){
    state.cloudRenderOutputAssetId=selection.outputAssetId;
    state.cloudRenderOutputName=selection.outputName;
    state.cloudRenderOutputUrl="";
-   cloudRenderPollingStatus="Render finished · asset library and master selection refreshed at "+new Date().toLocaleTimeString();
+   cloudRenderPollingStatus="Render job "+(selection.jobStatus||"updated")+" · asset metadata and master selection refreshed at "+new Date().toLocaleTimeString();
    const output=document.querySelector<HTMLElement>("#cloud-render-output");
    if(output)output.outerHTML=renderCloudRenderOutput();
    else if(state.cloudRenderOutputAssetId)document.querySelector("#cloud-render-history")?.insertAdjacentHTML("beforebegin",renderCloudRenderOutput());
