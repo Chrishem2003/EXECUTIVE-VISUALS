@@ -133,7 +133,7 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
   if(!Number.isFinite(speed)||speed<0.25||speed>4)throw new Error("Clip speed must be between 0.25× and 4×.");
   if(track.kind!=="video"&&track.kind!=="audio"&&speed!==1)throw new Error("Speed changes are supported only for video and audio clips.");
   if(curve!==undefined){
-    if(track.kind!=="video")throw new Error("Variable-speed curves are currently supported only for video clips.");
+    if(track.kind!=="video"&&track.kind!=="audio")throw new Error("Variable-speed curves are supported only for video and audio clips.");
     if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
       curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>durationSeconds||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
       throw new Error("Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×.");
