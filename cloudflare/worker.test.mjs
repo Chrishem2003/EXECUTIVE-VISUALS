@@ -450,6 +450,11 @@ test("D1 staging enforces the complete owner/editor/reviewer/viewer capability m
   const projectPath = "/api/d1/projects/" + project.id;
   const workspacePath = projectPath + "/workspace";
 
+  for (const role of ["editor", "reviewer", "viewer", "outsider"]) {
+    const authenticated = await request("/api/d1/projects", role);
+    assert.equal(authenticated.status, 200, role + " identity is registered before membership assignment");
+  }
+
   for (const [role, email] of [["editor", "editor@roles.test"], ["reviewer", "reviewer@roles.test"], ["viewer", "viewer@roles.test"]]) {
     const added = await request(membersPath, "owner", "POST", { email, role });
     assert.equal(added.status, 201, role);
