@@ -1,6 +1,6 @@
 const STAGING_APP_ORIGIN = "https://executive-visuals-1.onrender.com";
 const STAGING_D1_WORKER_URL = "https://executive-visuals-d1-staging.chrishem.workers.dev";
-const EMAIL_PATTERN = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
