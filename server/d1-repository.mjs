@@ -203,10 +203,13 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
           WHERE m.project_id = ? ORDER BY m.created_at ASC, m.member_id ASC
         `).bind(projectId).all()
       ]);
-      return [
-        { memberId: project.owner_id, email: owner?.email || null, role: "owner", createdAt: project.created_at, invitedBy: null },
-        ...(members.results || []).map(row => ({ memberId: row.member_id, email: row.email || null, role: row.role, createdAt: row.created_at, invitedBy: row.invited_by }))
-      ];
+      return {
+        canManageMembers: project.owner_id === actorId,
+        members: [
+          { memberId: project.owner_id, email: owner?.email || null, role: "owner", createdAt: project.created_at, invitedBy: null },
+          ...(members.results || []).map(row => ({ memberId: row.member_id, email: row.email || null, role: row.role, createdAt: row.created_at, invitedBy: row.invited_by }))
+        ]
+      };
     },
 
     async removeMember({ actorId, projectId, memberId } = {}) {
