@@ -41,6 +41,10 @@ import { createFinancialIntelligenceApi } from "./financial-intelligence-api.mjs
 import { createControlRemediationApi } from "./control-remediation-api.mjs";
 import { isPlatformAdministrator, getAdminOperationsOverview, listAdminOperationUsers, listAdminOperationJobs, listAdminOperationAudit, buildVideoDispatchReadiness } from "./admin-operations.mjs";
 import { evaluateReadiness } from "./readiness.mjs";
+import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
+import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
+import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -76,6 +80,39 @@ const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","m
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
+const googleDriveOAuthEnabled=process.env.GOOGLE_DRIVE_OAUTH_ENABLED==="true";
+if(googleDriveOAuthEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)){
+ throw new Error("Google Drive OAuth requires verified Supabase sessions and server-side Supabase credentials.");
+}
+const googleDriveConnectionStore=googleDriveOAuthEnabled?createGoogleDriveConnectionStore():null;
+const googleDriveOAuthStateStore=googleDriveOAuthEnabled?createGoogleDriveOAuthStateStore():null;
+const googleDriveOAuth=googleDriveOAuthEnabled?createGoogleDriveOAuth({stateStore:googleDriveOAuthStateStore,connections:googleDriveConnectionStore}):null;
+const googleDriveAssetService=googleDriveOAuthEnabled?createCloudAssetService({maxBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)}):null;
+const googleDriveBridge=googleDriveOAuthEnabled?createGoogleDrivePrivateFileBridge({
+ getUserAccessToken:({ownerId})=>googleDriveOAuth.getAccessToken({ownerId}),
+ assets:googleDriveAssetService.assets,
+ maxBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES),
+ loadPrivateAsset:async({ownerId,projectId=null,assetId})=>{
+  const asset=await googleDriveAssetService.assets.get({ownerId,assetId});
+  if((asset.projectId||null)!==(projectId||null))throw Object.assign(new Error("Private asset project scope does not match."),{code:"GOOGLE_DRIVE_ASSET_FORBIDDEN"});
+  const signed=await googleDriveAssetService.assets.createSignedUrl({ownerId,assetId,expiresIn:60});
+  const signedUrl=new URL(signed.url),storageOrigin=new URL(process.env.SUPABASE_URL).origin;
+  if(signedUrl.protocol!=="https:"||signedUrl.origin!==storageOrigin||signedUrl.username||signedUrl.password)throw Object.assign(new Error("Private asset storage returned an unsafe signed URL."),{code:"GOOGLE_DRIVE_ASSET_INVALID"});
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  try{
+   const response=await fetch(signedUrl,{redirect:"error",signal:controller.signal});
+   if(!response.ok||!response.body)throw Object.assign(new Error("Private asset download failed."),{code:"GOOGLE_DRIVE_ASSET_DOWNLOAD_FAILED"});
+   const declared=Number(response.headers.get("content-length")||asset.size),maxBytes=Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES);
+   if(declared!==asset.size||declared>maxBytes)throw Object.assign(new Error("Private asset download size is invalid."),{code:"GOOGLE_DRIVE_ASSET_INVALID"});
+   const reader=response.body.getReader(),chunks=[];let total=0;
+   try{while(true){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>maxBytes){await reader.cancel().catch(()=>{});throw Object.assign(new Error("Private asset exceeds the export limit."),{code:"GOOGLE_DRIVE_ASSET_INVALID"});}chunks.push(part.value);}}
+   finally{reader.releaseLock();}
+   const bytes=new Uint8Array(total);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+   if(bytes.byteLength!==asset.size||createHash("sha256").update(bytes).digest("hex")!==asset.sha256)throw Object.assign(new Error("Private asset integrity verification failed."),{code:"GOOGLE_DRIVE_ASSET_INVALID"});
+   return{asset,bytes};
+  }finally{clearTimeout(timer);}
+ }
+}):null;
 const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
