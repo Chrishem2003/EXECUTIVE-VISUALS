@@ -280,7 +280,7 @@ async function refreshLiveReadiness(){
   const health=await healthResponse.json().catch(()=>({}));
   const ready=readyResponse.ok&&readiness.ready===true;
   const healthy=healthResponse.ok&&health.status==="ok";
-  const checks=Array.isArray(readiness.checks)?readiness.checks:[];
+  const checks: Array<{id?:string;status?:string;reason?:string}>=Array.isArray(readiness.checks)?readiness.checks:[];
   const details=[
    ["Database",health.database],
    ["Storage",health.storage],
