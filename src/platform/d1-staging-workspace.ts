@@ -1,5 +1,5 @@
 import { apiRequest } from "../core/api";
-import { parseD1WorkspaceDocument, type D1WorkspaceDocument } from "./d1-staging-contract";
+import { buildD1WorkspaceUpdatePayload, type D1WorkspaceDocument } from "./d1-staging-contract";
 
 type D1Project = { id: string; name: string; description?: string; revision: number; settings?: Record<string, unknown> };
 type D1Asset = { id: string; projectId: string | null; name: string; mediaType: string; size: number; sha256: string; derivativeOf?: string | null; metadata?: Record<string, unknown>; createdAt: string };
@@ -133,17 +133,17 @@ export function initD1StagingWorkspace(onRender: () => void) {
       event.preventDefault();
       if (!state.ready || state.busy || !state.workspace || !form.reportValidity()) return;
       const raw = String(new FormData(form).get("document") || "");
-      let documentValue: D1WorkspaceDocument;
-      try { documentValue = parseD1WorkspaceDocument(raw); }
-      catch (error) { state.message = error instanceof Error ? error.message : "Workspace JSON is invalid."; repaint(); return; }
       const projectId = state.projectId;
       const expectedRevision = state.workspace.revision;
+      let payload: string;
+      try { payload = buildD1WorkspaceUpdatePayload(raw, expectedRevision); }
+      catch (error) { state.message = error instanceof Error ? error.message : "Workspace JSON is invalid."; repaint(); return; }
       state.busy = true;
       state.message = "Saving a revision-checked staging workspace…";
       repaint();
       void apiRequest<D1Workspace>("/api/d1/projects/" + encodeURIComponent(projectId) + "/workspace", {
         method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedRevision, document: documentValue })
+        body: payload
       }).then(result => {
         state.workspace = result;
         state.message = "Workspace saved as revision "+result.revision+".";
