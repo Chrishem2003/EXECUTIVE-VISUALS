@@ -42,3 +42,17 @@ jobs:
           ffprobe -version
       - name: Run complete product verification and production build
         run: npm run build
+
+  isolated-d1-staging-live-acceptance:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 499 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+      - name: Verify isolated staging and production boundaries
+        run: node scripts/verify-d1-staging-live.mjs
