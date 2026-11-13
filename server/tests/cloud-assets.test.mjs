@@ -14,14 +14,14 @@ const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null}={}) {
- const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
+ const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return uploadFileReceipt||{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
-  async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
+  async remove(path){storageCalls.push({op:"remove",path});if(removeFails)throw new Error("storage cleanup unavailable");return true;}
  };
- const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
+ const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z",deleted_at:null};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
   if(url.includes("/asset_storage_cleanup")){
@@ -57,10 +57,10 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
   }
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
-  if(options.method==="PATCH")return response([row]);
+  if(options.method==="PATCH"){const patch=JSON.parse(options.body||"{}");if("deleted_at" in patch)row.deleted_at=patch.deleted_at;return response([row]);}
   return response([row]);
  };
- return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
+ return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;},get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
 }
 
 test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
@@ -143,6 +143,25 @@ test("soft deletion remains private and exposes cleanup pending if object remova
  assert.equal(result.deleted,true);assert.equal(result.cleanupPending,true);
 });
 
+test("retries physical deletion for an existing tombstone without changing its metadata",async()=>{
+ const f=fixture();
+ f.row.deleted_at="2026-11-12T10:00:00.000Z";
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,true);
+ assert.equal(f.calls.some(call=>call.options.method==="PATCH"&&call.url.includes("/assets?")),false);
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["remove"]);
+});
+test("a successful retry closes the durable cleanup outbox record",async()=>{
+ const f=fixture({removeError:true});
+ const first=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(first.cleanupPending,true);
+ f.setRemoveError(false);
+ const second=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(second.storageRemoved,true);assert.equal(second.cleanupPending,false);
+ const completed=f.calls.find(call=>call.url.includes("/asset_storage_cleanup?object_path=")&&call.options.method==="PATCH");
+ assert.ok(completed);
+ assert.ok(JSON.parse(completed.options.body).completed_at);
+});
 test("rejects malformed identifiers, unsupported media and non-object metadata",async()=>{
  const f=fixture();
  await assert.rejects(()=>f.repo.create({ownerId:"bad",originalName:"x",mediaType:"video/mp4",bytes}),/UUID/);
