@@ -46,3 +46,11 @@ test("snapshot serialization omits absent optional fields so an unchanged graph 
  assert.equal(Object.hasOwn(saved.graph.nodes[0],"detail"),false);
  assert.equal(getLatestCreativeGraphSnapshot(db,"project-1").graph.nodes[0].detail,undefined);
 });
+
+test("saved graph baselines cannot be edited or deleted",async t=>{
+ const db=await fixture(t);
+ const saved=saveCreativeGraphSnapshot(db,{projectId:"project-1",ownerId:"owner",graph});
+ assert.throws(()=>db.prepare("UPDATE creative_graph_snapshots SET graph_hash=? WHERE id=?").run("b".repeat(64),saved.id),/CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE/);
+ assert.throws(()=>db.prepare("DELETE FROM creative_graph_snapshots WHERE id=?").run(saved.id),/CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE/);
+ assert.equal(getLatestCreativeGraphSnapshot(db,"project-1").id,saved.id);
+});
