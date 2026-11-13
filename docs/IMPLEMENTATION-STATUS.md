@@ -1,10 +1,19 @@
 # Executive Visuals — implementation status
 
 **Updated:** 13 November 2026  
-**Branch:** `main` (PRs #515, #522, #524, #525, #533, #534, #535, #536 and #538 merged; Render deployment `fa9e420cf4a6827affbe9d5e49866077f5a30684` is live; isolated D1 staging Worker version 8 is active)
+**Branch:** `main` (PRs #540, #541 and #542 are also merged; main is `e2ccf5930aae0ae67e48e908c15f7759458454ef`; Render deployment `dep-dbrndk0jo6nc73eqt2tg` is live; isolated D1 staging Worker version 9 is active)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
 ## Mainline delta — 13 November 2026
+
+The following later slices are now merged after the earlier checkpoint below:
+
+- **D1 staging job leases — PR #540:** added atomic claim, bounded lease, heartbeat, completion and retry-safe failure transitions behind a dedicated private worker credential. This is the isolated D1 staging metadata queue only; it is not connected to the Supabase cloud-video worker or the local workflow executor.
+- **Studio job/audit visibility — PR #541:** the isolated D1 staging workspace now shows project-scoped job history and append-only audit activity, with payloads hidden. It explicitly labels queued jobs as not dispatched.
+- **Embedded cloud video worker — PR #542:** the existing governed Supabase-backed cloud video worker can optionally run in the Render API process. It remains disabled by default and requires the existing cloud/video gates, credentials, provider adapter and output-host allowlist. It rejects CPU-heavy media/timeline worker families. Render deployment `dep-dbrndk0jo6nc73eqt2tg` is live for main commit `e2ccf5930aae0ae67e48e908c15f7759458454ef`; no Render environment variables or provider secrets were changed.
+- **Exact-head verification:** Quality checks, full build/verification, cloud-video PostgreSQL integration, asset-publication PostgreSQL integration and related workflows passed. Supabase Preview failed because its linked remote project contains NEMA/platform migration versions not present in this repository. The D1 live acceptance jobs were skipped because dedicated staging credentials are unavailable. Neither result is a successful live acceptance.
+- **Current external boundary:** the linked Supabase project is not an Executive Visuals-only migration target. Do not run `supabase db push`, migration repair, schema changes or storage setup against it. A dedicated isolated Executive Visuals project and private bucket remain prerequisites; no new project or paid service has been created.
+
 
 The following implementation slices have since merged into main and supersede older branch notes below where they cover the same feature:
 
