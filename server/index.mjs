@@ -573,6 +573,7 @@ export function createAppServer() {
       if(path==="/api/integrations/google-drive/import"&&req.method==="POST"){
         if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file import is not enabled.");return;}
         const body=await readJson(req);
+        if(!body||typeof body!=="object"||Array.isArray(body)){fail(res,400,"GOOGLE_DRIVE_IMPORT_INVALID","A file selection is required.");return;}
         try{
           const result=await googleDriveBridge.importFile({ownerId:user.id,projectId:body.projectId||null,fileId:body.fileId});
           audit(db,user.id,"integration.google_drive.file_imported","asset",result.asset.id,{providerFileId:result.sourceFileId,projectId:body.projectId||null});
@@ -586,6 +587,7 @@ export function createAppServer() {
       if(path==="/api/integrations/google-drive/export"&&req.method==="POST"){
         if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file export is not enabled.");return;}
         const body=await readJson(req);
+        if(!body||typeof body!=="object"||Array.isArray(body)){fail(res,400,"GOOGLE_DRIVE_EXPORT_INVALID","A private asset selection is required.");return;}
         try{
           const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
           audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
