@@ -294,7 +294,7 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       if (idempotencyKey !== null) {
         const existing = await db.prepare("SELECT * FROM ev_jobs WHERE owner_id = ? AND idempotency_key = ? LIMIT 1").bind(actorId, idempotencyKey).first();
         if (!existing) throw new Error("Idempotent D1 job creation returned no record.");
-        if (existing.job_type !== jobType || existing.project_id !== projectId || existing.input_json !== json(input)) {
+        if (existing.job_type !== jobType || existing.project_id !== projectId || existing.input_json !== json(input) || Number(existing.max_attempts) !== maxAttempts || (existing.available_at || null) !== availableAt) {
           const error = new Error("The idempotency key is already associated with a different job request.");
           error.code = "D1_IDEMPOTENCY_CONFLICT";
           throw error;
