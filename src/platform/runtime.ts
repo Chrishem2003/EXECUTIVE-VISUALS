@@ -238,7 +238,7 @@ function capabilityReadinessMarkup(){
 
 
 function renderD1StagingWorkspace(){
- if(!state.stagingD1WorkspaceEnabled)return "";
+ if(!state.stagingD1WorkspaceEnabled||!state.user)return "";
  const options=state.stagingD1Projects.map(project=>'<option value="'+esc(project.id)+'" '+(project.id===state.stagingD1ProjectId?'selected':'')+'>'+esc(project.name)+'</option>').join("");
  const selector=state.stagingD1Projects.length?'<label>Staging project<select id="ev-d1-project-select"><option value="">Select a staging project</option>'+options+'</select></label>':'<p class="muted">No staging projects exist yet. Create a disposable project to begin.</p>';
  const editor=state.stagingD1ProjectId?'<form id="ev-d1-workspace-form"><label for="ev-d1-workspace-document">Revisioned workspace document · JSON</label><textarea id="ev-d1-workspace-document" name="document" rows="12" maxlength="245760" spellcheck="false" autocapitalize="off">'+esc(state.stagingD1Draft||"{}")+'</textarea><small>Current revision: '+state.stagingD1WorkspaceRevision+' · maximum document size: 240 KiB · optimistic revision checks prevent silent overwrites</small><div class="runtime-toolbar"><button class="primary" type="submit" '+(state.stagingD1Busy?'disabled':'')+'>Save staging workspace</button><button class="secondary" type="button" data-ev-d1-reload '+(state.stagingD1Busy?'disabled':'')+'>Reload saved version</button></div></form>':'';
