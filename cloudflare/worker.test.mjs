@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import worker from "./worker.mjs";
+import { createD1Repository } from "../server/d1-repository.mjs";
 
 const migration = await readFile(new URL("../migrations/d1/0001_initial.sql", import.meta.url), "utf8");
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -215,6 +216,62 @@ test("D1 Worker exposes authenticated revisioned workspace documents", async t =
 });
 
 
+
+test("D1 asset metadata reads are owner-scoped and never expose private storage keys", async t => {
+  const DB = makeD1();
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "22222222-2222-4222-8222-222222222222";
+  t.mock.method(globalThis, "fetch", async request => {
+    const userId = request.headers.get("authorization") === "Bearer user-b" ? userB : userA;
+    return new Response(JSON.stringify({
+      user: { id: userId, email: userId === userA ? "owner@example.test" : "other@example.test" },
+      authMode: "supabase"
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const create = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "POST",
+    headers: { authorization: "Bearer user-a", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Private media project" })
+  }), env);
+  assert.equal(create.status, 201);
+  const { project } = await create.json();
+  const repo = createD1Repository({ db: DB });
+  const asset = await repo.createAsset({
+    actorId: project.ownerId,
+    projectId: project.id,
+    name: "source.mp4",
+    mediaType: "video/mp4",
+    size: 1024,
+    sha256: "a".repeat(64),
+    storageProvider: "local-staging",
+    storageKey: "staging/private/source.mp4",
+    metadata: { width: 1920, height: 1080 }
+  });
+
+  const ownerRead = await worker.fetch(new Request(
+    `https://staging.example/api/d1/assets?projectId=${project.id}`,
+    { headers: { authorization: "Bearer user-a" } }
+  ), env);
+  assert.equal(ownerRead.status, 200);
+  const ownerPayload = await ownerRead.json();
+  assert.equal(ownerPayload.metadataOnly, true);
+  assert.equal(ownerPayload.assets.length, 1);
+  assert.equal(ownerPayload.assets[0].id, asset.id);
+  assert.equal(ownerPayload.assets[0].name, "source.mp4");
+  assert.equal(ownerPayload.assets[0].sha256, "a".repeat(64));
+  assert.deepEqual(ownerPayload.assets[0].metadata, { width: 1920, height: 1080 });
+  assert.equal(Object.hasOwn(ownerPayload.assets[0], "storageKey"), false);
+  assert.equal(Object.hasOwn(ownerPayload.assets[0], "ownerId"), false);
+
+  const otherRead = await worker.fetch(new Request(
+    `https://staging.example/api/d1/assets?projectId=${project.id}`,
+    { headers: { authorization: "Bearer user-b" } }
+  ), env);
+  assert.equal(otherRead.status, 200);
+  assert.deepEqual((await otherRead.json()).assets, []);
+  DB.close();
+});
 
 test("D1 daily quota exhaustion is reported as temporary unavailability, not a missing migration", async () => {
   const DB = {
