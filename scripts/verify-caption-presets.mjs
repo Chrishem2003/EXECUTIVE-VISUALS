@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import { applyCaptionPreset, CAPTION_PRESETS, getCaptionPreset } from "../src/core/caption-presets.ts";
+import { captionStyle } from "../server/media.mjs";
+assert.equal(CAPTION_PRESETS.length,5);
+assert.equal(new Set(CAPTION_PRESETS.map(item=>item.id)).size,CAPTION_PRESETS.length);
+for(const preset of CAPTION_PRESETS){
+ assert.ok(preset.fontSize>=12&&preset.fontSize<=96);
+ assert.ok(preset.alignment>=1&&preset.alignment<=9);
+ assert.ok(preset.backgroundOpacity>=0&&preset.backgroundOpacity<=1);
+ assert.ok(preset.outline>=0&&preset.outline<=8);
+ assert.ok(preset.shadow>=0&&preset.shadow<=8);
+ assert.ok(preset.marginV>=0&&preset.marginV<=240);
+ assert.match(preset.primaryColor,/^#[0-9a-f]{6}$/i);
+ const rendered=captionStyle(applyCaptionPreset(preset.id));
+ assert.ok(rendered.includes("FontName="+preset.fontName));
+ assert.ok(rendered.includes("FontSize="+preset.fontSize));
+ assert.ok(rendered.includes("Alignment="+preset.alignment));
+ assert.ok(rendered.includes("Outline="+preset.outline));
+ assert.ok(rendered.includes("Shadow="+preset.shadow));
+ assert.ok(rendered.includes("MarginV="+preset.marginV));
+ assert.ok(rendered.includes("BorderStyle="+(preset.backgroundMode==="box"?3:1)));
+}
+const previous={customTag:"keep-me",fontSize:18};
+const applied=applyCaptionPreset("social-bold",previous);
+assert.equal(applied.fontSize,46);
+assert.equal(applied.presetId,"social-bold");
+assert.equal(applied.customTag,"keep-me");
+assert.equal(previous.fontSize,18,"preset application must not mutate the input object");
+assert.equal(getCaptionPreset("unknown"),undefined);
+assert.throws(()=>applyCaptionPreset("unknown"),/unknown caption preset/i);
+console.log("Caption preset checks passed: unique presets, renderer output mapping, supported ranges, immutable application and unknown-preset rejection.");
