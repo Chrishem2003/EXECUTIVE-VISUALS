@@ -5,7 +5,7 @@ import { describeRuntimeCapabilities } from "./runtime-capabilities";
 import { buildCreativeGraph, compareCreativeGraphSnapshot } from "../core/creative-graph";
 
 type RuntimeUser={id:string;email:string};
-type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
+type RuntimeProject={id:string;name:string;description?:string;revision?:number;settings?:Record<string,any>;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeCloudProject={id:string;name:string;revision?:number};
 type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
@@ -141,10 +141,12 @@ function renderBatchUpscaleControls():string{
 }
 function rebuildCreativeGraph(){
  const project=state.projects.find(item=>item.id===state.projectId);
- const workspace=state.creativeGraphWorkspace||{};
+ const workspace=state.creativeGraphWorkspace||{},production=project?.settings?.creativeProduction||{};
  if(!state.projectId||!project){state.creativeGraph=null;return;}
  state.creativeGraph=buildCreativeGraph({
   project:{id:project.id,name:project.name,brief:String(workspace.creativeProjects?.[0]?.brief||workspace.plan||"")},
+  creativeDNA:production.creativeDNA||{},
+  seriesPlans:Array.isArray(production.seriesPlans)?production.seriesPlans:[],
   shots:Array.isArray(workspace.shots)?workspace.shots:[],
   characters:Array.isArray(workspace.characters)?workspace.characters:[],
   assets:state.assets.filter(asset=>asset.projectId===project.id).map(asset=>({id:asset.id,name:asset.name,mediaType:asset.mediaType,sha256:asset.sha256,size:asset.size})),
