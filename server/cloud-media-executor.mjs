@@ -10,6 +10,12 @@ import { createC2paTransformationPreserver } from "./c2pa-transformation-preserv
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 
+export function aiUpscaleMediaType(format) {
+  const types = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
+  if (!Object.hasOwn(types, format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
+  return types[format];
+}
+
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
@@ -199,7 +205,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
+        const mediaType = aiUpscaleMediaType(format);
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
