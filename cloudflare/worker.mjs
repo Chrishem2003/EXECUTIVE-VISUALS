@@ -34,7 +34,7 @@ function withCors(response, request, env) {
   if (!allowedOrigin || requestOrigin !== allowedOrigin) return response;
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", allowedOrigin);
-  headers.set("access-control-allow-methods", "GET,POST,PATCH,PUT,OPTIONS");
+  headers.set("access-control-allow-methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
   headers.set("access-control-allow-headers", "authorization,content-type");
   headers.set("access-control-max-age", "600");
   headers.append("vary", "Origin");
@@ -129,7 +129,7 @@ async function d1Api(request, env, url) {
     return json({ error: { code: "D1_BINDING_MISSING", message: "The staging D1 binding is not configured." } }, 503);
   }
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: { "allow": "GET,POST,PATCH,PUT,OPTIONS", "access-control-allow-methods": "GET,POST,PATCH,PUT,OPTIONS", "access-control-allow-headers": "authorization,content-type", "cache-control": "no-store" } });
+    return new Response(null, { status: 204, headers: { "allow": "GET,POST,PATCH,PUT,DELETE,OPTIONS", "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS", "access-control-allow-headers": "authorization,content-type", "cache-control": "no-store" } });
   }
   if (url.pathname === "/api/d1/health" && request.method === "GET") {
     const ready = await requireSchema(env.DB);
@@ -189,6 +189,21 @@ async function d1Api(request, env, url) {
         storage: "cloudflare-d1-staging",
         metadataOnly: true
       }), sessionCookies);
+    }
+    const memberCollection = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})\/members$/i);
+    if (memberCollection && request.method === "GET") {
+      const members = await repo.listMembers({ actorId: principal.id, projectId: memberCollection[1] });
+      return withCookies(json({ members, projectId: memberCollection[1] }), sessionCookies);
+    }
+    if (memberCollection && request.method === "POST") {
+      const body = await readJson(request);
+      const member = await repo.addMemberByEmail({ actorId: principal.id, projectId: memberCollection[1], email: body.email, role: body.role });
+      return withCookies(json({ member }, 201), sessionCookies);
+    }
+    const memberItem = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})\/members\/([0-9a-f-]{36})$/i);
+    if (memberItem && request.method === "DELETE") {
+      const result = await repo.removeMember({ actorId: principal.id, projectId: memberItem[1], memberId: memberItem[2] });
+      return withCookies(json(result), sessionCookies);
     }
     const match = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})$/i);
     if (match && request.method === "GET") {
