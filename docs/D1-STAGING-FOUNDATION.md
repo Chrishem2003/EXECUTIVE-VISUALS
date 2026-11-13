@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, anonymous-access rejection, and two-account owner-isolation checks all pass. The feature and live acceptance gate are merged to `main`; production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
+**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, anonymous-access rejection, and two-account owner-isolation checks have passed. Local Worker/repository tests cover viewer/reviewer read-only behavior, editor writes, owner-only membership administration and revocation. The live acceptance script now exercises the full member-role matrix and has an explicitly confirmed, manual-only GitHub Actions workflow; its expanded live run remains pending. Production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
 
 ## Boundary and identity
 
@@ -34,11 +34,13 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 
 The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. The supported browser path is the same-origin Render `/api/d1/*` proxy, which forwards the existing HttpOnly session cookie server-to-server. The Worker also has a strict origin allow-list for direct Bearer-token calls, but browser cookies are not shared across the Render and workers.dev domains.
 
-## Local verification
+## Local and live verification
 
 ```bash
 npm run verify:d1
 ```
+
+The local command syntax-checks the live acceptance script and exercises repository/Worker authorization using in-memory SQLite. For live acceptance, manually run GitHub Actions → **D1 staging live acceptance**, explicitly confirm that disposable users/projects/memberships may be written to the isolated staging database, and inspect the resulting logs. The workflow is manual-only, requires no production secrets, does not run on pull requests or a schedule, and must not be pointed at production. It creates staging smoke identities and project records; it is not a cleanup or production migration workflow.
 
 The test suite applies the migration to local in-memory SQLite databases. It verifies schema creation, external-principal mapping, project access roles, revision conflicts, asset checksum/storage-key validation, Worker identity verification through the existing `/api/me` endpoint, revisioned workspace persistence, CORS allow-list enforcement, and rejection of production business API routes. The Worker does not trust browser-supplied owner IDs; it derives identity from the existing API's authenticated session. It cannot proxy production project, asset, job, or other business APIs.
 
@@ -55,7 +57,8 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 7. **Completed:** restrict browser CORS to the exact staging app origin and Bearer authorization; cross-origin cookies are disabled.
 8. **Completed:** configure `D1_STAGING_WORKER_URL` only on the dedicated Render staging service. It remains absent from production.
 9. **Completed (13 November):** live allowlisted registration/login, `/api/me` identity verification, authenticated D1 project create/list, revision 1 → 2 workspace save/reload, exact document comparison, and anonymous project rejection through the same-origin staging proxy. Read-only D1 audit confirms three staging smoke identities, three projects and three workspace documents; memberships, assets, jobs and audit events remain zero.
-10. **Completed (13 November):** two independently authenticated staging identities cannot list, read, or write each other's projects/workspace documents; each can access its own project. Shared-member role matrix (owner/editor/reviewer/viewer) remains untested.
+10. **Completed (13 November):** two independently authenticated staging identities cannot list, read, or write each other's projects/workspace documents; each can access its own project.
+11. **Implemented; live run pending:** `scripts/verify-d1-staging-live.mjs` exercises Owner, Editor, Reviewer and Viewer permissions, read-only enforcement for Viewer/Reviewer, Editor workspace writes, owner-only member administration, rejected owner self-removal and immediate access revocation. `.github/workflows/d1-staging-live-acceptance.yml` exposes this as a manual-only workflow with an explicit staging-write confirmation; it is intentionally not scheduled and does not run on pull requests. The full live matrix must pass before the shared-member role acceptance checkbox is closed.
 11. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and media-storage acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
 ## Deliberately not done
