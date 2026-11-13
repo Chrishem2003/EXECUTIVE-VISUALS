@@ -165,7 +165,7 @@ test("D1 worker leases reclaim expired claims and fail jobs after the attempt ce
   assert.equal(reclaimed.job.status, "running");
   assert.equal(reclaimed.job.attemptCount, 2);
   assert.notEqual(reclaimed.leaseToken, first.leaseToken);
-  assert.equal(await repo.completeJob({ jobId: job.id, leaseToken: first.leaseToken, output: {} }), null);
+  assert.equal(await repo.completeJob({ jobId: job.job.id, leaseToken: first.leaseToken, output: {} }), null);
 
   now += 5001;
   assert.equal(await repo.claimNextJob({ leaseMs: 5000 }), null);
