@@ -117,6 +117,23 @@ export function removeTrack(timeline:EditorialTimeline,trackId:string):Editorial
   if(!validation.valid)throw new Error(validation.issues[0].message);
   return updated;
 }
+/** Reorder an unlocked track by one lane while preserving every clip and source reference. */
+export function moveTrack(timeline:EditorialTimeline,trackId:string,direction:"up"|"down"):EditorialTimeline{
+  if(direction!=="up"&&direction!=="down")throw new Error("Track direction must be up or down.");
+  const index=timeline.tracks.findIndex(track=>track.id===trackId);
+  if(index<0)throw new Error("Track not found.");
+  const track=timeline.tracks[index];
+  if(track.locked)throw new Error("Track is locked.");
+  const targetIndex=index+(direction==="up"?-1:1);
+  if(targetIndex<0||targetIndex>=timeline.tracks.length)throw new Error("Track is already at the requested edge.");
+  if(timeline.tracks[targetIndex].locked)throw new Error("Cannot move a track across a locked track.");
+  const tracks=timeline.tracks.slice();
+  [tracks[index],tracks[targetIndex]]=[tracks[targetIndex],tracks[index]];
+  const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks};
+  const validation=validateTimeline(updated);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  return updated;
+}
 export function createGeneratedVideoClip(input:{id:string;assetId:string;name:string;durationSeconds:number;frameRate:{numerator:number;denominator:number};startFrame?:number;metadata?:Record<string,unknown>}):TimelineClip{
   const {id,assetId,name,durationSeconds,frameRate}=input;
   if(!id.trim()||!assetId.trim()||!name.trim())throw new Error("Generated video clip requires an ID, asset and name.");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeTrack, splitClip, trimClip } from "../../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, moveTrack, rational, removeTrack, splitClip, trimClip } from "../../src/core/timeline.ts";
 import {
   applyTimelineHistoryOperation,
   createTimelineHistory,
@@ -90,7 +90,8 @@ test("adding a track and clips together restores track order through undo and re
 
 test("track removal is reversed with its clips and original ordering intact", () => {
   const before = fixture();
-  const after = removeTrack(before, "video-1");
+  const reordered = moveTrack(before, "video-1", "down");
+const after = removeTrack(reordered, "video-1");
   const op = operation(before, after, "Remove track");
   const applied = applyTimelineHistoryOperation(before, op);
   assert.deepEqual(applied.tracks.map(track => track.id), ["audio-1"]);
@@ -147,4 +148,27 @@ test("remote operations can be applied without entering the local undo stack", (
   const history = recordTimelineHistory(createTimelineHistory(), op);
   assert.equal(history.undo.length, 0);
   assert.equal(history.redo.length, 0);
+});
+
+
+test("track reordering is reversible through undo and redo without changing clip references", () => {
+  const before = fixture();
+  const after = moveTrack(before, "video-1", "down");
+  const op = operation(before, after, "Move track");
+  let history = recordTimelineHistory(createTimelineHistory(), op);
+
+  const applied = applyTimelineHistoryOperation(before, op);
+  assert.deepEqual(applied.tracks.map(track => track.id), ["audio-1", "video-1"]);
+  assert.equal(applied.tracks[1].clips[0].id, "clip-a");
+
+  const undone = undoTimelineHistory(history, applied);
+  assert.deepEqual(undone.timeline.tracks.map(track => track.id), ["video-1", "audio-1"]);
+  assert.equal(undone.timeline.tracks[0].clips[0].id, "clip-a");
+  assert.equal(undone.timeline.revision, applied.revision + 1);
+
+  history = undone.history;
+  const redone = redoTimelineHistory(history, undone.timeline);
+  assert.deepEqual(redone.timeline.tracks.map(track => track.id), ["audio-1", "video-1"]);
+  assert.equal(redone.timeline.tracks[1].clips[0].id, "clip-a");
+  assert.equal(redone.timeline.revision, undone.timeline.revision + 1);
 });
