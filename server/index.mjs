@@ -1025,7 +1025,7 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const evidenceMatch=path.match(/^\\/api\\/assets\\/([0-9a-f-]+)\\/evidence(?:\\/([0-9a-f-]+)\\/(review|events))?$/i);
+      const evidenceMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)\/evidence(?:\/([0-9a-f-]+)\/(review|events))?$/i);
       if(evidenceMatch){
         const evidenceAsset=getAccessibleAsset(db,user.id,evidenceMatch[1],req.method==="POST"&&!evidenceMatch[2]);
         if(!evidenceAsset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
@@ -1069,7 +1069,7 @@ export function createAppServer() {
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         send(res,200,{projectId,records:listEvidenceRecords(db,{projectId})},cors);return;
       }
-      const graphSnapshotMatch=path.match(/^\\/api\\/projects\\/([0-9a-f-]+)\\/creative-graph\\/snapshots$/i);
+      const graphSnapshotMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-graph\/snapshots$/i);
       if(graphSnapshotMatch){
         const projectId=graphSnapshotMatch[1],access=getProjectAccess(db,user.id,projectId);
         if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
