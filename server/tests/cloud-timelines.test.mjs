@@ -95,5 +95,6 @@ test("accepts valid adjacent dip-to-black transitions and rejects invalid transi
  const gap={...transitioned,tracks:[{...transitioned.tracks[0],clips:[first,{...second,timelineStart:{value:31,rate:30}}]}]};
  await assert.rejects(()=>setup().repo.create({ownerId:owner,timeline:gap}),error=>error.code==="CLOUD_TIMELINE_INVALID");
  const audio={...transitioned,tracks:[{...transitioned.tracks[0],kind:"audio"}]};
- await assert.rejects(()=>setup().repo.create({ownerId:owner,timeline:audio}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+ const audioRepo=setup({assetLookup:async()=>({...asset,mediaType:"audio/mpeg"})});
+ await assert.rejects(()=>audioRepo.repo.create({ownerId:owner,timeline:audio}),error=>error.code==="CLOUD_TIMELINE_INVALID");
 });
