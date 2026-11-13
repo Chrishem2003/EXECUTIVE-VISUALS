@@ -152,7 +152,8 @@ function rebuildCreativeGraph(){
  });
 }
 function renderCreativeGraphPanel():string{
- if(!state.projectId)return "";
+ const selectedAsset=state.assets.find(item=>item.id===state.evidenceAssetId);
+ if(!state.projectId||!selectedAsset?.projectId)return "";
  const graph=state.creativeGraph;
  if(!graph)return '<section class="creative-graph-panel"><b>Creative dependency graph</b><p class="muted">Select a project and load its creative workspace to build the graph.</p></section>';
  const baseline=state.creativeGraphSnapshot;
