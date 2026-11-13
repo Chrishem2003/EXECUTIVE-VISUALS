@@ -1,6 +1,6 @@
 # Executive Visuals — persistence and release blockers
 
-**Audit date:** 12 November 2026  
+**Audit date:** 13 November 2026  
 **Purpose:** Record the live infrastructure facts that prevent the hosted app from being certified as a durable, multi-user production system. This is an architecture decision record, not a claim that storage has been implemented.
 
 ## Observed infrastructure
@@ -10,7 +10,7 @@
 | Render `executive-visuals` web service | Free plan, linked to `main`; no verified persistent disk | The Node service's local SQLite database and uploaded media are ephemeral. Render documents that Free web-service files are lost on restart, spin-down and deploy. |
 | Cloudflare Worker `executive-visuals` (production edge) | Deployed; static `ASSETS` binding and API proxy to Render | It is not the D1 data plane and remains unchanged. |
 | Cloudflare Worker `executive-visuals-d1-staging` | Separately deployed on workers.dev; D1 `DB` binding; restricted to auth/identity and `/api/d1/*`; business routes fail closed | Isolated staging metadata API exists. It is not yet the application's general API or production data plane. |
-| Cloudflare D1 `executive-visuals-staging` | 126,976 bytes; migration `0001_initial.sql` recorded; seven `ev_*` tables; bound to the staging Worker; latest read-only audit found zero rows in all seven tables | Schema and staging repository/API are deployed. Authenticated browser round-trip through the Render same-origin bridge remains unverified; this is not yet the application's source of truth. |
+| Cloudflare D1 `executive-visuals-staging` | 126,976 bytes; migration `0001_initial.sql` recorded; seven `ev_*` tables; bound only to the staging Worker; authenticated acceptance created one smoke user, one project and one workspace document; no assets/jobs/audit events | Authenticated project create/list and revisioned workspace save/reload are verified through the staging same-origin bridge. This remains isolated staging metadata, not the production source of truth. |
 | Cloudflare R2 | Not activated; listing buckets returns Cloudflare error 10042 asking to enable R2 in the dashboard | No durable object store is currently available for uploaded source media and rendered outputs. |
 | Supabase organisation `Chrishem Autos` | Free plan; two existing projects already occupy the free-project allowance | Both existing projects contain NEMA/platform tables. They must not be repurposed for Executive Visuals or have their auth/storage settings changed for this app. |
 
@@ -35,7 +35,7 @@
 - [ ] User explicitly approves activating Cloudflare R2 after reviewing the free allowance and overage billing risk, or selects another durable object-storage provider.
 - [ ] Dedicated Executive Visuals identity provider is selected and its public redirect URL/email-delivery settings are configured without changing NEMA projects.
 - [x] D1 schema and Worker binding are implemented on `executive-visuals-staging`; local migration/repository/Worker tests pass.
-- [ ] Complete authenticated browser round-trip through an isolated staging service and verify tenant isolation against live D1.
+- [x] Complete authenticated project create/list and revisioned workspace save/reload through the isolated staging same-origin bridge; anonymous project access is rejected.\n- [ ] Complete live cross-account tenant-isolation tests (second identity, shared-member roles, and forbidden cross-tenant reads/writes).
 - [ ] R2 bucket is activated and created in Standard storage; private upload/download, multipart recovery, lifecycle and quota guardrails pass.
 - [ ] Connect the full application project/workspace/asset/job APIs to D1 in staging; the current Worker exposes only project metadata and revisioned workspace documents.
 - [ ] Render media execution is changed to use object storage for inputs/outputs and scratch-only local files.
