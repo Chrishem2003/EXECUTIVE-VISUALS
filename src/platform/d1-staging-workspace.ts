@@ -18,6 +18,7 @@ const state: {
   workspace: D1Workspace | null;
   assets: D1Asset[];
   members: D1Member[];
+  canManageMembers: boolean;
 } = {
   checked: false, enabled: false, visibilityChecked: false, ready: false, busy: false,
   message: "This isolated staging workspace is opt-in and does not replace production storage.",
@@ -35,12 +36,13 @@ async function loadProjectData(projectId: string) {
   const [workspace, assets, members] = await Promise.all([
     apiRequest<D1Workspace>("/api/d1/projects/" + encodeURIComponent(projectId) + "/workspace"),
     apiRequest<{ assets: D1Asset[]; metadataOnly: boolean }>("/api/d1/assets?projectId=" + encodeURIComponent(projectId) + "&limit=50"),
-    apiRequest<{ members: D1Member[] }>("/api/d1/projects/" + encodeURIComponent(projectId) + "/members")
+    apiRequest<{ members: D1Member[]; canManageMembers: boolean }>("/api/d1/projects/" + encodeURIComponent(projectId) + "/members")
   ]);
   state.projectId = projectId;
   state.workspace = workspace;
   state.assets = Array.isArray(assets.assets) ? assets.assets : [];
   state.members = Array.isArray(members.members) ? members.members : [];
+  state.canManageMembers = members.canManageMembers === true;
   if (!assets.metadataOnly) throw new Error("The staging asset endpoint did not confirm metadata-only mode.");
 }
 
@@ -60,7 +62,7 @@ async function refresh() {
     state.checked = true;
     if (!state.projects.some(project => project.id === state.projectId)) state.projectId = state.projects[0]?.id || "";
     if (state.projectId) await loadProjectData(state.projectId);
-    else { state.workspace = null; state.assets = []; state.members = []; }
+    else { state.workspace = null; state.assets = []; state.members = []; state.canManageMembers = false; }
     state.message = "Connected to isolated D1 staging. Production projects, uploads and media storage are unchanged.";
   } catch (error) {
     state.ready = false;
