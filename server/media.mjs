@@ -225,9 +225,10 @@ const speedCurveNumber=value=>Number(value.toFixed(9)).toString();
 export function buildTimelineSpeedCurveSegments(clip,duration){
  const curve=clip?.speedCurve;
  if(curve===undefined)return null;
+ const clipDurationValue=Number(clip?.duration?.value)/Number(clip?.duration?.rate),clipDuration=Number.isFinite(clipDurationValue)&&clipDurationValue>0?clipDurationValue:duration;
  if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
     curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||
-      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||
+      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>clipDuration||
       (index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
   speedCurveFailure("Variable-speed keyframes require 2–64 ordered points, start at zero and stay within the clip at 0.25×–4×.","INVALID_SPEED_CURVE");
  const evaluate=time=>{
