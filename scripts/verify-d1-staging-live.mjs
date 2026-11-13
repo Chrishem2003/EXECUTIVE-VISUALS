@@ -230,7 +230,10 @@ assert.equal(firstAccountForeignRead.body.error?.code, "D1_PROJECT_NOT_FOUND");
 
 console.log("PASS: two independent staging identities cannot list, read or write each other's projects/workspaces.");
 
-const membersUrl = stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id) + "/members";
+const stagingWorkerOrigin = "https://executive-visuals-d1-staging.chrishem.workers.dev";
+const workerProjectUrl = stagingWorkerOrigin + "/api/d1/projects/" + encodeURIComponent(project.id);
+const workerWorkspaceUrl = workerProjectUrl + "/workspace";
+const membersUrl = workerProjectUrl + "/members";
 const added = await postJson("Owner adds verified collaborator as viewer", membersUrl, {
   body: { email: isolationEmail, role: "viewer" },
   cookie: sessionCookie,
