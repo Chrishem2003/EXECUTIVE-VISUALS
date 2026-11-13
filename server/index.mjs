@@ -477,7 +477,7 @@ export function createAppServer() {
         send(res,readiness.ready?200:503,readiness,cors);return;
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},cloudMedia:{enabled:Boolean(cloudTimelineApi),ready:Boolean(cloudTimelineApi)},cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH)},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:"separate-process"},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth)},cloudMedia:{enabled:Boolean(cloudTimelineApi),ready:Boolean(cloudTimelineApi)},cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH)},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:"separate-process"},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}const publicAppUrl=String(process.env.PUBLIC_APP_URL||"").trim();if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}let redirect;try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}const localRedirect=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1","::1"].includes(redirect.hostname);if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;}const body=await readJson(req);await requestSupabasePasswordRecovery({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email:String(body.email||""),redirectTo:redirect.origin+"/"});send(res,200,{ok:true,message:"If an account exists for that address, a password recovery email has been sent."},cors);return;
@@ -532,8 +532,70 @@ export function createAppServer() {
         const webhookResult=await financialApi.handleWebhook({rawBody,signatureV4:String(req.headers["flutterwave-signature"]||""),signatureV3:String(req.headers["verif-hash"]||"")});
         send(res,webhookResult.status,webhookResult.body,cors);return;
       }
+      if(path==="/api/integrations/google-drive/callback"&&req.method==="GET"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        if(url.searchParams.has("error")){res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;}
+        try{
+          await googleDriveOAuth.complete({state:url.searchParams.get("state"),code:url.searchParams.get("code")});
+          res.writeHead(303,{"location":"/?googleDrive=connected","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }catch(error){
+          process.stderr.write("Google Drive OAuth callback failed: "+String(error.code||"GOOGLE_DRIVE_CALLBACK_FAILED")+"\\n");
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+      }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(path==="/api/integrations/google-drive/status"&&req.method==="GET"){
+        if(!googleDriveOAuth||!googleDriveConnectionStore){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{const connection=await googleDriveConnectionStore.get(user.id);send(res,200,{connected:Boolean(connection),email:connection?.email||null,grantedScopes:connection?.grantedScopes||[]},cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_CONNECTION_STORE_UNAVAILABLE","Google Drive connection status is temporarily unavailable.");return;}
+      }
+      if(path==="/api/integrations/google-drive/connect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{send(res,200,await googleDriveOAuth.begin({ownerId:user.id}),cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_UNAVAILABLE","Google Drive authorization could not be started.");return;}
+      }
+      if(path==="/api/integrations/google-drive/picker-token"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        const developerKey=String(process.env.GOOGLE_PICKER_API_KEY||"").trim();
+        const appId=String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER||"").trim();
+        if(!developerKey||developerKey.length>512||appId.length<6||appId.length>24||appId.split("").some(ch=>ch<"0"||ch>"9")){
+          fail(res,503,"GOOGLE_PICKER_NOT_CONFIGURED","Google Picker API key and numeric Cloud project number are not configured.");return;
+        }
+        try{const accessToken=await googleDriveOAuth.getAccessToken({ownerId:user.id});send(res,200,{accessToken,developerKey,appId,expiresInSeconds:300},cors);return;}
+        catch(error){fail(res,401,error.code||"GOOGLE_OAUTH_NOT_CONNECTED","Connect Google Drive before opening the file picker.");return;}
+      }
+      if(path==="/api/integrations/google-drive/disconnect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{const result=await googleDriveOAuth.disconnect({ownerId:user.id});audit(db,user.id,"integration.google_drive.disconnected","integration","google-drive",{revoked:result.revoked});send(res,200,result,cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_DISCONNECT_FAILED","Google Drive could not be disconnected cleanly.");return;}
+      }
+      if(path==="/api/integrations/google-drive/import"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file import is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.importFile({ownerId:user.id,projectId:body.projectId||null,fileId:body.fileId});
+          audit(db,user.id,"integration.google_drive.file_imported","asset",result.asset.id,{providerFileId:result.sourceFileId,projectId:body.projectId||null});
+          send(res,201,{asset:result.asset,source:result.source},cors);return;
+        }catch(error){
+          const code=error.code||"GOOGLE_DRIVE_IMPORT_FAILED";
+          const status=code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:code==="GOOGLE_DRIVE_FILE_UNSUPPORTED"||code==="GOOGLE_DRIVE_FILE_ID_INVALID"?400:code==="GOOGLE_DRIVE_ACCESS_DENIED"||code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:502;
+          fail(res,status,code,error.message||"Google Drive file import failed.");return;
+        }
+      }
+      if(path==="/api/integrations/google-drive/export"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file export is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
+          audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
+          send(res,201,{file:result},cors);return;
+        }catch(error){
+          const code=error.code||"GOOGLE_DRIVE_EXPORT_FAILED";
+          const status=code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID"?400:502;
+          fail(res,status,code,error.message||"Google Drive file export failed.");return;
+        }
+      }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
       if(path==="/api/d1"||path.startsWith("/api/d1/")){
         const configuredWorker=String(process.env.D1_STAGING_WORKER_URL||"").trim();
