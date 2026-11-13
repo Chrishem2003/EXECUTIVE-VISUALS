@@ -73,3 +73,11 @@ test("requires a meaningful reviewer reason before changing evidence status",asy
  assert.throws(()=>reviewEvidenceRecord(db,{evidenceId:record.id,reviewerId:"reviewer",status:"verified",reviewNote:"ok"}),/EVIDENCE_REVIEW_REASON_REQUIRED/);
  assert.equal(listEvidenceEvents(db,record.id).length,1);
 });
+
+test("evidence source identity and audit events are append-only at the database boundary",async t=>{
+  const {db,asset}=await fixture(t);
+  const record=createEvidenceRecord(db,submission(asset));
+  assert.throws(()=>db.prepare("UPDATE evidence_records SET source_sha256=? WHERE id=?").run("b".repeat(64),record.id),/EVIDENCE_RECORD_SOURCE_IMMUTABLE/);
+  assert.throws(()=>db.prepare("DELETE FROM evidence_record_events WHERE evidence_id=?").run(record.id),/EVIDENCE_EVENTS_APPEND_ONLY/);
+  assert.equal(listEvidenceEvents(db,record.id).length,1);
+});
