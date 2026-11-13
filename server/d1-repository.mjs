@@ -171,6 +171,54 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       return { projectId, memberId, role };
     },
 
+    async addMemberByEmail({ actorId, projectId, email, role } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID");
+      if (typeof email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) throw new Error("A valid existing account email is required.");
+      if (!["editor", "reviewer", "viewer"].includes(role)) throw new Error("Project member role is invalid.");
+      const project = await projectAccess(actorId, projectId);
+      if (!project || project.owner_id !== actorId) { const error = new Error("Only the project owner can manage members."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+      const matches = await db.prepare("SELECT id FROM ev_users WHERE lower(email) = ? ORDER BY created_at ASC LIMIT 2").bind(email.trim().toLowerCase()).all();
+      const rows = matches.results || [];
+      if (!rows.length) { const error = new Error("The collaborator must sign in to the staging workspace before they can be added."); error.code = "D1_MEMBER_NOT_FOUND"; throw error; }
+      if (rows.length > 1) { const error = new Error("More than one verified account uses this email; invite by account identity after resolving the duplicate."); error.code = "D1_MEMBER_AMBIGUOUS"; throw error; }
+      const memberId = rows[0].id;
+      if (memberId === actorId) throw new Error("Project owner is implicit and cannot be added as a member.");
+      await db.prepare(`
+        INSERT INTO ev_project_members (project_id, member_id, role, invited_by, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, member_id) DO UPDATE SET role = excluded.role
+      `).bind(projectId, memberId, role, actorId, clock()).run();
+      return { projectId, memberId, email: email.trim().toLowerCase(), role };
+    },
+
+    async listMembers({ actorId, projectId } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID");
+      const project = await projectAccess(actorId, projectId);
+      if (!project) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+      const [owner, members] = await Promise.all([
+        db.prepare("SELECT id, email FROM ev_users WHERE id = ? LIMIT 1").bind(project.owner_id).first(),
+        db.prepare(`
+          SELECT m.member_id, u.email, m.role, m.created_at, m.invited_by
+          FROM ev_project_members m JOIN ev_users u ON u.id = m.member_id
+          WHERE m.project_id = ? ORDER BY m.created_at ASC, m.member_id ASC
+        `).bind(projectId).all()
+      ]);
+      return [
+        { memberId: project.owner_id, email: owner?.email || null, role: "owner", createdAt: project.created_at, invitedBy: null },
+        ...(members.results || []).map(row => ({ memberId: row.member_id, email: row.email || null, role: row.role, createdAt: row.created_at, invitedBy: row.invited_by }))
+      ];
+    },
+
+    async removeMember({ actorId, projectId, memberId } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID"); validUuid(memberId, "Member ID");
+      const project = await projectAccess(actorId, projectId);
+      if (!project || project.owner_id !== actorId) { const error = new Error("Only the project owner can manage members."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+      if (memberId === actorId) throw new Error("Project owner cannot be removed from their own project.");
+      const row = await db.prepare("DELETE FROM ev_project_members WHERE project_id = ? AND member_id = ? RETURNING member_id").bind(projectId, memberId).first();
+      if (!row) { const error = new Error("Project member not found."); error.code = "D1_MEMBER_NOT_FOUND"; throw error; }
+      return { projectId, memberId: row.member_id, removed: true };
+    },
+
     async createAsset({ actorId, ownerId = actorId, projectId = null, name, mediaType, size, sha256, storageProvider, storageKey, derivativeOf = null, metadata = {}, provenance = null } = {}) {
       validUuid(actorId, "Actor ID");
       if (ownerId !== actorId) throw new Error("Asset owner must be the authenticated actor.");
