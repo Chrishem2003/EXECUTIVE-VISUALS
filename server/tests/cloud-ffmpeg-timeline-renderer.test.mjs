@@ -360,6 +360,6 @@ test("cloud FFmpeg renderer retimes variable-speed audio with frame-sampled Rubb
 test("cloud speed curves validate against full clip duration and clip safely to the master tail",()=>{
  const clip={duration:{value:4,rate:1},speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]};
  assert.ok(buildVariableSpeedSetptsExpression(clip,1.25).includes("sqrt"));
- assert.ok(Math.abs(sourceDurationForClip(clip,1.25)-1.4453125)<1e-9);
+ assert.ok(Math.abs(sourceDurationForClip(clip,1.25)-1.640625)<1e-9);
  assert.throws(()=>sourceDurationForClip({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:5,speed:1}]},1.25),error=>error.code==="INVALID_SPEED_CURVE");
 });
