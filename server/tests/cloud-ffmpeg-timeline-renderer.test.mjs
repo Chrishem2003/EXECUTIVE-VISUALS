@@ -312,7 +312,7 @@ test("cloud FFmpeg renderer motion-compensates slow-motion frames and records th
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
   assert.equal(result.render.motionInterpolatedClips,1);
   assert.equal(result.render.durationSeconds,2);
-  const decoded=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","scale=16:16,format=rgb24","-vsync","0","-f","rawvideo","pipe:1"]);
+  const decoded=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","scale=16:16,format=rgb24","-fps_mode","passthrough","-f","rawvideo","pipe:1"]);
   const frameBytes=16*16*3,unique=new Set();
   assert.equal(decoded.length%frameBytes,0);
   for(let offset=0;offset<decoded.length;offset+=frameBytes)unique.add(decoded.subarray(offset,offset+frameBytes).toString("base64"));
