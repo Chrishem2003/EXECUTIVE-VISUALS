@@ -251,7 +251,7 @@ assert.ok(ownerMemberList.body.members.some(item => item.memberId === member.mem
 const viewerMemberList = await getJson("Viewer reads project members", membersUrl, { expectedStatus: 200, cookie: isolationAuth.cookie });
 assert.equal(viewerMemberList.body.canManageMembers, false);
 
-const viewerWorkspaceWrite = await fetch(workspaceUrl, {
+const viewerWorkspaceWrite = await fetch(workerWorkspaceUrl, {
   method: "PUT",
   headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
   body: JSON.stringify({ expectedRevision: reloaded.revision, document: { viewerWrite: "must be denied" } }),
@@ -266,7 +266,7 @@ const promoted = await postJson("Owner promotes collaborator to editor", members
 });
 assert.equal(promoted.payload.member.role, "editor");
 
-const editorWrite = await fetch(workspaceUrl, {
+const editorWrite = await fetch(workerWorkspaceUrl, {
   method: "PUT",
   headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
   body: JSON.stringify({ expectedRevision: reloaded.revision, document: { collaboration: "editor write accepted", runId: runLabel } }),
@@ -276,7 +276,7 @@ assert.equal(editorWrite.status, 200, await editorWrite.clone().text());
 const editorSaved = await editorWrite.json();
 assert.equal(editorSaved.revision, reloaded.revision + 1);
 
-const ownerReload = await fetch(workspaceUrl, {
+const ownerReload = await fetch(workerWorkspaceUrl, {
   headers: { cookie: sessionCookie, accept: "application/json" },
   signal: AbortSignal.timeout(20_000)
 });
@@ -292,7 +292,7 @@ const removed = await fetch(membersUrl + "/" + encodeURIComponent(member.memberI
 assert.equal(removed.status, 200, await removed.clone().text());
 assert.equal((await removed.json()).removed, true);
 
-const revoked = await fetch(stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id), {
+const revoked = await fetch(workerProjectUrl, {
   headers: { cookie: isolationAuth.cookie, accept: "application/json" },
   signal: AbortSignal.timeout(20_000)
 });
