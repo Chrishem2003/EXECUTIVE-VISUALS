@@ -46,7 +46,13 @@ export async function retryTimelineSave<T>({
     try {
       return await save();
     } catch (error) {
-      if (!isRetryableTimelineSaveError(error) || attempt >= attempts) throw error;
+      const candidate = error && typeof error === "object"
+        ? error as { status?: unknown; code?: unknown }
+        : {};
+      const isRevisionConflict = Number(candidate.status) === 409 ||
+        candidate.code === "REVISION_CONFLICT" || candidate.code === "TIMELINE_REVISION_CONFLICT";
+
+      if (!isRetryableTimelineSaveError(error) && !isRevisionConflict) throw error;
 
       let reconciliation: TimelineSaveReconciliation<T>;
       try {
@@ -57,6 +63,8 @@ export async function retryTimelineSave<T>({
       }
 
       if (reconciliation.kind === "committed") return reconciliation.value;
+      if (isRevisionConflict) throw error;
+      if (attempt >= attempts) throw error;
       if (reconciliation.kind === "conflict") {
         throw Object.assign(
           new Error("Timeline changed while the save response was unavailable. Refresh and compare before saving again."),
