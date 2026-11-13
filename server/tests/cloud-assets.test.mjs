@@ -57,7 +57,15 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
   }
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
-  if(options.method==="PATCH"){const patch=JSON.parse(options.body||"{}");if("deleted_at" in patch)row.deleted_at=patch.deleted_at;return response([row]);}
+  if(options.method==="PATCH"){
+   const patch=JSON.parse(options.body||"{}");
+   if("deleted_at" in patch){
+    if(deletePatchMode==="race-won"){row.deleted_at="2026-11-05T12:00:00.000Z";return response([]);}
+    if(deletePatchMode==="race-unconfirmed")return response([]);
+    row.deleted_at=patch.deleted_at;
+   }
+   return response([row]);
+  }
   return response([row]);
  };
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;},get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
