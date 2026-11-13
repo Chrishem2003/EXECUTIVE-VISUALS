@@ -707,6 +707,10 @@ async function refreshCloudRenderJobs(manual=false){
   }
   const history=document.querySelector<HTMLElement>("#cloud-render-history");
   if(history)history.outerHTML=renderCloudRenderHistory();
+  else if(state.cloudRenderJobs.length){
+   const editor=document.querySelector("#timeline-workspace .timeline-editor-grid");
+   if(editor)editor.insertAdjacentHTML("beforebegin",renderCloudRenderHistory());
+  }
   const action=document.querySelector<HTMLElement>('[data-tl-action="cloud-job"]');
   if(action&&state.cloudRenderJobId)action.textContent="Check cloud render · "+state.cloudRenderJobStatus;
  }catch(error){
