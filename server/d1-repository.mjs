@@ -30,6 +30,25 @@ function mapAsset(row) {
   };
 }
 
+function mapJob(row) {
+  return {
+    id: row.id, ownerId: row.owner_id, projectId: row.project_id || null,
+    jobType: row.job_type, status: row.status, progress: Number(row.progress),
+    input: parse(row.input_json), output: row.output_json ? parse(row.output_json) : null,
+    error: row.error_json ? parse(row.error_json) : null,
+    idempotencyKey: row.idempotency_key || null, attemptCount: Number(row.attempt_count),
+    maxAttempts: Number(row.max_attempts), availableAt: row.available_at || null,
+    createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at || null
+  };
+}
+function mapAuditEvent(row) {
+  return {
+    id: Number(row.id), ownerId: row.owner_id, projectId: row.project_id || null,
+    eventType: row.event_type, subjectType: row.subject_type, subjectId: row.subject_id,
+    details: parse(row.details_json), createdAt: row.created_at
+  };
+}
+
 export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR2 = false } = {}) {
   if (!db || typeof db.prepare !== "function") throw new Error("D1 repository requires a Cloudflare D1 database binding.");
   if (typeof id !== "function" || typeof clock !== "function") throw new Error("D1 repository requires valid ID and clock functions.");
@@ -249,6 +268,106 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       `).bind(id(), ownerId, projectId, name.trim(), mediaType, size, sha256, storageProvider, storageKey, derivativeOf, json(metadata), provenance ? json(provenance) : null, clock()).first();
       if (!row || row.owner_id !== ownerId) throw new Error("D1 asset registration returned an invalid record.");
       return mapAsset(row);
+    },
+
+
+    async createJob({ actorId, projectId = null, jobType, input = {}, idempotencyKey = null, maxAttempts = 2, availableAt = null } = {}) {
+      validUuid(actorId, "Actor ID");
+      if (projectId !== null) validUuid(projectId, "Project ID");
+      if (typeof jobType !== "string" || !/^[a-z0-9][a-z0-9._:-]{0,119}$/i.test(jobType)) throw new Error("Job type must contain 1–120 safe characters.");
+      if (!object(input) || json(input).length > 64 * 1024) throw new Error("Job input must be an object no larger than 64 KB.");
+      if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || !idempotencyKey.trim() || idempotencyKey.length > 128)) throw new Error("Idempotency key must contain 1–128 characters.");
+      if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) throw new Error("Maximum attempts must be between 1 and 10.");
+      if (availableAt !== null && (typeof availableAt !== "string" || !Number.isFinite(Date.parse(availableAt)))) throw new Error("Job availability time must be a valid ISO timestamp.");
+      if (projectId) {
+        const project = await projectAccess(actorId, projectId);
+        if (!project) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+        if (!["owner", "editor"].includes(project.actor_role)) { const error = new Error("Only project owners and editors can enqueue jobs."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+      }
+      const timestamp = clock(), jobId = id();
+      const inserted = await db.prepare(`
+        INSERT INTO ev_jobs (id, owner_id, project_id, job_type, status, progress, input_json, idempotency_key, max_attempts, available_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(owner_id, idempotency_key) DO NOTHING
+      `).bind(jobId, actorId, projectId, jobType, json(input), idempotencyKey, maxAttempts, availableAt, timestamp, timestamp).run();
+      if (inserted?.success === false) throw new Error("D1 job creation failed.");
+      if (idempotencyKey !== null) {
+        const existing = await db.prepare("SELECT * FROM ev_jobs WHERE owner_id = ? AND idempotency_key = ? LIMIT 1").bind(actorId, idempotencyKey).first();
+        if (!existing) throw new Error("Idempotent D1 job creation returned no record.");
+        if (existing.job_type !== jobType || existing.project_id !== projectId || existing.input_json !== json(input) || Number(existing.max_attempts) !== maxAttempts || (existing.available_at || null) !== availableAt) {
+          const error = new Error("The idempotency key is already associated with a different job request.");
+          error.code = "D1_IDEMPOTENCY_CONFLICT";
+          throw error;
+        }
+        return { job: mapJob(existing), created: existing.id === jobId };
+      }
+      const row = await db.prepare("SELECT * FROM ev_jobs WHERE id = ? AND owner_id = ? LIMIT 1").bind(jobId, actorId).first();
+      if (!row) throw new Error("D1 job creation returned no record.");
+      return { job: mapJob(row), created: true };
+    },
+
+    async listJobs({ actorId, projectId = undefined, limit = 50, offset = 0 } = {}) {
+      validUuid(actorId, "Actor ID");
+      if (projectId !== undefined && projectId !== null) validUuid(projectId, "Project ID");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Job page size must be between 1 and 100.");
+      if (!Number.isInteger(offset) || offset < 0 || offset > 100000) throw new Error("Job offset is invalid.");
+      const rows = await db.prepare(`
+        SELECT j.* FROM ev_jobs j
+        LEFT JOIN ev_project_members m ON m.project_id = j.project_id AND m.member_id = ?
+        WHERE (j.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = j.project_id AND p.owner_id = ?))
+          AND (? IS NULL OR j.project_id = ?)
+        ORDER BY j.created_at DESC, j.id ASC LIMIT ? OFFSET ?
+      `).bind(actorId, actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
+      return (rows.results || []).map(mapJob);
+    },
+
+    async getJob({ actorId, jobId } = {}) {
+      validUuid(actorId, "Actor ID"); validUuid(jobId, "Job ID");
+      const row = await db.prepare(`
+        SELECT j.* FROM ev_jobs j
+        LEFT JOIN ev_project_members m ON m.project_id = j.project_id AND m.member_id = ?
+        WHERE j.id = ? AND (j.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = j.project_id AND p.owner_id = ?)) LIMIT 1
+      `).bind(actorId, jobId, actorId, actorId, actorId).first();
+      return row ? mapJob(row) : null;
+    },
+
+    async appendAuditEvent({ actorId, projectId = null, eventType, subjectType, subjectId, details = {} } = {}) {
+      validUuid(actorId, "Actor ID");
+      if (projectId !== null) validUuid(projectId, "Project ID");
+      if (typeof eventType !== "string" || !/^[a-z0-9][a-z0-9._:-]{0,119}$/i.test(eventType)) throw new Error("Audit event type must contain 1–120 safe characters.");
+      if (typeof subjectType !== "string" || !/^[a-z0-9][a-z0-9._:-]{0,79}$/i.test(subjectType)) throw new Error("Audit subject type must contain 1–80 safe characters.");
+      if (typeof subjectId !== "string" || !subjectId.trim() || subjectId.length > 180) throw new Error("Audit subject ID must contain 1–180 characters.");
+      if (!object(details) || json(details).length > 16 * 1024) throw new Error("Audit details must be an object no larger than 16 KB.");
+      if (projectId) {
+        const project = await projectAccess(actorId, projectId);
+        if (!project) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+        if (!["owner", "editor"].includes(project.actor_role)) { const error = new Error("Only project owners and editors can append audit events."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+      }
+      const result = await db.prepare(`
+        INSERT INTO ev_audit_events (owner_id, project_id, event_type, subject_type, subject_id, details_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *
+      `).bind(actorId, projectId, eventType, subjectType, subjectId, json(details), clock()).first();
+      if (!result || result.owner_id !== actorId) throw new Error("D1 audit event append returned an invalid record.");
+      return mapAuditEvent(result);
+    },
+
+    async listAuditEvents({ actorId, projectId = undefined, limit = 50, offset = 0 } = {}) {
+      validUuid(actorId, "Actor ID");
+      if (projectId !== undefined && projectId !== null) validUuid(projectId, "Project ID");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Audit page size must be between 1 and 100.");
+      if (!Number.isInteger(offset) || offset < 0 || offset > 100000) throw new Error("Audit offset is invalid.");
+      if (projectId) {
+        const project = await projectAccess(actorId, projectId);
+        if (!project) { const error = new Error("Project not found."); error.code = "D1_PROJECT_NOT_FOUND"; throw error; }
+      }
+      const rows = await db.prepare(`
+        SELECT e.* FROM ev_audit_events e
+        LEFT JOIN ev_project_members m ON m.project_id = e.project_id AND m.member_id = ?
+        WHERE (e.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = e.project_id AND p.owner_id = ?))
+          AND (? IS NULL OR e.project_id = ?)
+        ORDER BY e.id DESC LIMIT ? OFFSET ?
+      `).bind(actorId, actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
+      return (rows.results || []).map(mapAuditEvent);
     },
 
     async listAssets({ actorId, projectId, limit = 50, offset = 0 } = {}) {

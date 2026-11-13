@@ -522,3 +522,85 @@ test("D1 staging enforces the complete owner/editor/reviewer/viewer capability m
   assert.equal(revokedRead.status, 404);
   DB.close();
 });
+
+
+test("D1 staging job and audit APIs enforce project roles, idempotency and tenant isolation", async t => {
+  const DB = makeD1();
+  const identities = {
+    "Bearer owner": { id: "11111111-1111-4111-8111-111111111111", email: "owner@jobs.test" },
+    "Bearer editor": { id: "22222222-2222-4222-8222-222222222222", email: "editor@jobs.test" },
+    "Bearer reviewer": { id: "33333333-3333-4333-8333-333333333333", email: "reviewer@jobs.test" },
+    "Bearer outsider": { id: "44444444-4444-4444-8444-444444444444", email: "outsider@jobs.test" }
+  };
+  t.mock.method(globalThis, "fetch", async request => {
+    const user = identities[request.headers.get("authorization")];
+    if (!user) return new Response(JSON.stringify({ error: { code: "AUTH_REQUIRED" } }), { status: 401 });
+    return new Response(JSON.stringify({ user, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const call = (path, token, method = "GET", body) => worker.fetch(new Request("https://staging.example" + path, {
+    method, headers: { authorization: "Bearer " + token, ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  }), env);
+  const createdProject = await call("/api/d1/projects", "owner", "POST", { name: "Job API project" });
+  assert.equal(createdProject.status, 201);
+  const project = (await createdProject.json()).project;
+  const auditPath = "/api/d1/projects/" + project.id + "/audit-events";
+  assert.equal((await call("/api/d1/projects", "editor")).status, 200);
+  assert.equal((await call("/api/d1/projects", "reviewer")).status, 200);
+  const memberPath = "/api/d1/projects/" + project.id + "/members";
+  assert.equal((await call(memberPath, "owner", "POST", { email: "editor@jobs.test", role: "editor" })).status, 201);
+  assert.equal((await call(memberPath, "owner", "POST", { email: "reviewer@jobs.test", role: "reviewer" })).status, 201);
+
+  const createdJob = await call("/api/d1/jobs", "editor", "POST", {
+    projectId: project.id, jobType: "storyboard.render", input: { storyboardId: "sb-1" }, idempotencyKey: "render-sb-1"
+  });
+  assert.equal(createdJob.status, 201);
+  const jobResult = await createdJob.json();
+  assert.equal(jobResult.job.status, "queued");
+  assert.equal(jobResult.execution, "not-dispatched");
+  const repeated = await call("/api/d1/jobs", "editor", "POST", {
+    projectId: project.id, jobType: "storyboard.render", input: { storyboardId: "sb-1" }, idempotencyKey: "render-sb-1"
+  });
+  assert.equal(repeated.status, 200);
+  assert.equal((await repeated.json()).job.id, jobResult.job.id);
+  const conflictingKey = await call("/api/d1/jobs", "editor", "POST", {
+    projectId: project.id, jobType: "storyboard.render", input: { storyboardId: "different" }, idempotencyKey: "render-sb-1"
+  });
+  assert.equal(conflictingKey.status, 409);
+  assert.equal((await conflictingKey.json()).error.code, "D1_IDEMPOTENCY_CONFLICT");
+
+  const reviewerJob = await call("/api/d1/jobs", "reviewer", "POST", { projectId: project.id, jobType: "blocked.write", input: {} });
+  assert.equal(reviewerJob.status, 403);
+  const outsiderJobList = await call("/api/d1/jobs?projectId=" + project.id, "outsider");
+  assert.equal(outsiderJobList.status, 200);
+  assert.equal((await outsiderJobList.json()).jobs.length, 0);
+  const editorJobList = await call("/api/d1/jobs?projectId=" + project.id, "editor");
+  assert.equal((await editorJobList.json()).jobs.length, 1);
+  const jobId = jobResult.job.id;
+  assert.equal((await call("/api/d1/jobs/" + jobId, "reviewer")).status, 200);
+  assert.equal((await call("/api/d1/jobs/" + jobId, "outsider")).status, 404);
+  assert.equal((await call("/api/d1/jobs/" + jobId, "owner")).status, 200);
+
+  const audit = await call(auditPath, "editor", "POST", {
+    eventType: "job.queued", subjectType: "job", subjectId: jobId, details: { requestId: "req-1" }
+  });
+  assert.equal(audit.status, 201);
+  const auditEvent = (await audit.json()).event;
+  assert.equal(auditEvent.eventType, "job.queued");
+  assert.equal(auditEvent.ownerId, jobResult.job.ownerId);
+  const auditList = await call(auditPath, "reviewer");
+  assert.equal(auditList.status, 200);
+  assert.equal((await auditList.json()).events.length, 1);
+  const ownerAudit = await call(auditPath, "owner");
+  assert.equal((await ownerAudit.json()).events.length, 1);
+  const outsiderAudit = await call(auditPath, "outsider");
+  assert.equal(outsiderAudit.status, 404);
+  const reviewerAppend = await call(auditPath, "reviewer", "POST", {
+    eventType: "forbidden", subjectType: "project", subjectId: project.id, details: {}
+  });
+  assert.equal(reviewerAppend.status, 403);
+  const oversized = await call("/api/d1/jobs", "owner", "POST", { jobType: "x", input: { payload: "x".repeat(70 * 1024) } });
+  assert.equal(oversized.status, 413);
+  DB.close();
+});

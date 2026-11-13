@@ -60,6 +60,7 @@ function errorResponse(error) {
     : error?.code === "D1_PROJECT_ACCESS_DENIED" ? 403
     : error?.code === "D1_PROJECT_REVISION_CONFLICT" || error?.code === "D1_MEMBER_AMBIGUOUS" ? 409
     : error?.code === "D1_MEMBER_NOT_FOUND" ? 404
+    : error?.code === "D1_IDEMPOTENCY_CONFLICT" ? 409
     : 400);
   return json({ error: { code: error?.code || "D1_REQUEST_INVALID", message: String(error?.message || "The D1 request could not be completed.").slice(0, 300) } }, status);
 }
@@ -165,6 +166,31 @@ async function d1Api(request, env, url) {
       return withCookies(json({ project, storage: "cloudflare-d1-staging" }, 201), sessionCookies);
     }
 
+
+    if (url.pathname === "/api/d1/jobs" && request.method === "GET") {
+      const rawLimit = url.searchParams.get("limit");
+      const rawOffset = url.searchParams.get("offset");
+      const limit = rawLimit === null ? 50 : Number(rawLimit);
+      const offset = rawOffset === null ? 0 : Number(rawOffset);
+      const projectId = url.searchParams.has("projectId") ? url.searchParams.get("projectId") : undefined;
+      const jobs = await repo.listJobs({ actorId: principal.id, projectId, limit, offset });
+      return withCookies(json({ jobs, page: { limit, offset }, storage: "cloudflare-d1-staging" }), sessionCookies);
+    }
+    if (url.pathname === "/api/d1/jobs" && request.method === "POST") {
+      const body = await readJson(request, 64 * 1024);
+      const result = await repo.createJob({
+        actorId: principal.id, projectId: body.projectId ?? null, jobType: body.jobType,
+        input: body.input ?? {}, idempotencyKey: body.idempotencyKey ?? null,
+        maxAttempts: body.maxAttempts ?? 2, availableAt: body.availableAt ?? null
+      });
+      return withCookies(json({ ...result, storage: "cloudflare-d1-staging", execution: "not-dispatched" }, result.created ? 201 : 200), sessionCookies);
+    }
+    const jobMatch = url.pathname.match(/^\/api\/d1\/jobs\/([0-9a-f-]{36})$/i);
+    if (jobMatch && request.method === "GET") {
+      const job = await repo.getJob({ actorId: principal.id, jobId: jobMatch[1] });
+      return withCookies(job ? json({ job, storage: "cloudflare-d1-staging" }) : json({ error: { code: "D1_JOB_NOT_FOUND", message: "Job not found." } }, 404), sessionCookies);
+    }
+
     if (url.pathname === "/api/d1/assets" && request.method === "GET") {
       const rawLimit = url.searchParams.get("limit");
       const rawOffset = url.searchParams.get("offset");
@@ -190,6 +216,24 @@ async function d1Api(request, env, url) {
         storage: "cloudflare-d1-staging",
         metadataOnly: true
       }), sessionCookies);
+    }
+
+    const auditCollection = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})\/audit-events$/i);
+    if (auditCollection && request.method === "GET") {
+      const rawLimit = url.searchParams.get("limit");
+      const rawOffset = url.searchParams.get("offset");
+      const limit = rawLimit === null ? 50 : Number(rawLimit);
+      const offset = rawOffset === null ? 0 : Number(rawOffset);
+      const events = await repo.listAuditEvents({ actorId: principal.id, projectId: auditCollection[1], limit, offset });
+      return withCookies(json({ events, page: { limit, offset }, projectId: auditCollection[1] }), sessionCookies);
+    }
+    if (auditCollection && request.method === "POST") {
+      const body = await readJson(request);
+      const event = await repo.appendAuditEvent({
+        actorId: principal.id, projectId: auditCollection[1], eventType: body.eventType,
+        subjectType: body.subjectType, subjectId: body.subjectId, details: body.details ?? {}
+      });
+      return withCookies(json({ event }, 201), sessionCookies);
     }
     const memberCollection = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})\/members$/i);
     if (memberCollection && request.method === "GET") {
