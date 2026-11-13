@@ -172,3 +172,79 @@ test("track reordering is reversible through undo and redo without changing clip
   assert.equal(redone.timeline.tracks[1].clips[0].id, "clip-a");
   assert.equal(redone.timeline.revision, undone.timeline.revision + 1);
 });
+
+test("deleting a clip is an entity-level operation that undo restores and redo removes", () => {
+  const before = fixture();
+  const after = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: track.clips.filter(item => item.id !== "clip-a") } : track) };
+  const op = operation(before, after, "Delete clip");
+  assert.ok(op);
+  assert.equal(op.changes.length, 1);
+  assert.equal(op.changes[0].entity, "clip");
+  assert.equal(op.changes[0].before.trackId, "video-1");
+  assert.equal(op.changes[0].after, null);
+
+  const applied = applyTimelineHistoryOperation(before, op);
+  assert.equal(applied.tracks[0].clips.length, 0);
+  assert.equal(applied.tracks[1].id, "audio-1");
+  assert.equal(applied.markers.length, before.markers.length);
+
+  const undone = applyTimelineHistoryOperation(applied, op, "undo");
+  assert.deepEqual(undone.tracks[0].clips, before.tracks[0].clips);
+  assert.deepEqual(undone.tracks.map(track => track.id), before.tracks.map(track => track.id));
+
+  const redone = applyTimelineHistoryOperation(undone, op, "forward");
+  assert.equal(redone.tracks[0].clips.length, 0);
+  assert.equal(redone.tracks[1].id, "audio-1");
+});
+
+test("undoing a clip deletion fails closed if its original track is now locked", () => {
+  const before = fixture();
+  const after = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: [] } : track) };
+  const op = operation(before, after, "Delete clip");
+  const deleted = applyTimelineHistoryOperation(before, op);
+  const locked = { ...deleted, tracks: deleted.tracks.map(track => track.id === "video-1"
+    ? { ...track, locked: true } : track) };
+  assert.throws(() => applyTimelineHistoryOperation(locked, op, "undo"), /locked track/);
+  assert.equal(locked.tracks[0].clips.length, 0);
+});
+
+test("stale entity state fails closed instead of overwriting a newer edit", () => {
+  const before = fixture();
+  const after = trimClip(before, "video-1", "clip-a", 6, 6);
+  const op = operation(before, after);
+  const changed = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: track.clips.map(item => ({ ...item, name: "Changed elsewhere" })) } : track) };
+  assert.throws(() => applyTimelineHistoryOperation(changed, op), /history conflict/);
+});
+
+test("invalid operations and invalid target timelines are rejected", () => {
+  const before = fixture();
+  const invalid = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: track.clips.map(item => ({ ...item, duration: rational(0, 24) })) } : track) };
+  assert.throws(() => createTimelineHistoryOperation(before, invalid, { label: "Invalid" }), /invalid|positive/i);
+  assert.throws(() => applyTimelineHistoryOperation(before, { schemaVersion: 1, id: "bad", label: "bad", origin: "local", createdAt: "", baseRevision: 1, changes: [] }), /invalid/);
+});
+
+test("history is bounded and a new local edit clears redo", () => {
+  const before = fixture();
+  let history = createTimelineHistory(2);
+  for (let index = 0; index < 3; index++) {
+    const prior = { ...before, name: "Sequence " + index };
+    const next = { ...prior, name: "Sequence " + (index + 1), revision: prior.revision + 1 };
+    const op = operation(prior, next, "Rename");
+    history = recordTimelineHistory(history, op);
+  }
+  assert.equal(history.undo.length, 2);
+  assert.deepEqual(history.redo, []);
+});
+
+test("remote operations can be applied without entering the local undo stack", () => {
+  const before = fixture();
+  const after = trimClip(before, "video-1", "clip-a", 3, 3);
+  const op = createTimelineHistoryOperation(before, after, { label: "Remote trim", origin: "remote" });
+  const history = recordTimelineHistory(createTimelineHistory(), op);
+  assert.equal(history.undo.length, 0);
+  assert.equal(history.redo.length, 0);
+});
