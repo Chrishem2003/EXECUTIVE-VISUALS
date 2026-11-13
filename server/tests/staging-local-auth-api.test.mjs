@@ -38,6 +38,7 @@ test("production staging local auth enforces origin and allowlist through real H
       STAGING_LOCAL_AUTH_ENABLED: "true",
       STAGING_LOCAL_AUTH_ORIGIN: STAGING_ORIGIN,
       STAGING_LOCAL_AUTH_ALLOWLIST: ALLOWED_EMAIL,
+      CORS_ORIGINS: STAGING_ORIGIN,
       D1_STAGING_WORKER_URL: STAGING_WORKER,
       API_HOST: "127.0.0.1",
       API_PORT: String(port),
