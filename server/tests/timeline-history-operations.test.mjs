@@ -149,3 +149,26 @@ test("remote operations can be applied without entering the local undo stack", (
   assert.equal(history.undo.length, 0);
   assert.equal(history.redo.length, 0);
 });
+
+
+test("track reordering is reversible through undo and redo without changing clip references", () => {
+  const before = fixture();
+  const after = moveTrack(before, "video-1", "down");
+  const op = operation(before, after, "Move track");
+  let history = recordTimelineHistory(createTimelineHistory(), op);
+
+  const applied = applyTimelineHistoryOperation(before, op);
+  assert.deepEqual(applied.tracks.map(track => track.id), ["audio-1", "video-1"]);
+  assert.equal(applied.tracks[1].clips[0].id, "clip-a");
+
+  const undone = undoTimelineHistory(history, applied);
+  assert.deepEqual(undone.timeline.tracks.map(track => track.id), ["video-1", "audio-1"]);
+  assert.equal(undone.timeline.tracks[0].clips[0].id, "clip-a");
+  assert.equal(undone.timeline.revision, applied.revision + 1);
+
+  history = undone.history;
+  const redone = redoTimelineHistory(history, undone.timeline);
+  assert.deepEqual(redone.timeline.tracks.map(track => track.id), ["audio-1", "video-1"]);
+  assert.equal(redone.timeline.tracks[1].clips[0].id, "clip-a");
+  assert.equal(redone.timeline.revision, undone.timeline.revision + 1);
+});
