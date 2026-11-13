@@ -1150,8 +1150,10 @@ export function createAppServer() {
       }
 
       if(path==="/api/timelines"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
-        send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
+        const projectId=url.searchParams.get("projectId")||null,includeDocuments=Boolean(projectId&&url.searchParams.get("includeDocuments")==="true");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at,timeline_json FROM timelines WHERE archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY updated_at DESC LIMIT ?").all(user.id,user.id,user.id,projectId,projectId,includeDocuments?100:500);
+        send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at,...(includeDocuments?{document:parseJson(x.timeline_json,null)}:{})}))},cors);return;
       }
       if(path==="/api/timelines"&&req.method==="POST"){
         const body=await readJson(req,4*1024*1024),timeline=body.timeline;
