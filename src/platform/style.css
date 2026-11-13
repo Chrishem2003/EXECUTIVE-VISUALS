@@ -1441,7 +1441,7 @@ body{
 .creative-graph-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .creative-graph-heading h3{margin:5px 0;font-size:1.25rem}
 .creative-graph-heading p{max-width:720px;color:var(--muted,#667085);line-height:1.5}
-.creative-graph-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}
+.creative-graph-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:16px 0}
 .creative-graph-metrics>div{display:grid;gap:3px;padding:12px;border:1px solid var(--line,#e2e5ec);border-radius:10px;background:var(--panel,#fff)}
 .creative-graph-metrics b{font-size:1.35rem;font-variant-numeric:tabular-nums}
 .creative-graph-metrics small,.creative-graph-baseline,.creative-graph-diff small{color:var(--muted,#667085)}
