@@ -321,6 +321,82 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       return (rows.results || []).map(mapJob);
     },
 
+    async claimNextJob({ leaseMs = 60000 } = {}) {
+      if (!Number.isInteger(leaseMs) || leaseMs < 5000 || leaseMs > 300000) throw new Error("Job lease must be between 5 and 300 seconds.");
+      const timestamp = clock(), leaseToken = id();
+      const leaseExpiresAt = new Date(Date.parse(timestamp) + leaseMs).toISOString();
+      await db.prepare(`
+        UPDATE ev_jobs SET status = 'failed',
+          error_json = ?, lease_owner = NULL, lease_expires_at = NULL,
+          updated_at = ?, completed_at = ?
+        WHERE status = 'running' AND lease_expires_at IS NOT NULL
+          AND lease_expires_at <= ? AND attempt_count >= max_attempts
+      `).bind(json({ code: "LEASE_EXHAUSTED", message: "The job lease expired after the maximum number of attempts." }), timestamp, timestamp, timestamp).run();
+      const row = await db.prepare(`
+        UPDATE ev_jobs SET status = 'running', attempt_count = attempt_count + 1,
+          lease_owner = ?, lease_expires_at = ?, updated_at = ?
+        WHERE id = (
+          SELECT id FROM ev_jobs
+          WHERE attempt_count < max_attempts
+            AND ((status = 'queued' AND (available_at IS NULL OR available_at <= ?))
+              OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?))
+          ORDER BY COALESCE(available_at, created_at), created_at, id
+          LIMIT 1
+        )
+        AND attempt_count < max_attempts
+        AND ((status = 'queued' AND (available_at IS NULL OR available_at <= ?))
+          OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?))
+        RETURNING *
+      `).bind(leaseToken, leaseExpiresAt, timestamp, timestamp, timestamp, timestamp, timestamp).first();
+      return row ? { job: mapJob(row), leaseToken, leaseExpiresAt } : null;
+    },
+
+    async heartbeatJob({ jobId, leaseToken, leaseMs = 60000 } = {}) {
+      validUuid(jobId, "Job ID"); validUuid(leaseToken, "Lease token");
+      if (!Number.isInteger(leaseMs) || leaseMs < 5000 || leaseMs > 300000) throw new Error("Job lease must be between 5 and 300 seconds.");
+      const timestamp = clock(), leaseExpiresAt = new Date(Date.parse(timestamp) + leaseMs).toISOString();
+      const row = await db.prepare(`
+        UPDATE ev_jobs SET lease_expires_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'running' AND lease_owner = ?
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+        RETURNING *
+      `).bind(leaseExpiresAt, timestamp, jobId, leaseToken, timestamp).first();
+      return row ? { job: mapJob(row), leaseExpiresAt } : null;
+    },
+
+    async completeJob({ jobId, leaseToken, output = {} } = {}) {
+      validUuid(jobId, "Job ID"); validUuid(leaseToken, "Lease token");
+      if (!object(output) || json(output).length > 64 * 1024) throw new Error("Job output must be an object no larger than 64 KB.");
+      const timestamp = clock();
+      const row = await db.prepare(`
+        UPDATE ev_jobs SET status = 'succeeded', progress = 100, output_json = ?,
+          error_json = NULL, lease_owner = NULL, lease_expires_at = NULL,
+          updated_at = ?, completed_at = ?
+        WHERE id = ? AND status = 'running' AND lease_owner = ?
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+        RETURNING *
+      `).bind(json(output), timestamp, timestamp, jobId, leaseToken, timestamp).first();
+      return row ? mapJob(row) : null;
+    },
+
+    async failJob({ jobId, leaseToken, error = {}, retryDelayMs = 0 } = {}) {
+      validUuid(jobId, "Job ID"); validUuid(leaseToken, "Lease token");
+      if (!object(error) || json(error).length > 16 * 1024) throw new Error("Job error must be an object no larger than 16 KB.");
+      if (!Number.isInteger(retryDelayMs) || retryDelayMs < 0 || retryDelayMs > 86400000) throw new Error("Retry delay must be between 0 and 24 hours.");
+      const timestamp = clock();
+      const row = await db.prepare(`
+        UPDATE ev_jobs SET
+          status = CASE WHEN attempt_count < max_attempts THEN 'queued' ELSE 'failed' END,
+          available_at = CASE WHEN attempt_count < max_attempts THEN ? ELSE available_at END,
+          error_json = ?, lease_owner = NULL, lease_expires_at = NULL,
+          updated_at = ?, completed_at = CASE WHEN attempt_count < max_attempts THEN NULL ELSE ? END
+        WHERE id = ? AND status = 'running' AND lease_owner = ?
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+        RETURNING *
+      `).bind(new Date(Date.parse(timestamp) + retryDelayMs).toISOString(), json(error), timestamp, timestamp, jobId, leaseToken, timestamp).first();
+      return row ? mapJob(row) : null;
+    },
+
     async getJob({ actorId, jobId } = {}) {
       validUuid(actorId, "Actor ID"); validUuid(jobId, "Job ID");
       const row = await db.prepare(`
