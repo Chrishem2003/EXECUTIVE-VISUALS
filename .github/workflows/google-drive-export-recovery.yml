@@ -1,0 +1,48 @@
+name: Google Drive export recovery
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+concurrency:
+  group: google-drive-export-recovery-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: executive_visuals_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible schema
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Seed isolated owner, project and private asset
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-postgres-fixtures.sql
+      - name: Apply encrypted Google Drive connection migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105150000_google_drive_connections.sql
+      - name: Apply one-time OAuth state migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105153000_google_drive_oauth_states.sql
+      - name: Apply durable Drive export-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
+      - name: Apply export lease integrity constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105180000_google_drive_export_lease_integrity.sql
+      - name: Verify service-role-only access, ownership, idempotency and lease integrity
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
