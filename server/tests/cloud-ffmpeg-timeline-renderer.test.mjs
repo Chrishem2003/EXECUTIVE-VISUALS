@@ -363,3 +363,31 @@ test("cloud speed curves validate against full clip duration and clip safely to 
  assert.ok(Math.abs(sourceDurationForClip(clip,1.25)-1.640625)<1e-9);
  assert.throws(()=>sourceDurationForClip({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:5,speed:1}]},1.25),error=>error.code==="INVALID_SPEED_CURVE");
 });
+
+
+test("cloud renderer accepts audio automation keyframes through the full audio clip when the master ends earlier", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-audio-automation-tail-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"voice.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=2","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Audio automation tail",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"picture",assetId:"video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"a",kind:"audio",clips:[{id:"voice",assetId:"audio",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)},audioAutomation:[
+    {timeSeconds:0,gainDb:-3,interpolation:"linear"},
+    {timeSeconds:1.5,gainDb:-18,interpolation:"linear"}
+   ]}]}
+  ]};
+  const assets=new Map([
+   ["video",{path:video,asset:{id:"video",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["audio",{path:audio,asset:{id:"audio",mediaType:"audio/wav",originalName:"voice.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.equal(result.render.audioClips,1);
+  assert.equal(result.render.durationSeconds,1);
+  assert.ok(Number(probe.format.duration)>=0.95&&Number(probe.format.duration)<=1.1,"the audio tail must not extend the one-second picture master");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
