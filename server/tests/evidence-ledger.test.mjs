@@ -49,7 +49,7 @@ test("review records reviewer identity and preserves an append-only event histor
   const events=listEvidenceEvents(db,record.id);
   assert.deepEqual(events.map(event=>event.type),["submitted","reviewed"]);
   assert.equal(events[1].actorId,"reviewer");
-  assert.throws(()=>reviewEvidenceRecord(db,{evidenceId:record.id,reviewerId:"owner",status:"rejected"}),/EVIDENCE_ALREADY_REVIEWED/);
+  assert.throws(()=>reviewEvidenceRecord(db,{evidenceId:record.id,reviewerId:"owner",status:"rejected",reviewNote:"A second final decision must be rejected."}),/EVIDENCE_ALREADY_REVIEWED/);
   assert.equal(listEvidenceEvents(db,record.id).length,2);
 });
 
