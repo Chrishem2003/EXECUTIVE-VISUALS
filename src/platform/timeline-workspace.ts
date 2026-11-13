@@ -889,6 +889,7 @@ document.addEventListener("submit",event=>{
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
   clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());clip.speed=speed;
   if(track.kind==="video")clip.speedCurve=speedCurve;
+  if(track.kind==="video"&&data.get("motionInterpolation")==="optical-flow"&&!(speed<1||(speedCurve||[]).some(point=>point.speed<1))){state.timeline=originalTimeline;cancelPendingTimelineEdit();alert("Optical-flow interpolation requires at least one slow-motion section below 1×.");return;}
   clip.sourceRange={start:rational(sourceIn,sourceFps),duration:rational(sourceDurationSeconds*sourceFps,sourceFps)};
   if(track.kind==="video"){
    if(data.get("transitionType")==="dip-to-black")clip.transitionToNext={type:"dip-to-black",fadeFrames:Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12)))};
