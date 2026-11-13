@@ -314,10 +314,10 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       const rows = await db.prepare(`
         SELECT j.* FROM ev_jobs j
         LEFT JOIN ev_project_members m ON m.project_id = j.project_id AND m.member_id = ?
-        WHERE (j.owner_id = ? OR m.member_id = ?)
+        WHERE (j.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = j.project_id AND p.owner_id = ?))
           AND (? IS NULL OR j.project_id = ?)
         ORDER BY j.created_at DESC, j.id ASC LIMIT ? OFFSET ?
-      `).bind(actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
+      `).bind(actorId, actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
       return (rows.results || []).map(mapJob);
     },
 
@@ -326,8 +326,8 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       const row = await db.prepare(`
         SELECT j.* FROM ev_jobs j
         LEFT JOIN ev_project_members m ON m.project_id = j.project_id AND m.member_id = ?
-        WHERE j.id = ? AND (j.owner_id = ? OR m.member_id = ?) LIMIT 1
-      `).bind(actorId, jobId, actorId, actorId).first();
+        WHERE j.id = ? AND (j.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = j.project_id AND p.owner_id = ?)) LIMIT 1
+      `).bind(actorId, jobId, actorId, actorId, actorId).first();
       return row ? mapJob(row) : null;
     },
 
@@ -363,10 +363,10 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
       const rows = await db.prepare(`
         SELECT e.* FROM ev_audit_events e
         LEFT JOIN ev_project_members m ON m.project_id = e.project_id AND m.member_id = ?
-        WHERE (e.owner_id = ? OR m.member_id = ?)
+        WHERE (e.owner_id = ? OR m.member_id = ? OR EXISTS (SELECT 1 FROM ev_projects p WHERE p.id = e.project_id AND p.owner_id = ?))
           AND (? IS NULL OR e.project_id = ?)
         ORDER BY e.id DESC LIMIT ? OFFSET ?
-      `).bind(actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
+      `).bind(actorId, actorId, actorId, actorId, projectId ?? null, projectId ?? null, limit, offset).all();
       return (rows.results || []).map(mapAuditEvent);
     },
 
