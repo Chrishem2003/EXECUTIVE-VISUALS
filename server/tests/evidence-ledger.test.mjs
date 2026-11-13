@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openDatabase } from "../db.mjs";
-import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents } from "../evidence-ledger.mjs";
+import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "../evidence-ledger.mjs";
 
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(),"ev-evidence-"));
@@ -80,4 +80,11 @@ test("evidence source identity and audit events are append-only at the database 
   assert.throws(()=>db.prepare("UPDATE evidence_records SET source_sha256=? WHERE id=?").run("b".repeat(64),record.id),/EVIDENCE_RECORD_SOURCE_IMMUTABLE/);
   assert.throws(()=>db.prepare("DELETE FROM evidence_record_events WHERE evidence_id=?").run(record.id),/EVIDENCE_EVENTS_APPEND_ONLY/);
   assert.equal(listEvidenceEvents(db,record.id).length,1);
+});
+
+test("production evidence writes require an operator-confirmed persistent data volume",()=>{
+ assert.equal(evidencePersistenceReady({nodeEnv:"production",persistence:"ephemeral"}),false);
+ assert.equal(evidencePersistenceReady({nodeEnv:"production",persistence:"unverified"}),false);
+ assert.equal(evidencePersistenceReady({nodeEnv:"production",persistence:"operator-confirmed-volume"}),true);
+ assert.equal(evidencePersistenceReady({nodeEnv:"development",persistence:"unverified"}),true);
 });
