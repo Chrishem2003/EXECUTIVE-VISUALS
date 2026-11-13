@@ -90,7 +90,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const verified=record.status==="verified"&&hashMatches&&sameProject&&targetExists;
   add({id:evidenceNode,type:"evidence",label:clean(record.kind,100)||"Evidence record",detail:clean(record.claim,1000)+(hashMatches?"":" · Source asset hash mismatch or unavailable")+(sameProject?"":" · Project scope mismatch")+(targetExists?"":" · Target is unresolved"),status:verified?"linked":"review"});
   if(hashMatches&&sameProject&&nodes.has(sourceNode))link(sourceNode,evidenceNode,"derived_from");
-  if(targetExists&&sameProject)link(evidenceNode,targetNode,verified?"supports":"evidence_for");
+  if(hashMatches&&sameProject&&targetExists)link(evidenceNode,targetNode,verified?"supports":"evidence_for");
   if(!hashMatches||!sameProject||!targetExists)unlinkedEvidence.push(id);
  }
  const counts={} as Record<CreativeGraphNodeType,number>;
