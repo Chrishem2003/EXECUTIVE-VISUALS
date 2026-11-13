@@ -8,7 +8,7 @@ import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluate
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
-const hasRubberband=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\\brubberband\\b/.test((result.stdout||"")+"\\n"+(result.stderr||""));})();
+const hasRubberband=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\brubberband\b/.test((result.stdout||"")+"\n"+(result.stderr||""));})();
 
 test("audio loudness QC parser extracts integrated loudness, LRA and encoded true peak",()=>{
  const stderr=`[Parsed_ebur128_0] Summary:
