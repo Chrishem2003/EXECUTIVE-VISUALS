@@ -313,7 +313,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   const needsRubberband=audioClips.some(clip=>clip.speedCurve!==undefined);
   if(needsRubberband){
     const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,job.id,activeProcesses,()=>db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status==="cancelled",262144);
-    if(!/\\brubberband\\b/.test((capabilities.stdout||"")+"\\n"+(capabilities.stderr||"")))throw Object.assign(new Error("Variable-speed audio export requires an FFmpeg build with librubberband support; this local worker does not provide that filter."),{code:"RUBBERBAND_UNAVAILABLE"});
+    if(!/\brubberband\b/.test((capabilities.stdout||"")+"\n"+(capabilities.stderr||"")))throw Object.assign(new Error("Variable-speed audio export requires an FFmpeg build with librubberband support; this local worker does not provide that filter."),{code:"RUBBERBAND_UNAVAILABLE"});
   }
   const overlayClips=overlayTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   const captionClips=captionTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
