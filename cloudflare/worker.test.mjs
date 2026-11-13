@@ -546,6 +546,11 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   assert.equal(createdProject.status, 201);
   const project = (await createdProject.json()).project;
   const auditPath = "/api/d1/projects/" + project.id + "/audit-events";
+  assert.equal((await call("/api/d1/projects", "editor")).status, 200);
+  assert.equal((await call("/api/d1/projects", "reviewer")).status, 200);
+  const memberPath = "/api/d1/projects/" + project.id + "/members";
+  assert.equal((await call(memberPath, "owner", "POST", { email: "editor@jobs.test", role: "editor" })).status, 201);
+  assert.equal((await call(memberPath, "owner", "POST", { email: "reviewer@jobs.test", role: "reviewer" })).status, 201);
 
   const createdJob = await call("/api/d1/jobs", "editor", "POST", {
     projectId: project.id, jobType: "storyboard.render", input: { storyboardId: "sb-1" }, idempotencyKey: "render-sb-1"
