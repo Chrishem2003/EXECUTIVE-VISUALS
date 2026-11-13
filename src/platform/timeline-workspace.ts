@@ -209,7 +209,7 @@ function loadCloudAudioWaveforms():Promise<void>{
  cloudWaveformLoadInFlight=(async()=>{
   const timeline=state.timeline!;
   const ids=[...new Set(timeline.tracks.filter(track=>track.enabled&&track.kind==="audio").flatMap(track=>track.clips.filter(clip=>clip.enabled).map(clip=>clip.assetId)))];
-  const pending=ids.filter(id=>!state.cloudWaveformPreviews[id]&&!state.cloudWaveformStatus[id]?.startsWith("Unavailable"));
+  const pending=ids.filter(id=>!state.cloudWaveformPreviews[id]);
   if(!pending.length)return;
   const Context=window.AudioContext;
   if(typeof Context!=="function"){
