@@ -16,8 +16,11 @@ test("queued or running progress does not trigger output refresh",()=>{
 test("already terminal jobs do not repeatedly refresh output",()=>{
  assert.equal(hasCloudRenderJobFinished([{id:"r1",status:"succeeded"}],[{id:"r1",status:"succeeded"}]),false);
 });
-test("unknown new jobs do not create false terminal transitions",()=>{
- assert.equal(hasCloudRenderJobFinished([{id:"r1",status:"running"}],[{id:"r2",status:"succeeded"}]),false);
+test("newly discovered terminal jobs trigger one asset reconciliation",()=>{
+ assert.equal(hasCloudRenderJobFinished([{id:"r1",status:"running"}],[{id:"r1",status:"running"},{id:"r2",status:"succeeded"}]),true);
+});
+test("newly discovered active jobs do not trigger asset reconciliation",()=>{
+ assert.equal(hasCloudRenderJobFinished([{id:"r1",status:"running"}],[{id:"r1",status:"running"},{id:"r2",status:"queued"}]),false);
 });
 test("status comparisons are case-insensitive and malformed records are ignored",()=>{
  assert.equal(hasCloudRenderJobFinished([{id:"r1",status:"RUNNING"}],[{id:"r1",status:"COMPLETED"}]),true);
