@@ -1150,10 +1150,18 @@ export function createAppServer() {
       }
 
       if(path==="/api/timelines"&&req.method==="GET"){
-        const projectId=url.searchParams.get("projectId")||null,includeDocuments=Boolean(projectId&&url.searchParams.get("includeDocuments")==="true");
+        const projectId=url.searchParams.get("projectId")||null,includeGraphData=Boolean(projectId&&url.searchParams.get("includeGraphData")==="true");
         if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
-        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at,timeline_json FROM timelines WHERE archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY updated_at DESC LIMIT ?").all(user.id,user.id,user.id,projectId,projectId,includeDocuments?100:500);
-        send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at,...(includeDocuments?{document:parseJson(x.timeline_json,null)}:{})}))},cors);return;
+        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at,timeline_json FROM timelines WHERE archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY updated_at DESC LIMIT ?").all(user.id,user.id,user.id,projectId,projectId,includeGraphData?25:500);
+        const timelines=rows.map(x=>{
+          const item={id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at};
+          if(!includeGraphData)return item;
+          const parsed=parseJson(x.timeline_json,{}),document=parsed&&typeof parsed==="object"?parsed:{};
+          const markers=Array.isArray(document.markers)?document.markers.slice(0,200).map(marker=>({id:marker.id,name:marker.name,note:marker.note})):[];
+          const tracks=Array.isArray(document.tracks)?document.tracks.slice(0,20).map(track=>({clips:Array.isArray(track.clips)?track.clips.slice(0,100).map(clip=>({id:clip.id,assetId:clip.assetId,name:clip.name})):[]})):[];
+          return {...item,graphData:{markers,tracks}};
+        });
+        send(res,200,{timelines},cors);return;
       }
       if(path==="/api/timelines"&&req.method==="POST"){
         const body=await readJson(req,4*1024*1024),timeline=body.timeline;
