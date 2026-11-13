@@ -4,10 +4,11 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline, sourceDurationForClip } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
+const hasRubberband=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\brubberband\b/.test((result.stdout||"")+"\n"+(result.stderr||""));})();
 
 test("audio loudness QC parser extracts integrated loudness, LRA and encoded true peak",()=>{
  const stderr=`[Parsed_ebur128_0] Summary:
@@ -318,4 +319,47 @@ test("cloud FFmpeg renderer motion-compensates slow-motion frames and records th
   for(let offset=0;offset<decoded.length;offset+=frameBytes)unique.add(decoded.subarray(offset,offset+frameBytes).toString("base64"));
   assert.ok(unique.size>12,"motion interpolation should create intermediate frames beyond the 12 source frames");
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test("cloud FFmpeg renderer fails closed when variable-speed audio requires unavailable Rubber Band", {skip:hasRubberband}, async()=>{
+ const time=value=>({value,rate:1});
+ const timeline={name:"Audio speed curve capability guard",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+  {id:"v",kind:"video",clips:[{id:"picture",assetId:"missing-video",timelineStart:time(0),duration:time(4),sourceRange:{start:time(0),duration:time(4)}}]},
+  {id:"a",kind:"audio",clips:[{id:"ramp-audio",assetId:"missing-audio",timelineStart:time(0),duration:time(4),sourceRange:{start:time(0),duration:time(6)},speed:1,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]}]}
+ ]};
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:new Map(),workDir:tmpdir()}),error=>error.code==="RUBBERBAND_UNAVAILABLE");
+});
+
+test("cloud FFmpeg renderer retimes variable-speed audio with frame-sampled Rubber Band commands",{skip:!hasFfmpeg||!hasFfprobe||!hasRubberband},async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-variable-audio-speed-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"source.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=navy:s=320x240:r=24:d=4","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=6","-c:a","pcm_s16le",audio]);
+  const time=value=>({value,rate:1});
+  const timeline={name:"Variable speed audio export",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"picture",assetId:"video",timelineStart:time(0),duration:time(4),sourceRange:{start:time(0),duration:time(4)}}]},
+   {id:"a",kind:"audio",clips:[{id:"ramp-audio",assetId:"audio",timelineStart:time(0),duration:time(4),sourceRange:{start:time(0),duration:time(6)},speed:1,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]}]}
+  ]};
+  const assets=new Map([
+   ["video",{path:video,asset:{id:"video",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["audio",{path:audio,asset:{id:"audio",mediaType:"audio/wav",originalName:"source.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_streams","-of","json",result.path],{encoding:"utf8"}));
+  const audioStream=probe.streams.find(stream=>stream.codec_type==="audio");
+  assert.ok(audioStream,"variable-speed export should retain its audio stream");
+  assert.ok(Math.abs(Number(audioStream.duration)-4)<0.08,"retimed audio should be padded/trimmed to the exact four-second clip duration");
+  assert.equal(result.render.durationSeconds,4);
+  assert.equal(result.render.retimedAudioClips,1);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test("cloud speed curves validate against full clip duration and clip safely to the master tail",()=>{
+ const clip={duration:{value:4,rate:1},speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]};
+ assert.ok(buildVariableSpeedSetptsExpression(clip,1.25).includes("sqrt"));
+ assert.ok(Math.abs(sourceDurationForClip(clip,1.25)-1.640625)<1e-9);
+ assert.throws(()=>sourceDurationForClip({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:5,speed:1}]},1.25),error=>error.code==="INVALID_SPEED_CURVE");
 });

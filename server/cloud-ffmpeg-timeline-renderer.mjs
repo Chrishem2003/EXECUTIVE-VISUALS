@@ -12,9 +12,10 @@ const speedNumber=(value)=>Number(value.toFixed(9)).toString();
 const speedSegments=(clip,duration)=>{
  const curve=clip.speedCurve;
  if(curve===undefined)return null;
+ const clipDuration=rawSeconds(clip?.duration)??duration;
  if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
     curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||
-      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||
+      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>clipDuration||
       (index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
   fail("Variable-speed keyframes require 2–64 ordered points, start at zero and stay within the clip at 0.25×–4×.","INVALID_SPEED_CURVE");
  const evaluate=time=>{
@@ -56,13 +57,36 @@ export const buildVariableSpeedSetptsExpression=(clip,duration)=>{
  return expression;
 };
 
+const speedAtTimeline=(segments,time)=>{
+ const segment=segments.find(item=>time<=item.timelineEnd+1e-9)||segments[segments.length-1];
+ const elapsed=Math.max(0,Math.min(segment.timelineEnd-segment.timelineStart,time-segment.timelineStart));
+ return segment.startSpeed+segment.slope*elapsed;
+};
+const sourceAtTimeline=(segments,time)=>{
+ const segment=segments.find(item=>time<=item.timelineEnd+1e-9)||segments[segments.length-1];
+ const elapsed=Math.max(0,Math.min(segment.timelineEnd-segment.timelineStart,time-segment.timelineStart));
+ return segment.sourceStart+segment.startSpeed*elapsed+0.5*segment.slope*elapsed*elapsed;
+};
+const buildRubberbandCommands=(clip,duration,fps)=>{
+ const segments=speedSegments(clip,duration);
+ if(!segments)return null;
+ const frameCount=Math.ceil(duration*fps);
+ if(frameCount>100000)fail("Variable-speed audio automation exceeds the 100,000-command render safety limit.","SPEED_CURVE_COMPLEXITY_LIMIT");
+ const commands=[];
+ for(let frame=1;frame<frameCount;frame++){
+  const timelineTime=frame/fps,sourceTime=sourceAtTimeline(segments,timelineTime),speed=speedAtTimeline(segments,timelineTime);
+  commands.push(speedNumber(sourceTime)+" rubberband@rb tempo "+speedNumber(speed)+";");
+ }
+ return commands.length?commands.join("\n")+"\n":"";
+};
+
 const validateClipTiming=(clip,kind)=>{
  const start=rawSeconds(clip?.timelineStart),duration=rawSeconds(clip?.duration),sourceStart=rawSeconds(clip?.sourceRange?.start),sourceDuration=rawSeconds(clip?.sourceRange?.duration);
  if(start===null||duration===null||sourceStart===null||sourceDuration===null||start<0||duration<=0||sourceStart<0||sourceDuration<=0||start+duration>86400||sourceStart+sourceDuration>86400)fail("Timeline clip has invalid or out-of-range timing values.","INVALID_TIMELINE_TIMING");
  const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
  let speed;try{speed=normalizeClipSpeed(clip?.speed??1);}catch{fail("Clip speed must be between 0.25× and 4×.","INVALID_CLIP_SPEED");}
  if(kind!=="video"&&kind!=="audio"&&speed!==1)fail("Speed changes are supported only for video and audio clips.","UNSUPPORTED_TIME_REMAP");
- if(clip?.speedCurve!==undefined&&kind!=="video")fail("Variable-speed curves are currently supported only for video clips.","UNSUPPORTED_SPEED_CURVE");
+ if(clip?.speedCurve!==undefined&&kind!=="video"&&kind!=="audio")fail("Variable-speed curves are supported only for video and audio clips.","UNSUPPORTED_SPEED_CURVE");
  const expected=clip?.speedCurve!==undefined?sourceDurationForClip(clip,duration):sourceDurationForTimeline(duration,speed);
  if(Math.abs(expected-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source duration must equal timeline duration multiplied by playback speed.","INVALID_TIMELINE_TIMING");
 };
@@ -174,9 +198,12 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  const motionClips=clips.filter(usesOpticalFlow);
- if(motionClips.length){
+ const needsRubberband=audioClips.some(clip=>enabled(clip)&&clip.speedCurve!==undefined);
+ if(motionClips.length||needsRubberband){
   const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,jobId,activeProcesses,()=>Boolean(signal?.aborted),262144);
-  if(!/\bminterpolate\b/.test((capabilities.stdout||"")+"\n"+(capabilities.stderr||"")))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
+  const filterListing=(capabilities.stdout||"")+"\n"+(capabilities.stderr||"");
+  if(needsRubberband&&!/\brubberband\b/.test(filterListing))fail("Variable-speed audio export requires an FFmpeg build with librubberband support; this render worker does not provide that filter.","RUBBERBAND_UNAVAILABLE");
+  if(motionClips.length&&!/\bminterpolate\b/.test(filterListing))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
  }
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
@@ -242,10 +269,16 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   for(const clip of audioClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
-   const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimeline(duration,speed);
+   const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForClip(clip,duration);
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("audio/"))fail("Audio tracks require audio source assets.","UNSUPPORTED_AUDIO_SOURCE");
    args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
-   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),tempo=buildAtempoFilter(speed),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
+   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
+   let tempo=buildAtempoFilter(speed);
+   if(clip.speedCurve!==undefined){
+    const commands=buildRubberbandCommands(clip,duration,fps),commandPath=join(workDir,outputId+"-audio-speed-"+label+".cmd");
+    await writeFile(commandPath,commands??"","utf8");captionTempPaths.push(commandPath);
+    tempo="aresample=48000,asetnsamples=n=96:p=0,asendcmd=f='"+escapeFilterPath(commandPath)+"',rubberband@rb=tempo="+speedNumber(clip.speedCurve[0].speed)+",apad=whole_dur="+duration.toFixed(6)+",atrim=duration="+duration.toFixed(6);
+   }
    const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
    const panFilter=pan?","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
    audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
@@ -307,7 +340,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
