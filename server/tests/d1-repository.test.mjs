@@ -120,12 +120,12 @@ test("project owner can manage verified members by email and list/remove project
   await repo.createProject({ ownerId, name: "Team workspace" });
 
   const initial = await repo.listMembers({ actorId: ownerId, projectId });
-  assert.deepEqual(initial.map(member => member.role), ["owner"]);
+  assert.deepEqual(initial.members.map(member => member.role), ["owner"]);
 
   const invited = await repo.addMemberByEmail({ actorId: ownerId, projectId, email: " COLLABORATOR@EXAMPLE.TEST ", role: "viewer" });
   assert.equal(invited.memberId, otherId);
   assert.equal(invited.role, "viewer");
-  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).find(member => member.memberId === otherId).role, "viewer");
+  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).members.find(member => member.memberId === otherId).role, "viewer");
 
   await assert.rejects(repo.addMemberByEmail({ actorId: otherId, projectId, email: "owner@example.test", role: "editor" }), { code: "D1_PROJECT_ACCESS_DENIED" });
   await assert.rejects(repo.removeMember({ actorId: otherId, projectId, memberId: ownerId }), { code: "D1_PROJECT_ACCESS_DENIED" });
@@ -135,7 +135,7 @@ test("project owner can manage verified members by email and list/remove project
 
   const removed = await repo.removeMember({ actorId: ownerId, projectId, memberId: otherId });
   assert.equal(removed.removed, true);
-  assert.deepEqual((await repo.listMembers({ actorId: ownerId, projectId })).map(member => member.role), ["owner"]);
+  assert.deepEqual((await repo.listMembers({ actorId: ownerId, projectId })).members.map(member => member.role), ["owner"]);
   await assert.rejects(repo.removeMember({ actorId: ownerId, projectId, memberId: otherId }), { code: "D1_MEMBER_NOT_FOUND" });
   await assert.rejects(repo.addMemberByEmail({ actorId: ownerId, projectId, email: "missing@example.test", role: "viewer" }), { code: "D1_MEMBER_NOT_FOUND" });
   db.close();
