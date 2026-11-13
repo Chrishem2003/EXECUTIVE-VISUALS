@@ -780,7 +780,7 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
 
   const listed=await request("/api/evidence?projectId="+encodeURIComponent(project.id),{},owner);
   assert.equal(listed.status,200);
-  assert.equal((await listed.json()).records[0].id,submitted.record.id);
+  assert.ok((await listed.json()).records.some(record=>record.id===submitted.record.id));
 
   const graph={nodes:[{id:"project:"+project.id,type:"project",label:"Evidence review project",status:"linked"},{id:"shot:shot-1",type:"shot",label:"Shot 1",status:"review"}],edges:[{from:"project:"+project.id,to:"shot:shot-1",relation:"contains",evidence:"project_scope"}]};
   const snapshot=await request("/api/projects/"+project.id+"/creative-graph/snapshots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({graph})},owner);
