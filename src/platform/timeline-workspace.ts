@@ -13,6 +13,7 @@ import { compareTimelineVariants, createTimelineVariant, type TimelineVariantCom
 import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
+import { applyTimelineHistory, type TimelineHistoryDirection } from "../core/timeline-history";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -420,7 +421,7 @@ function renderCloudRenderHistory(){
  }).join("")+"</section>";
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="undo" '+(history.undo.length?'':'disabled')+'>↶ Undo</button><button class="secondary" data-tl-action="redo" '+(history.redo.length?'':'disabled')+'>↷ Redo</button>'+(state.mode==="cloud"&&state.timeline?'<button class="secondary" data-tl-action="revision-history">Revision history</button>':'')+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mediaJobId?'<button class="secondary" data-tl-action="media-job-check">Check media job</button>':'')+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="undo" title="Undo · Ctrl/Cmd+Z" aria-keyshortcuts="Control+Z Meta+Z" '+(history.undo.length?'':'disabled')+'>↶ Undo</button><button class="secondary" data-tl-action="redo" title="Redo · Ctrl/Cmd+Shift+Z" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" '+(history.redo.length?'':'disabled')+'>↷ Redo</button>'+(state.mode==="cloud"&&state.timeline?'<button class="secondary" data-tl-action="revision-history">Revision history</button>':'')+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mediaJobId?'<button class="secondary" data-tl-action="media-job-check">Check media job</button>':'')+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+renderCloudRenderOutput()+renderCloudRenderHistory()+(state.recoveredDraft?'<section class="panel timeline-quality"><div class="eyebrow">BROWSER RECOVERY · '+(state.recoveryStatus==="conflict"?"REVISION CONFLICT":"UNSAVED DRAFT")+'</div><p>'+esc(state.recoveryStatus==="conflict"?"Recovered edits are based on server revision "+state.recoveredDraft.baseRevision+", while the current server revision is "+state.serverRevision+". The server timeline has not been replaced.":"Recovered unsaved edits from browser storage. Review them before continuing.")+'</p><div class="toolbar">'+(state.recoveryStatus==="conflict"?'<button class="primary" data-tl-action="restore-recovered-variant">Save recovered edits as a new variant</button>':'<button class="primary" data-tl-action="save-recovered-draft">Save recovered edits</button>')+'<button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered draft</button></div></section>':"")+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
@@ -584,6 +585,24 @@ export async function initTimelineWorkspace(){
  paint();
 }
 function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();if(state.previewLoaded){syncPreviewAtFrame(state.playheadFrame);updatePreviewDiagnostics();}}
+async function applyHistoryAction(direction:TimelineHistoryDirection):Promise<void>{
+ if(!state.timeline)return;
+ const previous=structuredClone(state.timeline);
+ state.message=direction==="undo"?"Restoring previous edit…":"Reapplying edit…";
+ try{
+  const saved=await applyTimelineHistory(previous,history,direction,async next=>{
+   state.timeline=structuredClone(next);
+   await persist();
+   return state.timeline||next;
+  });
+  state.timeline=saved;
+  state.message=direction==="undo"?"Previous edit restored and saved.":"Edit reapplied and saved.";
+ }catch(error){
+  state.timeline=previous;
+  state.message=error instanceof Error?error.message:(direction==="undo"?"Undo could not be saved.":"Redo could not be saved.");
+ }
+ paint();
+}
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="save-recovered-draft"){
@@ -609,8 +628,7 @@ async function runAction(action:HTMLElement){
  if(type==="preview-step-back"){stepTimelineFrame(-1);paint();return;}
  if(type==="preview-step-forward"){stepTimelineFrame(1);paint();return;}
  if(type==="refresh"){await refresh();paint();return;}
- if(type==="undo"&&state.timeline&&history.undo.length){history.redo.push(structuredClone(state.timeline));state.timeline=history.undo.pop()!;state.message="Restoring previous edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Undo could not be saved.";}paint();return;}
- if(type==="redo"&&state.timeline&&history.redo.length){history.undo.push(structuredClone(state.timeline));state.timeline=history.redo.pop()!;state.message="Reapplying edit…";try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Redo could not be saved.";}paint();return;}
+ if(type==="undo"||type==="redo"){await applyHistoryAction(type);return;}
  if(type==="revision-history"){try{await loadRevisionHistory();}catch(error){state.message=error instanceof Error?error.message:"Could not load revision history.";}paint();return;}
  if(type==="close-revision-history"){state.revisionHistoryOpen=false;state.historyCompareTimeline=null;state.historyComparison=null;paint();return;}
  if(type==="compare-revision"||type==="restore-revision"){
@@ -844,6 +862,19 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form);recordUndo();
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
+});
+document.addEventListener("keydown",event=>{
+ if(!(event.ctrlKey||event.metaKey)||event.altKey)return;
+ const target=event.target as HTMLElement|null;
+ if(target?.closest("input,textarea,select,[contenteditable='true'],[contenteditable='']"))return;
+ const key=event.key.toLowerCase();
+ if(key==="z"){
+  event.preventDefault();
+  void applyHistoryAction(event.shiftKey?"redo":"undo");
+ }else if(key==="y"){
+  event.preventDefault();
+  void applyHistoryAction("redo");
  }
 });
 document.addEventListener("input",event=>{
