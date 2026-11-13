@@ -265,6 +265,45 @@ function provenance(){
  '<section class="panel"><div class="eyebrow">REAL ASSET VERIFICATION</div><h3>Inspect Content Credentials in the Asset Library</h3><p>Open an image, audio or video asset and choose Inspect Content Credentials. Signature validity does not by itself establish signer trust, identity, rights clearance or factual accuracy.</p><button class="secondary" data-tab="library">Open Asset Library ↗</button></section>'+
  '<section class="panel"><div class="eyebrow">SAFE SIGNING BOUNDARY</div><h3>Production signing remains disabled</h3><p>CI uses test-only signing material. No production or staging key, paid provider call, shared database migration or deployment was provisioned. The callback signer is an integration boundary, not a connected KMS/HSM.</p></section>';
 }
+async function refreshLiveReadiness(){
+ const target=document.querySelector<HTMLElement>("#live-readiness-report");
+ if(!target)return;
+ const button=document.querySelector<HTMLButtonElement>("[data-readiness-refresh]");
+ if(button){button.disabled=true;button.textContent="Checking…";}
+ target.innerHTML='<p class="muted">Checking the hosted runtime and production gates…</p>';
+ try{
+  const [readyResponse,healthResponse]=await Promise.all([
+   fetch("/api/ready",{headers:{accept:"application/json"},cache:"no-store"}),
+   fetch("/api/health",{headers:{accept:"application/json"},cache:"no-store"})
+  ]);
+  const readiness=await readyResponse.json().catch(()=>({}));
+  const health=await healthResponse.json().catch(()=>({}));
+  const ready=readyResponse.ok&&readiness.ready===true;
+  const healthy=healthResponse.ok&&health.status==="ok";
+  const checks=Array.isArray(readiness.checks)?readiness.checks:[];
+  const details=[
+   ["Database",health.database],
+   ["Storage",health.storage],
+   ["Data directory",health.persistence?.dataDirectory],
+   ["Persistent volume required",health.persistence?.persistentVolumeRequired===true?"Yes":"No"]
+  ].filter(([,value])=>value!==undefined&&value!==null);
+  const detailHtml=details.map(([label,value])=>'<div class="readiness-item"><div class="readiness-item-top"><b>'+esc(String(label))+'</b><span>'+esc(String(value))+'</span></div></div>').join("");
+  const checkHtml=checks.length?checks.map(check=>{
+   const passed=check?.status==="passed";
+   return '<article class="readiness-item"><div class="readiness-item-top"><b>'+esc(String(check?.id||"Readiness check"))+'</b><span class="readiness-pill '+(passed?"done":"blocked")+'">'+(passed?"Passed":"Blocked")+'</span></div><p>'+esc(String(check?.reason||(passed?"Requirement verified.":"Requirement not verified.")))+'</p></article>';
+  }).join(""):'<p class="muted">The server did not return individual production checks.</p>';
+  target.innerHTML=
+   '<div class="readiness-item"><div class="readiness-item-top"><b>Runtime liveness</b><span class="readiness-pill '+(healthy?"done":"blocked")+'">'+(healthy?"Healthy":"Unavailable")+'</span></div><p>HTTP '+healthResponse.status+'. Liveness confirms that the service responds; it does not certify durable production readiness.</p></div>'+
+   '<div class="readiness-item"><div class="readiness-item-top"><b>Production readiness</b><span class="readiness-pill '+(ready?"done":"blocked")+'">'+(ready?"Ready":"Not approved")+'</span></div><p>HTTP '+readyResponse.status+'. A blocked response is an intentional release safeguard, not necessarily an application outage.</p></div>'+
+   (detailHtml?'<div class="readiness-list">'+detailHtml+'</div>':"")+
+   '<div class="section-title"><div class="eyebrow">SERVER-REPORTED GATES</div><h3>Readiness checks</h3></div><div class="readiness-list">'+checkHtml+'</div>'+
+   '<p class="muted">Checked '+esc(new Date().toLocaleString())+'. Secrets and filesystem paths are not displayed.</p>';
+ }catch(error){
+  target.innerHTML='<div class="readiness-item"><div class="readiness-item-top"><b>Live check unavailable</b><span class="readiness-pill blocked">Error</span></div><p>'+esc(error instanceof Error?error.message:"The live readiness check could not be completed.")+'</p><p class="muted">The static release inventory remains available; retry when the API is reachable.</p></div>';
+ }finally{
+  if(button){button.disabled=false;button.textContent="Refresh live checks";}
+ }
+}
 function readiness(){
  const completed=[
   ["Account and workspace identity","PR #250","Signed-in account, selected project, project role and sign-out navigation are visible in the app.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/250"],
@@ -297,6 +336,7 @@ function readiness(){
  const card=(item:string[],status:"done"|"progress"|"blocked")=>'<article class="readiness-item"><div class="readiness-item-top"><b>'+esc(item[0])+'</b><span class="readiness-pill '+status+'">'+(status==="done"?"Merged":status==="progress"?"In progress":"Blocked / gated")+'</span></div><p>'+esc(item[2])+'</p><small>'+esc(item[1])+'</small>'+(item[3]?'<a href="'+esc(item[3])+'" target="_blank" rel="noopener">Open evidence ↗</a>':'')+'</article>';
  return header("PRODUCT DELIVERY · HONEST STATUS","Full-system readiness","A live inventory of what users can use now, what is being built and what still prevents a durable production release.",'<button class="primary" data-tab="runtime">Open workspace →</button>')+
  '<section class="panel readiness-hero"><div class="eyebrow">CURRENT MAINLINE · PR #252 MERGED</div><h2>Core studio UI is live. Durable multi-user production is not yet certified.</h2><p>We are keeping external integrations and production data services disabled until isolated storage, identity and recovery paths are verified. This page deliberately separates merged code from branch-only work and external setup.</p><div class="readiness-metrics"><div><strong>3</strong><span>recent PRs merged</span></div><div><strong>1</strong><span>current green draft PR</span></div><div><strong>5</strong><span>infrastructure/product gates</span></div></div></section>'+
+ '<section class="panel"><div class="eyebrow">LIVE HOSTED RUNTIME</div><h2>Check the running application</h2><p>Query the live health and readiness endpoints. Liveness and production readiness are reported separately so an available website is never mistaken for a release-approved customer platform.</p><button class="secondary" data-readiness-refresh>Refresh live checks</button><div id="live-readiness-report" aria-live="polite"><p class="muted">Select Refresh live checks to inspect the hosted runtime.</p></div></section>'+
  '<div class="section-title"><div class="eyebrow">AVAILABLE IN MAIN</div><h2>Completed and merged</h2></div><div class="readiness-list">'+completed.map(item=>card(item,"done")).join("")+'</div>'+
  '<div class="section-title"><div class="eyebrow">ACTIVE DEVELOPMENT</div><h2>In progress — not yet live</h2></div><div class="readiness-list">'+inProgress.map(item=>card(item,"progress")).join("")+'</div>'+
  '<div class="section-title"><div class="eyebrow">REQUIRES INFRASTRUCTURE OR ACCEPTANCE</div><h2>Blocked release gates</h2></div><div class="readiness-list">'+blocked.map(item=>card(item,"blocked")).join("")+'</div>'+
@@ -736,6 +776,7 @@ function action(a:string){if(a==="publish-brief-cloud"){void publishBriefToCloud
  state.characters.push({id:uid(),name:n,description:d,voice:"Not assigned",consent});save();render();
 }if(a==="clip"){const n=prompt("Timeline clip label");if(n)task(n,"Timeline","Timeline record created; source media and render engine required.");}if(a==="clear"&&confirm("Clear browser planning drafts? API-backed projects, assets and jobs will not be deleted.")){localStorage.removeItem(KEY);location.reload();}}
 document.addEventListener("click",e=>{const t=e.target as HTMLElement;
+ if(t.closest("[data-readiness-refresh]")){void refreshLiveReadiness();return;}
  if(t.closest("[data-remediation-refresh]")||t.closest("[data-remediation-review-refresh]")){void loadFinanceWorkspace();return;}
  const reviewerProject=t.closest<HTMLElement>("[data-remediation-project-open]");if(reviewerProject){const projectId=reviewerProject.dataset.remediationProjectOpen||"";if(projectId){financeState.remediationProjectId=projectId;void loadFinanceWorkspace();}return;}
  const assuranceReportButton=t.closest<HTMLElement>("[data-assurance-report-export]");if(assuranceReportButton){void (async()=>{try{const report=await apiRequest<Record<string,any>>("/api/finance/remediations/portfolio-report");if(!report.payload||!report.integrity?.sha256)throw new Error("The server returned an incomplete report manifest.");const digestBytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify(report.payload)));const digest=Array.from(new Uint8Array(digestBytes),value=>value.toString(16).padStart(2,"0")).join("");if(digest!==String(report.integrity.sha256).toLowerCase())throw new Error("Report integrity check failed. The file was not downloaded.");const blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download="executive-visuals-assurance-"+new Date(String(report.payload.generatedAt)).toISOString().slice(0,10)+".json";link.click();URL.revokeObjectURL(url);financeState.error=report.payload.completeness?.truncated?"Report downloaded and SHA-256 checked, but the record limit was reached. Export smaller batches to obtain complete coverage.":"Report downloaded and SHA-256 checked. This digest detects post-export changes; it is not a digital signature or issuer authentication.";render();}catch(error){financeState.error=error instanceof Error?error.message:"Assurance report could not be exported.";render();}})();return;}
