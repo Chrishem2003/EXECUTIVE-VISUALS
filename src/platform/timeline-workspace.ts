@@ -1,6 +1,7 @@
 import { apiRequest, apiRequestBlob } from "../core/api";
 import { resolveCloudRenderSelection } from "../core/cloud-render-selection.ts";
 import { AudioPreviewEngine } from "../core/audio-preview";
+import { createAudioWaveformPreview } from "../core/audio-waveform-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
@@ -27,8 +28,8 @@ type TimelineRevisionSummary={timelineId:string;revision:number;name:string;crea
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
 type CloudTimelineJobOutput={outputAsset?:{id:string;name?:string};render?:{audioMastering?:CloudAudioMasteringReceipt}};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudRenderJobs:CloudRenderJob[];cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;recoveryServerSnapshot:EditorialTimeline|null;recoveryComparison:TimelineVariantComparison|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;timelineHistory:TimelineHistory}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudRenderJobs:[],cloudRenderOutputAssetId:"",cloudRenderOutputName:"",cloudRenderOutputUrl:"",cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,recoveryServerSnapshot:null,recoveryComparison:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0},audioPreviewEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},timelineHistory:createTimelineHistory()
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudRenderJobs:CloudRenderJob[];cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;recoveryServerSnapshot:EditorialTimeline|null;recoveryComparison:TimelineVariantComparison|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;cloudWaveformPreviews:Record<string,string>;cloudWaveformStatus:Record<string,string>;timelineHistory:TimelineHistory}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudRenderJobs:[],cloudRenderOutputAssetId:"",cloudRenderOutputName:"",cloudRenderOutputUrl:"",cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,recoveryServerSnapshot:null,recoveryComparison:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0},audioPreviewEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},cloudWaveformPreviews:{},cloudWaveformStatus:{},timelineHistory:createTimelineHistory()
 };
 let timelineHistoryTimelineId="";
 let pendingTimelineEdit:EditorialTimeline|null=null;
@@ -106,7 +107,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd(),tracks=state.timeline.tracks;
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- tracks.map((track,trackIndex)=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small><div class="track-order-controls"><button type="button" data-tl-action="move-track" data-track="'+esc(track.id)+'" data-direction="up" '+(track.locked||trackIndex===0||tracks[trackIndex-1]?.locked?'disabled':'')+' aria-label="Move '+esc(track.name)+' up" title="Move track up">↑</button><button type="button" data-tl-action="move-track" data-track="'+esc(track.id)+'" data-direction="down" '+(track.locked||trackIndex===tracks.length-1||tracks[trackIndex+1]?.locked?'disabled':'')+' aria-label="Move '+esc(track.name)+' down" title="Move track down">↓</button></div>'+(track.kind==="audio"?'<div class="audio-track-toggles"><button type="button" data-tl-audio-state="mute" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.muted)+'">M</button><button type="button" data-tl-audio-state="solo" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.solo)+'">S</button></div>':'')+(tracks.length>1?'<button type="button" class="track-remove" data-tl-action="remove-track" data-track="'+esc(track.id)+'" '+(track.locked?'disabled title="Unlock this track before removing it"':'title="Remove track and its clips · Undo restores them"')+' aria-label="Remove track '+esc(track.name)+'">Remove track</button>':'')+'</div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small>'+(clip.transitionToNext?'<small class="editor-clip-transition">Dip to black · '+clip.transitionToNext.fadeFrames+'f</small>':'')+(track.kind==="audio"&&state.mode==="local"?'<img class="editor-clip-waveform" src="/api/assets/'+encodeURIComponent(clip.assetId)+'/waveform" alt="Audio waveform" loading="lazy">':'')+'<div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button><button type="button" data-tl-action="remove" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" title="Delete clip · leaves a gap" aria-label="Delete '+esc(clip.name)+'">Delete</button></div></article>').join("")+'</div></div>').join("");
+ tracks.map((track,trackIndex)=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small><div class="track-order-controls"><button type="button" data-tl-action="move-track" data-track="'+esc(track.id)+'" data-direction="up" '+(track.locked||trackIndex===0||tracks[trackIndex-1]?.locked?'disabled':'')+' aria-label="Move '+esc(track.name)+' up" title="Move track up">↑</button><button type="button" data-tl-action="move-track" data-track="'+esc(track.id)+'" data-direction="down" '+(track.locked||trackIndex===tracks.length-1||tracks[trackIndex+1]?.locked?'disabled':'')+' aria-label="Move '+esc(track.name)+' down" title="Move track down">↓</button></div>'+(track.kind==="audio"?'<div class="audio-track-toggles"><button type="button" data-tl-audio-state="mute" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.muted)+'">M</button><button type="button" data-tl-audio-state="solo" data-track="'+esc(track.id)+'" aria-pressed="'+Boolean(state.audioTrackStates[track.id]?.solo)+'">S</button></div>':'')+(tracks.length>1?'<button type="button" class="track-remove" data-tl-action="remove-track" data-track="'+esc(track.id)+'" '+(track.locked?'disabled title="Unlock this track before removing it"':'title="Remove track and its clips · Undo restores them"')+' aria-label="Remove track '+esc(track.name)+'">Remove track</button>':'')+'</div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small>'+(clip.transitionToNext?'<small class="editor-clip-transition">Dip to black · '+clip.transitionToNext.fadeFrames+'f</small>':'')+(track.kind==="audio"?(state.mode==="local"?'<img class="editor-clip-waveform" src="/api/assets/'+encodeURIComponent(clip.assetId)+'/waveform" alt="Audio waveform" loading="lazy">':'<div class="editor-clip-waveform cloud-waveform" data-cloud-waveform="'+esc(clip.assetId)+'"><span>'+esc(state.cloudWaveformStatus[clip.assetId]||"Load preview to generate waveform")+'</span></div>'):'')+'<div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button><button type="button" data-tl-action="remove" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" title="Delete clip · leaves a gap" aria-label="Delete '+esc(clip.name)+'">Delete</button></div></article>').join("")+'</div></div>').join("");
 }
 function speedCurveEditor(clip:TimelineTrack["clips"][number],enabled=true){
  const duration=clip.duration.value/clip.duration.rate,speed=Number(clip.speed??1),curve=clip.speedCurve||[],points=curve.length?curve:[{timeSeconds:0,speed},{timeSeconds:duration,speed}];
@@ -194,6 +195,54 @@ async function previewUrlForAsset(asset:Asset):Promise<string>{
  state.previewAssetUrls[asset.id]=url;
  return url;
 }
+function updateCloudWaveformElement(assetId:string){
+ const imageUrl=state.cloudWaveformPreviews[assetId],message=state.cloudWaveformStatus[assetId]||"Waveform appears after preview loads.";
+ document.querySelectorAll<HTMLElement>('[data-cloud-waveform="'+CSS.escape(assetId)+'"]').forEach(container=>{
+  if(imageUrl){const image=document.createElement("img");image.src=imageUrl;image.alt="Audio waveform";image.loading="lazy";container.replaceChildren(image);}
+  else container.textContent=message;
+ });
+}
+let cloudWaveformLoadInFlight:Promise<void>|null=null;
+function loadCloudAudioWaveforms():Promise<void>{
+ if(state.mode!=="cloud"||!state.timeline||!state.previewLoaded)return Promise.resolve();
+ if(cloudWaveformLoadInFlight)return cloudWaveformLoadInFlight;
+ cloudWaveformLoadInFlight=(async()=>{
+  const timeline=state.timeline!;
+  const ids=[...new Set(timeline.tracks.filter(track=>track.enabled&&track.kind==="audio").flatMap(track=>track.clips.filter(clip=>clip.enabled).map(clip=>clip.assetId)))];
+  const pending=ids.filter(id=>!state.cloudWaveformPreviews[id]&&!state.cloudWaveformStatus[id]?.startsWith("Unavailable"));
+  if(!pending.length)return;
+  const Context=window.AudioContext;
+  if(typeof Context!=="function"){
+   for(const id of pending){state.cloudWaveformStatus[id]="Unavailable · browser audio decoding is not supported.";updateCloudWaveformElement(id);}
+   return;
+  }
+  const context=new Context();
+  try{
+   for(const id of pending){
+    const source=state.assets.find(asset=>asset.id===id);
+    if(!source||!source.mediaType.startsWith("audio/"))continue;
+    const clip=timeline.tracks.flatMap(track=>track.clips).find(item=>item.assetId===id);
+    if(!clip)continue;
+    const selected=previewAssetForClip(clip,source);
+    const url=state.previewAssetUrls[selected.id]||state.previewAssetUrls[id];
+    if(!url){state.cloudWaveformStatus[id]="Unavailable · load preview media first.";updateCloudWaveformElement(id);continue;}
+    state.cloudWaveformStatus[id]="Generating waveform…";updateCloudWaveformElement(id);
+    try{
+     const svg=await createAudioWaveformPreview(url,{decodeAudioData:data=>context.decodeAudioData(data.slice(0)),bucketCount:180,width:540,height:42,maxBytes:24*1024*1024});
+     state.cloudWaveformPreviews[id]="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+     delete state.cloudWaveformStatus[id];
+    }catch(error){
+     const message=error instanceof Error?error.message:"waveform decode failed";
+     state.cloudWaveformStatus[id]=message.includes("size limit")?"Unavailable · audio exceeds the 24 MB preview limit.":"Unavailable · "+message;
+    }
+    updateCloudWaveformElement(id);
+   }
+  }finally{
+   await context.close().catch(()=>{});
+  }
+ })().finally(()=>{cloudWaveformLoadInFlight=null;});
+ return cloudWaveformLoadInFlight;
+}
 async function loadTimelinePreview(){
  if(!state.timeline)throw new Error("Open a timeline before loading playback media.");
  state.previewLoading=true;state.previewUnavailableAssetIds=[];
@@ -221,6 +270,7 @@ async function loadTimelinePreview(){
   }
   state.previewDiagnostics={...state.previewDiagnostics,droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:required.size,proxyCount,proxyFallbacks:fallbacks};
   state.previewLoaded=true;state.previewLoading=false;state.message="Preview media loaded for "+required.size+" accessible source(s)"+(proxyCount?" · "+proxyCount+" verified proxy selection(s)":"")+(fallbacks?" · "+fallbacks+" proxy fallback(s) to originals":"")+".";
+  if(state.mode==="cloud")void loadCloudAudioWaveforms();
  }catch(error){releaseTimelinePreview();throw error;}
 }
 function stopTimelinePlayback(){
