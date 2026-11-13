@@ -6,8 +6,8 @@
   "workers_dev": true,
   "preview_urls": false,
   "vars": {
-    "API_ORIGIN": "https://executive-visuals.onrender.com",
-    "APP_ORIGIN": "https://executive-visuals.onrender.com"
+    "API_ORIGIN": "https://executive-visuals-1.onrender.com",
+    "APP_ORIGIN": "https://executive-visuals-1.onrender.com"
   },
   "d1_databases": [
     {
