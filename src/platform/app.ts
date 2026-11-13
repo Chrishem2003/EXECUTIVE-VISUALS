@@ -860,6 +860,12 @@ function action(a:string){if(a==="publish-brief-cloud"){void publishBriefToCloud
 
 document.addEventListener("click",e=>{
  const t=e.target as HTMLElement,action=t.closest<HTMLElement>("[data-google-drive-action]");
+ const exportButton=t.closest<HTMLElement>("[data-cloud-export-asset]");
+ if(exportButton){
+  const assetId=exportButton.dataset.cloudExportAsset||"";
+  void apiRequest<{file:{name:string;webViewLink:string|null}}>("/api/integrations/google-drive/export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({assetId,projectId:state.cloudProjectId||null})}).then(result=>{state.cloudMessage="Exported "+result.file.name+" to Google Drive."+(result.file.webViewLink?" "+result.file.webViewLink:"");render();}).catch(error=>{state.cloudMessage=error instanceof Error?error.message:"Google Drive export failed.";render();});
+  return;
+ }
  if(!action)return;
  const mode=action.dataset.googleDriveAction;
  if(mode==="refresh"){googleDriveStatusLoaded=false;void refreshGoogleDriveStatus();return;}
