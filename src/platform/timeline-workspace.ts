@@ -505,7 +505,7 @@ async function persist(){
  const recoveryDraft=await saveRecoveryDraft("timeline-edit",snapshot,mode,expectedRevision);
  const otio=toOpenTimelineIo(snapshot);
  if(mode==="cloud"){
-  const result=await retryTimelineSave({
+  const result=await retryTimelineSave<{timeline:CloudSavedTimeline}>({
    save:()=>apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision,timeline:snapshot,otio})}),
    reconcile:async()=>{
     const current=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+timelineId);
@@ -520,7 +520,7 @@ async function persist(){
   if(state.timeline?.id===timelineId)state.timeline={...state.timeline,revision:Math.max(state.timeline.revision,result.timeline.revision)};
   state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.timeline.revision);return;
  }
- const result=await retryTimelineSave({
+ const result=await retryTimelineSave<{revision:number}>({
   save:()=>apiRequest<{revision:number}>("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:expectedRevision,name:snapshot.name,timeline:snapshot,otio})}),
   reconcile:async()=>{
    const current=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+timelineId);
