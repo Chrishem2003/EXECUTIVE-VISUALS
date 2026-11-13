@@ -106,6 +106,17 @@ export function addTrack(timeline:EditorialTimeline,track:TimelineTrack):Editori
   if(timeline.tracks.some(item=>item.id===track.id))throw new Error("Track ID already exists.");
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:[...timeline.tracks,{...track,clips:[...track.clips]}]};
 }
+/** Remove a track and its timeline references without deleting source assets; history can restore the track and clips. */
+export function removeTrack(timeline:EditorialTimeline,trackId:string):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.locked)throw new Error("Track is locked.");
+  if(timeline.tracks.length<=1)throw new Error("A timeline must keep at least one track.");
+  const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.filter(item=>item.id!==trackId)};
+  const validation=validateTimeline(updated);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  return updated;
+}
 export function createGeneratedVideoClip(input:{id:string;assetId:string;name:string;durationSeconds:number;frameRate:{numerator:number;denominator:number};startFrame?:number;metadata?:Record<string,unknown>}):TimelineClip{
   const {id,assetId,name,durationSeconds,frameRate}=input;
   if(!id.trim()||!assetId.trim()||!name.trim())throw new Error("Generated video clip requires an ID, asset and name.");
