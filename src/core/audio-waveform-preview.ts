@@ -1,4 +1,4 @@
-import { extractWaveformPeaks, waveformSvg } from "./audio-preview";
+import { extractWaveformPeaks, waveformSvg } from "./audio-preview.ts";
 
 export interface AudioWaveformPreviewOptions {
  fetchImpl?:(url:string,init?:RequestInit)=>Promise<Response>;
