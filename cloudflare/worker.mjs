@@ -163,6 +163,33 @@ async function d1Api(request, env, url) {
       const project = await repo.createProject({ ownerId: principal.id, name: body.name, description: body.description || "", settings: body.settings || {} });
       return withCookies(json({ project, storage: "cloudflare-d1-staging" }, 201), sessionCookies);
     }
+
+    if (url.pathname === "/api/d1/assets" && request.method === "GET") {
+      const rawLimit = url.searchParams.get("limit");
+      const rawOffset = url.searchParams.get("offset");
+      const limit = rawLimit === null ? 50 : Number(rawLimit);
+      const offset = rawOffset === null ? 0 : Number(rawOffset);
+      const projectId = url.searchParams.has("projectId") ? url.searchParams.get("projectId") : null;
+      const assets = await repo.listAssets({ actorId: principal.id, projectId, limit, offset });
+      const visibleAssets = assets.map(asset => ({
+        id: asset.id,
+        projectId: asset.projectId,
+        name: asset.name,
+        mediaType: asset.mediaType,
+        size: asset.size,
+        sha256: asset.sha256,
+        derivativeOf: asset.derivativeOf,
+        metadata: asset.metadata,
+        provenance: asset.provenance,
+        createdAt: asset.createdAt
+      }));
+      return withCookies(json({
+        assets: visibleAssets,
+        page: { limit, offset },
+        storage: "cloudflare-d1-staging",
+        metadataOnly: true
+      }), sessionCookies);
+    }
     const match = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})$/i);
     if (match && request.method === "GET") {
       const project = await repo.getProject({ actorId: principal.id, projectId: match[1] });
