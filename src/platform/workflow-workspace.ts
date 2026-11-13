@@ -270,5 +270,5 @@ document.addEventListener("drop",event=>{
  node.position={x,y};state.graph={...state.graph,revision:state.graph.revision+1};void persist().then(paint).catch(error=>{state.message=error.message;paint();});
 });
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
-window.addEventListener("ev:jobs-updated",()=>{if(state.latestRunId)void loadRun().then(paint).catch(()=>{});});
+window.addEventListener("ev:jobs-updated",()=>{if(!state.latestRunId)return;void loadRun().then(paint).catch(error=>{state.message=error instanceof Error?"Workflow status could not be refreshed: "+error.message:"Workflow status could not be refreshed. The last known run state is still shown.";paint();});});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")scheduleWorkflowRunPoll(1000);});
