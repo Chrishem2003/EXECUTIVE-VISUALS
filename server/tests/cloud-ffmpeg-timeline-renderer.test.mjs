@@ -248,3 +248,41 @@ test("variable-speed video renderer maps the source-time ramp to the exact timel
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+
+
+test("cloud FFmpeg renderer applies frame-bounded dip-to-black fades to adjacent video clips", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-transition-test-"));
+ try{
+  const red=join(root,"red.mp4"),green=join(root,"green.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=red:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",red]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=green:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",green]);
+  const time=value=>({value,rate:1});
+  const timeline={name:"Transition test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[{id:"v",kind:"video",clips:[
+   {id:"v1",assetId:"red",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}},
+   {id:"v2",assetId:"green",timelineStart:time(1),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}
+  ]}]};
+  const assets=new Map([
+   ["red",{path:red,asset:{id:"red",mediaType:"video/mp4",originalName:"red.mp4"}}],
+   ["green",{path:green,asset:{id:"green",mediaType:"video/mp4",originalName:"green.mp4"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  assert.equal(result.render.transitions,1);
+  const sample=frame=>execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select=eq(n\\,"+frame+")","-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-s","1x1","pipe:1"]);
+  const brightness=[23,24,30].map(frame=>{const pixel=sample(frame);assert.equal(pixel.length,3);return pixel[0]+pixel[1]+pixel[2];});
+  assert.ok(brightness[0]<60,"outgoing clip should be almost black at the end of its fade");
+  assert.ok(brightness[1]<40,"incoming clip should begin at black");
+  assert.ok(brightness[2]>100,"incoming clip should reach full brightness after its fade");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud FFmpeg renderer rejects invalid or non-video transition metadata before materializing inputs",async()=>{
+ const time=value=>({value,rate:1});
+ const video={kind:"video",clips:[
+  {assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:0}},
+  {assetId:"v",timelineStart:time(1),duration:time(1),sourceRange:{start:time(1),duration:time(1)}}
+ ]};
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline:{frameRate:{numerator:24,denominator:1},tracks:[video]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+ const nonVideo={...video,kind:"audio",clips:video.clips.map(clip=>({...clip,transitionToNext:{type:"dip-to-black",fadeFrames:6}}))};
+ await assert.rejects(()=>renderCloudTimeline({timeline:{frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},nonVideo]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+});
