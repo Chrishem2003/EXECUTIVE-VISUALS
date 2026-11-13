@@ -180,6 +180,70 @@ export function openDatabase(filename) {
     CREATE INDEX IF NOT EXISTS model_usage_owner_idx ON model_usage_events(owner_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_project_idx ON model_usage_events(project_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_job_idx ON model_usage_events(job_id);
+    CREATE TABLE IF NOT EXISTS evidence_records (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      source_asset_id TEXT NOT NULL REFERENCES assets(id),
+      source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+      target_type TEXT NOT NULL CHECK(target_type IN ('project','scene','shot','timeline','asset')),
+      target_id TEXT NOT NULL,
+      evidence_kind TEXT NOT NULL,
+      claim TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT '',
+      source_ref TEXT NOT NULL DEFAULT '',
+      observed_at TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','needs_review','verified','rejected')),
+      review_note TEXT NOT NULL DEFAULT '',
+      reviewed_by TEXT REFERENCES users(id),
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      CHECK((status IN ('verified','rejected') AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL) OR status IN ('submitted','needs_review'))
+    );
+    CREATE INDEX IF NOT EXISTS evidence_records_project_idx ON evidence_records(project_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS evidence_records_asset_idx ON evidence_records(source_asset_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS evidence_records_target_idx ON evidence_records(target_type,target_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS evidence_record_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      evidence_id TEXT NOT NULL REFERENCES evidence_records(id) ON DELETE CASCADE,
+      actor_id TEXT NOT NULL REFERENCES users(id),
+      event_type TEXT NOT NULL CHECK(event_type IN ('submitted','reviewed')),
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS evidence_record_events_evidence_idx ON evidence_record_events(evidence_id,id);
+    CREATE TABLE IF NOT EXISTS creative_graph_snapshots (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      graph_hash TEXT NOT NULL CHECK(length(graph_hash)=64),
+      graph_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(project_id,revision)
+    );
+    CREATE INDEX IF NOT EXISTS creative_graph_snapshots_project_idx ON creative_graph_snapshots(project_id,revision DESC);
+    CREATE TRIGGER IF NOT EXISTS evidence_record_events_no_update
+      BEFORE UPDATE ON evidence_record_events BEGIN SELECT RAISE(ABORT,'EVIDENCE_EVENTS_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_record_events_no_delete
+      BEFORE DELETE ON evidence_record_events BEGIN SELECT RAISE(ABORT,'EVIDENCE_EVENTS_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_records_source_immutable
+      BEFORE UPDATE ON evidence_records
+      WHEN NEW.id IS NOT OLD.id OR NEW.owner_id IS NOT OLD.owner_id OR NEW.project_id IS NOT OLD.project_id
+        OR NEW.source_asset_id IS NOT OLD.source_asset_id OR NEW.source_sha256 IS NOT OLD.source_sha256
+        OR NEW.target_type IS NOT OLD.target_type OR NEW.target_id IS NOT OLD.target_id
+        OR NEW.evidence_kind IS NOT OLD.evidence_kind OR NEW.claim IS NOT OLD.claim
+        OR NEW.method IS NOT OLD.method OR NEW.source_ref IS NOT OLD.source_ref
+        OR NEW.observed_at IS NOT OLD.observed_at OR NEW.note IS NOT OLD.note
+        OR NEW.created_at IS NOT OLD.created_at
+      BEGIN SELECT RAISE(ABORT,'EVIDENCE_RECORD_SOURCE_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_records_no_delete
+      BEFORE DELETE ON evidence_records BEGIN SELECT RAISE(ABORT,'EVIDENCE_RECORD_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS creative_graph_snapshots_no_update
+      BEFORE UPDATE ON creative_graph_snapshots BEGIN SELECT RAISE(ABORT,'CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS creative_graph_snapshots_no_delete
+      BEFORE DELETE ON creative_graph_snapshots BEGIN SELECT RAISE(ABORT,'CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE'); END;
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_id TEXT NOT NULL REFERENCES users(id),
