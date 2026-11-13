@@ -805,9 +805,12 @@ document.addEventListener("submit",event=>{
   if(speed!==1&&!(track.kind==="audio"&&asset.mediaType.startsWith("audio/")||track.kind==="video"&&asset.mediaType.startsWith("video/"))){alert("Speed changes require a video or audio source asset.");return;}
   let speedCurve:SpeedKeyframe[]|undefined;
   if(track.kind==="video"){
-   const pointTimes=data.getAll("speedPointTime").map(value=>Number(value)),pointSpeeds=data.getAll("speedPointSpeed").map(value=>Number(value));
-   if(pointTimes.length!==pointSpeeds.length){alert("Each speed keyframe needs both a time and speed.");return;}
-   speedCurve=pointTimes.length?pointTimes.map((timeSeconds,index)=>({timeSeconds,speed:pointSpeeds[index]})):undefined;
+   if(!speedEditable)speedCurve=clip.speedCurve;
+   else{
+    const pointTimes=data.getAll("speedPointTime").map(value=>Number(value)),pointSpeeds=data.getAll("speedPointSpeed").map(value=>Number(value));
+    if(pointTimes.length!==pointSpeeds.length){alert("Each speed keyframe needs both a time and speed.");return;}
+    speedCurve=pointTimes.length?pointTimes.map((timeSeconds,index)=>({timeSeconds,speed:pointSpeeds[index]})):undefined;
+   }
    if(speedCurve&&(speedCurve.length<2||speedCurve.length>64||speedCurve[0]?.timeSeconds!==0||speedCurve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||(index>0&&point.timeSeconds<=speedCurve![index-1].timeSeconds)))){
     alert("Speed curves require 2–64 ordered keyframes, starting at zero, with speeds from 0.25× to 4×.");return;
    }
