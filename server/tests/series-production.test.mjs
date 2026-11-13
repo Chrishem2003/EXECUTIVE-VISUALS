@@ -187,3 +187,18 @@ assert.ok(convertedPackage.shots[0].prompt.includes("Story beat:"));
 assert.ok(convertedPackage.shots.every(shot=>shot.durationSeconds<=30));
 assert.throws(()=>buildSeriesPlanFromStoryboard({...directorBoard,providerSubmitted:true},{format:"documentary",aspectRatio:"16:9",frameRate:24,resolution:"1080p",visualStyle:"Cinematic",language:"English",voiceMode:"Natural",captions:"Both",music:"Score",cameraLanguage:"Mixed",shotComposition:"Mixed",pacing:"Measured",colorGrade:"Natural"}),/planning-only/);
 console.log("Creative Director handoff verification passed: timed storyboard converts to a validated editable episode and engine-neutral shot package without provider execution.");
+
+
+const generatedShots=convertedEpisode.scenes.flatMap(scene=>scene.shots);
+const generatedAssets=generatedShots.map((shot,shotIndex)=>({
+ id:"asset-"+shotIndex,projectId:"cloud-project-1",mediaType:"video/mp4",
+ metadata:{operation:"video.generate",approvalId:"approval-1",shotIndex,provider:"fal",model:"test-model"}
+}));
+const matchedGenerated=matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets].reverse(),"approval-1","cloud-project-1");
+assert.deepEqual(matchedGenerated.map(item=>item.asset.id),generatedShots.map((_,index)=>"asset-"+index));
+assert.deepEqual(matchedGenerated.map(item=>item.shotIndex),generatedShots.map((_,index)=>index));
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.slice(1),"approval-1","cloud-project-1"),/incomplete/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets,{...generatedAssets[0],id:"duplicate-asset"}],"approval-1","cloud-project-1"),/More than one generated asset/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map(asset=>({...asset,projectId:"other-project"})),"approval-1","cloud-project-1"),/different cloud project/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map((asset,index)=>index===0?{...asset,metadata:{...asset.metadata,shotIndex:generatedShots.length}}:asset),"approval-1","cloud-project-1"),/invalid shot index/);
+console.log("Generated storyboard asset matching verification passed: exact shot order, completeness, duplicate rejection and cloud-project isolation.");
