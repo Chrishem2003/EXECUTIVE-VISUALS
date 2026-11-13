@@ -177,7 +177,7 @@ async function d1Api(request, env, url) {
       return withCookies(json({ jobs, page: { limit, offset }, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
     if (url.pathname === "/api/d1/jobs" && request.method === "POST") {
-      const body = await readJson(request, 80 * 1024);
+      const body = await readJson(request, 64 * 1024);
       const result = await repo.createJob({
         actorId: principal.id, projectId: body.projectId ?? null, jobType: body.jobType,
         input: body.input ?? {}, idempotencyKey: body.idempotencyKey ?? null,
