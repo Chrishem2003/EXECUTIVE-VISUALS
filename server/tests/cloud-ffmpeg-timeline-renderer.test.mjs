@@ -288,7 +288,7 @@ test("cloud FFmpeg renderer rejects invalid or non-video transition metadata bef
 });
 
 
-const hasMinterpolate=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\\bminterpolate\\b/.test((result.stdout||"")+"\\n"+(result.stderr||""));})();
+const hasMinterpolate=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\bminterpolate\b/.test((result.stdout||"")+"\n"+(result.stderr||""));})();
 test("cloud renderer rejects optical-flow metadata on clips without a slow-motion section",async()=>{
  const time=value=>({value,rate:1});
  const timeline={frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[{id:"v",assetId:"missing",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{motionInterpolation:"optical-flow"}}]}]};
