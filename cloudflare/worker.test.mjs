@@ -258,6 +258,7 @@ test("D1 Worker exposes owner-managed member listing, email add/update, role enf
   assert.equal(list.status, 200);
   const memberList = await list.json();
   assert.deepEqual(memberList.members.map(member => member.role), ["owner", "viewer"]);
+  assert.equal(memberList.canManageMembers, true);
 
   const forbiddenInvite = await worker.fetch(new Request(membersUrl, {
     method: "POST", headers: memberHeaders,
