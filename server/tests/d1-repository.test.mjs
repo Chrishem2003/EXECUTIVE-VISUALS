@@ -111,3 +111,33 @@ test("workspace documents persist with revision checks and member write permissi
   db.close();
 });
 
+
+test("project owner can manage verified members by email and list/remove project roles", async () => {
+  const db = makeD1();
+  const repo = createD1Repository({ db, id: (() => { let n=0; return () => [ownerId, otherId, projectId][n++]; })(), clock: () => "2026-11-13T00:00:00.000Z" });
+  await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase", email: "owner@example.test" });
+  await repo.resolvePrincipal({ subject: otherSubject, provider: "supabase", email: "collaborator@example.test" });
+  await repo.createProject({ ownerId, name: "Team workspace" });
+
+  const initial = await repo.listMembers({ actorId: ownerId, projectId });
+  assert.deepEqual(initial.members.map(member => member.role), ["owner"]);
+
+  const invited = await repo.addMemberByEmail({ actorId: ownerId, projectId, email: " COLLABORATOR@EXAMPLE.TEST ", role: "viewer" });
+  assert.equal(invited.memberId, otherId);
+  assert.equal(invited.role, "viewer");
+  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).members.find(member => member.memberId === otherId).role, "viewer");
+  assert.equal((await repo.listMembers({ actorId: otherId, projectId })).canManageMembers, false);
+
+  await assert.rejects(repo.addMemberByEmail({ actorId: otherId, projectId, email: "owner@example.test", role: "editor" }), { code: "D1_PROJECT_ACCESS_DENIED" });
+  await assert.rejects(repo.removeMember({ actorId: otherId, projectId, memberId: ownerId }), { code: "D1_PROJECT_ACCESS_DENIED" });
+
+  await repo.addMemberByEmail({ actorId: ownerId, projectId, email: "collaborator@example.test", role: "editor" });
+  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).members.find(member => member.memberId === otherId).role, "editor");
+
+  const removed = await repo.removeMember({ actorId: ownerId, projectId, memberId: otherId });
+  assert.equal(removed.removed, true);
+  assert.deepEqual((await repo.listMembers({ actorId: ownerId, projectId })).members.map(member => member.role), ["owner"]);
+  await assert.rejects(repo.removeMember({ actorId: ownerId, projectId, memberId: otherId }), { code: "D1_MEMBER_NOT_FOUND" });
+  await assert.rejects(repo.addMemberByEmail({ actorId: ownerId, projectId, email: "missing@example.test", role: "viewer" }), { code: "D1_MEMBER_NOT_FOUND" });
+  db.close();
+});
