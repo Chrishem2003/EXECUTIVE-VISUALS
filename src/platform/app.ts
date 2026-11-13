@@ -284,7 +284,7 @@ async function refreshLiveReadiness(){
   const details=[
    ["Database",health.database],
    ["Storage",health.storage],
-   ["Data directory",health.persistence?.dataDirectory],
+   ["Data persistence",health.persistence?.dataDirectory==="operator-confirmed-volume"?"Operator-confirmed persistent volume":"Ephemeral or unverified"],
    ["Persistent volume required",health.persistence?.persistentVolumeRequired===true?"Yes":"No"]
   ].filter(([,value])=>value!==undefined&&value!==null);
   const detailHtml=details.map(([label,value])=>'<div class="readiness-item"><div class="readiness-item-top"><b>'+esc(String(label))+'</b><span>'+esc(String(value))+'</span></div></div>').join("");
