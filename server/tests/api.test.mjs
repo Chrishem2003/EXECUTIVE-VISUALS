@@ -738,21 +738,21 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
   const project=(await projectResponse.json()).project;
 
   const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":encodeURIComponent("source.png"),"x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10])},owner);
-  assert.equal(upload.status,201,await upload.text());
+  await expectStatus(upload,201);
   const asset=(await upload.json()).asset;
 
   const workspace=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document:{shots:[{id:"shot-1",scene:"Opening",action:"Presenter demonstrates the approved workflow"}],characters:[{id:"character-1",name:"Maya",description:"Presenter"}]}})},owner);
   assert.equal(workspace.status,200,await workspace.text());
 
   const submission=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"project",targetId:project.id,kind:"source_reference",claim:"The uploaded source supports the approved project reference.",method:"Human review of the original file",sourceRef:"capture://source-01",observedAt:"2026-11-13T10:00:00.000Z"})},owner);
-  assert.equal(submission.status,201,await submission.text());
+  await expectStatus(submission,201);
   const submitted=await submission.json();
   assert.equal(submitted.record.status,"submitted");
   assert.equal(submitted.events.length,1);
   assert.equal(submitted.events[0].type,"submitted");
 
   const shotEvidence=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"shot",targetId:"shot-1",kind:"shot_reference",claim:"This source shows the presenter action planned for shot one."})},owner);
-  assert.equal(shotEvidence.status,201,await shotEvidence.text());
+  await expectStatus(shotEvidence,201);
   assert.equal((await shotEvidence.json()).record.target.id,"shot-1");
 
   const forged=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",targetType:"project",targetId:project.id,kind:"source_reference",claim:"This should never be accepted as pre-verified."})},owner);
@@ -769,7 +769,7 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
   assert.equal(shortReason.status,400);
 
   const reviewed=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"Original source inspected; project claim scope accepted."})},reviewer);
-  assert.equal(reviewed.status,200,await reviewed.text());
+  await expectStatus(reviewed,200);
   const reviewedBody=await reviewed.json();
   assert.equal(reviewedBody.record.status,"verified");
   assert.equal(reviewedBody.record.reviewedBy!==null,true);
@@ -784,7 +784,7 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
 
   const graph={nodes:[{id:"project:"+project.id,type:"project",label:"Evidence review project",status:"linked"},{id:"shot:shot-1",type:"shot",label:"Shot 1",status:"review"}],edges:[{from:"project:"+project.id,to:"shot:shot-1",relation:"contains",evidence:"project_scope"}]};
   const snapshot=await request("/api/projects/"+project.id+"/creative-graph/snapshots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({graph})},owner);
-  assert.equal(snapshot.status,201,await snapshot.text());
+  await expectStatus(snapshot,201);
   const saved=(await snapshot.json()).snapshot;
   assert.equal(saved.revision,1);
   const loaded=await request("/api/projects/"+project.id+"/creative-graph/snapshots",{},reviewer);
