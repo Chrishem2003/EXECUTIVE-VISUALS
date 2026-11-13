@@ -225,7 +225,13 @@ async function action(actionName:string,actionElement?:HTMLElement){
 }
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
- const actionButton=target.closest<HTMLElement>("[data-wf-action]");if(actionButton){void action(actionButton.dataset.wfAction||"",actionButton);return;}
+ const actionButton=target.closest<HTMLElement>("[data-wf-action]");if(actionButton){
+  void action(actionButton.dataset.wfAction||"",actionButton).catch(error=>{
+   state.message=error instanceof Error?error.message:"The workflow action could not be completed. Refresh the workflow state before retrying.";
+   paint();
+  });
+  return;
+ }
  const add=target.closest<HTMLElement>("[data-wf-add]");if(add){addNode(add.dataset.wfAdd as keyof typeof palette);return;}
  const removeNode=target.closest<HTMLElement>("[data-wf-remove-node]");
  if(removeNode&&state.graph){const id=removeNode.dataset.wfRemoveNode||"";state.graph={...state.graph,revision:state.graph.revision+1,nodes:state.graph.nodes.filter(n=>n.id!==id),edges:state.graph.edges.filter(e=>e.sourceNodeId!==id&&e.targetNodeId!==id)};state.selectedNode="";state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
