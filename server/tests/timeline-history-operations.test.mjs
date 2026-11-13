@@ -101,7 +101,7 @@ test("track removal is reversed with its clips and original ordering intact", ()
 
 test("audio mastering settings are captured and restored as a reversible timeline edit", () => {
   const before = fixture();
-  const after = { ...before, audioMastering: { enabled: true, profile: "streaming", integratedLoudness: -14, truePeak: -1, loudnessRange: 8 } };
+  const after = { ...before, audioMastering: { enabled: true, profile: "web-podcast", integratedLoudness: -14, truePeak: -1, loudnessRange: 8 } };
   const op = operation(before, after, "Set audio mastering");
   assert.ok(op);
   const applied = applyTimelineHistoryOperation(before, op);
