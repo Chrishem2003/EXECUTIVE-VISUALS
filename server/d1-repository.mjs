@@ -173,7 +173,7 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR
 
     async addMemberByEmail({ actorId, projectId, email, role } = {}) {
       validUuid(actorId, "Actor ID"); validUuid(projectId, "Project ID");
-      if (typeof email !== "string" || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) throw new Error("A valid existing account email is required.");
+      if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("A valid existing account email is required.");
       if (!["editor", "reviewer", "viewer"].includes(role)) throw new Error("Project member role is invalid.");
       const project = await projectAccess(actorId, projectId);
       if (!project || project.owner_id !== actorId) { const error = new Error("Only the project owner can manage members."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
