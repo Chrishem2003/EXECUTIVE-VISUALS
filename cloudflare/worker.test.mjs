@@ -455,9 +455,11 @@ test("D1 staging enforces the complete owner/editor/reviewer/viewer capability m
     assert.equal(authenticated.status, 200, role + " identity is registered before membership assignment");
   }
 
+  const memberIds = {};
   for (const [role, email] of [["editor", "editor@roles.test"], ["reviewer", "reviewer@roles.test"], ["viewer", "viewer@roles.test"]]) {
     const added = await request(membersPath, "owner", "POST", { email, role });
     assert.equal(added.status, 201, role);
+    memberIds[role] = (await added.json()).member.memberId;
   }
 
   const ownerList = await request(membersPath, "owner");
@@ -508,12 +510,12 @@ test("D1 staging enforces the complete owner/editor/reviewer/viewer capability m
 
   const editorInvite = await request(membersPath, "editor", "POST", { email: "outsider@roles.test", role: "viewer" });
   assert.equal(editorInvite.status, 403);
-  const reviewerRemove = await request(membersPath + "/" + identities["Bearer viewer"].id, "reviewer", "DELETE");
+  const reviewerRemove = await request(membersPath + "/" + memberIds.viewer, "reviewer", "DELETE");
   assert.equal(reviewerRemove.status, 403);
-  const viewerRemove = await request(membersPath + "/" + identities["Bearer editor"].id, "viewer", "DELETE");
+  const viewerRemove = await request(membersPath + "/" + memberIds.editor, "viewer", "DELETE");
   assert.equal(viewerRemove.status, 403);
 
-  const ownerRemove = await request(membersPath + "/" + identities["Bearer viewer"].id, "owner", "DELETE");
+  const ownerRemove = await request(membersPath + "/" + memberIds.viewer, "owner", "DELETE");
   assert.equal(ownerRemove.status, 200);
   assert.equal((await ownerRemove.json()).removed, true);
   const revokedRead = await request(projectPath, "viewer");
