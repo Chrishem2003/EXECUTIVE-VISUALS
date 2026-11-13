@@ -1402,3 +1402,11 @@ body{
 .speed-curve-point button{padding:7px 9px;font-size:10px}
 .speed-curve-editor>button{justify-self:start}
 @media(max-width:520px){.speed-curve-point{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr)}.speed-curve-point button{grid-column:2/4;justify-self:start}}
+
+/* Google Drive private workspace integration */
+.integration-status{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 0}
+.integration-status>div{min-width:0}
+.integration-status p,.muted{color:var(--muted);font-size:11px;line-height:1.7;margin:7px 0 0}
+.integration-status>.status{white-space:nowrap}
+.action-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:12px 0}
+@media(max-width:650px){.integration-status{display:block}.integration-status>.status{display:inline-block;margin-top:10px}}
