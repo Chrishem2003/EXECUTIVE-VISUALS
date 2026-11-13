@@ -1388,7 +1388,7 @@ body{
 .editor-clip-waveform{display:block;width:calc(100% - 8px);height:22px;margin:3px 4px 2px;object-fit:fill;opacity:.9;pointer-events:none}
 
 
-/* Visual variable-speed keyframe editor */
+.speed-curve-fieldset{min-width:0;margin:0;padding:0;border:0}\n.speed-curve-fieldset:disabled{opacity:.55}\n\n/* Visual variable-speed keyframe editor */
 .speed-curve-editor{display:grid;gap:10px;margin:8px 0 14px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft)}
 .speed-curve-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
 .speed-curve-heading span,.speed-curve-editor>small,.speed-curve-scale{color:var(--muted);font-size:10px}
