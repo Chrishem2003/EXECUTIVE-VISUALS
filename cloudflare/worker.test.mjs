@@ -419,3 +419,106 @@ test("D1 daily read/write quota errors are surfaced as bounded 503 responses", a
     DB.close();
   }
 });
+
+
+test("D1 staging enforces the complete owner/editor/reviewer/viewer capability matrix", async t => {
+  const DB = makeD1();
+  const identities = {
+    "Bearer owner": { id: "11111111-1111-4111-8111-111111111111", email: "owner@roles.test" },
+    "Bearer editor": { id: "22222222-2222-4222-8222-222222222222", email: "editor@roles.test" },
+    "Bearer reviewer": { id: "33333333-3333-4333-8333-333333333333", email: "reviewer@roles.test" },
+    "Bearer viewer": { id: "44444444-4444-4444-8444-444444444444", email: "viewer@roles.test" },
+    "Bearer outsider": { id: "55555555-5555-4555-8555-555555555555", email: "outsider@roles.test" }
+  };
+  t.mock.method(globalThis, "fetch", async request => {
+    const user = identities[request.headers.get("authorization")];
+    if (!user) return new Response(JSON.stringify({ error: { code: "AUTH_REQUIRED" } }), { status: 401 });
+    return new Response(JSON.stringify({ user, authMode: "supabase" }), {
+      status: 200, headers: { "content-type": "application/json" }
+    });
+  });
+  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const request = (path, token, method = "GET", body) => worker.fetch(new Request(
+    "https://staging.example" + path,
+    { method, headers: { authorization: "Bearer " + token, ...(body ? { "content-type": "application/json" } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}) }
+  ), env);
+  const created = await request("/api/d1/projects", "owner", "POST", { name: "Role matrix project" });
+  assert.equal(created.status, 201);
+  const { project } = await created.json();
+  const membersPath = "/api/d1/projects/" + project.id + "/members";
+  const projectPath = "/api/d1/projects/" + project.id;
+  const workspacePath = projectPath + "/workspace";
+
+  for (const role of ["editor", "reviewer", "viewer", "outsider"]) {
+    const authenticated = await request("/api/d1/projects", role);
+    assert.equal(authenticated.status, 200, role + " identity is registered before membership assignment");
+  }
+
+  const memberIds = {};
+  for (const [role, email] of [["editor", "editor@roles.test"], ["reviewer", "reviewer@roles.test"], ["viewer", "viewer@roles.test"]]) {
+    const added = await request(membersPath, "owner", "POST", { email, role });
+    assert.equal(added.status, 201, role);
+    memberIds[role] = (await added.json()).member.memberId;
+  }
+
+  const ownerList = await request(membersPath, "owner");
+  assert.equal(ownerList.status, 200);
+  assert.equal((await ownerList.json()).canManageMembers, true);
+
+  for (const role of ["editor", "reviewer", "viewer"]) {
+    const list = await request(membersPath, role);
+    assert.equal(list.status, 200, role);
+    assert.equal((await list.json()).canManageMembers, false, role);
+    const projectRead = await request(projectPath, role);
+    assert.equal(projectRead.status, 200, role + " can read project");
+    const workspaceRead = await request(workspacePath, role);
+    assert.equal(workspaceRead.status, 200, role + " can read workspace");
+  }
+
+  const outsiderProject = await request(projectPath, "outsider");
+  assert.equal(outsiderProject.status, 404);
+  assert.equal((await outsiderProject.json()).error.code, "D1_PROJECT_NOT_FOUND");
+  const outsiderWorkspace = await request(workspacePath, "outsider");
+  assert.equal(outsiderWorkspace.status, 404);
+  assert.equal((await outsiderWorkspace.json()).error.code, "D1_PROJECT_NOT_FOUND");
+
+  const ownerPatch = await request(projectPath, "owner", "PATCH", { expectedRevision: 1, name: "Owner edit" });
+  assert.equal(ownerPatch.status, 200);
+  assert.equal((await ownerPatch.json()).project.revision, 2);
+  const editorPatch = await request(projectPath, "editor", "PATCH", { expectedRevision: 2, description: "Editor edit" });
+  assert.equal(editorPatch.status, 200);
+  assert.equal((await editorPatch.json()).project.revision, 3);
+
+  for (const role of ["reviewer", "viewer"]) {
+    const denied = await request(projectPath, role, "PATCH", { expectedRevision: 3, name: "Unauthorized " + role });
+    assert.equal(denied.status, 403, role + " cannot edit project settings");
+    assert.equal((await denied.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
+  }
+
+  const ownerWorkspaceWrite = await request(workspacePath, "owner", "PUT", { expectedRevision: 1, document: { owner: true } });
+  assert.equal(ownerWorkspaceWrite.status, 200);
+  const editorWorkspaceWrite = await request(workspacePath, "editor", "PUT", { expectedRevision: 2, document: { editor: true } });
+  assert.equal(editorWorkspaceWrite.status, 200);
+  assert.equal((await editorWorkspaceWrite.json()).revision, 3);
+
+  for (const role of ["reviewer", "viewer"]) {
+    const denied = await request(workspacePath, role, "PUT", { expectedRevision: 3, document: { forbidden: role } });
+    assert.equal(denied.status, 403, role + " cannot edit workspace");
+    assert.equal((await denied.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
+  }
+
+  const editorInvite = await request(membersPath, "editor", "POST", { email: "outsider@roles.test", role: "viewer" });
+  assert.equal(editorInvite.status, 403);
+  const reviewerRemove = await request(membersPath + "/" + memberIds.viewer, "reviewer", "DELETE");
+  assert.equal(reviewerRemove.status, 403);
+  const viewerRemove = await request(membersPath + "/" + memberIds.editor, "viewer", "DELETE");
+  assert.equal(viewerRemove.status, 403);
+
+  const ownerRemove = await request(membersPath + "/" + memberIds.viewer, "owner", "DELETE");
+  assert.equal(ownerRemove.status, 200);
+  assert.equal((await ownerRemove.json()).removed, true);
+  const revokedRead = await request(projectPath, "viewer");
+  assert.equal(revokedRead.status, 404);
+  DB.close();
+});
