@@ -3,6 +3,7 @@ import { cloudAssetProjectQuery, selectCloudAssetProject } from "./cloud-asset-p
 import { describePersistenceReadiness } from "./persistence-readiness";
 import { describeRuntimeCapabilities } from "./runtime-capabilities";
 import { buildCreativeGraph, compareCreativeGraphSnapshot } from "../core/creative-graph";
+import { hasCloudJobFinished } from "./cloud-job-polling";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;settings?:Record<string,any>;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -19,6 +20,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
+let cloudJobPollingTimer:ReturnType<typeof setInterval>|null=null;
+let cloudJobPollingBusy=false;
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];cloudProjects:RuntimeCloudProject[];cloudProjectId:string;authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";databaseMode:"unknown"|"sqlite"|"postgres";storageMode:"unknown"|"local-disk"|"object-storage";persistentVolumeRequired:boolean;authSessionReady:boolean;authSessionEncrypted:boolean;billingEnabled:boolean;billingProviderConfigured:boolean;billingWebhookConfigured:boolean;billingProviderMode:"unknown"|"sandbox"|"live";cloudVideoWorker:{enabled:boolean;remoteExecutionGates:boolean;modelRouterEnabled:boolean;modelRouterRemoteEnabled:boolean;modelRouterConfigPresent:boolean;providerCredentialConfigured:boolean;outputHostAllowlistConfigured:boolean;supabaseCredentialsConfigured:boolean;directRunwayModelsRequested:boolean;runtimeMode:"separate-process"|"embedded"|"unknown"};user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>;evidenceAssetId:string;evidenceRecords:Array<Record<string,any>>;evidenceLoading:boolean;evidenceError:string;projectEvidenceRecords:Array<any>;creativeGraphWorkspace:Record<string,any>|null;creativeGraphTimelines:Array<any>;creativeGraph:ReturnType<typeof buildCreativeGraph>|null;creativeGraphSnapshot:Record<string,any>|null}={
  status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],cloudProjects:[],cloudProjectId:"",authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",databaseMode:"unknown",storageMode:"unknown",persistentVolumeRequired:false,authSessionReady:false,authSessionEncrypted:false,billingEnabled:false,billingProviderConfigured:false,billingWebhookConfigured:false,billingProviderMode:"unknown",cloudVideoWorker:{enabled:false,remoteExecutionGates:false,modelRouterEnabled:false,modelRouterRemoteEnabled:false,modelRouterConfigPresent:false,providerCredentialConfigured:false,outputHostAllowlistConfigured:false,supabaseCredentialsConfigured:false,directRunwayModelsRequested:false,runtimeMode:"unknown"},user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{},evidenceAssetId:"",evidenceRecords:[],evidenceLoading:false,evidenceError:"",projectEvidenceRecords:[],creativeGraphWorkspace:null,creativeGraphTimelines:[],creativeGraph:null,creativeGraphSnapshot:null
 };
@@ -207,12 +210,43 @@ function renderCloudMediaJobs(){
  if(!state.cloudMediaJobs.length)return '<div class="empty">No cloud processing jobs yet. Choose an operation on a private cloud asset above.</div>';
  return '<div class="runtime-jobs">'+state.cloudMediaJobs.map(job=>'<article class="runtime-job"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(job.status.toUpperCase())+' · '+Math.max(0,Math.min(100,Number(job.progress)||0))+'%</small><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+(job.error?.message?'<small class="muted">'+esc(job.error.message)+'</small>':'')+'</div></article>').join("")+'</div>';
 }
+async function refreshCloudMediaJobs(){
+ if(cloudJobPollingBusy||!state.user||!state.cloudMediaReady||!state.cloudMediaJobsEnabled||!state.cloudProjectId)return;
+ if(document.visibilityState!=="visible"||!document.querySelector<HTMLElement>('#runtime-workspace[data-runtime-view="library"]'))return;
+ const scope=cloudAssetProjectQuery(state.cloudProjectId);if(!scope)return;
+ cloudJobPollingBusy=true;
+ try{
+  const response=await apiRequest<{jobs:CloudRuntimeJob[]}>("/api/cloud/jobs"+scope);
+  const next=Array.isArray(response.jobs)?response.jobs:[];
+  const finished=hasCloudJobFinished(state.cloudMediaJobs,next);
+  state.cloudMediaJobs=next;
+  if(finished){
+   await refresh();
+   paint();
+   return;
+  }
+  const list=document.querySelector<HTMLElement>("#cloud-media-jobs-list");
+  if(list)list.innerHTML=renderCloudMediaJobs();
+  const count=document.querySelector<HTMLElement>("#cloud-media-job-count");
+  if(count)count.textContent=state.cloudMediaJobs.length+" recent jobs";
+  const status=document.querySelector<HTMLElement>("#cloud-media-job-refresh-status");
+  if(status)status.textContent="Live · updated "+new Date().toLocaleTimeString();
+ }catch{
+  const status=document.querySelector<HTMLElement>("#cloud-media-job-refresh-status");
+  if(status)status.textContent="Refresh unavailable · showing the last known job status";
+ }finally{
+  cloudJobPollingBusy=false;
+ }
+}
+function startCloudJobPolling(){
+ if(!cloudJobPollingTimer)cloudJobPollingTimer=setInterval(()=>{void refreshCloudMediaJobs();},5000);
+}
 function renderCloudAssetLibrary(){
  if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
  const projectOptions=state.cloudProjects.map(project=>'<option value="'+esc(project.id)+'" '+(project.id===state.cloudProjectId?'selected':'')+'>'+esc(project.name)+'</option>').join("");
  const projectPicker=state.cloudProjects.length?'<label>Cloud project<select id="ev-cloud-project-select"><option value="">Select a cloud project</option>'+projectOptions+'</select></label>':'<div class="notice">Create a cloud project in the Cloud Projects workspace before uploading media. Unassigned cloud uploads are disabled so assets cannot become detached from the editor project.</div>';
  const upload=state.cloudProjectId?'<label class="upload primary">＋ Upload to selected cloud project<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>':'<button class="secondary" disabled>＋ Upload unavailable · select a cloud project</button>';
- return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><span>'+state.cloudMediaJobs.length+' recent jobs</span></div>'+renderCloudMediaJobs()+'</section>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><div><span id="cloud-media-job-count">'+state.cloudMediaJobs.length+' recent jobs</span> <button type="button" class="secondary" data-ev-cloud-jobs-refresh '+(state.cloudMediaJobsEnabled?'':'disabled')+'>↻ Refresh queue</button></div></div><small id="cloud-media-job-refresh-status">Auto-refreshes every 5 seconds while this library is open.</small><div id="cloud-media-jobs-list">'+renderCloudMediaJobs()+'</div></section>';
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
@@ -253,6 +287,7 @@ export function renderRuntimeWorkspace(){
 }
 
 export function renderAssetLibrary(){
+ startCloudJobPolling();
  return '<div id="runtime-workspace" data-runtime-view="library"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out</button>':'')+'</div>'+
  (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderBatchUpscaleControls()+renderAssets()+'</section>'+renderCloudAssetLibrary()+
@@ -439,6 +474,8 @@ document.addEventListener("input",event=>{
  if(compare)compare.style.setProperty("--ev-compare",value+"%");
  target.setAttribute("aria-valuetext",value+"% enhanced revealed");
 });
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void refreshCloudMediaJobs();});
+window.addEventListener("beforeunload",()=>{if(cloudJobPollingTimer)clearInterval(cloudJobPollingTimer);cloudJobPollingTimer=null;});
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
@@ -462,6 +499,8 @@ document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
  const authView=target.closest<HTMLElement>("[data-auth-view]");if(authView){state.authView=authView.dataset.authView==="recover"?"recover":"login";state.message="";paint();return;}
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
+ const cloudJobsRefresh=target.closest<HTMLElement>("[data-ev-cloud-jobs-refresh]");
+ if(cloudJobsRefresh){void refreshCloudMediaJobs();return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.cloudAssets=[];state.cloudProjects=[];state.cloudProjectId="";state.projects=[];paint();return;}
