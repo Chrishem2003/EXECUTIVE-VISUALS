@@ -557,6 +557,7 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   });
   assert.equal(createdJob.status, 201);
   const jobResult = await createdJob.json();
+  const jobId = jobResult.job.id;
   assert.equal(jobResult.job.status, "queued");
   assert.equal(jobResult.execution, "not-dispatched");
   const repeated = await call("/api/d1/jobs", "editor", "POST", {
@@ -611,7 +612,6 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   assert.equal((await outsiderJobList.json()).jobs.length, 0);
   const editorJobList = await call("/api/d1/jobs?projectId=" + project.id, "editor");
   assert.equal((await editorJobList.json()).jobs.length, 1);
-  const jobId = jobResult.job.id;
   assert.equal((await call("/api/d1/jobs/" + jobId, "reviewer")).status, 200);
   assert.equal((await call("/api/d1/jobs/" + jobId, "outsider")).status, 404);
   assert.equal((await call("/api/d1/jobs/" + jobId, "owner")).status, 200);
