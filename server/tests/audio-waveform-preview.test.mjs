@@ -25,7 +25,7 @@ test("cloud waveform preview rejects oversized responses before decoding",async(
 });
 
 test("cloud waveform preview rejects failed and empty media responses",async()=>{
- await assert.rejects(()=>createAudioWaveformPreview("https://storage.example.test/missing",{fetchImpl:async()=>response([],{status:404}),decodeAudioData:async()=>decoded;}),/could not be fetched/);
+ await assert.rejects(()=>createAudioWaveformPreview("https://storage.example.test/missing",{fetchImpl:async()=>response([],{status:404}),decodeAudioData:async()=>decoded}),/could not be fetched/);
  await assert.rejects(()=>createAudioWaveformPreview("https://storage.example.test/empty",{fetchImpl:async()=>response([]),decodeAudioData:async()=>decoded;}),/empty/);
 });
 
