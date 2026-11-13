@@ -82,3 +82,18 @@ test("does not list cloud timelines when project read permission is denied",asyn
  await assert.rejects(()=>f.repo.list({ownerId:owner,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+test("accepts valid adjacent dip-to-black transitions and rejects invalid transition contracts",async()=>{
+ const f=setup();
+ const first={...document.tracks[0].clips[0],transitionToNext:{type:"dip-to-black",fadeFrames:6}};
+ const second={...document.tracks[0].clips[0],id:"clip-2",timelineStart:{value:30,rate:30}};
+ const transitioned={...document,tracks:[{...document.tracks[0],clips:[first,second]}]};
+ const created=await f.repo.create({ownerId:owner,timeline:transitioned});
+ assert.deepEqual(created.timeline.tracks[0].clips[0].transitionToNext,{type:"dip-to-black",fadeFrames:6});
+ const invalidFade={...transitioned,tracks:[{...transitioned.tracks[0],clips:[{...first,transitionToNext:{type:"dip-to-black",fadeFrames:0}},second]}]};
+ await assert.rejects(()=>setup().repo.create({ownerId:owner,timeline:invalidFade}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+ const gap={...transitioned,tracks:[{...transitioned.tracks[0],clips:[first,{...second,timelineStart:{value:31,rate:30}}]}]};
+ await assert.rejects(()=>setup().repo.create({ownerId:owner,timeline:gap}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+ const audio={...transitioned,tracks:[{...transitioned.tracks[0],kind:"audio"}]};
+ await assert.rejects(()=>setup().repo.create({ownerId:owner,timeline:audio}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+});
