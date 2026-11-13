@@ -165,7 +165,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
- const fps=fpsNum/fpsDen;
+ const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
  for(let index=0;index<clips.length;index++){
   const clip=clips[index],transition=clip.transitionToNext;
   if(transition===undefined)continue;
