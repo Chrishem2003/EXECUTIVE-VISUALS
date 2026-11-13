@@ -277,6 +277,30 @@ test("D1 Worker exposes owner-managed member listing, email add/update, role enf
   assert.equal(viewerWrite.status, 403);
   assert.equal((await viewerWrite.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
 
+  const invalidRole = await worker.fetch(new Request(membersUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ email: "member@example.test", role: "owner" })
+  }), env);
+  assert.equal(invalidRole.status, 400, await invalidRole.clone().text());
+
+  const promoteReviewer = await worker.fetch(new Request(membersUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ email: "member@example.test", role: "reviewer" })
+  }), env);
+  assert.equal(promoteReviewer.status, 201);
+  assert.equal((await promoteReviewer.json()).member.role, "reviewer");
+
+  const reviewerList = await worker.fetch(new Request(membersUrl, { headers: ownerHeaders }), env);
+  assert.equal(reviewerList.status, 200);
+  assert.deepEqual((await reviewerList.json()).members.map(member => member.role), ["owner", "reviewer"]);
+
+  const reviewerWrite = await worker.fetch(new Request(workspaceUrl, {
+    method: "PUT", headers: memberHeaders,
+    body: JSON.stringify({ expectedRevision: 1, document: { forbidden: "reviewer is read-only" } })
+  }), env);
+  assert.equal(reviewerWrite.status, 403);
+  assert.equal((await reviewerWrite.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
+
   const promote = await worker.fetch(new Request(membersUrl, {
     method: "POST", headers: ownerHeaders,
     body: JSON.stringify({ email: "member@example.test", role: "editor" })
