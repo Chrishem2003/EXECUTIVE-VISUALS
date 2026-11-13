@@ -176,7 +176,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const motionClips=clips.filter(usesOpticalFlow);
  if(motionClips.length){
   const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,jobId,activeProcesses,()=>Boolean(signal?.aborted),262144);
-  if(!/\\bminterpolate\\b/.test((capabilities.stdout||"")+"\\n"+(capabilities.stderr||"")))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
+  if(!/\bminterpolate\b/.test((capabilities.stdout||"")+"\n"+(capabilities.stderr||"")))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
  }
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
