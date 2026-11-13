@@ -351,9 +351,9 @@ async function verifyEvidenceSourceAsset(asset) {
 }
 function workspaceHasEvidenceTarget(projectId,targetType,targetId) {
   const row=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(projectId);
-  if(!row)return false;
-  const document=parseJson(row.document_json,null);
-  if(!document||typeof document!=="object")return false;
+  const project=db.prepare("SELECT settings_json FROM projects WHERE id=? AND archived_at IS NULL").get(projectId);
+  const documents=[row?parseJson(row.document_json,null):null,project?parseJson(project.settings_json,null):null].filter(value=>value&&typeof value==="object");
+  if(!documents.length)return false;
   const collection=targetType==="shot"?"shots":"scenes";
   let visited=0;
   const walk=(value,depth=0)=>{
@@ -365,7 +365,7 @@ function workspaceHasEvidenceTarget(projectId,targetType,targetId) {
     }
     return false;
   };
-  return walk(document);
+  return documents.some(document=>walk(document));
 }
 function evidenceTargetExists(asset,targetType,targetId) {
   if(typeof targetId!=="string"||!targetId.trim()||targetId.length>160)return false;
