@@ -563,7 +563,7 @@ export async function createCloudTimelineFromDocument(projectId:string,timeline:
  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;resetTimelineHistory(state.timeline.id);
   state.cloudTimelines=[result.timeline,...state.cloudTimelines.filter(item=>item.id!==result.timeline.id)];
  state.selectedTrack=timeline.tracks[0]?.id||"";state.selectedClipId="";state.status="ready";
- state.message="Created a new cloud timeline from the reviewed storyboard. Scene and shot markers are ready for editing; no media clips or provider jobs were created.";
+ const generatedClipCount=timeline.tracks.reduce((count,track)=>count+track.clips.length,0);state.message=generatedClipCount>0?"Created a cloud timeline with "+generatedClipCount+" generated storyboard shot clip(s), scene/shot markers and source-asset lineage. Review the sequence before rendering.":"Created a new cloud timeline from the reviewed storyboard. Scene and shot markers are ready for editing; no media clips or provider jobs were created.";
  await loadVariantComparison();paint();
 }
 
