@@ -30,6 +30,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
 - Read/update persisted workspace documents: `GET/PUT /api/d1/projects/:id/workspace` (revision checked; maximum document size 256 KB)
 - Read private asset metadata: `GET /api/d1/assets?projectId=:id&limit=50&offset=0` (authenticated and owner/member scoped; returns checksums and descriptive metadata but never storage keys or media bytes)
+- The Cloud Projects workspace includes an opt-in D1 staging panel. It checks the same-origin `/api/d1/health` bridge, lists/creates staging projects, reads/writes revision-checked workspace JSON, and displays metadata-only asset records. It does not run unless the current server has `D1_STAGING_WORKER_URL` configured; production remains disabled when that variable is absent.
 
 The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. The supported browser path is the same-origin Render `/api/d1/*` proxy, which forwards the existing HttpOnly session cookie server-to-server. The Worker also has a strict origin allow-list for direct Bearer-token calls, but browser cookies are not shared across the Render and workers.dev domains.
 
