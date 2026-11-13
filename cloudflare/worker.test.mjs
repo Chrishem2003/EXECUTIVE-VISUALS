@@ -570,6 +570,40 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   assert.equal(conflictingKey.status, 409);
   assert.equal((await conflictingKey.json()).error.code, "D1_IDEMPOTENCY_CONFLICT");
 
+  const workerEnv = { ...env, D1_WORKER_TOKEN: "staging-worker-secret-0123456789abcdef" };
+  const privateCall = (path, body, token = workerEnv.D1_WORKER_TOKEN) => worker.fetch(new Request("https://staging.example" + path, {
+    method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify(body)
+  }), workerEnv);
+  const noSecret = await worker.fetch(new Request("https://staging.example/api/d1/internal/jobs/claim", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }), env);
+  assert.equal(noSecret.status, 503);
+  const deniedClaim = await privateCall("/api/d1/internal/jobs/claim", {}, "wrong-worker-token");
+  assert.equal(deniedClaim.status, 401);
+  const claimResponse = await privateCall("/api/d1/internal/jobs/claim", { leaseMs: 30000 });
+  assert.equal(claimResponse.status, 200);
+  const claim = await claimResponse.json();
+  assert.equal(claim.claimed, true);
+  assert.equal(claim.job.id, jobId);
+  assert.equal(claim.job.status, "running");
+  assert.equal(claim.job.attemptCount, 1);
+  assert.equal(typeof claim.leaseToken, "string");
+  const heartbeat = await privateCall("/api/d1/internal/jobs/" + jobId + "/heartbeat", { leaseToken: claim.leaseToken, leaseMs: 45000 });
+  assert.equal(heartbeat.status, 200);
+  const staleHeartbeat = await privateCall("/api/d1/internal/jobs/" + jobId + "/heartbeat", { leaseToken: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+  assert.equal(staleHeartbeat.status, 409);
+  const failedAttempt = await privateCall("/api/d1/internal/jobs/" + jobId + "/fail", { leaseToken: claim.leaseToken, error: { code: "TRANSIENT", message: "retry me" }, retryDelayMs: 0 });
+  assert.equal(failedAttempt.status, 200);
+  assert.equal((await failedAttempt.json()).job.status, "queued");
+  const secondClaimResponse = await privateCall("/api/d1/internal/jobs/claim", {});
+  const secondClaim = await secondClaimResponse.json();
+  assert.equal(secondClaim.job.attemptCount, 2);
+  const completed = await privateCall("/api/d1/internal/jobs/" + jobId + "/complete", { leaseToken: secondClaim.leaseToken, output: { artifactId: "artifact-1" } });
+  assert.equal(completed.status, 200);
+  assert.equal((await completed.json()).job.status, "succeeded");
+  const staleComplete = await privateCall("/api/d1/internal/jobs/" + jobId + "/complete", { leaseToken: secondClaim.leaseToken, output: {} });
+  assert.equal(staleComplete.status, 409);
+  const emptyClaim = await privateCall("/api/d1/internal/jobs/claim", {});
+  assert.equal((await emptyClaim.json()).claimed, false);
+
   const reviewerJob = await call("/api/d1/jobs", "reviewer", "POST", { projectId: project.id, jobType: "blocked.write", input: {} });
   assert.equal(reviewerJob.status, 403);
   const outsiderJobList = await call("/api/d1/jobs?projectId=" + project.id, "outsider");
