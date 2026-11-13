@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTimeline, addTrack, addClip, rational } from "../../src/core/timeline.ts";
+import { createTimeline, addTrack, addClip, rational, validateTimeline, splitClip, trimClip, toOpenTimelineIo } from "../../src/core/timeline.ts";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../../src/core/timeline-playback.ts";
 
 function fixture(){
@@ -119,4 +119,60 @@ test("proxy recovery falls back only to the matching canonical source and only o
  assert.equal(shouldFallbackToTimelineSourcePreview(true,"source-1","source-1",[]),false);
  assert.equal(shouldFallbackToTimelineSourcePreview(true,"source-1","proxy-2",["proxy-2"]),false);
  assert.equal(shouldFallbackToTimelineSourcePreview(true,"","proxy-1",[]),false);
+});
+
+
+function transitionFixture(){
+ let timeline=createTimeline("project-transition","timeline-transition","Transition preview",{numerator:24,denominator:1});
+ timeline=addTrack(timeline,{id:"video",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
+ const clip=(id,start)=>({id,assetId:"asset-"+id,name:id,sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(start,24),duration:rational(24,24),enabled:true});
+ timeline=addClip(timeline,"video",clip("outgoing",0));
+ timeline=addClip(timeline,"video",clip("incoming",24));
+ timeline.tracks[0].clips[0].transitionToNext={type:"dip-to-black",fadeFrames:6};
+ return timeline;
+}
+
+test("dip-to-black transitions validate and round-trip through OpenTimelineIO metadata",()=>{
+ const timeline=transitionFixture();
+ assert.equal(validateTimeline(timeline).valid,true);
+ const otio=toOpenTimelineIo(timeline);
+ assert.equal(otio.tracks.children[0].children[0].metadata.executiveVisuals.transitionToNext.type,"dip-to-black");
+ assert.equal(otio.tracks.children[0].children[0].metadata.executiveVisuals.transitionToNext.fadeFrames,6);
+});
+
+test("dip-to-black preview fades the outgoing clip to black and brings the next clip up",()=>{
+ const timeline=transitionFixture();
+ const outgoing=getTimelinePlaybackFrame(timeline,0.875).active.find(item=>item.clipId==="outgoing");
+ const atCut=getTimelinePlaybackFrame(timeline,1).active.find(item=>item.clipId==="incoming");
+ const incoming=getTimelinePlaybackFrame(timeline,1.125).active.find(item=>item.clipId==="incoming");
+ const complete=getTimelinePlaybackFrame(timeline,1.25).active.find(item=>item.clipId==="incoming");
+ assert.ok(Math.abs(outgoing.opacity-0.5)<0.001);
+ assert.equal(atCut.opacity,0);
+ assert.ok(Math.abs(incoming.opacity-0.5)<0.001);
+ assert.equal(complete.opacity,1);
+});
+
+test("invalid transition length, non-adjacent clips and non-video transitions are rejected",()=>{
+ const timeline=transitionFixture();
+ const invalidLength=structuredClone(timeline);invalidLength.tracks[0].clips[0].transitionToNext.fadeFrames=0;
+ assert.ok(validateTimeline(invalidLength).issues.some(issue=>issue.code==="invalid_transition"));
+ const nonAdjacent=structuredClone(timeline);nonAdjacent.tracks[0].clips[1].timelineStart=rational(30,24);
+ assert.ok(validateTimeline(nonAdjacent).issues.some(issue=>issue.code==="transition_requires_adjacent_clip"));
+ const nonVideo=structuredClone(timeline);nonVideo.tracks[0].kind="audio";
+ assert.ok(validateTimeline(nonVideo).issues.some(issue=>issue.code==="invalid_transition"));
+});
+
+test("splitting a transitioned clip keeps its outgoing transition only on the right-hand segment",()=>{
+ const timeline=transitionFixture();
+ const split=splitClip(timeline,"video","outgoing",12,"outgoing-right");
+ const first=split.tracks[0].clips.find(item=>item.id==="outgoing");
+ const second=split.tracks[0].clips.find(item=>item.id==="outgoing-right");
+ assert.equal(first.transitionToNext,undefined);
+ assert.deepEqual(second.transitionToNext,{type:"dip-to-black",fadeFrames:6});
+});
+
+test("trimming the outgoing edge removes a transition whose adjacency would be broken",()=>{
+ const timeline=transitionFixture();
+ const trimmed=trimClip(timeline,"video","outgoing",0,1);
+ assert.equal(trimmed.tracks[0].clips.find(item=>item.id==="outgoing").transitionToNext,undefined);
 });

@@ -164,6 +164,16 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
+ const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
+ for(let index=0;index<clips.length;index++){
+  const clip=clips[index],transition=clip.transitionToNext;
+  if(transition===undefined)continue;
+  const fadeFrames=Number(transition?.fadeFrames),durationFrames=Math.round(seconds(clip.duration)*fps),next=clips[index+1];
+  if(transition?.type!=="dip-to-black"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>durationFrames)fail("Video dip-to-black transitions require a positive integer fade length no longer than the outgoing clip.","INVALID_TIMELINE_TRANSITION");
+  if(!next||Math.abs(seconds(next.timelineStart)-(seconds(clip.timelineStart)+seconds(clip.duration)))>0.5/fps)fail("A dip-to-black transition requires the next enabled video clip to begin immediately after this clip.","INVALID_TIMELINE_TRANSITION");
+  if(fadeFrames>Math.round(seconds(next.duration)*fps))fail("The transition fade cannot be longer than the incoming clip.","INVALID_TIMELINE_TRANSITION");
+ }
  if(timeline.audioMastering?.enabled===true&&!audioClips.length)fail("Audio mastering requires at least one enabled audio clip.","AUDIO_MASTERING_REQUIRES_AUDIO");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
@@ -190,7 +200,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   return{path:entry.path,id:asset.id,mediaType:asset.mediaType||asset.media_type,originalName:asset.originalName||asset.original_name||asset.name||"",size:asset.size,sha256:asset.sha256};
  };
  try{
-  for(const clip of clips){
+  for(const [clipPosition,clip] of clips.entries()){
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
    if(duration<=0)continue;
@@ -207,7 +217,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const label="v"+segmentIndex++;
    const effect=buildTimelineClipEffects(clip.metadata||{});
    const retimeFilter=speedExpression ? "setpts='"+speedExpression+"/TB'" : speed===1 ? null : "setpts=(PTS-STARTPTS)/"+speed.toFixed(6);
-    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+    const previous=clips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames:0,fadeOutFrames=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames:0;
+    const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps;
+    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
    segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
@@ -281,7 +293,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});

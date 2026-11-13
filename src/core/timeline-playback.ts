@@ -11,6 +11,7 @@ export interface TimelinePlaybackItem {
   mediaTimeSeconds: number;
   gainDb: number;
   speed: number;
+  opacity: number;
 }
 
 export interface TimelinePlaybackFrame {
@@ -61,11 +62,20 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
 
   timeline.tracks.forEach((track, trackIndex) => {
     if (!track.enabled || track.kind === "caption") return;
+    const enabledVideoClips=track.kind==="video"?track.clips.filter(item=>item.enabled).slice().sort((a,b)=>a.timelineStart.value/a.timelineStart.rate-b.timelineStart.value/b.timelineStart.rate):[];
     for (const clip of track.clips) {
       if (!clip.enabled) continue;
       const start = clip.timelineStart.value / clip.timelineStart.rate;
       const end = start + clip.duration.value / clip.duration.rate;
       if (safeTime < start || safeTime >= end) continue;
+      let opacity=1;
+      if(track.kind==="video"){
+        const index=enabledVideoClips.findIndex(item=>item.id===clip.id),previous=enabledVideoClips[index-1];
+        const fadeIn=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeOut=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        if(fadeIn>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(safeTime-start)/fadeIn)));
+        if(fadeOut>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(end-safeTime)/fadeOut)));
+      }
       active.push({
         clipId: clip.id,
         trackId: track.id,
@@ -77,6 +87,7 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
         mediaTimeSeconds: timelineClipMediaTimeSeconds(clip, safeTime),
         gainDb: Math.max(-60, Math.min(24, Number.isFinite(clip.gainDb) ? clip.gainDb! : 0)),
         speed: evaluateSpeedCurve(clip.speedCurve, safeTime-start, positive(clip.speed ?? 1, 1)),
+        opacity,
       });
     }
   });

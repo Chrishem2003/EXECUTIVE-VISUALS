@@ -11,8 +11,10 @@ export function validateTimelineDocument(timeline,db,ownerId){
   if(!track.id||ids.has(track.id))issues.push("Track IDs must be unique and non-empty.");ids.add(track.id);
   if(!["video","audio","overlay","caption"].includes(track.kind))issues.push("Track kind must be video, audio, overlay or caption.");
   if(!Array.isArray(track.clips))issues.push("Every track must contain a clips array.");
+  const orderedClips=[...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+  const enabledClips=orderedClips.filter(clip=>clip.enabled!==false);
   let end=0;
-  for(const clip of [...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
+  for(const clip of orderedClips){
    clipCount++;
    if(!clip.id||ids.has(clip.id))issues.push("Clip and track IDs must be unique and non-empty.");ids.add(clip.id);
    const asset=clip.assetId?getAccessibleAsset(db,ownerId,clip.assetId,true):null;
@@ -30,6 +32,13 @@ export function validateTimelineDocument(timeline,db,ownerId){
    if(Number.isFinite(start)&&Number.isFinite(duration)&&start+0.000001<end)issues.push("Clips overlap on the same track; use a separate overlay track.");
    if(Number.isFinite(start)&&Number.isFinite(duration))end=Math.max(end,start+duration);
    if(Number.isFinite(duration)&&Number.isFinite(sourceDuration)&&Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/Number(clip.sourceRange.duration.rate)))issues.push("Clip source and timeline durations must match within half a source frame until time-remapping is implemented.");
+   if(clip.enabled!==false&&clip.transitionToNext!==undefined){
+    const transition=clip.transitionToNext,index=enabledClips.findIndex(item=>item.id===clip.id),next=enabledClips[index+1];
+    const fadeFrames=Number(transition?.fadeFrames),fps=Number(timeline.frameRate.numerator)/Number(timeline.frameRate.denominator),durationFrames=Math.round(duration*fps);
+    if(track.kind!=="video"||transition?.type!=="dip-to-black"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>durationFrames)issues.push("Video dip-to-black transitions require a positive integer fade length no longer than the outgoing clip.");
+    else if(!next||Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)issues.push("A dip-to-black transition requires the next enabled video clip to begin immediately after this clip.");
+    else if(fadeFrames>Math.round(seconds(next.duration)*fps))issues.push("The transition fade cannot be longer than the incoming clip.");
+   }
   }
  }
  if(clipCount>5000)issues.push("Timeline exceeds the 5,000 clip limit.");

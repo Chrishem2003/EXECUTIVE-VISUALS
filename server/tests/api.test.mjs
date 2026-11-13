@@ -548,6 +548,15 @@ test("timelines persist with asset ownership, revision checks and interchange ex
   const reject=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({timeline:invalid})},cookie);
   assert.equal(reject.status,422);
   assert.equal((await reject.json()).error.code,"TIMELINE_INVALID");
+  const first={...document.tracks[0].clips[0],transitionToNext:{type:"dip-to-black",fadeFrames:24}};
+  const second={...document.tracks[0].clips[0],id:"clip-next",timelineStart:{value:240,rate:24}};
+  const transitioned={...document,tracks:[{...document.tracks[0],clips:[first,second]}]};
+  const accepted=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({timeline:transitioned})},cookie);
+  assert.equal(accepted.status,201,await accepted.clone().text());
+  const invalidTransition={...transitioned,tracks:[{...transitioned.tracks[0],clips:[{...first,transitionToNext:{type:"dip-to-black",fadeFrames:0}},second]}]};
+  const rejectedTransition=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({timeline:invalidTransition})},cookie);
+  assert.equal(rejectedTransition.status,422);
+  assert.equal((await rejectedTransition.json()).error.code,"TIMELINE_INVALID");
 });
 
 
