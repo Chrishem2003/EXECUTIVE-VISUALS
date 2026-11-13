@@ -110,6 +110,43 @@ test("audio mastering settings are captured and restored as a reversible timelin
   assert.equal(undone.audioMastering, undefined);
 });
 
+test("deleting a clip is an entity-level operation that undo restores and redo removes", () => {
+  const before = fixture();
+  const after = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: track.clips.filter(item => item.id !== "clip-a") } : track) };
+  const op = operation(before, after, "Delete clip");
+  assert.ok(op);
+  assert.equal(op.changes.length, 1);
+  assert.equal(op.changes[0].entity, "clip");
+  assert.equal(op.changes[0].before.trackId, "video-1");
+  assert.equal(op.changes[0].after, null);
+
+  const applied = applyTimelineHistoryOperation(before, op);
+  assert.equal(applied.tracks[0].clips.length, 0);
+  assert.equal(applied.tracks[1].id, "audio-1");
+  assert.equal(applied.markers.length, before.markers.length);
+
+  const undone = applyTimelineHistoryOperation(applied, op, "undo");
+  assert.deepEqual(undone.tracks[0].clips, before.tracks[0].clips);
+  assert.deepEqual(undone.tracks.map(track => track.id), before.tracks.map(track => track.id));
+
+  const redone = applyTimelineHistoryOperation(undone, op, "forward");
+  assert.equal(redone.tracks[0].clips.length, 0);
+  assert.equal(redone.tracks[1].id, "audio-1");
+});
+
+test("undoing a clip deletion fails closed if its original track is now locked", () => {
+  const before = fixture();
+  const after = { ...before, tracks: before.tracks.map(track => track.id === "video-1"
+    ? { ...track, clips: [] } : track) };
+  const op = operation(before, after, "Delete clip");
+  const deleted = applyTimelineHistoryOperation(before, op);
+  const locked = { ...deleted, tracks: deleted.tracks.map(track => track.id === "video-1"
+    ? { ...track, locked: true } : track) };
+  assert.throws(() => applyTimelineHistoryOperation(locked, op, "undo"), /locked track/);
+  assert.equal(locked.tracks[0].clips.length, 0);
+});
+
 test("stale entity state fails closed instead of overwriting a newer edit", () => {
   const before = fixture();
   const after = trimClip(before, "video-1", "clip-a", 6, 6);
