@@ -129,7 +129,7 @@ async function loadRun(){
  if(!runId){scheduleWorkflowRunPoll();return;}
  const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+runId);
  if(state.latestRunId!==runId)return;
- state.runStatus=response.run.status;state.runNodes=response.nodes;
+ state.runStatus=response.run.status;state.runNodes=response.nodes;if(state.message.startsWith("Workflow status refresh failed")||state.message.startsWith("Workflow status could not be refreshed"))state.message="";
  if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+runId})}).catch(()=>{});
  scheduleWorkflowRunPoll();
 }
