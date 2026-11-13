@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,buildSeriesPlanFromStoryboard,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS,EPISODE_RUNTIME_CHOICES} from "../../src/core/series-production.ts";
+import {createGeneratedVideoClip,validateTimeline} from "../../src/core/timeline.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,buildSeriesPlanFromStoryboard,matchGeneratedStoryboardAssets,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS,EPISODE_RUNTIME_CHOICES} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,input.episodeRuntimeSeconds);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -187,3 +188,38 @@ assert.ok(convertedPackage.shots[0].prompt.includes("Story beat:"));
 assert.ok(convertedPackage.shots.every(shot=>shot.durationSeconds<=30));
 assert.throws(()=>buildSeriesPlanFromStoryboard({...directorBoard,providerSubmitted:true},{format:"documentary",aspectRatio:"16:9",frameRate:24,resolution:"1080p",visualStyle:"Cinematic",language:"English",voiceMode:"Natural",captions:"Both",music:"Score",cameraLanguage:"Mixed",shotComposition:"Mixed",pacing:"Measured",colorGrade:"Natural"}),/planning-only/);
 console.log("Creative Director handoff verification passed: timed storyboard converts to a validated editable episode and engine-neutral shot package without provider execution.");
+
+
+const generatedShots=convertedEpisode.scenes.flatMap(scene=>scene.shots);
+const generatedAssets=generatedShots.map((shot,shotIndex)=>({
+ id:"asset-"+shotIndex,projectId:"cloud-project-1",mediaType:"video/mp4",
+ metadata:{operation:"video.generate",approvalId:"approval-1",shotIndex,provider:"fal",model:"test-model"}
+}));
+const matchedGenerated=matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets].reverse(),"approval-1","cloud-project-1");
+assert.deepEqual(matchedGenerated.map(item=>item.asset.id),generatedShots.map((_,index)=>"asset-"+index));
+assert.deepEqual(matchedGenerated.map(item=>item.shotIndex),generatedShots.map((_,index)=>index));
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.slice(1),"approval-1","cloud-project-1"),/incomplete/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,[...generatedAssets,{...generatedAssets[0],id:"duplicate-asset"}],"approval-1","cloud-project-1"),/More than one generated asset/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map(asset=>({...asset,projectId:"other-project"})),"approval-1","cloud-project-1"),/different cloud project/);
+assert.throws(()=>matchGeneratedStoryboardAssets(generatedShots,generatedAssets.map((asset,index)=>index===0?{...asset,metadata:{...asset.metadata,shotIndex:generatedShots.length}}:asset),"approval-1","cloud-project-1"),/invalid shot index/);
+console.log("Generated storyboard asset matching verification passed: exact shot order, completeness, duplicate rejection and cloud-project isolation.");
+
+
+const generatedTimeline=buildEpisodeTimelineDocument(converted,convertedEpisode,"cloud-project-1");
+const generatedVideoTrack=generatedTimeline.tracks.find(track=>track.kind==="video");
+assert.ok(generatedVideoTrack);
+for(const {shot,asset,shotIndex} of matchedGenerated){
+ const marker=generatedTimeline.markers.find(item=>item.id===shot.id);
+ assert.ok(marker);
+ const fps=generatedTimeline.frameRate.numerator/generatedTimeline.frameRate.denominator;
+ generatedVideoTrack.clips.push(createGeneratedVideoClip({
+  id:"generated-clip-"+shotIndex,assetId:asset.id,name:shot.framing||("Shot "+(shotIndex+1)),
+  durationSeconds:shot.durationSeconds,frameRate:generatedTimeline.frameRate,
+  startFrame:Math.round(marker.start.value/marker.start.rate*fps),
+  metadata:{source:"creative-storyboard",approvalId:"approval-1",shotIndex,cloudAssetId:asset.id,cloudSha256:"a".repeat(64)}
+ }));
+}
+assert.equal(generatedVideoTrack.clips.length,generatedShots.length);
+assert.equal(validateTimeline(generatedTimeline).valid,true);
+assert.deepEqual(generatedVideoTrack.clips.map(clip=>clip.assetId),generatedShots.map((_,index)=>"asset-"+index));
+console.log("Generated storyboard timeline verification passed: validated video clips align with their original shot markers and approved cloud assets.");
