@@ -7,6 +7,6 @@ export function hasCloudRenderJobFinished(previous:readonly CloudRenderJobSnapsh
  return next.some(job=>{
   if(!job||typeof job.id!=="string"||!TERMINAL.has(String(job.status||"").toLowerCase()))return false;
   const old=prior.get(job.id);
-  return old!==undefined&&!TERMINAL.has(old);
+  return old===undefined||!TERMINAL.has(old);
  });
 }
