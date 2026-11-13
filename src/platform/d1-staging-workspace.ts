@@ -1,5 +1,5 @@
 import { apiRequest } from "../core/api";
-import { buildD1WorkspaceUpdatePayload, type D1WorkspaceDocument } from "./d1-staging-contract";
+import { buildD1WorkspaceUpdatePayload, isD1StagingWorkspaceEnabled, type D1WorkspaceDocument } from "./d1-staging-contract";
 
 type D1Project = { id: string; name: string; description?: string; revision: number; settings?: Record<string, unknown> };
 type D1Asset = { id: string; projectId: string | null; name: string; mediaType: string; size: number; sha256: string; derivativeOf?: string | null; metadata?: Record<string, unknown>; createdAt: string };
@@ -7,6 +7,8 @@ type D1Workspace = { document: D1WorkspaceDocument; revision: number; updatedAt:
 
 const state: {
   checked: boolean;
+  enabled: boolean;
+  visibilityChecked: boolean;
   ready: boolean;
   busy: boolean;
   message: string;
@@ -15,7 +17,7 @@ const state: {
   workspace: D1Workspace | null;
   assets: D1Asset[];
 } = {
-  checked: false, ready: false, busy: false,
+  checked: false, enabled: false, visibilityChecked: false, ready: false, busy: false,
   message: "This isolated staging workspace is opt-in and does not replace production storage.",
   projects: [], projectId: "", workspace: null, assets: []
 };
@@ -76,6 +78,7 @@ function projectMarkup() {
 }
 
 export function renderD1StagingWorkspace() {
+  if (!state.visibilityChecked || !state.enabled) return "";
   return '<section class="panel d1-staging-workspace"><div class="runtime-section-heading"><div><div class="eyebrow">ISOLATED DATABASE PREVIEW</div><h2>D1 staging workspace</h2></div><span class="status">'+(state.ready ? "Connected · staging only" : state.checked ? "Unavailable" : "Not connected")+'</span></div><p>Exercise persistent staging projects, revision-checked workspace documents and private asset metadata without switching production data or enabling media storage.</p><div class="notice">'+esc(state.message)+'</div><div class="action-row"><button class="secondary" data-d1-staging-refresh '+(state.busy ? "disabled" : "")+'>'+ (state.busy ? "Checking…" : state.checked ? "↻ Check staging bridge" : "Connect staging preview")+'</button><small class="muted">No production writes · no media bytes · R2 disabled</small></div>'+projectMarkup()+'</section>';
 }
 
@@ -83,6 +86,14 @@ export function initD1StagingWorkspace(onRender: () => void) {
   repaint = onRender;
   if (initialized) return;
   initialized = true;
+  void apiRequest<unknown>("/api/health").then(health => {
+    state.enabled = isD1StagingWorkspaceEnabled(health);
+  }).catch(() => {
+    state.enabled = false;
+  }).finally(() => {
+    state.visibilityChecked = true;
+    repaint();
+  });
   document.addEventListener("click", event => {
     const target = event.target as HTMLElement;
     if (target.closest("[data-d1-staging-refresh]")) { void refresh(); }
