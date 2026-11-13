@@ -13,7 +13,7 @@ const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal"}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
@@ -141,6 +141,22 @@ test("soft deletion remains private and exposes cleanup pending if object remova
  const f=fixture({removeError:true});
  const result=await f.repo.softDelete({ownerId,assetId});
  assert.equal(result.deleted,true);assert.equal(result.cleanupPending,true);
+});
+
+test("confirms a concurrent tombstone before attempting physical deletion",async()=>{
+ const f=fixture({deletePatchMode:"race-won"});
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);
+ assert.equal(result.storageRemoved,true);
+ assert.equal(f.row.deleted_at,"2026-11-05T12:00:00.000Z");
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["remove"]);
+});
+
+test("does not remove storage when a failed soft-delete race has no confirmed tombstone",async()=>{
+ const f=fixture({deletePatchMode:"race-unconfirmed"});
+ await assert.rejects(()=>f.repo.softDelete({ownerId,assetId}),/could not be safely marked deleted/);
+ assert.equal(f.row.deleted_at,null);
+ assert.equal(f.storageCalls.length,0);
 });
 
 test("retries physical deletion for an existing tombstone without changing its metadata",async()=>{
