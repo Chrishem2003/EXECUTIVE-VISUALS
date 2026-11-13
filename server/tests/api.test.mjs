@@ -740,12 +740,19 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
   assert.equal(upload.status,201,await upload.text());
   const asset=(await upload.json()).asset;
 
+  const workspace=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document:{shots:[{id:"shot-1",scene:"Opening",action:"Presenter demonstrates the approved workflow"}],characters:[{id:"character-1",name:"Maya",description:"Presenter"}]}})},owner);
+  assert.equal(workspace.status,200,await workspace.text());
+
   const submission=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"project",targetId:project.id,kind:"source_reference",claim:"The uploaded source supports the approved project reference.",method:"Human review of the original file",sourceRef:"capture://source-01",observedAt:"2026-11-13T10:00:00.000Z"})},owner);
   assert.equal(submission.status,201,await submission.text());
   const submitted=await submission.json();
   assert.equal(submitted.record.status,"submitted");
   assert.equal(submitted.events.length,1);
   assert.equal(submitted.events[0].type,"submitted");
+
+  const shotEvidence=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"shot",targetId:"shot-1",kind:"shot_reference",claim:"This source shows the presenter action planned for shot one."})},owner);
+  assert.equal(shotEvidence.status,201,await shotEvidence.text());
+  assert.equal((await shotEvidence.json()).record.target.id,"shot-1");
 
   const forged=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",targetType:"project",targetId:project.id,kind:"source_reference",claim:"This should never be accepted as pre-verified."})},owner);
   assert.equal(forged.status,400);
