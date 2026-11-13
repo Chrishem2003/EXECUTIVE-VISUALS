@@ -14,7 +14,13 @@
 | Cloudflare R2 | Not activated; listing buckets returns Cloudflare error 10042 asking to enable R2 in the dashboard | No durable object store is currently available for uploaded source media and rendered outputs. |
 | Supabase organisation `Chrishem Autos` | Free plan; two existing projects already occupy the free-project allowance | Both existing projects contain NEMA/platform tables. They must not be repurposed for Executive Visuals or have their auth/storage settings changed for this app. |
 
-## Current staging implementation boundary (12 November 2026)\n\nThe earlier 8 November observations that D1 had no tables or Worker binding are superseded. A read-only account query on 12 November confirmed all seven `ev_*` tables and zero user/project/membership/workspace/asset/job/audit rows. `wrangler.jsonc` targets only the separate `executive-visuals-d1-staging` Worker and the existing `executive-visuals-staging` database. The staging Worker authenticates by calling the existing Render `/api/me` endpoint and exposes only `/api/d1/*`; it does not proxy production project, asset, job, or media routes.\n\nThe repository contains an environment-gated same-origin `/api/d1/*` proxy controlled by `D1_STAGING_WORKER_URL`. It is fail-closed when unset. It has not been enabled on the live production Render service, and no isolated Render staging service has completed an authenticated browser workspace round-trip. Therefore D1 is a deployed staging foundation, not durable application persistence.\n\n## Recommended target architecture
+## Current staging implementation boundary (13 November 2026)
+
+The earlier 8 November observations that D1 had no tables or Worker binding are superseded. A read-only schema query confirms all seven `ev_*` tables and migration `0001_initial.sql`. On 13 November, the live acceptance workflow registered/authenticated the allowlisted staging smoke identity, verified `/api/me`, created and listed a project through the Render same-origin `/api/d1/*` bridge, saved a workspace document from revision 1 to revision 2, reloaded it with exact document equality, and confirmed anonymous project access returns HTTP 401. A subsequent read-only D1 query confirmed one user, one project and one workspace document; memberships, assets, jobs and audit events remain zero.
+
+The staging Worker authenticates against the dedicated Render staging API and exposes only `/api/d1/*`; it does not proxy production project, asset, job, or media routes. The bridge is configured only on the isolated staging service. Production health continues to report Supabase auth and `d1WorkspaceEnabled=false`. D1 is now an accepted staging workspace foundation, but it is not the production source of truth or a complete media-storage solution. Staging identity currently uses local SQLite on Render's unverified/ephemeral disk, so the smoke account is not a durable customer identity.
+
+## Recommended target architecture
 
 1. **Cloudflare D1** — durable relational metadata for accounts/workspace mapping, projects, memberships, assets, jobs, reviews, audit records and provenance indexes. Use parameterized SQL, indexed tenant-scoped queries and server-side authorization. Keep the existing staging database isolated.
 2. **Cloudflare R2 Standard** — durable private source media, derivatives, timeline renders, thumbnails and export artifacts. Use object keys scoped by account/project, server-authorized reads, short-lived signed URLs or a Worker-mediated access path, checksums, lifecycle rules and upload recovery.
@@ -46,6 +52,7 @@
 
 - No existing Supabase project was modified.
 - No R2 subscription was activated and no bucket was created.
-- The isolated staging D1 schema and staging Worker binding are deployed; no production D1 binding or route was changed.
-- No paid Render plan, persistent disk, Render Postgres or production deployment was added.
-- The current app must continue to display its temporary-storage warning until the end-to-end persistence gates pass.
+- The isolated staging D1 schema and staging Worker binding are deployed; no production D1 binding or route was enabled.
+- The main-branch merge triggered the existing Render production auto-deploy; production health continues to show Supabase auth and D1 staging disabled. No production environment configuration or database was changed.
+- No paid Render plan, persistent disk, Render Postgres or paid service was added.
+- The current app must continue to display its temporary-storage warning until durable database/object storage and backup/restore gates pass.
