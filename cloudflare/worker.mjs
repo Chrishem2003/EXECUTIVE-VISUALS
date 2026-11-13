@@ -61,6 +61,7 @@ function errorResponse(error) {
     : error?.code === "D1_PROJECT_REVISION_CONFLICT" || error?.code === "D1_MEMBER_AMBIGUOUS" ? 409
     : error?.code === "D1_MEMBER_NOT_FOUND" ? 404
     : error?.code === "D1_IDEMPOTENCY_CONFLICT" ? 409
+    : error?.code === "D1_JOB_LEASE_LOST" ? 409
     : 400);
   return json({ error: { code: error?.code || "D1_REQUEST_INVALID", message: String(error?.message || "The D1 request could not be completed.").slice(0, 300) } }, status);
 }
@@ -140,6 +141,36 @@ async function d1Api(request, env, url) {
   if (!await requireSchema(env.DB)) {
     return json({ error: { code: "D1_MIGRATION_REQUIRED", message: "The isolated staging schema has not been applied." } }, 503);
   }
+  if (url.pathname.startsWith("/api/d1/internal/jobs")) {
+    if (typeof env.D1_WORKER_TOKEN !== "string" || env.D1_WORKER_TOKEN.length < 32) {
+      return json({ error: { code: "D1_WORKER_NOT_CONFIGURED", message: "The private staging job worker token is not configured." } }, 503);
+    }
+    const supplied = request.headers.get("authorization") || "";
+    if (supplied !== "Bearer " + env.D1_WORKER_TOKEN) {
+      return json({ error: { code: "D1_WORKER_UNAUTHORIZED", message: "A valid private worker credential is required." } }, 401);
+    }
+    if (request.method !== "POST") return json({ error: { code: "METHOD_NOT_ALLOWED", message: "Use POST for private worker operations." } }, 405);
+    const repo = createD1Repository({ db: env.DB, allowR2: false });
+    try {
+      if (url.pathname === "/api/d1/internal/jobs/claim") {
+        const body = await readJson(request);
+        const claimed = await repo.claimNextJob({ leaseMs: body.leaseMs ?? 60000 });
+        return json({ claimed: Boolean(claimed), ...(claimed || {}) });
+      }
+      const leaseMatch = url.pathname.match(/^\/api\/d1\/internal\/jobs\/([0-9a-f-]{36})\/(heartbeat|complete|fail)$/i);
+      if (!leaseMatch) return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "Private worker endpoint not found." } }, 404);
+      const body = await readJson(request, 80 * 1024);
+      const args = { jobId: leaseMatch[1], leaseToken: body.leaseToken };
+      let result;
+      if (leaseMatch[2] === "heartbeat") result = await repo.heartbeatJob({ ...args, leaseMs: body.leaseMs ?? 60000 });
+      else if (leaseMatch[2] === "complete") result = await repo.completeJob({ ...args, output: body.output ?? {} });
+      else result = await repo.failJob({ ...args, error: body.error ?? {}, retryDelayMs: body.retryDelayMs ?? 0 });
+      return result ? json({ job: result }) : json({ error: { code: "D1_JOB_LEASE_LOST", message: "The job lease is expired, superseded or no longer active." } }, 409);
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
   let user, sessionCookies = [];
   try {
     const authenticated = await authenticate(request, env);

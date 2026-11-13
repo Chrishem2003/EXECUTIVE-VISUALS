@@ -141,3 +141,36 @@ test("project owner can manage verified members by email and list/remove project
   await assert.rejects(repo.addMemberByEmail({ actorId: ownerId, projectId, email: "missing@example.test", role: "viewer" }), { code: "D1_MEMBER_NOT_FOUND" });
   db.close();
 });
+
+
+test("D1 worker leases reclaim expired claims and fail jobs after the attempt ceiling", async () => {
+  const db = makeD1();
+  let now = Date.parse("2026-11-13T12:00:00.000Z");
+  const repo = createD1Repository({ db, clock: () => new Date(now).toISOString() });
+  const principal = await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase", email: "owner@example.test" });
+  const project = await repo.createProject({ ownerId: principal.id, name: "Lease recovery" });
+  const job = await repo.createJob({
+    actorId: principal.id, projectId: project.id, jobType: "storyboard.render",
+    input: { storyboardId: "lease-recovery" }, maxAttempts: 2
+  });
+
+  const first = await repo.claimNextJob({ leaseMs: 5000 });
+  assert.equal(first.job.id, job.job.id);
+  assert.equal(first.job.attemptCount, 1);
+  now += 5001;
+  assert.equal(await repo.heartbeatJob({ jobId: job.job.id, leaseToken: first.leaseToken }), null);
+
+  const reclaimed = await repo.claimNextJob({ leaseMs: 5000 });
+  assert.equal(reclaimed.job.id, job.job.id);
+  assert.equal(reclaimed.job.status, "running");
+  assert.equal(reclaimed.job.attemptCount, 2);
+  assert.notEqual(reclaimed.leaseToken, first.leaseToken);
+  assert.equal(await repo.completeJob({ jobId: job.job.id, leaseToken: first.leaseToken, output: {} }), null);
+
+  now += 5001;
+  assert.equal(await repo.claimNextJob({ leaseMs: 5000 }), null);
+  const exhausted = await repo.getJob({ actorId: principal.id, jobId: job.job.id });
+  assert.equal(exhausted.status, "failed");
+  assert.equal(exhausted.error.code, "LEASE_EXHAUSTED");
+  db.close();
+});
