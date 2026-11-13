@@ -14,6 +14,14 @@
 | Cloudflare R2 | Not activated; listing buckets returns Cloudflare error 10042 asking to enable R2 in the dashboard | No durable object store is currently available for uploaded source media and rendered outputs. |
 | Supabase organisation `Chrishem Autos` | Free plan; two existing projects already occupy the free-project allowance | Both existing projects contain NEMA/platform tables. They must not be repurposed for Executive Visuals or have their auth/storage settings changed for this app. |
 
+## New observations — 13 November 2026
+
+- Main commit `e2ccf5930aae0ae67e48e908c15f7759458454ef` is deployed on the existing Render Free service. The service remains on local SQLite/disk; this deployment did not add persistent storage or change production environment variables.
+- Isolated D1 staging Worker version 9 is active. PR #540 adds lease operations and PR #541 adds job/audit visibility, but the D1 queue remains a staging metadata system and is not wired to the Supabase cloud-video worker. The UI says queued jobs are not dispatched.
+- PR #542 adds an optional embedded host for the existing cloud-video worker. It is disabled by default; no provider execution secrets or paid-generation flags were enabled.
+- The latest GitHub Supabase Preview check failed because the linked remote project has migration history for NEMA/platform services that is not present in this repository. Treat this as an integration-target mismatch. Do not run migration repair, `supabase db push`, apply migrations, or change storage/auth on that project. The isolated Executive Visuals Supabase project and bucket are still not provisioned.
+- The latest live D1 acceptance jobs were skipped because dedicated staging credentials are unavailable. Local CI passing is not live D1 acceptance.
+
 ## Current staging implementation boundary (13 November 2026)
 
 The earlier 8 November observations that D1 had no tables or Worker binding are superseded. A read-only schema query confirms all seven `ev_*` tables and migration `0001_initial.sql`. On 13 November, the live acceptance workflow registered/authenticated the allowlisted staging smoke identity, verified `/api/me`, created and listed a project through the Render same-origin `/api/d1/*` bridge, saved a workspace document from revision 1 to revision 2, reloaded it with exact document equality, and confirmed anonymous project access returns HTTP 401. An earlier read-only audit recorded three staging smoke users, three projects and three workspace documents. A later aggregate-only SELECT audit returned five users, five projects and five workspace documents, with zero memberships, assets, jobs and audit events. The later totals are not attributed to a specific workflow run, and no writes were made during that audit.

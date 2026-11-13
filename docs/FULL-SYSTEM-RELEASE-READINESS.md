@@ -1,11 +1,18 @@
 # Executive Visuals — full-system release readiness plan
 
 **Audit date:** 13 November 2026  
-**Baseline:** current `main` includes the 13 November integrations through PR #538; see `docs/IMPLEMENTATION-STATUS.md` for the authoritative merged-PR and live-deployment ledger. Render deployment for commit `fa9e420cf4a6827affbe9d5e49866077f5a30684` is live; isolated D1 staging Worker version 8 is active.
+**Baseline:** current `main` includes PRs #540, #541 and #542 after the earlier PR #538 checkpoint; see `docs/IMPLEMENTATION-STATUS.md` for the authoritative merged-PR and live-deployment ledger. Main commit `e2ccf5930aae0ae67e48e908c15f7759458454ef` is live on Render; isolated D1 staging Worker version 9 is active.
 
 This plan distinguishes code that is merged, code that has passed CI but is still on a branch, and features that cannot work end-to-end until external infrastructure and credentials exist. A passing test suite does not mean a provider, persistent store or production workflow is activated.
 
 ## 0. Mainline checkpoint — 13 November 2026
+
+- PR #540 adds fenced D1 staging job leases (claim, heartbeat, completion and retry-safe failure). It does not connect the D1 metadata queue to the cloud-video executor.
+- PR #541 exposes D1 staging job history and append-only audit events in the isolated workspace. The UI clearly reports that queued jobs are not dispatched.
+- PR #542 adds an opt-in embedded mode for the existing governed cloud video worker. It is default-off; Render configuration and provider credentials were not changed. Deployment `dep-dbrndk0jo6nc73eqt2tg` is live for commit `e2ccf5930aae0ae67e48e908c15f7759458454ef`.
+- Mainline CI passed full build/verification and disposable PostgreSQL integrations. Supabase Preview failed because the integration's linked remote project contains NEMA/platform migration history that is absent from this repository. Live D1 acceptance was skipped because dedicated staging credentials are not configured.
+- Do not attempt migration repair, `supabase db push`, schema changes or storage setup against the linked Supabase project. It is not an isolated Executive Visuals migration target. Keep paid generation and cloud storage default-off.
+
 
 - PR #470 and PR #472 are merged: waveform-cache file and directory symlink escape regression tests now run on main.
 - PR #515 is merged and deployed: variable-speed audio curves now flow through the Studio inspector, timeline model, local master renderer and cloud master renderer. Local variable-speed video rendering uses the same analytic inverse source-time mapping. Exact-head CI passed all five required workflows; Render deployment `ff73eb376d92a49b1facfeba96aeb1f390a499dc` is live. Rubber Band capability remains checked at render time and unsupported workers fail closed.
