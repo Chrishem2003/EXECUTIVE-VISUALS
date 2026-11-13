@@ -224,6 +224,26 @@ export function openDatabase(filename) {
       UNIQUE(project_id,revision)
     );
     CREATE INDEX IF NOT EXISTS creative_graph_snapshots_project_idx ON creative_graph_snapshots(project_id,revision DESC);
+    CREATE TRIGGER IF NOT EXISTS evidence_record_events_no_update
+      BEFORE UPDATE ON evidence_record_events BEGIN SELECT RAISE(ABORT,'EVIDENCE_EVENTS_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_record_events_no_delete
+      BEFORE DELETE ON evidence_record_events BEGIN SELECT RAISE(ABORT,'EVIDENCE_EVENTS_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_records_source_immutable
+      BEFORE UPDATE ON evidence_records
+      WHEN NEW.id IS NOT OLD.id OR NEW.owner_id IS NOT OLD.owner_id OR NEW.project_id IS NOT OLD.project_id
+        OR NEW.source_asset_id IS NOT OLD.source_asset_id OR NEW.source_sha256 IS NOT OLD.source_sha256
+        OR NEW.target_type IS NOT OLD.target_type OR NEW.target_id IS NOT OLD.target_id
+        OR NEW.evidence_kind IS NOT OLD.evidence_kind OR NEW.claim IS NOT OLD.claim
+        OR NEW.method IS NOT OLD.method OR NEW.source_ref IS NOT OLD.source_ref
+        OR NEW.observed_at IS NOT OLD.observed_at OR NEW.note IS NOT OLD.note
+        OR NEW.created_at IS NOT OLD.created_at
+      BEGIN SELECT RAISE(ABORT,'EVIDENCE_RECORD_SOURCE_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS evidence_records_no_delete
+      BEFORE DELETE ON evidence_records BEGIN SELECT RAISE(ABORT,'EVIDENCE_RECORD_APPEND_ONLY'); END;
+    CREATE TRIGGER IF NOT EXISTS creative_graph_snapshots_no_update
+      BEFORE UPDATE ON creative_graph_snapshots BEGIN SELECT RAISE(ABORT,'CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS creative_graph_snapshots_no_delete
+      BEFORE DELETE ON creative_graph_snapshots BEGIN SELECT RAISE(ABORT,'CREATIVE_GRAPH_SNAPSHOTS_IMMUTABLE'); END;
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_id TEXT NOT NULL REFERENCES users(id),
