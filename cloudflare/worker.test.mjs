@@ -152,6 +152,7 @@ test("D1 staging CORS allows only the configured app origin and bearer headers",
   assert.equal(allowed.status, 204);
   assert.equal(allowed.headers.get("access-control-allow-origin"), env.APP_ORIGIN);
   assert.match(allowed.headers.get("access-control-allow-headers"), /authorization/i);
+  assert.match(allowed.headers.get("access-control-allow-methods"), /DELETE/i);
   assert.equal(allowed.headers.get("access-control-allow-credentials"), null);
 
   const denied = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
@@ -216,6 +217,91 @@ test("D1 Worker exposes authenticated revisioned workspace documents", async t =
 });
 
 
+
+
+test("D1 Worker exposes owner-managed member listing, email add/update, role enforcement and removal", async t => {
+  const DB = makeD1();
+  const memberUserId = "22222222-2222-4222-8222-222222222222";
+  const identities = {
+    "Bearer owner-token": { id: userId, email: "owner@example.test" },
+    "Bearer member-token": { id: memberUserId, email: "member@example.test" }
+  };
+  t.mock.method(globalThis, "fetch", async request => {
+    const user = identities[request.headers.get("authorization")];
+    if (!user) return new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 });
+    return new Response(JSON.stringify({ user, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const ownerHeaders = { authorization: "Bearer owner-token", "content-type": "application/json" };
+  const memberHeaders = { authorization: "Bearer member-token", "content-type": "application/json" };
+
+  const create = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "POST", headers: ownerHeaders, body: JSON.stringify({ name: "Collaborative staging project" })
+  }), env);
+  assert.equal(create.status, 201);
+  const { project } = await create.json();
+
+  const resolveMember = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    headers: memberHeaders
+  }), env);
+  assert.equal(resolveMember.status, 200);
+
+  const membersUrl = `https://staging.example/api/d1/projects/${project.id}/members`;
+  const addViewer = await worker.fetch(new Request(membersUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ email: " MEMBER@EXAMPLE.TEST ", role: "viewer" })
+  }), env);
+  assert.equal(addViewer.status, 201, await addViewer.clone().text());
+  assert.equal((await addViewer.json()).member.role, "viewer");
+
+  const list = await worker.fetch(new Request(membersUrl, { headers: ownerHeaders }), env);
+  assert.equal(list.status, 200);
+  const memberList = await list.json();
+  assert.deepEqual(memberList.members.map(member => member.role), ["owner", "viewer"]);
+  assert.equal(memberList.canManageMembers, true);
+
+  const forbiddenInvite = await worker.fetch(new Request(membersUrl, {
+    method: "POST", headers: memberHeaders,
+    body: JSON.stringify({ email: "owner@example.test", role: "editor" })
+  }), env);
+  assert.equal(forbiddenInvite.status, 403);
+  assert.equal((await forbiddenInvite.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
+
+  const workspaceUrl = `https://staging.example/api/d1/projects/${project.id}/workspace`;
+  const viewerWrite = await worker.fetch(new Request(workspaceUrl, {
+    method: "PUT", headers: memberHeaders,
+    body: JSON.stringify({ expectedRevision: 1, document: { forbidden: true } })
+  }), env);
+  assert.equal(viewerWrite.status, 403);
+  assert.equal((await viewerWrite.json()).error.code, "D1_PROJECT_ACCESS_DENIED");
+
+  const promote = await worker.fetch(new Request(membersUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ email: "member@example.test", role: "editor" })
+  }), env);
+  assert.equal(promote.status, 201);
+  assert.equal((await promote.json()).member.role, "editor");
+
+  const editorWrite = await worker.fetch(new Request(workspaceUrl, {
+    method: "PUT", headers: memberHeaders,
+    body: JSON.stringify({ expectedRevision: 1, document: { authorized: true } })
+  }), env);
+  assert.equal(editorWrite.status, 200);
+  assert.equal((await editorWrite.json()).revision, 2);
+
+  const remove = await worker.fetch(new Request(membersUrl + "/" + memberUserId, {
+    method: "DELETE", headers: ownerHeaders
+  }), env);
+  assert.equal(remove.status, 200);
+  assert.equal((await remove.json()).removed, true);
+
+  const afterRemoval = await worker.fetch(new Request(`https://staging.example/api/d1/projects/${project.id}`, {
+    headers: memberHeaders
+  }), env);
+  assert.equal(afterRemoval.status, 404);
+  assert.equal((await afterRemoval.json()).error.code, "D1_PROJECT_NOT_FOUND");
+  DB.close();
+});
 
 test("D1 asset metadata reads are owner-scoped and never expose private storage keys", async t => {
   const DB = makeD1();
