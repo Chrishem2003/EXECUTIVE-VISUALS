@@ -1,13 +1,14 @@
 # Executive Visuals — full-system release readiness plan
 
-**Audit date:** 12 November 2026  
+**Audit date:** 13 November 2026  
 **Baseline:** current `main` includes the 12 November release and security work recorded in `docs/IMPLEMENTATION-STATUS.md`; see that document for the authoritative merged-PR and live-deployment ledger.
 
 This plan distinguishes code that is merged, code that has passed CI but is still on a branch, and features that cannot work end-to-end until external infrastructure and credentials exist. A passing test suite does not mean a provider, persistent store or production workflow is activated.
 
-## 0. Mainline checkpoint — 12 November 2026
+## 0. Mainline checkpoint — 13 November 2026
 
 - PR #470 and PR #472 are merged: waveform-cache file and directory symlink escape regression tests now run on main.
+- PR #515 is merged and deployed: variable-speed audio curves now flow through the Studio inspector, timeline model, local master renderer and cloud master renderer. Local variable-speed video rendering uses the same analytic inverse source-time mapping. Exact-head CI passed all five required workflows; Render deployment `ff73eb376d92a49b1facfeba96aeb1f390a499dc` is live. Rubber Band capability remains checked at render time and unsupported workers fail closed.
 - PR #468 Content Credentials trust-anchor policy and PR #469 patched Node 22.23.4 runtime are merged. The latest live application-code deployment is tracked in `docs/IMPLEMENTATION-STATUS.md`.
 - The isolated D1 staging schema and Worker are deployed and bound. Seven `ev_*` tables exist and a read-only audit found zero records. The Worker exposes project metadata and revisioned workspace-document endpoints only.
 - The Render same-origin D1 bridge exists in code but remains disabled unless `D1_STAGING_WORKER_URL` is explicitly configured. It is not configured on the live production service; authenticated browser acceptance is outstanding.
