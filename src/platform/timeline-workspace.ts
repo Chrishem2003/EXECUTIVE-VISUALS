@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestBlob } from "../core/api";
+import { resolveCloudRenderSelection } from "../core/cloud-render-selection.ts";
 import { AudioPreviewEngine } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
@@ -477,17 +478,17 @@ async function refresh(){
    const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
   }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
   else state.timeline=null;
-  if(state.timeline){
-   const activeRender=state.cloudRenderJobs.find(job=>job.input?.timelineId===state.timeline?.id);
-   if(activeRender){
-    state.cloudRenderJobId=activeRender.id;state.cloudRenderJobStatus=activeRender.status;
-    const outputAsset=activeRender.output?.outputAsset;
-    if(activeRender.status==="succeeded"&&outputAsset?.id){state.cloudRenderOutputAssetId=outputAsset.id;state.cloudRenderOutputName=outputAsset.name||"Verified cloud master";}
-   }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";}
-   const verifiedMaster=state.assets.find(asset=>asset.metadata?.operation==="timeline.render"&&asset.metadata?.timelineId===state.timeline?.id&&Number(asset.metadata?.timelineRevision)===state.serverRevision);
-   if(verifiedMaster){state.cloudRenderOutputAssetId=verifiedMaster.id;state.cloudRenderOutputName=verifiedMaster.name;state.cloudRenderOutputUrl="";}
-   else if(!activeRender||activeRender.status!=="succeeded"){state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
-  }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
+  const renderSelection=resolveCloudRenderSelection({
+   timelineId:state.timeline?.id,
+   timelineRevision:state.serverRevision,
+   jobs:state.cloudRenderJobs,
+   assets:state.assets
+  });
+  state.cloudRenderJobId=renderSelection.jobId;
+  state.cloudRenderJobStatus=renderSelection.jobStatus;
+  state.cloudRenderOutputAssetId=renderSelection.outputAssetId;
+  state.cloudRenderOutputName=renderSelection.outputName;
+  state.cloudRenderOutputUrl=renderSelection.outputUrl;
   if(state.timeline)ensureTimelineHistory();else resetTimelineHistory();state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();await loadCloudReviews();return;
  }
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
