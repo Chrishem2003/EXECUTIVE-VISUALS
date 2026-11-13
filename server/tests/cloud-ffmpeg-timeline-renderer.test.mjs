@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
+import { buildAudioMasteringFilter, buildVariableSpeedSetptsExpression, evaluateAudioMasteringQuality, parseAudioLoudnessMeasurement, renderCloudTimeline, sourceDurationForClip } from "../cloud-ffmpeg-timeline-renderer.mjs";
 
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
@@ -354,4 +354,12 @@ test("cloud FFmpeg renderer retimes variable-speed audio with frame-sampled Rubb
   assert.equal(result.render.durationSeconds,4);
   assert.equal(result.render.retimedAudioClips,1);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test("cloud speed curves validate against full clip duration and clip safely to the master tail",()=>{
+ const clip={duration:{value:4,rate:1},speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]};
+ assert.ok(buildVariableSpeedSetptsExpression(clip,1.25).includes("sqrt"));
+ assert.ok(Math.abs(sourceDurationForClip(clip,1.25)-1.4453125)<1e-9);
+ assert.throws(()=>sourceDurationForClip({...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:5,speed:1}]},1.25),error=>error.code==="INVALID_SPEED_CURVE");
 });
