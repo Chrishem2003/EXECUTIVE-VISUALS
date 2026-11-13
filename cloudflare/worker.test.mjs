@@ -152,6 +152,7 @@ test("D1 staging CORS allows only the configured app origin and bearer headers",
   assert.equal(allowed.status, 204);
   assert.equal(allowed.headers.get("access-control-allow-origin"), env.APP_ORIGIN);
   assert.match(allowed.headers.get("access-control-allow-headers"), /authorization/i);
+  assert.match(allowed.headers.get("access-control-allow-methods"), /DELETE/i);
   assert.equal(allowed.headers.get("access-control-allow-credentials"), null);
 
   const denied = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
