@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status (12 November 2026):** isolated D1 schema and Worker are deployed and read-only health checks pass. The current-main same-origin proxy and its authenticated-cookie regression test are merged. The proxy is not enabled in production; no authenticated browser workspace round-trip has been performed.
+**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, anonymous-access rejection, and two-account owner-isolation checks all pass. The feature and live acceptance gate are merged to `main`; production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
 
 ## Boundary and identity
 
@@ -24,7 +24,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Worker health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/edge-health` — live check returned HTTP 200 with `d1Bound=true`, `apiProxyConfigured=true`, and `stagingOnly=true`.
 - D1 schema health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/health` — live check returned HTTP 200 with `metadataOnly=true` and `r2Enabled=false`.
 - Anonymous project access: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/projects` — live check returned HTTP 401 `AUTH_REQUIRED`.
-- Read-only D1 audit confirmed migration `0001_initial.sql`, all seven `ev_*` tables, and zero rows in user, project, membership, workspace-document, asset, job and audit tables.
+- Live D1 audit confirmed migration `0001_initial.sql` and all seven `ev_*` tables. The accepted smoke workflow created three staging smoke identities, three projects and three workspace documents; memberships, assets, jobs and audit events remain zero. This is test data in the isolated staging database.
 - Sign in: `POST /api/auth/login` (proxied only to the existing Render auth endpoint)
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
@@ -46,26 +46,26 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 
 ## Staged rollout
 
-1. Review and merge this code only after CI passes.
-2. Add the D1 binding to a separately reviewed Worker configuration, targeting only database `executive-visuals-staging`.
-3. Run `wrangler d1 migrations apply executive-visuals-staging --local` against a local simulator and verify the migration ledger.
-4. **Completed:** apply `0001_initial.sql` to the isolated remote `executive-visuals-staging` database and record it in `d1_migrations`. Verified seven `ev_*` tables and zero user/project/asset/job rows.
-5. **Completed:** deploy `executive-visuals-d1-staging` as a separate Worker on its workers.dev subdomain, with no custom domain or production route. It permits only login/logout, `/api/me`, and `/api/d1/*`; all other application/business routes return 404. The Render API is contacted only for authentication and identity verification.
+1. **Completed:** review and merge the staging implementation after exact-head CI passed.
+2. **Completed:** configure the D1 binding on the separately deployed Worker, targeting only database `executive-visuals-staging`.
+3. **Completed:** run the SQLite-compatible migration locally and verify the migration ledger.
+4. **Completed:** apply `0001_initial.sql` to the isolated remote staging database. All seven `ev_*` tables and the migration ledger are present.
+5. **Completed:** deploy `executive-visuals-d1-staging` on its workers.dev subdomain with no custom domain or production route. It permits only login/logout, `/api/me`, and `/api/d1/*`; all other application/business routes return 404.
 6. **Completed:** add revisioned D1 workspace-document GET/PUT endpoints, strict body bounds, and owner/editor write authorization; viewers/reviewers remain read-only.
-7. **Completed:** restrict browser CORS to the exact Executive Visuals app origin and Bearer authorization; cross-origin cookies are disabled. The deployed Worker reports the exact staging-only and D1-bound health flags.
-8. Configure `D1_STAGING_WORKER_URL` only on a separately approved isolated Executive Visuals staging service; do not set it on production. The variable is not configured on the live production service.
-9. Run a live authenticated smoke test and workspace round-trip through the same-origin proxy; confirm unauthenticated requests cannot create D1 principals or projects.
-10. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
+7. **Completed:** restrict browser CORS to the exact staging app origin and Bearer authorization; cross-origin cookies are disabled.
+8. **Completed:** configure `D1_STAGING_WORKER_URL` only on the dedicated Render staging service. It remains absent from production.
+9. **Completed (13 November):** live allowlisted registration/login, `/api/me` identity verification, authenticated D1 project create/list, revision 1 → 2 workspace save/reload, exact document comparison, and anonymous project rejection through the same-origin staging proxy. Read-only D1 audit confirms three staging smoke identities, three projects and three workspace documents; memberships, assets, jobs and audit events remain zero.
+10. **Completed (13 November):** two independently authenticated staging identities cannot list, read, or write each other's projects/workspace documents; each can access its own project. Shared-member role matrix (owner/editor/reviewer/viewer) remains untested.
+11. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and media-storage acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
 ## Deliberately not done
 
 - No production Worker binding, deployed Worker code, route, or environment variable was changed.
-- No production route, main application API, or Render service has been switched to D1. The new same-origin proxy is inert until its staging-only environment variable is set.
-- No Render deployment or production service was changed.
+- No production route or main application API has been switched to D1. The D1 bridge is enabled only on the isolated staging service.
+- The main-branch merge triggered the existing Render production auto-deploy; production health still reports Supabase authentication and the D1 staging bridge disabled. No production environment configuration or database was changed.
 - No Supabase project, key, or auth configuration was changed.
 - No R2 bucket was activated or created.
 - No paid service was enabled.
-
 
 ## Free-plan guardrails and live staging baseline
 
