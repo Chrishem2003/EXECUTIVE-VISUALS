@@ -76,6 +76,37 @@ export function buildEpisodeTimelineDocument(series:SeriesProductionPlan,episode
  return{id:"episode-"+episode.id,projectId,name:series.title+" · "+episode.title,revision:1,frameRate:{numerator:fps,denominator:1},width:size.width,height:size.height,pixelAspectRatio:1,tracks,markers,createdAt:now,updatedAt:now};
 }
 
+/** Match completed provider outputs to the exact approved storyboard shot order. */
+export type GeneratedStoryboardAsset = {
+ id:string;
+ projectId?:string|null;
+ mediaType:string;
+ metadata?:Record<string,unknown>;
+};
+export function matchGeneratedStoryboardAssets<T extends GeneratedStoryboardAsset>(
+ shots:readonly EpisodeShot[],
+ assets:readonly T[],
+ approvalId:string,
+ projectId:string
+):Array<{shot:EpisodeShot;asset:T;shotIndex:number}>{
+ if(!approvalId.trim()||!projectId.trim())throw new Error("A cloud project and approved production are required to match generated shots.");
+ if(!shots.length)throw new Error("The storyboard contains no shots to place on the timeline.");
+ const byIndex=new Map<number,T>();
+ for(const asset of assets){
+  const metadata=asset.metadata||{};
+  if(metadata.operation!=="video.generate"||metadata.approvalId!==approvalId)continue;
+  if(asset.projectId!==projectId)throw new Error("A generated storyboard asset belongs to a different cloud project.");
+  const shotIndex=Number(metadata.shotIndex);
+  if(!Number.isInteger(shotIndex)||shotIndex<0||shotIndex>=shots.length)throw new Error("A generated storyboard asset has an invalid shot index.");
+  if(!String(asset.mediaType||"").startsWith("video/"))throw new Error("A generated storyboard output is not a video asset.");
+  if(byIndex.has(shotIndex))throw new Error("More than one generated asset matches storyboard shot "+(shotIndex+1)+".");
+  byIndex.set(shotIndex,asset);
+ }
+ const missing=shots.map((_,index)=>index).filter(index=>!byIndex.has(index));
+ if(missing.length)throw new Error("Generated video outputs are incomplete. Missing storyboard shot(s): "+missing.map(index=>index+1).join(", ")+".");
+ return shots.map((shot,shotIndex)=>({shot,asset:byIndex.get(shotIndex)!,shotIndex}));
+}
+
 const BIBLE_KINDS=new Set<StoryBibleKind>(["character","location","prop","wardrobe","voice","brand-rule"]);
 const OVERRIDE_TEXT_LIMITS:Partial<Record<keyof SeriesDefaults,number>>={aspectRatio:8,resolution:20,visualStyle:80,cameraLanguage:100,shotComposition:100,pacing:100,colorGrade:100,language:40,voiceMode:80,captions:80,music:100};
 /** Merge episode-specific direction over series defaults without mutating either record. */
