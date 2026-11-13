@@ -21,6 +21,8 @@ This integration is opt-in and disabled by default. It supports importing files 
 3. Apply the two migration files in this directory through the normal reviewed migration process:
    - `20261105150000_google_drive_connections.sql`
    - `20261105153000_google_drive_oauth_states.sql`
+   - `20261105170000_google_drive_export_attempts.sql`
+   - `20261105180000_google_drive_export_lease_integrity.sql`
 4. In Google Cloud, enable Google Drive API and Google Picker API, configure the OAuth consent screen, and create an OAuth web client.
 5. Add this exact authorized redirect URI to the Google OAuth client:
    `https://executive-visuals.onrender.com/api/integrations/google-drive/callback`
@@ -35,6 +37,7 @@ Configure these only in the server environment; never in browser settings or sou
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI`
 - `GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY` — a high-entropy secret suitable for AES-256-GCM key derivation; keep it stable for existing encrypted tokens.
+- `GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY` — a separate high-entropy key (at least 32 characters) used only to encrypt resumable upload session URIs in the durable export-attempt ledger. It must differ from the OAuth token key and remain stable while attempts are recoverable.
 - `GOOGLE_PICKER_API_KEY`
 - `GOOGLE_CLOUD_PROJECT_NUMBER` — numeric Google Cloud project number.
 - Existing server-only `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
@@ -45,3 +48,8 @@ Do not enable the feature flag until the migrations, private bucket, OAuth clien
 ## Verification
 
 The Google Drive OAuth coordinator, encrypted connection/state stores, and private-file bridge have dedicated Node tests under `server/tests/google-drive-*.test.mjs`. The normal server verification suite includes these tests. After applying migrations in an isolated staging environment, verify connect, callback, status, picker-token, import, export, disconnect, owner isolation, token revocation and checksum mismatch handling before enabling the feature in production.
+## Resumable export recovery
+
+Exports use a durable, owner-scoped attempt ledger when Drive is enabled. Each attempt reserves a Google Drive file ID before upload, binds it to the private asset SHA-256, and uses an expiring lease so concurrent workers cannot duplicate the same export. Resumable session URIs are AES-GCM encrypted at rest with the separate `GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY`; they are never returned to the browser. Interrupted uploads query the provider session offset and resume from the confirmed byte range. Ambiguous outcomes and expired sessions are quarantined for provider reconciliation against the reserved file ID and MD5 checksum rather than blindly creating duplicate files. The ledger is service-role-only under forced RLS.
+
+The migration and PostgreSQL contract are exercised by `.github/workflows/google-drive-export-recovery.yml`. Applying the migrations to a production Supabase project remains an explicit operator action; this implementation does not apply migrations or activate OAuth credentials by itself.
