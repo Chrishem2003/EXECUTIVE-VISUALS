@@ -285,7 +285,20 @@ async function refreshLiveReadiness(){
    ["Database",health.database],
    ["Storage",health.storage],
    ["Data persistence",health.persistence?.dataDirectory==="operator-confirmed-volume"?"Operator-confirmed persistent volume":"Ephemeral or unverified"],
-   ["Persistent volume required",health.persistence?.persistentVolumeRequired===true?"Yes":"No"]
+   ["Persistent volume required",health.persistence?.persistentVolumeRequired===true?"Yes":"No"],
+   ["Authentication mode",health.authMode],
+   ["Hosted sessions",health.authSession?.configurationReady===true?"Configured":"Not configured"],
+   ["Private cloud media",health.cloudMedia?.ready===true?"Enabled and ready":health.cloudMedia?.enabled===true?"Enabled but not ready":"Disabled"],
+   ["Cloud video worker",health.cloudVideoWorker?.enabled===true?"Enabled":"Disabled — separate process"],
+   ["Remote generation gates",health.cloudVideoWorker?.remoteExecutionGates===true?"Enabled":"Disabled"],
+   ["Video provider adapter",health.cloudVideoWorker?.falAdapterConfigured===true?"FAL configured":health.cloudVideoWorker?.modelRouterEnabled===true?"Model Router enabled":"No active provider adapter"],
+   ["Image gateway",health.imageGateway?.enabled===true?(health.imageGateway?.configured===true?"Enabled and configured":"Enabled but not configured"):"Disabled"],
+   ["Text AI gateway",health.textGateway?.enabled===true?(health.textGateway?.configured===true?"Enabled and configured":"Enabled but not configured"):"Disabled"],
+   ["Billing",health.billing?.enabled===true?"Enabled":"Disabled"],
+   ["Billing provider",health.billing?.provider],
+   ["Payment credentials",health.billing?.providerKeyConfigured===true?"Configured":"Not configured"],
+   ["Billing webhook",health.billing?.webhookSecretConfigured===true?"Configured":"Not configured"],
+   ["Media tools",health.media?.ffmpeg===true&&health.media?.ffprobe===true?"FFmpeg and FFprobe available":"Media tools incomplete"]
   ].filter(([,value])=>value!==undefined&&value!==null);
   const detailHtml=details.map(([label,value])=>'<div class="readiness-item"><div class="readiness-item-top"><b>'+esc(String(label))+'</b><span>'+esc(String(value))+'</span></div></div>').join("");
   const checkHtml=checks.length?checks.map(check=>{
