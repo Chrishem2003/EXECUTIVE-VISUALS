@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
-import { mkdir, unlink, open, readFile, stat } from "node:fs/promises";
+import { mkdir, unlink, open, readFile, stat, realpath } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep, relative, isAbsolute } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
@@ -46,6 +46,8 @@ import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
 import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
+import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents } from "./evidence-ledger.mjs";
+import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -334,6 +336,48 @@ async function storeUpload(req,user,projectId) {
     .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata),createdAt);
   audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256,provenanceHash:provenance.recordHash},projectId||null);
   return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,provenance,createdAt};
+}
+async function verifyEvidenceSourceAsset(asset) {
+  try {
+    const root=await realpath(MEDIA_ROOT),file=await realpath(resolve(MEDIA_ROOT,asset.storage_path));
+    const prefix=root.endsWith(sep)?root:root+sep;
+    if(!file.startsWith(prefix))return false;
+    const info=await stat(file);
+    if(!info.isFile()||info.size!==Number(asset.byte_size)||info.size<1||info.size>MAX_UPLOAD_BYTES)return false;
+    const digest=createHash("sha256");
+    for await(const chunk of createReadStream(file))digest.update(chunk);
+    return digest.digest("hex")===String(asset.sha256||"").toLowerCase();
+  } catch { return false; }
+}
+function workspaceHasEvidenceTarget(projectId,targetType,targetId) {
+  const row=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(projectId);
+  if(!row)return false;
+  const document=parseJson(row.document_json,null);
+  if(!document||typeof document!=="object")return false;
+  const collection=targetType==="shot"?"shots":"scenes";
+  let visited=0;
+  const walk=(value,depth=0)=>{
+    if(depth>18||visited++>30000||!value||typeof value!=="object")return false;
+    if(Array.isArray(value))return value.some(item=>walk(item,depth+1));
+    for(const [key,child] of Object.entries(value)){
+      if(key===collection&&Array.isArray(child)&&child.some(item=>item&&typeof item==="object"&&String(item.id||"")===targetId))return true;
+      if(walk(child,depth+1))return true;
+    }
+    return false;
+  };
+  return walk(document);
+}
+function evidenceTargetExists(asset,targetType,targetId) {
+  if(typeof targetId!=="string"||!targetId.trim()||targetId.length>160)return false;
+  if(targetType==="project")return Boolean(asset.project_id&&asset.project_id===targetId);
+  if(targetType==="asset"){
+    const target=getAccessibleAsset(db,asset.owner_id,targetId);
+    return Boolean(target&&target.project_id===asset.project_id);
+  }
+  if(!asset.project_id)return false;
+  if(targetType==="timeline")return Boolean(db.prepare("SELECT id FROM timelines WHERE id=? AND project_id=? AND archived_at IS NULL").get(targetId,asset.project_id));
+  if(targetType==="shot"||targetType==="scene")return workspaceHasEvidenceTarget(asset.project_id,targetType,targetId);
+  return false;
 }
 async function processNextJob() {
   recoverExpiredJobs(db);
@@ -980,6 +1024,62 @@ export function createAppServer() {
       }
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
+      }
+      const evidenceMatch=path.match(/^\\/api\\/assets\\/([0-9a-f-]+)\\/evidence(?:\\/([0-9a-f-]+)\\/(review|events))?$/i);
+      if(evidenceMatch){
+        const evidenceAsset=getAccessibleAsset(db,user.id,evidenceMatch[1],req.method==="POST"&&!evidenceMatch[2]);
+        if(!evidenceAsset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(!evidenceMatch[2]&&req.method==="GET"){
+          send(res,200,{assetId:evidenceAsset.id,records:listEvidenceRecords(db,{sourceAssetId:evidenceAsset.id}),notice:"Evidence review status does not independently prove the underlying claim."},cors);return;
+        }
+        if(!evidenceMatch[2]&&req.method==="POST"){
+          if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
+          const body=await readJson(req);
+          if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
+          if(!evidenceTargetExists(evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}
+          if(!await verifyEvidenceSourceAsset(evidenceAsset)){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","The stored source asset no longer matches its recorded size and SHA-256.");return;}
+          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
+          audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
+          send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        const recordRow=db.prepare("SELECT id,source_asset_id,project_id FROM evidence_records WHERE id=? AND source_asset_id=?").get(evidenceMatch[2],evidenceAsset.id);
+        if(!recordRow){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+        if(evidenceMatch[3]==="events"&&req.method==="GET"){
+          const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
+          if(recordRow.project_id&&!access||!recordRow.project_id&&evidenceAsset.owner_id!==user.id){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+          send(res,200,{evidenceId:recordRow.id,events:listEvidenceEvents(db,recordRow.id)},cors);return;
+        }
+        if(evidenceMatch[3]==="review"&&req.method==="POST"){
+          const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
+          const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
+          if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
+          const body=await readJson(req);
+          if(typeof body.reviewNote!=="string"||body.reviewNote.trim().length<8){fail(res,400,"EVIDENCE_REVIEW_REASON_REQUIRED","Provide a review reason of at least eight characters for every evidence decision.");return;}
+          if(!await verifyEvidenceSourceAsset(evidenceAsset)){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","Evidence cannot be reviewed until the source asset matches its recorded checksum.");return;}
+          const record=reviewEvidenceRecord(db,{evidenceId:recordRow.id,reviewerId:user.id,status:body.status,reviewNote:body.reviewNote});
+          if(!record){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+          audit(db,user.id,"evidence.reviewed","evidence",record.id,{status:record.status,sourceAssetId:evidenceAsset.id},evidenceAsset.project_id);
+          send(res,200,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for this evidence resource.");return;
+      }
+      if(path==="/api/evidence"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId")||"";
+        if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        send(res,200,{projectId,records:listEvidenceRecords(db,{projectId})},cors);return;
+      }
+      const graphSnapshotMatch=path.match(/^\\/api\\/projects\\/([0-9a-f-]+)\\/creative-graph\\/snapshots$/i);
+      if(graphSnapshotMatch){
+        const projectId=graphSnapshotMatch[1],access=getProjectAccess(db,user.id,projectId);
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){send(res,200,{snapshot:getLatestCreativeGraphSnapshot(db,projectId)},cors);return;}
+        if(req.method==="POST"){
+          if(!["owner","editor"].includes(access.access_role)){fail(res,403,"CREATIVE_GRAPH_WRITE_FORBIDDEN","Editor access is required to save a creative graph review baseline.");return;}
+          const body=await readJson(req),snapshot=saveCreativeGraphSnapshot(db,{projectId,ownerId:user.id,graph:body.graph});
+          audit(db,user.id,"creative_graph.snapshot_saved","creative_graph",snapshot.id,{revision:snapshot.revision,graphHash:snapshot.graphHash},projectId);
+          send(res,201,{snapshot},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for this creative graph snapshot.");return;
       }
       const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance|c2pa|waveform))?$/i);
       if(assetMatch){
