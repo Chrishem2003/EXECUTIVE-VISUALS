@@ -377,7 +377,7 @@ async function duplicateTimelineVariant(){
   const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:variant.name,timeline:variant})});
   state.timeline=result.timeline.document||variant;state.serverRevision=result.timeline.revision;resetTimelineHistory(state.timeline.id);
  }
- state.selectedClipId="";state.selectedTrack=state.timeline.tracks[0]?.id||"";
+ resetTimelineHistory(state.timeline.id);state.selectedClipId="";state.selectedTrack=state.timeline.tracks[0]?.id||"";
  await refresh();await loadVariantComparison();
  state.message="Created an independent variant. The original sequence was not changed.";state.status="ready";
 }
@@ -807,7 +807,7 @@ async function runAction(action:HTMLElement){
  }else if(type==="trim"){recordUndo();state.timeline=trimClip(state.timeline,trackId,clipId,12,12);commitUndo("Trim clip");}
  else if(type==="move"){
   recordUndo();const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target){cancelPendingTimelineEdit();return;}
-  const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
+  const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip){cancelPendingTimelineEdit();return;}
   const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);commitUndo("Move clip");
  }else if(type==="export"){
   const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
