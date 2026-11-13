@@ -732,6 +732,7 @@ test.after(async()=>{
 test("project evidence ledger is asset-bound, reviewer-gated, append-only and exposes immutable graph baselines",async()=>{
   const owner=await register("evidence-owner@example.test");
   const reviewer=await register("evidence-reviewer@example.test");
+  const viewer=await register("evidence-viewer@example.test");
   const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence review project"})},owner);
   assert.equal(projectResponse.status,201);
   const project=(await projectResponse.json()).project;
@@ -759,6 +760,10 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
 
   const addReviewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"evidence-reviewer@example.test",role:"reviewer"})},owner);
   assert.equal(addReviewer.status,201,await addReviewer.text());
+  const addViewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"evidence-viewer@example.test",role:"viewer"})},owner);
+  assert.equal(addViewer.status,201,await addViewer.text());
+  const viewerAttempt=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"Viewer must not be allowed to review."})},viewer);
+  assert.equal(viewerAttempt.status,403);
 
   const shortReason=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"ok"})},reviewer);
   assert.equal(shortReason.status,400);
