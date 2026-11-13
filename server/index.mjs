@@ -371,8 +371,8 @@ function evidenceTargetExists(asset,targetType,targetId) {
   if(typeof targetId!=="string"||!targetId.trim()||targetId.length>160)return false;
   if(targetType==="project")return Boolean(asset.project_id&&asset.project_id===targetId);
   if(targetType==="asset"){
-    const target=getAccessibleAsset(db,asset.owner_id,targetId);
-    return Boolean(target&&target.project_id===asset.project_id);
+    const target=db.prepare("SELECT id,owner_id,project_id FROM assets WHERE id=? AND deleted_at IS NULL").get(targetId);
+    return Boolean(target&&target.project_id===asset.project_id&&(asset.project_id||target.owner_id===asset.owner_id));
   }
   if(!asset.project_id)return false;
   if(targetType==="timeline")return Boolean(db.prepare("SELECT id FROM timelines WHERE id=? AND project_id=? AND archived_at IS NULL").get(targetId,asset.project_id));
