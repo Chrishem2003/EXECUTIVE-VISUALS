@@ -1,0 +1,30 @@
+name: D1 staging live acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_staging_writes:
+        description: "Confirm this run may create disposable identities, projects and memberships in the isolated D1 staging database"
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: executive-visuals-d1-live-acceptance
+  cancel-in-progress: false
+jobs:
+  live-acceptance:
+    if: inputs.confirm_staging_writes == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify local D1 repository and Worker role contracts
+        run: |
+          node --check scripts/verify-d1-staging-live.mjs
+          npm run verify:d1
+      - name: Exercise isolated live staging identity, tenant and member-role matrix
+        run: node scripts/verify-d1-staging-live.mjs

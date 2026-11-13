@@ -242,6 +242,13 @@ assert.ok(ownerMemberList.body.members.some(item => item.memberId === member.mem
 const viewerMemberList = await getJson("Viewer reads project members", membersUrl, { expectedStatus: 200, cookie: isolationAuth.cookie });
 assert.equal(viewerMemberList.body.canManageMembers, false);
 
+const viewerInvite = await postJson("Viewer cannot invite or change roles", membersUrl, {
+  body: { email: smokeEmail, role: "editor" },
+  cookie: isolationAuth.cookie,
+  expectedStatus: 403
+});
+assert.equal(viewerInvite.payload.error?.code, "D1_PROJECT_ACCESS_DENIED");
+
 const viewerWorkspaceWrite = await fetch(workerWorkspaceUrl, {
   method: "PUT",
   headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
@@ -250,12 +257,41 @@ const viewerWorkspaceWrite = await fetch(workerWorkspaceUrl, {
 });
 assert.equal(viewerWorkspaceWrite.status, 403, "Viewer role must not write workspace documents.");
 
+const reviewer = await postJson("Owner promotes collaborator to reviewer", membersUrl, {
+  body: { email: isolationEmail, role: "reviewer" },
+  cookie: sessionCookie,
+  expectedStatus: 201
+});
+assert.equal(reviewer.payload.member.role, "reviewer");
+
+const reviewerWorkspaceWrite = await fetch(workerWorkspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { reviewerWrite: "must be denied" } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(reviewerWorkspaceWrite.status, 403, "Reviewer role must not write workspace documents.");
+
+const reviewerInvite = await postJson("Reviewer cannot invite or change roles", membersUrl, {
+  body: { email: smokeEmail, role: "editor" },
+  cookie: isolationAuth.cookie,
+  expectedStatus: 403
+});
+assert.equal(reviewerInvite.payload.error?.code, "D1_PROJECT_ACCESS_DENIED");
+
 const promoted = await postJson("Owner promotes collaborator to editor", membersUrl, {
   body: { email: isolationEmail, role: "editor" },
   cookie: sessionCookie,
   expectedStatus: 201
 });
 assert.equal(promoted.payload.member.role, "editor");
+
+const editorInvite = await postJson("Editor cannot manage project membership", membersUrl, {
+  body: { email: smokeEmail, role: "viewer" },
+  cookie: isolationAuth.cookie,
+  expectedStatus: 403
+});
+assert.equal(editorInvite.payload.error?.code, "D1_PROJECT_ACCESS_DENIED");
 
 const editorWrite = await fetch(workerWorkspaceUrl, {
   method: "PUT",
@@ -275,6 +311,19 @@ assert.equal(ownerReload.status, 200);
 const ownerWorkspace = await ownerReload.json();
 assert.deepEqual(ownerWorkspace.document, { collaboration: "editor write accepted", runId: runLabel });
 
+const ownerSelfRemoval = await fetch(membersUrl + "/" + encodeURIComponent(project.ownerId), {
+  method: "DELETE",
+  headers: { ...mutationHeaders, cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(ownerSelfRemoval.status, 400, "The implicit project owner cannot remove themselves.");
+
+const ownerStillHasAccess = await fetch(workerProjectUrl, {
+  headers: { cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(ownerStillHasAccess.status, 200, "Owner access must survive a rejected self-removal.");
+
 const removed = await fetch(membersUrl + "/" + encodeURIComponent(member.memberId), {
   method: "DELETE",
   headers: { ...mutationHeaders, cookie: sessionCookie, accept: "application/json" },
@@ -290,6 +339,7 @@ const revoked = await fetch(workerProjectUrl, {
 assert.equal(revoked.status, 404, "Removing a member must revoke project access immediately.");
 
 console.log("PASS: owner-managed member add/list/update/remove works through the live staging app.");
-console.log("PASS: Viewer writes are denied, Editor writes are accepted, and removal revokes access.");
+console.log("PASS: Viewer and Reviewer are read-only; only Owner can manage membership; Editor can write but cannot invite.");
+console.log("PASS: owner self-removal is rejected; removing a collaborator revokes access immediately.");
 
 
