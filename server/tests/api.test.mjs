@@ -605,12 +605,12 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   const save=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,timeline})},owner);
   assert.equal(save.status,201,await save.clone().text());
   const timelineId=(await save.json()).timeline.id;
-  const timelineList=await request("/api/timelines?projectId="+encodeURIComponent(project.id)+"&includeDocuments=true",{},owner);
+  const timelineList=await request("/api/timelines?projectId="+encodeURIComponent(project.id)+"&includeGraphData=true",{},owner);
   assert.equal(timelineList.status,200);
   const listedTimeline=(await timelineList.json()).timelines.find(item=>item.id===timelineId);
-  assert.equal(listedTimeline.document.tracks[0].clips[0].assetId,asset.id);
+  assert.equal(listedTimeline.graphData.tracks[0].clips[0].assetId,asset.id);
   const metadataOnly=await request("/api/timelines?projectId="+encodeURIComponent(project.id),{},owner);
-  assert.equal((await metadataOnly.json()).timelines.find(item=>item.id===timelineId).document,undefined);
+  assert.equal((await metadataOnly.json()).timelines.find(item=>item.id===timelineId).graphData,undefined);
   const viewerRead=await request("/api/timelines/"+timelineId,{},viewer);
   assert.equal(viewerRead.status,200);
   const viewerEdit=await request("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,timeline})},viewer);
