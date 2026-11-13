@@ -559,6 +559,11 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   });
   assert.equal(repeated.status, 200);
   assert.equal((await repeated.json()).job.id, jobResult.job.id);
+  const conflictingKey = await call("/api/d1/jobs", "editor", "POST", {
+    projectId: project.id, jobType: "storyboard.render", input: { storyboardId: "different" }, idempotencyKey: "render-sb-1"
+  });
+  assert.equal(conflictingKey.status, 409);
+  assert.equal((await conflictingKey.json()).error.code, "D1_IDEMPOTENCY_CONFLICT");
 
   const reviewerJob = await call("/api/d1/jobs", "reviewer", "POST", { projectId: project.id, jobType: "blocked.write", input: {} });
   assert.equal(reviewerJob.status, 403);
@@ -570,6 +575,7 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   const jobId = jobResult.job.id;
   assert.equal((await call("/api/d1/jobs/" + jobId, "reviewer")).status, 200);
   assert.equal((await call("/api/d1/jobs/" + jobId, "outsider")).status, 404);
+  assert.equal((await call("/api/d1/jobs/" + jobId, "owner")).status, 200);
 
   const audit = await call(auditPath, "editor", "POST", {
     eventType: "job.queued", subjectType: "job", subjectId: jobId, details: { requestId: "req-1" }
@@ -581,6 +587,8 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   const auditList = await call(auditPath, "reviewer");
   assert.equal(auditList.status, 200);
   assert.equal((await auditList.json()).events.length, 1);
+  const ownerAudit = await call(auditPath, "owner");
+  assert.equal((await ownerAudit.json()).events.length, 1);
   const outsiderAudit = await call(auditPath, "outsider");
   assert.equal(outsiderAudit.status, 404);
   const reviewerAppend = await call(auditPath, "reviewer", "POST", {
