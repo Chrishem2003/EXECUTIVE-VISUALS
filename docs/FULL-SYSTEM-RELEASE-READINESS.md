@@ -1,7 +1,7 @@
 # Executive Visuals — full-system release readiness plan
 
 **Audit date:** 13 November 2026  
-**Baseline:** current `main` includes the 12 November release and security work recorded in `docs/IMPLEMENTATION-STATUS.md`; see that document for the authoritative merged-PR and live-deployment ledger.
+**Baseline:** current `main` includes the 13 November integrations through PR #536; see `docs/IMPLEMENTATION-STATUS.md` for the authoritative merged-PR and live-deployment ledger. Render deployment for commit `85ff7620ce013299d3d0aaaf1057810d0d08b014` is live.
 
 This plan distinguishes code that is merged, code that has passed CI but is still on a branch, and features that cannot work end-to-end until external infrastructure and credentials exist. A passing test suite does not mean a provider, persistent store or production workflow is activated.
 
@@ -12,9 +12,13 @@ This plan distinguishes code that is merged, code that has passed CI but is stil
 - PR #522 is merged and deployed: the Asset Library includes source-hash-bound evidence submission/review, append-only audit history and a live creative dependency graph with immutable review baselines. Exact-head Quality, Release, Billing, Financial and Remediation workflows passed; Render deployment `8a8f5355d8c48fe6423f376c41d8a7b152338666` is live. Production ledger writes remain intentionally gated until an operator-confirmed persistent volume is configured; this Render Free deployment does not claim durable evidence storage.
 - PR #524 is merged and deployed: the creative dependency graph now includes bounded project-scoped timeline/clip projections, preserving metadata-only defaults for ordinary timeline listings. Clip-to-asset and clip-to-timeline dependencies are visible in the graph. Exact-head Quality, Release, Billing, Financial and Remediation workflows passed; Render deployment `a541c9510573c8e9f4b0d0fd1dbe4016f3bb2019` is live.
 - PR #525 is merged and deployed: Google Drive private exports now use a durable attempt ledger, reserved provider file IDs, AES-GCM-encrypted resumable session URIs, expiring lease-token fencing, bounded byte-range recovery and provider-side reconciliation for ambiguous outcomes. Dedicated unit and isolated PostgreSQL integration workflows passed alongside the full mainline build. Render deployment `220f6a6472b12263c06d79a7a0fe0e8fced5f105` is live. The feature remains opt-in pending operator-applied Supabase migrations, OAuth configuration and distinct encryption keys; production credentials and schema were not changed.
-- PR #533 is merged: timeline tracks can now be moved one lane up or down through accessible editor controls. Locked-track crossings and out-of-range moves are rejected; clips and source asset references remain intact; changes persist through the existing timeline save path and are undoable/redoable. A dedicated history regression test was added. Exact-head Quality, Release Integration, Billing, Google Drive recovery, Remediation, and Financial workflows passed. Render deployment `d7aeaa1612b1d5253706130e3886bba5113f1f31` was triggered automatically and is building; hosted verification is still pending.
+- PR #533 is merged: timeline tracks can now be moved one lane up or down through accessible editor controls. Locked-track crossings and out-of-range moves are rejected; clips and source asset references remain intact; changes persist through the existing timeline save path and are undoable/redoable. A dedicated history regression test was added. Exact-head Quality, Release Integration, Billing, Google Drive recovery, Remediation, and Financial workflows passed.
+- PR #534 is merged: completed approved storyboard outputs can be assembled into a cloud timeline as ordered video clips with source asset IDs, SHA-256 checksums, approval and provider/model provenance, plus original scene/shot markers. The workflow does not launch provider jobs during assembly.
+- PR #535 is merged: clip deletion history regressions verify exact restoration, redo and fail-closed behavior when the original track is locked.
+- PR #536 is merged: the isolated D1 Worker role-capability test matrix verifies owner/editor/reviewer/viewer permissions, outsider denial and immediate membership revocation. All six required CI workflows passed. Live D1 membership acceptance was skipped because dedicated staging credentials are not configured; do not treat local Worker tests as live D1 acceptance.
+- Render deployment for main commit `85ff7620ce013299d3d0aaaf1057810d0d08b014` is live.
 - PR #468 Content Credentials trust-anchor policy and PR #469 patched Node 22.23.4 runtime are merged. The latest live application-code deployment is tracked in `docs/IMPLEMENTATION-STATUS.md`.
-- The isolated D1 staging schema and Worker are deployed and bound. Seven `ev_*` tables exist and a read-only audit found zero records. The Worker exposes project metadata and revisioned workspace-document endpoints only.
+- The isolated D1 staging schema and Worker are deployed and bound. Seven `ev_*` tables exist; the latest recorded aggregate audit found five users, five projects and five workspace documents, with zero memberships, assets, jobs and audit events. The staging Worker exposes project, asset-metadata, member-management and revisioned workspace APIs. Local role-matrix CI is merged via PR #536; live member-role acceptance remains pending.
 - The Render same-origin D1 bridge exists in code but remains disabled unless `D1_STAGING_WORKER_URL` is explicitly configured. It is not configured on the live production service; authenticated browser acceptance is outstanding.
 - Production Render Free remains on ephemeral SQLite/disk. R2 remains inactive; no durable hosted media storage is available.
 - Older PRs listed below are historical branch inventory. Their mergeability and exact-head checks must be refreshed before any merge; do not infer that a previously passing workflow or old base is current.
@@ -62,9 +66,9 @@ These branches are not independent mainline changes: many target one another rat
 See [Persistence and Release Blockers](PERSISTENCE-AND-RELEASE-BLOCKERS.md) for the complete observed facts. The short version:
 
 - Render Free has ephemeral storage; local SQLite and media are lost on restart, spin-down and redeploy.
-- Cloudflare D1 `executive-visuals-staging` exists but is empty and is not bound to the current Worker.
+- Cloudflare D1 `executive-visuals-staging` is bound to its isolated staging Worker and has seven `ev_*` tables; it is not the production data plane and currently contains only limited staging metadata. The production edge Worker remains separate.
 - Cloudflare R2 is not activated. Its free allowance is useful for a pilot, but activation requires a subscription/checkout flow and usage above free allowances is billable.
-- The existing Cloudflare Worker only has the static `ASSETS` binding and proxies API calls to Render.
+- The production Cloudflare edge Worker still has only its static `ASSETS` binding and proxies API calls to Render; the separate staging Worker has the D1 binding and restricted `/api/d1/*` routes.
 - The two Supabase Free projects already contain NEMA/platform data and use the free-project allowance. They must not be repurposed for Executive Visuals.
 - Cloudflare Email Sending requires Workers Paid for arbitrary-recipient transactional email; Free Email Routing is inbound/forwarding only.
 
@@ -72,7 +76,7 @@ See [Persistence and Release Blockers](PERSISTENCE-AND-RELEASE-BLOCKERS.md) for 
 
 ### P0 — establish isolated, durable foundations
 - Obtain explicit approval for a storage option: activate R2 with strict app-level quotas and overage monitoring, or select another durable object store.
-- Connect the existing D1 staging database to an isolated staging Worker and implement tenant-scoped metadata migrations and integration tests.
+- Extend the existing isolated D1 staging Worker/API toward the complete project, asset, job and audit data plane; finish live owner/editor/reviewer/viewer role acceptance. Keep production routing disabled until the full tenant-scoped migration and acceptance suite passes.
 - Select a dedicated identity provider for Executive Visuals; do not change NEMA projects.
 - Move hosted project, asset metadata, job state and audit records off Render's ephemeral SQLite. Keep local files as scratch only.
 
