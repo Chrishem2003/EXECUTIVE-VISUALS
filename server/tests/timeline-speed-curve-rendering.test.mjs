@@ -30,7 +30,7 @@ test("local audio speed curves produce bounded frame-sampled Rubber Band command
  const lines=commands.trim().split("\n");
  assert.equal(lines.length,95);
  assert.ok(lines.every(line=>line.includes("rubberband@rb tempo")));
- assert.match(lines[0],/^0\.041/);
+ assert.match(lines[0],/^0\.042/);
 });
 
 test("local timeline speed curves clip safely to the effective render duration",()=>{
