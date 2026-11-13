@@ -208,7 +208,14 @@ function renderCloudAssets(){
 function renderCloudMediaJobs(){
  if(!state.cloudMediaJobsEnabled)return '<div class="notice">Cloud processing remains disabled until an isolated worker is deployed and its private storage, queue and authorization checks are verified.</div>';
  if(!state.cloudMediaJobs.length)return '<div class="empty">No cloud processing jobs yet. Choose an operation on a private cloud asset above.</div>';
- return '<div class="runtime-jobs">'+state.cloudMediaJobs.map(job=>'<article class="runtime-job"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(job.status.toUpperCase())+' · '+Math.max(0,Math.min(100,Number(job.progress)||0))+'%</small><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+(job.error?.message?'<small class="muted">'+esc(job.error.message)+'</small>':'')+'</div></article>').join("")+'</div>';
+ return '<div class="runtime-jobs" aria-live="polite">'+state.cloudMediaJobs.map(job=>{
+  const progress=Math.max(0,Math.min(100,Number(job.progress)||0));
+  const status=String(job.status||"unknown").toUpperCase();
+  const attempt=Number.isSafeInteger(job.attempt_count)&&Number(job.attempt_count)>0?' · attempt '+Number(job.attempt_count):"";
+  const error=job.error?.message?'<small class="muted">'+esc(job.error.code||"JOB_ERROR")+' · '+esc(job.error.message)+'</small>':"";
+  const completed=job.completed_at?'<small>Finished '+esc(fmt(job.completed_at))+'</small>':"";
+  return '<article class="runtime-job" data-cloud-job-status="'+esc(job.status)+'"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(status)+' · '+progress+'%'+attempt+'</small><div class="progress" role="progressbar" aria-label="Cloud job progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+completed+error+'</div></article>';
+ }).join("")+'</div>';
 }
 async function refreshCloudMediaJobs(){
  if(cloudJobPollingBusy||!state.user||!state.cloudMediaReady||!state.cloudMediaJobsEnabled||!state.cloudProjectId)return;
