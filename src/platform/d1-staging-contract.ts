@@ -20,3 +20,16 @@ export function parseD1WorkspaceDocument(raw: string): D1WorkspaceDocument {
   }
   return value as D1WorkspaceDocument;
 }
+
+/** Serialize a workspace update and enforce the upstream request-body limit including its revision envelope. */
+export function buildD1WorkspaceUpdatePayload(raw: string, expectedRevision: number): string {
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    throw new Error("Workspace revision must be a positive integer.");
+  }
+  const document = parseD1WorkspaceDocument(raw);
+  const payload = JSON.stringify({ expectedRevision, document });
+  if (new TextEncoder().encode(payload).byteLength > D1_WORKSPACE_DOCUMENT_MAX_BYTES) {
+    throw new Error("Workspace document plus API envelope must fit within 256 KB.");
+  }
+  return payload;
+}
