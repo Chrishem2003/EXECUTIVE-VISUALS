@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, and anonymous-access rejection all pass. The feature and live acceptance gate are merged to `main`; production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
+**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, anonymous-access rejection, and two-account owner-isolation checks all pass. The feature and live acceptance gate are merged to `main`; production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
 
 ## Boundary and identity
 
@@ -24,7 +24,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Worker health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/edge-health` — live check returned HTTP 200 with `d1Bound=true`, `apiProxyConfigured=true`, and `stagingOnly=true`.
 - D1 schema health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/health` — live check returned HTTP 200 with `metadataOnly=true` and `r2Enabled=false`.
 - Anonymous project access: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/projects` — live check returned HTTP 401 `AUTH_REQUIRED`.
-- Live D1 audit confirmed migration `0001_initial.sql` and all seven `ev_*` tables. The accepted smoke workflow created one staging identity, one project and one workspace document; memberships, assets, jobs and audit events remain zero. This is test data in the isolated staging database.
+- Live D1 audit confirmed migration `0001_initial.sql` and all seven `ev_*` tables. The accepted smoke workflow created three staging smoke identities, three projects and three workspace documents; memberships, assets, jobs and audit events remain zero. This is test data in the isolated staging database.
 - Sign in: `POST /api/auth/login` (proxied only to the existing Render auth endpoint)
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
@@ -55,7 +55,7 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 7. **Completed:** restrict browser CORS to the exact staging app origin and Bearer authorization; cross-origin cookies are disabled.
 8. **Completed:** configure `D1_STAGING_WORKER_URL` only on the dedicated Render staging service. It remains absent from production.
 9. **Completed (13 November):** live allowlisted registration/login, `/api/me` identity verification, authenticated D1 project create/list, revision 1 → 2 workspace save/reload, exact document comparison, and anonymous project rejection through the same-origin staging proxy. Read-only D1 audit confirms one smoke user, one project and one workspace document.
-10. Continue live cross-account tenant-isolation tests, then keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and media-storage acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
+10. **Completed (13 November):** two independently authenticated staging identities cannot list, read, or write each other's projects/workspace documents; each can access its own project. Shared-member role matrix (owner/editor/reviewer/viewer) remains untested.\n11. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and media-storage acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
 ## Deliberately not done
 
