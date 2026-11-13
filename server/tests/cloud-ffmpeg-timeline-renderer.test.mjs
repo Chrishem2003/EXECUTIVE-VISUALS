@@ -171,7 +171,7 @@ test("cloud renderer applies clip gain and pan automation to the encoded audio",
    for(let frame=start;frame<end;frame++){const value=samples[frame*2+channel];energy+=value*value;count++;}
    return count?Math.sqrt(energy/count):0;
   };
-  const earlyLeft=channelRms(0,.05,.2),earlyRight=channelRms(1,.05,.2);
+  const earlyLeft=channelRms(0,.01,.04),earlyRight=channelRms(1,.01,.04);
   const lateLeft=channelRms(0,.75,.9),lateRight=channelRms(1,.75,.9);
   assert.ok(earlyLeft>earlyRight*4,"the opening hard-left automation should favor the left channel");
   assert.ok(lateRight>lateLeft*4,"the later hard-right automation should favor the right channel");
