@@ -1,6 +1,7 @@
 const STAGING_APP_ORIGIN = "https://executive-visuals-1.onrender.com";
 const STAGING_D1_WORKER_URL = "https://executive-visuals-d1-staging.chrishem.workers.dev";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DYNAMIC_CI_ALLOWLIST_ENTRY = "ev-ci+*@ev-staging.test";
 
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
@@ -34,6 +35,6 @@ export function getStagingLocalAuthPolicy(env = {}) {
 export function isStagingLocalAuthEmailAllowed(policy, email) {
   const normalized = normalizeEmail(email);
   return Boolean(policy?.enabled && policy.allowlist.some(entry =>
-    entry === normalized || (entry === DYNAMIC_CI_ALLOWLIST_ENTRY && /^ev-ci\\+[a-z0-9-]+@ev-staging\\.test$/.test(normalized))
+    entry === normalized || (entry === DYNAMIC_CI_ALLOWLIST_ENTRY && /^ev-ci\+[a-z0-9-]+@ev-staging\.test$/.test(normalized))
   ));
 }
