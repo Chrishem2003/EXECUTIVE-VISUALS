@@ -727,3 +727,55 @@ test.after(async()=>{
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
   await rm(dataDir,{recursive:true,force:true});
 });
+
+
+test("project evidence ledger is asset-bound, reviewer-gated, append-only and exposes immutable graph baselines",async()=>{
+  const owner=await register("evidence-owner@example.test");
+  const reviewer=await register("evidence-reviewer@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence review project"})},owner);
+  assert.equal(projectResponse.status,201);
+  const project=(await projectResponse.json()).project;
+
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":encodeURIComponent("source.png"),"x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10])},owner);
+  assert.equal(upload.status,201,await upload.text());
+  const asset=(await upload.json()).asset;
+
+  const submission=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"project",targetId:project.id,kind:"source_reference",claim:"The uploaded source supports the approved project reference.",method:"Human review of the original file",sourceRef:"capture://source-01",observedAt:"2026-11-13T10:00:00.000Z"})},owner);
+  assert.equal(submission.status,201,await submission.text());
+  const submitted=await submission.json();
+  assert.equal(submitted.record.status,"submitted");
+  assert.equal(submitted.events.length,1);
+  assert.equal(submitted.events[0].type,"submitted");
+
+  const forged=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",targetType:"project",targetId:project.id,kind:"source_reference",claim:"This should never be accepted as pre-verified."})},owner);
+  assert.equal(forged.status,400);
+
+  const addReviewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"evidence-reviewer@example.test",role:"reviewer"})},owner);
+  assert.equal(addReviewer.status,201,await addReviewer.text());
+
+  const shortReason=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"ok"})},reviewer);
+  assert.equal(shortReason.status,400);
+
+  const reviewed=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"Original source inspected; project claim scope accepted."})},reviewer);
+  assert.equal(reviewed.status,200,await reviewed.text());
+  const reviewedBody=await reviewed.json();
+  assert.equal(reviewedBody.record.status,"verified");
+  assert.equal(reviewedBody.record.reviewedBy!==null,true);
+  assert.deepEqual(reviewedBody.events.map(event=>event.type),["submitted","reviewed"]);
+
+  const replay=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"rejected",reviewNote:"Second decision should conflict."})},owner);
+  assert.equal(replay.status,500);
+
+  const listed=await request("/api/evidence?projectId="+encodeURIComponent(project.id),{},owner);
+  assert.equal(listed.status,200);
+  assert.equal((await listed.json()).records[0].id,submitted.record.id);
+
+  const graph={nodes:[{id:"project:"+project.id,type:"project",label:"Evidence review project",status:"linked"},{id:"shot:shot-1",type:"shot",label:"Shot 1",status:"review"}],edges:[{from:"project:"+project.id,to:"shot:shot-1",relation:"contains",evidence:"project_scope"}]};
+  const snapshot=await request("/api/projects/"+project.id+"/creative-graph/snapshots",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({graph})},owner);
+  assert.equal(snapshot.status,201,await snapshot.text());
+  const saved=(await snapshot.json()).snapshot;
+  assert.equal(saved.revision,1);
+  const loaded=await request("/api/projects/"+project.id+"/creative-graph/snapshots",{},reviewer);
+  assert.equal(loaded.status,200);
+  assert.equal((await loaded.json()).snapshot.graphHash,saved.graphHash);
+});
