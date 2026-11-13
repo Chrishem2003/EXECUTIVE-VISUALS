@@ -38,17 +38,64 @@ async function refreshGoogleDriveStatus(){
  catch(error){googleDriveConnection=null;googleDriveStatusError=error instanceof Error?error.message:"Google Drive status is unavailable.";}
  finally{googleDriveStatusLoading=false;googleDriveStatusLoaded=true;if(state.tab==="settings")render();}
 }
+async function loadGooglePicker():Promise<void>{
+ const w=window as any;
+ if(!w.gapi){
+  await new Promise<void>((resolve,reject)=>{
+   let script=document.querySelector<HTMLScriptElement>('script[data-google-picker-loader]');
+   if(!script){script=document.createElement("script");script.src="https://apis.google.com/js/api.js";script.async=true;script.dataset.googlePickerLoader="true";document.head.append(script);}
+   script.addEventListener("load",()=>resolve(),{once:true});
+   script.addEventListener("error",()=>reject(new Error("Google Picker could not be loaded.")),{once:true});
+  });
+ }
+ const gapi=(window as any).gapi;
+ if(!gapi?.load)throw new Error("Google API loader is unavailable.");
+ await new Promise<void>((resolve,reject)=>{try{gapi.load("picker",{callback:resolve,onerror:()=>reject(new Error("Google Picker library could not be loaded.")),timeout:10000,ontimeout:()=>reject(new Error("Google Picker loading timed out."))});}catch{reject(new Error("Google Picker could not be initialized."));}});
+}
+async function openGoogleDrivePicker(){
+ googleDriveStatusMessage="Preparing secure Google Drive picker…";googleDriveStatusError="";render();
+ try{
+  const config=await apiRequest<{accessToken:string;developerKey:string;appId:string}>("/api/integrations/google-drive/picker-token",{method:"POST"});
+  if(!config.accessToken||!config.developerKey||!config.appId)throw new Error("Google Picker configuration is incomplete.");
+  await loadGooglePicker();
+  const google=(window as any).google;
+  if(!google?.picker)throw new Error("Google Picker did not initialize.");
+  const view=new google.picker.DocsView(google.picker.ViewId.DOCS);
+  view.setIncludeFolders(false);
+  view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/x-matroska,audio/mpeg,audio/wav,audio/mp4,audio/ogg,application/pdf,text/plain,text/vtt");
+  const picker=new google.picker.PickerBuilder()
+   .setAppId(config.appId).setDeveloperKey(config.developerKey).setOAuthToken(config.accessToken)
+   .setOrigin(window.location.protocol+"//"+window.location.host)
+   .setTitle("Select a private media file")
+   .addView(view)
+   .setCallback(async(data:any)=>{
+    if(data.action===google.picker.Action.CANCEL){googleDriveStatusMessage="File selection cancelled.";render();return;}
+    if(data.action!==google.picker.Action.PICKED)return;
+    const selected=data.docs?.[0];
+    if(!selected?.id){googleDriveStatusError="Google Picker did not return a file ID.";render();return;}
+    googleDriveStatusMessage="Importing "+(selected.name||"selected file")+" into private project storage…";render();
+    try{
+     const result=await apiRequest<{asset:{name:string}}>("/api/integrations/google-drive/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId:selected.id,projectId:state.cloudProjectId||null})});
+     googleDriveStatusMessage="Imported "+result.asset.name+" into private storage.";
+     if(state.cloudProjectId)await loadCloudWorkspace();
+    }catch(error){googleDriveStatusError=error instanceof Error?error.message:"Google Drive import failed.";googleDriveStatusMessage="";}
+    render();
+   }).build();
+  picker.setVisible(true);
+  googleDriveStatusMessage="Choose a Drive file to import into your private asset library.";render();
+ }catch(error){googleDriveStatusError=error instanceof Error?error.message:"Google Drive picker could not be opened.";googleDriveStatusMessage="";render();}
+}
 function googleDriveSettings(){
  const connected=googleDriveConnection?.connected===true;
  const status=googleDriveStatusLoading||!googleDriveStatusLoaded?"Checking connection…":googleDriveStatusError?"Not configured or unavailable":connected?"Connected · "+esc(googleDriveConnection?.email||"Google account"):"Not connected";
  return panel("Google Drive · Private workspace",
   '<div class="integration-status"><div><b>'+status+'</b><p>Connect your Google account to import files you explicitly select into private project storage, or export finished assets to Drive. Access uses the limited drive.file permission.</p></div><span class="status">'+(connected?"Connected":"User-controlled")+'</span></div>'+
-  '<div class="action-row"><button class="primary" data-google-drive-action="'+(connected?"disconnect":"connect")+'">'+(connected?"Disconnect Google Drive":"Connect Google Drive →")+'</button><button class="secondary" data-google-drive-action="refresh">Refresh status</button></div>'+
-  (connected?'<form id="google-drive-import"><label>Google Drive file ID</label><input name="fileId" required maxlength="200" placeholder="Paste the ID from a Drive file URL"><button class="secondary">Import selected Drive file</button></form><form id="google-drive-export"><label>Private asset ID</label><input name="assetId" required maxlength="64" placeholder="Paste a private cloud asset ID"><button class="secondary">Export private asset to Drive</button></form>':'')+
+  '<div class="action-row"><button class="primary" data-google-drive-action="'+(connected?"disconnect":"connect")+'">'+(connected?"Disconnect Google Drive":"Connect Google Drive →")+'</button>'+(connected?'<button class="secondary" data-google-drive-action="browse">Choose Drive files</button>':'')+'<button class="secondary" data-google-drive-action="refresh">Refresh status</button></div>'+
   (googleDriveStatusMessage?'<p class="muted">'+esc(googleDriveStatusMessage)+'</p>':'')+
   (googleDriveStatusError?'<p class="muted">'+esc(googleDriveStatusError)+'</p>':'')+
   '<p class="muted">Refresh tokens are encrypted server-side. Private media remains in application storage; Drive is used only for explicitly selected imports and exports.</p>');
 }
+
 let storyboardPreflightContext:{shots:Array<Record<string,any>>;result:Record<string,any>;projectId:string|null;idempotencyKey:string;lastBudget:string}|null=null;
 type BillingPlan={plan_code:string;name:string;description:string;billing_interval:string;amount_minor:number;currency:string;included_credits:number};
 type BillingSubscription={id:string;plan_code:string;status:string;billing_interval:string;amount_minor:number;currency:string;current_period_start:string;current_period_end:string|null;grace_until:string|null;cancel_at_period_end:boolean;cancelled_at:string|null;scheduled_plan_code:string|null;scheduled_amount_minor:number|null;scheduled_currency:string|null;scheduled_plan_at:string|null};
@@ -177,7 +224,7 @@ function cloudWorkspace(){
  (cloudDisabled?'<div class="notice">Cloud storage is safely gated. This deployment currently reports local SQLite and disk storage; no cloud project, bucket or upload operation is being attempted. A dedicated Supabase database with the reviewed Executive Visuals migrations and a private media bucket must be provisioned before enabling this workspace.</div>':'')+
  '<div class="two-col"><section class="panel"><div class="eyebrow">PROJECTS</div><h2>Start or select a production</h2><form id="cloud-project"><label>Project name</label><input name="name" required maxlength="160" placeholder="Campaign / film / production"'+(cloudDisabled?' disabled':'')+'><label>Description</label><textarea name="description" rows="3" maxlength="4000" placeholder="Purpose, audience and delivery goals"'+(cloudDisabled?' disabled':'')+'></textarea><button class="primary wide"'+(cloudDisabled?' disabled':'')+'>＋ Create cloud project</button></form><label class="field-label">Your projects</label><select id="cloud-project-select"'+(cloudDisabled?' disabled':'')+'><option value="" disabled>Select a project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select><div class="project-grid compact">'+state.cloudProjects.map(p=>'<article class="project"><small>REVISION '+p.revision+'</small><b>'+esc(p.name)+'</b><p>'+esc(p.description||"No description yet.")+'</p><span>'+esc([p.settings?.creativeProduction?.project?.audience,p.settings?.creativeProduction?.project?.style,p.settings?.creativeProduction?.project?.duration].filter(Boolean).join(" · ")||"Production workspace")+"</span></article>").join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h2>Bring source media into the production</h2><form id="cloud-upload"><label>Upload image, video, audio or reference file</label><input type="file" name="file" required accept="image/*,video/*,audio/*,.pdf,.txt,.vtt,.json"'+(cloudDisabled?' disabled':'')+'><button class="primary wide"'+(cloudDisabled?' disabled':'')+'>Upload to selected project</button></form><p class="muted">'+(cloudDisabled?'Uploads will become available after private cloud storage passes the server readiness check.':'Uploads are size-limited, signature-checked, checksummed and stored in a private bucket. Project uploads require editor access.')+'</p></section></div>'+
- '<div class="section-title"><div><div class="eyebrow">EDITING STRUCTURE</div><h2>Saved timelines</h2></div><button class="secondary" data-cloud-create-timeline'+(cloudDisabled?' disabled':'')+'>＋ New timeline</button></div><div class="project-grid">'+(state.cloudTimelines.length?state.cloudTimelines.map(t=>'<article class="project"><small>REVISION '+t.revision+'</small><b>'+esc(t.name)+'</b><p>Updated '+esc(new Date(t.updatedAt).toLocaleString())+'</p><span>'+esc(t.id)+'</span></article>').join(""):'<div class="empty">No saved cloud timelines in this project yet.</div>')+'</div><div class="section-title"><div class="eyebrow">ASSET REGISTER</div><h2>Production media</h2></div><div class="notice">'+esc(state.cloudMessage)+'</div><div class="asset-grid">'+(state.cloudAssets.length?state.cloudAssets.map(a=>'<article class="asset"><div class="asset-preview">'+(a.mediaType.startsWith("image/")?"▧":a.mediaType.startsWith("video/")?"▷":a.mediaType.startsWith("audio/")?"♫":"▤")+'</div><b>'+esc(a.name)+'</b><small>'+esc(a.mediaType)+' · '+(a.size/1048576).toFixed(2)+' MB</small><small>SHA-256 · '+esc(a.sha256.slice(0,16))+'…</small><div class="asset-actions"><button class="secondary" data-cloud-asset-link="'+esc(a.id)+'">Create private preview link</button>'+(cloudAssetUrls.has(a.id)?'<a href="'+esc(cloudAssetUrls.get(a.id)!)+'" target="_blank" rel="noopener noreferrer">Open / download ↗</a>':'')+'</div></article>').join(""):'<div class="empty">No cloud assets in this project yet.</div>')+'</div>';
+ '<div class="section-title"><div><div class="eyebrow">EDITING STRUCTURE</div><h2>Saved timelines</h2></div><button class="secondary" data-cloud-create-timeline'+(cloudDisabled?' disabled':'')+'>＋ New timeline</button></div><div class="project-grid">'+(state.cloudTimelines.length?state.cloudTimelines.map(t=>'<article class="project"><small>REVISION '+t.revision+'</small><b>'+esc(t.name)+'</b><p>Updated '+esc(new Date(t.updatedAt).toLocaleString())+'</p><span>'+esc(t.id)+'</span></article>').join(""):'<div class="empty">No saved cloud timelines in this project yet.</div>')+'</div><div class="section-title"><div class="eyebrow">ASSET REGISTER</div><h2>Production media</h2></div><div class="notice">'+esc(state.cloudMessage)+'</div><div class="asset-grid">'+(state.cloudAssets.length?state.cloudAssets.map(a=>'<article class="asset"><div class="asset-preview">'+(a.mediaType.startsWith("image/")?"▧":a.mediaType.startsWith("video/")?"▷":a.mediaType.startsWith("audio/")?"♫":"▤")+'</div><b>'+esc(a.name)+'</b><small>'+esc(a.mediaType)+' · '+(a.size/1048576).toFixed(2)+' MB</small><small>SHA-256 · '+esc(a.sha256.slice(0,16))+'…</small><div class="asset-actions"><button class="secondary" data-cloud-asset-link="'+esc(a.id)+'">Create private preview link</button>'+(googleDriveConnection?.connected?'<button class="secondary" data-cloud-export-asset="'+esc(a.id)+'">Export to Google Drive</button>':'')+''+(cloudAssetUrls.has(a.id)?'<a href="'+esc(cloudAssetUrls.get(a.id)!)+'" target="_blank" rel="noopener noreferrer">Open / download ↗</a>':'')+'</div></article>').join(""):'<div class="empty">No cloud assets in this project yet.</div>')+'</div>';
 }
 function buildWorkflowGraph():WorkflowGraph{
  const nodes=state.graph.map((label,i)=>({
@@ -816,6 +863,7 @@ document.addEventListener("click",e=>{
  if(!action)return;
  const mode=action.dataset.googleDriveAction;
  if(mode==="refresh"){googleDriveStatusLoaded=false;void refreshGoogleDriveStatus();return;}
+ if(mode==="browse"){void openGoogleDrivePicker();return;}
  if(mode==="connect"){
   void apiRequest<{authorizationUrl:string}>("/api/integrations/google-drive/connect",{method:"POST"}).then(result=>{if(!result.authorizationUrl)throw new Error("Google authorization URL was not returned.");window.location.assign(result.authorizationUrl);}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive connection could not be started.";googleDriveStatusLoaded=true;render();});
   return;
@@ -1105,11 +1153,7 @@ if(t.closest("[data-finance-executive-print]")){
 
 document.addEventListener("submit",e=>{
  const form=e.target as HTMLFormElement;
- if(form.id==="google-drive-import"){
-  e.preventDefault();const fileId=String(new FormData(form).get("fileId")||"").trim();if(!fileId)return;
-  googleDriveStatusMessage="Importing selected file into private project storage…";googleDriveStatusError="";render();
-  void apiRequest<{asset:{name:string}}>("/api/integrations/google-drive/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,projectId:state.cloudProjectId||null})}).then(async result=>{googleDriveStatusMessage="Imported "+result.asset.name+" into private storage.";if(state.cloudProjectId)await loadCloudWorkspace();}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive import failed.";googleDriveStatusMessage="";}).finally(()=>render());
- }
+
  if(form.id==="google-drive-export"){
   e.preventDefault();const assetId=String(new FormData(form).get("assetId")||"").trim();if(!assetId)return;
   googleDriveStatusMessage="Exporting private asset to Google Drive…";googleDriveStatusError="";render();
