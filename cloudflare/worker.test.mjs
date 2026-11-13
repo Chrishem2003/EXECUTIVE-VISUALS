@@ -252,7 +252,9 @@ test("D1 Worker exposes owner-managed member listing, email add/update, role enf
     body: JSON.stringify({ email: " MEMBER@EXAMPLE.TEST ", role: "viewer" })
   }), env);
   assert.equal(addViewer.status, 201, await addViewer.clone().text());
-  assert.equal((await addViewer.json()).member.role, "viewer");
+  const addedMember = (await addViewer.json()).member;
+  assert.equal(addedMember.role, "viewer");
+  const memberPrincipalId = addedMember.memberId;
 
   const list = await worker.fetch(new Request(membersUrl, { headers: ownerHeaders }), env);
   assert.equal(list.status, 200);
@@ -289,7 +291,7 @@ test("D1 Worker exposes owner-managed member listing, email add/update, role enf
   assert.equal(editorWrite.status, 200);
   assert.equal((await editorWrite.json()).revision, 2);
 
-  const remove = await worker.fetch(new Request(membersUrl + "/" + memberUserId, {
+  const remove = await worker.fetch(new Request(membersUrl + "/" + memberPrincipalId, {
     method: "DELETE", headers: ownerHeaders
   }), env);
   assert.equal(remove.status, 200);
