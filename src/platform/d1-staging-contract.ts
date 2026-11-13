@@ -33,3 +33,11 @@ export function buildD1WorkspaceUpdatePayload(raw: string, expectedRevision: num
   }
   return payload;
 }
+
+/** The D1 workspace is a staging-only feature and must be hidden unless the server explicitly advertises its bridge. */
+export function isD1StagingWorkspaceEnabled(health: unknown): boolean {
+  if (!health || typeof health !== "object" || Array.isArray(health)) return false;
+  const staging = (health as { staging?: unknown }).staging;
+  if (!staging || typeof staging !== "object" || Array.isArray(staging)) return false;
+  return (staging as { d1WorkspaceEnabled?: unknown }).d1WorkspaceEnabled === true;
+}
