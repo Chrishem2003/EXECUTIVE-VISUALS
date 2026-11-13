@@ -46,7 +46,7 @@ import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
 import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
-import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents } from "./evidence-ledger.mjs";
+import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
@@ -377,6 +377,11 @@ function evidenceTargetExists(asset,targetType,targetId) {
   if(!asset.project_id)return false;
   if(targetType==="timeline")return Boolean(db.prepare("SELECT id FROM timelines WHERE id=? AND project_id=? AND archived_at IS NULL").get(targetId,asset.project_id));
   if(targetType==="shot"||targetType==="scene")return workspaceHasEvidenceTarget(asset.project_id,targetType,targetId);
+  return false;
+}
+function evidencePersistenceGuard(res,cors) {
+  if(evidencePersistenceReady({nodeEnv:process.env.NODE_ENV,persistence:DATA_DIR_PERSISTENCE}))return true;
+  fail(res,503,"EVIDENCE_PERSISTENCE_REQUIRED","Evidence records and graph review baselines require an operator-confirmed persistent data volume. This runtime reports "+DATA_DIR_PERSISTENCE+".");
   return false;
 }
 async function processNextJob() {
@@ -1033,6 +1038,7 @@ export function createAppServer() {
           send(res,200,{assetId:evidenceAsset.id,records:listEvidenceRecords(db,{sourceAssetId:evidenceAsset.id}),notice:"Evidence review status does not independently prove the underlying claim."},cors);return;
         }
         if(!evidenceMatch[2]&&req.method==="POST"){
+          if(!evidencePersistenceGuard(res,cors))return;
           if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
           const body=await readJson(req);
           if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
@@ -1050,6 +1056,7 @@ export function createAppServer() {
           send(res,200,{evidenceId:recordRow.id,events:listEvidenceEvents(db,recordRow.id)},cors);return;
         }
         if(evidenceMatch[3]==="review"&&req.method==="POST"){
+          if(!evidencePersistenceGuard(res,cors))return;
           const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
           const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
           if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
@@ -1075,6 +1082,7 @@ export function createAppServer() {
         if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         if(req.method==="GET"){send(res,200,{snapshot:getLatestCreativeGraphSnapshot(db,projectId)},cors);return;}
         if(req.method==="POST"){
+          if(!evidencePersistenceGuard(res,cors))return;
           if(!["owner","editor"].includes(access.access_role)){fail(res,403,"CREATIVE_GRAPH_WRITE_FORBIDDEN","Editor access is required to save a creative graph review baseline.");return;}
           const body=await readJson(req),snapshot=saveCreativeGraphSnapshot(db,{projectId,ownerId:user.id,graph:body.graph});
           audit(db,user.id,"creative_graph.snapshot_saved","creative_graph",snapshot.id,{revision:snapshot.revision,graphHash:snapshot.graphHash},projectId);
