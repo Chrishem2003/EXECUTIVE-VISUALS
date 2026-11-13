@@ -488,7 +488,7 @@ async function refresh(){
    if(verifiedMaster){state.cloudRenderOutputAssetId=verifiedMaster.id;state.cloudRenderOutputName=verifiedMaster.name;state.cloudRenderOutputUrl="";}
    else if(!activeRender||activeRender.status!=="succeeded"){state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
   }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
-  state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();await loadCloudReviews();return;
+  if(state.timeline)ensureTimelineHistory();else resetTimelineHistory();state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();await loadCloudReviews();return;
  }
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
  const [assetResponse,timelineResponse]=await Promise.all([apiRequest<{assets:Asset[]}>("/api/assets"),apiRequest<{timelines:SavedTimeline[]}>("/api/timelines")]);
@@ -506,7 +506,7 @@ async function refresh(){
  }
  state.selectedTrack=state.timeline?.tracks[0]?.id||"";
  if(!state.timeline?.tracks.some(track=>track.clips.some(clip=>clip.id===state.selectedClipId)))state.selectedClipId="";
- state.status="ready";state.message="";await loadVariantComparison();
+ if(state.timeline)ensureTimelineHistory();else resetTimelineHistory();state.status="ready";state.message="";await loadVariantComparison();
 }
 async function persist(){
  if(!state.timeline)return;
