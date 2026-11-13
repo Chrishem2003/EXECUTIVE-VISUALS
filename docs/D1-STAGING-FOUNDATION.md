@@ -29,6 +29,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
 - Read/update persisted workspace documents: `GET/PUT /api/d1/projects/:id/workspace` (revision checked; maximum document size 256 KB)
+- Read private asset metadata: `GET /api/d1/assets?projectId=:id&limit=50&offset=0` (authenticated and owner/member scoped; returns checksums and descriptive metadata but never storage keys or media bytes)
 
 The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. The supported browser path is the same-origin Render `/api/d1/*` proxy, which forwards the existing HttpOnly session cookie server-to-server. The Worker also has a strict origin allow-list for direct Bearer-token calls, but browser cookies are not shared across the Render and workers.dev domains.
 
