@@ -41,5 +41,5 @@ export async function createAudioWaveformPreview(url:string,options:AudioWavefor
  const bytes=await readBoundedBody(response,maxBytes);
  const decoded=await decode(bytes.slice(0));
  const peaks=extractWaveformPeaks(decoded,bucketCount);
- return waveformSvg(peaks,width,height);
+ return waveformSvg(peaks,width,height).replace('<svg ','<svg fill="#a78bfa" ');
 }
