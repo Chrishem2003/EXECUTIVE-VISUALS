@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status (12 November 2026):** isolated D1 schema and Worker are deployed and read-only health checks pass. The current-main same-origin proxy and its authenticated-cookie regression test are merged. The proxy is not enabled in production; no authenticated browser workspace round-trip has been performed.
+**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, and anonymous-access rejection all pass. The feature and live acceptance gate are merged to `main`; production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
 
 ## Boundary and identity
 
@@ -24,7 +24,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Worker health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/edge-health` — live check returned HTTP 200 with `d1Bound=true`, `apiProxyConfigured=true`, and `stagingOnly=true`.
 - D1 schema health: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/health` — live check returned HTTP 200 with `metadataOnly=true` and `r2Enabled=false`.
 - Anonymous project access: `GET https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/projects` — live check returned HTTP 401 `AUTH_REQUIRED`.
-- Read-only D1 audit confirmed migration `0001_initial.sql`, all seven `ev_*` tables, and zero rows in user, project, membership, workspace-document, asset, job and audit tables.
+- Live D1 audit confirmed migration `0001_initial.sql` and all seven `ev_*` tables. The accepted smoke workflow created one staging identity, one project and one workspace document; memberships, assets, jobs and audit events remain zero. This is test data in the isolated staging database.
 - Sign in: `POST /api/auth/login` (proxied only to the existing Render auth endpoint)
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
@@ -61,7 +61,7 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 
 - No production Worker binding, deployed Worker code, route, or environment variable was changed.
 - No production route, main application API, or Render service has been switched to D1. The new same-origin proxy is inert until its staging-only environment variable is set.
-- No Render deployment or production service was changed.
+- The main merge triggered the existing Render production auto-deploy; no production environment variables, database, D1 binding, route, or identity configuration were changed. Production health still reports Supabase auth and the D1 staging bridge disabled.
 - No Supabase project, key, or auth configuration was changed.
 - No R2 bucket was activated or created.
 - No paid service was enabled.
