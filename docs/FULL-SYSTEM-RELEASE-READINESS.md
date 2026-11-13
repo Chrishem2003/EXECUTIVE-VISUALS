@@ -9,6 +9,7 @@ This plan distinguishes code that is merged, code that has passed CI but is stil
 
 - PR #470 and PR #472 are merged: waveform-cache file and directory symlink escape regression tests now run on main.
 - PR #515 is merged and deployed: variable-speed audio curves now flow through the Studio inspector, timeline model, local master renderer and cloud master renderer. Local variable-speed video rendering uses the same analytic inverse source-time mapping. Exact-head CI passed all five required workflows; Render deployment `ff73eb376d92a49b1facfeba96aeb1f390a499dc` is live. Rubber Band capability remains checked at render time and unsupported workers fail closed.
+- PR #522 is merged and deployed: the Asset Library includes source-hash-bound evidence submission/review, append-only audit history and a live creative dependency graph with immutable review baselines. Exact-head Quality, Release, Billing, Financial and Remediation workflows passed; Render deployment `8a8f5355d8c48fe6423f376c41d8a7b152338666` is live. Production ledger writes remain intentionally gated until an operator-confirmed persistent volume is configured; this Render Free deployment does not claim durable evidence storage.
 - PR #468 Content Credentials trust-anchor policy and PR #469 patched Node 22.23.4 runtime are merged. The latest live application-code deployment is tracked in `docs/IMPLEMENTATION-STATUS.md`.
 - The isolated D1 staging schema and Worker are deployed and bound. Seven `ev_*` tables exist and a read-only audit found zero records. The Worker exposes project metadata and revisioned workspace-document endpoints only.
 - The Render same-origin D1 bridge exists in code but remains disabled unless `D1_STAGING_WORKER_URL` is explicitly configured. It is not configured on the live production service; authenticated browser acceptance is outstanding.
@@ -25,6 +26,7 @@ See [Persistence and Release Blockers](PERSISTENCE-AND-RELEASE-BLOCKERS.md) for 
 | Local SQLite media transcode and timeline provenance round-trips | Merged | PR #249; local/test storage only, not proof of durable hosted storage. |
 | Six-format C2PA round-trip matrix | Merged | JPEG, PNG, WebP, MP3, WAV and MP4 tested. This is not every format in the CAI SDK. |
 | Asset Library Content Credentials inspection | Merged | Authenticated API and UI states are implemented; independent browser acceptance remains. |
+| Project evidence ledger and creative dependency graph | Merged and live | PR #522; source SHA-256 binding, reviewer permissions, append-only SQLite audit events, immutable graph snapshots and UI. Production writes fail closed until persistent storage is operator-confirmed. |
 | Account identity in app shell and Overview | Merged | PR #250; email, role, active project and sign-out navigation are visible. |
 | Full-system Release readiness workspace | Merged | PR #252; in-app inventory separates merged capabilities, in-progress branches and blocked release gates. |
 | Project member list and owner-only add/remove | Merged | PR #250; adds existing accounts only and does not send invitations. |
