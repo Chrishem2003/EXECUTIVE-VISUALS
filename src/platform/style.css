@@ -1386,3 +1386,19 @@ body{
 .audio-track-toggles button{min-width:25px;padding:2px 6px;font-size:10px}
 
 .editor-clip-waveform{display:block;width:calc(100% - 8px);height:22px;margin:3px 4px 2px;object-fit:fill;opacity:.9;pointer-events:none}
+
+
+.speed-curve-fieldset{min-width:0;margin:0;padding:0;border:0}\n.speed-curve-fieldset:disabled{opacity:.55}\n\n/* Visual variable-speed keyframe editor */
+.speed-curve-editor{display:grid;gap:10px;margin:8px 0 14px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft)}
+.speed-curve-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+.speed-curve-heading span,.speed-curve-editor>small,.speed-curve-scale{color:var(--muted);font-size:10px}
+.speed-curve-graph{display:block;width:100%;height:104px;overflow:visible;color:var(--purple-400);background:var(--panel);border:1px solid var(--line);border-radius:7px}
+.speed-curve-scale{display:flex;justify-content:space-between;margin-top:-8px}
+.speed-curve-points{display:grid;gap:7px}
+.speed-curve-point{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:8px;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+.speed-curve-point label{display:grid;gap:4px;font-size:10px;color:var(--muted)}
+.speed-curve-point input{width:100%;min-width:0;padding:7px 8px;font-size:12px}
+.speed-curve-index{align-self:center;color:var(--muted);font-size:11px}
+.speed-curve-point button{padding:7px 9px;font-size:10px}
+.speed-curve-editor>button{justify-self:start}
+@media(max-width:520px){.speed-curve-point{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr)}.speed-curve-point button{grid-column:2/4;justify-self:start}}
