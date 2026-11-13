@@ -148,6 +148,15 @@ const panExpressions=(points,basePan,channels)=>{
 };
 
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
+const usesOpticalFlow=(clip)=>{
+ const mode=clip?.metadata?.motionInterpolation;
+ if(mode===undefined||mode===null||mode===""||mode==="off")return false;
+ if(mode!=="optical-flow")fail("Motion interpolation mode is invalid.","INVALID_MOTION_INTERPOLATION");
+ const speed=normalizeClipSpeed(clip?.speed??1),curve=clip?.speedCurve;
+ const hasSlowSection=speed<1||(Array.isArray(curve)&&curve.some(point=>Number(point?.speed)<1));
+ if(!hasSlowSection)fail("Optical-flow interpolation is available only when the clip contains a slow-motion section below 1×.","MOTION_INTERPOLATION_REQUIRES_SLOW_MOTION");
+ return true;
+};
 
 /**
  * FFmpeg timeline renderer for cloud-materialized assets.
@@ -164,6 +173,11 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ const motionClips=clips.filter(usesOpticalFlow);
+ if(motionClips.length){
+  const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,jobId,activeProcesses,()=>Boolean(signal?.aborted),262144);
+  if(!/\bminterpolate\b/.test((capabilities.stdout||"")+"\n"+(capabilities.stderr||"")))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
+ }
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
  for(let index=0;index<clips.length;index++){
@@ -219,7 +233,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const retimeFilter=speedExpression ? "setpts='"+speedExpression+"/TB'" : speed===1 ? null : "setpts=(PTS-STARTPTS)/"+speed.toFixed(6);
     const previous=clips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames:0,fadeOutFrames=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames:0;
     const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps;
-    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
+    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
    segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
@@ -293,7 +307,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});

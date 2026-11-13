@@ -286,3 +286,36 @@ test("cloud FFmpeg renderer rejects invalid or non-video transition metadata bef
  const nonVideo={...video,kind:"audio",clips:video.clips.map(clip=>({...clip,transitionToNext:{type:"dip-to-black",fadeFrames:6}}))};
  await assert.rejects(()=>renderCloudTimeline({timeline:{frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},nonVideo]},assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
 });
+
+
+const hasMinterpolate=(()=>{const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-filters"],{encoding:"utf8"});return /\bminterpolate\b/.test((result.stdout||"")+"\n"+(result.stderr||""));})();
+test("cloud renderer rejects optical-flow metadata on clips without a slow-motion section",async()=>{
+ const time=value=>({value,rate:1});
+ const timeline={frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[{id:"v",assetId:"missing",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{motionInterpolation:"optical-flow"}}]}]};
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:new Map(),workDir:tmpdir()}),error=>error.code==="MOTION_INTERPOLATION_REQUIRES_SLOW_MOTION");
+});
+test("cloud renderer rejects unknown motion interpolation modes before asset access",async()=>{
+ const time=value=>({value,rate:1});
+ const timeline={frameRate:{numerator:24,denominator:1},tracks:[{kind:"video",clips:[{id:"v",assetId:"missing",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(1)},speed:0.5,metadata:{motionInterpolation:"neural-magic"}}]}]};
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:new Map(),workDir:tmpdir()}),error=>error.code==="INVALID_MOTION_INTERPOLATION");
+});
+test("cloud FFmpeg renderer motion-compensates slow-motion frames and records the render receipt",{skip:!hasFfmpeg||!hasFfprobe||!hasMinterpolate},async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-optical-flow-test-"));
+ try{
+  const source=join(root,"slow-source.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=size=160x120:rate=12:duration=1","-c:v","libx264","-pix_fmt","yuv420p",source]);
+  const time=value=>({value,rate:1});
+  const timeline={name:"Optical flow slow motion",width:160,height:120,frameRate:{numerator:24,denominator:1},tracks:[{id:"v",kind:"video",clips:[
+   {id:"slow",assetId:"source",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(1)},speed:0.5,metadata:{motionInterpolation:"optical-flow"}}
+  ]}]};
+  const assets=new Map([["source",{path:source,asset:{id:"source",mediaType:"video/mp4",originalName:"slow-source.mp4"}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  assert.equal(result.render.motionInterpolatedClips,1);
+  assert.equal(result.render.durationSeconds,2);
+  const decoded=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","scale=16:16,format=rgb24","-fps_mode","passthrough","-f","rawvideo","pipe:1"]);
+  const frameBytes=16*16*3,unique=new Set();
+  assert.equal(decoded.length%frameBytes,0);
+  for(let offset=0;offset<decoded.length;offset+=frameBytes)unique.add(decoded.subarray(offset,offset+frameBytes).toString("base64"));
+  assert.ok(unique.size>12,"motion interpolation should create intermediate frames beyond the 12 source frames");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
