@@ -63,7 +63,7 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
    if("deleted_at" in patch){
     deletePatchAttempted=true;
     if(deletePatchMode==="race-won"){row.deleted_at="2026-11-05T12:00:00.000Z";return response([]);}
-    if(deletePatchMode==="race-unconfirmed")return response([]);
+    if(deletePatchMode==="race-unconfirmed"||deletePatchMode==="lookup-fails")return response([]);
     row.deleted_at=patch.deleted_at;
    }
    return response([row]);
