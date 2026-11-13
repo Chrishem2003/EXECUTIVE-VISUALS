@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 
 const endpoints = {
   stagingApp: "https://executive-visuals-1.onrender.com/api/health",
@@ -36,6 +37,9 @@ async function getJson(name, url, { expectedStatus = 200, retries = 5, cookie } 
   throw lastError || new Error(`${name} could not be reached.`);
 }
 
+const runLabel = process.env.GITHUB_RUN_ID || String(Date.now());
+const runAttempt = process.env.GITHUB_RUN_ATTEMPT || "1";
+
 const staging = await getJson("Staging application health", endpoints.stagingApp);
 assert.equal(staging.body.status, "ok");
 assert.equal(staging.body.staging?.d1WorkspaceEnabled, true);
@@ -68,8 +72,8 @@ console.log("PASS: isolated staging app, Worker, D1 schema and unauthenticated-a
 console.log("PASS: production remains on Supabase authentication with the D1 staging bridge disabled.");
 
 const stagingOrigin = "https://executive-visuals-1.onrender.com";
-const smokeEmail = "ev-staging-smoke@example.com";
-const smokePassword = "Staging-only-password-2026!";
+const smokeEmail = `ev-ci+${runLabel}-${runAttempt}@ev-staging.test`;
+const smokePassword = randomBytes(24).toString("base64url");
 const mutationHeaders = {
   "content-type": "application/json",
   origin: stagingOrigin,
@@ -99,12 +103,6 @@ let sessionCookie = "";
 const registration = await postJson("Staging smoke registration", stagingOrigin + "/api/auth/register", {
   body: { email: smokeEmail, password: smokePassword },
   expectedStatus: 201
-}).catch(async error => {
-  if (!String(error.message).includes("HTTP 409")) throw error;
-  return postJson("Staging smoke login", stagingOrigin + "/api/auth/login", {
-    body: { email: smokeEmail, password: smokePassword },
-    expectedStatus: 200
-  });
 });
 sessionCookie = registration.cookie;
 assert.ok(sessionCookie, "Staging auth must issue a session cookie.");
@@ -118,7 +116,6 @@ const identity = await identityResponse.json();
 assert.equal(identity.user?.email, smokeEmail);
 assert.equal(identity.authMode, "local");
 
-const runLabel = process.env.GITHUB_RUN_ID || String(Date.now());
 const projectResponse = await postJson("Authenticated D1 project creation", stagingOrigin + "/api/d1/projects", {
   body: { name: `CI D1 round-trip ${runLabel}`, description: "Automated isolated staging acceptance project", settings: { source: "github-actions", runId: runLabel } },
   cookie: sessionCookie,
@@ -161,17 +158,11 @@ console.log("PASS: allowlisted staging registration/login and /api/me session ve
 console.log("PASS: authenticated D1 project create/list and revisioned workspace save/reload succeeded.");
 console.log("PASS: anonymous project access remains rejected.");
 
-const isolationEmail = "ev-staging-isolation@example.com";
-const isolationPassword = "Staging-isolation-password-2026!";
+const isolationEmail = `ev-ci+${runLabel}-${runAttempt}-member@ev-staging.test`;
+const isolationPassword = randomBytes(24).toString("base64url");
 const isolationAuth = await postJson("Second staging identity registration", stagingOrigin + "/api/auth/register", {
   body: { email: isolationEmail, password: isolationPassword },
   expectedStatus: 201
-}).catch(async error => {
-  if (!String(error.message).includes("HTTP 409")) throw error;
-  return postJson("Second staging identity login", stagingOrigin + "/api/auth/login", {
-    body: { email: isolationEmail, password: isolationPassword },
-    expectedStatus: 200
-  });
 });
 assert.ok(isolationAuth.cookie, "Second staging identity must receive an independent session cookie.");
 
@@ -229,5 +220,76 @@ const firstAccountForeignRead = await getJson("First account cannot read second 
 assert.equal(firstAccountForeignRead.body.error?.code, "D1_PROJECT_NOT_FOUND");
 
 console.log("PASS: two independent staging identities cannot list, read or write each other's projects/workspaces.");
+
+const stagingWorkerOrigin = "https://executive-visuals-d1-staging.chrishem.workers.dev";
+const workerProjectUrl = stagingWorkerOrigin + "/api/d1/projects/" + encodeURIComponent(project.id);
+const workerWorkspaceUrl = workerProjectUrl + "/workspace";
+const membersUrl = workerProjectUrl + "/members";
+const added = await postJson("Owner adds verified collaborator as viewer", membersUrl, {
+  body: { email: isolationEmail, role: "viewer" },
+  cookie: sessionCookie,
+  expectedStatus: 201
+});
+const member = added.payload.member;
+assert.equal(member.email, isolationEmail);
+assert.equal(member.role, "viewer");
+assert.match(member.memberId || "", /^[0-9a-f-]{36}$/i);
+
+const ownerMemberList = await getJson("Owner reads project members", membersUrl, { expectedStatus: 200, cookie: sessionCookie });
+assert.equal(ownerMemberList.body.canManageMembers, true);
+assert.ok(ownerMemberList.body.members.some(item => item.memberId === member.memberId && item.role === "viewer"));
+
+const viewerMemberList = await getJson("Viewer reads project members", membersUrl, { expectedStatus: 200, cookie: isolationAuth.cookie });
+assert.equal(viewerMemberList.body.canManageMembers, false);
+
+const viewerWorkspaceWrite = await fetch(workerWorkspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { viewerWrite: "must be denied" } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(viewerWorkspaceWrite.status, 403, "Viewer role must not write workspace documents.");
+
+const promoted = await postJson("Owner promotes collaborator to editor", membersUrl, {
+  body: { email: isolationEmail, role: "editor" },
+  cookie: sessionCookie,
+  expectedStatus: 201
+});
+assert.equal(promoted.payload.member.role, "editor");
+
+const editorWrite = await fetch(workerWorkspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { collaboration: "editor write accepted", runId: runLabel } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(editorWrite.status, 200, await editorWrite.clone().text());
+const editorSaved = await editorWrite.json();
+assert.equal(editorSaved.revision, reloaded.revision + 1);
+
+const ownerReload = await fetch(workerWorkspaceUrl, {
+  headers: { cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(ownerReload.status, 200);
+const ownerWorkspace = await ownerReload.json();
+assert.deepEqual(ownerWorkspace.document, { collaboration: "editor write accepted", runId: runLabel });
+
+const removed = await fetch(membersUrl + "/" + encodeURIComponent(member.memberId), {
+  method: "DELETE",
+  headers: { ...mutationHeaders, cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(removed.status, 200, await removed.clone().text());
+assert.equal((await removed.json()).removed, true);
+
+const revoked = await fetch(workerProjectUrl, {
+  headers: { cookie: isolationAuth.cookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(revoked.status, 404, "Removing a member must revoke project access immediately.");
+
+console.log("PASS: owner-managed member add/list/update/remove works through the live staging app.");
+console.log("PASS: Viewer writes are denied, Editor writes are accepted, and removal revokes access.");
 
 

@@ -52,3 +52,16 @@ test("registration and login are limited to normalized allowlisted email address
   assert.equal(isStagingLocalAuthEmailAllowed(policy, "other@example.com"), false);
   assert.equal(isStagingLocalAuthEmailAllowed(getStagingLocalAuthPolicy({}), "ev-staging-smoke@example.com"), false);
 });
+
+
+test("only run-scoped synthetic CI identities in the reserved test domain match the narrow wildcard", () => {
+  const policy = getStagingLocalAuthPolicy({
+    ...valid,
+    STAGING_LOCAL_AUTH_ALLOWLIST: "ev-staging-smoke@example.com,ev-ci+*@ev-staging.test"
+  });
+  assert.equal(isStagingLocalAuthEmailAllowed(policy, "ev-ci+43391594815-1@ev-staging.test"), true);
+  assert.equal(isStagingLocalAuthEmailAllowed(policy, "ev-ci+43391594815-member@ev-staging.test"), true);
+  assert.equal(isStagingLocalAuthEmailAllowed(policy, "other+43391594815@ev-staging.test"), false);
+  assert.equal(isStagingLocalAuthEmailAllowed(policy, "ev-ci+43391594815@example.com"), false);
+  assert.equal(isStagingLocalAuthEmailAllowed(policy, "ev-ci+*@ev-staging.test"), false);
+});

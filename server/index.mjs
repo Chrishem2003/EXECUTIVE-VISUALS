@@ -624,7 +624,7 @@ export function createAppServer() {
         }catch{
           fail(res,503,"D1_STAGING_CONFIG_INVALID","The isolated D1 staging Worker URL is invalid.");return;
         }
-        if(!["GET","POST","PATCH","PUT"].includes(req.method)){fail(res,405,"D1_METHOD_NOT_ALLOWED","This staging endpoint does not support the requested method.");return;}
+        if(!["GET","POST","PATCH","PUT","DELETE"].includes(req.method)){fail(res,405,"D1_METHOD_NOT_ALLOWED","This staging endpoint does not support the requested method.");return;}
         try{
           const headers=new Headers();
           for(const name of ["cookie","authorization","content-type","accept"]){

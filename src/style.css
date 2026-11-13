@@ -46,3 +46,11 @@ body{font-size:15px;line-height:1.55}
  .hero-copy p{font-size:14px}
  .content{padding-top:27px}
 }
+
+/* Isolated D1 collaboration controls */
+.d1-staging-workspace .member-list{display:grid;gap:8px;margin-top:12px}
+.d1-staging-workspace .member-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:#121620;min-width:0}
+.d1-staging-workspace .member-row>div{min-width:0;overflow-wrap:anywhere}
+.d1-staging-workspace .member-row b{display:block;font-size:13px}
+.d1-staging-workspace .member-row small{display:block;margin-top:3px;color:var(--muted);font-size:11px}
+.d1-staging-workspace .member-row button{flex:0 0 auto}
