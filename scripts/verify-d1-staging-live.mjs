@@ -8,13 +8,13 @@ const endpoints = {
   productionApp: "https://executive-visuals.onrender.com/api/health"
 };
 
-async function getJson(name, url, { expectedStatus = 200, retries = 5 } = {}) {
+async function getJson(name, url, { expectedStatus = 200, retries = 5, cookie } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       const response = await fetch(url, {
         method: "GET",
-        headers: { accept: "application/json", "cache-control": "no-cache" },
+        headers: { accept: "application/json", "cache-control": "no-cache", ...(cookie ? { cookie } : {}) },
         signal: AbortSignal.timeout(20_000)
       });
       const raw = await response.text();
@@ -128,7 +128,7 @@ const project = projectResponse.payload.project;
 assert.match(project?.id || "", /^[0-9a-f-]{36}$/i);
 assert.equal(projectResponse.payload.storage, "cloudflare-d1-staging");
 
-const projectList = await getJson("Authenticated D1 project list", stagingOrigin + "/api/d1/projects?limit=50", { expectedStatus: 200 });
+const projectList = await getJson("Authenticated D1 project list", stagingOrigin + "/api/d1/projects?limit=50", { expectedStatus: 200, cookie: sessionCookie });
 assert.ok(projectList.body.projects?.some(item => item.id === project.id), "New project must be visible to its authenticated owner.");
 
 const workspaceUrl = stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id) + "/workspace";
