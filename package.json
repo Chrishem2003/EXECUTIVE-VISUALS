@@ -80,7 +80,7 @@
     "review:upscale": "node server/scripts/create-upscale-review-package.mjs",
     "verify:video-workflow-cloud-contract": "node --test server/tests/video-generation-contract.test.mjs server/tests/runway-source-asset-resolver.test.mjs server/tests/video-workflow-cloud-contract.test.mjs",
     "verify:cloud-video-workers": "node --test server/tests/cloud-video-enqueue.test.mjs server/tests/cloud-video-generation-executor.test.mjs server/tests/cloud-video-provider-worker-composition.test.mjs server/tests/cloud-video-provider-worker.test.mjs server/tests/cloud-video-submissions.test.mjs server/tests/cloud-video-worker-cancellation.test.mjs server/tests/private-video-output-ingestion.test.mjs server/tests/runway-model-router-video-adapter.test.mjs server/tests/workflow-cloud-video-bridge.test.mjs server/tests/workflow-cloud-video-resumer.test.mjs",
-    "verify:staging-local-auth": "node --test server/tests/staging-local-auth.test.mjs"
+    "verify:staging-local-auth": "node --test server/tests/staging-local-auth.test.mjs server/tests/staging-local-auth-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
