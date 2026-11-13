@@ -15,7 +15,7 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const route=new URL(url).searchParams,id=route.get("id")?.replace(/^eq\\./,""),expected=route.get("status")?.replace(/^eq\\./,""),row=existing.find(item=>item.id===id&&item.status===expected);if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
  return{api,calls,created};
 }
@@ -595,4 +595,39 @@ test("cloud transformation API rejects unknown, coerced and oversized inputs bef
   assert.equal(result.body.error.code,invalid[i][1]);
  }
  assert.equal(f.calls.some(call=>call[0]==="fetch"),false,"invalid requests must not write jobs or events");
+});
+
+test("cloud transformation cancellation is authorized, idempotent and limited to pre-execution states",async()=>{
+ const id="623e4567-e89b-42d3-a456-426614174000";
+ const draft={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the parked car with a red electric coupe.",durationSeconds:8,referenceAssetIds:[],preservation:[]},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
+ const f=setup({existing:[draft]});
+ const cancelled=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ assert.equal(cancelled.status,200);
+ assert.equal(cancelled.body.plan.status,"cancelled");
+ assert.equal(cancelled.body.idempotentReplay,false);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="transformation.cancelled"));
+ const replay=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ assert.equal(replay.status,200);
+ assert.equal(replay.body.idempotentReplay,true);
+ assert.equal(f.calls.filter(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="PATCH").length,1);
+});
+test("cloud transformation cancellation can revoke an approved plan before dispatch",async()=>{
+ const id="823e4567-e89b-42d3-a456-426614174000";
+ const approved={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_at:"2026-11-14T00:00:00.000Z",estimated_cost:{approvalId:"approval-1",estimatedCostMicros:100,approvedBudgetMicros:100,currency:"USD",adapterId:"provider-a",capability:"video.transform"},input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the parked car with a red electric coupe.",durationSeconds:8,referenceAssetIds:[],preservation:[]},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
+ const f=setup({existing:[approved]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ assert.equal(result.status,200);
+ assert.equal(result.body.plan.status,"cancelled");
+});
+test("cloud transformation cancellation refuses active work and unauthorized editors",async()=>{
+ const id="923e4567-e89b-42d3-a456-426614174000";
+ const active={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"processing",input:{},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
+ const f=setup({existing:[active]});
+ const conflict=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ assert.equal(conflict.status,409);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
+ const denied=setup({canWrite:false,existing:[{...active,status:"draft"}]});
+ const forbidden=await denied.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ assert.equal(forbidden.status,403);
+ assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
 });
