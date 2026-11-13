@@ -801,6 +801,7 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
   const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
+  const speedEditable=(track.kind==="video"&&asset.mediaType.startsWith("video/"))||(track.kind==="audio"&&asset.mediaType.startsWith("audio/"));
   const speedInput=data.get("speed"),speed=speedInput===null?Number(clip.speed??1):Math.max(0.25,Math.min(4,Number(speedInput)||1));
   if(speed!==1&&!(track.kind==="audio"&&asset.mediaType.startsWith("audio/")||track.kind==="video"&&asset.mediaType.startsWith("video/"))){alert("Speed changes require a video or audio source asset.");return;}
   let speedCurve:SpeedKeyframe[]|undefined;
