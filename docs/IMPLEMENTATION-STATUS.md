@@ -1,10 +1,10 @@
 # Executive Visuals — implementation status
 
-**Updated:** 12 November 2026  
+**Updated:** 13 November 2026  
 **Branch:** `main` (studio polish, upscaling integrity, secure Supabase sessions, batch enhancement, private cloud Asset Library integration, cloud media-job queue integration, audio/timeline improvements, signed-MP4 provenance tests and patched Node runtime merged; latest Render main deployment for the audio renderer fix is building at `6abe7896d73f4b7a896eb2be935846802732850d`; the previous live deployment was `f37a5a0e89bd90b729ccac6ce133cf78deab3eab`)  
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
-## Mainline delta — 12 November 2026
+## Mainline delta — 13 November 2026
 
 The following implementation slices have since merged into main and supersede older branch notes below where they cover the same feature:
 
@@ -15,7 +15,8 @@ The following implementation slices have since merged into main and supersede ol
 - **Content Credentials:** PR #467 adds real signed-MP4 verification/tamper tests; PR #468 adds explicit trusted-versus-valid-untrusted signer policy tests and is merged into main.
 - **Waveform cache path security:** PR #470 adds the file-symlink escape regression and PR #472 adds the directory-symlink escape regression; both are merged into main. PR #471 was superseded by the fresh-mainline PR #472 and closed unmerged.
 - **Audio automation/render duration:** PR #473 is merged into main. The cloud renderer now validates keyframes against the full audio clip duration while still trimming the rendered master to the remaining picture sequence. Exact-head CI passed all five workflows; Render deployment is in progress.
-- **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The latest Render deployment is building commit `6abe7896d73f4b7a896eb2be935846802732850d`, which includes the merged audio automation validation fix from PR #473. The previous live deployment was `f37a5a0e89bd90b729ccac6ce133cf78deab3eab`. Subsequent status-documentation commits are marked `[skip render]` and are not deployed.
+- **Variable-speed timeline rendering:** PR #515 is merged and deployed. Audio keyframes are editable in the Studio inspector and rendered in local/cloud masters using frame-sampled FFmpeg Rubber Band tempo commands; local video masters also use the analytic speed-curve source-time mapping. Rendered audio is padded/trimmed to exact timeline duration, curves are clipped safely at the master picture tail, and workers fail closed with `RUBBERBAND_UNAVAILABLE` if the filter is absent. Exact-head Quality, Release, Billing, Financial and Remediation workflows passed; Render reports the deployment live at `ff73eb376d92a49b1facfeba96aeb1f390a499dc`.
+- **Runtime:** PR #469 pins patched Node 22.23.4 for both Docker stages. The latest Render deployment is live at `ff73eb376d92a49b1facfeba96aeb1f390a499dc` (PR #515). Subsequent status-documentation commits are marked `[skip render]` and are not deployed.
 - **Staging persistence:** the isolated Cloudflare D1 metadata database has the seven ev_* tables and one migration recorded; the staging Worker has a D1 binding. The production Render service remains on local SQLite/disk, and its D1 same-origin proxy is deliberately not enabled. R2 is not activated.
 
 The broad Google Drive/billing/provider integration candidate remains draft PR #206 and is not mergeable against current main. Customer-managed subscription cancellation remains draft PR #303 on that integration branch. Do not merge either without a focused mainline reconciliation and fresh exact-head CI.
