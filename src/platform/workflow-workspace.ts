@@ -120,7 +120,7 @@ function scheduleWorkflowRunPoll(delayMs=5000){
   if(!shouldPollWorkflowRun()||runPollInFlight)return;
   runPollInFlight=true;
   try{await loadRun();paint();}
-  catch{/* A transient refresh failure must not erase the last known workflow state. */}
+  catch(error){state.message=error instanceof Error?"Workflow status refresh failed: "+error.message:"Workflow status refresh failed. The last known run state is still shown.";paint();}
   finally{runPollInFlight=false;scheduleWorkflowRunPoll();}
  },delay);
 }
@@ -129,7 +129,7 @@ async function loadRun(){
  if(!runId){scheduleWorkflowRunPoll();return;}
  const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+runId);
  if(state.latestRunId!==runId)return;
- state.runStatus=response.run.status;state.runNodes=response.nodes;
+ state.runStatus=response.run.status;state.runNodes=response.nodes;if(state.message.startsWith("Workflow status refresh failed")||state.message.startsWith("Workflow status could not be refreshed"))state.message="";
  if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+runId})}).catch(()=>{});
  scheduleWorkflowRunPoll();
 }
@@ -270,5 +270,5 @@ document.addEventListener("drop",event=>{
  node.position={x,y};state.graph={...state.graph,revision:state.graph.revision+1};void persist().then(paint).catch(error=>{state.message=error.message;paint();});
 });
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
-window.addEventListener("ev:jobs-updated",()=>{if(state.latestRunId)void loadRun().then(paint).catch(()=>{});});
+window.addEventListener("ev:jobs-updated",()=>{if(!state.latestRunId)return;void loadRun().then(paint).catch(error=>{state.message=error instanceof Error?"Workflow status could not be refreshed: "+error.message:"Workflow status could not be refreshed. The last known run state is still shown.";paint();});});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")scheduleWorkflowRunPoll(1000);});
