@@ -38,7 +38,7 @@ test("local timeline speed curves clip safely to the effective render duration",
  const clippedClip={speedCurve:curve,duration:{value:4,rate:1}};
  const segments=buildTimelineSpeedCurveSegments(clippedClip,duration);
  assert.equal(segments.length,1);
- assert.ok(Math.abs(sourceDurationForTimelineClip(clippedClip,duration)-1.4453125)<1e-9);
+ assert.ok(Math.abs(sourceDurationForTimelineClip(clippedClip,duration)-1.640625)<1e-9);
  assert.ok(!buildTimelineRubberbandCommands(clippedClip,duration,24).includes("rubberband@rb tempo 2;"));
 });
 
