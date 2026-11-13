@@ -28,6 +28,27 @@ const tabs:{id:Tab;label:string;group:string;icon:string}[]=[
 {id:"billing",label:"Billing & plan",group:"Manage",icon:"＄"},{id:"finance",label:"Financial command centre",group:"Manage",icon:"▥"},{id:"admin",label:"Administrator",group:"Manage",icon:"⚑"}];
 const baseGraph=["Creative brief","Character reference","Image generation","Video generation","Edit & captions","Enhancement","Export"];
 const state={seriesPlans:[] as SeriesProductionPlan[],activeSeriesId:"",projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],brandKit:{name:"",tagline:"",voice:"",visualStyle:"",colors:{primary:"#202124",secondary:"#5F6368",accent:"#7C5CFC",background:"#FFFFFF",text:"#202124"},typography:{heading:"",body:""},logoAssetIds:[],prohibitedTerms:[],legalFooter:"",updatedAt:""} as BrandKit,campaignTemplates:[{id:"tpl-vertical",name:"Vertical short-form",channel:"TikTok / Reels / Shorts",aspectRatio:"9:16",width:1080,height:1920,maxDurationSeconds:60,safeArea:{top:12,right:8,bottom:18,left:8},subtitleSafeArea:true,enabled:true},{id:"tpl-youtube",name:"YouTube landscape",channel:"YouTube",aspectRatio:"16:9",width:1920,height:1080,maxDurationSeconds:900,safeArea:{top:5,right:5,bottom:8,left:5},subtitleSafeArea:true,enabled:true},{id:"tpl-square",name:"Square social",channel:"Instagram / Facebook",aspectRatio:"1:1",width:1080,height:1080,maxDurationSeconds:90,safeArea:{top:8,right:8,bottom:12,left:8},subtitleSafeArea:true,enabled:true},{id:"tpl-feed",name:"Portrait feed",channel:"Instagram / Facebook",aspectRatio:"4:5",width:1080,height:1350,maxDurationSeconds:90,safeArea:{top:8,right:8,bottom:14,left:8},subtitleSafeArea:true,enabled:true}] as CampaignTemplate[],workflowPreview:"",apiProjectId:"",cloudProjects:[] as Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:CloudCreativeProduction}}>,cloudAssets:[] as Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>,cloudTimelines:[] as Array<{id:string;name:string;revision:number;updatedAt:string}>,cloudProjectId:"",cloudProjectLinks:{} as Record<string,{id:string;revision:number}>,cloudMessage:"",cloudLoading:false,cloudMediaReady:null as boolean|null,videoApproval:null as {id:string;projectId:string;localProjectId:string;status:string;submitted:boolean;jobCount:number;jobIds:string[];jobStatuses:Array<{jobId:string;shotIndex:number;status:string;progress:number}>;statusSummary:string}|null,transformationDrafts:[] as TransformationDraft[],transformationReadiness:null as TransformationReadiness|null};
+
+let googleDriveConnection:{connected:boolean;email:string|null;grantedScopes:string[]}|null=null;
+let googleDriveStatusLoaded=false,googleDriveStatusLoading=false,googleDriveStatusError="",googleDriveStatusMessage="";
+async function refreshGoogleDriveStatus(){
+ if(googleDriveStatusLoading)return;
+ googleDriveStatusLoading=true;
+ try{googleDriveConnection=await apiRequest<{connected:boolean;email:string|null;grantedScopes:string[]}>("/api/integrations/google-drive/status");googleDriveStatusError="";}
+ catch(error){googleDriveConnection=null;googleDriveStatusError=error instanceof Error?error.message:"Google Drive status is unavailable.";}
+ finally{googleDriveStatusLoading=false;googleDriveStatusLoaded=true;if(state.tab==="settings")render();}
+}
+function googleDriveSettings(){
+ const connected=googleDriveConnection?.connected===true;
+ const status=googleDriveStatusLoading||!googleDriveStatusLoaded?"Checking connection…":googleDriveStatusError?"Not configured or unavailable":connected?"Connected · "+esc(googleDriveConnection?.email||"Google account"):"Not connected";
+ return panel("Google Drive · Private workspace",
+  '<div class="integration-status"><div><b>'+status+'</b><p>Connect your Google account to import files you explicitly select into private project storage, or export finished assets to Drive. Access uses the limited drive.file permission.</p></div><span class="status">'+(connected?"Connected":"User-controlled")+'</span></div>'+
+  '<div class="action-row"><button class="primary" data-google-drive-action="'+(connected?"disconnect":"connect")+'">'+(connected?"Disconnect Google Drive":"Connect Google Drive →")+'</button><button class="secondary" data-google-drive-action="refresh">Refresh status</button></div>'+
+  (connected?'<form id="google-drive-import"><label>Google Drive file ID</label><input name="fileId" required maxlength="200" placeholder="Paste the ID from a Drive file URL"><button class="secondary">Import selected Drive file</button></form><form id="google-drive-export"><label>Private asset ID</label><input name="assetId" required maxlength="64" placeholder="Paste a private cloud asset ID"><button class="secondary">Export private asset to Drive</button></form>':'')+
+  (googleDriveStatusMessage?'<p class="muted">'+esc(googleDriveStatusMessage)+'</p>':'')+
+  (googleDriveStatusError?'<p class="muted">'+esc(googleDriveStatusError)+'</p>':'')+
+  '<p class="muted">Refresh tokens are encrypted server-side. Private media remains in application storage; Drive is used only for explicitly selected imports and exports.</p>');
+}
 let storyboardPreflightContext:{shots:Array<Record<string,any>>;result:Record<string,any>;projectId:string|null;idempotencyKey:string;lastBudget:string}|null=null;
 type BillingPlan={plan_code:string;name:string;description:string;billing_interval:string;amount_minor:number;currency:string;included_credits:number};
 type BillingSubscription={id:string;plan_code:string;status:string;billing_interval:string;amount_minor:number;currency:string;current_period_start:string;current_period_end:string|null;grace_until:string|null;cancel_at_period_end:boolean;cancelled_at:string|null;scheduled_plan_code:string|null;scheduled_amount_minor:number|null;scheduled_currency:string|null;scheduled_plan_at:string|null};
@@ -229,7 +250,8 @@ function library(){return header("MEDIA & PROJECT ASSETS","Asset library","Persi
 
 function engines(){return header("ENGINE READINESS","Creative engines","Verified local processing and explicitly gated model adapters. Unavailable engines are shown as unavailable.",'<button class="secondary" data-action="export">Export capability map</button>')+renderEngineStatus();}
 
-function settings(){return header("WORKSPACE CONFIGURATION","Project settings","Security, persistence, identity consent and server-side execution controls.",'<button class="secondary" data-action="export">Export browser planning drafts</button>')+
+function settings(){if(!googleDriveStatusLoaded&&!googleDriveStatusLoading)void refreshGoogleDriveStatus();return header("WORKSPACE CONFIGURATION","Project settings","Security, persistence, identity consent and server-side execution controls.",'<button class="secondary" data-action="export">Export browser planning drafts</button>')+
+ googleDriveSettings()+
  panel("Persistent data","<p>Authenticated projects, source assets, processing jobs, reviews and audit events are stored by the API in SQLite and the configured media volume. Durable production use requires a mounted persistent volume. The cloud database migration is prepared but has not been applied.</p>")+
  panel("Text-model gateway","<p>The text gateway is disabled by default. Enable it only through server environment settings. Text-model workflow nodes require a completed upstream human approval. Credentials must never be entered into browser forms or workflow JSON.</p>")+
  panel("Identity and rights","<ul><li>Use only source media and identities you own or are authorized to use.</li><li>Require documented consent for likeness transfer and voice cloning.</li><li>Require explicit review before publishing, paid execution or destructive actions.</li><li>Preserve original files and record derivative lineage.</li></ul>")+
@@ -788,6 +810,21 @@ function action(a:string){if(a==="publish-brief-cloud"){void publishBriefToCloud
  }
  state.characters.push({id:uid(),name:n,description:d,voice:"Not assigned",consent});save();render();
 }if(a==="clip"){const n=prompt("Timeline clip label");if(n)task(n,"Timeline","Timeline record created; source media and render engine required.");}if(a==="clear"&&confirm("Clear browser planning drafts? API-backed projects, assets and jobs will not be deleted.")){localStorage.removeItem(KEY);location.reload();}}
+
+document.addEventListener("click",e=>{
+ const t=e.target as HTMLElement,action=t.closest<HTMLElement>("[data-google-drive-action]");
+ if(!action)return;
+ const mode=action.dataset.googleDriveAction;
+ if(mode==="refresh"){googleDriveStatusLoaded=false;void refreshGoogleDriveStatus();return;}
+ if(mode==="connect"){
+  void apiRequest<{authorizationUrl:string}>("/api/integrations/google-drive/connect",{method:"POST"}).then(result=>{if(!result.authorizationUrl)throw new Error("Google authorization URL was not returned.");window.location.assign(result.authorizationUrl);}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive connection could not be started.";googleDriveStatusLoaded=true;render();});
+  return;
+ }
+ if(mode==="disconnect"){
+  if(!confirm("Disconnect Google Drive? The saved refresh token will be revoked where possible."))return;
+  void apiRequest<{disconnected:boolean;revoked:boolean}>("/api/integrations/google-drive/disconnect",{method:"POST"}).then(result=>{googleDriveConnection={connected:false,email:null,grantedScopes:[]};googleDriveStatusLoaded=true;googleDriveStatusError=result.revoked?"":"Connection removed, but Google revocation could not be confirmed.";render();}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive could not be disconnected.";render();});
+ }
+});
 document.addEventListener("click",e=>{const t=e.target as HTMLElement;
  if(t.closest("[data-readiness-refresh]")){void refreshLiveReadiness();return;}
  if(t.closest("[data-remediation-refresh]")||t.closest("[data-remediation-review-refresh]")){void loadFinanceWorkspace();return;}
@@ -1065,6 +1102,20 @@ if(t.closest("[data-finance-executive-print]")){
  if(t.closest("[data-finance-refund-reconcile]")){void apiRequest("/api/admin/finance/reconcile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({})}).then(()=>loadFinanceWorkspace()).catch(error=>{financeState.error=error instanceof Error?error.message:"Refund reconciliation failed.";render();});return;}
  if(t.closest("[data-finance-audit]")){void apiRequest<{events:Array<Record<string,unknown>>}>("/api/admin/finance/audit").then(result=>{const target=$<HTMLElement>("#finance-audit-results");if(target)target.innerHTML='<pre class="finance-json">'+esc(JSON.stringify(result.events||[],null,2))+'</pre>';}).catch(error=>{financeState.error=error instanceof Error?error.message:"Audit trail unavailable.";render();});return;}
  if(t.closest("[data-billing-refresh]")){void loadBillingWorkspace();return;}const tab=t.closest<HTMLElement>("[data-tab]");if(tab){const id=tab.dataset.tab as Tab;if(tabs.some(x=>x.id===id)){state.tab=id;trackCustomerSuccessEvent(id==="billing"?"billing_viewed":"workspace_opened");render();if(id==="cloud")void loadCloudWorkspace();if(id==="billing")void loadBillingWorkspace();if(id==="admin")void loadAdminOperationsWorkspace();if(id==="finance"){void loadFinanceWorkspace();startFinanceAutoRefresh();}else stopFinanceAutoRefresh();}return;}const a=t.closest<HTMLElement>("[data-action]");if(a){action(a.dataset.action||"");return;}const op=t.closest<HTMLElement>("[data-operation]");if(op)task(op.dataset.operation||"Enhancement","Enhancement","Source media and a connected enhancement provider are required.");const rm=t.closest<HTMLElement>("[data-remove]");if(rm){state.graph.splice(Number(rm.dataset.remove),1);save();render();}const ed=t.closest<HTMLElement>("[data-edit]");if(ed){const s=state.shots.find(x=>x.id===ed.dataset.edit);if(s){const n=prompt("Shot title",s.scene);if(n!==null)s.scene=n;const d=prompt("Action and blocking",s.action);if(d!==null)s.action=d;save();render();}}});
+
+document.addEventListener("submit",e=>{
+ const form=e.target as HTMLFormElement;
+ if(form.id==="google-drive-import"){
+  e.preventDefault();const fileId=String(new FormData(form).get("fileId")||"").trim();if(!fileId)return;
+  googleDriveStatusMessage="Importing selected file into private project storage…";googleDriveStatusError="";render();
+  void apiRequest<{asset:{name:string}}>("/api/integrations/google-drive/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileId,projectId:state.cloudProjectId||null})}).then(async result=>{googleDriveStatusMessage="Imported "+result.asset.name+" into private storage.";if(state.cloudProjectId)await loadCloudWorkspace();}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive import failed.";googleDriveStatusMessage="";}).finally(()=>render());
+ }
+ if(form.id==="google-drive-export"){
+  e.preventDefault();const assetId=String(new FormData(form).get("assetId")||"").trim();if(!assetId)return;
+  googleDriveStatusMessage="Exporting private asset to Google Drive…";googleDriveStatusError="";render();
+  void apiRequest<{file:{name:string;webViewLink:string|null}}>("/api/integrations/google-drive/export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({assetId,projectId:state.cloudProjectId||null})}).then(result=>{googleDriveStatusMessage="Exported "+result.file.name+" to Google Drive."+(result.file.webViewLink?" "+result.file.webViewLink:"");}).catch(error=>{googleDriveStatusError=error instanceof Error?error.message:"Google Drive export failed.";googleDriveStatusMessage="";}).finally(()=>render());
+ }
+});
 document.addEventListener("submit",e=>{const f=e.target as HTMLFormElement;
  if(f.id==="finance-remediation-create-form"){e.preventDefault();if(!f.reportValidity())return;const d=new FormData(f),select=f.querySelector<HTMLSelectElement>('select[name="findingId"]'),option=select?.selectedOptions[0],dueValue=String(d.get("dueAt")||"");if(!option||!dueValue){financeState.error="Select a finding and a valid due date.";render();return;}const dueAt=new Date(dueValue+"T23:59:59.000Z");if(!Number.isFinite(dueAt.getTime())){financeState.error="The remediation due date is invalid.";render();return;}const payload={findingId:option.value,controlId:option.dataset.controlId||"",title:option.dataset.title||"",severity:option.dataset.severity||"unknown",actionPlan:String(d.get("actionPlan")||""),dueAt:dueAt.toISOString()};const button=f.querySelector<HTMLButtonElement>('button[type="submit"]');if(button){button.disabled=true;button.textContent="Creating action…";}void apiRequest("/api/finance/remediations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)}).then(()=>{financeState.error="Persistent remediation action created.";return loadFinanceWorkspace();}).catch(error=>{financeState.error=error instanceof Error?error.message:"Remediation action could not be created.";render();}).finally(()=>{if(button){button.disabled=false;button.textContent="Create remediation action →";}});return;}
  if(f.matches("[data-remediation-project-form]")){e.preventDefault();const projectId=String(new FormData(f).get("projectId")||"").trim();if(projectId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)){financeState.error="Choose a valid shared project.";render();return;}financeState.remediationProjectId=projectId;void loadFinanceWorkspace();return;}
