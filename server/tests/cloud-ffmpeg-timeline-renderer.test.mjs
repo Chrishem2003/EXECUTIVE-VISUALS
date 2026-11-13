@@ -163,6 +163,18 @@ test("cloud renderer applies clip gain and pan automation to the encoded audio",
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
   const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
   assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"&&stream.channels===2));
+  const pcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-ac","2","-ar","48000","-f","f32le","pipe:1"]);
+  const samples=new Float32Array(pcm.buffer,pcm.byteOffset,Math.floor(pcm.byteLength/4));
+  const channelRms=(channel,startSeconds,endSeconds)=>{
+   const start=Math.floor(startSeconds*48000),end=Math.min(Math.floor(endSeconds*48000),Math.floor(samples.length/2));
+   let energy=0,count=0;
+   for(let frame=start;frame<end;frame++){const value=samples[frame*2+channel];energy+=value*value;count++;}
+   return count?Math.sqrt(energy/count):0;
+  };
+  const earlyLeft=channelRms(0,.05,.2),earlyRight=channelRms(1,.05,.2);
+  const lateLeft=channelRms(0,.75,.9),lateRight=channelRms(1,.75,.9);
+  assert.ok(earlyLeft>earlyRight*4,"the opening hard-left automation should favor the left channel");
+  assert.ok(lateRight>lateLeft*4,"the later hard-right automation should favor the right channel");
   assert.equal(result.render.audioClips,1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
