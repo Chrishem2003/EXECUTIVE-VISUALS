@@ -194,7 +194,7 @@ async function d1Api(request, env, url) {
     const memberCollection = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})\/members$/i);
     if (memberCollection && request.method === "GET") {
       const members = await repo.listMembers({ actorId: principal.id, projectId: memberCollection[1] });
-      return withCookies(json({ members, projectId: memberCollection[1] }), sessionCookies);
+      return withCookies(json({ ...members, projectId: memberCollection[1] }), sessionCookies);
     }
     if (memberCollection && request.method === "POST") {
       const body = await readJson(request);
