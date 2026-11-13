@@ -219,6 +219,79 @@ function addAsset(db, job, filePath, originalName, mediaType, size, sha256, deri
   return { id, name:originalName, mediaType, size, sha256, derivativeOf, metadata };
 }
 
+
+const speedCurveFailure=(message,code)=>{throw Object.assign(new Error(message),{code});};
+const speedCurveNumber=value=>Number(value.toFixed(9)).toString();
+export function buildTimelineSpeedCurveSegments(clip,duration){
+ const curve=clip?.speedCurve;
+ if(curve===undefined)return null;
+ if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||
+    curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||
+      point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||
+      (index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))
+  speedCurveFailure("Variable-speed keyframes require 2–64 ordered points, start at zero and stay within the clip at 0.25×–4×.","INVALID_SPEED_CURVE");
+ const evaluate=time=>{
+  if(time<=curve[0].timeSeconds)return curve[0].speed;
+  for(let index=1;index<curve.length;index++){
+   const left=curve[index-1],right=curve[index];
+   if(time<=right.timeSeconds){
+    const span=right.timeSeconds-left.timeSeconds,ratio=span>0?(time-left.timeSeconds)/span:1;
+    return left.speed+(right.speed-left.speed)*ratio;
+   }
+  }
+  return curve[curve.length-1].speed;
+ };
+ const points=curve.filter(point=>point.timeSeconds<duration).map(point=>({time:point.timeSeconds,speed:point.speed}));
+ if(!points.length||points[0].time!==0)speedCurveFailure("Variable-speed keyframes must start at zero.","INVALID_SPEED_CURVE");
+ points.push({time:duration,speed:evaluate(duration)});
+ let source=0;
+ return points.slice(1).map((point,index)=>{
+  const previous=points[index],elapsed=point.time-previous.time,sourceStart=source;
+  if(elapsed<=0)speedCurveFailure("Variable-speed keyframe intervals must have positive duration.","INVALID_SPEED_CURVE");
+  source+=(previous.speed+point.speed)*0.5*elapsed;
+  return{timelineStart:previous.time,timelineEnd:point.time,sourceStart,sourceEnd:source,startSpeed:previous.speed,endSpeed:point.speed,slope:(point.speed-previous.speed)/elapsed};
+ });
+}
+export function sourceDurationForTimelineClip(clip,duration){
+ const segments=buildTimelineSpeedCurveSegments(clip,duration);
+ if(!segments)return sourceDurationForTimeline(duration,normalizeClipSpeed(clip?.speed??1));
+ return segments.reduce((total,segment)=>total+segment.sourceEnd-segment.sourceStart,0);
+}
+export function buildTimelineSpeedCurveSetptsExpression(clip,duration){
+ const segments=buildTimelineSpeedCurveSegments(clip,duration);
+ if(!segments)return null;
+ let expression="("+speedCurveNumber(duration)+"+(T-"+speedCurveNumber(segments[segments.length-1].sourceEnd)+")/"+speedCurveNumber(segments[segments.length-1].endSpeed)+")";
+ for(let index=segments.length-1;index>=0;index--){
+  const segment=segments[index],delta="(T-"+speedCurveNumber(segment.sourceStart)+")";
+  const local=Math.abs(segment.slope)<1e-9?delta+"/"+speedCurveNumber(segment.startSpeed):
+   "2*"+delta+"/("+speedCurveNumber(segment.startSpeed)+"+sqrt("+speedCurveNumber(segment.startSpeed*segment.startSpeed)+"+2*"+speedCurveNumber(segment.slope)+"*"+delta+"))";
+  expression="if(lt(T,"+speedCurveNumber(segment.sourceEnd)+"),("+speedCurveNumber(segment.timelineStart)+"+("+local+")),"+expression+")";
+ }
+ return expression;
+}
+const timelineSpeedAt=(segments,time)=>{
+ const segment=segments.find(item=>time<=item.timelineEnd+1e-9)||segments[segments.length-1];
+ const elapsed=Math.max(0,Math.min(segment.timelineEnd-segment.timelineStart,time-segment.timelineStart));
+ return segment.startSpeed+segment.slope*elapsed;
+};
+const timelineSourceAt=(segments,time)=>{
+ const segment=segments.find(item=>time<=item.timelineEnd+1e-9)||segments[segments.length-1];
+ const elapsed=Math.max(0,Math.min(segment.timelineEnd-segment.timelineStart,time-segment.timelineStart));
+ return segment.sourceStart+segment.startSpeed*elapsed+0.5*segment.slope*elapsed*elapsed;
+};
+export function buildTimelineRubberbandCommands(clip,duration,fps){
+ const segments=buildTimelineSpeedCurveSegments(clip,duration);
+ if(!segments)return null;
+ const frameCount=Math.ceil(duration*fps);
+ if(frameCount>100000)speedCurveFailure("Variable-speed audio automation exceeds the 100,000-command render safety limit.","SPEED_CURVE_COMPLEXITY_LIMIT");
+ const commands=[];
+ for(let frame=1;frame<frameCount;frame++){
+  const timelineTime=frame/fps,sourceTime=timelineSourceAt(segments,timelineTime),speed=timelineSpeedAt(segments,timelineTime);
+  commands.push(speedCurveNumber(sourceTime)+" rubberband@rb tempo "+speedCurveNumber(speed)+";");
+ }
+ return commands.length?commands.join("\n")+"\n":"";
+}
+
 async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,onResourceMeasurement=null,c2paPreserver=defaultC2paPreserver,c2paSigner=null,c2paSignerMode="local"}){
   const input=parseJson(job.input_json);
   const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(input.timelineId||""));
@@ -237,12 +310,17 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   if(videoTracks.length!==1||unsupported.length)throw Object.assign(new Error("The master renderer requires exactly one primary video track. Unsupported track types: "+unsupported.map(track=>track.kind).join(", ")),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
   const clips=videoTracks[0].clips.filter(clip=>clip.enabled!==false).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   const audioClips=audioTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
+  const needsRubberband=audioClips.some(clip=>clip.speedCurve!==undefined);
+  if(needsRubberband){
+    const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,job.id,activeProcesses,()=>db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status==="cancelled",262144);
+    if(!/\\brubberband\\b/.test((capabilities.stdout||"")+"\\n"+(capabilities.stderr||"")))throw Object.assign(new Error("Variable-speed audio export requires an FFmpeg build with librubberband support; this local worker does not provide that filter."),{code:"RUBBERBAND_UNAVAILABLE"});
+  }
   const overlayClips=overlayTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   const captionClips=captionTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   if(!clips.length)throw Object.assign(new Error("Add at least one enabled clip to the primary video track."),{code:"EMPTY_TIMELINE"});
   const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
   const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
-  const fpsNum=Number(timeline.frameRate?.numerator)||24,fpsDen=Number(timeline.frameRate?.denominator)||1;
+  const fpsNum=Number(timeline.frameRate?.numerator)||24,fpsDen=Number(timeline.frameRate?.denominator)||1,fps=fpsNum/fpsDen;
   const outputDir=join(mediaRoot,"derived");await mkdir(outputDir,{recursive:true});
   const outputId=randomUUID(),outputPath=join(outputDir,outputId+".mp4"),args=["-hide_banner","-y"];
   const segments=[];let cursor=0,inputIndex=0,segmentIndex=0;
@@ -251,7 +329,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const start=safeSeconds(Number(clip.timelineStart.value)/Number(clip.timelineStart.rate));
     const duration=safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate));
     if(duration<=0)continue;
-    const speed=normalizeClipSpeed(clip.speed??1);
+    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimelineClip(clip,duration),speedExpression=buildTimelineSpeedCurveSetptsExpression(clip,duration);
     if(start+0.000001<cursor)throw Object.assign(new Error("Primary video track contains overlapping clips."),{code:"TIMELINE_OVERLAP"});
     if(start>cursor+0.000001){
       const gap=start-cursor;
@@ -265,11 +343,12 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const file=join(mediaRoot,asset.storage_path);
     const label="v"+segmentIndex++;
     const sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate));
-    if(asset.media_type.startsWith("image/")){if(speed!==1)throw Object.assign(new Error("Still-image clips do not support speed changes."),{code:"UNSUPPORTED_IMAGE_TIME_REMAP"});args.push("-loop","1","-t",duration.toFixed(6),"-i",file);}
-    else if(asset.media_type.startsWith("video/")){const sourceDuration=sourceDurationForTimeline(duration,speed);args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);}
+    if(asset.media_type.startsWith("image/")){if(speed!==1||clip.speedCurve!==undefined)throw Object.assign(new Error("Still-image clips do not support speed changes."),{code:"UNSUPPORTED_IMAGE_TIME_REMAP"});args.push("-loop","1","-t",duration.toFixed(6),"-i",file);}
+    else if(asset.media_type.startsWith("video/")){args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);}
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const effect=buildTimelineClipEffects(clip.metadata||{});
-    const filterParts=["trim=duration="+sourceDurationForTimeline(duration,speed).toFixed(6),speed===1?"setpts=PTS-STARTPTS":"setpts=(PTS-STARTPTS)/"+speed.toFixed(6),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+    const retimeFilters=speedExpression?["setpts=\'"+speedExpression+"/TB\'"]:speed===1?[]:["setpts=(PTS-STARTPTS)/"+speed.toFixed(6)];
+    const filterParts=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...retimeFilters,...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
     const filter="["+inputIndex+":v]"+filterParts.join(",")+"["+label+"]";
     segments.push({label,filter,effectsEnabled:effect.enabled});
     inputIndex++;cursor=start+duration;
@@ -277,21 +356,27 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   }
   if(!segments.length)throw Object.assign(new Error("No renderable clips were found."),{code:"EMPTY_TIMELINE"});
   const audioFilters=[];let audioIndex=0;
+  const videoEffects=[],captionTempPaths=[];
   for(const clip of audioClips){
     const start=safeSeconds(Number(clip.timelineStart.value)/Number(clip.timelineStart.rate));
     if(start>=cursor)continue;
     const requested=safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate)),duration=Math.min(requested,cursor-start);
     if(duration<=0)continue;
-    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimeline(duration,speed);
+    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForTimelineClip(clip,duration);
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
     if(!asset||!asset.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio tracks require accessible audio-only source assets."),{code:"UNSUPPORTED_AUDIO_SOURCE"});
     const file=join(mediaRoot,asset.storage_path),sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate));
     args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);
-    const delay=Math.max(0,Math.round(start*1000)),label="a"+audioIndex++,tempo=buildAtempoFilter(speed),gain=Math.pow(10,Math.max(-60,Math.min(24,Number(clip.gainDb)||0))/20);
+    const delay=Math.max(0,Math.round(start*1000)),label="a"+audioIndex++,gain=Math.pow(10,Math.max(-60,Math.min(24,Number(clip.gainDb)||0))/20);
+    let tempo=buildAtempoFilter(speed);
+    if(clip.speedCurve!==undefined){
+      const commands=buildTimelineRubberbandCommands(clip,duration,fps),commandPath=join(outputDir,outputId+"-audio-speed-"+label+".cmd");
+      await writeFile(commandPath,commands??"","utf8");captionTempPaths.push(commandPath);
+      tempo="aresample=48000,asetnsamples=n=96:p=0,asendcmd=f=\'"+escapeFilterPath(commandPath)+"\',rubberband@rb=tempo="+speedCurveNumber(clip.speedCurve[0].speed)+",apad=whole_dur="+duration.toFixed(6)+",atrim=duration="+duration.toFixed(6);
+    }
     audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume=${gain.toFixed(6)},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
     inputIndex++;
   }
-  const videoEffects=[],captionTempPaths=[];
   let currentVideo="[vbase]",overlayIndex=0,captionIndex=0;
   for(const clip of overlayClips){
     const start=safeSeconds(Number(clip.timelineStart.value)/Number(clip.timelineStart.rate));
@@ -362,7 +447,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
   const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
-  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
+  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,retimedVideoClips:clips.filter(clip=>clip.speedCurve!==undefined).length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
 }
 
 export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onResourceMeasurement=null, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
