@@ -15,7 +15,7 @@ export function getStagingLocalAuthPolicy(env = {}) {
     String(env.STAGING_LOCAL_AUTH_ALLOWLIST || "")
       .split(",")
       .map(normalizeEmail)
-      .filter(email => EMAIL_PATTERN.test(email))
+      .filter(email => EMAIL_PATTERN.test(email) && (!email.includes("*") || email === DYNAMIC_CI_ALLOWLIST_ENTRY))
   )].sort();
   const enabled = env.NODE_ENV === "production" &&
     env.AUTH_MODE === "local" &&
@@ -32,5 +32,8 @@ export function getStagingLocalAuthPolicy(env = {}) {
 }
 
 export function isStagingLocalAuthEmailAllowed(policy, email) {
-  return Boolean(policy?.enabled && policy.allowlist.includes(normalizeEmail(email)));
+  const normalized = normalizeEmail(email);
+  return Boolean(policy?.enabled && policy.allowlist.some(entry =>
+    entry === normalized || (entry === DYNAMIC_CI_ALLOWLIST_ENTRY && /^ev-ci\\+[a-z0-9-]+@ev-staging\\.test$/.test(normalized))
+  ));
 }
