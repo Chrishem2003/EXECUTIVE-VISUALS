@@ -34,6 +34,7 @@ export function getStagingLocalAuthPolicy(env = {}) {
 
 export function isStagingLocalAuthEmailAllowed(policy, email) {
   const normalized = normalizeEmail(email);
+  if (normalized.includes("*")) return false;
   return Boolean(policy?.enabled && policy.allowlist.some(entry =>
     entry === normalized || (entry === DYNAMIC_CI_ALLOWLIST_ENTRY && /^ev-ci\+[a-z0-9-]+@ev-staging\.test$/.test(normalized))
   ));
