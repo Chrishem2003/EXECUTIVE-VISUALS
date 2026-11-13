@@ -131,7 +131,7 @@ test("project owner can manage verified members by email and list/remove project
   await assert.rejects(repo.removeMember({ actorId: otherId, projectId, memberId: ownerId }), { code: "D1_PROJECT_ACCESS_DENIED" });
 
   await repo.addMemberByEmail({ actorId: ownerId, projectId, email: "collaborator@example.test", role: "editor" });
-  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).find(member => member.memberId === otherId).role, "editor");
+  assert.equal((await repo.listMembers({ actorId: ownerId, projectId })).members.find(member => member.memberId === otherId).role, "editor");
 
   const removed = await repo.removeMember({ actorId: ownerId, projectId, memberId: otherId });
   assert.equal(removed.removed, true);
