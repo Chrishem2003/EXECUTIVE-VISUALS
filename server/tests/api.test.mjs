@@ -764,7 +764,7 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
   assert.deepEqual(reviewedBody.events.map(event=>event.type),["submitted","reviewed"]);
 
   const replay=await request("/api/assets/"+asset.id+"/evidence/"+submitted.record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"rejected",reviewNote:"Second decision should conflict."})},owner);
-  assert.equal(replay.status,500);
+  assert.equal(replay.status,409);
 
   const listed=await request("/api/evidence?projectId="+encodeURIComponent(project.id),{},owner);
   assert.equal(listed.status,200);
