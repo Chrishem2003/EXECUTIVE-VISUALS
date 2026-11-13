@@ -1453,3 +1453,6 @@ body{
 .creative-graph-baseline{margin:14px 0 0;font-size:.82rem}
 .creative-graph-diff{display:grid;gap:5px;margin-top:12px;padding:12px;border-radius:10px;background:var(--panel,#fff)}
 @media(max-width:760px){.creative-graph-heading{display:grid}.creative-graph-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+.evidence-storage-note{margin:0 0 14px;padding:10px 12px;border-left:3px solid #b98a32;border-radius:7px;background:#fff8e8;color:#75510b;font-size:.84rem;line-height:1.45}
