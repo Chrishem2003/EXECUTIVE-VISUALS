@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { D1_WORKSPACE_DOCUMENT_MAX_BYTES, buildD1WorkspaceUpdatePayload, parseD1WorkspaceDocument } from "../../src/platform/d1-staging-contract.ts";
+import { D1_WORKSPACE_DOCUMENT_MAX_BYTES, buildD1WorkspaceUpdatePayload, isD1StagingWorkspaceEnabled, parseD1WorkspaceDocument } from "../../src/platform/d1-staging-contract.ts";
 
 test("D1 workspace JSON accepts object documents", () => {
   assert.deepEqual(parseD1WorkspaceDocument('{"schemaVersion":1,"clips":[]}'), { schemaVersion: 1, clips: [] });
@@ -31,4 +31,13 @@ test("D1 workspace update includes its revision envelope within the Worker body 
   assert.throws(() => buildD1WorkspaceUpdatePayload(nearLimit, 1), /API envelope/);
   const valid = buildD1WorkspaceUpdatePayload('{"clips":[]}', 4);
   assert.deepEqual(JSON.parse(valid), { expectedRevision: 4, document: { clips: [] } });
+});
+
+test("D1 staging panel is enabled only when the server explicitly advertises its isolated bridge", () => {
+  assert.equal(isD1StagingWorkspaceEnabled({ staging: { d1WorkspaceEnabled: true } }), true);
+  assert.equal(isD1StagingWorkspaceEnabled({ staging: { d1WorkspaceEnabled: false } }), false);
+  assert.equal(isD1StagingWorkspaceEnabled({ staging: {} }), false);
+  assert.equal(isD1StagingWorkspaceEnabled({}), false);
+  assert.equal(isD1StagingWorkspaceEnabled(null), false);
+  assert.equal(isD1StagingWorkspaceEnabled({ staging: "true" }), false);
 });
