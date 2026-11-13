@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, trimClip } from "../../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeTrack, splitClip, trimClip } from "../../src/core/timeline.ts";
 import {
   applyTimelineHistoryOperation,
   createTimelineHistory,
@@ -90,7 +90,7 @@ test("adding a track and clips together restores track order through undo and re
 
 test("track removal is reversed with its clips and original ordering intact", () => {
   const before = fixture();
-  const after = { ...before, tracks: before.tracks.filter(track => track.id !== "video-1") };
+  const after = removeTrack(before, "video-1");
   const op = operation(before, after, "Remove track");
   const applied = applyTimelineHistoryOperation(before, op);
   assert.deepEqual(applied.tracks.map(track => track.id), ["audio-1"]);

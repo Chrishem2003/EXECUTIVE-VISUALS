@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, removeClip, normalizeAudioMasteringSettings, rational, seconds, sourceElapsedSeconds, splitClip, toOpenTimelineIo, timelineElapsedForSourceElapsed, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, removeClip, removeTrack, normalizeAudioMasteringSettings, rational, seconds, sourceElapsedSeconds, splitClip, toOpenTimelineIo, timelineElapsedForSourceElapsed, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression } from "../src/core/audio-automation.ts";
 
@@ -46,6 +46,16 @@ assert.throws(()=>removeClip(deleteTimeline,"missing-track","delete-a"),/Track n
 assert.throws(()=>removeClip(deleteTimeline,"delete-track","missing-clip"),/Clip not found/);
 const lockedDelete={...deleteTimeline,tracks:deleteTimeline.tracks.map(track=>({...track,locked:true}))};
 assert.throws(()=>removeClip(lockedDelete,"delete-track","delete-a"),/Track is locked/);
+const trackDeleteBase=createTimeline("project-track-delete","timeline-track-delete","Track deletion",{numerator:24,denominator:1});
+let trackDelete=addTrack(trackDeleteBase,{id:"track-delete-a",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
+trackDelete=addTrack(trackDelete,{id:"track-delete-b",name:"Music",kind:"audio",enabled:true,locked:false,clips:[]});
+trackDelete=addClip(trackDelete,"track-delete-a",{id:"track-delete-clip",assetId:"source-track-delete",name:"Shot",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true});
+const removedTrack=removeTrack(trackDelete,"track-delete-a");
+assert.deepEqual(removedTrack.tracks.map(track=>track.id),["track-delete-b"]);
+assert.equal(removedTrack.revision,trackDelete.revision+1);
+assert.throws(()=>removeTrack(trackDelete,"missing-track"),/Track not found/);
+assert.throws(()=>removeTrack({...trackDelete,tracks:trackDelete.tracks.map(track=>track.id==="track-delete-a"?{...track,locked:true}:track)},"track-delete-a"),/Track is locked/);
+assert.throws(()=>removeTrack({...trackDelete,tracks:[trackDelete.tracks[0]]},"track-delete-a"),/at least one track/);
 
 timeline=addMarker(timeline,{id:"marker-1",name:"Review hook",start:rational(144,24),color:"YELLOW",note:"Check the opening"});
 const interchange=toOpenTimelineIo(timeline);
