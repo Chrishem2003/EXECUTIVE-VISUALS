@@ -230,4 +230,72 @@ assert.equal(firstAccountForeignRead.body.error?.code, "D1_PROJECT_NOT_FOUND");
 
 console.log("PASS: two independent staging identities cannot list, read or write each other's projects/workspaces.");
 
+const membersUrl = stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id) + "/members";
+const added = await postJson("Owner adds verified collaborator as viewer", membersUrl, {
+  body: { email: isolationEmail, role: "viewer" },
+  cookie: sessionCookie,
+  expectedStatus: 201
+});
+const member = added.payload.member;
+assert.equal(member.email, isolationEmail);
+assert.equal(member.role, "viewer");
+assert.match(member.memberId || "", /^[0-9a-f-]{36}$/i);
+
+const ownerMemberList = await getJson("Owner reads project members", membersUrl, { expectedStatus: 200, cookie: sessionCookie });
+assert.equal(ownerMemberList.body.canManageMembers, true);
+assert.ok(ownerMemberList.body.members.some(item => item.memberId === member.memberId && item.role === "viewer"));
+
+const viewerMemberList = await getJson("Viewer reads project members", membersUrl, { expectedStatus: 200, cookie: isolationAuth.cookie });
+assert.equal(viewerMemberList.body.canManageMembers, false);
+
+const viewerWorkspaceWrite = await fetch(workspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { viewerWrite: "must be denied" } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(viewerWorkspaceWrite.status, 403, "Viewer role must not write workspace documents.");
+
+const promoted = await postJson("Owner promotes collaborator to editor", membersUrl, {
+  body: { email: isolationEmail, role: "editor" },
+  cookie: sessionCookie,
+  expectedStatus: 201
+});
+assert.equal(promoted.payload.member.role, "editor");
+
+const editorWrite = await fetch(workspaceUrl, {
+  method: "PUT",
+  headers: { ...mutationHeaders, cookie: isolationAuth.cookie },
+  body: JSON.stringify({ expectedRevision: reloaded.revision, document: { collaboration: "editor write accepted", runId: runLabel } }),
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(editorWrite.status, 200, await editorWrite.clone().text());
+const editorSaved = await editorWrite.json();
+assert.equal(editorSaved.revision, reloaded.revision + 1);
+
+const ownerReload = await fetch(workspaceUrl, {
+  headers: { cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(ownerReload.status, 200);
+const ownerWorkspace = await ownerReload.json();
+assert.deepEqual(ownerWorkspace.document, { collaboration: "editor write accepted", runId: runLabel });
+
+const removed = await fetch(membersUrl + "/" + encodeURIComponent(member.memberId), {
+  method: "DELETE",
+  headers: { ...mutationHeaders, cookie: sessionCookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(removed.status, 200, await removed.clone().text());
+assert.equal((await removed.json()).removed, true);
+
+const revoked = await fetch(stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id), {
+  headers: { cookie: isolationAuth.cookie, accept: "application/json" },
+  signal: AbortSignal.timeout(20_000)
+});
+assert.equal(revoked.status, 404, "Removing a member must revoke project access immediately.");
+
+console.log("PASS: owner-managed member add/list/update/remove works through the live staging app.");
+console.log("PASS: Viewer writes are denied, Editor writes are accepted, and removal revokes access.");
+
 
