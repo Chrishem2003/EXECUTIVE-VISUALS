@@ -157,7 +157,7 @@ async function d1Api(request, env, url) {
         const claimed = await repo.claimNextJob({ leaseMs: body.leaseMs ?? 60000 });
         return json({ claimed: Boolean(claimed), ...(claimed || {}) });
       }
-      const leaseMatch = url.pathname.match(/^\\/api\\/d1\\/internal\\/jobs\\/([0-9a-f-]{36})\\/(heartbeat|complete|fail)$/i);
+      const leaseMatch = url.pathname.match(/^\/api\/d1\/internal\/jobs\/([0-9a-f-]{36})\/(heartbeat|complete|fail)$/i);
       if (!leaseMatch) return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "Private worker endpoint not found." } }, 404);
       const body = await readJson(request, 80 * 1024);
       const args = { jobId: leaseMatch[1], leaseToken: body.leaseToken };
