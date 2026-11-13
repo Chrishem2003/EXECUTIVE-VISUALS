@@ -203,6 +203,24 @@ export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:st
   const validation=validateTimeline(updated);if(!validation.valid)throw new Error(validation.issues[0].message);
   return updated;
 }
+/** Delete a clip without shifting other tracks; the edit remains reversible through timeline history. */
+export function removeClip(timeline:EditorialTimeline,trackId:string,clipId:string):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.locked)throw new Error("Track is locked.");
+  const clip=track.clips.find(item=>item.id===clipId);
+  if(!clip)throw new Error("Clip not found.");
+  const ordered=track.clips.slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+  const removedIndex=ordered.findIndex(item=>item.id===clipId);
+  const previous=removedIndex>0?ordered[removedIndex-1]:null;
+  const clips=track.clips.filter(item=>item.id!==clipId).map(item=>
+    previous&&item.id===previous.id&&item.transitionToNext?{...item,transitionToNext:undefined}:item
+  );
+  const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips}:item)};
+  const validation=validateTimeline(updated);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  return updated;
+}
 export function addMarker(timeline:EditorialTimeline,marker:TimelineMarker):EditorialTimeline{
   if(timeline.markers.some(item=>item.id===marker.id))throw new Error("Marker ID already exists.");
   if(marker.start.value<0)throw new Error("Marker cannot start before the timeline.");

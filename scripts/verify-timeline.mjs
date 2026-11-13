@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, normalizeAudioMasteringSettings, rational, seconds, sourceElapsedSeconds, splitClip, toOpenTimelineIo, timelineElapsedForSourceElapsed, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, removeClip, normalizeAudioMasteringSettings, rational, seconds, sourceElapsedSeconds, splitClip, toOpenTimelineIo, timelineElapsedForSourceElapsed, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression } from "../src/core/audio-automation.ts";
 
@@ -27,6 +27,26 @@ assert.equal(timeline.tracks[1].clips[0].timelineStart.value,500);
 timeline=moveClip(timeline,"v1","clip-a-part-b","v1",150);
 assert.equal(timeline.tracks[0].clips.some(x=>x.id==="clip-a-part-b"),true);
 assert.equal(validateTimeline(timeline).valid,true);
+
+const deleteBase=createTimeline("project-delete","timeline-delete","Clip deletion",{numerator:24,denominator:1});
+let deleteTimeline=addTrack(deleteBase,{id:"delete-track",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
+deleteTimeline=addClip(deleteTimeline,"delete-track",{id:"delete-a",assetId:"source-a",name:"First",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true});
+deleteTimeline=addClip(deleteTimeline,"delete-track",{id:"delete-b",assetId:"source-b",name:"Second",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(24,24),duration:rational(24,24),enabled:true});
+const gapDelete=removeClip(deleteTimeline,"delete-track","delete-a");
+assert.deepEqual(gapDelete.tracks[0].clips.map(clip=>clip.id),["delete-b"]);
+assert.equal(gapDelete.tracks[0].clips[0].timelineStart.value,24,"deleting a clip leaves the remaining edit in place instead of shifting it");
+assert.equal(gapDelete.revision,deleteTimeline.revision+1);
+assert.equal(validateTimeline(gapDelete).valid,true);
+const transitionTimeline={...deleteTimeline,tracks:deleteTimeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>clip.id==="delete-a"?{...clip,transitionToNext:{type:"dip-to-black",fadeFrames:12}}:clip)}))};
+assert.equal(validateTimeline(transitionTimeline).valid,true);
+const transitionDelete=removeClip(transitionTimeline,"delete-track","delete-b");
+assert.equal(transitionDelete.tracks[0].clips.length,1);
+assert.equal(transitionDelete.tracks[0].clips[0].transitionToNext,undefined,"deleting the next clip clears the now-orphaned outgoing transition");
+assert.throws(()=>removeClip(deleteTimeline,"missing-track","delete-a"),/Track not found/);
+assert.throws(()=>removeClip(deleteTimeline,"delete-track","missing-clip"),/Clip not found/);
+const lockedDelete={...deleteTimeline,tracks:deleteTimeline.tracks.map(track=>({...track,locked:true}))};
+assert.throws(()=>removeClip(lockedDelete,"delete-track","delete-a"),/Track is locked/);
+
 timeline=addMarker(timeline,{id:"marker-1",name:"Review hook",start:rational(144,24),color:"YELLOW",note:"Check the opening"});
 const interchange=toOpenTimelineIo(timeline);
 assert.equal(interchange.OTIO_SCHEMA,"Timeline.1");
