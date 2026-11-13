@@ -7,7 +7,7 @@ import {
 } from "./timeline.ts";
 
 type ClipLocation = { trackId: string; clip: TimelineClip } | null;
-type TimelineSettings = Pick<EditorialTimeline, "name" | "width" | "height" | "pixelAspectRatio" | "frameRate" | "metadata">;
+type TimelineSettings = Pick<EditorialTimeline, "name" | "width" | "height" | "pixelAspectRatio" | "frameRate" | "metadata" | "audioMastering">;
 type TrackValue = {
   id: string;
   name: string;
@@ -104,8 +104,8 @@ export function createTimelineHistoryOperation(
     if (!same(a, b)) markerChanges.push({ entity: "marker", id, before: a ? clone(a) : null, after: b ? clone(b) : null });
   }
 
-  const settingsBefore: TimelineSettings = { name: before.name, width: before.width, height: before.height, pixelAspectRatio: before.pixelAspectRatio, frameRate: clone(before.frameRate), metadata: clone(before.metadata) };
-  const settingsAfter: TimelineSettings = { name: after.name, width: after.width, height: after.height, pixelAspectRatio: after.pixelAspectRatio, frameRate: clone(after.frameRate), metadata: clone(after.metadata) };
+  const settingsBefore: TimelineSettings = { name: before.name, width: before.width, height: before.height, pixelAspectRatio: before.pixelAspectRatio, frameRate: clone(before.frameRate), metadata: clone(before.metadata), audioMastering: clone(before.audioMastering) };
+  const settingsAfter: TimelineSettings = { name: after.name, width: after.width, height: after.height, pixelAspectRatio: after.pixelAspectRatio, frameRate: clone(after.frameRate), metadata: clone(after.metadata), audioMastering: clone(after.audioMastering) };
   const settingsChanges: EntityChange[] = same(settingsBefore, settingsAfter) ? [] : [{ entity: "settings", id: "timeline-settings", before: settingsBefore, after: settingsAfter }];
   const changes = [...settingsChanges, ...trackAdds, ...trackUpdates, ...clipChanges, ...markerChanges, ...trackRemoves];
   if (!changes.length) return null;
@@ -172,7 +172,7 @@ function applyTrackChanges(timeline: EditorialTimeline, changes: EntityChange[])
 
 function applyEntityChange(timeline: EditorialTimeline, change: Exclude<EntityChange, { entity: "track" }>): EditorialTimeline {
   if (change.entity === "settings") {
-    const actual: TimelineSettings = { name: timeline.name, width: timeline.width, height: timeline.height, pixelAspectRatio: timeline.pixelAspectRatio, frameRate: clone(timeline.frameRate), metadata: clone(timeline.metadata) };
+    const actual: TimelineSettings = { name: timeline.name, width: timeline.width, height: timeline.height, pixelAspectRatio: timeline.pixelAspectRatio, frameRate: clone(timeline.frameRate), metadata: clone(timeline.metadata), audioMastering: clone(timeline.audioMastering) };
     assertExpected(actual, change.before, "Timeline settings");
     return { ...timeline, ...clone(change.after) };
   }
