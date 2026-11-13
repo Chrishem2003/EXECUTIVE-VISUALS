@@ -14,6 +14,7 @@ import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline,
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { applyTimelineHistory, type TimelineHistoryDirection } from "../core/timeline-history";
+import { retryTimelineSave } from "../core/timeline-save-retry";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -38,13 +39,18 @@ function currentRecoveryKey(){
  const projectId=state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"";
  return timelineRecoveryKey(state.mode,projectId,state.timeline.id);
 }
-async function saveRecoveryDraft(reason:string):Promise<TimelineRecoveryDraft|null>{
- if(!state.timeline)return null;
+async function saveRecoveryDraft(reason:string,snapshot:EditorialTimeline=state.timeline!,mode:"local"|"cloud"=state.mode,baseRevision=state.serverRevision):Promise<TimelineRecoveryDraft|null>{
+ if(!snapshot)return null;
  try{
-  const projectId=state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"";
-  const draft=await recoveryStore().saveDraft({key:currentRecoveryKey(),projectId,timelineId:state.timeline.id,mode:state.mode,baseRevision:state.serverRevision,localRevision:state.timeline.revision,sequence:++timelineRecoverySequence,updatedAt:new Date().toISOString(),reason,snapshot:structuredClone(state.timeline)});
+  const projectId=mode==="cloud"?(snapshot.projectId||state.cloudProjectId):snapshot.projectId||"";
+  const draft=await recoveryStore().saveDraft({key:timelineRecoveryKey(mode,projectId,snapshot.id),projectId,timelineId:snapshot.id,mode,baseRevision,localRevision:snapshot.revision,sequence:++timelineRecoverySequence,updatedAt:new Date().toISOString(),reason,snapshot:structuredClone(snapshot)});
   state.recoveryStatus="saved";return draft;
  }catch(error){state.recoveryStatus="unavailable";state.message="Browser recovery storage is unavailable: "+(error instanceof Error?error.message:"unknown storage error")+". The server save will still be attempted.";return null;}
+}
+async function timelineContentMatches(expected:EditorialTimeline,actual:EditorialTimeline,revision:number):Promise<boolean>{
+ const left=structuredClone(expected),right=structuredClone(actual);
+ left.revision=revision;right.revision=revision;
+ return checksumTimeline(left)===checksumTimeline(right);
 }
 async function completeRecoveryCheckpoint(draft:TimelineRecoveryDraft|null,revision:number):Promise<void>{
  if(!draft)return;
@@ -494,14 +500,40 @@ async function refresh(){
 }
 async function persist(){
  if(!state.timeline)return;
- const recoveryDraft=await saveRecoveryDraft("timeline-edit");
- const otio=toOpenTimelineIo(state.timeline);
- if(state.mode==="cloud"){
-  const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
-  state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.timeline.revision);return;
+ const snapshot=structuredClone(state.timeline),mode=state.mode,expectedRevision=state.serverRevision;
+ const timelineId=snapshot.id;
+ const recoveryDraft=await saveRecoveryDraft("timeline-edit",snapshot,mode,expectedRevision);
+ const otio=toOpenTimelineIo(snapshot);
+ if(mode==="cloud"){
+  const result=await retryTimelineSave<{timeline:CloudSavedTimeline}>({
+   save:()=>apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision,timeline:snapshot,otio})}),
+   reconcile:async()=>{
+    const current=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+timelineId);
+    if(current.timeline.revision===expectedRevision)return {kind:"retry"} as const;
+    if(current.timeline.revision>expectedRevision&&await timelineContentMatches(snapshot,current.timeline.timeline,expectedRevision))
+     return {kind:"committed",value:{timeline:current.timeline}} as const;
+    return {kind:"conflict"} as const;
+   },
+   onRetry:attempt=>{state.message="The cloud save response was interrupted. The server revision was checked; retrying save ("+(attempt+1)+"/3)…";}
+  });
+  state.serverRevision=Math.max(state.serverRevision,result.timeline.revision);
+  if(state.timeline?.id===timelineId)state.timeline={...state.timeline,revision:Math.max(state.timeline.revision,result.timeline.revision)};
+  state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.timeline.revision);return;
  }
- const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
- state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.revision);
+ const result=await retryTimelineSave<{revision:number}>({
+  save:()=>apiRequest<{revision:number}>("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:expectedRevision,name:snapshot.name,timeline:snapshot,otio})}),
+  reconcile:async()=>{
+   const current=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+timelineId);
+   if(current.timeline.revision===expectedRevision)return {kind:"retry"} as const;
+   if(current.timeline.revision>expectedRevision&&current.timeline.document&&await timelineContentMatches(snapshot,current.timeline.document,expectedRevision))
+    return {kind:"committed",value:{revision:current.timeline.revision}} as const;
+   return {kind:"conflict"} as const;
+  },
+  onRetry:attempt=>{state.message="The save response was interrupted. The server revision was checked; retrying save ("+(attempt+1)+"/3)…";}
+ });
+ state.serverRevision=Math.max(state.serverRevision,result.revision);
+ if(state.timeline?.id===timelineId)state.timeline={...state.timeline,revision:Math.max(state.timeline.revision,result.revision)};
+ state.status="ready";state.message="Saved revision "+result.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.revision);
 }
 export async function createCloudTimelineFromDocument(projectId:string,timeline:EditorialTimeline){
  if(!projectId.trim()||timeline.projectId!==projectId)throw new Error("The storyboard timeline must belong to the selected cloud project.");
