@@ -1042,7 +1042,7 @@ export function createAppServer() {
           audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
           send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
         }
-        const recordRow=db.prepare("SELECT id,source_asset_id,project_id FROM evidence_records WHERE id=? AND source_asset_id=?").get(evidenceMatch[2],evidenceAsset.id);
+        const recordRow=db.prepare("SELECT id,source_asset_id,project_id,status FROM evidence_records WHERE id=? AND source_asset_id=?").get(evidenceMatch[2],evidenceAsset.id);
         if(!recordRow){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
         if(evidenceMatch[3]==="events"&&req.method==="GET"){
           const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
@@ -1053,6 +1053,7 @@ export function createAppServer() {
           const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
           const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
           if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
+          if(["verified","rejected"].includes(recordRow.status)){fail(res,409,"EVIDENCE_ALREADY_REVIEWED","This evidence record already has a final reviewer decision.");return;}
           const body=await readJson(req);
           if(typeof body.reviewNote!=="string"||body.reviewNote.trim().length<8){fail(res,400,"EVIDENCE_REVIEW_REASON_REQUIRED","Provide a review reason of at least eight characters for every evidence decision.");return;}
           if(!await verifyEvidenceSourceAsset(evidenceAsset)){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","Evidence cannot be reviewed until the source asset matches its recorded checksum.");return;}
