@@ -385,18 +385,36 @@ export function createCloudAssetRepository({
     },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
-      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
+      // Include tombstones so a repeated, authorized delete can retry a
+      // transient object-store failure without making the asset visible again.
+      const lookup=()=>request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&id=eq."+encodeURIComponent(assetId)+"&limit=1");
+      const rows=await lookup();
       const row=Array.isArray(rows)?rows[0]:null;
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
-      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
-      if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
+      if(!row.deleted_at) {
+        const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
+        if(!Array.isArray(changed)||changed.length!==1) {
+          // Another request may have won the soft-delete race. Confirm the
+          // tombstone before attempting any physical deletion.
+          const latest=await lookup();
+          if(!Array.isArray(latest)||latest[0]?.deleted_at==null) throw new Error("Cloud asset could not be safely marked deleted.");
+        }
+      }
       let storageRemoved=false,cleanupRecordFailed=false;
-      try { await storage.remove(row.object_path); storageRemoved=true; }
-      catch(error) {
-        storageRemoved=false;
+      try {
+        await storage.remove(row.object_path);
+        storageRemoved=true;
+        // If an earlier delete queued this exact object, close that outbox
+        // record. Failure is harmless: the retry worker's delete is idempotent.
+        try {
+          await request("asset_storage_cleanup?object_path=eq."+encodeURIComponent(row.object_path)+"&completed_at=is.null",{
+            method:"PATCH",prefer:"return=minimal",body:{completed_at:new Date().toISOString(),last_error:null}
+          });
+        } catch {}
+      } catch(error) {
         try { await enqueueStorageCleanup(row.object_path,error?.code||"asset_soft_delete_storage_cleanup_failed"); }
         catch { cleanupRecordFailed=true; }
       }
