@@ -87,6 +87,13 @@ const speedTrack=addTrack(speedTimeline,{id:"speed-video",name:"Speed ramp",kind
 const speedClip={id:"speed-ramp",assetId:"speed-source",name:"Speed ramp",sourceRange:{start:rational(0,24),duration:rational(144,24)},timelineStart:rational(0,24),duration:rational(96,24),enabled:true,speed:1,speedCurve};
 const speedAdded=addClip(speedTrack,"speed-video",speedClip);
 assert.equal(validateTimeline(speedAdded).valid,true);
+const audioSpeedTrack=addTrack(speedAdded,{id:"speed-audio",name:"Audio speed ramp",kind:"audio",enabled:true,locked:false,clips:[]});
+const audioSpeedClip={...speedClip,id:"audio-speed-ramp",assetId:"speed-audio-source"};
+const audioSpeedAdded=addClip(audioSpeedTrack,"speed-audio",audioSpeedClip);
+assert.equal(validateTimeline(audioSpeedAdded).valid,true);
+assert.equal(sourceElapsedSeconds(audioSpeedClip,2),3);
+const invalidAudioSpeedCurve={...audioSpeedAdded,tracks:audioSpeedAdded.tracks.map(track=>({...track,clips:track.clips.map(clip=>track.kind==="audio"?{...clip,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:1,speed:5}]}:clip)}))};
+assert.ok(validateTimeline(invalidAudioSpeedCurve).issues.some(issue=>issue.code==="invalid_speed_curve"));
 assert.equal(sourceElapsedSeconds(speedClip,2),3);
 assert.ok(Math.abs(timelineElapsedForSourceElapsed(speedClip,3)-2)<1e-9);
 const splitSpeed=splitClip(speedAdded,"speed-video","speed-ramp",48,"speed-ramp-b");
