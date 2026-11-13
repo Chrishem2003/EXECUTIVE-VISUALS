@@ -14,7 +14,7 @@ const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal"}={}) {
- const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError;
+ const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError,deletePatchAttempted=false;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return uploadFileReceipt||{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
@@ -55,13 +55,15 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
   if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){
    const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);
   }
+  if(url.includes("/assets?")&&url.includes("id=eq.")&&deletePatchMode==="lookup-fails"&&deletePatchAttempted)throw new Error("asset tombstone readback unavailable");
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH"){
    const patch=JSON.parse(options.body||"{}");
    if("deleted_at" in patch){
+    deletePatchAttempted=true;
     if(deletePatchMode==="race-won"){row.deleted_at="2026-11-05T12:00:00.000Z";return response([]);}
-    if(deletePatchMode==="race-unconfirmed")return response([]);
+    if(deletePatchMode==="race-unconfirmed"||deletePatchMode==="lookup-fails")return response([]);
     row.deleted_at=patch.deleted_at;
    }
    return response([row]);
@@ -158,6 +160,13 @@ test("confirms a concurrent tombstone before attempting physical deletion",async
  assert.equal(result.storageRemoved,true);
  assert.equal(f.row.deleted_at,"2026-11-05T12:00:00.000Z");
  assert.deepEqual(f.storageCalls.map(call=>call.op),["remove"]);
+});
+
+test("fails closed when tombstone readback is unavailable after a concurrent delete race",async()=>{
+ const f=fixture({deletePatchMode:"lookup-fails"});
+ await assert.rejects(()=>f.repo.softDelete({ownerId,assetId}),/asset tombstone readback unavailable/);
+ assert.equal(f.row.deleted_at,null);
+ assert.equal(f.storageCalls.length,0,"storage must remain untouched without confirmed tombstone state");
 });
 
 test("does not remove storage when a failed soft-delete race has no confirmed tombstone",async()=>{
