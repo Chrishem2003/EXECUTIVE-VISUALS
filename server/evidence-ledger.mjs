@@ -99,3 +99,7 @@ export function listEvidenceEvents(db, evidenceId) {
   return db.prepare("SELECT id,actor_id AS actorId,event_type AS type,details_json AS detailsJson,created_at AS createdAt FROM evidence_record_events WHERE evidence_id=? ORDER BY id ASC").all(evidenceId)
     .map(row => ({ id: row.id, actorId: row.actorId, type: row.type, details: parseJson(row.detailsJson), createdAt: row.createdAt }));
 }
+
+export function evidencePersistenceReady({nodeEnv=process.env.NODE_ENV,persistence="unverified"}={}) {
+  return nodeEnv!=="production"||persistence==="operator-confirmed-volume";
+}
