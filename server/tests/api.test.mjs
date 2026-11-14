@@ -55,6 +55,7 @@ test("health reports local storage and media-engine availability without secrets
   const body=await response.json();
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
+  assert.deepEqual(body.localAssetUploads,{enabled:true,code:null,message:null});
   assert.deepEqual(body.persistence,{dataDirectory:"ephemeral",persistentVolumeRequired:false});
   assert.equal(body.cloudVideoWorker.enabled,false);
   assert.equal(body.cloudVideoWorker.runtimeMode,"separate-process");
