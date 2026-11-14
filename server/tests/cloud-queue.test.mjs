@@ -61,6 +61,8 @@ test("cancellation polling is scoped to the exact active worker lease",async()=>
 });
 test("cloud job finalization is lease-fenced and atomically honors cancellation credits",async()=>{
  const sql=await readFile(new URL("../../supabase/migrations/20261114130000_atomic_cloud_job_cancellation_settlement.sql",import.meta.url),"utf8");
+ assert.ok(sql.includes("create or replace function executive_visuals.claim_next_job_v2"));
+ assert.ok(sql.includes("cancel_requested_at is not null"));
  assert.ok(sql.includes("create or replace function executive_visuals.finish_job_v2"));
  assert.ok(sql.includes("and lease_token = p_lease_token"));
  assert.ok(sql.includes("case when cancel_requested_at is not null then 'cancelled' else p_status end"));
