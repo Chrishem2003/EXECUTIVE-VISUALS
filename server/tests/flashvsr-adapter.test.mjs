@@ -34,7 +34,7 @@ function stubbornSpawn(signals){
 const readyReport={available:true,model:"FlashVSR-v1.1-tiny-long",license:"Apache-2.0",runtime:{cuda:true,bfloat16:true},checks:{upstream_script:true},executionVerified:false};
 
 test("FlashVSR readiness requires installed runtime, explicit enablement and self-test",async()=>{
-  const adapter=createFlashVsrAdapter({pythonExecutable:"python-test",repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,spawnImpl:fakeSpawn(readyReport)});
+  const adapter=createFlashVsrAdapter({pythonExecutable:"python-test",repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,spawnImpl:fakeSpawn(readyReport)});
   const result=await adapter.probe();
   assert.equal(result.available,true);
   assert.equal(result.executionEnabled,true);
@@ -51,7 +51,7 @@ test("FlashVSR inference refuses to run without explicit enablement and self-tes
 test("FlashVSR inference validates model result and output file before returning",async t=>{
   const dir=await mkdtemp(join(tmpdir(),"flashvsr-adapter-test-"));t.after(()=>rm(dir,{recursive:true,force:true}));
   const input=join(dir,"input.mp4"),output=join(dir,"output.mp4");await writeFile(input,"source");
-  const adapter=createFlashVsrAdapter({repoRoot:dir,modelDir:dir,scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,spawnImpl:fakeSpawn({ok:true,model:"FlashVSR-v1.1-tiny-long",frames:8,scale:4,temporalModel:true,license:"Apache-2.0"})});
+  const adapter=createFlashVsrAdapter({repoRoot:dir,modelDir:dir,scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,spawnImpl:fakeSpawn({ok:true,model:"FlashVSR-v1.1-tiny-long",frames:8,scale:4,temporalModel:true,license:"Apache-2.0"})});
   const result=await adapter.execute({inputPath:input,outputPath:output,scale:4});
   assert.equal(result.temporalModel,true);
   assert.equal((await readFile(output)).toString(),"verified-test-video");
@@ -61,20 +61,20 @@ test("FlashVSR inference validates model result and output file before returning
 test("FlashVSR rejects a subprocess response that does not prove temporal-model execution",async t=>{
   const dir=await mkdtemp(join(tmpdir(),"flashvsr-adapter-invalid-"));t.after(()=>rm(dir,{recursive:true,force:true}));
   const input=join(dir,"input.mp4"),output=join(dir,"output.mp4");await writeFile(input,"source");
-  const adapter=createFlashVsrAdapter({repoRoot:dir,modelDir:dir,scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,spawnImpl:fakeSpawn({ok:true,model:"FlashVSR-v1.1-tiny-long",frames:8,scale:4,temporalModel:false})});
+  const adapter=createFlashVsrAdapter({repoRoot:dir,modelDir:dir,scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,spawnImpl:fakeSpawn({ok:true,model:"FlashVSR-v1.1-tiny-long",frames:8,scale:4,temporalModel:false})});
   await assert.rejects(adapter.execute({inputPath:input,outputPath:output,scale:4}),error=>error.code==="FLASHVSR_OUTPUT_INVALID");
 });
 
 test("FlashVSR timeout escalates an unresponsive worker from SIGTERM to SIGKILL",async()=>{
   const signals=[];
-  const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,timeoutMs:5,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
+  const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,timeoutMs:5,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
   await assert.rejects(adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4}),error=>error.code==="FLASHVSR_TIMEOUT");
   assert.deepEqual(signals,["SIGTERM","SIGKILL"]);
 });
 
 test("FlashVSR cancellation escalates an unresponsive worker and preserves cancellation status",async()=>{
   const signals=[],controller=new AbortController();
-  const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,timeoutMs:60_000,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
+  const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,timeoutMs:60_000,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
   const pending=adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4,signal:controller.signal});
   controller.abort();
   await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
