@@ -19,6 +19,7 @@ declare
   finished executive_visuals.jobs;
   reservation_row executive_visuals.credit_reservations%rowtype;
   cancellation_won boolean;
+  reservation_status text := 'none';
 begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
      or p_lease_token is null then
@@ -57,7 +58,7 @@ begin
     return false;
   end if;
 
-  cancellation_won := finished.status = 'cancelled';
+  cancellation_won := finished.status = 'cancelled' and finished.cancel_requested_at is not null;
 
   -- Preserve the owner-level credit lock order used by reserve/release RPCs.
   perform pg_advisory_xact_lock(hashtextextended(finished.owner_id::text,0));
@@ -72,6 +73,7 @@ begin
       raise exception 'Job credit reservation owner mismatch';
     end if;
 
+    reservation_status := reservation_row.status;
     if reservation_row.status = 'reserved' then
       if finished.status = 'succeeded' then
         insert into executive_visuals.credit_ledger
@@ -86,6 +88,7 @@ begin
         update executive_visuals.credit_reservations
            set status='settled',settled_at=clock_timestamp(),updated_at=clock_timestamp()
          where id=reservation_row.id;
+        reservation_status := 'settled';
       else
         update executive_visuals.credit_reservations
            set status='released',released_at=clock_timestamp(),updated_at=clock_timestamp(),
@@ -95,6 +98,7 @@ begin
                  'owner_cancellation_won',cancellation_won
                )
          where id=reservation_row.id;
+        reservation_status := 'released';
       end if;
     elsif reservation_row.status not in ('settled','released') then
       raise exception 'Unknown credit reservation state';
@@ -108,9 +112,7 @@ begin
     'job.'||finished.status,
     jsonb_build_object(
       'status',finished.status,
-      'creditReservationStatus',case when reservation_row.id is null then 'none'
-        when finished.status='succeeded' then 'settled'
-        else 'released' end,
+      'creditReservationStatus',reservation_status,
       'ownerCancellationWon',cancellation_won
     )
   );
