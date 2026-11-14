@@ -208,3 +208,46 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111260000_video_generation_shot_worker_lease_fencing.sql
       - name: Verify stale video workers cannot submit, record, defer or finalize
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-worker-lease-fencing-postgres-integration.sql
+
+  product-verification:
+    name: Product verification ${{ matrix.batch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        batch:
+          - "01"
+          - "02"
+          - "03"
+          - "04"
+          - "05"
+          - "06"
+          - "07"
+          - "08"
+          - "server-01"
+          - "server-02"
+          - "server-03"
+          - "server-04"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+          cache: npm
+      - name: Install pinned FFmpeg static build
+        run: bash scripts/ci-setup-ffmpeg.sh
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run assigned product verification batch
+        shell: bash
+        env:
+          VERIFY_BATCH: ${{ matrix.batch }}
+        run: |
+          set -euo pipefail
+          if [[ "$VERIFY_BATCH" == server-* ]]; then
+            shard="${VERIFY_BATCH#server-}"
+            npm run "verify:server:shard:$shard"
+          else
+            npm run "verify:batch:$VERIFY_BATCH"
+          fi

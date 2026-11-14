@@ -29,5 +29,7 @@ assert.match(docker,/CMD \["npm","start"\]/);
 assert.match(server,/REQUIRE_PERSISTENT_DATA_DIR/);
 assert.match(server,/isWithinDataDir\(DB_FILE\)/);
 assert.equal(pkg.scripts.start,"node server/index.mjs");
-assert.ok(pkg.scripts.build.includes("npm run verify:deployment"));
+assert.ok(pkg.scripts.build.includes("vite build"));
+assert.ok(pkg.scripts["verify:product"].includes("npm run verify:batch:03"));
+assert.ok(pkg.scripts["verify:batch:03"].includes("npm run verify:deployment"));
 console.log("Deployment guard passed: Docker includes FFmpeg, staging requires external auth and durable storage, and the API refuses an unmounted data directory.");
