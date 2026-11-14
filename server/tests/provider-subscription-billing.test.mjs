@@ -1,0 +1,111 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {createProviderSubscriptionBilling,getProviderSubscriptionBillingReadiness} from "../provider-subscription-billing.mjs";
+
+const owner="11111111-1111-4111-8111-111111111111";
+const paymentId="22222222-2222-4222-8222-222222222222";
+const subscriptionId="33333333-3333-4333-8333-333333333333";
+const payment={
+  id:paymentId,owner_id:owner,provider:"paddle",provider_transaction_id:"txn-1",
+  tx_ref:"EVP-order-1",amount_minor:5000,currency:"USD",status:"pending",
+  metadata:{payment_purpose:"subscription_purchase",subscription_id:subscriptionId,plan_code:"creator"}
+};
+const env={
+  PADDLE_PESAPAL_BILLING_ENABLED:"true",PADDLE_API_KEY:"paddle-key",PADDLE_WEBHOOK_SECRET:"paddle-secret",
+  PADDLE_RETURN_URL:"https://app.example/billing/return",PADDLE_API_BASE_URL:"https://sandbox-api.paddle.com",
+  PESAPAL_CONSUMER_KEY:"pesapal-key",PESAPAL_CONSUMER_SECRET:"pesapal-secret",
+  PESAPAL_IPN_ID:"ipn-1",PESAPAL_CALLBACK_URL:"https://app.example/api/billing/return",
+  PESAPAL_API_BASE_URL:"https://cybqa.pesapal.com/pesapalv3",
+  SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-role"
+};
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});
+const empty=(status=204)=>new Response(null,{status});
+
+test("provider billing readiness requires both sandbox credentials, callbacks and server database access",()=>{
+  assert.equal(getProviderSubscriptionBillingReadiness(env).ready,true);
+  assert.equal(getProviderSubscriptionBillingReadiness({...env,PESAPAL_IPN_ID:""}).ready,false);
+  assert.equal(getProviderSubscriptionBillingReadiness({...env,SUPABASE_SERVICE_ROLE_KEY:""}).ready,false);
+  assert.equal(getProviderSubscriptionBillingReadiness({...env,PADDLE_PESAPAL_BILLING_ENABLED:"false"}).ready,false);
+});
+
+test("authenticated provider checkout reserves ledger price and persists hosted checkout before returning",async()=>{
+  const calls=[];
+  const providers={
+    paddle:{createCheckout:async input=>{calls.push(["paddle",input]);return {provider:"paddle",transactionId:"txn-1",checkoutUrl:"https://checkout.paddle.com/txn-1"};},verifyWebhook:()=>({})},
+    pesapal:{createCheckout:async()=>{throw new Error("unexpected");},handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname,target.search]);
+    if(target.pathname.endsWith("/rpc/reserve_subscription_purchase_for_provider"))return json({
+      paymentId,subscriptionId,txRef:"EVP-order-1",amountMinor:5000,amountMajor:50,currency:"USD",
+      provider:"paddle",providerPriceId:"pri_01creator123",status:"pending",idempotentReplay:false
+    });
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="PATCH")return empty();
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const result=await billing.handle({
+    method:"POST",path:"/api/billing/subscription/provider-checkout",ownerId:owner,
+    idempotencyKey:"checkout-key-0001",body:{provider:"paddle",planCode:"creator",email:"buyer@example.com"}
+  });
+  assert.equal(result.status,202);
+  assert.equal(result.body.checkout.checkoutUrl,"https://checkout.paddle.com/txn-1");
+  assert.equal(calls.find(x=>x[0]==="paddle")[1].priceId,"pri_01creator123");
+  assert.equal(calls.find(x=>x[0]==="paddle")[1].paymentId,paymentId);
+  assert.ok(calls.some(x=>x[0]==="PATCH"&&x[1].endsWith("/payment_transactions")));
+});
+
+test("verified Paddle transaction webhook settles only the matching reserved ledger payment",async()=>{
+  const calls=[];
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
+      provider:"paddle",eventId:"evt-1",eventType:"transaction.completed",ownerId:owner,planCode:"creator",
+      paymentId,reference:"EVP-order-1",providerTransactionId:"txn-1",providerCustomerId:"ctm-1",
+      providerSubscriptionId:"sub-1",amountMinor:5000,currency:"USD",occurredAt:"2026-11-14T10:00:00Z"
+    })},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname]);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const result=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
+  assert.equal(result.status,200);
+  assert.equal(result.body.applied,true);
+  assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+});
+
+test("Pesapal IPN verifies the pending UGX order before invoking the atomic subscription finalizer",async()=>{
+  const calls=[];
+  const pesapalPayment={...payment,provider:"pesapal",provider_transaction_id:"track-1",tx_ref:"EVP-pesapal-1",amount_minor:50000,currency:"UGX"};
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({})},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async(query,expected)=>{
+      calls.push(["verify",query,expected]);
+      return {provider:"pesapal",eventId:"track-1",eventType:"payment.completed",merchantReference:"EVP-pesapal-1",
+        trackingId:"track-1",amount:50000,currency:"UGX",paymentMethod:"Visa"};
+    }}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname,target.search]);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([pesapalPayment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const result=await billing.handlePesapalIpn({
+    OrderNotificationType:"IPNCHANGE",OrderTrackingId:"track-1",OrderMerchantReference:"EVP-pesapal-1"
+  });
+  assert.equal(result.status,200);
+  assert.equal(result.body.status,200);
+  assert.equal(calls.find(x=>x[0]==="verify")[2].expectedAmount,50000);
+  assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+});
