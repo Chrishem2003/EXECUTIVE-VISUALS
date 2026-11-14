@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { generateCreativeDirection } from "./creative-director.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile, stat, realpath } from "node:fs/promises";
@@ -507,8 +508,8 @@ export function createAppServer() {
         assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});
       }catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
     }
-    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:ratePath==="/creative-director"?5:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -679,6 +680,33 @@ export function createAppServer() {
         }
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
+      if(path==="/api/creative/director"&&req.method==="POST"){
+        const body=await readJson(req,16*1024);
+        const projectId=String(body.projectId||"").trim()||null;
+        if(projectId){
+          const access=getProjectAccess(db,user.id,projectId);
+          if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request project creative direction.");return;}
+        }
+        try{
+          const result=await generateCreativeDirection({input:body.input});
+          const recordId=randomUUID();
+          audit(db,user.id,"creative.director.generated","creative_plan",recordId,{
+            model:result.model,
+            inputHash:result.plan.inputHash,
+            promptTokens:result.usage?.promptTokens??null,
+            completionTokens:result.usage?.completionTokens??null,
+            totalTokens:result.usage?.totalTokens??null,
+            outputSchemaVersion:result.plan.schemaVersion
+          },projectId);
+          send(res,200,{...result,recordId},cors);return;
+        }catch(error){
+          const code=error.code||"CREATIVE_DIRECTOR_FAILED";
+          const status=["CREATIVE_DIRECTOR_INPUT_INVALID","CREATIVE_DIRECTOR_BRIEF_REQUIRED"].includes(code)?400:
+            code==="CREATIVE_DIRECTOR_OUTPUT_INVALID"||code==="CREATIVE_DIRECTOR_EMPTY_RESPONSE"?502:503;
+          fail(res,status,code,error.message||"Creative direction could not be generated.");return;
+        }
+      }
       if(path==="/api/d1"||path.startsWith("/api/d1/")){
         const configuredWorker=String(process.env.D1_STAGING_WORKER_URL||"").trim();
         if(!configuredWorker){fail(res,503,"D1_STAGING_DISABLED","The isolated D1 staging bridge is not enabled in this environment.");return;}
