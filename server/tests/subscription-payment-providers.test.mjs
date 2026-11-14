@@ -50,7 +50,15 @@ test("Paddle webhook rejects tampered and stale signatures",()=>{
   const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
   const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
   assert.throws(()=>provider.verifyWebhook(Buffer.from(raw.toString()+" "), "ts="+timestamp+";h1="+valid),{code:"PADDLE_WEBHOOK_SIGNATURE_INVALID"});
-  assert.throws(()=>provider.verifyWebhook(raw,"ts="+(timestamp-1000)+";h1="+valid),{code:"PADDLE_WEBHOOK_SIGNATURE_INVALID"});
+  assert.throws(()=>provider.verifyWebhook(raw,"ts="+(timestamp-6)+";h1="+valid),{code:"PADDLE_WEBHOOK_SIGNATURE_INVALID"});
+});
+
+test("Paddle webhook accepts any valid h1 during endpoint secret rotation",()=>{
+  const secret="paddle-secret",timestamp=Math.floor(now()/1000),raw=Buffer.from('{"event_id":"evt-rotation","event_type":"subscription.activated","data":{}}');
+  const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
+  const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
+  const event=provider.verifyWebhook(raw,"ts="+timestamp+";h1="+"0".repeat(64)+";h1="+valid);
+  assert.equal(event.eventId,"evt-rotation");
 });
 
 test("Paddle live API is fail-closed without explicit opt-in",()=>{
