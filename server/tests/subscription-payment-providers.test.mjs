@@ -18,7 +18,7 @@ test("Paddle checkout uses a server-mapped price and returns hosted checkout onl
   assert.equal(result.transactionId,"txn_123");
   assert.equal(request.url,"https://sandbox-api.paddle.com/transactions");
   assert.equal(request.options.headers.authorization,"Bearer sandbox-key");
-  assert.deepEqual(request.body.items,[{price_id:"pri_creator_monthly",quantity:1}]);
+  assert.deepEqual(request.body.items,[{price_id:"pri_01creator123",quantity:1}]);
   assert.deepEqual(request.body.custom_data,{owner_id:owner,plan_code:"creator",product:"executive_visuals"});
 });
 
