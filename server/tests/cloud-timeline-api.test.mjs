@@ -601,12 +601,12 @@ test("cloud transformation cancellation is authorized, idempotent and limited to
  const id="623e4567-e89b-42d3-a456-426614174000";
  const draft={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the parked car with a red electric coupe.",durationSeconds:8,referenceAssetIds:[],preservation:[]},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
  const f=setup({existing:[draft]});
- const cancelled=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ const cancelled=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(cancelled.status,200);
  assert.equal(cancelled.body.plan.status,"cancelled");
  assert.equal(cancelled.body.idempotentReplay,false);
  assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="transformation.cancelled"));
- const replay=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ const replay=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(replay.status,200);
  assert.equal(replay.body.idempotentReplay,true);
  assert.equal(f.calls.filter(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="PATCH").length,1);
@@ -615,7 +615,7 @@ test("cloud transformation cancellation can revoke an approved plan before dispa
  const id="823e4567-e89b-42d3-a456-426614174000";
  const approved={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_at:"2026-11-14T00:00:00.000Z",estimated_cost:{approvalId:"approval-1",estimatedCostMicros:100,approvedBudgetMicros:100,currency:"USD",adapterId:"provider-a",capability:"video.transform"},input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the parked car with a red electric coupe.",durationSeconds:8,referenceAssetIds:[],preservation:[]},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
  const f=setup({existing:[approved]});
- const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(result.status,200);
  assert.equal(result.body.plan.status,"cancelled");
 });
@@ -623,11 +623,11 @@ test("cloud transformation cancellation refuses active work and unauthorized edi
  const id="923e4567-e89b-42d3-a456-426614174000";
  const active={id,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"processing",input:{},created_at:"2026-11-14T00:00:00.000Z",updated_at:"2026-11-14T00:00:00.000Z"};
  const f=setup({existing:[active]});
- const conflict=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ const conflict=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(conflict.status,409);
  assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
  const denied=setup({canWrite:false,existing:[{...active,status:"draft"}]});
- const forbidden=await denied.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId});
+ const forbidden=await denied.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(forbidden.status,403);
  assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
 });
