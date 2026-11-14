@@ -403,3 +403,32 @@ test("cloud renderer accepts audio automation keyframes through the full audio c
   assert.ok(Number(probe.format.duration)>=0.95&&Number(probe.format.duration)<=1.1,"the audio tail must not extend the one-second picture master");
  }finally{await rm(root,{recursive:true,force:true});}
 });
+test("cloud FFmpeg audio crossfade follows the preview linear-gain envelope through the overlap", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-audio-crossfade-envelope-test-"));
+ try{
+  const video=join(root,"picture.mp4"),first=join(root,"first.wav"),second=join(root,"second.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1.75","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=400:sample_rate=48000:duration=1","-c:a","pcm_s16le",first]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=800:sample_rate=48000:duration=1","-c:a","pcm_s16le",second]);
+  const timeline={name:"Audio crossfade envelope parity",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(1.75),sourceRange:{start:time(0),duration:time(1.75)}}]},
+   {id:"a",kind:"audio",clips:[
+    {id:"a1",assetId:"first",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"crossfade",fadeFrames:6}},
+    {id:"a2",assetId:"second",timelineStart:time(0.75),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}
+   ]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["first",{path:first,asset:{id:"first",mediaType:"audio/wav",originalName:"first.wav"}}],
+   ["second",{path:second,asset:{id:"second",mediaType:"audio/wav",originalName:"second.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const output=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(output.buffer,output.byteOffset,output.byteLength/4);
+  const rms=(start,end)=>{let sum=0,count=0;for(let frame=Math.floor(start*48000);frame<Math.min(samples.length/2,Math.floor(end*48000));frame++){const value=samples[frame*2]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const before=rms(0.68,0.72),middle=rms(0.855,0.895),after=rms(1.03,1.07),middleRatio=middle/before;
+  assert.ok(middleRatio>0.62&&middleRatio<0.80,"two uncorrelated sources with linear 0.5/0.5 gains should produce the expected -3 dB midpoint (ratio="+middleRatio+")");
+  assert.ok(after/before>0.88&&after/before<1.12,"the incoming source should reach unity gain after the overlap");
+  assert.equal(result.render.audioCrossfades,1);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
