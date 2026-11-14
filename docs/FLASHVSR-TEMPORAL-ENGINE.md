@@ -38,9 +38,10 @@ Set the following server environment variables only after provisioning:
 - \`FLASHVSR_MODEL_DIR\`: absolute path to \`examples/WanVSR/FlashVSR-v1.1\` (optional if using the default).
 - \`FLASHVSR_ENABLED=true\`: explicit administrator opt-in after staging validation.
 - \`FLASHVSR_SELF_TEST_PASSED=true\`: operator attestation set only after a real, representative local GPU inference and output inspection have passed.
+- \`FLASHVSR_QUALITY_EVIDENCE_PASSED=true\`: separate operator attestation set only after the controlled staging benchmark and blinded human review pass; it is not implied by model readiness or a successful smoke test.
 - \`AI_VIDEO_UPSCALE_ENABLED=true\`: existing video-upscale feature gate.
 
-The readiness API checks the Python runtime, CUDA/bfloat16 availability, imports, upstream entry point and required checkpoint files. Readiness alone is not a successful model execution test. The adapter reports \`executionVerified=false\` until the operator sets the self-test attestation.
+The readiness API checks the Python runtime, CUDA/bfloat16 availability, imports, upstream entry point and required checkpoint files. Readiness alone is not a successful model execution test. The adapter reports \`executionVerified=false\` until the operator sets the self-test attestation, and does not report ready until the separate quality-evidence attestation is set.
 
 ## Inference contract
 
