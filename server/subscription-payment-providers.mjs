@@ -47,13 +47,22 @@ function normalizePaddleEvent(event){
     "transaction.completed":"payment_succeeded","transaction.payment_failed":"payment_failed"
   };
   const period=data.current_billing_period||{};
+  const totals=data.details?.totals||{};
+  const lineItems=data.details?.line_items||[];
+  const amountMinor=Number(totals.subtotal);
+  const totalPaidMinor=Number(totals.grand_total);
+  const discountMinor=Number(totals.discount||0);
   return {
     ignored:false,provider:"paddle",eventId:text(event?.event_id),eventType:type,
     ownerId:text(custom.owner_id),planCode:text(custom.plan_code),paymentId:text(custom.payment_id),reference:text(custom.reference),
     providerCustomerId:text(data.customer_id),providerSubscriptionId:subscriptionId,
     providerTransactionId:text(data.id&&type.startsWith("transaction.")?data.id:""),
     status:statusMap[type],currency:text(data.currency_code).toUpperCase(),
-    amountMinor:Number.isSafeInteger(Number(data.details?.totals?.grand_total))?Number(data.details.totals.grand_total):null,
+    providerPriceId:text(lineItems[0]?.price_id||data.items?.[0]?.price?.id),
+    amountMinor:Number.isSafeInteger(amountMinor)?amountMinor:null,
+    totalPaidMinor:Number.isSafeInteger(totalPaidMinor)?totalPaidMinor:null,
+    discountMinor:Number.isSafeInteger(discountMinor)?discountMinor:null,
+    origin:text(data.origin),
     periodStart:text(period.starts_at)||null,periodEnd:text(period.ends_at)||null,
     occurredAt:text(event?.occurred_at)||null,rawEventType:type
   };
