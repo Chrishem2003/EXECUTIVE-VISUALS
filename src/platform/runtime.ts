@@ -314,10 +314,6 @@ export function renderReferenceImageOptions(){
  const images=state.assets.filter(asset=>String(asset.mediaType||"").startsWith("image/"));
  return '<option value="">No reference image · text-to-image/video</option>'+images.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+'</option>').join("");
 }
-export function renderCloudReferenceImageOptions(){
- const images=state.cloudAssets.filter(asset=>String(asset.mediaType||"").startsWith("image/"));
- return '<option value="">No private cloud reference · text-to-video</option>'+images.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+'</option>').join("");
-}
 export function renderImageModelOptions(){
  const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
  if(!provider)return '<option value="">Server-configured model</option>';
