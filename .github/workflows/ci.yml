@@ -3,7 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Stacked PRs target feature/fix/integration branches. Validate them before
+    # they become part of a main-targeting release candidate.
+    branches: [main, "feat/**", "fix/**", "integration/**", "docs/**", "ci/**"]
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
