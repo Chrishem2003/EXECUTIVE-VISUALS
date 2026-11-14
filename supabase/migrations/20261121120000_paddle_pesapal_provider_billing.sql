@@ -213,8 +213,8 @@ declare
   amount_minor bigint;
   currency_code text;
   reference text;
-  provider_subscription_id text;
-  provider_customer_id text;
+  v_provider_subscription_id text;
+  v_provider_customer_id text;
 begin
   if p_payment_id is null or nullif(btrim(p_provider_transaction_id),'') is null
      or p_verified_at is null or jsonb_typeof(coalesce(p_provider_payload,'{}'::jsonb))<>'object'
@@ -238,8 +238,8 @@ begin
   end;
   currency_code:=upper(coalesce(p_provider_payload->>'currency',''));
   reference:=coalesce(p_provider_payload->>'reference','');
-  provider_subscription_id:=nullif(p_provider_payload->>'provider_subscription_id','');
-  provider_customer_id:=nullif(p_provider_payload->>'provider_customer_id','');
+  v_provider_subscription_id:=nullif(p_provider_payload->>'provider_subscription_id','');
+  v_provider_customer_id:=nullif(p_provider_payload->>'provider_customer_id','');
 
   if amount_minor<>payment_row.amount_minor or currency_code<>payment_row.currency
      or reference<>payment_row.tx_ref
