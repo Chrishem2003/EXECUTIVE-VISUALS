@@ -47,6 +47,8 @@ Pesapal:
 - For recurring schedules, passes subscription details to the hosted iframe so the payer can explicitly consent. Pesapal's recurring IPN is only a notification; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
 - Do not infer a recurring subscription solely from a checkout redirect or an unverified IPN query.
 
+server/unified-subscription-billing.mjs provides a provider-neutral orchestration contract. It reserves the internal subscription before checkout, reuses idempotent checkout records, retains uncertain provider outcomes for reconciliation, and routes only verified provider events to an atomic repository method. The concrete Supabase repository and HTTP routes are not wired yet.
+
 ## Required next integration before staging activation
 
 1. Add provider IDs to the dedicated Executive Visuals subscription/payment schema, with unique constraints for provider event IDs, provider transaction IDs and provider subscription IDs.
@@ -59,4 +61,4 @@ Pesapal:
 
 ## Verification
 
-Run npm run verify:subscription-payment-providers. Tests use fake provider HTTP responses and no live credentials or network calls.
+Run npm run verify:subscription-payment-providers. Tests use fake provider HTTP responses and an in-memory repository; they do not use live credentials or network calls.
