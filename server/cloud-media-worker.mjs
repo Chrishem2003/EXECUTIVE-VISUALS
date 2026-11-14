@@ -7,7 +7,7 @@ import { runCloudWorkerCycle } from "./cloud-worker.mjs";
 const MEDIA_JOB_TYPES = Object.freeze([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"
+  "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
 ]);
 
 /**
