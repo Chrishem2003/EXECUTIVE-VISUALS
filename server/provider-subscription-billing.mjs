@@ -8,14 +8,21 @@ const text=value=>String(value??"").trim();
 const validEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 export function getProviderSubscriptionBillingReadiness(env=process.env){
-  const paddle=Boolean(env.PADDLE_API_KEY&&env.PADDLE_WEBHOOK_SECRET&&env.PADDLE_RETURN_URL);
-  const pesapal=Boolean(env.PESAPAL_CONSUMER_KEY&&env.PESAPAL_CONSUMER_SECRET&&env.PESAPAL_IPN_ID&&env.PESAPAL_CALLBACK_URL);
+  const paddleBase=env.PADDLE_API_BASE_URL||"https://sandbox-api.paddle.com";
+  const pesapalBase=env.PESAPAL_API_BASE_URL||"https://cybqa.pesapal.com/pesapalv3";
+  const paddleLive=paddleBase==="https://api.paddle.com";
+  const pesapalLive=pesapalBase==="https://pay.pesapal.com/v3";
+  const paddleHostValid=paddleBase==="https://sandbox-api.paddle.com"||paddleLive;
+  const pesapalHostValid=pesapalBase==="https://cybqa.pesapal.com/pesapalv3"||pesapalLive;
+  const paddle=Boolean(paddleHostValid&&env.PADDLE_API_KEY&&env.PADDLE_WEBHOOK_SECRET&&env.PADDLE_RETURN_URL&&(!paddleLive||env.PADDLE_ALLOW_LIVE==="true"));
+  const pesapal=Boolean(pesapalHostValid&&env.PESAPAL_CONSUMER_KEY&&env.PESAPAL_CONSUMER_SECRET&&env.PESAPAL_IPN_ID&&env.PESAPAL_CALLBACK_URL&&(!pesapalLive||env.PESAPAL_ALLOW_LIVE==="true"));
+  const databaseConfigured=Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY);
   return {
     enabled:env.PADDLE_PESAPAL_BILLING_ENABLED==="true",
-    paddle:{configured:paddle,environment:env.PADDLE_API_BASE_URL==="https://api.paddle.com"?"live":"sandbox"},
-    pesapal:{configured:pesapal,environment:env.PESAPAL_API_BASE_URL==="https://pay.pesapal.com/v3"?"live":"sandbox"},
-    databaseConfigured:Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY),
-    ready:env.PADDLE_PESAPAL_BILLING_ENABLED==="true"&&paddle&&pesapal&&Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)
+    paddle:{configured:paddle,environment:paddleLive?"live":"sandbox"},
+    pesapal:{configured:pesapal,environment:pesapalLive?"live":"sandbox"},
+    databaseConfigured,
+    ready:env.PADDLE_PESAPAL_BILLING_ENABLED==="true"&&paddle&&pesapal&&databaseConfigured
   };
 }
 
