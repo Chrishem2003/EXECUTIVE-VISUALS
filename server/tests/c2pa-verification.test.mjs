@@ -19,7 +19,7 @@ function sdkFor(store,{embedded=true,onRead=null,mimeType="video/mp4"}={}){
   assert.equal(context.settings.verify.verifyAfterReading,true);
   assert.equal(context.settings.verify.remoteManifestFetch,false);
   if(onRead)await onRead(asset);
-  return{isEmbedded:()=>embedded,json:()=>store};
+  return{isEmbedded:()=>embedded,json:()=>store,getActive:()=>store?.active_manifest?store.manifests?.[store.active_manifest]||null:null};
  }};
  return{Reader,Context};
 }
@@ -45,6 +45,36 @@ test("validates a real SDK Reader result without claiming signer trust",async()=
   assert.equal(result.manifest.title,"Generated sample");
   assert.equal(result.manifest.ingredientCount,1);
   assert.equal(result.validationStatuses[0].code,"claimSignature.validated");
+ }finally{await f.cleanup();}
+});
+
+
+test("uses the official Reader.getActive manifest for the returned active manifest summary",async()=>{
+ const f=await fixture();
+ try{
+  const sdk=sdkFor(validStore);
+  const active={...validStore.manifests["urn:uuid:active"],title:"Reader.getActive result"};
+  sdk.Reader.fromAsset=async()=>({isEmbedded:()=>true,json:()=>validStore,getActive:()=>active});
+  const result=await createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256,expectedSize:f.size
+  });
+  assert.equal(result.status,"valid_untrusted");
+  assert.equal(result.manifest.title,"Reader.getActive result");
+ }finally{await f.cleanup();}
+});
+
+test("fails closed when the SDK store names an active manifest but Reader.getActive cannot resolve it",async()=>{
+ const f=await fixture();
+ try{
+  const sdk=sdkFor(validStore);
+  sdk.Reader.fromAsset=async()=>({isEmbedded:()=>true,json:()=>validStore,getActive:()=>null});
+  const result=await createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256,expectedSize:f.size
+  });
+  assert.equal(result.status,"validation_unavailable");
+  assert.equal(result.present,true);
+  assert.equal(result.trusted,false);
+  assert.deepEqual(result.findings,["C2PA_ACTIVE_MANIFEST_UNAVAILABLE"]);
  }finally{await f.cleanup();}
 });
 
@@ -214,7 +244,7 @@ test("normalizes MIME parameters before supported-format verification", async ()
       receivedType = asset.mimeType;
       assert.ok(context instanceof sdk.Context);
       assert.equal(context.settings.verify.verifyAfterReading, true);
-      return { isEmbedded: () => true, json: () => validStore };
+      return { isEmbedded: () => true, json: () => validStore, getActive: () => validStore.manifests[validStore.active_manifest] };
     };
     const result = await createC2paVerifier({ sdkLoader: async () => sdk, maxBytes: 1024 })({
       filePath: f.filePath, mediaType: " VIDEO/MP4; codecs=avc1 ", expectedSha256: f.sha256
