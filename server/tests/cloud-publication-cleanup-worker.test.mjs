@@ -1,3 +1,11 @@
+test("publication cleanup worker checks the required durable tables before starting",async()=>{
+ const calls=[];
+ const worker=createCloudPublicationCleanupWorker({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl:async(url,options)=>{calls.push(url);return response([]);},storage:{listObjects:async()=>({objects:[],hasNext:false,nextCursor:null}),remove:async()=>true}});
+ const readiness=await worker.checkReadiness();
+ assert.equal(readiness.ready,true);
+ assert.deepEqual(readiness.tables,["assets","jobs","asset_publications","asset_publication_cleanup_claims","publication_cleanup_audit_events"]);
+ assert.equal(calls.length,5);
+});
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createCloudPublicationCleanupWorker} from "../cloud-publication-cleanup-worker.mjs";
