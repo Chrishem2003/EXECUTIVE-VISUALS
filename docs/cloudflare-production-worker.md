@@ -12,6 +12,10 @@ The production Worker is `executive-visuals` in the `chrishem.workers.dev` accou
 
 The production Worker serves the Vite static application from Cloudflare and proxies `/api/*` to the verified production Render service. It does not currently move the Node API, FFmpeg rendering process, or media storage into Cloudflare.
 
+## Automated production deployment
+
+The repository workflow `.github/workflows/cloudflare-production-deploy.yml` builds and verifies the full app, then deploys the Worker and the freshly built `dist/` assets using Wrangler 4.160.0. It runs on relevant changes to `main` and can also be started manually. Configure the GitHub Actions repository secret `CLOUDFLARE_API_TOKEN` with a token scoped to deploy Workers and manage Worker assets for this account. If the secret is absent, the deployment job is skipped; Render deployment does not update the Cloudflare static asset bundle.
+
 ## Safe deployment boundary
 
 1. Build and run the repository verification suite.
