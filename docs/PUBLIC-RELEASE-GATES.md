@@ -13,6 +13,21 @@
 - The runtime started `node server/index.mjs`; startup logs show Node's experimental SQLite warning.
 - The latest build emitted a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. Vite/Rolldown warned that the JavaScript chunk exceeds 500 kB; treat this as a frontend performance/refactoring item, not a failed build.
 
+## Isolated Cloudflare D1 staging — verified 15 November 2026
+
+- The existing Cloudflare D1 database `executive-visuals-staging` is already provisioned; do not create a duplicate.
+- Migration `0001_initial.sql` is recorded in `d1_migrations`. The expected `ev_users`, `ev_projects`, `ev_project_members`, `ev_project_workspace_documents`, `ev_assets`, `ev_jobs` and `ev_audit_events` tables, indexes and ownership triggers are present.
+- Read-only live integrity checks returned `PRAGMA quick_check = ok`, no foreign-key violations, no projects missing workspace documents, and no orphaned assets/jobs.
+- The Cloudflare Worker `executive-visuals-d1-staging` exists, and the Render staging app `EXECUTIVE-VISUALS-1` has a live deployment. PR #499's Release Integration Gate completed both `full-build-and-verification` and `isolated-d1-staging-live-acceptance` successfully.
+- This is an isolated metadata/workspace staging path, not production persistence. D1's schema permits `local-staging` assets; R2 is disabled. The D1 worker uses an allowlisted staging-only local identity path; this must never be copied to production.
+- No D1 rows or schema were changed during this review.
+
+### Free-tier capacity and limits
+
+- Supabase Free allows two free projects across organizations where the account is an owner/administrator. Both currently connected Supabase projects are already active; do not create a third project, repurpose either existing project, or upgrade the organization without an explicit cost decision.
+- Cloudflare D1 on Workers Free includes 5 million rows read/day, 100,000 rows written/day and 5 GB total database storage. Workers Free includes 100,000 requests/day and 10 ms CPU per invocation. These limits suit a small metadata staging workload, not FFmpeg rendering or long-running video generation.
+- Keep large media in private object storage. R2 remains unprovisioned/deferred; no card, billing setting or paid plan was changed.
+
 ## Mainline integrations now deployed
 
 - **PR #591:** bounded product-verification batches and CI improvements.
@@ -34,10 +49,10 @@
 
 ## Current next steps
 
-1. Select an organization and obtain a cost estimate before creating a dedicated Free-tier application database; do not use the NEMA/shared projects.
-2. Configure the isolated application schema, Supabase Auth, private bucket and RLS policies; validate migrations in staging only.
-3. Deploy the separate worker only after its service cost/plan is understood and explicitly approved. Keep all provider execution gates disabled until staging acceptance.
-4. Verify Google Drive OAuth/import/export and Paddle/Pesapal sandbox lifecycle against the isolated backend.
+1. Extend the already-provisioned isolated D1 staging path only where the current schema/workspace acceptance tests prove the need; do not create another database or mutate existing production resources.
+2. Keep D1 as staging metadata only until identity, storage, backup/restore, rate limits and production operational requirements are designed and accepted. Do not port the staging-only local-auth allowlist to production.
+3. Resolve private durable media storage separately. R2 remains deferred; no large customer upload may fall back to ephemeral Render disk.
+4. Verify Google Drive OAuth/import/export and Paddle/Pesapal sandbox lifecycle against an isolated, persistent backend. Keep provider and payment gates disabled until verified.
 5. Refactor the 415 kB source entry module into feature modules and reduce the 784 kB emitted JavaScript entry bundle; preserve application behavior and add build-size regression checks.
 6. Complete hosted end-to-end tests, backup/restore and security review before public release.
 
