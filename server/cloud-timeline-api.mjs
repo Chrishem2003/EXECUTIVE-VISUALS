@@ -613,6 +613,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    const rows=await request(table+"?select=id&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
   }
+  const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
+  if(!Array.isArray(leaseColumns))throw new Error("Cloud timeline API readiness check failed for worker lease and cancellation columns.");
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
