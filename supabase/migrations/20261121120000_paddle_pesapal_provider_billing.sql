@@ -723,7 +723,7 @@ begin
   provider_name:=payment_row.provider;
   if provider_name not in ('paddle','pesapal')
      or payment_row.metadata->>'payment_purpose'<>'subscription_renewal'
-     or payment_row.provider_transaction_id<>p_provider_transaction_id then
+     or (payment_row.provider_transaction_id is not null and payment_row.provider_transaction_id<>p_provider_transaction_id) then
     raise exception 'Payment is not a reserved provider subscription renewal' using errcode='23514';
   end if;
 
@@ -762,8 +762,8 @@ begin
     raise exception 'Could not calculate provider renewal period' using errcode='22023';
   end if;
 
-  update payment_transactions set status='successful',paid_at=coalesce(paid_at,p_verified_at),
-    verified_at=p_verified_at,
+  update payment_transactions set status='successful',provider_transaction_id=p_provider_transaction_id,
+    paid_at=coalesce(paid_at,p_verified_at),verified_at=p_verified_at,
     metadata=metadata||jsonb_build_object('subscription_applied',true,
       'subscription_verified_at',p_verified_at,'provider_verification',p_provider_payload),
     updated_at=now()
