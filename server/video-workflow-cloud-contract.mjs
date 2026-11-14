@@ -28,6 +28,60 @@ function assetList(value, label, maximum) {
   return ids;
 }
 
+function createGoogleOmniWorkflowRequest({node,values,config,projectId,requestId}){
+  const prompt=firstString(values.prompt,values.text,values.input,config.prompt);
+  const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
+  const startFrameAssetId=firstString(values.startFrameAssetId,values["start-frame"],values.image,values.referenceImage,values.reference,
+    config.firstFrameAssetId,config.startFrameAssetId,config.referenceAssetId);
+  const referenceImageAssetIds=assetList(
+    config.referenceImageAssetIds??values.referenceImageAssetIds??values.references,
+    "Gemini Omni reference images",5
+  );
+  const referenceVideoAssetIds=assetList(
+    config.referenceVideoAssetIds??values.referenceVideoAssetIds,
+    "Gemini Omni reference videos",3
+  );
+  const referenceAudioAssetIds=assetList(
+    config.referenceAudioAssetIds??values.referenceAudioAssetIds,
+    "Gemini Omni reference audio",1
+  );
+  const previousInteractionId=firstString(config.previousInteractionId,values.previousInteractionId);
+  const operation=firstString(config.operation)||(sourceVideoAssetId||previousInteractionId?"edit":"generate");
+  const allAssetIds=[sourceVideoAssetId,startFrameAssetId,...referenceImageAssetIds,...referenceVideoAssetIds,...referenceAudioAssetIds].filter(Boolean);
+  if(new Set(allAssetIds).size!==allAssetIds.length)throw fail("A Gemini Omni asset cannot be assigned to more than one source/reference role.","VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT");
+  if(!prompt)throw fail("Gemini Omni video generation requires a non-empty prompt.","PROMPT_REQUIRED");
+  if(!["generate","edit","extend"].includes(operation))throw fail("Gemini Omni operation must be generate, edit or extend.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  if(operation==="generate"&&(sourceVideoAssetId||previousInteractionId))throw fail("Gemini Omni generate mode cannot include a source video or previous interaction.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+  if(["edit","extend"].includes(operation)&&!sourceVideoAssetId&&!previousInteractionId)throw fail("Gemini Omni edit and extend require a source video or previous interaction.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+  if(sourceVideoAssetId&&startFrameAssetId)throw fail("Gemini Omni source-video and first-frame inputs must be separate operations.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+  if(referenceAudioAssetIds.length||config.audioMode==="reference"||values.audioMode==="reference")throw fail("Gemini Omni workflow quotes do not yet support reference-audio inputs.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  const durationSeconds=Number(config.durationSeconds??config.duration??5);
+  if(!Number.isInteger(durationSeconds)||durationSeconds<3||durationSeconds>10)throw fail("Gemini Omni duration must be between 3 and 10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  const aspectRatio=String(config.aspectRatio??"16:9");
+  if(!["16:9","9:16"].includes(aspectRatio))throw fail("Gemini Omni supports 16:9 or 9:16 output only.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  const resolution=String(config.resolution??"720p");
+  if(!["provider_default","720p"].includes(resolution))throw fail("Gemini Omni workflow quotes currently support 720p output only.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  if(1+(sourceVideoAssetId?1:0)+(startFrameAssetId?1:0)+referenceImageAssetIds.length+referenceVideoAssetIds.length>10)
+    throw fail("Gemini Omni workflow input exceeds the ten-part limit.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  const normalized={
+    requestId,projectId:projectId.trim(),provider:"google",model:"gemini-omni-1.1-flash",
+    operation,prompt,durationSeconds,aspectRatio,resolution,
+    rightsConfirmed:config.rightsConfirmed===true,
+    outputFormat:"mp4",
+    ...(sourceVideoAssetId?{sourceVideoAssetId}:{}),
+    ...(startFrameAssetId?{startFrameAssetId}:{}),
+    ...(referenceImageAssetIds.length?{referenceImageAssetIds}:{}),
+    ...(referenceVideoAssetIds.length?{referenceVideoAssetIds}:{}),
+    ...(previousInteractionId?{previousInteractionId}:{})
+  };
+  const requestHash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+  const input=deepFreeze({...normalized,requestHash});
+  return deepFreeze({
+    provider:"google",model:"gemini-omni-1.1-flash",operation,
+    requestId,projectId:projectId.trim(),requestHash,input
+  });
+}
+
 /**
  * Build the immutable, provider-bound input for a governed cloud video job.
  *
@@ -52,8 +106,17 @@ export function createVideoWorkflowCloudRequest({
     ? node.config : {};
   const provider = firstString(config.provider);
   const model = firstString(config.model);
+  if (provider === "google" && model === "gemini-omni-1.1-flash") {
+    if (typeof projectId !== "string" || !projectId.trim() || projectId.length > 160) {
+      throw fail("A saved project ID is required for cloud video workflow execution.", "VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED");
+    }
+    if (typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(requestId)) {
+      throw fail("A stable workflow request ID is required for idempotent cloud execution.", "VIDEO_WORKFLOW_CLOUD_REQUEST_ID_REQUIRED");
+    }
+    return createGoogleOmniWorkflowRequest({node,values,config,projectId,requestId});
+  }
   if (provider !== "runway" || model !== "model-router") {
-    throw fail("The first governed workflow adapter supports only the explicit runway/model-router identity.", "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE");
+    throw fail("Only explicit runway/model-router and google/gemini-omni-1.1-flash workflow adapters are supported.", "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE");
   }
   if (typeof projectId !== "string" || !projectId.trim() || projectId.length > 160) {
     throw fail("A saved project ID is required for cloud video workflow execution.", "VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED");
