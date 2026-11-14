@@ -9,7 +9,7 @@ function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-11111111
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
   async renew(id,workerId,seconds,leaseToken){calls.push(["renew",id,workerId,seconds,leaseToken]);return typeof renew==="function"?renew():renew;},
   async finish(id,workerId,status,output,error,leaseToken){calls.push(["finish",id,workerId,status,output,error,leaseToken]);if(failFinish)throw new Error("finish unavailable");return finish;},
-  async assertLease(id,workerId,leaseToken){calls.push(["assertLease",id,workerId,leaseToken]);return true;}
+  async assertLease(id,workerId,leaseToken){calls.push(["assertLease",id,workerId,leaseToken]);return true;},
   async cancellationRequested(id,workerId,leaseToken){calls.push(["cancellationRequested",id,workerId,leaseToken]);return typeof cancellationRequested==="function"?cancellationRequested():cancellationRequested;}
  };
 }
