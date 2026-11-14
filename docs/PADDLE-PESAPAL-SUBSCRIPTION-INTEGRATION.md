@@ -44,7 +44,7 @@ Pesapal:
 - Uses the documented sandbox/live API hosts only.
 - Authenticates with the merchant consumer key and secret and caches the short-lived access token in process memory.
 - Registers an HTTPS GET IPN endpoint and creates hosted orders.
-- For recurring schedules, passes subscription details to the hosted iframe so the payer can explicitly consent. Pesapal's recurring IPN is only a notification; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
+- The current checkout intentionally omits `account_number` and `subscription_details`, so it does not offer an automatic recurring schedule before the renewal ledger is ready. Pesapal recurring card schedules can be enabled in a later slice after recurring IPNs can reserve and atomically settle renewal ledger entries. Pesapal IPNs are only notifications; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
 - Do not infer a recurring subscription solely from a checkout redirect or an unverified IPN query.
 
 `supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only reservation and initial-purchase finalization RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
