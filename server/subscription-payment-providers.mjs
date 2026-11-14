@@ -35,7 +35,7 @@ function verifyPaddleSignature(rawBody,signature,secret,{now=Date.now(),toleranc
 const PADDLE_EVENTS=new Set([
   "subscription.created","subscription.activated","subscription.updated","subscription.canceled",
   "subscription.past_due","subscription.paused","subscription.resumed","transaction.completed",
-  "transaction.payment_failed"
+  "transaction.payment_failed","adjustment.created","adjustment.updated"
 ]);
 function normalizePaddleEvent(event){
   const type=text(event?.event_type),data=event?.data||{},custom=data.custom_data||{};
@@ -56,7 +56,10 @@ function normalizePaddleEvent(event){
     ignored:false,provider:"paddle",eventId:text(event?.event_id),eventType:type,
     ownerId:text(custom.owner_id),planCode:text(custom.plan_code),paymentId:text(custom.payment_id),reference:text(custom.reference),
     providerCustomerId:text(data.customer_id),providerSubscriptionId:subscriptionId,
-    providerTransactionId:text(data.id&&type.startsWith("transaction.")?data.id:""),
+    providerTransactionId:text(data.id&&type.startsWith("transaction.")?data.id:(type.startsWith("adjustment.")?data.transaction_id:"")),
+    adjustmentId:text(data.id&&type.startsWith("adjustment.")?data.id:""),
+    adjustmentAction:text(data.action),adjustmentStatus:text(data.status),
+    adjustmentAmount:text(data.totals?.total)||null,adjustmentCurrency:text(data.currency_code).toUpperCase()||null,
     status:statusMap[type],currency:text(data.currency_code).toUpperCase(),
     providerPriceId:text(lineItems[0]?.price_id||data.items?.[0]?.price?.id),
     amountMinor:Number.isSafeInteger(amountMinor)?amountMinor:null,
