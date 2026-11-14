@@ -74,7 +74,7 @@
     "verify:runway-durable-tasks": "node --test server/tests/runway-video-gateway.test.mjs",
     "verify:cloud-video-generation": "node --test server/tests/cloud-video-generation-dispatch.test.mjs server/tests/cloud-video-generation-executor.test.mjs server/tests/cloud-video-generation-migration-contract.test.mjs server/tests/cloud-video-generation-repositories.test.mjs server/tests/cloud-video-generation-dispatch-route.test.mjs server/tests/cloud-video-generation-worker.test.mjs server/tests/cloud-worker-process.test.mjs server/tests/video-generation-approval.test.mjs",
     "verify:d1": "node --check scripts/verify-d1-staging-live.mjs && node --experimental-strip-types --test server/tests/d1-repository.test.mjs server/tests/d1-staging-workspace.test.mjs cloudflare/worker.test.mjs",
-    "verify:persistence-readiness": "node --experimental-strip-types --test server/tests/persistence-readiness.test.mjs",
+    "verify:persistence-readiness": "node --experimental-strip-types --test server/tests/persistence-readiness.test.mjs server/tests/local-asset-upload-policy.test.mjs",
     "verify:runtime-capabilities": "node --experimental-strip-types --test server/tests/runtime-capabilities.test.mjs",
     "verify:upscale-review-package": "node --test server/tests/upscale-review-package.test.mjs",
     "review:upscale": "node server/scripts/create-upscale-review-package.mjs",
