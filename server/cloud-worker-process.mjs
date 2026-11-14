@@ -20,8 +20,8 @@ const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||v
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED);
- if(!media&&!timeline&&!video&&!publicationCleanup)throw new Error("Enable at least one supported cloud worker family.");
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
+ if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
@@ -36,7 +36,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,publicationCleanup,
+  media,timeline,video,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
   cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
   cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
   cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
@@ -52,11 +52,12 @@ export function readCloudWorkerConfig(env=process.env){
 }
 
 export function createCloudWorkerSupervisor({workers,maintenanceTasks=[],maintenanceIntervalMs=300000,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
- if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
+ if(!Array.isArray(workers)||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
  if(!Array.isArray(maintenanceTasks)||maintenanceTasks.some(task=>typeof task!=="function"))throw new Error("Cloud worker maintenance tasks must be functions.");
  if(!Number.isInteger(maintenanceIntervalMs)||maintenanceIntervalMs<60000||maintenanceIntervalMs>3600000)throw new Error("Cloud worker maintenance interval is invalid.");
+ if(workers.length===0&&maintenanceTasks.length===0)throw new Error("Cloud worker supervisor requires at least one worker family or maintenance task.");
  let stopped=true,timer=null,recoveryTimer=null,maintenanceTimer=null,active=null,activeMaintenance=null,busy=false,maintenanceBusy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
