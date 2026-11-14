@@ -15,10 +15,9 @@ async function fixture(t,{temporalFrames=3,temporalWidth=256,temporalHeight=256,
   {codec_type:"audio",codec_name:"aac",start_time:"0",sample_rate:"48000",channels:2}
  ];
  const temporalStreams=[
-  {codec_type:"video",codec_name:"h264",width:temporalWidth,height:temporalHeight,avg_frame_rate:"2/1",r_frame_rate:"2/1",nb_read_frames:String(temporalFrames),duration:"1.5",start_time:"0",pix_fmt:"yuv420p"},
-  {codec_type:"audio",codec_name:"aac",start_time:"0",sample_rate:"48000",channels:2}
+  {codec_type:"video",codec_name:"h264",width:temporalWidth,height:temporalHeight,avg_frame_rate:"2/1",r_frame_rate:"2/1",nb_read_frames:String(temporalFrames),duration:"1.5",start_time:"0",pix_fmt:"yuv420p"}
  ];
- const outputStreams=temporalStreams;
+ const outputStreams=[...temporalStreams,{codec_type:"audio",codec_name:"aac",start_time:"0",sample_rate:"48000",channels:2}];
  const metadata=[40,70,41,72,42].map((saturation,index)=>"[Parsed_metadata] frame:"+index+" pts:"+(index*14062)+" pts_time:"+(index*0.125).toFixed(6)+"\n[Parsed_metadata] lavfi.signalstats.YAVG=80\n[Parsed_metadata] lavfi.signalstats.SATAVG="+saturation+"\n[Parsed_metadata] lavfi.signalstats.UAVG=128\n[Parsed_metadata] lavfi.signalstats.VAVG=128").join("\n");
  let assemblyArgs=[];
  const runCommand=async(binary,args)=>{
