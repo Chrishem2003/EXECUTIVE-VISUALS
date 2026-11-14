@@ -90,6 +90,14 @@ export function createProviderSubscriptionBilling({
       if(!result||typeof result!=="object")return null;
       return {...result,reference:result.txRef};
     },
+    async reserveRenewalCheckout({ownerId,subscriptionId,idempotencyKey}){
+      const result=await rpc("reserve_pesapal_subscription_renewal",{
+        p_owner_id:ownerId,p_subscription_id:subscriptionId,p_idempotency_key:idempotencyKey,
+        p_tx_ref:"EVR"+randomUUID().replaceAll("-","")
+      });
+      if(!result||typeof result!=="object")return null;
+      return {...result,reference:result.txRef};
+    },
     async getCheckout({paymentId,ownerId}){
       const payment=await getPayment(paymentId,ownerId);
       if(!payment)return null;
@@ -257,7 +265,9 @@ export function createProviderSubscriptionBilling({
             throw Object.assign(new Error("Pesapal transaction does not match a pending reserved payment."),{code:"PESAPAL_EVENT_LEDGER_MISMATCH",status:409});
           if(payment.currency!=="UGX"||event.currency!=="UGX"||!Number.isSafeInteger(Number(event.amount))||Number(event.amount)!==Number(payment.amount_minor))
             throw Object.assign(new Error("Pesapal amount or currency does not match the reserved payment."),{code:"PESAPAL_EVENT_AMOUNT_MISMATCH",status:409});
-          settled=await rpc("finalize_subscription_purchase_for_provider",{
+          const finalizer=payment.metadata?.payment_purpose==="subscription_renewal"
+            ?"finalize_subscription_renewal_for_provider":"finalize_subscription_purchase_for_provider";
+          settled=await rpc(finalizer,{
             p_payment_id:payment.id,p_provider_transaction_id:event.trackingId,
             p_provider_payload:{status:"succeeded",amount_minor:Number(event.amount),currency:event.currency,
               reference,provider_subscription_id:event.recurring?.correlationId||null,provider_customer_id:null},
@@ -315,6 +325,25 @@ export function createProviderSubscriptionBilling({
         return jsonResponse(result.idempotentReplay?200:202,{checkout:result});
       }catch(error){
         return jsonResponse(Number(error?.status)||502,{error:{code:error?.code||"PROVIDER_SUBSCRIPTION_CHECKOUT_FAILED",message:error?.message||"Provider checkout failed."}});
+      }
+    }
+    if(path==="/api/billing/subscription/provider-renewal-checkout"&&method==="POST"){
+      const subscriptionId=text(body.subscriptionId),email=text(body.email).toLowerCase(),key=text(idempotencyKey);
+      if(!ownerId||!subscriptionId||!validEmail(email)||key.length<8||key.length>180||
+         !text(body.firstName)||!text(body.lastName)||!text(body.phone))
+        return jsonResponse(400,{error:{code:"PESAPAL_RENEWAL_INPUT_INVALID",message:"Provide your subscription, name, email, phone and idempotency key."}});
+      try{
+        const result=await service.createRenewalCheckout({
+          provider:"pesapal",ownerId,subscriptionId,email,idempotencyKey:key,
+          pesapalOrder:{
+            description:"Executive Visuals subscription renewal",
+            firstName:text(body.firstName).slice(0,80),lastName:text(body.lastName).slice(0,80),
+            phone:text(body.phone),countryCode:"UG",callbackUrl:pesapalCallbackUrl,notificationId:pesapalNotificationId
+          }
+        });
+        return jsonResponse(result.idempotentReplay?200:202,{checkout:result});
+      }catch(error){
+        return jsonResponse(Number(error?.status)||502,{error:{code:error?.code||"PESAPAL_RENEWAL_FAILED",message:error?.message||"Pesapal renewal checkout failed."}});
       }
     }
     return jsonResponse(404,{error:{code:"PROVIDER_SUBSCRIPTION_ROUTE_NOT_FOUND",message:"Provider subscription route not found."}});
