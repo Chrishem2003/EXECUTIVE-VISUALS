@@ -65,7 +65,9 @@ export function createGoogleOmniCloudVideoIntegration({
           budgetApprovalId: job.budget_approval_id || input.budgetApprovalId || null,
           estimatedCost: job.estimated_cost || null,
           approvedBy: job.approved_by || null,
-          approvedAt: job.approved_at || null
+          approvedAt: job.approved_at || null,
+          workerId: job.lease_owner || null,
+          leaseToken: job.lease_token || null
         })
       });
     },
