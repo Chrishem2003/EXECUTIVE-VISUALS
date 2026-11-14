@@ -6,6 +6,8 @@ const VIDEO_OUTPUT_USD_PER_MILLION = 17.50;
 const VIDEO_OUTPUT_TOKENS_PER_SECOND_720P = 5792;
 const MAX_CONTEXT_TOKENS = 1_048_576;
 const MAX_OUTPUT_SECONDS = 10;
+const CUSTOMER_CREDITS_PER_USD = 100;
+function customerCredits(amount){ return Math.ceil(amount * CUSTOMER_CREDITS_PER_USD - 1e-9); }
 
 function fail(message, code = "GOOGLE_OMNI_PRICE_INPUT_INVALID") {
   return Object.assign(new Error(message), { code });
@@ -49,6 +51,8 @@ export function estimateGoogleOmniVideoCost({
     model: MODEL,
     currency: "USD",
     amount,
+    estimatedCredits: customerCredits(amount),
+    customerCreditsPerUsd: CUSTOMER_CREDITS_PER_USD,
     basis: "maximum_context_and_10_second_720p_output_reservation",
     maxInputTokens: MAX_CONTEXT_TOKENS,
     maxOutputTokens,
@@ -106,6 +110,8 @@ export function resolveGoogleOmniActualCost({ task, providerTaskId } = {}) {
   const amount = usageMoney(inputTokens, textOutputTokens, videoOutputTokens);
   return Object.freeze({
     amount,
+    actualCredits: customerCredits(amount),
+    customerCreditsPerUsd: CUSTOMER_CREDITS_PER_USD,
     currency: "USD",
     evidenceReference: "google-interaction-usage:" + providerTaskId +
       ":input=" + inputTokens + ":text=" + textOutputTokens + ":video=" + videoOutputTokens,
