@@ -31,3 +31,16 @@ test("cloud media worker requires an explicit stable worker identity", () => {
     /worker ID/
   );
 });
+
+test("cloud media worker forwards owner cancellation to the generic worker",async()=>{
+ const calls=[];const queue={
+  async claim(){return{id:"media-job",lease_token:"11111111-1111-4111-8111-111111111111"};},
+  async cancellationRequested(){calls.push("cancel-check");return true;},
+  async renew(){return true;},async assertLease(){return true;},
+  async finish(id,worker,status,output,error){calls.push(status);return true;},async recover(){return 0;}
+ };
+ let executed=false;
+ const worker=createCloudMediaWorker({workerId:"media-worker-cancel",queue,assetService:{assets:{}},mediaIO:{},execute:async()=>{executed=true;return{};}});
+ const result=await worker.runCycle();
+ assert.equal(result.status,"cancelled");assert.equal(executed,false);assert.deepEqual(calls,["cancel-check","cancelled"]);
+});
