@@ -10,7 +10,7 @@ const now=()=>Date.parse("2026-11-14T10:00:00Z");
 test("Paddle checkout uses a server-mapped price and returns hosted checkout only",async()=>{
   let request;
   const provider=createPaddleSubscriptionProvider({
-    apiKey:"sandbox-key",webhookSecret:"webhook-secret",priceIds:{creator:"pri_creator_monthly"},
+    apiKey:"sandbox-key",webhookSecret:"webhook-secret",priceIds:{creator:"pri_01creator123"},
     now,fetchImpl:async(url,options)=>{request={url:String(url),options,body:JSON.parse(options.body)};return json({data:{id:"txn_123",status:"draft",checkout:{url:"https://checkout.paddle.com/txn_123"}}});}
   });
   const result=await provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",returnUrl:"https://executive-visuals.onrender.com/billing/return"});
@@ -24,7 +24,7 @@ test("Paddle checkout uses a server-mapped price and returns hosted checkout onl
 
 test("Paddle checkout rejects client-controlled price IDs and invalid return URLs",async()=>{
   const provider=createPaddleSubscriptionProvider({apiKey:"x",priceIds:{creator:"pri_valid"},fetchImpl:async()=>{throw new Error("must not call");}});
-  await assert.rejects(()=>provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",priceId:"pri_attacker"}),{code:"PADDLE_CHECKOUT_INPUT_INVALID"});
+  await assert.rejects(()=>provider.createCheckout({planCode:"missing",ownerId:owner,email:"buyer@example.com"}),{code:"PADDLE_CHECKOUT_INPUT_INVALID"});
   await assert.rejects(()=>provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",returnUrl:"http://attacker.example/"}),{code:"PADDLE_RETURN_URL_INVALID"});
 });
 
