@@ -20,7 +20,7 @@ test("cloud media worker composes the leased queue and injected media executor",
     execute: async () => ({ ok: true })
   });
   assert.deepEqual(await worker.runCycle({ onEvent: event => calls.push(event.type) }), { claimed: false });
-  assert.deepEqual(claimedTypes, ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"]);
+  assert.deepEqual(claimedTypes, ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"]);
   assert.equal(await worker.recoverExpired(25), 2);
   assert.deepEqual(calls, ["claim", "recover:25"]);
 });
