@@ -54,7 +54,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
  if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
- const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER});
+ const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2:{accountId:env.R2_ACCOUNT_ID,accessKeyId:env.R2_ACCESS_KEY_ID,secretAccessKey:env.R2_SECRET_ACCESS_KEY,bucket:env.R2_BUCKET}});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const reviews=service.projects?.get&&service.assets?.get&&service.timelines?.get
   ? createCloudReviewRepository({url,serviceRoleKey,fetchImpl,authorize:allow,projects:service.projects,assets:service.assets,timelines:service.timelines,timeoutMs})
