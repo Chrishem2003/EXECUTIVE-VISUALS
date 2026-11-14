@@ -16,6 +16,7 @@ import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
+const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -459,23 +460,49 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(projectId&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
      if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
-     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.transcode,media.proxy,timeline.render";
-     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
+     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.ai-upscale,media.transcode,media.proxy,timeline.render";
+     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
      return response(200,{jobs:Array.isArray(rows)?rows:[]});
     }
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
-    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
     return response(200,{jobs:Array.isArray(rows)?rows:[]});
    }
-   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
-   if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
-    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events|cancel))?$/i);
+   if(jobMatch&&safeId(jobMatch[1])){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
-    if(job.project_id){if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});}
-    else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
-    if(jobMatch[2]){
+    const cancelling=jobMatch[2]==="cancel"&&method==="POST";
+    if(jobMatch[2]==="cancel"&&!cancelling)return null;
+    if(job.project_id){
+     const permitted=await allow({ownerId,projectId:job.project_id,action:cancelling?"write":"read"});
+     if(permitted!==true)return response(cancelling?403:404,{error:{code:cancelling?"EDITOR_REQUIRED":"JOB_NOT_FOUND",message:cancelling?"Owner or editor access is required.":"Job not found."}});
+    } else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(cancelling){
+     const supported=CANCELLABLE_CLOUD_JOB_TYPES.has(job.job_type);
+     if(!supported)return response(409,{error:{code:"JOB_CANCELLATION_UNSUPPORTED",message:"This job type requires its dedicated cancellation workflow."}});
+     if(job.status==="cancelled")return response(200,{job,idempotentReplay:true,cancellationRequested:false});
+     if(["queued","processing"].includes(job.status)&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
+     if(!["queued","processing"].includes(job.status))return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"Only queued or processing media jobs can be cancelled."}});
+     const now=new Date().toISOString();
+     // Keep queued jobs claimable so the normal lease-fenced worker can
+     // finalize cancellation through finish_job_v2 and release any reservation.
+     const patch={cancel_requested_at:now,updated_at:now};
+     const updated=await request("jobs?id=eq."+encodeURIComponent(job.id)+"&status=eq."+encodeURIComponent(job.status)+"&cancel_requested_at=is.null",{method:"PATCH",prefer:"return=representation",body:patch});
+     if(Array.isArray(updated)&&updated.length===1){
+      await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:job.owner_id,event_type:"job.cancellation_requested",event_data:{phase:job.status==="queued"?"before_claim":"worker_requested",requestedBy:ownerId}}});
+      return response(200,{job:updated[0],idempotentReplay:false,cancellationRequested:true});
+     }
+     const latestRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(job.id)+"&limit=1");
+     const latest=Array.isArray(latestRows)?latestRows[0]:null;
+     if(latest?.status==="cancelled")return response(200,{job:latest,idempotentReplay:true,cancellationRequested:false});
+     if(["queued","processing"].includes(latest?.status)&&latest.cancel_requested_at)return response(200,{job:latest,idempotentReplay:true,cancellationRequested:true});
+     return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"The job changed while cancellation was being recorded. Refresh its status and retry if it is still active."}});
+    }
+    if(method!=="GET")return null;
+    if(jobMatch[2]==="events"){
      const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
      return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
     }
@@ -587,6 +614,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    const rows=await request(table+"?select=id&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
   }
+  const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
+  if(!Array.isArray(leaseColumns))throw new Error("Cloud timeline API readiness check failed for worker lease and cancellation columns.");
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});

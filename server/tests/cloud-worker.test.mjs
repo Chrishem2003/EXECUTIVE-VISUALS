@@ -2,14 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCloudWorkerCycle } from "../cloud-worker.mjs";
 
-function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-111111111111"},renew=true,finish=true,failFinish=false}={}) {
+function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-111111111111"},renew=true,finish=true,failFinish=false,cancellationRequested=false}={}) {
  const calls=[];
  return {
   calls,
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
   async renew(id,workerId,seconds,leaseToken){calls.push(["renew",id,workerId,seconds,leaseToken]);return typeof renew==="function"?renew():renew;},
   async finish(id,workerId,status,output,error,leaseToken){calls.push(["finish",id,workerId,status,output,error,leaseToken]);if(failFinish)throw new Error("finish unavailable");return finish;},
-  async assertLease(id,workerId,leaseToken){calls.push(["assertLease",id,workerId,leaseToken]);return true;}
+  async assertLease(id,workerId,leaseToken){calls.push(["assertLease",id,workerId,leaseToken]);return true;},
+  async cancellationRequested(id,workerId,leaseToken){calls.push(["cancellationRequested",id,workerId,leaseToken]);return typeof cancellationRequested==="function"?cancellationRequested():cancellationRequested;}
  };
 }
 
@@ -91,6 +92,34 @@ test("worker shutdown signal aborts execution and records a cancelled terminal s
  assert.ok(events.some(event=>event.type==="job.cancelled"));
 });
 
+test("owner cancellation observed before execution finishes the claimed job without running it",async()=>{
+ const queue=queueFor({cancellationRequested:true});let executed=false;const events=[];
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{executed=true;return{};},onEvent:event=>events.push(event)});
+ assert.equal(executed,false);assert.equal(result.status,"cancelled");assert.equal(result.reason,"owner_request");
+ const finish=queue.calls.find(call=>call[0]==="finish");assert.equal(finish[3],"cancelled");assert.equal(finish[5].code,"JOB_CANCELLED");
+ assert.ok(events.some(event=>event.type==="job.cancelled"&&event.reason==="owner_request"));
+});
+test("worker fails closed when cancellation state cannot be verified",async()=>{
+ const queue=queueFor({cancellationRequested:()=>{throw Object.assign(new Error("lookup unavailable"),{code:"CLOUD_QUEUE_HTTP_503"});}});
+ let executed=false;
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-cancel-check",execute:async()=>{executed=true;return{};}});
+ assert.equal(result.finished,false);assert.equal(result.reason,"cancellation_check_failed");assert.equal(executed,false);
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
+test("owner cancellation polling aborts an active executor and records cancellation",async()=>{
+ let checks=0;const queue=queueFor({cancellationRequested:()=>++checks>=2});let started;
+ const keepAlive=setTimeout(()=>{},5000);
+ const began=new Promise(resolve=>{started=resolve;});
+ try{
+  const resultPromise=runCloudWorkerCycle({queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,execute:async({signal})=>{
+   started();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));
+  }});
+  await began;const result=await resultPromise;
+  assert.equal(result.status,"cancelled");assert.equal(result.reason,"owner_request");
+  assert.ok(checks>=2);assert.equal(queue.calls.some(call=>call[0]==="renew"),false);
+  const finish=queue.calls.find(call=>call[0]==="finish");assert.equal(finish[5].code,"JOB_CANCELLED");
+ }finally{clearTimeout(keepAlive);}
+});
 test("already-aborted shutdown signal does not claim a new job",async()=>{
  const queue=queueFor();const controller=new AbortController();controller.abort();
  const result=await runCloudWorkerCycle({queue,workerId:"worker-shutdown",signal:controller.signal,execute:async()=>({})});

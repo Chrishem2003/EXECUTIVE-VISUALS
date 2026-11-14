@@ -94,6 +94,60 @@ export function createCloudQueue({
       if (!jobId || !workerId || !LEASE_TOKEN.test(leaseToken || "")) throw new Error("Job ID, worker ID and a valid lease token are required to verify a lease.");
       return (await call("assert_job_lease_v2", { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken })) === true;
     },
+    async cancellationRequested(jobId, workerId, leaseToken) {
+      if (!jobId || typeof workerId !== "string" || !workerId.trim() || !LEASE_TOKEN.test(leaseToken || "")) {
+        throw new Error("Job ID, worker ID and a valid lease token are required to check cancellation.");
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const query = new URLSearchParams({
+          select: "id,status,lease_owner,lease_token,cancel_requested_at",
+          id: "eq." + jobId,
+          status: "eq.processing",
+          lease_owner: "eq." + workerId,
+          lease_token: "eq." + leaseToken,
+          limit: "1"
+        });
+        const response = await fetchImpl(base + "/rest/v1/jobs?" + query.toString(), {
+          method: "GET",
+          headers: {
+            apikey: serviceRoleKey,
+            authorization: "Bearer " + serviceRoleKey,
+            "accept-profile": SCHEMA,
+            accept: "application/json"
+          },
+          signal: controller.signal
+        });
+        const body = await response.text();
+        let rows = null;
+        if (body) {
+          try { rows = JSON.parse(body); }
+          catch { throw new Error("Cloud queue cancellation lookup returned a non-JSON response (HTTP " + response.status + ")."); }
+        }
+        if (!response.ok) {
+          const message = typeof rows?.message === "string" ? rows.message.replaceAll(serviceRoleKey, "[redacted]").slice(0, 300) : "Cloud queue cancellation lookup failed.";
+          const error = new Error(message);
+          error.code = "CLOUD_QUEUE_HTTP_" + response.status;
+          error.status = response.status;
+          throw error;
+        }
+        if (!Array.isArray(rows) || rows.length > 1) throw new Error("Cloud queue cancellation lookup returned an invalid result.");
+        const row = rows[0];
+        if (!row) return false;
+        if (row.id !== jobId || row.status !== "processing" || row.lease_owner !== workerId || row.lease_token !== leaseToken) return false;
+        return row.cancel_requested_at !== null && row.cancel_requested_at !== undefined;
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          const timeout = new Error("Cloud queue cancellation lookup timed out.");
+          timeout.code = "CLOUD_QUEUE_TIMEOUT";
+          throw timeout;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     async recover(limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Recovery limit must be between 1 and 1000.");
       const result = await call("recover_expired_jobs", { p_limit: limit });

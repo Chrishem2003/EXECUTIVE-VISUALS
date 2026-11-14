@@ -26,7 +26,7 @@ type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number
 type CloudProject={id:string;name:string};
 type CloudReview={id:string;projectId:string;assetId:string|null;timelineId:string|null;timelineRevision:number|null;frameNumber:number|null;durationFrames:number|null;timecodeSeconds:number|null;body:string;decision:"comment"|"approve"|"request_changes";status:"open"|"resolved"|"dismissed";visibility:"project"|"internal";authorId:string;createdAt:string;updatedAt:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-type CloudRenderJob={id:string;status:string;progress?:number;input?:{timelineId?:string;timelineRevision?:number};output?:{outputAsset?:{id:string;name?:string}};error?:{code?:string;message?:string};created_at?:string};
+type CloudRenderJob={id:string;status:string;progress?:number;input?:{timelineId?:string;timelineRevision?:number};output?:{outputAsset?:{id:string;name?:string}};error?:{code?:string;message?:string};cancel_requested_at?:string|null;created_at?:string};
 type TimelineRevisionSummary={timelineId:string;revision:number;name:string;createdAt:string};
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
@@ -491,8 +491,9 @@ function renderCloudRenderOutput(){
 function renderCloudRenderHistory(){
  if(state.mode!=="cloud"||!state.cloudRenderJobs.length)return "";
  return "<section id='cloud-render-history' class='panel timeline-quality'><div class='eyebrow'>DURABLE CLOUD RENDER HISTORY</div><h3>Recent master renders</h3><p id='cloud-render-refresh-status' class='muted' aria-live='polite'>"+esc(cloudRenderPollingStatus)+"</p>"+state.cloudRenderJobs.slice(0,10).map(job=>{
-  const revision=Number(job.input?.timelineRevision)||0,created=job.created_at?new Date(job.created_at).toLocaleString():"",status=String(job.status||"unknown");
-  return "<article class='timeline-quality-item info'><b>Revision "+revision+"</b><span class='job-status'>"+esc(status)+"</span><p>"+esc(created)+(job.progress!==undefined?" · "+Math.round(Number(job.progress)||0)+"%":"")+"</p>"+(job.error?.message?"<small>"+esc(job.error.code||"RENDER_FAILED")+" · "+esc(job.error.message)+"</small>":"")+"<button class='secondary' data-tl-load-job='"+esc(job.id)+"'>Inspect render</button></article>";
+  const revision=Number(job.input?.timelineRevision)||0,created=job.created_at?new Date(job.created_at).toLocaleString():"",status=job.cancel_requested_at?"cancellation requested":String(job.status||"unknown");
+  const cancelButton=["queued","processing"].includes(job.status)&&!job.cancel_requested_at?"<button class='secondary' data-tl-cancel-job='"+esc(job.id)+"'>Cancel render</button>":"";
+  return "<article class='timeline-quality-item info'><b>Revision "+revision+"</b><span class='job-status'>"+esc(status)+"</span><p>"+esc(created)+(job.progress!==undefined?" · "+Math.round(Number(job.progress)||0)+"%":"")+"</p>"+(job.error?.message?"<small>"+esc(job.error.code||"RENDER_FAILED")+" · "+esc(job.error.message)+"</small>":"")+"<button class='secondary' data-tl-load-job='"+esc(job.id)+"'>Inspect render</button>"+cancelButton+"</article>";
  }).join("")+"</section>";
 }
 export function renderTimelineWorkspace(){
@@ -1157,6 +1158,14 @@ document.addEventListener("click",event=>{
  const loadJob=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-load-job]");
  if(loadJob){const job=state.cloudRenderJobs.find(item=>item.id===loadJob.dataset.tlLoadJob);if(job){state.cloudRenderJobId=job.id;state.cloudRenderJobStatus=job.status;const outputAsset=job.output?.outputAsset;if(job.status==="succeeded"&&outputAsset?.id){state.cloudRenderOutputAssetId=outputAsset.id;state.cloudRenderOutputName=outputAsset.name||"Verified cloud master";state.cloudRenderOutputUrl="";state.message="Selected verified render from revision "+Number(job.input?.timelineRevision||0)+".";}else{state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";state.message="Selected render job · "+job.status+(job.error?.message?": "+job.error.message:"");}paint();}return;}
  
+ const cancelRender=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-cancel-job]");
+ if(cancelRender){
+  const id=cancelRender.dataset.tlCancelJob||"";cancelRender.setAttribute("disabled","true");
+  void apiRequest<{job:{status:string};cancellationRequested:boolean}>("/api/cloud/jobs/"+encodeURIComponent(id)+"/cancel",{method:"POST"})
+   .then(async result=>{state.message=result.cancellationRequested?(result.job?.status==="queued"?"Cancellation queued. The render worker will cancel the job before rendering.":"Cancellation requested. The active render worker will stop at its next cancellation check."):"Cloud render cancelled.";await refreshCloudRenderJobs(true);paint();})
+   .catch(error=>{cancelRender.removeAttribute("disabled");state.message=error instanceof Error?error.message:"Cloud render cancellation could not be recorded.";paint();});
+  return;
+ }
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
  const target=event.target as HTMLElement;
  const speedAdd=target.closest<HTMLElement>("[data-tl-speed-add]");

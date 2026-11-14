@@ -64,7 +64,8 @@ export function createCloudMediaWorker({
     renew: (...args) => cloudQueue.renew(...args),
     finish: (...args) => cloudQueue.finish(...args),
     recover: (...args) => cloudQueue.recover(...args),
-    assertLease: (...args) => cloudQueue.assertLease(...args)
+    assertLease: (...args) => cloudQueue.assertLease(...args),
+    ...(typeof cloudQueue.cancellationRequested === "function" ? { cancellationRequested: (...args) => cloudQueue.cancellationRequested(...args) } : {})
   });
 
   return Object.freeze({

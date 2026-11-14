@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createCloudQueue } from "../cloud-queue.mjs";
 
@@ -45,6 +46,30 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   assert.deepEqual(requests[3].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
+test("cancellation polling is scoped to the exact active worker lease",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,options});return response([{id:"job-1",status:"processing",lease_owner:"worker-1",lease_token:"11111111-1111-4111-8111-111111111111",cancel_requested_at:"2026-11-14T06:00:00Z"}]);}});
+ assert.equal(await queue.cancellationRequested("job-1","worker-1","11111111-1111-4111-8111-111111111111"),true);
+ const request=requests[0];const parsed=new URL(request.url);
+ assert.equal(parsed.pathname,"/rest/v1/jobs");
+ assert.equal(parsed.searchParams.get("id"),"eq.job-1");assert.equal(parsed.searchParams.get("status"),"eq.processing");
+ assert.equal(parsed.searchParams.get("lease_owner"),"eq.worker-1");assert.equal(parsed.searchParams.get("lease_token"),"eq.11111111-1111-4111-8111-111111111111");
+ assert.equal(request.options.headers["accept-profile"],"executive_visuals");
+ const empty=createCloudQueue({...base,fetchImpl:async()=>response([])});
+ assert.equal(await empty.cancellationRequested("job-1","worker-1","11111111-1111-4111-8111-111111111111"),false);
+ await assert.rejects(()=>queue.cancellationRequested("job-1","worker-1","bad-token"),/lease token/);
+});
+test("cloud job finalization is lease-fenced and atomically honors cancellation credits",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261114130000_atomic_cloud_job_cancellation_settlement.sql",import.meta.url),"utf8");
+ assert.ok(sql.includes("create or replace function executive_visuals.claim_next_job_v2"));
+ assert.ok(sql.includes("cancel_requested_at is not null"));
+ assert.ok(sql.includes("create or replace function executive_visuals.finish_job_v2"));
+ assert.ok(sql.includes("and lease_token = p_lease_token"));
+ assert.ok(sql.includes("case when cancel_requested_at is not null then 'cancelled' else p_status end"));
+ assert.ok(sql.includes("status='released'")||sql.includes("set status='released'"));
+ assert.ok(sql.includes("'ownerCancellationWon',cancellation_won"));
+ assert.ok(sql.includes("creditReservationStatus',reservation_status"));
+});
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
   assert.throws(()=>createCloudQueue({url:base.url}),/SUPABASE_SERVICE_ROLE_KEY/);

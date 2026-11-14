@@ -10,7 +10,7 @@ type RuntimeProject={id:string;name:string;description?:string;revision?:number;
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeCloudProject={id:string;name:string;revision?:number};
 type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
-type CloudRuntimeJob={id:string;owner_id:string;project_id:string|null;job_type:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;attempt_count?:number;created_at:string;updated_at:string;completed_at?:string|null};
+type CloudRuntimeJob={id:string;owner_id:string;project_id:string|null;job_type:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;attempt_count?:number;cancel_requested_at?:string|null;created_at:string;updated_at:string;completed_at?:string|null};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type C2paVerification={status:"trusted"|"valid_untrusted"|"invalid"|"not_present"|"validation_unavailable";present:boolean;valid:boolean;trusted:boolean;assetSha256:string;validationState:string|null;findings:string[];manifest:null|{title:string|null;format:string|null;claimGenerator:string|null;ingredientCount:number;ingredients:Array<{title:string|null;format:string|null;relationship:string|null;hasManifestData:boolean}>};validationStatuses:Array<{code:string;success:boolean|null;explanation:string|null}>};
@@ -210,11 +210,13 @@ function renderCloudMediaJobs(){
  if(!state.cloudMediaJobs.length)return '<div class="empty">No cloud processing jobs yet. Choose an operation on a private cloud asset above.</div>';
  return '<div class="runtime-jobs" aria-live="polite">'+state.cloudMediaJobs.map(job=>{
   const progress=Math.max(0,Math.min(100,Number(job.progress)||0));
-  const status=String(job.status||"unknown").toUpperCase();
+  const cancelRequested=Boolean(job.cancel_requested_at);
+  const status=cancelRequested?"CANCELLATION REQUESTED":String(job.status||"unknown").toUpperCase();
   const attempt=Number.isSafeInteger(job.attempt_count)&&Number(job.attempt_count)>0?' · attempt '+Number(job.attempt_count):"";
   const error=job.error?.message?'<small class="muted">'+esc(job.error.code||"JOB_ERROR")+' · '+esc(job.error.message)+'</small>':"";
   const completed=job.completed_at?'<small>Finished '+esc(fmt(job.completed_at))+'</small>':"";
-  return '<article class="runtime-job" data-cloud-job-status="'+esc(job.status)+'"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(status)+' · '+progress+'%'+attempt+'</small><div class="progress" role="progressbar" aria-label="Cloud job progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+completed+error+'</div></article>';
+  const cancelButton=["queued","processing"].includes(job.status)&&!cancelRequested?'<button class="secondary" data-ev-cloud-cancel="'+esc(job.id)+'">Cancel job</button>':"";
+  return '<article class="runtime-job" data-cloud-job-status="'+esc(job.status)+'"><div class="runtime-job-main"><b>'+esc(job.job_type.replaceAll("media.","").replaceAll("-"," "))+'</b><small>'+esc(status)+' · '+progress+'%'+attempt+'</small><div class="progress" role="progressbar" aria-label="Cloud job progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div><small>'+esc(job.id)+' · '+esc(fmt(job.created_at))+'</small>'+completed+error+cancelButton+'</div></article>';
  }).join("")+'</div>';
 }
 async function refreshCloudMediaJobs(){
@@ -559,6 +561,14 @@ document.addEventListener("click",event=>{
   void apiRequest("/api/jobs/batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({projectId:state.projectId||undefined,model,scale,format:"png",tile:0,items:selected.map(sourceAssetId=>({sourceAssetId}))})})
    .then(async()=>{await refresh();paint();alert("Batch queued. Each image has its own job and shared batch ID.");})
    .catch(error=>{batchButton.removeAttribute("disabled");alert(error instanceof Error?error.message:"Batch submission failed.");});
+  return;
+ }
+ const cloudCancel=target.closest<HTMLElement>("[data-ev-cloud-cancel]");
+ if(cloudCancel){
+  const id=cloudCancel.dataset.evCloudCancel||"";cloudCancel.setAttribute("disabled","true");
+  void apiRequest<{job:{status:string;cancel_requested_at?:string|null};idempotentReplay:boolean;cancellationRequested:boolean}>("/api/cloud/jobs/"+encodeURIComponent(id)+"/cancel",{method:"POST"})
+   .then(async result=>{state.message=result.cancellationRequested?(result.job.status==="queued"?"Cancellation queued. The worker will mark the job cancelled before starting execution.":"Cancellation requested. The active worker will stop at its next cancellation check."):"Cloud job cancelled.";await refresh();paint();})
+   .catch(error=>{cloudCancel.removeAttribute("disabled");state.message=error instanceof Error?error.message:"Cloud job cancellation could not be recorded.";paint();});
   return;
  }
  const job=target.closest<HTMLElement>("[data-ev-job]");
