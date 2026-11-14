@@ -38,7 +38,7 @@ test("authenticated provider checkout reserves ledger price and persists hosted 
     const target=new URL(url);calls.push([options.method,target.pathname,target.search]);
     if(target.pathname.endsWith("/rpc/reserve_subscription_purchase_for_provider"))return json({
       paymentId,subscriptionId,txRef:"EVP-order-1",amountMinor:5000,amountMajor:50,currency:"USD",
-      provider:"paddle",providerPriceId:"pri_01creator123",status:"pending",idempotentReplay:false
+      provider:"paddle",providerPriceId:"pri_01creator123",billingInterval:"monthly",status:"pending",idempotentReplay:false
     });
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="PATCH")return empty();
