@@ -23,7 +23,7 @@ test("cloud worker supervisor recovers, runs enabled families and stops cleanly"
  assert.deepEqual(calls.slice(0,4),[["recover",100],["recover-timeline",100],["media",60],["timeline",60]]);
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
-test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});
+test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/at least one worker family or maintenance task/);});
 
 test("cloud worker supervisor waits for all families and reports individual failures",async()=>{
  const errors=[],calls=[];
@@ -99,4 +99,26 @@ test("publication cleanup destructive mode requires explicit independent flags",
  assert.equal(config.cleanupConfirmDelete,true);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_POLL_MS:"100"}),/poll interval/);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS:"31"}),/age in days/);
+});
+
+test("Gemini file cleanup and recovery can run as a maintenance-only worker family",()=>{
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",
+  CLOUD_VIDEO_WORKER_ENABLED:"false",CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"false",
+  GOOGLE_GEMINI_FILES_CLEANUP_ENABLED:"true"
+ });
+ assert.equal(config.geminiFilesCleanup,true);
+ assert.equal(config.geminiFilesRecovery,false);
+});
+test("cloud worker supervisor supports maintenance-only operation",async()=>{
+ const calls=[],events=[];
+ const supervisor=createCloudWorkerSupervisor({
+  workers:[],maintenanceTasks:[async()=>{calls.push("gemini-cleanup");return{scanned:2,deleted:2};}],
+  leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,
+  onLog:event=>events.push(event)
+ });
+ await supervisor.start();
+ assert.deepEqual(calls,["gemini-cleanup"]);
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
+ await supervisor.stop();
 });
