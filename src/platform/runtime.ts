@@ -329,9 +329,14 @@ export function renderImageModelNote(){
  return esc(provider.status==="ready"?"Selected Gemini image model "+provider.model+" is configured. Google API charges apply to approved generations.":provider.reason)+" The image workspace now accepts one validated reference asset for image editing.";
 }
 export function renderVideoModelOptions(){
- const provider=state.providers.find(item=>item.provider==="runway");
- if(!provider)return '<option value="">Server-configured model</option>';
- return (provider.availableModels||[]).map(model=>'<option value="'+esc(model.id)+'" '+(provider.model===model.id?"selected":"")+'>'+esc(model.label)+' · '+model.minDurationSeconds+'–'+model.maxDurationSeconds+'s</option>').join("")||'<option value="">No verified Runway models available</option>';
+ const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google");
+ const options=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>{
+  const ready=provider.status==="ready"&&model.available===true&&model.executionVerified===true&&model.qualityVerified===true;
+  const reason=ready?"":String(model.reason||provider.reason||model.readiness||provider.status||"Not verified");
+  const duration=Number.isFinite(model.minDurationSeconds)&&Number.isFinite(model.maxDurationSeconds)?" · "+model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":"";
+  return '<option value="'+esc(model.id)+'" data-provider="'+esc(provider.provider)+'" '+(provider.model===model.id?"selected ":"")+(ready?"":"disabled ")+'>'+esc(model.label)+duration+(ready?"":" · "+esc(reason.slice(0,90)))+'</option>';
+ }));
+ return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
 export function renderVideoModelNote(){
  const provider=state.providers.find(item=>item.provider==="runway");
