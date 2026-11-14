@@ -152,5 +152,5 @@ test("Google Omni worker gates fail closed when any transport, connection, paid-
   {GEMINI_OMNI_PAID_TIER_CONFIRMED:"false"},
   {GEMINI_API_KEY:""}
  ])assert.throws(()=>readCloudWorkerConfig({...valid,...patch}),/Google Omni worker requires/);
- assert.throws(()=>readCloudWorkerConfig({...valid,CLOUD_VIDEO_WORKER_ENABLED:"false"}),/CLOUD_VIDEO_WORKER_ENABLED=true/);
+ assert.throws(()=>readCloudWorkerConfig({...valid,CLOUD_VIDEO_WORKER_ENABLED:"false"}),/at least one supported cloud worker family/);
 });
