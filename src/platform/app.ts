@@ -327,7 +327,7 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
   rightsConfirmed:config.rightsConfirmed===true,
   referenceAssetId:undefined,
   ...(referenceAssetId?(googleOmni?{firstFrameAssetId:referenceAssetId}:{startFrameAssetId:referenceAssetId}):{}),
-  ...(googleOmni?{operation:"generate",outputFormat:"mp4"}:{})
+  ...(googleOmni?{operation:"generate",outputFormat:"mp4",audioMode:"none"}:{})
  };
  const approvalNode={id:approvalId,kind:"approval",label:"Human approval · paid generation",inputs:[{id:"input",label:"Generation request",type:"any",required:true}],outputs:[{id:"result",label:"Approved prompt",type:"any"},{id:"approved",label:"Approval record",type:"structured-data"}],config:{input:prompt},position:{x:30,y:40}};
  const generationNode={id:generationId,kind,label:image?"Generate image":"Generate video",inputs:image?[{id:"prompt",label:"Prompt",type:"text",required:true},{id:"reference",label:"Reference",type:"image"}]:[{id:"prompt",label:"Prompt",type:"text",required:true},{id:"start-frame",label:"Start frame",type:"start-frame"},{id:"reference",label:"Reference",type:"video",multiple:true}],outputs:[{id:image?"image":"video",label:image?"Generated image":"Generated video",type:image?"image":"video"}],config:generationConfig,position:{x:380,y:40}};
