@@ -9,6 +9,7 @@ import { Transform } from "node:stream";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 
 export function aiUpscaleMediaType(format) {
   const types = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
@@ -22,7 +23,7 @@ const EXTENSION = Object.freeze({
 const SUPPORTED = new Set([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"
+  "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
 ]);
 
 function parseInput(value) {
@@ -152,10 +153,29 @@ export function buildCloudMediaOutputPlan(jobType, input, source, sourcePath, ou
 async function preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,operation,signal}){
   return c2paPreserver({sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,signer:c2paSigner,signerMode:c2paSignerMode,operation,signal});
 }
-export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, c2paPreserver = createC2paTransformationPreserver(), c2paSigner = null, c2paSignerMode = "local" } = {}) {
+export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, c2paPreserver = createC2paTransformationPreserver(), c2paSigner = null, c2paSignerMode = "local", videoAiUpscaleProcessor = null, videoAiUpscaleEnabled = process.env.AI_VIDEO_UPSCALE_ENABLED === "true", videoAiUpscaleWorkerSelfTestPassed = process.env.AI_VIDEO_UPSCALE_WORKER_SELF_TEST_PASSED === "true" } = {}) {
   if (!mediaIO || typeof mediaIO.materialize !== "function" || typeof mediaIO.publish !== "function") throw new Error("Cloud media executor requires cloud media IO.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
   if(typeof c2paPreserver!=="function")throw new Error("Cloud media executor requires a C2PA preservation adapter.");
+
+  let configuredVideoAiUpscaleProcessor = videoAiUpscaleProcessor;
+  function getVideoAiUpscaleProcessor() {
+    if (configuredVideoAiUpscaleProcessor) return configuredVideoAiUpscaleProcessor;
+    configuredVideoAiUpscaleProcessor = createVideoAiUpscaleProcessor({
+      runCommand: runProcess,
+      upscalerFactory: options => createRealEsrganAdapter(options),
+      maxFrames: 300,
+      maxDurationSeconds: 600,
+      maxInputBytes: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_MAX_INPUT_BYTES || 2 * 1024 * 1024 * 1024),
+      maxOutputBytes: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_MAX_OUTPUT_BYTES || 4 * 1024 * 1024 * 1024),
+      maxTempBytes: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_MAX_TEMP_BYTES || 8 * 1024 * 1024 * 1024),
+      maxOutputPixels: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_MAX_OUTPUT_PIXELS || 40_000_000),
+      frameTimeoutMs: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_FRAME_TIMEOUT_MS || 30 * 60 * 1000),
+      jobTimeoutMs: Number(process.env.CLOUD_VIDEO_AI_UPSCALE_JOB_TIMEOUT_MS || 2 * 60 * 60 * 1000),
+      tempRoot: tempRoot || tmpdir()
+    });
+    return configuredVideoAiUpscaleProcessor;
+  }
 
   return async function execute({ job, signal, onProgress = () => {}, assertLease = async () => true }) {
     if (!job || typeof job.id !== "string" || typeof job.owner_id !== "string" || !SUPPORTED.has(job.job_type)) {
@@ -170,7 +190,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const workDir = await mkdtemp(join(tempRoot || tmpdir(), "ev-cloud-job-"));
     const extension = extname(materialized.asset.name || "").slice(0, 12);
     const sourcePath = join(workDir, "source" + extension);
-    const outputExtension = job.job_type === "media.ai-upscale" ? String(input.format || "png")
+    const outputExtension = job.job_type === "media.video-ai-upscale" ? "mp4" : job.job_type === "media.ai-upscale" ? String(input.format || "png")
       : job.job_type === "media.thumbnail" ? "jpg"
       : job.job_type === "media.audio_extract" ? "mp3"
       : job.job_type === "media.audio-clean" ? "wav"
@@ -221,6 +241,47 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           publicationKey: job.id + ":output:v1",
         assertLease, signal,
         leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
+        });
+        onProgress(100);
+        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2paPreservation };
+      }
+      if (job.job_type === "media.video-ai-upscale") {
+        if (!videoAiUpscaleEnabled) throw Object.assign(new Error("Video AI upscaling is disabled on this worker."), { code: "VIDEO_AI_UPSCALE_DISABLED" });
+        if (!videoAiUpscaleWorkerSelfTestPassed) throw Object.assign(new Error("A worker-side video AI inference self-test must pass before video jobs can execute."), { code: "VIDEO_AI_UPSCALE_WORKER_NOT_VERIFIED" });
+        if (!String(materialized.asset.mediaType || "").startsWith("video/")) throw Object.assign(new Error("AI video upscaling requires a video source asset."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+        const processor = getVideoAiUpscaleProcessor();
+        const result = await processor.process({
+          sourcePath, outputPath,
+          model: String(input.model || "realesrgan-x4plus"),
+          scale: Number(input.scale ?? 2),
+          tile: Number(input.tile ?? 0),
+          threads: String(input.threads || "1:2:2"),
+          tta: input.tta === true,
+          gpu: String(input.gpu || "auto"),
+          expectedSourceSha256: materialized.asset.sha256 || null,
+          signal,
+          onProgress
+        });
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+        await assertLease();
+        const { path: _localOutputPath, ...processing } = result;
+        const mediaType = "video/mp4";
+        const sourceName = String(materialized.asset.name || "video");
+        const filename = sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled.mp4";
+        const c2paPreservation = await preserveC2paOutput({
+          c2paPreserver, c2paSigner, c2paSignerMode, sourcePath, outputPath,
+          sourceMimeType: materialized.asset.mediaType, outputMimeType: mediaType,
+          expectedSourceSha256: materialized.asset.sha256, operation: job.job_type, signal
+        });
+        const info = await stat(outputPath);
+        if (!info.isFile() || info.size < 1) throw Object.assign(new Error("AI video upscaler produced an empty output."), { code: "VIDEO_AI_UPSCALE_OUTPUT_INVALID" });
+        const digest = await checksum(outputPath);
+        const asset = await mediaIO.publish({
+          ownerId: job.owner_id, projectId: job.project_id || null, filename, mediaType,
+          path: outputPath, derivativeOf: sourceId,
+          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2paPreservation },
+          publicationKey: job.id + ":output:v1", assertLease, signal,
+          leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
         });
         onProgress(100);
         return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2paPreservation };
