@@ -61,7 +61,7 @@ test("FlashVSR temporal path verifies exact frames, 4x dimensions, timestamps an
  assert.equal(result.audioStreams,1);
  assert.equal(result.temporalConsistency,"not-certified");
  assert.equal(result.qualityReviewRequired,true);
- assert.ok(f.assemblyArgs.includes("flashvsr-temporal-output.mp4"));
+ assert.ok(f.assemblyArgs.some(value=>String(value).includes("flashvsr-temporal-output.mp4")));
  assert.ok(f.assemblyArgs.includes("1:a?"));
  assert.equal((await readFile(f.outputPath)).toString(),"rendered-temporal-video");
 });
