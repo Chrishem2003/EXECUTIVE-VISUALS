@@ -366,6 +366,10 @@ export function createFinancialIntelligenceApi({
         if(!UUID.test(subscriptionId)||!allowed.includes(action)||
           (action==="schedule_plan_change"&&!/^[a-z][a-z0-9_-]{1,63}$/.test(planCode)))
           return error(400,"SUBSCRIPTION_MANAGEMENT_INPUT_INVALID","Provide a valid subscription and supported management action.");
+        const owned=await dbRequest("customer_subscriptions?select=id,provider&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        const current=Array.isArray(owned.data)?owned.data[0]:null;
+        if(!current)return error(404,"SUBSCRIPTION_NOT_FOUND","Subscription not found.");
+        if(current.provider==="paddle")return error(409,"PADDLE_MANAGEMENT_PORTAL_REQUIRED","Paddle subscription changes must be made through the provider customer portal. Local-only cancellation is blocked to prevent an unintended future charge.");
         const result=await rpc("manage_customer_subscription",{
           p_owner_id:ownerId,p_subscription_id:subscriptionId,p_action:action,
           p_plan_code:action==="schedule_plan_change"?planCode:null,
