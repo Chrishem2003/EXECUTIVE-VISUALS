@@ -23,7 +23,7 @@ test("cloud worker supervisor recovers, runs enabled families and stops cleanly"
  assert.deepEqual(calls.slice(0,4),[["recover",100],["recover-timeline",100],["media",60],["timeline",60]]);
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
-test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});
+test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/at least one worker family or maintenance task/);});
 
 test("cloud worker supervisor waits for all families and reports individual failures",async()=>{
  const errors=[],calls=[];
