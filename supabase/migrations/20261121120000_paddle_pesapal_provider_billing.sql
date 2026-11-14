@@ -45,6 +45,8 @@ alter table executive_visuals.customer_subscriptions
   add constraint customer_subscriptions_provider_check
   check (provider is null or provider in ('flutterwave','paddle','pesapal'));
 alter table executive_visuals.subscription_events
+  drop constraint if exists subscription_events_source_check;
+alter table executive_visuals.subscription_events
   add constraint subscription_events_source_check
   check (source in ('system','flutterwave','paddle','pesapal','admin'));
 
@@ -288,8 +290,8 @@ begin
   end if;
 
   update customer_subscriptions set status='active',
-    provider_subscription_id=coalesce(provider_subscription_id,provider_subscription_id),
-    provider_customer_id=coalesce(provider_customer_id,provider_customer_id),
+    provider_subscription_id=coalesce(provider_subscription_id,v_provider_subscription_id),
+    provider_customer_id=coalesce(provider_customer_id,v_provider_customer_id),
     current_period_start=p_verified_at,current_period_end=period_end,updated_at=now()
    where id=subscription_row.id;
 
