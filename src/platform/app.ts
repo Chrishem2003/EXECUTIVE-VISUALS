@@ -313,12 +313,21 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
  const projectId=image?"":getCurrentProjectId();
  if(!image&&(!projectId||!canEditCurrentProject()))throw new Error("Select a saved project where you have owner or editor access before preparing video generation.");
  if(!image&&String(config.referenceAssetId||"").trim()&&config.rightsConfirmed!==true)throw new Error("Confirm that you have the rights to use the selected reference media before preparing generation.");
+ const requestedModel=String(config.model||"model-router");
+ const googleOmni=requestedModel==="gemini-omni-1.1-flash";
+ const referenceAssetId=String(config.referenceAssetId||"").trim();
  const generationConfig=image?config:{
-  ...config,provider:"runway",model:"model-router",
+  ...config,
+  provider:googleOmni?"google":"runway",
+  model:requestedModel,
+  projectId,
   durationSeconds:Number(config.durationSeconds??config.duration??5),
   aspectRatio:String(config.aspectRatio||"16:9"),
-  resolution:String(config.resolution||"provider_default"),
-  rightsConfirmed:config.rightsConfirmed===true
+  resolution:googleOmni?"720p":String(config.resolution||"provider_default"),
+  rightsConfirmed:config.rightsConfirmed===true,
+  referenceAssetId:undefined,
+  ...(referenceAssetId?(googleOmni?{firstFrameAssetId:referenceAssetId}:{startFrameAssetId:referenceAssetId}):{}),
+  ...(googleOmni?{operation:"generate",outputFormat:"mp4"}:{})
  };
  const approvalNode={id:approvalId,kind:"approval",label:"Human approval · paid generation",inputs:[{id:"input",label:"Generation request",type:"any",required:true}],outputs:[{id:"result",label:"Approved prompt",type:"any"},{id:"approved",label:"Approval record",type:"structured-data"}],config:{input:prompt},position:{x:30,y:40}};
  const generationNode={id:generationId,kind,label:image?"Generate image":"Generate video",inputs:image?[{id:"prompt",label:"Prompt",type:"text",required:true},{id:"reference",label:"Reference",type:"image"}]:[{id:"prompt",label:"Prompt",type:"text",required:true},{id:"start-frame",label:"Start frame",type:"start-frame"},{id:"reference",label:"Reference",type:"video",multiple:true}],outputs:[{id:image?"image":"video",label:image?"Generated image":"Generated video",type:image?"image":"video"}],config:generationConfig,position:{x:380,y:40}};
