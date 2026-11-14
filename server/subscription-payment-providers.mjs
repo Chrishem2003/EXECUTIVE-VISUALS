@@ -6,6 +6,34 @@ const jsonHeaders={"content-type":"application/json","accept":"application/json"
 const fail=(code,message,status=400)=>Object.assign(new Error(message),{code,status});
 const same=(a,b)=>{const left=Buffer.from(String(a)),right=Buffer.from(String(b));return left.length===right.length&&timingSafeEqual(left,right);};
 
+async function readBoundedResponseText(response,maxBytes=1024*1024){
+  const declared=Number(response.headers?.get?.("content-length"));
+  if(Number.isFinite(declared)&&declared>maxBytes){
+    await response.body?.cancel?.().catch(()=>{});
+    throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Payment provider response exceeded the 1 MiB limit.",502);
+  }
+  if(!response.body?.getReader){
+    const raw=await readBoundedResponseText(response);
+    if(Buffer.byteLength(raw)>maxBytes)throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Payment provider response exceeded the 1 MiB limit.",502);
+    return raw;
+  }
+  const reader=response.body.getReader(),chunks=[];
+  let size=0;
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      size+=value.byteLength;
+      if(size>maxBytes){
+        await reader.cancel().catch(()=>{});
+        throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Payment provider response exceeded the 1 MiB limit.",502);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  }finally{reader.releaseLock();}
+  return Buffer.concat(chunks,size).toString("utf8");
+}
+
 async function requestJson(fetchImpl,url,{method="GET",headers={},body,timeoutMs=15000}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
