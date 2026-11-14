@@ -80,7 +80,7 @@ function normalizePaddleEvent(event){
       originalAmount:text(data.payout_totals.chargeback_fee.original?.amount)||null,
       originalCurrency:text(data.payout_totals.chargeback_fee.original?.currency_code).toUpperCase()||null
     }:null,
-    adjustmentTaxRates:Array.isArray(data.tax_rates_used)?data.tax_rates_used.map(rate=>({
+    adjustmentTaxRates:data.tax_rates_used===null||data.tax_rates_used===undefined?null:Array.isArray(data.tax_rates_used)?data.tax_rates_used.map(rate=>({
       rate:text(rate.tax_rate)||null,subtotal:text(rate.totals?.subtotal)||null,
       tax:text(rate.totals?.tax)||null,total:text(rate.totals?.total)||null
     })):[],
