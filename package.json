@@ -110,7 +110,7 @@
     "verify:server:shard:03": "node scripts/run-server-test-shard.mjs 3 4",
     "verify:server:shard:04": "node scripts/run-server-test-shard.mjs 4 4",
     "verify:product": "npm run verify:batch:01 && npm run verify:batch:02 && npm run verify:batch:03 && npm run verify:batch:04 && npm run verify:batch:05 && npm run verify:batch:06 && npm run verify:batch:07 && npm run verify:batch:08 && npm run verify:server:shard:01 && npm run verify:server:shard:02 && npm run verify:server:shard:03 && npm run verify:server:shard:04 && npm run typecheck && npm run build && npm run verify:batch:09",
-    "verify:subscription-payment-providers": "node --test server/tests/subscription-payment-providers.test.mjs server/tests/unified-subscription-billing.test.mjs server/tests/paddle-pesapal-billing-migration.test.mjs server/tests/provider-subscription-billing.test.mjs",
+    "verify:subscription-payment-providers": "node --test --test-force-exit server/tests/subscription-payment-providers.test.mjs server/tests/unified-subscription-billing.test.mjs server/tests/paddle-pesapal-billing-migration.test.mjs server/tests/provider-subscription-billing.test.mjs",
     "verify:batch:09": "npm run verify:subscription-payment-providers"
   },
   "devDependencies": {
