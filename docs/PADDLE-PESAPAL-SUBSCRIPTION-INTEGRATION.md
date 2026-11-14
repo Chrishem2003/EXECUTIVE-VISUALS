@@ -37,7 +37,7 @@ Paddle:
 - Uses the documented sandbox/live API hosts only.
 - Uses server-mapped pri_ price IDs; ignores client-supplied prices.
 - Creates hosted checkout transactions with owner_id and plan_code custom data.
-- Verifies the Paddle-Signature header against the exact raw request body, timestamp and configured endpoint secret, with a five-minute replay window.
+- Verifies the Paddle-Signature header against the exact raw request body, timestamp and configured endpoint secret, with a five-second replay tolerance and support for multiple signatures during endpoint-secret rotation.
 - Normalizes known subscription and transaction events. Unknown event types are acknowledged as ignored by the adapter and must not change access.
 
 Pesapal:
