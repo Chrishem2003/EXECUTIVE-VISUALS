@@ -91,5 +91,5 @@ test("robots and sitemap are served at the edge", async () => {
 
   const sitemap = await worker.fetch(new Request(`${edgeUrl}/sitemap.xml`), {});
   assert.equal(sitemap.status, 200);
-  assert.match(await sitemap.text(), new RegExp(edgeUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.ok((await sitemap.text()).includes(edgeUrl));
 });
