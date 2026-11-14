@@ -23,6 +23,46 @@ test("builds deterministic text-to-video contract for the exact router adapter",
   assert.equal(first.input.requestHash, first.requestHash);
 });
 
+test("builds a deterministic Gemini Omni text-to-video request with bounded 720p pricing inputs",()=>{
+ const googleNode={id:"google-video-1",kind:"video.generate",config:{provider:"google",model:"gemini-omni-1.1-flash",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",rightsConfirmed:true}};
+ const request={node:googleNode,projectId:"project-1",requestId:"workflow-run-1:google-video-1",values:{prompt:"A cinematic sunrise over Kampala"}};
+ const first=createVideoWorkflowCloudRequest(request),second=createVideoWorkflowCloudRequest(request);
+ assert.equal(first.provider,"google");assert.equal(first.model,"gemini-omni-1.1-flash");
+ assert.equal(first.operation,"generate");assert.equal(first.input.operation,"generate");
+ assert.equal(first.input.durationSeconds,5);assert.equal(first.input.resolution,"720p");
+ assert.equal(first.requestHash,second.requestHash);assert.match(first.requestHash,/^[a-f0-9]{64}$/);
+ assert.equal(first.input.requestHash,first.requestHash);assert.equal(first.input.rightsConfirmed,true);
+});
+test("maps Gemini Omni first-frame and reference assets to the immutable cloud input",()=>{
+ const result=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"google",model:"gemini-omni-1.1-flash",durationSeconds:5,firstFrameAssetId:"first-frame",referenceImageAssetIds:["reference-image"]}},
+  projectId:"project-1",requestId:"google-image-workflow",
+  values:{prompt:"Animate this scene"}
+ });
+ assert.equal(result.operation,"generate");assert.equal(result.input.startFrameAssetId,"first-frame");
+ assert.deepEqual(result.input.referenceImageAssetIds,["reference-image"]);
+});
+test("maps Gemini Omni source-video editing and prior-interaction extension",()=>{
+ const edited=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"google",model:"gemini-omni-1.1-flash",operation:"edit",durationSeconds:5}},
+  projectId:"project-1",requestId:"google-edit-workflow",
+  values:{prompt:"Replace the background",sourceVideoAssetId:"source-video"}
+ });
+ assert.equal(edited.operation,"edit");assert.equal(edited.input.sourceVideoAssetId,"source-video");
+ const extended=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"google",model:"gemini-omni-1.1-flash",operation:"extend",durationSeconds:5}},
+  projectId:"project-1",requestId:"google-extend-workflow",
+  values:{prompt:"Continue the shot",previousInteractionId:"v1_abcdef123456"}
+ });
+ assert.equal(extended.operation,"extend");assert.equal(extended.input.previousInteractionId,"v1_abcdef123456");
+});
+test("Gemini Omni workflow contract rejects unsupported audio, last-frame, duration and resolution inputs",()=>{
+ const baseGoogle={node:{kind:"video.generate",config:{provider:"google",model:"gemini-omni-1.1-flash",durationSeconds:5}},projectId:"project-1",requestId:"google-invalid",values:{prompt:"A scene"}};
+ assert.throws(()=>createVideoWorkflowCloudRequest({...baseGoogle,values:{...baseGoogle.values,referenceAudioAssetIds:["audio-1"]}}),/reference-audio/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...baseGoogle,node:{...baseGoogle.node,config:{...baseGoogle.node.config,lastFrameAssetId:"last-frame"}}}),/last-frame/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...baseGoogle,node:{...baseGoogle.node,config:{...baseGoogle.node.config,durationSeconds:11}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...baseGoogle,node:{...baseGoogle.node,config:{...baseGoogle.node.config,resolution:"1080p"}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
 test("deep-freezes nested request data so approved inputs cannot mutate after hashing", () => {
   const result = createVideoWorkflowCloudRequest({
     ...base,
