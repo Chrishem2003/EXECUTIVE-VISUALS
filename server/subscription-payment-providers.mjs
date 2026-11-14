@@ -115,7 +115,8 @@ export function createPesapalSubscriptionProvider({
   fetchImpl=globalThis.fetch,
   now=()=>Date.now()
 }={}){
-  const base=new URL(baseUrl);
+  const parsedBase=new URL(baseUrl);
+  const base=new URL(parsedBase.href.endsWith("/")?parsedBase.href:parsedBase.href+"/");
   const sandbox=base.hostname==="cybqa.pesapal.com";
   const live=base.hostname==="pay.pesapal.com";
   if(base.protocol!=="https:"||(!sandbox&&!live))throw fail("PESAPAL_API_HOST_INVALID","Pesapal API must use its documented sandbox or production HTTPS host.",500);
@@ -125,7 +126,7 @@ export function createPesapalSubscriptionProvider({
 
   async function accessToken(){
     if(token&&tokenExpiresAt>now()+60000)return token;
-    const result=await requestJson(fetchImpl,new URL("/api/Auth/RequestToken",base),{
+    const result=await requestJson(fetchImpl,new URL("api/Auth/RequestToken",base),{
       method:"POST",body:{consumer_key:consumerKey,consumer_secret:consumerSecret}
     });
     if(!result?.token)throw fail("PESAPAL_AUTH_RESPONSE_INVALID","Pesapal did not return an access token.",502);
@@ -136,7 +137,7 @@ export function createPesapalSubscriptionProvider({
   async function registerIpn(url){
     const callback=new URL(text(url));
     if(callback.protocol!=="https:")throw fail("PESAPAL_IPN_URL_INVALID","Pesapal IPN endpoint must use HTTPS.");
-    const result=await requestJson(fetchImpl,new URL("/api/URLSetup/RegisterIPN",base),{
+    const result=await requestJson(fetchImpl,new URL("api/URLSetup/RegisterIPN",base),{
       method:"POST",headers:{authorization:"Bearer "+await accessToken()},
       body:{url:callback.toString(),ipn_notification_type:"GET"}
     });
@@ -160,7 +161,7 @@ export function createPesapalSubscriptionProvider({
         throw fail("PESAPAL_SUBSCRIPTION_DETAILS_INVALID","Pesapal recurring payment requires valid dates and a supported frequency.");
       body.subscription_details={start_date:startDate,end_date:endDate,frequency:text(frequency).toUpperCase()};
     }
-    const result=await requestJson(fetchImpl,new URL("/api/Transactions/SubmitOrderRequest",base),{
+    const result=await requestJson(fetchImpl,new URL("api/Transactions/SubmitOrderRequest",base),{
       method:"POST",headers:{authorization:"Bearer "+await accessToken()},body
     });
     if(!result?.order_tracking_id||!result?.redirect_url)throw fail("PESAPAL_CHECKOUT_RESPONSE_INVALID","Pesapal did not return a tracking ID and hosted checkout URL.",502);
@@ -170,7 +171,7 @@ export function createPesapalSubscriptionProvider({
   async function verifyNotification({trackingId,merchantReference,expectedAmount,expectedCurrency}={}){
     const tracking=text(trackingId),reference=text(merchantReference);
     if(!tracking||!reference)throw fail("PESAPAL_NOTIFICATION_INVALID","Pesapal tracking ID and merchant reference are required.");
-    const url=new URL("/api/Transactions/GetTransactionStatus",base);
+    const url=new URL("api/Transactions/GetTransactionStatus",base);
     url.searchParams.set("orderTrackingId",tracking);
     const result=await requestJson(fetchImpl,url,{headers:{authorization:"Bearer "+await accessToken()}});
     const amount=Number(result?.amount),currency=text(result?.currency).toUpperCase();
