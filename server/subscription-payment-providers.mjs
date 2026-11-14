@@ -76,10 +76,10 @@ export function createPaddleSubscriptionProvider({
   if(!apiKey)throw fail("PADDLE_API_KEY_REQUIRED","Paddle API key is not configured.",500);
   if(typeof fetchImpl!=="function")throw fail("PAYMENT_FETCH_REQUIRED","A fetch implementation is required.",500);
 
-  async function createCheckout({planCode,ownerId,email,returnUrl,quantity=1}={}){
+  async function createCheckout({planCode,ownerId,email,returnUrl,priceId:reservedPriceId,quantity=1}={}){
     const plan=text(planCode).toLowerCase(),owner=text(ownerId),customerEmail=text(email).toLowerCase();
     const priceId=text(priceIds[plan]);
-    if(!/^[a-z][a-z0-9_-]{1,63}$/.test(plan)||!owner||!EMAIL.test(customerEmail)||!priceId||!/^pri_[A-Za-z0-9]+$/.test(priceId))
+    if(!/^[a-z][a-z0-9_-]{1,63}$/.test(plan)||!owner||!EMAIL.test(customerEmail)||!priceId||!/^pri_[A-Za-z0-9]+$/.test(priceId)||(reservedPriceId&&text(reservedPriceId)!==priceId))
       throw fail("PADDLE_CHECKOUT_INPUT_INVALID","A mapped Paddle price, owner, plan and valid customer email are required.");
     if(!Number.isInteger(quantity)||quantity!==1)throw fail("PADDLE_QUANTITY_INVALID","Subscription checkout quantity must be one.");
     const successUrl=text(returnUrl);
