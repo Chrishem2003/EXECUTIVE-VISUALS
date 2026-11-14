@@ -1,12 +1,14 @@
 # Current release status — 15 November 2026
 
-The latest mainline includes the November 14–15 integration wave: PR #591 bounded verification batches, PR #592 Paddle/Pesapal subscription adapters, PR #593 Gemini Files upload/recovery/retention, PR #594 governed Google Omni worker composition and provider-aware video workflow wiring, and PR #596 release-gate reconciliation. PR #594 passed its exact-head verification before merge. The production Render service reports the resulting main commit `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789` as live.
+Current main is `bc1226a3a0317c41ae4113d97cc1946775d68f5c`. The current production deployment remains on `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789`; the later mainline change is documentation/staging acceptance only and did not redeploy production.
 
-**The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage; the checked-in cloud database, private-media, Drive and remote-generation features remain gated pending a dedicated isolated Executive Visuals backend, private bucket/RLS, separate worker, verified credentials, and hosted acceptance. The connected Supabase projects contain NEMA/shared-platform workloads and must not be reused. Paddle is the primary and Pesapal the secondary billing provider, but merchant sandbox acceptance is still required; Pesapal automatic recurring billing is not implemented.
+**The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
 
-The Render workspace currently has the production web service and an older staging web service, not an independently deployed cloud background worker. The worker entrypoint exists but must not be enabled in the API process as a substitute. Keep customer uploads, remote generation and live checkout disabled until their respective isolated infrastructure and safety gates pass.
+The Cloudflare D1 workspace is a verified isolated metadata/workspace staging path, not production persistence or large-media storage. The current main includes Gemini Files upload/recovery and Google Omni worker integration, but not the separate private GCS mirror. The older GCS source PR #83 and related Workload Identity Federation PRs #90–#96 require focused rebase/reconciliation; do not merge the stacked branches wholesale. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
 
-The latest production build succeeds but emits a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle; Vite warns about the 500 kB JavaScript chunk threshold. This is a frontend modularization/performance task, not a deployment failure. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md) for the current blockers and sequence.
+Paddle is the primary and Pesapal the secondary billing provider. Merchant sandbox acceptance and production webhook verification remain outstanding; Pesapal automatic recurring billing is not implemented. Keep live checkout, customer uploads and remote generation disabled until their respective isolated infrastructure and safety gates pass.
+
+The latest production build succeeds but emits a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. This is a frontend modularization/performance task, not a deployment failure.
 
 ---
 
