@@ -852,3 +852,199 @@ revoke all on function executive_visuals.apply_paddle_subscription_lifecycle(tex
   from public,anon,authenticated;
 grant execute on function executive_visuals.apply_paddle_subscription_lifecycle(text,text,timestamptz,timestamptz,boolean,jsonb)
   to service_role;
+
+
+create or replace function executive_visuals.reserve_pesapal_subscription_renewal(
+  p_owner_id uuid,
+  p_subscription_id uuid,
+  p_idempotency_key text,
+  p_tx_ref text
+) returns jsonb
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $$
+declare
+  subscription_row executive_visuals.customer_subscriptions%rowtype;
+  price_row executive_visuals.subscription_plan_provider_prices%rowtype;
+  existing_payment executive_visuals.payment_transactions%rowtype;
+  payment_id uuid;
+begin
+  if p_owner_id is null or p_subscription_id is null
+     or p_idempotency_key is null or char_length(p_idempotency_key) not between 8 and 180
+     or p_tx_ref is null or char_length(p_tx_ref) not between 8 and 180 then
+    raise exception 'Invalid Pesapal renewal reservation' using errcode='22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text,0));
+
+  select * into existing_payment from payment_transactions
+   where owner_id=p_owner_id and metadata->>'idempotency_key'=p_idempotency_key
+   limit 1 for update;
+  if found then
+    if existing_payment.provider<>'pesapal'
+       or existing_payment.metadata->>'payment_purpose'<>'subscription_renewal'
+       or existing_payment.metadata->>'subscription_id'<>p_subscription_id::text then
+      raise exception 'Pesapal renewal idempotency key conflict' using errcode='23505';
+    end if;
+    return jsonb_build_object('paymentId',existing_payment.id,'subscriptionId',p_subscription_id,
+      'txRef',existing_payment.tx_ref,'amountMinor',existing_payment.amount_minor,
+      'amountMajor',existing_payment.amount_minor::numeric,'currency',existing_payment.currency,
+      'status',existing_payment.status,'idempotentReplay',true);
+  end if;
+
+  select * into subscription_row from customer_subscriptions
+   where id=p_subscription_id and owner_id=p_owner_id and provider='pesapal'
+     and status in ('active','past_due') and cancel_at_period_end=false
+   for update;
+  if not found then
+    raise exception 'Active Pesapal subscription for renewal was not found' using errcode='P0002';
+  end if;
+
+  select * into price_row from subscription_plan_provider_prices
+   where plan_id=subscription_row.plan_id and provider='pesapal' and active=true
+   for share;
+  if not found or price_row.provider_price_id is not null
+     or price_row.currency<>'UGX'
+     or price_row.amount_minor<>subscription_row.amount_minor
+     or price_row.currency<>subscription_row.currency then
+    raise exception 'Pesapal renewal price no longer matches the active server price' using errcode='23514';
+  end if;
+
+  select * into existing_payment from payment_transactions
+   where owner_id=p_owner_id and provider='pesapal' and status='pending'
+     and metadata->>'payment_purpose'='subscription_renewal'
+     and metadata->>'subscription_id'=p_subscription_id::text
+   limit 1 for update;
+  if found then
+    raise exception 'A Pesapal renewal payment is already pending for this subscription' using errcode='23505';
+  end if;
+
+  insert into payment_transactions(
+    owner_id,provider,tx_ref,amount_minor,currency,status,payment_method,
+    customer_email,description,metadata
+  ) values(
+    p_owner_id,'pesapal',p_tx_ref,price_row.amount_minor,price_row.currency,'pending',
+    'hosted_checkout',subscription_row.customer_email,'Pesapal manual subscription renewal',
+    jsonb_build_object('payment_purpose','subscription_renewal',
+      'subscription_id',subscription_row.id,'plan_code',subscription_row.plan_code,
+      'idempotency_key',p_idempotency_key,'provider','pesapal',
+      'billing_interval',subscription_row.billing_interval)
+  ) returning id into payment_id;
+
+  return jsonb_build_object('paymentId',payment_id,'subscriptionId',subscription_row.id,
+    'txRef',p_tx_ref,'amountMinor',price_row.amount_minor,
+    'amountMajor',price_row.amount_minor::numeric,'currency',price_row.currency,
+    'status','pending','idempotentReplay',false);
+end;
+$$;
+
+create or replace function executive_visuals.finalize_subscription_renewal_for_provider(
+  p_payment_id uuid,
+  p_provider_transaction_id text,
+  p_provider_payload jsonb,
+  p_verified_at timestamptz
+) returns jsonb
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $$
+declare
+  payment_row executive_visuals.payment_transactions%rowtype;
+  subscription_row executive_visuals.customer_subscriptions%rowtype;
+  provider_name text;
+  amount_minor bigint;
+  period_start timestamptz;
+  period_end timestamptz;
+begin
+  if p_payment_id is null or nullif(btrim(p_provider_transaction_id),'') is null
+     or p_verified_at is null or jsonb_typeof(coalesce(p_provider_payload,'{}'::jsonb))<>'object'
+     or lower(coalesce(p_provider_payload->>'status',''))<>'succeeded' then
+    raise exception 'Invalid verified subscription renewal input' using errcode='22023';
+  end if;
+
+  select * into payment_row from payment_transactions where id=p_payment_id for update;
+  if not found then raise exception 'Subscription renewal payment not found' using errcode='P0002'; end if;
+  provider_name:=payment_row.provider;
+  if provider_name not in ('paddle','pesapal')
+     or payment_row.metadata->>'payment_purpose'<>'subscription_renewal'
+     or payment_row.provider_transaction_id<>p_provider_transaction_id then
+    raise exception 'Payment is not a reserved provider subscription renewal' using errcode='23514';
+  end if;
+
+  begin
+    amount_minor:=(p_provider_payload->>'amount_minor')::bigint;
+  exception when others then
+    raise exception 'Verified renewal amount is invalid' using errcode='22023';
+  end;
+  if amount_minor<>payment_row.amount_minor
+     or upper(coalesce(p_provider_payload->>'currency',''))<>payment_row.currency
+     or coalesce(p_provider_payload->>'reference','')<>payment_row.tx_ref then
+    raise exception 'Verified renewal does not match its reservation' using errcode='23514';
+  end if;
+
+  if payment_row.status='successful' and coalesce((payment_row.metadata->>'subscription_applied')::boolean,false) then
+    return jsonb_build_object('paymentId',payment_row.id,'status','successful','idempotentReplay',true);
+  end if;
+  if payment_row.status<>'pending' then
+    raise exception 'Provider renewal payment is not pending' using errcode='23514';
+  end if;
+
+  select * into subscription_row from customer_subscriptions
+   where id=(payment_row.metadata->>'subscription_id')::uuid
+     and owner_id=payment_row.owner_id and provider=provider_name
+   for update;
+  if not found or subscription_row.status not in ('active','past_due') then
+    raise exception 'Provider renewal subscription is not active' using errcode='23514';
+  end if;
+
+  period_start:=greatest(coalesce(subscription_row.current_period_end,p_verified_at),p_verified_at);
+  period_end:=case subscription_row.billing_interval
+    when 'monthly' then period_start+interval '1 month'
+    when 'yearly' then period_start+interval '1 year'
+    else null end;
+  if period_end is null or period_end<=period_start then
+    raise exception 'Could not calculate provider renewal period' using errcode='22023';
+  end if;
+
+  update payment_transactions set status='successful',paid_at=coalesce(paid_at,p_verified_at),
+    verified_at=p_verified_at,
+    metadata=metadata||jsonb_build_object('subscription_applied',true,
+      'subscription_verified_at',p_verified_at,'provider_verification',p_provider_payload),
+    updated_at=now()
+   where id=payment_row.id;
+
+  if subscription_row.included_credits>0 then
+    insert into credit_ledger(owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata)
+    values(subscription_row.owner_id,'purchase_grant',subscription_row.included_credits,
+      'subscription-renewal:'||payment_row.id::text,payment_row.id,
+      'Included credits for verified subscription renewal',
+      jsonb_build_object('subscription_id',subscription_row.id,'plan_code',subscription_row.plan_code,
+        'period_start',period_start,'period_end',period_end,'provider',provider_name))
+    on conflict(owner_id,idempotency_key) do nothing;
+  end if;
+
+  update customer_subscriptions set status='active',current_period_start=period_start,
+    current_period_end=period_end,grace_until=null,updated_at=now()
+   where id=subscription_row.id;
+
+  insert into subscription_events(subscription_id,owner_id,event_type,source,reason,event_data)
+  values(subscription_row.id,subscription_row.owner_id,'renewed',provider_name,
+    'Subscription period extended after verified provider renewal payment',
+    jsonb_build_object('payment_id',payment_row.id,'provider_transaction_id',p_provider_transaction_id,
+      'amount_minor',payment_row.amount_minor,'currency',payment_row.currency,
+      'period_start',period_start,'period_end',period_end,'provider',provider_name));
+
+  return jsonb_build_object('paymentId',payment_row.id,'subscriptionId',subscription_row.id,
+    'status','active','periodStart',period_start,'periodEnd',period_end,'idempotentReplay',false);
+end;
+$$;
+
+revoke all on function executive_visuals.reserve_pesapal_subscription_renewal(uuid,uuid,text,text)
+  from public,anon,authenticated;
+revoke all on function executive_visuals.finalize_subscription_renewal_for_provider(uuid,text,jsonb,timestamptz)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.reserve_pesapal_subscription_renewal(uuid,uuid,text,text)
+  to service_role;
+grant execute on function executive_visuals.finalize_subscription_renewal_for_provider(uuid,text,jsonb,timestamptz)
+  to service_role;
