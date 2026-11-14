@@ -1,42 +1,49 @@
 # Public release gates
 
 **Current decision: NOT APPROVED for public users.**  
-**Scope:** staging deployment review for the unified production application.  
-**Last reviewed:** 14 November 2026.
+**Last reviewed:** 15 November 2026.  
+**Current main:** `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789`.
 
-# Public release gates
+## Verified deployment
 
-**Current decision: NOT APPROVED for public users.**  
-**Scope:** staging deployment review for the unified production application.  
-**Last reviewed:** 15 November 2026.
+- Render production service `EXECUTIVE-VISUALS` is `live` on the exact current main commit above.
+- Production URL: https://executive-visuals.onrender.com
+- Render plan: Free, Frankfurt.
+- Build and deploy events both report success.
+- The runtime started `node server/index.mjs`; startup logs show Node's experimental SQLite warning.
+- The latest build emitted a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. Vite/Rolldown warned that the JavaScript chunk exceeds 500 kB; treat this as a frontend performance/refactoring item, not a failed build.
 
-## Mainline reconciliation — 15 November 2026 (supersedes all earlier checkpoints below)
+## Mainline integrations now deployed
 
-- **Current GitHub main:** `2d0c8ec9497b20db3efad908b7bf7eacfa2ebcbf`.
-- **Production deployment:** Render's `EXECUTIVE-VISUALS` service reports this exact commit as `live` at `https://executive-visuals.onrender.com`. The service is on Render Free in Frankfurt; this confirms source deployment, not hosted customer acceptance or durable media readiness.
-- **Merged PR #591:** verification pipeline improvements and separated product build/verification batches.
-- **Merged PR #592:** Paddle primary and Pesapal secondary provider adapters, unified subscription orchestration, authenticated checkout, verified webhook/IPN settlement, Paddle recurring renewals and customer portal cancellation/payment-method management. Paddle adjustment events are preserved for financial review; they are not automatically executed as refunds. Pesapal currently supports one-time checkout and authenticated manual renewal only; automatic Pesapal recurring schedules are not implemented.
-- **Merged PR #593:** private Gemini Files upload, durable upload-attempt tracking, recovery leases and retention workers. Gemini temporary files do not replace the application's private customer-media store.
-- **Billing activation boundary:** provider integration code is merged, but checkout remains disabled by default. Isolated PostgreSQL migration validation, actual Paddle/Pesapal sandbox credentials and merchant end-to-end acceptance are still required. Never enable live checkout without explicit merchant approval.
-- **Open PR #594:** Google Omni worker integration. Exact-head release integration and build jobs have passed; cloud-video PostgreSQL and asset-publication PostgreSQL tests have passed; multiple product-verification batches are still running/queued, while some unrelated billing and Drive checks are still running. Hosted D1 acceptance jobs were skipped, not passed. Do not merge until all required exact-head checks complete successfully.
-- **Google model compatibility:** PR #594 currently pins `gemini-omni-1.1-flash`, uses 1.1 token rates and limits output to 10 seconds. Google announced Omni 1.2 Flash GA on 5 November 2026 with up to 15-second clips and a published 720p price of $0.07/second. The PR must explicitly scope 1.1 or add a separately priced and tested 1.2 path. Do not change only the model string or infer hosted readiness from CI.
-- **Hosted persistence remains the critical release blocker:** no dedicated isolated Executive Visuals Supabase project, production private object bucket, verified hosted RLS/storage policy, separately accepted durable worker, tested backups or role-based hosted acceptance is established. Do not reuse NEMA/shared-platform Supabase projects.
-- **Upload behavior remains fail-closed:** do not weaken production upload guards while durable private storage is unavailable. R2 is optional source code only; no R2 bucket or credentials have been provisioned.
-- **Stale integration branches:** PR #206 remains a large divergent branch and must not be merged wholesale. PR #303 is stacked on that branch; review only for capabilities not already covered by #592. PRs #294 and #297 are superseded by the quality-assessment and FlashVSR mainline work.
-- **No production credentials, migrations, paid infrastructure, provider execution or service configuration were changed by this reconciliation.**
+- **PR #591:** bounded product-verification batches and CI improvements.
+- **PR #592:** Paddle primary and Pesapal secondary subscription integration. Paddle recurring lifecycle and customer self-service cancellation/payment-method portal are implemented. Pesapal supports one-time checkout and authenticated manual renewal; automatic recurring schedules are not implemented. Provider checkout remains gated pending isolated database migrations, merchant sandbox credentials and end-to-end acceptance.
+- **PR #593:** private Gemini Files upload, durable upload-attempt tracking, recovery leases and retention workers. Temporary Gemini Files are not the application's permanent media store.
+- **PR #594:** Google Omni worker composition, approval and budget checks, private input planning, interaction ownership, provider routing, UI readiness and cost reconciliation. Its exact-head CI passed before merge. All remote execution gates remain opt-in and false by default in the checked-in example configuration.
+- **PR #595:** closed as superseded by #594; do not merge the older overlapping worker bootstrap.
+- **PR #596:** release-readiness reconciliation documentation.
 
-## Current priority order
+## Hosted runtime blockers
 
-1. Complete PR #594's exact-head quality/product/PostgreSQL checks and reconcile the Google model/pricing target before merge.
-2. Validate the Paddle/Pesapal migration and both sandbox flows against a dedicated isolated staging database and merchant accounts; keep production billing disabled.
-3. Provision a dedicated Executive Visuals identity/database and private media storage; review RLS, grants, bucket policies and signed URL expiry.
-4. Deploy and verify the API and durable worker against that isolated backend; test lease recovery, cancellation, media ingestion and delivery.
-5. Verify owner/editor/reviewer/viewer access, backup/restore, monitoring, incident response and rollback on the hosted environment.
-6. Only then consider public release and any paid provider/hosting activation.
+1. **Database and identity:** production health implementation reports SQLite/local-disk storage. No dedicated isolated Executive Visuals Supabase project has been provisioned. The two connected Supabase projects are used by NEMA/shared platform workloads and must not be repurposed.
+2. **Private media:** the private `executive-visuals-media` bucket and reviewed storage/RLS policies are not confirmed in an isolated application project. Keep hosted customer uploads fail-closed.
+3. **Worker:** the Render workspace currently has the production web service and an older staging web service, but no separately provisioned cloud background worker. The worker entrypoint exists as `npm run start:cloud-worker`; it must not be enabled inside the web process as a substitute for an independently deployed worker.
+4. **Google Drive:** implementation exists but remains opt-in until Supabase Auth, reviewed migrations, private bucket, OAuth client, redirect URI and separate encryption keys are configured and tested.
+5. **Subscriptions:** provider adapters are in main, but merchant sandbox acceptance and production webhook verification remain outstanding. Do not enable live checkout or claim recurring Pesapal support.
+6. **Provider generation:** Gemini/Runway/FAL remote execution requires explicit provider credentials, paid-tier confirmation, approved cost reservation, private storage and the independent worker. No generation flag should be enabled merely because the UI exposes a model option.
+7. **Durability and operations:** backup/restore, hosted role isolation, signed URL expiry, queue recovery, monitoring and incident/rollback drills remain unaccepted.
 
-## Evidence and release rule
+## Current next steps
 
-A successful source build, CI suite or GitHub merge is necessary but not sufficient. Public release requires a dedicated isolated backend, ordinary user authentication, durable private media storage, verified backups, hosted end-to-end tests, operational monitoring and explicit approval of recurring infrastructure/provider costs.
+1. Select an organization and obtain a cost estimate before creating a dedicated Free-tier application database; do not use the NEMA/shared projects.
+2. Configure the isolated application schema, Supabase Auth, private bucket and RLS policies; validate migrations in staging only.
+3. Deploy the separate worker only after its service cost/plan is understood and explicitly approved. Keep all provider execution gates disabled until staging acceptance.
+4. Verify Google Drive OAuth/import/export and Paddle/Pesapal sandbox lifecycle against the isolated backend.
+5. Refactor the 415 kB source entry module into feature modules and reduce the 784 kB emitted JavaScript entry bundle; preserve application behavior and add build-size regression checks.
+6. Complete hosted end-to-end tests, backup/restore and security review before public release.
+
+## Release rule
+
+A green build, successful deployment or merged PR does not prove hosted customer acceptance. Public release requires dedicated isolated identity/database, durable private media storage, independent workers, tested backups, hosted end-to-end workflows, operational monitoring and explicit approval of recurring infrastructure/provider costs.
 
 ---
 
