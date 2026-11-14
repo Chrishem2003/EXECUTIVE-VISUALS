@@ -27,13 +27,14 @@ export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
  if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
+ let googleOmni=false;
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
   const runwayRouterConfigured=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
    /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
   const googleOmniRequested=["GOOGLE_OMNI_VIDEO_ENABLED","GOOGLE_OMNI_VIDEO_ALLOW_REMOTE","GEMINI_OMNI_ENABLED","GEMINI_OMNI_ALLOW_REMOTE","GEMINI_OMNI_PAID_TIER_CONFIRMED","GEMINI_OMNI_WORKER_ENABLED"].some(key=>truth(env[key]));
-  const googleOmni=env.GOOGLE_OMNI_VIDEO_ENABLED==="true"&&env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"&&
+  googleOmni=env.GOOGLE_OMNI_VIDEO_ENABLED==="true"&&env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"&&
    env.GEMINI_OMNI_ENABLED==="true"&&env.GEMINI_OMNI_ALLOW_REMOTE==="true"&&
    env.GEMINI_OMNI_PAID_TIER_CONFIRMED==="true"&&env.GEMINI_OMNI_WORKER_ENABLED==="true"&&
    env.GOOGLE_OMNI_CONNECTION_STATUS==="connected"&&Boolean(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY);
