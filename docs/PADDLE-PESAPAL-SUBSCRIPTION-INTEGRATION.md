@@ -38,7 +38,7 @@ Paddle:
 - Uses server-mapped pri_ price IDs; ignores client-supplied prices.
 - Creates hosted checkout transactions with owner_id and plan_code custom data.
 - Verifies the Paddle-Signature header against the exact raw request body, timestamp and configured endpoint secret, with a five-second replay tolerance and support for multiple signatures during endpoint-secret rotation.
-- Normalizes known subscription and transaction events. Unknown event types are acknowledged as ignored by the adapter and must not change access.
+- Normalizes known subscription, transaction and adjustment events, including refund approval/rejection and chargeback/reversal evidence. Adjustment events are durably recorded and quarantined for financial reconciliation; they never silently change entitlements. Unknown event types are acknowledged as ignored by the adapter and must not change access.
 
 Pesapal:
 - Uses the documented sandbox/live API hosts only.
@@ -49,7 +49,7 @@ Pesapal:
 
 `supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only initial reservation/finalization, Paddle recurring renewal and lifecycle RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
 
-`server/provider-subscription-billing.mjs` now supplies the concrete Supabase repository and wires authenticated checkout, Paddle webhook and Pesapal IPN processing. `server/unified-subscription-billing.mjs` provides provider-neutral checkout orchestration, idempotent replay, reserved price/payment correlation and uncertain-result protection. Paddle initial activation, automatic renewals, lifecycle events and short-lived customer portal sessions are connected. Pesapal supports one-time hosted checkout and authenticated manual renewal; automatic recurring Pesapal schedules remain disabled.
+`server/provider-subscription-billing.mjs` now supplies the concrete Supabase repository and wires authenticated checkout, Paddle webhook and Pesapal IPN processing. `server/unified-subscription-billing.mjs` provides provider-neutral checkout orchestration, idempotent replay, reserved price/payment correlation and uncertain-result protection. Paddle initial activation, automatic renewals, lifecycle events and short-lived customer portal sessions are connected. Paddle adjustment.created/adjustment.updated events are recorded with adjustment identifiers, actions, statuses, amounts and related transaction IDs, then quarantined for financial review without changing subscription entitlements. This is safe intake and evidence preservation, not yet automated refund execution or chargeback accounting. Pesapal supports one-time hosted checkout and authenticated manual renewal; automatic recurring Pesapal schedules remain disabled.
 
 ## Required next integration before staging activation
 
@@ -57,7 +57,7 @@ Pesapal:
 2. Configure Paddle sandbox product prices and Pesapal sandbox merchant/IPN details; ensure Paddle price IDs and provider price rows match exactly.
 3. Add Pesapal manual-renewal checkout and lifecycle reconciliation; keep automatic Pesapal recurring disabled until recurring IPNs are verified end to end.
 4. Test using both sandbox merchant accounts: initial checkout, successful/failed payments, recurring Paddle renewals, Pesapal manual renewals, customer portal cancellation/payment-method updates, webhook retries, duplicate/out-of-order events and cross-account isolation.
-5. Add provider-specific reconciliation for refunds, disputes and payment reversals before production billing.
+5. Complete provider-specific financial reconciliation for refunds, disputes, credits and reversals: link each adjustment to its original payment and owner, update payment_refunds/chargeback_cases only from verified provider state, preserve partial-refund totals, and define entitlement policy separately. Current adjustment intake is deliberately quarantined and does not claim refund completion.
 6. Enable provider checkout in staging only after dedicated staging Supabase schema and secrets exist. Keep production billing disabled until explicit approval.
 
 ## Verification
