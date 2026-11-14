@@ -58,6 +58,38 @@ test("authenticated provider checkout reserves ledger price and persists hosted 
   assert.ok(calls.some(x=>x[0]==="PATCH"&&x[1].endsWith("/payment_transactions")));
 });
 
+test("authenticated Pesapal manual renewal reserves the active subscription and persists its checkout",async()=>{
+  const calls=[];
+  const pesapalPayment={...payment,provider:"pesapal",provider_transaction_id:null,tx_ref:"EVR-order-1",currency:"UGX",
+    amount_minor:50000,metadata:{...payment.metadata,payment_purpose:"subscription_renewal"}};
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({})},
+    pesapal:{createCheckout:async input=>{calls.push(["checkout",input]);return {provider:"pesapal",trackingId:"track-renewal",checkoutUrl:"https://pay.pesapal.com/order/renewal"};},
+      handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname]);
+    if(target.pathname.endsWith("/rpc/reserve_pesapal_subscription_renewal"))return json({
+      paymentId,subscriptionId,txRef:"EVR-order-1",amountMinor:50000,amountMajor:50000,currency:"UGX",status:"pending",idempotentReplay:false
+    });
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([pesapalPayment]);
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="PATCH")return empty();
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+  const result=await billing.handle({method:"POST",path:"/api/billing/subscription/provider-renewal-checkout",
+    ownerId:owner,idempotencyKey:"pesapal-renewal-0001",
+    body:{subscriptionId,firstName:"Test",lastName:"Buyer",email:"buyer@example.com",phone:"256771234567"}});
+  assert.equal(result.status,202);
+  assert.equal(result.body.checkout.provider,"pesapal");
+  assert.equal(result.body.checkout.checkoutUrl,"https://pay.pesapal.com/order/renewal");
+  const order=calls.find(x=>x[0]==="checkout")[1];
+  assert.equal(order.amount,50000);
+  assert.equal(order.currency,"UGX");
+  assert.equal(order.accountNumber,undefined);
+});
+
 test("verified Paddle transaction webhook settles only the matching reserved ledger payment",async()=>{
   const calls=[];
   const providers={
