@@ -3,7 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Run the Drive ledger/export recovery contract on its provider stack as well
+    # as the final main-targeting integration PR.
+    branches: [main, "feat/p0-google-**", "fix/gcs-**", "integration/**"]
 concurrency:
   group: google-drive-export-recovery-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
