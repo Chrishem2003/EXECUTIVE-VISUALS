@@ -22,12 +22,20 @@ export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
  if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
+ const googleOmniRequested=truth(env.GOOGLE_OMNI_VIDEO_ENABLED)||truth(env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE)||
+  truth(env.GEMINI_OMNI_ENABLED)||truth(env.GEMINI_OMNI_ALLOW_REMOTE);
+ const googleOmni=googleOmniRequested&&
+  env.GOOGLE_OMNI_VIDEO_ENABLED==="true"&&env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"&&
+  env.GEMINI_OMNI_ENABLED==="true"&&env.GEMINI_OMNI_ALLOW_REMOTE==="true"&&
+  env.GOOGLE_OMNI_CONNECTION_STATUS==="connected"&&env.GEMINI_OMNI_PAID_TIER_CONFIRMED==="true"&&
+  Boolean(String(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY||"").trim());
+ if(googleOmniRequested&&!googleOmni)throw new Error("Google Omni worker requires both provider gates, both Gemini transport gates, a verified connection status, explicit paid-tier confirmation and a server-side API key.");
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
   const runwayRouterConfigured=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
    /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-  if(!falConfigured&&!runwayRouterConfigured)throw new Error("Cloud video worker requires either a fully configured FAL adapter or an explicitly enabled Runway Model Router with a saved config.");
+  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router, or a fully gated Google Omni integration.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
   if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Direct Runway model execution remains disabled until its task-level actual-cost resolver is integrated.");
  }
@@ -36,7 +44,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
+  media,timeline,video,googleOmni,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
   cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
   cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
   cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
@@ -119,7 +127,7 @@ export function createCloudWorkerSupervisor({workers,maintenanceTasks=[],mainten
  });
 }
 
-export async function startCloudWorkerProcess(env=process.env){
+export async function startCloudWorkerProcess(env=process.env,{providerDependencies={}}={}){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")) )throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
@@ -131,7 +139,8 @@ export async function startCloudWorkerProcess(env=process.env){
   workerId:"video-"+randomUUID(),...cloudCredentials,env,
   allowedOutputHosts:String(env.CLOUD_VIDEO_OUTPUT_HOSTS).split(",").map(value=>value.trim()).filter(Boolean),
   timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
-  maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
+  maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes,
+  providerDependencies
  }));
  if(config.publicationCleanup){
   const cleanupWorker=createCloudPublicationCleanupWorker({
