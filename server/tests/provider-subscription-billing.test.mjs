@@ -256,3 +256,29 @@ test("Pesapal IPN verifies the pending UGX order before invoking the atomic subs
   assert.equal(calls.find(x=>x[0]==="verify")[2].expectedAmount,50000);
   assert.ok(calls.some(x=>typeof x[1]==="string"&&x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
 });
+
+test("subscription database response bodies are streamed with a strict 1 MiB cap",async()=>{
+  let canceled=false,providerCalled=false;
+  const body=new ReadableStream({
+    pull(controller){controller.enqueue(new Uint8Array(1024*1024+1));},
+    cancel(){canceled=true;}
+  });
+  const providers={
+    paddle:{createCheckout:async()=>{providerCalled=true;return {};},verifyWebhook:()=>({})},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+  };
+  const billing=createProviderSubscriptionBilling({
+    supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,
+    pesapalNotificationId:env.PESAPAL_IPN_ID,providers,
+    fetchImpl:async()=>new Response(body,{status:200})
+  });
+  const result=await billing.handle({
+    method:"POST",path:"/api/billing/subscription/provider-checkout",ownerId:owner,
+    idempotencyKey:"bounded-response-key",body:{provider:"paddle",planCode:"creator",email:"buyer@example.com"}
+  });
+  assert.equal(result.status,502);
+  assert.equal(result.body.error.code,"SUBSCRIPTION_DATABASE_RESPONSE_TOO_LARGE");
+  assert.equal(canceled,true);
+  assert.equal(providerCalled,false);
+});
