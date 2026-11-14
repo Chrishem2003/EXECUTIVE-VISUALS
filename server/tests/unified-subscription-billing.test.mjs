@@ -7,6 +7,7 @@ function fixture(overrides={}){
   const calls=[];
   const repository={
     reserveCheckout:async input=>{calls.push(["reserve",input]);return {paymentId:"payment-1",subscriptionId:"subscription-1",reference:"EVS-order-1",providerPriceId:"pri_01creator123",billingInterval:"monthly",amountMajor:25000,currency:"UGX",...overrides.reservation};},
+    reserveRenewalCheckout:async input=>{calls.push(["reserve-renewal",input]);return {paymentId:"renewal-payment-1",subscriptionId:"subscription-1",reference:"EVR-order-1",amountMajor:25000,currency:"UGX",...overrides.renewalReservation};},
     getCheckout:async input=>{calls.push(["get",input]);return {checkoutUrl:"https://checkout.example/replay",paymentId:input.paymentId};},
     attachProviderCheckout:async input=>{calls.push(["attach",input]);return true;},
     markCheckoutUncertain:async input=>{calls.push(["uncertain",input]);return true;},
@@ -67,6 +68,22 @@ test("provider timeout leaves reservation marked uncertain and prevents a blind 
   const {service,calls}=fixture({providers:{paddle:{createCheckout:async()=>{throw Object.assign(new Error("timeout"),{code:"PAYMENT_PROVIDER_TIMEOUT"});}}}});
   await assert.rejects(()=>service.createCheckout({provider:"paddle",ownerId:owner,planCode:"creator",email:"buyer@example.com",idempotencyKey:"checkout-key-0004"}),{code:"SUBSCRIPTION_CHECKOUT_UNCERTAIN",status:202});
   assert.equal(calls.some(x=>x[0]==="uncertain"),true);
+});
+
+test("Pesapal manual renewal reserves an existing subscription before hosted checkout",async()=>{
+  const {service,calls}=fixture();
+  const result=await service.createRenewalCheckout({
+    provider:"pesapal",ownerId:owner,subscriptionId:"subscription-1",email:"buyer@example.com",
+    idempotencyKey:"renewal-key-0001",pesapalOrder:{callbackUrl:"https://app.example/billing/return",notificationId:"ipn-1"}
+  });
+  assert.equal(result.provider,"pesapal");
+  assert.equal(result.paymentId,"renewal-payment-1");
+  assert.equal(calls[0][0],"reserve-renewal");
+  const checkout=calls.find(x=>x[0]==="pesapal-checkout")[1];
+  assert.equal(checkout.reference,"EVR-order-1");
+  assert.equal(checkout.amount,25000);
+  assert.equal(checkout.currency,"UGX");
+  assert.equal(checkout.accountNumber,undefined);
 });
 
 test("Paddle webhook applies only a verified event to the unified repository",async()=>{
