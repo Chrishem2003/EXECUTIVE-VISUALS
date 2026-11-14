@@ -126,10 +126,14 @@ test("Paddle adjustment webhook normalizes refund and chargeback evidence withou
   const secret="paddle-secret",timestamp=Math.floor(now()/1000);
   const event={event_id:"evt_01adjustmentabcdefghijkl",event_type:"adjustment.created",occurred_at:"2026-11-14T10:00:00Z",data:{
     id:"adj_01adjustmentabcdefghijkl",action:"chargeback",status:"pending_approval",type:"partial",
-    reason:"customer dispute",updated_at:"2026-11-14T10:01:00Z",credit_applied_to_balance:false,
-    transaction_id:"txn_01transactionabcdefghijkl",subscription_id:"sub_01subscriptionabcdefghijk",
-    currency_code:"USD",totals:{total:"5000",subtotal:"4500",tax:"500",fee:"100",earnings:"4400"},
-    items:[{id:"adjitm_01adjustmentabcdefghijkl",item_id:"txnitm_01transactionabcdefghijkl",type:"partial",amount:"5000",totals:{subtotal:"4500",tax:"500",total:"5000"}}]
+    reason:"customer dispute",created_at:"2026-11-14T09:59:00Z",updated_at:"2026-11-14T10:01:00Z",credit_applied_to_balance:false,
+    customer_id:"ctm_01customerabcdefghijklmnop",transaction_id:"txn_01transactionabcdefghijkl",subscription_id:"sub_01subscriptionabcdefghijk",
+    currency_code:"USD",totals:{total:"5000",subtotal:"4500",tax:"500",fee:"100",retained_fee:"20",earnings:"4400",currency_code:"USD"},
+    payout_totals:{total:"5000",subtotal:"4500",tax:"500",fee:"100",retained_fee:"20",earnings:"4400",currency_code:"USD",
+      chargeback_fee:{amount:"150",original:{amount:"150",currency_code:"USD"}}},
+    tax_rates_used:[{tax_rate:"0.1111",totals:{subtotal:"4500",tax:"500",total:"5000"}}],
+    items:[{id:"adjitm_01adjustmentabcdefghijkl",item_id:"txnitm_01transactionabcdefghijkl",type:"partial",amount:"5000",
+      totals:{subtotal:"4500",tax:"500",total:"5000"},proration:{rate:"0.5",billing_period:{starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-12-01T00:00:00Z"}}}]
   }};
   const raw=Buffer.from(JSON.stringify(event));
   const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
@@ -147,6 +151,14 @@ test("Paddle adjustment webhook normalizes refund and chargeback evidence withou
   assert.equal(normalized.adjustmentTax,"500");
   assert.equal(normalized.adjustmentFee,"100");
   assert.equal(normalized.adjustmentEarnings,"4400");
+  assert.equal(normalized.adjustmentRetainedFee,"20");
+  assert.equal(normalized.adjustmentTotalsCurrency,"USD");
+  assert.equal(normalized.adjustmentPayoutTotals.earnings,"4400");
+  assert.equal(normalized.adjustmentChargebackFee.originalCurrency,"USD");
+  assert.equal(normalized.adjustmentTaxRates[0].rate,"0.1111");
+  assert.equal(normalized.adjustmentCreatedAt,"2026-11-14T09:59:00Z");
+  assert.equal(normalized.adjustmentCustomerId,"ctm_01customerabcdefghijklmnop");
+  assert.equal(normalized.adjustmentItems[0].proration.rate,"0.5");
   assert.equal(normalized.adjustmentType,"partial");
   assert.equal(normalized.adjustmentReason,"customer dispute");
   assert.equal(normalized.adjustmentCreditAppliedToBalance,false);
