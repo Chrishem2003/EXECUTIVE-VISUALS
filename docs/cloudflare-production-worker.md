@@ -18,7 +18,7 @@ The production Worker serves the Vite static application from Cloudflare and pro
 2. Validate the production config against the installed Wrangler version.
 3. Deploy only `wrangler.production.jsonc` after the production change is explicitly approved.
 4. Verify `/edge-health`, `/`, and `/api/health` from the Cloudflare workers.dev URL.
-5. Confirm the API reports its actual persistence, media, queue, provider and billing capabilities. HTTP 200 alone is not production-readiness evidence.
+5. Confirm `/edge-health` verifies the live API dependency and reports its safe capability flags. Then confirm the API's persistence, media, queue, provider and billing capabilities. An available API is not the same as a production-ready media pipeline.
 
 The API origin is a public service URL, not a secret. Provider credentials, OAuth secrets, signing keys and worker tokens must remain Cloudflare secrets or protected backend configuration and must never be committed here.
 

@@ -78,11 +78,44 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/edge-health") {
-      return json({
-        status: "ok",
-        edge: "cloudflare-workers",
-        apiProxyConfigured: Boolean(env.API_ORIGIN)
-      });
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return json({ error: { code: "METHOD_NOT_ALLOWED", message: "Use GET or HEAD for edge health." } }, 405, { allow: "GET, HEAD" });
+      }
+
+      try {
+        const origin = safeApiOrigin(env.API_ORIGIN);
+        const upstream = await fetch(new Request(new URL("/api/health", origin), {
+          method: "GET",
+          headers: { accept: "application/json", "cache-control": "no-store" },
+          signal: AbortSignal.timeout(3000)
+        }));
+        let health = null;
+        if (upstream.ok) {
+          try { health = await upstream.json(); } catch {}
+        }
+        const reachable = upstream.ok && health?.status === "ok";
+        return json({
+          status: reachable ? "ok" : "degraded",
+          edge: "cloudflare-workers",
+          apiProxyConfigured: true,
+          api: {
+            reachable,
+            httpStatus: upstream.status,
+            authMode: typeof health?.authMode === "string" ? health.authMode : null,
+            database: typeof health?.database === "string" ? health.database : null,
+            storage: typeof health?.storage === "string" ? health.storage : null,
+            cloudMediaReady: health?.cloudMedia?.ready === true,
+            localAssetUploadsEnabled: health?.localAssetUploads?.enabled === true
+          }
+        }, reachable ? 200 : 503);
+      } catch {
+        return json({
+          status: "degraded",
+          edge: "cloudflare-workers",
+          apiProxyConfigured: Boolean(env.API_ORIGIN),
+          api: { reachable: false, httpStatus: null, errorCode: "API_UPSTREAM_UNAVAILABLE" }
+        }, 503);
+      }
     }
 
     if (url.pathname === "/robots.txt") {
