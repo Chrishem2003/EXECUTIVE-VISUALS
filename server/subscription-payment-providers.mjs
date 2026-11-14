@@ -21,7 +21,7 @@ async function requestJson(fetchImpl,url,{method="GET",headers={},body,timeoutMs
   }finally{clearTimeout(timer);}
 }
 
-function verifyPaddleSignature(rawBody,signature,secret,{now=Date.now(),toleranceSeconds=300}={}){
+function verifyPaddleSignature(rawBody,signature,secret,{now=Date.now(),toleranceSeconds=5}={}){
   if(!Buffer.isBuffer(rawBody)||rawBody.length===0||rawBody.length>1024*1024)return false;
   const fields=Object.fromEntries(String(signature||"").split(";").map(part=>part.split("=",2)).filter(pair=>pair.length===2));
   const timestamp=Number(fields.ts),provided=fields.h1;
