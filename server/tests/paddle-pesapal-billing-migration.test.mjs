@@ -24,7 +24,7 @@ test("checkout reservation is server-priced, owner-serialized and idempotent",()
   assert.match(migration,/provider=lower\(p_provider\)/);
   assert.match(migration,/subscription_plan_provider_prices/);
   assert.match(migration,/for share/);
-  assert.match(migration,/status,'pending'/);
+  assert.match(migration,/'status','pending'/);
 });
 
 test("provider finalization verifies reserved amount, currency, reference and owner before entitlement grant",()=>{
