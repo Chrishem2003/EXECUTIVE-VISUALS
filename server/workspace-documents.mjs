@@ -25,7 +25,7 @@ function creativeProjects(value){
    id:text(item.id,80),name:text(item.name,160),brief:text(item.brief,10000),
    audience:text(item.audience,2000),style:text(item.style,200),created:text(item.created,40)
   };
-  for(const key of ["creativeDNA","creativeBriefInput","modelCreativeDirection","storyboard"]){
+  for(const key of ["creativeDNA","creativeBriefInput","modelCreativeDirection","storyboard","modelStoryboard"]){
    if(item[key]!==undefined&&item[key]!==null){
     const artifact=boundedProjectValue(item[key]);
     if(Buffer.byteLength(JSON.stringify(artifact),"utf8")>512*1024)throw Object.assign(new Error("A creative project artifact exceeds the 512 KiB limit."),{code:"WORKSPACE_ARTIFACT_TOO_LARGE"});
