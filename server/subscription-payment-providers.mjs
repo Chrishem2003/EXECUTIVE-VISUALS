@@ -61,7 +61,7 @@ function normalizePaddleEvent(event){
     adjustmentAction:text(data.action),adjustmentStatus:text(data.status),adjustmentType:text(data.type),
     adjustmentReason:text(data.reason),adjustmentCreatedAt:text(data.created_at)||null,
     adjustmentUpdatedAt:text(data.updated_at)||null,
-    adjustmentCreditAppliedToBalance:data.credit_applied_to_balance===true,
+    adjustmentCreditAppliedToBalance:data.credit_applied_to_balance===null||data.credit_applied_to_balance===undefined?null:data.credit_applied_to_balance===true,
     adjustmentAmount:text(data.totals?.total)||null,
     adjustmentSubtotal:text(data.totals?.subtotal)||null,adjustmentTax:text(data.totals?.tax)||null,
     adjustmentFee:text(data.totals?.fee)||null,adjustmentRetainedFee:text(data.totals?.retained_fee)||null,
