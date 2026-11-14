@@ -1,6 +1,6 @@
 # Paddle primary + Pesapal secondary subscription integration
 
-**Status:** provider adapter foundation, sandbox-only by default. Not enabled for customer checkout until the unified subscription ledger and webhook application path are connected and verified.
+**Status:** provider adapters, unified subscription ledger integration, authenticated checkout routes, webhook/IPN settlement, Paddle customer portal and billing UI are implemented. Exact-head CI is passing. Customer checkout remains disabled pending isolated PostgreSQL staging migration validation, provider sandbox credentials and end-to-end acceptance.
 
 ## Provider roles
 
@@ -44,7 +44,7 @@ Pesapal:
 - Uses the documented sandbox/live API hosts only.
 - Authenticates with the merchant consumer key and secret and caches the short-lived access token in process memory.
 - Registers an HTTPS GET IPN endpoint and creates hosted orders.
-- The current checkout intentionally omits `account_number` and `subscription_details`, so it uses a one-time hosted payment and does not offer automatic recurring schedules. Authenticated manual renewal checkout now reserves an existing Pesapal subscription and extends its period only after verified IPN settlement. Pesapal recurring card schedules can be enabled only after recurring IPNs can reserve and atomically settle renewal ledger entries. Pesapal IPNs are only notifications; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
+- Pesapal documents recurring card schedules through API 3.0 by supplying `account_number`; recurring IPNs use `OrderNotificationType=RECURRING` and must be verified by fetching transaction status. The documented recurring methods are Visa and Mastercard. The current Executive Visuals checkout deliberately omits `account_number`, so it does not yet create Pesapal recurring schedules. Authenticated manual renewal checkout reserves an existing Pesapal subscription and extends its period only after verified IPN settlement. Do not advertise automatic MTN/Airtel Money debits. Add Pesapal card recurring only after merchant sandbox access, recurring-IPN normalization, atomic settlement, cancellation/opt-out, retries and duplicate/out-of-order acceptance are tested. Pesapal IPNs are only notifications; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
 - Do not infer a recurring subscription solely from a checkout redirect or an unverified IPN query.
 
 `supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only initial reservation/finalization, Paddle recurring renewal and lifecycle RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
