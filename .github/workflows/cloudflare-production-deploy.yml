@@ -1,0 +1,73 @@
+name: Cloudflare production deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "assets/**"
+      - "index.html"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - "package.json"
+      - "package-lock.json"
+      - "cloudflare/production-worker.mjs"
+      - "wrangler.production.jsonc"
+      - ".github/workflows/cloudflare-production-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: executive-visuals-cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, verify and deploy Cloudflare app
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+          cache: npm
+
+      - name: Install pinned FFmpeg static build
+        shell: bash
+        run: bash scripts/ci-setup-ffmpeg.sh
+
+      - name: Verify media test tools and caption font
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          command -v fc-match
+          font_family="$(fc-match --format='%{family}' 'DejaVu Sans')"
+          [[ "$font_family" == *"DejaVu Sans"* ]] || { echo "DejaVu Sans is unavailable: $font_family" >&2; exit 1; }
+
+      - name: Install locked JavaScript dependencies
+        run: npm ci
+
+      - name: Verify official CAI native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s node_modules/@contentauth/c2pa-node/dist/index.node
+          node --input-type=module -e "import('@contentauth/c2pa-node').then(({ Reader }) => { if (typeof Reader?.fromAsset !== 'function') process.exit(1); })"
+
+      - name: Typecheck and run complete product build
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Deploy production Worker and freshly built static assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.160.0 deploy --config wrangler.production.jsonc
