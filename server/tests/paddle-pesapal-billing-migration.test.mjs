@@ -13,7 +13,7 @@ test("provider migration extends existing ledger without removing Flutterwave co
 
 test("provider webhook migration permits the needs_review quarantine state",()=>{
   assert.match(migration,/drop constraint if exists payment_webhook_events_processing_status_check/);
-  assert.match(migration,/processing_status in ('received','processing','processed','ignored','failed','needs_review')/);
+  assert.ok(migration.includes("check (processing_status in ('received','processing','processed','ignored','failed','needs_review'))"));
 });
 
 test("provider pricing keeps Paddle supported currencies separate from Ugandan Pesapal pricing",()=>{
