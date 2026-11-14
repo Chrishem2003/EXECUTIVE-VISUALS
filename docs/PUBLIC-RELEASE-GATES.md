@@ -4,7 +4,31 @@
 **Scope:** staging deployment review for the unified production application.  
 **Last reviewed:** 14 November 2026.
 
-This checklist separates a successful source build from a safe, usable hosted service. Do not promote the feature branch to the production branch or expose the application to public users until every mandatory gate below has evidence.
+## Mainline reconciliation — 14 November 2026 (supersedes older checkpoints below)
+
+- **Current GitHub main:** `4221ec5b464820bdd3df1d1ab152cf26bc1fd098` (PR #588, FlashVSR temporal enhancement).
+- **Deployment drift:** the previous verified Render production deployment recorded in this document is `6b21dc5`. This audit has not established that Render is running `4221ec5`; do not describe the latest GitHub main as deployed until the live service reports that exact commit.
+- **Merged mainline slices #567–#588:** refreshed readiness records; Runway router syntax and cloud-checkpoint migration repairs; production ephemeral-upload guard and fail-closed upload readiness; reproducible Cloudflare Worker source/deployment tracking and live-API health checks; timeline fades/crossfades; optional private R2 adapter; audited publication cleanup; LPIPS and visual-quality assessment; model-backed Creative Director and persisted creative artifacts; storyboard compiler, cloud-timeline handoff and governed generation; gated FlashVSR temporal enhancement.
+- **Not implied by those merges:** R2 is not provisioned or connected to customer media; FlashVSR is not enabled on Render Free and has no claimed real CUDA inference; LPIPS is an optional offline assessment, not an automatic approval; storyboard/generation paths still require the relevant model/provider approvals and runtime gates.
+- **Known open integration sources:** PR #206 remains a 574-commit/180-file divergent integration candidate and must not be merged wholesale. PR #303 contains recurring-subscription lifecycle/cancellation work but is stacked on that old branch; extract it into a clean, dependency-ordered mainline PR. PRs #294 and #297 are superseded source branches for the quality-assessment and FlashVSR work already extracted in #587 and #588; do not merge them again.
+- **Recurring subscriptions:** current main still lacks the Dodo recurring-subscription module and cloud subscription lifecycle-sync implementation. The existing local billing code is not proof that recurring customer subscriptions are production-ready.
+- **Hosted persistence remains the critical release blocker:** the application needs a dedicated isolated Supabase project or a separately provisioned private R2 backend, correct auth/RLS/storage policies, durable worker execution, backups and hosted end-to-end acceptance. Do not reuse the connected NEMA/shared-platform Supabase projects.
+- **Upload behavior is intentionally fail-closed:** production uploads must remain blocked while only ephemeral/local storage is available. Do not weaken the guard to make the UI appear functional.
+- **No production settings, credentials, migrations, paid infrastructure, provider execution or deployment were changed by this reconciliation.**
+
+## Next integration order
+
+1. Extract recurring subscriptions from PR #303 onto a fresh branch from current main; include webhook idempotency, lifecycle transitions, customer cancellation, period-boundary and disposable-Postgres tests.
+2. Extract only the still-missing Google Drive and provider-worker capabilities from PR #206, each as bounded vertical slices with exact-head CI.
+3. Complete isolated hosted persistence and identity configuration before enabling customer uploads or cloud workers.
+4. Verify the live Render commit, hosted authentication, upload/download, job execution, cancellation, timeline render, recovery and backup/restore.
+5. Keep all paid generation and subscription collection disabled until pricing, merchant acceptance, provider credentials and operational controls are explicitly approved.
+
+## Evidence and release rule
+
+A successful source build or GitHub merge is necessary but not sufficient. Public release requires a dedicated isolated backend, ordinary user authentication, durable private media storage, verified backups, hosted end-to-end tests, operational monitoring and explicit approval of recurring infrastructure/provider costs.
+
+---
 
 ## Current evidence
 
