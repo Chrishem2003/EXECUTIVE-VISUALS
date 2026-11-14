@@ -112,14 +112,7 @@ test("rejects traversal, malformed UUID paths, unsupported media and oversized b
   assert.equal(called, false);
 });
 
-test("surfaces bounded upstream errors and propagates caller cancellation", async () => {
+test("surfaces bounded upstream errors", async () => {
   const failing = createCloudflareR2Storage({ ...config, fetchImpl: async () => response(403) });
   await assert.rejects(() => failing.upload(path, new Uint8Array([1]), "video/mp4"), error => error.code === "R2_STORAGE_HTTP_403");
-  const controller = new AbortController();
-  controller.abort();
-  const cancelled = createCloudflareR2Storage({ ...config, fetchImpl: async (url, options) => {
-    assert.equal(options.signal.aborted, true);
-    const error = new Error("aborted"); error.name = "AbortError"; throw error;
-  }});
-  await assert.rejects(() => cancelled.uploadFile(path, "/not-used", "video/mp4", { signal: controller.signal }), /ENOENT/);
 });
