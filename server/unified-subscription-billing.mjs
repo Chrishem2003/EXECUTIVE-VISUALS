@@ -23,7 +23,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     let checkout=null;
     try{
       if(selected==="paddle"){
-        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,paymentId:reservation.paymentId,reference,priceId:reservation.providerPriceId});
+        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,paymentId:reservation.paymentId,reference,priceId:reservation.providerPriceId,expectedPrice:{amountMinor:reservation.amountMinor,currency:reservation.currency,billingInterval:reservation.billingInterval}});
       }else{
         const order=pesapalOrder||{};
         checkout=await providers.pesapal.createCheckout({
