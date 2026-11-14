@@ -6,7 +6,7 @@ const owner="11111111-1111-4111-8111-111111111111";
 function fixture(overrides={}){
   const calls=[];
   const repository={
-    reserveCheckout:async input=>{calls.push(["reserve",input]);return {paymentId:"payment-1",subscriptionId:"subscription-1",reference:"EVS-order-1",providerPriceId:"pri_01creator123",amountMajor:25000,currency:"UGX",...overrides.reservation};},
+    reserveCheckout:async input=>{calls.push(["reserve",input]);return {paymentId:"payment-1",subscriptionId:"subscription-1",reference:"EVS-order-1",providerPriceId:"pri_01creator123",billingInterval:"monthly",amountMajor:25000,currency:"UGX",...overrides.reservation};},
     getCheckout:async input=>{calls.push(["get",input]);return {checkoutUrl:"https://checkout.example/replay",paymentId:input.paymentId};},
     attachProviderCheckout:async input=>{calls.push(["attach",input]);return true;},
     markCheckoutUncertain:async input=>{calls.push(["uncertain",input]);return true;},
@@ -41,6 +41,7 @@ test("unified checkout reserves server-side before Paddle and persists provider 
   assert.equal(paddleCall.paymentId,"payment-1");
   assert.equal(paddleCall.reference,"EVS-order-1");
   assert.equal(paddleCall.priceId,"pri_01creator123");
+  assert.deepEqual(paddleCall.expectedPrice,{amountMinor:25000,currency:"UGX",billingInterval:"monthly"});
 });
 
 test("unified checkout derives Pesapal amount and reference from reservation, not client input",async()=>{
