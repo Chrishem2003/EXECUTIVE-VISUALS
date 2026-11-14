@@ -66,9 +66,9 @@ create table if not exists executive_visuals.subscription_plan_provider_prices (
   updated_at timestamptz not null default now(),
   unique(plan_id,provider),
   check (
-    (provider='paddle' and provider_price_id is not null and provider_price_id ~ '^pri_[A-Za-z0-9]+    or
+    (provider='paddle' and provider_price_id is not null and provider_price_id ~ '^pri_[A-Za-z0-9]+$')
+    or
     (provider='pesapal' and provider_price_id is null and currency='UGX')
-  )
 );
 create unique index if not exists subscription_plan_provider_price_id_uq
   on executive_visuals.subscription_plan_provider_prices(provider,provider_price_id)
