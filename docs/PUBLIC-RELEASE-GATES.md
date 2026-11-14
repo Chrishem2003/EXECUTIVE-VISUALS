@@ -34,18 +34,19 @@ A successful source build or GitHub merge is necessary but not sufficient. Publi
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Source build | Passed on merged release candidates; main recheck running | PR #565 (TypeScript 7.0.2 + Vite 8.3.8) and PR #566 (stacked-PR CI coverage) passed exact-head build and release gates before merge. Main commit `6b21dc5` has a fresh post-merge quality run. |
-| Latest deployment guard | Render deployment live; hosted acceptance incomplete | Render's production service reports commit `6b21dc5` live. Deployment success is not full hosted user-acceptance evidence. |
-| Production-mode authentication | Code path implemented; hosted acceptance pending | Main includes Supabase password sign-in/recovery and server-managed opaque sessions. Production runtime configuration, a dedicated isolated Supabase project, RLS review and hosted owner/editor/viewer tests still require independent verification. |
-| Isolated identity/database | Blocked | Connected Supabase projects already contain unrelated NEMA and shared platform tables. Do not reuse or migrate either for this application. Provision and review a dedicated project before applying the application schema. |
-| Durable media storage | Cloud contracts implemented; production connection blocked | Private Supabase Storage adapter, owner-aware asset repository, streaming uploads, checksums, signed reads, soft-delete and lease-fenced derivative publication are implemented and CI-tested. Production still needs a dedicated isolated Supabase project, private bucket, active cloud API and hosted end-to-end validation. |
-| Durable application database | Blocked for multi-instance use | The last verified production runtime uses SQLite on one persistent disk. A dedicated isolated Postgres project, schema/RLS review and durable queue migration are still required before horizontal scaling. |
-| Worker recovery | Worker contracts implemented; live worker acceptance pending | Lease-fenced media/timeline workers, cancellation polling, recovery and derivative publication are tested. A separate production worker deployment and exact-host smoke tests remain unverified. |
-| Media generation | Gated | Video AI upscaling is connected to the cloud media worker and has an isolated synthetic-video smoke-test command. The worker-side inference test has not yet been attested on the actual production worker; video flags remain false by default. Image/text/provider gateways remain gated. |
-| Security review | Partial | API tests and headers exist. Complete Supabase RLS/storage policy review, auth abuse controls, upload isolation and dependency/security review are required on the dedicated project. |
-| Recovery / backups | Blocked | No tested backup-and-restore procedure for the application's SQLite database and media files is recorded. |
-| Operational monitoring | Blocked | No application-specific alerting, retention policy, capacity limits or tested incident/rollback procedure. |
-| User acceptance | Not run | No hosted end-to-end tests with separate owner/editor/reviewer/viewer accounts and real media files. |
+| Source build | Merged slices verified; current-main recheck not established here | PRs #565–#588 were merged through focused mainline extractions. Verify the latest main commit's own required checks before another release decision. |
+| Latest deployment | Drift not resolved | Last documented Render production commit is `6b21dc5`; current GitHub main is `4221ec5`. Confirm the live Render service commit before claiming these changes are hosted. |
+| Production authentication | Pending hosted acceptance | Supabase auth/session code exists, but the dedicated application project, production configuration, RLS review and owner/editor/reviewer/viewer hosted tests are not verified. |
+| Isolated identity/database | Blocked | Connected Supabase projects contain unrelated NEMA/shared-platform data. Provision a dedicated Executive Visuals project; do not reuse existing projects. |
+| Durable media storage | Contracts implemented; production connection blocked | Private Supabase Storage and optional R2 adapter code exist. No dedicated production bucket, credentials, policy review or hosted media lifecycle acceptance is established. |
+| Durable application database | Blocked for multi-instance use | The last verified production runtime uses SQLite/local disk. Complete isolated Postgres setup and queue/data migration before horizontal scaling; otherwise preserve single-instance constraints and tested backups. |
+| Worker recovery | Code implemented; live acceptance pending | Lease-fenced worker, cancellation and publication contracts exist. A separately deployed/verified production worker and exact-host recovery tests remain outstanding. |
+| Media generation | Gated | Framewise and FlashVSR paths exist, but worker-side execution and quality attestations are not established on the live host. Provider gateways remain default-off. |
+| Billing and subscriptions | Partial | Existing local billing primitives do not provide a verified hosted recurring-subscription lifecycle. Dodo subscription and lifecycle-sync work remains on old PR #303/#206 branches and requires clean extraction. |
+| Security review | Partial | API tests and fail-closed guards exist. Complete hosted RLS/storage-policy review, upload isolation and dependency/security review remain outstanding. |
+| Recovery / backups | Blocked | No tested backup-and-restore rehearsal for the live application database and customer media is recorded. |
+| Operational monitoring | Blocked | Application-specific alerting, retention, capacity limits, incident response and rollback rehearsal are not verified. |
+| User acceptance | Not run | Hosted end-to-end tests with separate roles and real media have not been recorded. |
 
 ## Mandatory staging sequence
 
@@ -71,13 +72,14 @@ A successful source build or GitHub merge is necessary but not sufficient. Publi
 
 ## Evidence recorded on 14 November 2026
 
-- Main commit: `6b21dc593be74bf2775a88b1bf7929a18a9b5346`.
-- PR #563 merged the framewise video AI upscaling executor and lease-aware worker integration. Customer video jobs remain gated until the actual worker is verified.
-- PR #564 added `npm run self-test:video-ai-upscale-worker`, which generates a synthetic four-frame clip, runs real NCNN/Vulkan inference on the worker and validates the resulting MP4. The command proves execution only; it does not certify visual quality or temporal consistency.
-- PR #395 and PR #565 merged TypeScript 7.0.2 and Vite 8.3.8. Exact-head build, release, PostgreSQL, billing, financial, asset-publication, remediation and Google Drive checks passed.
-- PR #566 expanded quality checks to stacked `feat/*`, `fix/*`, `integration/*`, `docs/*` and `ci/*` pull-request targets, and expanded Google Drive recovery checks to its provider stack. All exact-head checks passed.
-- Render reported the production deployment for commit `6b21dc5` as live.
-- No provider credentials, paid infrastructure, Supabase projects, production feature flags or external provider execution settings were changed by this work.
+- Current GitHub main is `4221ec5b464820bdd3df1d1ab152cf26bc1fd098`, the FlashVSR temporal enhancement merge (PR #588).
+- PRs #567–#588 delivered the focused source and UI slices listed in the mainline reconciliation section above. These merges do not prove the Render deployment has advanced from the last documented live commit `6b21dc5`.
+- PR #578 adds an optional private R2 adapter; no R2 bucket, credentials or paid infrastructure were provisioned as part of this audit.
+- PR #587 adds offline paired-reference/visual-quality assessment; it does not make AI enhancement automatically quality-approved.
+- PR #588 adds the gated FlashVSR v1.1 temporal path. It remains unavailable on Render Free without an isolated compatible CUDA worker, upstream checkout, model weights, real inference self-test and separate quality-evidence attestation.
+- PRs #570–#572 intentionally prevent uploads from being treated as durable when production storage is ephemeral or not verified. Do not remove those guards.
+- PR #206 remains a stale, divergent source branch. PR #303 remains stacked on it. Neither is safe to merge wholesale.
+- No production configuration, provider credentials, migrations, paid infrastructure, provider execution or deployment was changed by this reconciliation.
 
 ## Current video worker activation boundary
 
