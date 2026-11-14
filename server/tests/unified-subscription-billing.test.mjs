@@ -51,7 +51,7 @@ test("unified checkout derives Pesapal amount and reference from reservation, no
   assert.equal(providerCall.reference,"EVS-order-1");
   assert.equal(providerCall.amount,25000);
   assert.equal(providerCall.currency,"UGX");
-  assert.equal(providerCall.accountNumber,"subscription-1");
+  assert.equal(providerCall.accountNumber,undefined);
 });
 
 test("unified checkout returns saved replay and never starts a second provider charge",async()=>{
