@@ -7,6 +7,11 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
 import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-provider-worker-composition.mjs";
+import { createCloudQueue } from "./cloud-queue.mjs";
+import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
+import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
+import { createGoogleOmniWorkerDependencies } from "./google-omni-worker-dependencies.mjs";
 import { createCloudAssetRepository } from "./cloud-assets.mjs";
 import { createCloudStorage } from "./cloud-storage.mjs";
 import { createCloudPublicationCleanupWorker } from "./cloud-publication-cleanup-worker.mjs";
@@ -27,7 +32,13 @@ export function readCloudWorkerConfig(env=process.env){
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
   const runwayRouterConfigured=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
    /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-  if(!falConfigured&&!runwayRouterConfigured)throw new Error("Cloud video worker requires either a fully configured FAL adapter or an explicitly enabled Runway Model Router with a saved config.");
+  const googleOmniRequested=["GOOGLE_OMNI_VIDEO_ENABLED","GOOGLE_OMNI_VIDEO_ALLOW_REMOTE","GEMINI_OMNI_ENABLED","GEMINI_OMNI_ALLOW_REMOTE","GEMINI_OMNI_PAID_TIER_CONFIRMED","GEMINI_OMNI_WORKER_ENABLED"].some(key=>truth(env[key]));
+  const googleOmni=env.GOOGLE_OMNI_VIDEO_ENABLED==="true"&&env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"&&
+   env.GEMINI_OMNI_ENABLED==="true"&&env.GEMINI_OMNI_ALLOW_REMOTE==="true"&&
+   env.GEMINI_OMNI_PAID_TIER_CONFIRMED==="true"&&env.GEMINI_OMNI_WORKER_ENABLED==="true"&&
+   env.GOOGLE_OMNI_CONNECTION_STATUS==="connected"&&Boolean(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY);
+  if(googleOmniRequested&&!googleOmni)throw new Error("Google Omni requires all provider, transport, paid-tier, hosted-worker and verified-connection gates plus a server-side API key.");
+  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, or fully gated Google Omni.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
   if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Direct Runway model execution remains disabled until its task-level actual-cost resolver is integrated.");
  }
@@ -36,7 +47,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
+  media,timeline,video,googleOmni,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
   cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
   cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
   cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
@@ -127,12 +138,33 @@ export async function startCloudWorkerProcess(env=process.env){
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
  if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
- if(config.video)workers.push(createProviderAwareCloudVideoWorkerComposition({
-  workerId:"video-"+randomUUID(),...cloudCredentials,env,
-  allowedOutputHosts:String(env.CLOUD_VIDEO_OUTPUT_HOSTS).split(",").map(value=>value.trim()).filter(Boolean),
-  timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
-  maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
- }));
+ if(config.video){
+  let providerDependencies={};
+  if(config.googleOmni){
+   const googleAssets=createCloudAssetService({...cloudCredentials,maxBytes:config.maxBytes});
+   const googleFiles=createGoogleGeminiFilesComposition({...cloudCredentials,env,fetchImpl:globalThis.fetch,maxBytes:config.maxBytes});
+   const googleQueue=createCloudQueue(cloudCredentials);
+   const googleLedger=createCloudVideoSubmissionLedger(cloudCredentials);
+   const googleInteractions=createGoogleVideoInteractionRepository({...cloudCredentials,timeoutMs:30000});
+   const googlePolicy=createGoogleOmniWorkerDependencies({
+    ...cloudCredentials,env,fetchImpl:globalThis.fetch,queue:googleQueue,ledger:googleLedger,
+    interactions:googleInteractions,assets:googleAssets.assets,filesGateway:googleFiles
+   });
+   providerDependencies={
+    googleOmniAssertApprovedSubmission:googlePolicy.assertApprovedSubmission,
+    googleOmniAuthorizeInteraction:googlePolicy.authorizeInteraction,
+    googleOmniPreparePlan:googlePolicy.preparePlan,
+    googleOmniAssertConnection:googlePolicy.assertConnection,
+    googleOmniInteractions:googleInteractions
+   };
+  }
+  workers.push(createProviderAwareCloudVideoWorkerComposition({
+   workerId:"video-"+randomUUID(),...cloudCredentials,env,providerDependencies,
+   allowedOutputHosts:String(env.CLOUD_VIDEO_OUTPUT_HOSTS).split(",").map(value=>value.trim()).filter(Boolean),
+   timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
+   maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
+  }));
+ }
  if(config.publicationCleanup){
   const cleanupWorker=createCloudPublicationCleanupWorker({
    ...cloudCredentials,
