@@ -318,11 +318,6 @@ grant execute on function executive_visuals.reserve_subscription_purchase_for_pr
   to service_role;
 grant execute on function executive_visuals.finalize_subscription_purchase_for_provider(uuid,text,jsonb,timestamptz)
   to service_role;
- and currency in ('USD','EUR','GBP'))
-    or
-    (provider='pesapal' and provider_price_id is null and currency='UGX')
-  )
-);
 
 
 -- Paddle recurring renewals are reserved from a verified subscription ID and
