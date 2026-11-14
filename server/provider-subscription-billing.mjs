@@ -177,7 +177,7 @@ export function createProviderSubscriptionBilling({
         adjustmentTotalsCurrency:event.adjustmentTotalsCurrency||null,adjustmentCurrency:event.adjustmentCurrency||null,
         adjustmentPayoutTotals:event.adjustmentPayoutTotals||null,
         adjustmentChargebackFee:event.adjustmentChargebackFee||null,
-        adjustmentTaxRates:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
+        adjustmentTaxRates:event.adjustmentTaxRates===null||event.adjustmentTaxRates===undefined?null:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
         adjustmentItems:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]};
       const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
@@ -237,7 +237,7 @@ export function createProviderSubscriptionBilling({
             retainedFee:event.adjustmentRetainedFee||null,earnings:event.adjustmentEarnings||null,
             currency:event.adjustmentCurrency||null,totalsCurrency:event.adjustmentTotalsCurrency||null,
             payoutTotals:event.adjustmentPayoutTotals||null,chargebackFee:event.adjustmentChargebackFee||null,
-            taxRates:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
+            taxRates:event.adjustmentTaxRates===null||event.adjustmentTaxRates===undefined?null:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
             items:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]}};
         }
         if(provider==="paddle"&&event.eventType!=="transaction.completed"){
