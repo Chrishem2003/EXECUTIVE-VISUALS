@@ -692,6 +692,12 @@ test("transformation plans persist through the authenticated API with role, cons
   const replay=await request("/api/transformations",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"transform-api-key-001"},body:JSON.stringify(payload)},owner);
   assert.equal(replay.status,200);
   assert.equal((await replay.json()).idempotentReplay,true);
+  const coercedKey=await request("/api/transformations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...payload,idempotencyKey:{value:"not-a-string"}})},owner);
+  assert.equal(coercedKey.status,400);
+  assert.equal((await coercedKey.json()).error.code,"IDEMPOTENCY_KEY_REQUIRED");
+  const oversizedBodyKey=await request("/api/transformations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...payload,idempotencyKey:"x".repeat(181)})},owner);
+  assert.equal(oversizedBodyKey.status,400);
+  assert.equal((await oversizedBodyKey.json()).error.code,"IDEMPOTENCY_KEY_REQUIRED");
   const auditDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
   try{assert.equal(auditDb.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='transformation.draft_created' AND subject_id=?").get(created.id).count,1,"idempotent draft replay must not emit a duplicate creation audit event");}finally{auditDb.close();}
   const conflict=await request("/api/transformations",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"transform-api-key-001"},body:JSON.stringify({...payload,prompt:"Change the vehicle to a red classic sports car instead."})},owner);
