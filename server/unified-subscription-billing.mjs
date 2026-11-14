@@ -28,7 +28,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
         const order=pesapalOrder||{};
         checkout=await providers.pesapal.createCheckout({
           ...order,reference,amount:reservation.amountMajor,
-          currency:reservation.currency,email:customerEmail,accountNumber:reservation.subscriptionId
+          currency:reservation.currency,email:customerEmail
         });
       }
       await repository.attachProviderCheckout({
