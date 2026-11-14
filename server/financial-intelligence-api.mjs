@@ -1672,9 +1672,10 @@ export function createFinancialIntelligenceApi({
         const key=String(idempotencyKey||"").trim();
         if(!UUID.test(paymentId)||!Number.isSafeInteger(amountMinor)||amountMinor<=0||reason.length<3||key.length<8||key.length>180)
           return error(400,"REFUND_INPUT_INVALID","Provide a payment ID, positive amount in minor units, reason and an idempotency key.");
-        const paymentResult=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,amount_minor,currency,status&id=eq."+encodeURIComponent(paymentId)+"&limit=1");
+        const paymentResult=await dbRequest("payment_transactions?select=id,owner_id,provider,provider_transaction_id,amount_minor,currency,status&id=eq."+encodeURIComponent(paymentId)+"&limit=1");
         const payment=Array.isArray(paymentResult.data)?paymentResult.data[0]:null;
         if(!payment)return error(404,"PAYMENT_NOT_FOUND","Payment transaction not found.");
+        if(payment.provider!=="flutterwave")return error(409,"REFUND_PROVIDER_UNSUPPORTED","Refund initiation is currently supported only for verified Flutterwave charges.");
         if(payment.status!=="successful"||!payment.provider_transaction_id)return error(409,"PAYMENT_NOT_REFUNDABLE","Only a verified successful Flutterwave charge can be refunded.");
         if(!Number.isSafeInteger(payment.amount_minor)||amountMinor>payment.amount_minor)return error(400,"REFUND_AMOUNT_INVALID","Refund amount exceeds the original payment.");
         const reservation=await rpc("reserve_payment_refund",{
