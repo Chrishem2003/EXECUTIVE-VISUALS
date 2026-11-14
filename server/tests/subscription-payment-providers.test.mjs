@@ -45,6 +45,27 @@ test("Paddle webhook verifies raw-body HMAC and normalizes subscription activati
   assert.equal(event.periodEnd,"2026-12-14T00:00:00Z");
 });
 
+test("Paddle transaction normalization uses the reserved subtotal, not tax-inclusive total",()=>{
+  const secret="paddle-secret",timestamp=Math.floor(now()/1000);
+  const event={event_id:"evt_01abcdefghijklmnopqrstuvwxyz",event_type:"transaction.completed",occurred_at:"2026-11-14T10:00:00Z",data:{
+    id:"txn_01abcdefghijklmnopqrstuvwxyz",status:"completed",customer_id:"ctm_01abcdefghijklmnopqrstuvwxyz",
+    subscription_id:"sub_01abcdefghijklmnopqrstuvwxyz",currency_code:"USD",origin:"web",
+    custom_data:{owner_id:owner,plan_code:"creator",payment_id:"payment-123",reference:"EVS-order-123"},
+    items:[{price:{id:"pri_01creator123"}}],
+    details:{totals:{subtotal:"5000",discount:"0",tax:"500",grand_total:"5500"},
+      line_items:[{price_id:"pri_01creator123"}]}
+  }};
+  const raw=Buffer.from(JSON.stringify(event));
+  const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
+  const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
+  const normalized=provider.verifyWebhook(raw,"ts="+timestamp+";h1="+signature);
+  assert.equal(normalized.amountMinor,5000);
+  assert.equal(normalized.totalPaidMinor,5500);
+  assert.equal(normalized.discountMinor,0);
+  assert.equal(normalized.providerPriceId,"pri_01creator123");
+  assert.equal(normalized.origin,"web");
+});
+
 test("Paddle webhook rejects tampered and stale signatures",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000),raw=Buffer.from('{"event_id":"evt","event_type":"subscription.activated","data":{}}');
   const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
