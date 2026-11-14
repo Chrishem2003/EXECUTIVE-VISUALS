@@ -43,6 +43,16 @@ test("FlashVSR readiness requires installed runtime, explicit enablement and sel
   assert.equal(result.license,"Apache-2.0");
 });
 
+test("FlashVSR remains locked until staging quality evidence is approved",async()=>{
+  const adapter=createFlashVsrAdapter({pythonExecutable:"python-test",repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:false,spawnImpl:fakeSpawn(readyReport)});
+  const result=await adapter.probe();
+  assert.equal(result.available,true);
+  assert.equal(result.ready,false);
+  assert.equal(result.qualityEvidencePassed,false);
+  assert.match(result.reason,/FLASHVSR_QUALITY_EVIDENCE_PASSED/);
+  await assert.rejects(adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4}),error=>error.code==="FLASHVSR_NOT_ENABLED");
+});
+
 test("FlashVSR inference refuses to run without explicit enablement and self-test",async()=>{
   const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:false,spawnImpl:fakeSpawn({ok:true,model:"FlashVSR-v1.1-tiny-long",frames:8,scale:4,temporalModel:true})});
   await assert.rejects(adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4}),error=>error.code==="FLASHVSR_NOT_ENABLED");
