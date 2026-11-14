@@ -46,6 +46,8 @@ function createGoogleOmniWorkflowRequest({node,values,config,projectId,requestId
     "Gemini Omni reference audio",1
   );
   const previousInteractionId=firstString(config.previousInteractionId,values.previousInteractionId);
+  if(firstString(config.lastFrameAssetId,config.endFrameAssetId,values.lastFrameAssetId,values.endFrameAssetId,values["last-frame"]))
+    throw fail("Gemini Omni last-frame locking is not yet supported by the workflow contract.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   const operation=firstString(config.operation)||(sourceVideoAssetId||previousInteractionId?"edit":"generate");
   const allAssetIds=[sourceVideoAssetId,startFrameAssetId,...referenceImageAssetIds,...referenceVideoAssetIds,...referenceAudioAssetIds].filter(Boolean);
   if(new Set(allAssetIds).size!==allAssetIds.length)throw fail("A Gemini Omni asset cannot be assigned to more than one source/reference role.","VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT");
