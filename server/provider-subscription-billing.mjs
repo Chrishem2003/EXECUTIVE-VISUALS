@@ -7,6 +7,34 @@ const hash=value=>createHash("sha256").update(String(value)).digest("hex");
 const text=value=>String(value??"").trim();
 const validEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+async function readBoundedDatabaseResponseText(response,maxBytes=1024*1024){
+  const declared=Number(response.headers?.get?.("content-length"));
+  if(Number.isFinite(declared)&&declared>maxBytes){
+    await response.body?.cancel?.().catch(()=>{});
+    throw Object.assign(new Error("Subscription database response exceeded the 1 MiB limit."),{code:"SUBSCRIPTION_DATABASE_RESPONSE_TOO_LARGE",status:502});
+  }
+  if(!response.body?.getReader){
+    const raw=await response.text();
+    if(Buffer.byteLength(raw)>maxBytes)throw Object.assign(new Error("Subscription database response exceeded the 1 MiB limit."),{code:"SUBSCRIPTION_DATABASE_RESPONSE_TOO_LARGE",status:502});
+    return raw;
+  }
+  const reader=response.body.getReader(),chunks=[];
+  let size=0;
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      size+=value.byteLength;
+      if(size>maxBytes){
+        await reader.cancel().catch(()=>{});
+        throw Object.assign(new Error("Subscription database response exceeded the 1 MiB limit."),{code:"SUBSCRIPTION_DATABASE_RESPONSE_TOO_LARGE",status:502});
+      }
+      chunks.push(Buffer.from(value));
+    }
+  }finally{reader.releaseLock();}
+  return Buffer.concat(chunks,size).toString("utf8");
+}
+
 export function getProviderSubscriptionBillingReadiness(env=process.env){
   const paddleBase=env.PADDLE_API_BASE_URL||"https://sandbox-api.paddle.com";
   const pesapalBase=env.PESAPAL_API_BASE_URL||"https://cybqa.pesapal.com/pesapalv3";
@@ -57,7 +85,7 @@ export function createProviderSubscriptionBilling({
         method,headers,...(body===null?{}:{body:JSON.stringify(body)}),
         signal:controller.signal,redirect:"error"
       });
-      const raw=await result.text();
+      const raw=await readBoundedDatabaseResponseText(result);
       let data=null;
       if(raw){try{data=JSON.parse(raw);}catch{throw Object.assign(new Error("Subscription database returned invalid JSON."),{code:"SUBSCRIPTION_DATABASE_INVALID_JSON",status:502});}}
       if(!result.ok){
