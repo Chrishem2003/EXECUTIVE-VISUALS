@@ -229,6 +229,7 @@ jobs:
           - "09b"
           - "09c"
           - "09d"
+          - "10"
           - "server-01"
           - "server-02"
           - "server-03"
