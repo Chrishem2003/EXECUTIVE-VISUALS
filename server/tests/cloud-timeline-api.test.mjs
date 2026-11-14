@@ -103,9 +103,9 @@ test("cloud queued media cancellation atomically records a terminal state and is
  const job={id:"623e4567-e89b-42d3-a456-426614174100",owner_id:editor,project_id:project,job_type:"timeline.render",status:"queued",progress:0,input:{timelineId,timelineRevision:2},cancel_requested_at:null};
  const f=setup({existing:[job]});
  const first=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
- assert.equal(first.status,200);assert.equal(first.body.job.status,"cancelled");assert.equal(first.body.idempotentReplay,false);
- assert.equal(first.body.cancellationRequested,false);
- assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="job.cancelled"));
+ assert.equal(first.status,200);assert.equal(first.body.job.status,"queued");assert.equal(first.body.idempotentReplay,false);
+ assert.equal(first.body.cancellationRequested,true);assert.ok(first.body.job.cancel_requested_at);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="job.cancellation_requested"));
  const replay=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
  assert.equal(replay.status,200);assert.equal(replay.body.idempotentReplay,true);
 });
