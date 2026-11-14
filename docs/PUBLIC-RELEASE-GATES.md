@@ -2,8 +2,8 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Last reviewed:** 15 November 2026.  
-**Current main:** `bc1226a3a0317c41ae4113d97cc1946775d68f5c` (documentation/staging-acceptance update).  
-**Current production deployment:** `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789` (Google Omni integration; documentation-only commits have not redeployed production).
+**Current main:** `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1` (private GCS mirror code integration).  
+**Current production deployment:** `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1` (live on Render; GCS feature flags remain off).
 
 ## Verified deployment
 
@@ -29,13 +29,14 @@
 - Cloudflare D1 on Workers Free includes 5 million rows read/day, 100,000 rows written/day and 5 GB total database storage. Workers Free includes 100,000 requests/day and 10 ms CPU per invocation. These limits suit a small metadata staging workload, not FFmpeg rendering or long-running video generation.
 - Keep large media in private object storage. R2 remains unprovisioned/deferred; no card, billing setting or paid plan was changed.
 
-## Outstanding private Google Cloud Storage mirror — not yet in main
+## Private Google Cloud Storage mirror — merged, not activated
 
-- The current main branch contains the Gemini Files upload/recovery lifecycle and Google Omni worker integration, but it does **not** contain the separate Google Cloud Storage (GCS) private mirror modules or their `google_gcs_asset_sources` / mirror-attempt migrations.
-- The older implementation source is [PR #83](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/83). Its Quality checks and Cloud video PostgreSQL integration workflows passed on its exact head, but the branch is stacked on obsolete Google Files work and replaces large shared files (`server/index.mjs`, `server/cloud-worker-process.mjs`, `package.json`, UI and CI). Do not merge it wholesale.
-- PR #83's unique work includes private GCS upload/read-back verification, SHA-256/CRC32C checks, encrypted resumable-upload sessions, owner/project-scoped source records, IAM preflight and lease-fenced recovery. Related workload-identity hardening PRs #90–#96 must be reconciled before any extraction.
-- A safe implementation must be rebased onto current main as a focused change, with only required GCS modules, tests, additive migrations, server route and separately scheduled recovery worker. The migration assumes the isolated `executive_visuals` PostgreSQL/Supabase schema; the existing Cloudflare D1 staging database is not compatible with it.
-- Keep `GEMINI_GCS_MIRROR_ENABLED`, registration and recovery disabled until an isolated application database, private GCS bucket, Workload Identity Federation configuration, service-agent IAM and a unique encryption key are verified. Never reuse the NEMA/shared Supabase projects or put service-account keys in the app.
+- PR [#600](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/600) is merged into main. The focused extraction includes private GCS upload/read-back verification, SHA-256/CRC32C checks, encrypted resumable-upload attempts, owner/project-scoped source records, WIF identity validation, authenticated/rate-limited API routes and a separately gated recovery maintenance task.
+- The complete GitHub Quality workflow passed: application build, all 24 quality/product jobs, focused GCS unit tests, and disposable PostgreSQL integration for both GCS migrations, CRC32C immutability, source scope and recovery-attempt state transitions.
+- This is a code integration and CI acceptance result, **not a real-cloud staging acceptance**. The GCS migrations were applied only to disposable CI PostgreSQL; they have not been applied to a connected Supabase environment. No real GCS bucket, IAM policy, WIF provider, or customer asset was touched.
+- The runtime dependency `google-auth-library` is not yet present in `package.json` / `package-lock.json`. Do not enable `GEMINI_GCS_MIRROR_ENABLED` or `GEMINI_GCS_MIRROR_RECOVERY_ENABLED` until that dependency is added with a committed lockfile and verified in the deployment build.
+- After dependency resolution, configure an isolated Executive Visuals PostgreSQL/Supabase schema, a private allowlisted GCS bucket, a dedicated Workload Identity Federation or attached Compute identity, the required service-agent IAM grants, and a unique 32-byte `GEMINI_GCS_SESSION_ENCRYPTION_KEY`. Run live upload/read-back, checksum, ownership, revocation and recovery acceptance before enabling either flag.
+- The GCS bootstrap rejects local user ADC and unapproved credential sources. Never use service-account key files or per-user Google Drive OAuth tokens as the GCS workload identity. Do not reuse the NEMA/shared Supabase projects or store secrets in source control.
 
 ## Hosting durability warning
 
