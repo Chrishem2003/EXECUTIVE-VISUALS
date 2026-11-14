@@ -824,6 +824,7 @@ test("customer subscription management delegates ownership-bound cancellation to
   let rpcPayload=null;
   const service=api(async(url,options={})=>{
     const target=String(url);
+    if(target.includes("/customer_subscriptions?select=id,provider"))return json([{provider:"flutterwave"}]);
     if(target.endsWith("/rpc/manage_customer_subscription")){
       rpcPayload=JSON.parse(options.body);
       return json({subscriptionId:"44444444-4444-4444-8444-444444444444",status:"active",cancelAtPeriodEnd:true,effectiveAt:"2026-12-01T00:00:00Z"});
