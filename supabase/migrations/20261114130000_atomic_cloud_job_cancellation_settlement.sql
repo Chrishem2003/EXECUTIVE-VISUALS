@@ -2,6 +2,60 @@
 -- This migration is additive and must be applied only to the isolated Executive Visuals database
 -- after review. It is not applied to shared staging or production by this change.
 
+-- Cancellation-requested queued jobs bypass normal retry delay/attempt limits so
+-- an available worker can finalize them promptly without executing the job body.
+create or replace function executive_visuals.claim_next_job_v2(
+  p_worker_id text,
+  p_lease_seconds integer default 90,
+  p_job_types text[] default null
+)
+returns setof executive_visuals.jobs
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare claimed executive_visuals.jobs;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 then
+    raise exception 'worker_id must contain between 1 and 128 characters';
+  end if;
+  if p_lease_seconds is null or p_lease_seconds not between 15 and 900 then
+    raise exception 'lease_seconds must be between 15 and 900';
+  end if;
+  if p_job_types is not null and (
+    cardinality(p_job_types)=0 or exists(
+      select 1 from unnest(p_job_types) as requested(job_type)
+      where requested.job_type is null or char_length(btrim(requested.job_type))=0
+    )
+  ) then raise exception 'job_types must be null or a non-empty array of non-empty values'; end if;
+
+  with candidate as (
+    select id from executive_visuals.jobs
+    where status='queued'
+      and (p_job_types is null or job_type=any(p_job_types))
+      and (
+        cancel_requested_at is not null
+        or ((available_at is null or available_at<=clock_timestamp()) and attempt_count<max_attempts)
+      )
+    order by case when cancel_requested_at is not null then 0 else 1 end,created_at,id
+    limit 1 for update skip locked
+  )
+  update executive_visuals.jobs j
+  set status='processing',
+      progress=case when j.cancel_requested_at is not null then j.progress else 5 end,
+      attempt_count=case when j.cancel_requested_at is not null then j.attempt_count else j.attempt_count+1 end,
+      started_at=coalesce(j.started_at,clock_timestamp()),updated_at=clock_timestamp(),
+      lease_owner=p_worker_id,lease_token=gen_random_uuid(),
+      lease_expires_at=clock_timestamp()+make_interval(secs=>p_lease_seconds),
+      lease_heartbeat_at=clock_timestamp()
+  from candidate where j.id=candidate.id
+  returning j.* into claimed;
+
+  if claimed.id is not null then return next claimed; end if;
+  return;
+end;
+$;
+
 create or replace function executive_visuals.finish_job_v2(
   p_job_id uuid,
   p_worker_id text,
