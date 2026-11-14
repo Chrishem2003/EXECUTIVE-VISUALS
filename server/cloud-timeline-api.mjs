@@ -460,7 +460,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
      const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.transcode,media.proxy,timeline.render";
-     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
+     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
      return response(200,{jobs:Array.isArray(rows)?rows:[]});
     }
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
