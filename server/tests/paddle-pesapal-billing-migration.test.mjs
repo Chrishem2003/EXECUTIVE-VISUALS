@@ -43,3 +43,12 @@ test("provider price records are server-only and provider RPCs are service-role 
   assert.match(migration,/grant execute on function executive_visuals\.reserve_subscription_purchase_for_provider[\s\S]*?to service_role/);
   assert.match(migration,/grant execute on function executive_visuals\.finalize_subscription_purchase_for_provider[\s\S]*?to service_role/);
 });
+
+test("Paddle recurring renewals are separately reserved, idempotent and lifecycle-controlled",()=>{
+  assert.match(migration,/reserve_paddle_subscription_renewal/);
+  assert.match(migration,/finalize_paddle_subscription_renewal/);
+  assert.match(migration,/apply_paddle_subscription_lifecycle/);
+  assert.match(migration,/provider_subscription_id=p_provider_subscription_id/);
+  assert.match(migration,/subscription-renewal:/);
+  assert.match(migration,/subscription_row\.status='pending'.*next_status:='pending'/s);
+});
