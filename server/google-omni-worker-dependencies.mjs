@@ -152,7 +152,7 @@ export function createGoogleOmniWorkerDependencies({
    const file=await filesGateway.resolveAsset({assetId,ownerId,projectId,mediaType:asset.mediaType});
    if(!file||!FILE_URI.test(text(file.uri))||file.mediaType!==asset.mediaType||
       !Number.isFinite(Date.parse(text(file.expiresAt)))||Date.parse(file.expiresAt)<=now())throw fail("Gemini Files did not return a valid active private media reference.","GEMINI_OMNI_FILE_PREPARATION_FAILED");
-   return{type:kind,uri:file.uri,mime_type:file.mediaType};
+   return{type:kind,uri:file.uri};
   }
   const parts=[];
   if(sourceVideoId)parts.push(await filePart(sourceVideoId,"video"));
