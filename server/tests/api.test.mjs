@@ -22,7 +22,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",DISABLE_WORKER:"true",D1_STAGING_WORKER_URL:"http://127.0.0.1:"+d1ProxyPort},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",AI_UPSCALE_ADMIN_EMAILS:"upscale-admin@example.test",DISABLE_WORKER:"true",D1_STAGING_WORKER_URL:"http://127.0.0.1:"+d1ProxyPort},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -102,6 +102,16 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
 });
 
+
+test("provider catalog exposes inference self-test only to allowlisted administrators",async()=>{
+  const userCookie=await register("provider-self-test-user@example.test");
+  const userCatalog=await (await request("/api/providers",{},userCookie)).json();
+  assert.equal(userCatalog.providers.find(item=>item.id==="ai-upscale").selfTestAllowed,false);
+  const adminCookie=await register("upscale-admin@example.test");
+  const adminCatalog=await (await request("/api/providers",{},adminCookie)).json();
+  assert.equal(adminCatalog.providers.find(item=>item.id==="ai-upscale").selfTestAllowed,true);
+  assert.equal(JSON.stringify(adminCatalog).includes("upscale-admin@example.test"),false);
+});
 
 test("video cost estimate API is authenticated, read-only and uses configured model pricing",async()=>{
   assert.equal((await fetch(base+"/api/video-cost-estimate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"fal",model:"fal-ai/example-video",durationSeconds:5,resolution:"720p",audioMode:"generated",referenceImageCount:1})})).status,401);

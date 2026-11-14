@@ -906,6 +906,9 @@ export function createAppServer() {
         const upscaleModels=modelProbes.map(model=>({...model,qualityVerified:qualityEvidence.models[model.model]?.qualityVerified===true,qualityEvidence:qualityEvidence.models[model.model]?.qualityEvidence||null,qualityReason:qualityEvidence.models[model.model]?.reason||qualityEvidence.reason}));
         const aiUpscale={...upscaleModels[0],models:upscaleModels,qualityVerified:upscaleModels[0]?.qualityVerified===true,qualityEvidence:upscaleModels[0]?.qualityEvidence||null};
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
+        const allowlistedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        const upscaleProvider=catalog.providers.find(provider=>provider.id==="ai-upscale");
+        if(upscaleProvider)upscaleProvider.selfTestAllowed=allowlistedAdmins.includes(String(user.email||"").trim().toLowerCase());
         send(res,200,catalog,cors);return;
       }
       if(path==="/api/usage"&&req.method==="GET"){
