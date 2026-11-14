@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeRuntimeCapabilities } from "../../src/platform/runtime-capabilities.ts";
+import { describeRuntimeCapabilities, resolveLocalAssetUploadReadiness } from "../../src/platform/runtime-capabilities.ts";
 
 const byId = (items, id) => items.find(item => item.id === id);
 
@@ -131,4 +131,13 @@ test("FAL worker is blocked when its model, API key or billing key configuration
     }
   });
   assert.equal(byId(items, "cloud-video-worker").state, "blocked");
+});
+
+test("local media uploads require an explicit positive server readiness signal", () => {
+  assert.deepEqual(resolveLocalAssetUploadReadiness({ enabled: true }), { enabled: true, message: "" });
+  assert.equal(resolveLocalAssetUploadReadiness({ enabled: false, code: "PERSISTENT_STORAGE_REQUIRED", message: "Persistent storage is required." }).enabled, false);
+  assert.equal(resolveLocalAssetUploadReadiness({ enabled: false, message: "Persistent storage is required." }).message, "Persistent storage is required.");
+  assert.equal(resolveLocalAssetUploadReadiness(undefined).enabled, false);
+  assert.equal(resolveLocalAssetUploadReadiness(null).enabled, false);
+  assert.match(resolveLocalAssetUploadReadiness({}).message, /not confirmed durable local media storage/i);
 });
