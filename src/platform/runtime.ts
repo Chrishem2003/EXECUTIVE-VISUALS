@@ -131,8 +131,10 @@ function renderAiUpscaleControls(assetId:string):string{
 function renderVideoAiUpscaleControls(assetId:string):string{
  const provider=state.providers.find(item=>item.id==="ai-upscale");
  const model=(provider?.availableModels||[]).find(item=>item.id==="realesrgan-x4plus");
- const ready=model?.readiness==="ready"&&model.qualityVerified===true&&model.executionVerified===true;
- const reason=model?.reason||provider?.reason||"Video enhancement requires a verified Real-ESRGAN model and worker execution self-test.";
+ const workerEnabled=provider?.videoAiUpscaleEnabled===true;
+ const workerVerified=provider?.videoAiUpscaleWorkerSelfTestPassed===true;
+ const ready=model?.readiness==="ready"&&model.qualityVerified===true&&model.executionVerified===true&&workerEnabled&&workerVerified;
+ const reason=!workerEnabled?"Video AI upscaling is disabled on the cloud worker.":!workerVerified?"A worker-side video inference self-test has not been confirmed.":model?.reason||provider?.reason||"Video enhancement requires a verified Real-ESRGAN model and worker execution self-test.";
  const button=(scale:number)=>'<button type="button" '+(ready?'':'disabled aria-disabled="true"')+' title="'+esc(reason)+'" data-ev-job="media.video-ai-upscale" data-ev-asset="'+esc(assetId)+'" data-ev-model="realesrgan-x4plus" data-ev-scale="'+scale+'" data-ev-tile="0">Enhance video · '+scale+'×</button>';
  return '<section class="ai-upscale-controls" aria-label="AI video super-resolution"><div class="ai-upscale-heading"><div><small class="ai-upscale-label">VIDEO FINISHING</small><strong>Framewise AI enhancement</strong></div><span class="ai-upscale-original">SOURCE PRESERVED</span></div><div class="ai-upscale-presets">'+button(2)+button(4)+'</div><p class="ai-upscale-footnote">'+esc(reason)+' Jobs are limited to 300 frames and 10 minutes. Audio and subtitle streams are preserved or safely transcoded. Temporal consistency is not certified by framewise inference; every result requires human quality review.</p></section>';
 }
