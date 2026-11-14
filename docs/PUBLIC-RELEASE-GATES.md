@@ -4,7 +4,43 @@
 **Scope:** staging deployment review for the unified production application.  
 **Last reviewed:** 14 November 2026.
 
-## Mainline reconciliation — 14 November 2026 (supersedes older checkpoints below)
+# Public release gates
+
+**Current decision: NOT APPROVED for public users.**  
+**Scope:** staging deployment review for the unified production application.  
+**Last reviewed:** 15 November 2026.
+
+## Mainline reconciliation — 15 November 2026 (supersedes all earlier checkpoints below)
+
+- **Current GitHub main:** `2d0c8ec9497b20db3efad908b7bf7eacfa2ebcbf`.
+- **Production deployment:** Render's `EXECUTIVE-VISUALS` service reports this exact commit as `live` at `https://executive-visuals.onrender.com`. The service is on Render Free in Frankfurt; this confirms source deployment, not hosted customer acceptance or durable media readiness.
+- **Merged PR #591:** verification pipeline improvements and separated product build/verification batches.
+- **Merged PR #592:** Paddle primary and Pesapal secondary provider adapters, unified subscription orchestration, authenticated checkout, verified webhook/IPN settlement, Paddle recurring renewals and customer portal cancellation/payment-method management. Paddle adjustment events are preserved for financial review; they are not automatically executed as refunds. Pesapal currently supports one-time checkout and authenticated manual renewal only; automatic Pesapal recurring schedules are not implemented.
+- **Merged PR #593:** private Gemini Files upload, durable upload-attempt tracking, recovery leases and retention workers. Gemini temporary files do not replace the application's private customer-media store.
+- **Billing activation boundary:** provider integration code is merged, but checkout remains disabled by default. Isolated PostgreSQL migration validation, actual Paddle/Pesapal sandbox credentials and merchant end-to-end acceptance are still required. Never enable live checkout without explicit merchant approval.
+- **Open PR #594:** Google Omni worker integration. Exact-head release integration and build jobs have passed; cloud-video PostgreSQL and asset-publication PostgreSQL tests have passed; multiple product-verification batches are still running/queued, while some unrelated billing and Drive checks are still running. Hosted D1 acceptance jobs were skipped, not passed. Do not merge until all required exact-head checks complete successfully.
+- **Google model compatibility:** PR #594 currently pins `gemini-omni-1.1-flash`, uses 1.1 token rates and limits output to 10 seconds. Google announced Omni 1.2 Flash GA on 5 November 2026 with up to 15-second clips and a published 720p price of $0.07/second. The PR must explicitly scope 1.1 or add a separately priced and tested 1.2 path. Do not change only the model string or infer hosted readiness from CI.
+- **Hosted persistence remains the critical release blocker:** no dedicated isolated Executive Visuals Supabase project, production private object bucket, verified hosted RLS/storage policy, separately accepted durable worker, tested backups or role-based hosted acceptance is established. Do not reuse NEMA/shared-platform Supabase projects.
+- **Upload behavior remains fail-closed:** do not weaken production upload guards while durable private storage is unavailable. R2 is optional source code only; no R2 bucket or credentials have been provisioned.
+- **Stale integration branches:** PR #206 remains a large divergent branch and must not be merged wholesale. PR #303 is stacked on that branch; review only for capabilities not already covered by #592. PRs #294 and #297 are superseded by the quality-assessment and FlashVSR mainline work.
+- **No production credentials, migrations, paid infrastructure, provider execution or service configuration were changed by this reconciliation.**
+
+## Current priority order
+
+1. Complete PR #594's exact-head quality/product/PostgreSQL checks and reconcile the Google model/pricing target before merge.
+2. Validate the Paddle/Pesapal migration and both sandbox flows against a dedicated isolated staging database and merchant accounts; keep production billing disabled.
+3. Provision a dedicated Executive Visuals identity/database and private media storage; review RLS, grants, bucket policies and signed URL expiry.
+4. Deploy and verify the API and durable worker against that isolated backend; test lease recovery, cancellation, media ingestion and delivery.
+5. Verify owner/editor/reviewer/viewer access, backup/restore, monitoring, incident response and rollback on the hosted environment.
+6. Only then consider public release and any paid provider/hosting activation.
+
+## Evidence and release rule
+
+A successful source build, CI suite or GitHub merge is necessary but not sufficient. Public release requires a dedicated isolated backend, ordinary user authentication, durable private media storage, verified backups, hosted end-to-end tests, operational monitoring and explicit approval of recurring infrastructure/provider costs.
+
+---
+
+## Historical reconciliation — 14 November 2026 (superseded by the 15 November checkpoint above)
 
 - **Current GitHub main:** `4221ec5b464820bdd3df1d1ab152cf26bc1fd098` (PR #588, FlashVSR temporal enhancement).
 - **Deployment drift:** the previous verified Render production deployment recorded in this document is `6b21dc5`. This audit has not established that Render is running `4221ec5`; do not describe the latest GitHub main as deployed until the live service reports that exact commit.
@@ -34,15 +70,15 @@ A successful source build or GitHub merge is necessary but not sufficient. Publi
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Source build | Merged slices verified; current-main recheck not established here | PRs #565–#588 were merged through focused mainline extractions. Verify the latest main commit's own required checks before another release decision. |
-| Latest deployment | Drift not resolved | Last documented Render production commit is `6b21dc5`; current GitHub main is `4221ec5`. Confirm the live Render service commit before claiming these changes are hosted. |
+| Source build | Latest mainline integrations merged; PR #594 checks partially complete | PRs #591–#593 are merged. PR #594 has successful build, release integration and cloud-video PostgreSQL checks; remaining exact-head product batches are still pending. |
+| Latest deployment | Live on current main | Render production reports commit `2d0c8ec9497b20db3efad908b7bf7eacfa2ebcbf` as live. This is deployment evidence, not full hosted acceptance. |
 | Production authentication | Pending hosted acceptance | Supabase auth/session code exists, but the dedicated application project, production configuration, RLS review and owner/editor/reviewer/viewer hosted tests are not verified. |
 | Isolated identity/database | Blocked | Connected Supabase projects contain unrelated NEMA/shared-platform data. Provision a dedicated Executive Visuals project; do not reuse existing projects. |
 | Durable media storage | Contracts implemented; production connection blocked | Private Supabase Storage and optional R2 adapter code exist. No dedicated production bucket, credentials, policy review or hosted media lifecycle acceptance is established. |
 | Durable application database | Blocked for multi-instance use | The last verified production runtime uses SQLite/local disk. Complete isolated Postgres setup and queue/data migration before horizontal scaling; otherwise preserve single-instance constraints and tested backups. |
 | Worker recovery | Code implemented; live acceptance pending | Lease-fenced worker, cancellation and publication contracts exist. A separately deployed/verified production worker and exact-host recovery tests remain outstanding. |
 | Media generation | Gated | Framewise and FlashVSR paths exist, but worker-side execution and quality attestations are not established on the live host. Provider gateways remain default-off. |
-| Billing and subscriptions | Partial | Existing local billing primitives do not provide a verified hosted recurring-subscription lifecycle. Dodo subscription and lifecycle-sync work remains on old PR #303/#206 branches and requires clean extraction. |
+| Billing and subscriptions | Provider adapters merged; hosted acceptance pending | PR #592 adds Paddle recurring lifecycle and customer portal controls plus Pesapal one-time/manual renewal. Sandbox credentials, isolated migration validation and end-to-end merchant tests remain outstanding; automatic Pesapal recurring is not implemented. |
 | Security review | Partial | API tests and fail-closed guards exist. Complete hosted RLS/storage-policy review, upload isolation and dependency/security review remain outstanding. |
 | Recovery / backups | Blocked | No tested backup-and-restore rehearsal for the live application database and customer media is recorded. |
 | Operational monitoring | Blocked | Application-specific alerting, retention, capacity limits, incident response and rollback rehearsal are not verified. |
