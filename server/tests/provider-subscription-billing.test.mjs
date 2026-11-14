@@ -117,8 +117,8 @@ test("authenticated Pesapal manual renewal reserves the active subscription and 
 });
 
 test("Paddle refund and chargeback adjustments are durably quarantined without changing subscription entitlements",async()=>{
-  const calls=[];
   for(const adjustmentAction of ["refund","chargeback","chargeback_warning"]){
+    const calls=[];
     const providers={
       paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
         provider:"paddle",eventId:"evt-adjustment-"+adjustmentAction,eventType:"adjustment.created",
