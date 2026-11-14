@@ -185,6 +185,10 @@ export async function executeCloudVideoWorkflowNode({
    }
    const cloudAssetIds=cloudJob.output?.assetIds;
    if(!Array.isArray(cloudAssetIds)||cloudAssetIds.length<1||cloudAssetIds.length>10)throw fail("Cloud video job completed without a valid private asset collection.","VIDEO_WORKFLOW_OUTPUT_INVALID");
+   const provider=String(cloudJob.output?.provider||cloudRequest.provider||initial.provider);
+   const model=String(cloudJob.output?.model||routedModel||cloudRequest.model);
+   const adapterVersion=provider==="google"?"google-gemini-omni-cloud-worker-v1":"runway-model-router-cloud-worker-v1";
+   let actualDurationSeconds=null;
    const imported=[];
    for(const cloudAssetId of cloudAssetIds){
     if(!UUID.test(String(cloudAssetId)))throw fail("Cloud video output contains an invalid asset ID.","VIDEO_WORKFLOW_OUTPUT_INVALID");
@@ -205,15 +209,16 @@ export async function executeCloudVideoWorkflowNode({
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     const buffer=await readBounded(response,MAX_VIDEO_BYTES);
     if(buffer.length!==asset.size||createHash("sha256").update(buffer).digest("hex")!==asset.sha256)throw fail("Downloaded cloud output failed byte-size or SHA-256 verification.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
-    const provider=String(cloudJob.output?.provider||cloudRequest.provider||initial.provider);
-    const model=String(cloudJob.output?.model||routedModel||cloudRequest.model);
-    const adapterVersion=provider==="google"?"google-gemini-omni-cloud-worker-v1":"runway-model-router-cloud-worker-v1";
+    if(actualDurationSeconds===null){
+     const reportedDuration=Number(asset.metadata?.durationSeconds||asset.metadata?.duration||0);
+     if(Number.isFinite(reportedDuration)&&reportedDuration>0)actualDurationSeconds=reportedDuration;
+    }
     const provenance=createVideoRequestProvenance(initial.input,{provider,model,adapterVersion});
     const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model,provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,buffer});
     imported.push(local.id);
    }
    const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],
-    durationSeconds:provider==="google"?(Number(asset.metadata?.durationSeconds||asset.metadata?.duration||0)||null):Number(initial.input.durationSeconds),
+    durationSeconds:provider==="google"?actualDurationSeconds:Number(initial.input.durationSeconds),
     provider,model,
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
     approvedMaxAmount,actualAmount,currency:actualCurrency,costEvidenceReference};
