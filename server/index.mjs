@@ -13,6 +13,7 @@ import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getPr
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { createBatchIdempotencyKeys, inspectBatchReplay } from "./batch-idempotency.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
@@ -129,6 +130,7 @@ const googleDriveBridge=googleDriveOAuthEnabled?createGoogleDrivePrivateFileBrid
 const controlRemediationApi = createControlRemediationApi({db});
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
+const flashVsrAdapter = createFlashVsrAdapter();
 const financialApiEnabled = process.env.BILLING_API_ENABLED === "true";
 if (financialApiEnabled && AUTH_MODE !== "supabase") throw new Error("Financial intelligence API requires verified Supabase authentication.");
 const financialApi = financialApiEnabled ? createFinancialIntelligenceApi() : null;
@@ -999,6 +1001,10 @@ export function createAppServer() {
             :!upscaleProvider.videoAiUpscaleWorkerSelfTestPassed
               ?"A worker-side video inference self-test has not been confirmed."
               :"Video AI upscaling is enabled; every result still requires human quality review.";
+          const flashVsrStatus=process.env.FLASHVSR_ENABLED==="true"?await flashVsrAdapter.probe():{ready:false,reason:"FLASHVSR_ENABLED is not true."};
+          upscaleProvider.flashVsrEnabled=process.env.FLASHVSR_ENABLED==="true";
+          upscaleProvider.flashVsrReady=flashVsrStatus.ready===true;
+          upscaleProvider.flashVsrReason=flashVsrStatus.reason||(!upscaleProvider.flashVsrReady?"FlashVSR requires a provisioned CUDA worker, official v1.1 weights and a successful operator inference self-test.":"FlashVSR is ready; human review remains mandatory.");
         }
         send(res,200,catalog,cors);return;
       }
@@ -1566,17 +1572,31 @@ export function createAppServer() {
             fail(res,409,"VIDEO_AI_UPSCALE_WORKER_NOT_VERIFIED","A worker-side video inference self-test must be completed before video enhancement jobs can be queued.");return;
           }
         }
-        if(type==="media.ai-upscale"||type==="media.video-ai-upscale"){
+        if(type==="media.ai-upscale"){
           const model=String(body.model||"realesrgan-x4plus");
           const evidence=await loadUpscaleQualityEvidence();
           if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
           const readiness=await aiUpscaleAdapter.probe(model);
           if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
-          if(type==="media.video-ai-upscale"){
-            const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
-            if(!source||!source.media_type.startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for AI video enhancement.");return;}
-            if(![2,4].includes(Number(body.scale??2))){fail(res,400,"INVALID_MEDIA_OPTIONS","AI video enhancement supports 2× or 4× scale.");return;}
-          }
+        }
+        if(type==="media.video-ai-upscale"){
+          const source=getAccessibleAsset(db,user.id,String(body.sourceAssetId||""),true);
+          if(!source||!source.media_type.startsWith("video/")){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Choose an accessible video asset for AI video enhancement.");return;}
+          const engine=String(body.engine||"realesrgan-framewise");
+          if(engine==="flashvsr-v1.1-tiny-long"){
+            if(Number(body.scale??4)!==4){fail(res,400,"FLASHVSR_SCALE_UNSUPPORTED","FlashVSR v1.1 supports 4× video enhancement only.");return;}
+            const readiness=await flashVsrAdapter.probe();
+            if(!readiness.ready||process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"||process.env.AI_VIDEO_UPSCALE_WORKER_SELF_TEST_PASSED!=="true"){
+              fail(res,409,"FLASHVSR_NOT_READY",readiness.reason||"FlashVSR requires explicit video-worker and model-specific self-test gates.");return;
+            }
+          }else if(engine==="realesrgan-framewise"){
+            if(![2,4].includes(Number(body.scale??2))){fail(res,400,"INVALID_MEDIA_OPTIONS","Framewise video enhancement supports 2× or 4× scale.");return;}
+            const model=String(body.model||"realesrgan-x4plus");
+            const evidence=await loadUpscaleQualityEvidence();
+            if(evidence.models[model]?.qualityVerified!==true){fail(res,409,"AI_UPSCALE_QUALITY_NOT_VERIFIED","The selected model is not enabled. Complete its model-specific five-category human-reviewed benchmark before submitting an upscale job.");return;}
+            const readiness=await aiUpscaleAdapter.probe(model);
+            if(!readiness.available||!readiness.executionEnabled||!readiness.executionVerified){fail(res,409,"AI_UPSCALE_MODEL_NOT_READY","The selected model must have installed weights, explicit worker enablement and a successful model-specific execution self-test.");return;}
+          }else{fail(res,400,"VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED","Choose a supported video enhancement engine.");return;}
         }
         let projectId=body.projectId||null;
         if(type==="timeline.render"){

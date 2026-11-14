@@ -10,6 +10,7 @@ import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
+import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
@@ -451,7 +452,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,retimedVideoClips:clips.filter(clip=>clip.speedCurve!==undefined).length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onResourceMeasurement=null, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onResourceMeasurement=null, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter, flashVsrAdapterFactory=createFlashVsrAdapter }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
@@ -472,8 +473,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
   if (job.job_type === "media.video-ai-upscale") {
     if (!source.media_type.startsWith("video/")) throw Object.assign(new Error("AI video super-resolution accepts video sources only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+    const engine=String(input.engine||"realesrgan-framewise");
     const model=String(input.model||"realesrgan-x4plus");
-    const scale=Number(input.scale??2);
+    const scale=Number(input.scale??(engine==="flashvsr-v1.1-tiny-long"?4:2));
     const tile=Number(input.tile??0);
     const outputPath=join(outputDir,id+".mp4");
     const controller=new AbortController();
@@ -483,6 +485,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const processor=createVideoAiUpscaleProcessor({
         runCommand:(binary,args,options={})=>run(binary,args,options.timeoutMs||30*60*1000,job.id,activeProcesses,()=>cancelled()||options.signal?.aborted,options.maxCaptureBytes||16000,onResourceMeasurement),
         upscalerFactory:options=>aiUpscalerFactory(options),
+        temporalUpscalerFactory:engine==="flashvsr-v1.1-tiny-long"?()=>flashVsrAdapterFactory():null,
         maxFrames:300,
         maxDurationSeconds:600,
         maxInputBytes:250*1024*1024,
@@ -490,7 +493,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         maxTempBytes:8*1024*1024*1024,
         maxOutputPixels:40_000_000
       });
-      const result=await processor.process({sourcePath,outputPath,model,scale,tile,expectedSourceSha256:source.sha256,signal:controller.signal,onProgress});
+      const result=await processor.process({sourcePath,outputPath,engine,model,scale,tile,expectedSourceSha256:source.sha256,signal:controller.signal,onProgress});
       if(controller.signal.aborted||cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
       let c2paPreservation;
       try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:"video/mp4",expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
@@ -499,7 +502,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const hash=createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const processing={
-        engine:"framewise-ai-video-upscale",method:result.frameProcessing,model:result.model,scale:result.scale,tile:result.tile,
+        engine:result.engine==="flashvsr-v1.1-tiny-long"?"flashvsr-v1.1-tiny-long":"framewise-ai-video-upscale",method:result.frameProcessing,model:result.model,temporalModel:result.temporalModel===true,temporalModelLicense:result.temporalModelLicense||null,scale:result.scale,tile:result.tile,
         sourceSha256:result.sourceSha256,frameCount:result.frameCount,frameRate:result.frameRate,
         inputDimensions:result.inputDimensions,outputDimensions:result.outputDimensions,
         audioHandling:result.audioHandling,subtitleHandling:result.subtitleHandling,

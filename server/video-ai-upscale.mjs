@@ -78,6 +78,7 @@ function colorArgs(source){
 export function createVideoAiUpscaleProcessor({
   runCommand,
   upscalerFactory,
+  temporalUpscalerFactory=null,
   maxFrames=300,
   maxDurationSeconds=600,
   maxInputBytes=2*1024*1024*1024,
@@ -88,7 +89,7 @@ export function createVideoAiUpscaleProcessor({
   jobTimeoutMs=2*60*60*1000,
   tempRoot=tmpdir()
 }={}){
-  if(typeof runCommand!=="function"||typeof upscalerFactory!=="function")throw new TypeError("Video AI upscaling requires process and image-upscaler adapters.");
+  if(typeof runCommand!=="function"||(typeof upscalerFactory!=="function"&&typeof temporalUpscalerFactory!=="function"))throw new TypeError("Video AI upscaling requires process and model adapters.");
   if(!Number.isInteger(maxFrames)||maxFrames<1||maxFrames>18000)throw new TypeError("Video frame limit must be between 1 and 18,000.");
   if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>3600)throw new TypeError("Video duration limit is invalid.");
   if(!Number.isSafeInteger(maxTempBytes)||maxTempBytes<64*1024*1024||maxTempBytes>32*1024*1024*1024)throw new TypeError("Video temporary storage budget must be between 64 MiB and 32 GiB.");
@@ -96,12 +97,14 @@ export function createVideoAiUpscaleProcessor({
   if(!Number.isSafeInteger(maxInputBytes)||maxInputBytes<1||!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1)throw new TypeError("Video byte budgets must be positive safe integers.");
   if(!Number.isSafeInteger(frameTimeoutMs)||frameTimeoutMs<1000||!Number.isSafeInteger(jobTimeoutMs)||jobTimeoutMs<1000)throw new TypeError("Video execution time budgets are invalid.");
   async function process({
-    sourcePath,outputPath,model="realesrgan-x4plus",scale=2,tile=0,threads="1:2:2",tta=false,gpu="auto",expectedSourceSha256=null,signal,onProgress=()=>{}
+    sourcePath,outputPath,model="realesrgan-x4plus",engine="realesrgan-framewise",scale=2,tile=0,threads="1:2:2",tta=false,gpu="auto",expectedSourceSha256=null,signal,onProgress=()=>{}
   }={}){
     const started=Date.now();
     const progress=value=>{checkCancelled(signal);if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");onProgress(Math.max(0,Math.min(99,Math.round(value))));};
     if(!sourcePath||!outputPath||resolve(sourcePath)===resolve(outputPath))throw fail("Distinct source and output paths are required.","VIDEO_AI_UPSCALE_INVALID_PATH");
-    if(![2,4].includes(Number(scale)))throw fail("Video AI upscale supports 2x or 4x image-model scale.","AI_UPSCALE_INVALID_OPTIONS");
+    if(engine==="flashvsr-v1.1-tiny-long"&&Number(scale)!==4)throw fail("FlashVSR v1.1 supports 4x video super-resolution only.","FLASHVSR_SCALE_UNSUPPORTED");
+    if(!["realesrgan-framewise","flashvsr-v1.1-tiny-long"].includes(engine))throw fail("Unknown video super-resolution engine.","VIDEO_AI_UPSCALE_ENGINE_UNSUPPORTED");
+    if(engine!=="flashvsr-v1.1-tiny-long"&&![2,4].includes(Number(scale)))throw fail("Video AI upscale supports 2x or 4x image-model scale.","AI_UPSCALE_INVALID_OPTIONS");
     const sourceInfo=await lstat(sourcePath).catch(()=>null);
     if(!sourceInfo?.isFile()||sourceInfo.isSymbolicLink()||sourceInfo.size<1||sourceInfo.size>maxInputBytes)throw fail("Video source must be a readable regular file within the input byte budget.","VIDEO_AI_UPSCALE_INPUT_INVALID");
     const sourceIdentity=fileIdentity(sourceInfo),sourceSha256=await sha256File(sourcePath);
@@ -130,38 +133,57 @@ export function createVideoAiUpscaleProcessor({
       assertConstantFrameRate(frameTimes,source.fps,source.frames);
       workspace=await mkdtemp(join(tempRoot,"executive-video-ai-upscale-"));
       const inputFrames=join(workspace,"input"),outputFrames=join(workspace,"enhanced");
-      await mkdir(inputFrames);await mkdir(outputFrames);
-      const inputPattern=join(inputFrames,"%08d.png");
-      await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-an","-sn","-dn","-vsync","0","-start_number","0",inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
-      const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
-      if(extracted.length!==source.frames)throw fail("Extracted frame count does not match the source video; no derivative was published.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
-      let remainingInputBytes=0;
-      for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
-      if(remainingInputBytes>maxTempBytes)throw fail("Extracted frames exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
-      progress(12);
-      const upscaler=upscalerFactory({timeoutMs:frameTimeoutMs,maxOutputBytes:250*1024*1024,maxOutputPixels});
-      if(!upscaler||typeof upscaler.execute!=="function")throw fail("The configured AI image upscaler is unavailable.","AI_UPSCALE_ENGINE_UNAVAILABLE");
-      const tileFallbackFrames=[];let tileFallbackCount=0,outputFrameBytes=0;
-      for(let index=0;index<extracted.length;index++){
-        checkCancelled(signal);
-        if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");
-        const inputFrame=join(inputFrames,extracted[index]),outputFrame=join(outputFrames,extracted[index]);
-        const inputFrameInfo=await stat(inputFrame);
-        const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
-        if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
-        const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
-        if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
-        await unlink(inputFrame);
-        remainingInputBytes-=inputFrameInfo.size;
-        if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
-        progress(12+Math.round(((index+1)/source.frames)*70));
+      let temporalResult=null,temporalOutputPath=null,tileFallbackCount=0,tileFallbackFrames=[];
+      if(engine==="flashvsr-v1.1-tiny-long"){
+        if(typeof temporalUpscalerFactory!=="function")throw fail("FlashVSR temporal inference is not configured on this worker.","FLASHVSR_RUNTIME_UNAVAILABLE");
+        const temporalUpscaler=temporalUpscalerFactory();
+        if(!temporalUpscaler||typeof temporalUpscaler.execute!=="function")throw fail("FlashVSR temporal inference is unavailable.","FLASHVSR_RUNTIME_UNAVAILABLE");
+        if(Math.abs(source.fps-Math.round(source.fps))>0.0001)throw fail("FlashVSR currently requires an integer constant frame rate.","FLASHVSR_FRAME_RATE_UNSUPPORTED");
+        temporalOutputPath=join(workspace,"flashvsr-temporal-output.mp4");
+        progress(12);
+        temporalResult=await temporalUpscaler.execute({inputPath:sourcePath,outputPath:temporalOutputPath,scale:Number(scale),signal,onProgress:value=>progress(12+Math.round(value*.68))});
+        const temporalInfo=await lstat(temporalOutputPath).catch(()=>null);
+        if(!temporalInfo?.isFile()||temporalInfo.isSymbolicLink()||temporalInfo.size<1)throw fail("FlashVSR temporal intermediate is not a regular non-empty file.","FLASHVSR_OUTPUT_INVALID");
+        if(temporalInfo.size>maxTempBytes)throw fail("FlashVSR temporal intermediate exceeds the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+        const temporalProbe=await run(runCommand,"ffprobe",["-v","error","-count_frames","-show_entries","stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,pix_fmt","-of","json",temporalOutputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:2_000_000});
+        const temporalVideo=parseProbe(temporalProbe.stdout);
+        if(temporalVideo.frames!==source.frames||temporalVideo.width!==outputWidth||temporalVideo.height!==outputHeight||Math.abs(temporalVideo.fps-source.fps)>0.0001)throw fail("Temporal model output did not preserve exact source frame count, 4x dimensions and frame rate.","FLASHVSR_OUTPUT_PROFILE_MISMATCH");
+        const temporalTimesResult=await run(runCommand,"ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","csv=p=0",temporalOutputPath],{timeoutMs:10*60*1000,signal,maxCaptureBytes:Math.min(8_000_000,Math.max(64_000,source.frames*24))});
+        assertConstantFrameRate(parseFrameTimes(temporalTimesResult.stdout),source.fps,source.frames);
+      }else{
+        await mkdir(inputFrames);await mkdir(outputFrames);
+        const inputPattern=join(inputFrames,"%08d.png");
+        await run(runCommand,"ffmpeg",["-hide_banner","-nostdin","-y","-i",sourcePath,"-map","0:v:0","-an","-sn","-dn","-vsync","0","-start_number","0",inputPattern],{timeoutMs:20*60*1000,signal,maxCaptureBytes:256_000});
+        const extracted=(await readdir(inputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
+        if(extracted.length!==source.frames)throw fail("Extracted frame count does not match the source video; no derivative was published.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
+        let remainingInputBytes=0;
+        for(const name of extracted)remainingInputBytes+=(await stat(join(inputFrames,name))).size;
+        if(remainingInputBytes>maxTempBytes)throw fail("Extracted frames exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+        progress(12);
+        const upscaler=upscalerFactory({timeoutMs:frameTimeoutMs,maxOutputBytes:250*1024*1024,maxOutputPixels});
+        if(!upscaler||typeof upscaler.execute!=="function")throw fail("The configured AI image upscaler is unavailable.","AI_UPSCALE_ENGINE_UNAVAILABLE");
+        let outputFrameBytes=0;
+        for(let index=0;index<extracted.length;index++){
+          checkCancelled(signal);
+          if(Date.now()-started>jobTimeoutMs)throw fail("Video AI upscaling exceeded its total job time budget.","VIDEO_AI_UPSCALE_TIMEOUT");
+          const inputFrame=join(inputFrames,extracted[index]),outputFrame=join(outputFrames,extracted[index]);
+          const inputFrameInfo=await stat(inputFrame);
+          const result=await upscaler.execute({inputPath:inputFrame,outputPath:outputFrame,model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,format:"png",signal});
+          if(result.outputDimensions?.width!==outputWidth||result.outputDimensions?.height!==outputHeight)throw fail("An enhanced frame has unexpected dimensions; the video derivative was rejected.","VIDEO_AI_UPSCALE_FRAME_DIMENSIONS_MISMATCH");
+          const outputFrameInfo=await stat(outputFrame);outputFrameBytes+=outputFrameInfo.size;
+          if(outputFrameBytes+remainingInputBytes>maxTempBytes)throw fail("Input and enhanced frame intermediates exceed the temporary storage budget.","VIDEO_AI_UPSCALE_TEMP_BUDGET_EXCEEDED");
+          await unlink(inputFrame);
+          remainingInputBytes-=inputFrameInfo.size;
+          if(result.tileFallbackUsed){tileFallbackCount++;if(tileFallbackFrames.length<100)tileFallbackFrames.push(index);}
+          progress(12+Math.round(((index+1)/source.frames)*70));
+        }
+        const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
+        if(enhanced.length!==source.frames)throw fail("Enhanced frame count does not match the source video.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       }
-      const enhanced=(await readdir(outputFrames)).filter(name=>/^\d{8}\.png$/.test(name)).sort();
-      if(enhanced.length!==source.frames)throw fail("Enhanced frame count does not match the source video.","VIDEO_AI_UPSCALE_FRAME_COUNT_MISMATCH");
       progress(84);
       const fpsText=rational(source.video.avg_frame_rate)?source.video.avg_frame_rate:source.video.r_frame_rate;
       const audioCodecSafe=source.audio.every(stream=>["aac","mp3","ac3","eac3","alac"].includes(String(stream.codec_name||"").toLowerCase()));
-      const args=["-hide_banner","-nostdin","-y","-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png"),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
+      const args=["-hide_banner","-nostdin","-y",...(temporalResult?["-i",temporalOutputPath]:["-framerate",fpsText,"-start_number","0","-i",join(outputFrames,"%08d.png")]),"-itsoffset",String(-source.startTime),"-i",sourcePath,"-map","0:v:0","-map","1:a?","-map","1:s?","-map_metadata","1","-map_chapters","1","-frames:v",String(source.frames),"-c:v","libx264","-preset","medium","-crf","18","-pix_fmt",outputPixelFormat,...colorArgs(source.video),"-fps_mode","cfr","-c:a",audioCodecSafe?"copy":"aac"];
       if(!audioCodecSafe&&source.audio.length)args.push("-b:a","192k");
       if(source.subtitles.length)args.push("-c:s","mov_text");
       args.push("-avoid_negative_ts","make_zero","-movflags","+faststart",outputPath);
@@ -190,7 +212,7 @@ export function createVideoAiUpscaleProcessor({
         const samples=parseTemporalLumaSamples(temporalResult.stderr);
         if(samples.length<2)throw fail("FFmpeg returned too few temporal signal samples.","VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE");
         const findings=[...buildTemporalLumaFindings({samples,sceneChanges}),...buildTemporalColorFindings({samples,sceneChanges})];
-        temporalQuality={status:"completed",sampleRateFps:8,sampleCount:samples.length,sceneChangeCount:sceneChanges.length,findings,limitations:["Global frame-average luma and chroma are coarse screening signals, not motion-compensated temporal perceptual metrics.","This framewise image-model pipeline does not certify temporal consistency."]};
+        temporalQuality={status:"completed",sampleRateFps:8,sampleCount:samples.length,sceneChangeCount:sceneChanges.length,findings,limitations:["Global frame-average luma and chroma are coarse screening signals, not motion-compensated temporal perceptual metrics.","Global frame-average signals are not motion-compensated perceptual metrics and do not certify temporal consistency for either framewise or temporal-model output."]};
       }catch(error){
         if(signal?.aborted||error?.code==="JOB_CANCELLED")throw error;
         temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:error?.code||"VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE"};
@@ -204,10 +226,10 @@ export function createVideoAiUpscaleProcessor({
         path:outputPath,byteSize:outputInfo.size,inputBytes,sourceSha256,frameCount:source.frames,
         frameRate:{numerator:Number(String(fpsText).split("/")[0]),denominator:Number(String(fpsText).split("/")[1]||1)},
         inputDimensions:{width:source.width,height:source.height},outputDimensions:{width:outputWidth,height:outputHeight},
-        model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,subtitleStreams:source.subtitles.length,
+        engine,model:temporalResult?.model||model,scale:Number(scale),tile:Number(tile),threads,tta,gpu,audioStreams:source.audio.length,subtitleStreams:source.subtitles.length,
         audioHandling:audioCodecSafe?"original-audio-streams-copied":"audio-transcoded-to-aac",
         subtitleHandling:source.subtitles.length?"subtitles-transcoded-to-mov_text":"no-subtitles",
-        frameProcessing:"sequential-image-model-inference",tileFallbackCount,tileFallbackFrames,temporalQuality,temporalConsistency:"not-certified",
+        frameProcessing:temporalResult?"temporal-video-model-inference":"sequential-image-model-inference",temporalModel:temporalResult?.temporalModel===true,temporalModelLicense:temporalResult?.license||null,tileFallbackCount,tileFallbackFrames,temporalQuality,temporalConsistency:"not-certified",
         qualityReviewRequired:true,qualityReviewReasons:["temporal-consistency-not-certified","human-review-required"]
       };
     }catch(error){
