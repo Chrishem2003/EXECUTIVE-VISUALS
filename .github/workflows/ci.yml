@@ -233,6 +233,10 @@ jobs:
           - "server-02"
           - "server-03"
           - "server-04"
+          - "server-05"
+          - "server-06"
+          - "server-07"
+          - "server-08"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
