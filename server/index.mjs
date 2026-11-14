@@ -6,6 +6,7 @@ import { dirname, extname, join, resolve, basename, sep, relative, isAbsolute } 
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { tmpdir } from "node:os";
+import { evaluateLocalAssetUploadPolicy } from "./local-asset-upload-policy.mjs";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
@@ -305,6 +306,8 @@ function validFileSignature(type,header){
   return false;
 }
 async function storeUpload(req,user,projectId) {
+  const uploadPolicy=evaluateLocalAssetUploadPolicy({nodeEnv:process.env.NODE_ENV,dataDirPersistence:DATA_DIR_PERSISTENCE,requirePersistentDataDir:REQUIRE_PERSISTENT_DATA_DIR});
+  if(!uploadPolicy.allowed)throw Object.assign(new Error(uploadPolicy.message),{status:503,code:uploadPolicy.code});
   const mediaType=String(req.headers["content-type"]||"application/octet-stream").split(";")[0].toLowerCase();
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
   if(projectId&&!canWriteProject(db,user.id,projectId))throw Object.assign(new Error("Project not found or you do not have editor access."),{status:404,code:"PROJECT_NOT_FOUND"});
