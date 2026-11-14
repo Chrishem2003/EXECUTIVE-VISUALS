@@ -49,6 +49,15 @@ begin
   if not exists (
     select 1 from pg_constraint
      where conrelid = v_table
+       and contype = 'c'
+       and conname = 'google_provider_files_source_lineage_check'
+  ) then
+    raise exception 'Google provider-file source lineage must be internally consistent';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_table
        and contype = 'f'
        and confrelid = 'executive_visuals.assets'::regclass
   ) then
