@@ -16,6 +16,7 @@ import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
+const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -459,7 +460,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(projectId&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
      if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
-     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.transcode,media.proxy,timeline.render";
+     const types="media.probe,media.thumbnail,media.audio_extract,media.audio-clean,media.denoise,media.color,media.resize,media.interpolate,media.upscale,media.ai-upscale,media.transcode,media.proxy,timeline.render";
      const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&"+scope+"&job_type=in.("+types+")&order=created_at.desc&limit="+limit);
      return response(200,{jobs:Array.isArray(rows)?rows:[]});
     }
@@ -480,7 +481,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(permitted!==true)return response(cancelling?403:404,{error:{code:cancelling?"EDITOR_REQUIRED":"JOB_NOT_FOUND",message:cancelling?"Owner or editor access is required.":"Job not found."}});
     } else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
     if(cancelling){
-     const supported=job.job_type==="timeline.render"||(typeof job.job_type==="string"&&job.job_type.startsWith("media."));
+     const supported=CANCELLABLE_CLOUD_JOB_TYPES.has(job.job_type);
      if(!supported)return response(409,{error:{code:"JOB_CANCELLATION_UNSUPPORTED",message:"This job type requires its dedicated cancellation workflow."}});
      if(job.status==="cancelled")return response(200,{job,idempotentReplay:true,cancellationRequested:false});
      if(["queued","processing"].includes(job.status)&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
