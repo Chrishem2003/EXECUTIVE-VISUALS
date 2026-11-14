@@ -124,7 +124,11 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
         provider:"paddle",eventId:"evt-adjustment-"+adjustmentAction,eventType:"adjustment.created",
         providerTransactionId:"txn-original",providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",
         adjustmentId:"adj-"+adjustmentAction,adjustmentAction,adjustmentStatus:"pending_approval",
-        adjustmentAmount:"5000",adjustmentCurrency:"USD",occurredAt:"2026-11-14T10:00:00Z"
+        adjustmentType:"partial",adjustmentReason:"customer request",adjustmentUpdatedAt:"2026-11-14T10:01:00Z",
+        adjustmentCreditAppliedToBalance:false,adjustmentAmount:"5000",adjustmentSubtotal:"4500",
+        adjustmentTax:"500",adjustmentFee:"100",adjustmentEarnings:"4400",adjustmentCurrency:"USD",
+        adjustmentItems:[{id:"adjitm-1",transactionItemId:"txnitm-1",type:"partial",amount:"5000",total:"5000"}],
+        occurredAt:"2026-11-14T10:00:00Z"
       })},
       pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
     };
@@ -141,7 +145,14 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     assert.equal(result.body.applied,false);
     assert.equal(result.body.needsReview,true);
     assert.equal(result.body.adjustment.action,adjustmentAction);
+    assert.equal(result.body.adjustment.type,"partial");
+    assert.equal(result.body.adjustment.reason,"customer request");
+    assert.equal(result.body.adjustment.subtotal,"4500");
+    assert.equal(result.body.adjustment.items[0].transactionItemId,"txnitm-1");
     assert.equal(calls.filter(call=>call.method==="POST").length,1);
+    const stored=calls.find(call=>call.method==="POST").body.payload;
+    assert.equal(stored.adjustmentId,"adj-"+adjustmentAction);
+    assert.equal(stored.adjustmentItems[0].total,"5000");
     assert.equal(calls.filter(call=>call.method==="PATCH").length,2);
     assert.equal(calls.at(-1).body.processing_status,"needs_review");
     assert.ok(calls.every(call=>call.path.endsWith("/payment_webhook_events")));
