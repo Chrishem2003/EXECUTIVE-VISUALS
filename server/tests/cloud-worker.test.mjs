@@ -108,14 +108,17 @@ test("worker fails closed when cancellation state cannot be verified",async()=>{
 });
 test("owner cancellation polling aborts an active executor and records cancellation",async()=>{
  let checks=0;const queue=queueFor({cancellationRequested:()=>++checks>=2});let started;
+ const keepAlive=setTimeout(()=>{},5000);
  const began=new Promise(resolve=>{started=resolve;});
- const resultPromise=runCloudWorkerCycle({queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,execute:async({signal})=>{
-  started();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));
- }});
- await began;const result=await resultPromise;
- assert.equal(result.status,"cancelled");assert.equal(result.reason,"owner_request");
- assert.ok(checks>=2);assert.equal(queue.calls.some(call=>call[0]==="renew"),false);
- const finish=queue.calls.find(call=>call[0]==="finish");assert.equal(finish[5].code,"JOB_CANCELLED");
+ try{
+  const resultPromise=runCloudWorkerCycle({queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,execute:async({signal})=>{
+   started();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));
+  }});
+  await began;const result=await resultPromise;
+  assert.equal(result.status,"cancelled");assert.equal(result.reason,"owner_request");
+  assert.ok(checks>=2);assert.equal(queue.calls.some(call=>call[0]==="renew"),false);
+  const finish=queue.calls.find(call=>call[0]==="finish");assert.equal(finish[5].code,"JOB_CANCELLED");
+ }finally{clearTimeout(keepAlive);}
 });
 test("already-aborted shutdown signal does not claim a new job",async()=>{
  const queue=queueFor();const controller=new AbortController();controller.abort();
