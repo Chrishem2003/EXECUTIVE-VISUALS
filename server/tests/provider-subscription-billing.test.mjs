@@ -44,7 +44,7 @@ test("authenticated provider checkout reserves ledger price and persists hosted 
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="PATCH")return empty();
     throw new Error("unexpected database request "+target.pathname);
   };
-  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
   const result=await billing.handle({
     method:"POST",path:"/api/billing/subscription/provider-checkout",ownerId:owner,
     idempotencyKey:"checkout-key-0001",body:{provider:"paddle",planCode:"creator",email:"buyer@example.com"}
