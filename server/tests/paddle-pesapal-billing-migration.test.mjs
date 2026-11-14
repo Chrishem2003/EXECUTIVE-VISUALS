@@ -52,3 +52,9 @@ test("Paddle recurring renewals are separately reserved, idempotent and lifecycl
   assert.match(migration,/subscription-renewal:/);
   assert.match(migration,/subscription_row\.status='pending'.*next_status:='pending'/s);
 });
+
+test("provider checkout reservation returns server-locked billing interval and price identity",()=>{
+  assert.match(migration,/billingInterval',plan_row\.billing_interval/);
+  assert.match(migration,/providerPriceId',price_row\.provider_price_id/);
+  assert.match(migration,/billing_interval/);
+});
