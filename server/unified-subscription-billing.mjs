@@ -12,7 +12,8 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     if(!PROVIDERS.has(selected)||!owner||!plan||!key||key.length<8||key.length>180||!customerEmail)
       throw fail("SUBSCRIPTION_CHECKOUT_INPUT_INVALID","A supported provider, authenticated owner, plan, email and idempotency key are required.");
     const reservation=await repository.reserveCheckout({provider:selected,ownerId:owner,planCode:plan,email:customerEmail,idempotencyKey:key});
-    if(!reservation?.paymentId||!reservation?.subscriptionId||!reservation?.reference)
+    const reference=text(reservation?.reference||reservation?.txRef);
+    if(!reservation?.paymentId||!reservation?.subscriptionId||!reference)
       throw fail("SUBSCRIPTION_RESERVATION_INVALID","The subscription ledger did not reserve a pending payment.");
     if(reservation.idempotentReplay){
       const existing=await repository.getCheckout({paymentId:reservation.paymentId,ownerId:owner});
@@ -22,11 +23,11 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     try{
       let checkout;
       if(selected==="paddle"){
-        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl});
+        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,priceId:reservation.providerPriceId});
       }else{
         const order=pesapalOrder||{};
         checkout=await providers.pesapal.createCheckout({
-          ...order,reference:reservation.reference,amount:reservation.amountMajor,
+          ...order,reference,amount:reservation.amountMajor,
           currency:reservation.currency,email:customerEmail,accountNumber:reservation.subscriptionId
         });
       }
@@ -34,7 +35,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
         ownerId:owner,paymentId:reservation.paymentId,subscriptionId:reservation.subscriptionId,
         provider:selected,providerCheckout:checkout
       });
-      return {paymentId:reservation.paymentId,subscriptionId:reservation.subscriptionId,provider:selected,...checkout,idempotentReplay:false};
+      return {paymentId:reservation.paymentId,subscriptionId:reservation.subscriptionId,reference,provider:selected,...checkout,idempotentReplay:false};
     }catch(error){
       await repository.markCheckoutUncertain({
         ownerId:owner,paymentId:reservation.paymentId,subscriptionId:reservation.subscriptionId,
