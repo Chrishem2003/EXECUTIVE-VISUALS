@@ -30,6 +30,32 @@ test("provider billing readiness requires both sandbox credentials, callbacks an
   assert.equal(getProviderSubscriptionBillingReadiness({...env,PESAPAL_API_BASE_URL:"https://pay.pesapal.com/v3",PESAPAL_ALLOW_LIVE:"false"}).ready,false);
 });
 
+test("Paddle customer portal route checks subscription ownership before creating a portal session",async()=>{
+  const calls=[];
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({}),
+      createCustomerPortalSession:async input=>{calls.push(input);return {portalUrl:"https://customer-portal.paddle.com/subscription?token=abc"};}},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname,target.search]);
+    if(target.pathname.endsWith("/customer_subscriptions"))return json([{
+      id:subscriptionId,provider:"paddle",provider_customer_id:"ctm_01abcdefghijklmnopqrstuvwx",
+      provider_subscription_id:"sub_01abcdefghijklmnopqrstuvwx"
+    }]);
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+  const result=await billing.handle({method:"POST",path:"/api/billing/subscription/provider-portal",
+    ownerId:owner,body:{subscriptionId}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.portal.portalUrl,"https://customer-portal.paddle.com/subscription?token=abc");
+  assert.deepEqual(calls.find(x=>x.customerId),{
+    customerId:"ctm_01abcdefghijklmnopqrstuvwx",subscriptionId:"sub_01abcdefghijklmnopqrstuvwx"
+  });
+});
+
 test("authenticated provider checkout reserves ledger price and persists hosted checkout before returning",async()=>{
   const calls=[];
   const providers={
