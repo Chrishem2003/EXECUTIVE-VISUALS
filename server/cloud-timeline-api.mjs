@@ -483,21 +483,21 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const supported=job.job_type==="timeline.render"||(typeof job.job_type==="string"&&job.job_type.startsWith("media."));
      if(!supported)return response(409,{error:{code:"JOB_CANCELLATION_UNSUPPORTED",message:"This job type requires its dedicated cancellation workflow."}});
      if(job.status==="cancelled")return response(200,{job,idempotentReplay:true,cancellationRequested:false});
-     if(job.status==="processing"&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
+     if(["queued","processing"].includes(job.status)&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
      if(!["queued","processing"].includes(job.status))return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"Only queued or processing media jobs can be cancelled."}});
      const now=new Date().toISOString();
-     const patch=job.status==="queued"
-      ?{status:"cancelled",cancel_requested_at:now,updated_at:now,completed_at:now,error:{code:"JOB_CANCELLED",message:"Job was cancelled before execution began."}}
-      :{cancel_requested_at:now,updated_at:now};
+     // Keep queued jobs claimable so the normal lease-fenced worker can
+     // finalize cancellation through finish_job_v2 and release any reservation.
+     const patch={cancel_requested_at:now,updated_at:now};
      const updated=await request("jobs?id=eq."+encodeURIComponent(job.id)+"&status=eq."+encodeURIComponent(job.status)+"&cancel_requested_at=is.null",{method:"PATCH",prefer:"return=representation",body:patch});
      if(Array.isArray(updated)&&updated.length===1){
-      await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:job.owner_id,event_type:job.status==="queued"?"job.cancelled":"job.cancellation_requested",event_data:{phase:job.status==="queued"?"before_execution":"worker_requested",requestedBy:ownerId}}});
-      return response(200,{job:updated[0],idempotentReplay:false,cancellationRequested:job.status==="processing"});
+      await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:job.owner_id,event_type:"job.cancellation_requested",event_data:{phase:job.status==="queued"?"before_claim":"worker_requested",requestedBy:ownerId}}});
+      return response(200,{job:updated[0],idempotentReplay:false,cancellationRequested:true});
      }
      const latestRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(job.id)+"&limit=1");
      const latest=Array.isArray(latestRows)?latestRows[0]:null;
      if(latest?.status==="cancelled")return response(200,{job:latest,idempotentReplay:true,cancellationRequested:false});
-     if(latest?.status==="processing"&&latest.cancel_requested_at)return response(200,{job:latest,idempotentReplay:true,cancellationRequested:true});
+     if(["queued","processing"].includes(latest?.status)&&latest.cancel_requested_at)return response(200,{job:latest,idempotentReplay:true,cancellationRequested:true});
      return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"The job changed while cancellation was being recorded. Refresh its status and retry if it is still active."}});
     }
     if(method!=="GET")return null;
