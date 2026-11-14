@@ -182,6 +182,7 @@ test("Paddle adjustment.updated normalizes approved refunds and chargeback rever
     assert.equal(normalized.adjustmentAction,action);
     assert.equal(normalized.adjustmentStatus,status);
     assert.equal(normalized.adjustmentCreditAppliedToBalance,null);
+    assert.equal(normalized.adjustmentTaxRates,null);
     assert.equal(normalized.adjustmentId,event.data.id);
     assert.equal(normalized.providerTransactionId,event.data.transaction_id);
     assert.equal(normalized.adjustmentAmount,"2500");
