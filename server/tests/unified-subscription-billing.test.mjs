@@ -6,7 +6,7 @@ const owner="11111111-1111-4111-8111-111111111111";
 function fixture(overrides={}){
   const calls=[];
   const repository={
-    reserveCheckout:async input=>{calls.push(["reserve",input]);return {paymentId:"payment-1",subscriptionId:"subscription-1",reference:"EVS-order-1",providerPriceId:"pri_01creator123",billingInterval:"monthly",amountMajor:25000,currency:"UGX",...overrides.reservation};},
+    reserveCheckout:async input=>{calls.push(["reserve",input]);return {paymentId:"payment-1",subscriptionId:"subscription-1",reference:"EVS-order-1",providerPriceId:"pri_01creator123",billingInterval:"monthly",amountMinor:25000,amountMajor:25000,currency:"UGX",...overrides.reservation};},
     reserveRenewalCheckout:async input=>{calls.push(["reserve-renewal",input]);return {paymentId:"renewal-payment-1",subscriptionId:"subscription-1",reference:"EVR-order-1",amountMajor:25000,currency:"UGX",...overrides.renewalReservation};},
     getCheckout:async input=>{calls.push(["get",input]);return {checkoutUrl:"https://checkout.example/replay",paymentId:input.paymentId};},
     attachProviderCheckout:async input=>{calls.push(["attach",input]);return true;},
@@ -94,7 +94,7 @@ test("Paddle webhook applies only a verified event to the unified repository",as
 });
 
 test("Paddle webhook cannot grant access when verified event has no owner mapping",async()=>{
-  const {service,calls}=fixture({providers:{paddle:{verifyWebhook:()=>({eventId:"evt-2",ownerId:"",planCode:"creator"})}}});
+  const {service,calls}=fixture({providers:{paddle:{verifyWebhook:()=>({eventId:"evt-2",eventType:"transaction.completed",origin:"web",ownerId:"",planCode:"creator",paymentId:"payment-1",reference:"EVS-order-1",providerTransactionId:"txn-1"})}}});
   await assert.rejects(()=>service.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"x"}),{code:"PADDLE_EVENT_REQUIRES_REVIEW"});
   assert.equal(calls.some(x=>x[0]==="apply"),false);
 });
