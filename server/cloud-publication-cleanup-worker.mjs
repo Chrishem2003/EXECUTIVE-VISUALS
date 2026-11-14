@@ -236,6 +236,11 @@ export function createCloudPublicationCleanupWorker({
  let busy=false,lastRunAt=0;
  return Object.freeze({
   workerId:"publication-cleanup-"+randomUUID(),
+  async checkReadiness(){
+   const tables=["assets","jobs","asset_publications","asset_publication_cleanup_claims","publication_cleanup_audit_events"];
+   for(const table of tables){const rows=await request(table+"?select=id&limit=0");if(!Array.isArray(rows))throw new Error("Publication cleanup readiness query returned an invalid response for "+table+".");}
+   return{ready:true,tables};
+  },
   async runCycle(){
    if(busy)return{skipped:true,reason:"cycle_busy"};
    const startedAt=now().getTime();
