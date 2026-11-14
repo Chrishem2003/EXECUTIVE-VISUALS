@@ -117,6 +117,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
       - name: Apply immutable publication cleanup path constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
+      - name: Apply append-only publication cleanup audit ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261114130000_publication_cleanup_audit_events.sql
+      - name: Verify publication cleanup audit access and append-only enforcement
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/publication-cleanup-audit-postgres-integration.sql
       - name: Verify lease-fenced atomic asset publication and stale attempt rejection
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
       - name: Prepare timeline revision history fixture
