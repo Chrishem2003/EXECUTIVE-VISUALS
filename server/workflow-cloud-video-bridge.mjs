@@ -82,8 +82,8 @@ export async function executeCloudVideoWorkflowNode({
  const initial=createVideoWorkflowCloudRequest({node,values,projectId,requestId:"workflow-"+createHash("sha256").update(String(run.id)+":"+String(node.id)).digest("hex")});
  const localIds=[...new Set([
   initial.input.sourceVideoAssetId,initial.input.startFrameAssetId,
-  ...(initial.input.referenceAssetIds||[]),...(initial.input.referenceVideoAssetIds||[]),
-  ...(initial.input.referenceAudioAssetIds||[])
+  ...(initial.input.referenceAssetIds||[]),...(initial.input.referenceImageAssetIds||[]),
+  ...(initial.input.referenceVideoAssetIds||[]),...(initial.input.referenceAudioAssetIds||[])
  ].filter(Boolean))];
  if(localIds.length&&node.config?.rightsConfirmed!==true)throw fail("Confirm that you have the rights to use every connected source/reference asset before cloud video generation.","MEDIA_RIGHTS_REQUIRED");
  const mapping=new Map();
@@ -205,12 +205,16 @@ export async function executeCloudVideoWorkflowNode({
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     const buffer=await readBounded(response,MAX_VIDEO_BYTES);
     if(buffer.length!==asset.size||createHash("sha256").update(buffer).digest("hex")!==asset.sha256)throw fail("Downloaded cloud output failed byte-size or SHA-256 verification.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
-    const provenance=createVideoRequestProvenance(initial.input,{provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",adapterVersion:"runway-model-router-cloud-worker-v1"});
-    const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model:cloudJob.output?.model||routedModel||"model-router",provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,buffer});
+    const provider=String(cloudJob.output?.provider||cloudRequest.provider||initial.provider);
+    const model=String(cloudJob.output?.model||routedModel||cloudRequest.model);
+    const adapterVersion=provider==="google"?"google-gemini-omni-cloud-worker-v1":"runway-model-router-cloud-worker-v1";
+    const provenance=createVideoRequestProvenance(initial.input,{provider,model,adapterVersion});
+    const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model,provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,buffer});
     imported.push(local.id);
    }
-   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],durationSeconds:Number(initial.input.durationSeconds),
-    provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",
+   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],
+    durationSeconds:provider==="google"?(Number(asset.metadata?.durationSeconds||asset.metadata?.duration||0)||null):Number(initial.input.durationSeconds),
+    provider,model,
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
     approvedMaxAmount,actualAmount,currency:actualCurrency,costEvidenceReference};
    onProgress(95);
