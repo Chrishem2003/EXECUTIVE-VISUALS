@@ -13,7 +13,7 @@ async function readBoundedResponseText(response,maxBytes=1024*1024){
     throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Payment provider response exceeded the 1 MiB limit.",502);
   }
   if(!response.body?.getReader){
-    const raw=await readBoundedResponseText(response);
+    const raw=await response.text();
     if(Buffer.byteLength(raw)>maxBytes)throw fail("PAYMENT_PROVIDER_RESPONSE_TOO_LARGE","Payment provider response exceeded the 1 MiB limit.",502);
     return raw;
   }
@@ -38,7 +38,7 @@ async function requestJson(fetchImpl,url,{method="GET",headers={},body,timeoutMs
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     const response=await fetchImpl(url,{method,headers:{...jsonHeaders,...headers},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:controller.signal,redirect:"error"});
-    const raw=await response.text();
+    const raw=await readBoundedResponseText(response);
     let data=null;
     if(raw){try{data=JSON.parse(raw);}catch{throw fail("PAYMENT_PROVIDER_INVALID_JSON","Payment provider returned invalid JSON.",502);}}
     if(!response.ok)throw fail("PAYMENT_PROVIDER_REQUEST_FAILED","Payment provider request failed (HTTP "+response.status+").",502);
