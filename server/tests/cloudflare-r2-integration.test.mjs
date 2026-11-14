@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createCloudAssetService } from "../cloud-asset-service.mjs";
 import { createCloudTimelineService } from "../cloud-timeline-service.mjs";
 import { createRunwaySourceAssetResolver } from "../runway-source-asset-resolver.mjs";
+import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const OWNER = "11111111-1111-4111-8111-111111111111";
@@ -89,4 +90,33 @@ test("Runway resolver rejects a different R2 bucket path before downloading", as
     error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
   );
   assert.equal(fetched, false);
+});
+
+test("cloud timeline readiness delegates the private-bucket check to the configured R2 adapter", async () => {
+  const calls = [];
+  const api = createCloudTimelineApi({
+    url: "https://db.example.supabase.co",
+    serviceRoleKey: "server-only-test-value",
+    fetchImpl: async url => {
+      calls.push(String(url));
+      return { ok: true, status: 200, async text() { return "[]"; } };
+    },
+    timelineService: {
+      projects: {},
+      timelines: {},
+      assets: { get: async () => null, createSignedUrl: async () => null },
+      storage: {
+        async checkReadiness() {
+          calls.push("r2-check");
+          return { ready: true, provider: "cloudflare-r2", storage: "private" };
+        }
+      }
+    },
+    authorize: async () => true,
+    env: { CLOUD_MEDIA_STORAGE_PROVIDER: "r2", R2_ACCOUNT_ID: ACCOUNT, R2_BUCKET: "executive-visuals-media" }
+  });
+  const result = await api.checkReadiness();
+  assert.deepEqual(result, { ready: true, storage: "private", schema: "executive_visuals" });
+  assert.equal(calls.at(-1), "r2-check");
+  assert.equal(calls.some(url => url.includes("/storage/v1/bucket/")), false);
 });
