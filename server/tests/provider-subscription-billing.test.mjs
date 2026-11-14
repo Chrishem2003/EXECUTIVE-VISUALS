@@ -8,7 +8,7 @@ const subscriptionId="33333333-3333-4333-8333-333333333333";
 const payment={
   id:paymentId,owner_id:owner,provider:"paddle",provider_transaction_id:"txn-1",
   tx_ref:"EVP-order-1",amount_minor:5000,currency:"USD",status:"pending",
-  metadata:{payment_purpose:"subscription_purchase",subscription_id:subscriptionId,plan_code:"creator"}
+  metadata:{payment_purpose:"subscription_purchase",subscription_id:subscriptionId,plan_code:"creator",provider_price_id:"pri_01creator123"}
 };
 const env={
   PADDLE_PESAPAL_BILLING_ENABLED:"true",PADDLE_API_KEY:"paddle-key",PADDLE_WEBHOOK_SECRET:"paddle-secret",
@@ -62,7 +62,7 @@ test("verified Paddle transaction webhook settles only the matching reserved led
     paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
       provider:"paddle",eventId:"evt-1",eventType:"transaction.completed",ownerId:owner,planCode:"creator",
       paymentId,reference:"EVP-order-1",providerTransactionId:"txn-1",providerCustomerId:"ctm-1",
-      providerSubscriptionId:"sub-1",amountMinor:5000,currency:"USD",occurredAt:"2026-11-14T10:00:00Z"
+      providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",providerPriceId:"pri_01creator123",origin:"web",amountMinor:5000,totalPaidMinor:5500,discountMinor:0,currency:"USD",occurredAt:"2026-11-14T10:00:00Z"
     })},
     pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
   };
