@@ -285,3 +285,20 @@ test("provider registry exposes one normalized Paddle and Pesapal contract",()=>
   assert.equal(providers.paddle.environment,"sandbox");
   assert.equal(providers.pesapal.environment,"sandbox");
 });
+
+test("Paddle provider response bodies are streamed with a strict 1 MiB cap",async()=>{
+  let canceled=false;
+  const body=new ReadableStream({
+    pull(controller){controller.enqueue(new Uint8Array(1024*1024+1));},
+    cancel(){canceled=true;}
+  });
+  const provider=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-key",priceIds:{creator:"pri_01creator123"},
+    fetchImpl:async()=>new Response(body,{status:200})
+  });
+  await assert.rejects(()=>provider.createCheckout({
+    planCode:"creator",ownerId:owner,email:"buyer@example.com",
+    expectedPrice:{amountMinor:5000,currency:"USD",billingInterval:"monthly"}
+  }),{code:"PAYMENT_PROVIDER_RESPONSE_TOO_LARGE"});
+  assert.equal(canceled,true);
+});
