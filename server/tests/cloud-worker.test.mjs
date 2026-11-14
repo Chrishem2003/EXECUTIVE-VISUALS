@@ -99,6 +99,13 @@ test("owner cancellation observed before execution finishes the claimed job with
  const finish=queue.calls.find(call=>call[0]==="finish");assert.equal(finish[3],"cancelled");assert.equal(finish[5].code,"JOB_CANCELLED");
  assert.ok(events.some(event=>event.type==="job.cancelled"&&event.reason==="owner_request"));
 });
+test("worker fails closed when cancellation state cannot be verified",async()=>{
+ const queue=queueFor({cancellationRequested:()=>{throw Object.assign(new Error("lookup unavailable"),{code:"CLOUD_QUEUE_HTTP_503"});}});
+ let executed=false;
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-cancel-check",execute:async()=>{executed=true;return{};}});
+ assert.equal(result.finished,false);assert.equal(result.reason,"cancellation_check_failed");assert.equal(executed,false);
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
 test("owner cancellation polling aborts an active executor and records cancellation",async()=>{
  let checks=0;const queue=queueFor({cancellationRequested:()=>++checks>=2});let started;
  const began=new Promise(resolve=>{started=resolve;});
