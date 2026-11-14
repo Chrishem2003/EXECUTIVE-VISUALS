@@ -54,21 +54,18 @@ export function createGoogleOmniWorkerDependencies({
   finally{clearTimeout(timer);}
  }
 
- async function assertApprovedSubmission({plan,context}={}){
-  if(!plan||plan.policy?.provider!=="google"||plan.policy?.model!==MODEL||plan.policy?.requiresApproval!==true||
-     !UUID.test(text(context?.jobId))||!UUID.test(text(context?.ownerId))||
+ async function verifyApprovalContext(context,allowedStates){
+  if(!UUID.test(text(context?.jobId))||!UUID.test(text(context?.ownerId))||
      !/^[a-f0-9]{64}$/.test(text(context?.requestHash))||
      !text(context?.workerId)||!UUID.test(text(context?.leaseToken))||
      context?.approvedBy!==context?.ownerId||!Number.isFinite(Date.parse(text(context?.approvedAt)))||
      !Number.isFinite(Number(context?.estimatedCost?.amount))||Number(context.estimatedCost.amount)<=0||
-     context?.estimatedCost?.currency!=="USD"){
-   return false;
-  }
+     context?.estimatedCost?.currency!=="USD")return false;
   if(await queue.assertLease(context.jobId,context.workerId,context.leaseToken)!==true)return false;
   const submission=await ledger.get(context.jobId);
   if(!submission||submission.job_id!==context.jobId||submission.owner_id!==context.ownerId||
      submission.provider!=="google"||submission.model!==MODEL||submission.request_hash!==context.requestHash||
-     submission.state!=="submitting")return false;
+     !allowedStates.includes(submission.state))return false;
   const reservations=await databaseRows("video_generation_budget_reservations",{
    select:"id,job_id,approval_id,owner_id,project_id,provider,model,currency,reserved_amount,state",
    job_id:"eq."+context.jobId,owner_id:"eq."+context.ownerId,limit:"2"
@@ -95,6 +92,10 @@ export function createGoogleOmniWorkerDependencies({
    Number(approval.approved_max_amount)+0.000001>=Number(reservation.reserved_amount);
  }
 
+ async function assertApprovedSubmission({plan,context}={}){
+  if(!plan||plan.policy?.provider!=="google"||plan.policy?.model!==MODEL||plan.policy?.requiresApproval!==true)return false;
+  return verifyApprovalContext(context,["submitting"]);
+ }
  async function authorizeInteraction({interactionId,context}={}){
   if(!/^v1_[A-Za-z0-9_-]{6,200}$/.test(text(interactionId))||
      !UUID.test(text(context?.ownerId))||!UUID.test(text(context?.jobId)))return false;
@@ -113,6 +114,14 @@ export function createGoogleOmniWorkerDependencies({
      !/^[a-f0-9]{64}$/.test(text(input.requestHash))||
      !text(input.prompt)||input.prompt.length>12000)throw fail("Gemini Omni request is invalid.","GEMINI_OMNI_PLAN_INVALID");
   const ownerId=job.owner_id,projectId=job.project_id||null;
+  const approvalContext={
+   jobId:job.id,ownerId,projectId,requestHash:input.requestHash,
+   workerId:job.lease_owner,leaseToken:job.lease_token,
+   approvedBy:job.approved_by,approvedAt:job.approved_at,
+   budgetApprovalId:job.budget_approval_id||input.budgetApprovalId||null,
+   estimatedCost:job.estimated_cost
+  };
+  if(!await verifyApprovalContext(approvalContext,["prepared"]))throw fail("Gemini Omni private input preparation requires a current lease and consumed matching budget approval.","GEMINI_OMNI_APPROVAL_REQUIRED");
   if(input.lastFrameAssetId||input.endFrameAssetId)throw fail("Gemini Omni last-frame locking is not yet supported by this worker path.","GEMINI_OMNI_UNSUPPORTED_INPUT");
   const operation=text(input.operation)||"generate";
   if(!["generate","edit","extend"].includes(operation))throw fail("Gemini Omni operation is unsupported.","GEMINI_OMNI_UNSUPPORTED_INPUT");
