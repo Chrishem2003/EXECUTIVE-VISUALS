@@ -50,6 +50,23 @@ test("cloud video worker may be configured with Runway Model Router without FAL 
  }),/saved config/);
 });
 
+test("Google Omni can be the only video provider when every server-side execution and paid-tier gate is explicit",()=>{
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"generativelanguage.googleapis.com",
+  GOOGLE_OMNI_VIDEO_ENABLED:"true",GOOGLE_OMNI_VIDEO_ALLOW_REMOTE:"true",
+  GEMINI_OMNI_ENABLED:"true",GEMINI_OMNI_ALLOW_REMOTE:"true",GEMINI_OMNI_PAID_TIER_CONFIRMED:"true",
+  GEMINI_OMNI_WORKER_ENABLED:"true",GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_API_KEY:"server-only"
+ });
+ assert.equal(config.video,true);assert.equal(config.googleOmni,true);
+ assert.throws(()=>readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"generativelanguage.googleapis.com",
+  GOOGLE_OMNI_VIDEO_ENABLED:"true",GOOGLE_OMNI_VIDEO_ALLOW_REMOTE:"true",
+  GEMINI_OMNI_ENABLED:"true",GEMINI_OMNI_ALLOW_REMOTE:"true",GEMINI_OMNI_WORKER_ENABLED:"true",
+  GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_API_KEY:"server-only"
+ }),/paid-tier/);
+});
 test("cloud worker config validates the storage cleanup sweep interval",()=>{
  const config=readCloudWorkerConfig(env);assert.equal(config.cleanupIntervalMs,300000);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_STORAGE_CLEANUP_INTERVAL_MS:"1000"}),/cleanup interval/);
