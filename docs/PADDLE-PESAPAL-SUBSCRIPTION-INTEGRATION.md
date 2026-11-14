@@ -44,22 +44,21 @@ Pesapal:
 - Uses the documented sandbox/live API hosts only.
 - Authenticates with the merchant consumer key and secret and caches the short-lived access token in process memory.
 - Registers an HTTPS GET IPN endpoint and creates hosted orders.
-- The current checkout intentionally omits `account_number` and `subscription_details`, so it does not offer an automatic recurring schedule before the renewal ledger is ready. Pesapal recurring card schedules can be enabled in a later slice after recurring IPNs can reserve and atomically settle renewal ledger entries. Pesapal IPNs are only notifications; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
+- The current checkout intentionally omits `account_number` and `subscription_details`, so it uses a one-time hosted payment and does not offer automatic recurring schedules. Pesapal manual renewal checkout is still a separate remaining integration. Pesapal recurring card schedules can be enabled only after recurring IPNs can reserve and atomically settle renewal ledger entries. Pesapal IPNs are only notifications; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
 - Do not infer a recurring subscription solely from a checkout redirect or an unverified IPN query.
 
-`supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only reservation and initial-purchase finalization RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
+`supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only initial reservation/finalization, Paddle recurring renewal and lifecycle RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
 
-`server/unified-subscription-billing.mjs` provides provider-neutral checkout and event orchestration. It reserves the internal subscription before checkout, reuses idempotent checkout records, carries the reserved price/payment identity to Paddle, retains uncertain provider outcomes for reconciliation, and delegates verified events to an atomic repository method. The concrete Supabase repository, recurring-renewal processor and HTTP routes are not wired yet.
+`server/provider-subscription-billing.mjs` now supplies the concrete Supabase repository and wires authenticated checkout, Paddle webhook and Pesapal IPN processing. `server/unified-subscription-billing.mjs` provides provider-neutral checkout orchestration, idempotent replay, reserved price/payment correlation and uncertain-result protection. Paddle initial activation, automatic renewals and lifecycle events are connected. Pesapal currently supports one-time hosted checkout; manual renewal and its customer-facing management flow remain to be completed.
 
 ## Required next integration before staging activation
 
-1. Apply and validate the new provider-ledger migration in an isolated Supabase preview/staging database; add explicit staging provider prices and verify unique provider transaction/subscription identities.
-2. Implement the concrete Supabase repository and wire authenticated checkout to `reserve_subscription_purchase_for_provider`; keep all plan price, currency and Paddle price-ID decisions server-side.
-3. Add an inbox/outbox lifecycle processor. Verify signatures/status first; persist every event idempotently; handle duplicate and out-of-order events; apply renewals/cancellations atomically; reconcile ambiguous events instead of granting access.
-4. Wire authenticated checkout, Paddle webhook and Pesapal IPN routes into the financial API using raw request bodies for Paddle.
-5. Add customer portal/session routes and customer-visible subscription status/cancellation semantics.
-6. Test using Paddle and Pesapal sandbox merchant accounts, webhook retries, duplicate/out-of-order events, failed renewals, refunds, cancellation and cross-account isolation.
-7. Enable provider checkout in staging only after dedicated staging Supabase schema and secrets exist. Keep production billing disabled until explicit approval.
+1. Apply and validate the new provider-ledger migration in an isolated Supabase preview/staging database; add real staging provider price rows and verify the database RPCs against PostgreSQL.
+2. Configure Paddle sandbox product prices and Pesapal sandbox merchant/IPN details; ensure Paddle price IDs and provider price rows match exactly.
+3. Add Pesapal manual-renewal checkout and lifecycle reconciliation; keep automatic Pesapal recurring disabled until recurring IPNs are verified end to end.
+4. Add customer portal/session and provider-specific cancellation/payment-method management routes, then connect them to the billing UI.
+5. Test using both sandbox merchant accounts: initial checkout, successful/failed payments, recurring Paddle renewals, cancellations, webhook retries, duplicate/out-of-order events and cross-account isolation.
+6. Enable provider checkout in staging only after dedicated staging Supabase schema and secrets exist. Keep production billing disabled until explicit approval.
 
 ## Verification
 
