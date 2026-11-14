@@ -188,6 +188,16 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Verify cloud-video submission, budget and recovery contracts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply private Gemini provider-file mappings
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
+      - name: Apply durable Gemini upload-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql
+      - name: Apply lease-fenced Gemini upload recovery
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql
+      - name: Verify private provider-file mapping permissions and constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
+      - name: Verify durable upload-attempt and recovery lease controls
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
       - name: Apply subscription AI-generation entitlement gate
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
       - name: Apply frame-accurate review and annotation foundation
