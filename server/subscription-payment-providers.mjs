@@ -86,11 +86,36 @@ export function createPaddleSubscriptionProvider({
   if(!apiKey)throw fail("PADDLE_API_KEY_REQUIRED","Paddle API key is not configured.",500);
   if(typeof fetchImpl!=="function")throw fail("PAYMENT_FETCH_REQUIRED","A fetch implementation is required.",500);
 
-  async function createCheckout({planCode,ownerId,email,returnUrl,paymentId,reference,priceId:reservedPriceId,quantity=1}={}){
+  async function getPrice(priceId){
+    const id=text(priceId);
+    if(!/^pri_[A-Za-z0-9]+$/.test(id))throw fail("PADDLE_PRICE_ID_INVALID","A valid server-mapped Paddle price ID is required.");
+    const result=await requestJson(fetchImpl,new URL("/prices/"+encodeURIComponent(id),base),{
+      headers:{authorization:"Bearer "+apiKey}
+    });
+    const price=result?.data;
+    if(!price?.id||price.id!==id)throw fail("PADDLE_PRICE_NOT_FOUND","The configured Paddle price could not be found.",404);
+    return {
+      id:price.id,status:text(price.status),
+      amountMinor:Number(price.unit_price?.amount),
+      currency:text(price.unit_price?.currency_code).toUpperCase(),
+      interval:text(price.billing_cycle?.interval).toLowerCase(),
+      frequency:Number(price.billing_cycle?.frequency||0)
+    };
+  }
+
+  async function createCheckout({planCode,ownerId,email,returnUrl,paymentId,reference,priceId:reservedPriceId,expectedPrice,quantity=1}={}){
     const plan=text(planCode).toLowerCase(),owner=text(ownerId),customerEmail=text(email).toLowerCase();
     const priceId=text(priceIds[plan]);
     if(!/^[a-z][a-z0-9_-]{1,63}$/.test(plan)||!owner||!EMAIL.test(customerEmail)||!priceId||!/^pri_[A-Za-z0-9]+$/.test(priceId)||(reservedPriceId&&text(reservedPriceId)!==priceId))
       throw fail("PADDLE_CHECKOUT_INPUT_INVALID","A mapped Paddle price, owner, plan and valid customer email are required.");
+    if(expectedPrice){
+      const configured=await getPrice(priceId);
+      const expectedInterval=String(expectedPrice.billingInterval||"").toLowerCase()==="yearly"?"year":"month";
+      if(configured.status!=="active"||configured.amountMinor!==Number(expectedPrice.amountMinor)||
+         configured.currency!==String(expectedPrice.currency||"").toUpperCase()||
+         configured.interval!==expectedInterval||configured.frequency!==1)
+        throw fail("PADDLE_PRICE_CONFIGURATION_MISMATCH","Paddle price must be active and match the server plan amount, currency and monthly/yearly billing interval.",409);
+    }
     if(!Number.isInteger(quantity)||quantity!==1)throw fail("PADDLE_QUANTITY_INVALID","Subscription checkout quantity must be one.");
     const successUrl=text(returnUrl);
     if(successUrl){const url=new URL(successUrl);if(url.protocol!=="https:"&&!["localhost","127.0.0.1"].includes(url.hostname))throw fail("PADDLE_RETURN_URL_INVALID","Checkout return URL must use HTTPS.");}
@@ -116,7 +141,7 @@ export function createPaddleSubscriptionProvider({
     return normalizePaddleEvent(event);
   }
 
-  return Object.freeze({name:"paddle",environment:sandbox?"sandbox":"live",createCheckout,verifyWebhook});
+  return Object.freeze({name:"paddle",environment:sandbox?"sandbox":"live",getPrice,createCheckout,verifyWebhook});
 }
 
 export function createPesapalSubscriptionProvider({
