@@ -32,6 +32,21 @@ begin
   end if;
 
   if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'executive_visuals'
+       and table_name = 'google_provider_files'
+       and column_name = 'source_type'
+       and is_nullable = 'NO'
+  ) or not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'executive_visuals'
+       and table_name = 'google_provider_files'
+       and column_name = 'source_uri'
+  ) then
+    raise exception 'Google provider-file mappings must preserve upload or GCS source lineage';
+  end if;
+
+  if not exists (
     select 1 from pg_constraint
      where conrelid = v_table
        and contype = 'f'
