@@ -197,5 +197,5 @@ test("Pesapal IPN verifies the pending UGX order before invoking the atomic subs
   assert.equal(result.status,200);
   assert.equal(result.body.status,200);
   assert.equal(calls.find(x=>x[0]==="verify")[2].expectedAmount,50000);
-  assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+  assert.ok(calls.some(x=>typeof x[1]==="string"&&x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
 });
