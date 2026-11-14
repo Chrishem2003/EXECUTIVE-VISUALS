@@ -155,7 +155,8 @@ export function createCloudStorage({
       }finally{externalSignal?.removeEventListener("abort",abortFromCaller);clearTimeout(timer);}
     },
     async listObjects({prefix,limit=100,cursor=null}={}) {
-      if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/$/i.test(prefix)) {
+      const prefixParts=typeof prefix==="string"?prefix.split("/") : [];
+      if(prefixParts.length!==3||prefixParts[2]!==""||!UUID.test(prefixParts[0])||!UUID.test(prefixParts[1])) {
         throw new Error("Storage listing requires an exact owner-or-project and asset UUID prefix.");
       }
       if(!Number.isInteger(limit)||limit<1||limit>1000||cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096)) {
