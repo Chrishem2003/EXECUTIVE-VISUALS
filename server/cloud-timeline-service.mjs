@@ -9,7 +9,7 @@ import { createCloudProjectRepository } from "./cloud-projects.mjs";
  */
 export function createCloudTimelineService(options={}){
   const shared={url:options.url,serviceRoleKey:options.serviceRoleKey,fetchImpl:options.fetchImpl};
-  const assets=options.assetService||createCloudAssetService({...shared,maxBytes:options.maxBytes});
+  const assets=options.assetService||createCloudAssetService({...shared,maxBytes:options.maxBytes,storageProvider:options.storageProvider,r2:options.r2});
   const authorize=options.authorize||createCloudAssetAuthorizer({...shared});
   const projects=createCloudProjectRepository({...shared,authorize,timeoutMs:options.timeoutMs??12000});
   const timelines=createCloudTimelineRepository({
@@ -19,5 +19,5 @@ export function createCloudTimelineService(options={}){
     timeoutMs:options.timeoutMs??12000,
     maxDocumentBytes:options.maxDocumentBytes??5*1024*1024
   });
-  return Object.freeze({assets:assets.assets,timelines,projects});
+  return Object.freeze({assets:assets.assets,storage:assets.storage||null,timelines,projects});
 }

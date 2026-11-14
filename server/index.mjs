@@ -105,7 +105,7 @@ const googleDriveBridge=googleDriveOAuthEnabled?createGoogleDrivePrivateFileBrid
   const asset=await googleDriveAssetService.assets.get({ownerId,assetId});
   if((asset.projectId||null)!==(projectId||null))throw Object.assign(new Error("Private asset project scope does not match."),{code:"GOOGLE_DRIVE_ASSET_FORBIDDEN"});
   const signed=await googleDriveAssetService.assets.createSignedUrl({ownerId,assetId,expiresIn:60});
-  const signedUrl=new URL(signed.url),storageOrigin=new URL(process.env.SUPABASE_URL).origin;
+  const signedUrl=new URL(signed.url),storageOrigin=CLOUD_MEDIA_ORIGIN;
   if(signedUrl.protocol!=="https:"||signedUrl.origin!==storageOrigin||signedUrl.username||signedUrl.password)throw Object.assign(new Error("Private asset storage returned an unsafe signed URL."),{code:"GOOGLE_DRIVE_ASSET_INVALID"});
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
   try{
@@ -194,8 +194,8 @@ const SECURITY_HEADERS = {
   "cross-origin-resource-policy":"same-origin",
   "permissions-policy":"camera=(), microphone=(), geolocation=()"
 };
-const CLOUD_MEDIA_ORIGIN = (()=>{try{const value=new URL(process.env.SUPABASE_URL||"");return value.protocol==="https:"&&!value.username&&!value.password?value.origin:"";}catch{return "";}})();
-const HTML_CSP = "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; frame-src 'self' https://drive.google.com https://docs.google.com; connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://content.googleapis.com; img-src 'self' data: blob: "+CLOUD_MEDIA_ORIGIN+" https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: "+CLOUD_MEDIA_ORIGIN+"; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const CLOUD_MEDIA_ORIGIN = (()=>{if(String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()==="r2"){const id=String(process.env.R2_ACCOUNT_ID||"");return /^[a-f0-9]{32}$/i.test(id)?"https://"+id+".r2.cloudflarestorage.com":"";}try{const value=new URL(process.env.SUPABASE_URL||"");return value.protocol==="https:"&&!value.username&&!value.password?value.origin:"";}catch{return "";}})();
+const HTML_CSP = "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; frame-src 'self' https://drive.google.com https://docs.google.com; connect-src 'self' "+CLOUD_MEDIA_ORIGIN+" https://www.googleapis.com https://oauth2.googleapis.com https://content.googleapis.com; img-src 'self' data: blob: "+CLOUD_MEDIA_ORIGIN+" https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: "+CLOUD_MEDIA_ORIGIN+"; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readRawBody = async (req,limit=1024*1024) => {
