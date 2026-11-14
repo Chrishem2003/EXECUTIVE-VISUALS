@@ -59,16 +59,40 @@ function normalizePaddleEvent(event){
     providerTransactionId:text(data.id&&type.startsWith("transaction.")?data.id:(type.startsWith("adjustment.")?data.transaction_id:"")),
     adjustmentId:text(data.id&&type.startsWith("adjustment.")?data.id:""),
     adjustmentAction:text(data.action),adjustmentStatus:text(data.status),adjustmentType:text(data.type),
-    adjustmentReason:text(data.reason),adjustmentUpdatedAt:text(data.updated_at)||null,
+    adjustmentReason:text(data.reason),adjustmentCreatedAt:text(data.created_at)||null,
+    adjustmentUpdatedAt:text(data.updated_at)||null,
     adjustmentCreditAppliedToBalance:data.credit_applied_to_balance===true,
     adjustmentAmount:text(data.totals?.total)||null,
     adjustmentSubtotal:text(data.totals?.subtotal)||null,adjustmentTax:text(data.totals?.tax)||null,
-    adjustmentFee:text(data.totals?.fee)||null,adjustmentEarnings:text(data.totals?.earnings)||null,
+    adjustmentFee:text(data.totals?.fee)||null,adjustmentRetainedFee:text(data.totals?.retained_fee)||null,
+    adjustmentEarnings:text(data.totals?.earnings)||null,
+    adjustmentTotalsCurrency:text(data.totals?.currency_code).toUpperCase()||null,
     adjustmentCurrency:text(data.currency_code).toUpperCase()||null,
+    adjustmentCustomerId:text(data.customer_id)||null,
+    adjustmentPayoutTotals:data.payout_totals?{
+      subtotal:text(data.payout_totals.subtotal)||null,tax:text(data.payout_totals.tax)||null,
+      total:text(data.payout_totals.total)||null,fee:text(data.payout_totals.fee)||null,
+      retainedFee:text(data.payout_totals.retained_fee)||null,earnings:text(data.payout_totals.earnings)||null,
+      currency:text(data.payout_totals.currency_code).toUpperCase()||null
+    }:null,
+    adjustmentChargebackFee:data.payout_totals?.chargeback_fee?{
+      amount:text(data.payout_totals.chargeback_fee.amount)||null,
+      originalAmount:text(data.payout_totals.chargeback_fee.original?.amount)||null,
+      originalCurrency:text(data.payout_totals.chargeback_fee.original?.currency_code).toUpperCase()||null
+    }:null,
+    adjustmentTaxRates:Array.isArray(data.tax_rates_used)?data.tax_rates_used.map(rate=>({
+      rate:text(rate.tax_rate)||null,subtotal:text(rate.totals?.subtotal)||null,
+      tax:text(rate.totals?.tax)||null,total:text(rate.totals?.total)||null
+    })):[],
     adjustmentItems:Array.isArray(data.items)?data.items.map(item=>({
       id:text(item.id),transactionItemId:text(item.item_id),type:text(item.type),
       amount:text(item.amount)||null,subtotal:text(item.totals?.subtotal)||null,
-      tax:text(item.totals?.tax)||null,total:text(item.totals?.total)||null
+      tax:text(item.totals?.tax)||null,total:text(item.totals?.total)||null,
+      proration:item.proration?{
+        rate:text(item.proration.rate)||null,
+        startsAt:text(item.proration.billing_period?.starts_at)||null,
+        endsAt:text(item.proration.billing_period?.ends_at)||null
+      }:null
     })):[],
     status:statusMap[type],currency:text(data.currency_code).toUpperCase(),
     providerPriceId:text(lineItems[0]?.price_id||data.items?.[0]?.price?.id),
