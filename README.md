@@ -1,10 +1,10 @@
 # Current release status — 15 November 2026
 
-Current main is `bc1226a3a0317c41ae4113d97cc1946775d68f5c`. The current production deployment remains on `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789`; the later mainline change is documentation/staging acceptance only and did not redeploy production.
+Current main and the current Render production deployment are both on `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1`. The deployment is live. PR #600 integrated the private GCS mirror backend, migrations, API routes and recovery worker, with all 24 Quality workflow jobs passing.
 
 **The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
 
-The Cloudflare D1 workspace is a verified isolated metadata/workspace staging path, not production persistence or large-media storage. The current main includes Gemini Files upload/recovery and Google Omni worker integration, but not the separate private GCS mirror. The older GCS source PR #83 and related Workload Identity Federation PRs #90–#96 require focused rebase/reconciliation; do not merge the stacked branches wholesale. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+The Cloudflare D1 workspace remains an isolated metadata/workspace staging path, not production persistence or large-media storage. The new GCS mirror is in main but deliberately inactive: both GCS flags remain off, the `google-auth-library` dependency/lockfile is still outstanding, no real GCS bucket/WIF/IAM has been configured, and its Supabase migrations have only been tested in disposable CI PostgreSQL. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
 
 Paddle is the primary and Pesapal the secondary billing provider. Merchant sandbox acceptance and production webhook verification remain outstanding; Pesapal automatic recurring billing is not implemented. Keep live checkout, customer uploads and remote generation disabled until their respective isolated infrastructure and safety gates pass.
 
