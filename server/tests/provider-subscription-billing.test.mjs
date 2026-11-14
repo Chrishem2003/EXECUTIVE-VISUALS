@@ -70,6 +70,7 @@ test("verified Paddle transaction webhook settles only the matching reserved led
     const target=new URL(url);calls.push([options.method,target.pathname]);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
     if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="GET")return json([]);
     if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([payment]);
     if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
     throw new Error("unexpected database request "+target.pathname);
