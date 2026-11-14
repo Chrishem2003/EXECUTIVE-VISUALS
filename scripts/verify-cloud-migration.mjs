@@ -143,6 +143,7 @@ const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20
 const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
 const cleanupClaimsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql"), "utf8");
 const cleanupAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql"), "utf8");
+const cleanupAuditSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261114130000_publication_cleanup_audit_events.sql"), "utf8");
 if (!fencingSql.includes("add column if not exists lease_token uuid") || !fencingSql.includes("create or replace function executive_visuals.claim_next_job_v2(") || !fencingSql.includes("create or replace function executive_visuals.finish_job_v2(")) {
   issues.push("Cloud jobs require per-attempt lease tokens and fenced claim/completion RPCs.");
 }
@@ -167,6 +168,11 @@ if (!cleanupClaimsSql.includes("create or replace function executive_visuals.res
 if (!cleanupAttemptSql.includes("attempt-[0-9a-f]") || !cleanupAttemptSql.includes("ev_asset_storage_cleanup_object_path_check")) {
   issues.push("Storage cleanup must accept only immutable, owner-scoped publication attempt paths.");
 }
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(cleanupAuditSql)) issues.push("Publication cleanup audit migration must not contain destructive DDL/DML.");
+if (!cleanupAuditSql.includes("create table if not exists executive_visuals.publication_cleanup_audit_events")) issues.push("Append-only publication cleanup audit ledger is missing.");
+if (!cleanupAuditSql.includes("alter table executive_visuals.publication_cleanup_audit_events enable row level security;")) issues.push("Publication cleanup audit ledger must enable RLS.");
+if (!cleanupAuditSql.includes("revoke all on executive_visuals.publication_cleanup_audit_events from public, anon, authenticated, service_role;") || !cleanupAuditSql.includes("grant select, insert on executive_visuals.publication_cleanup_audit_events to service_role;")) issues.push("Publication cleanup audit ledger must be private and service-role append/read only.");
+if (!cleanupAuditSql.includes("before update or delete on executive_visuals.publication_cleanup_audit_events") || !cleanupAuditSql.includes("publication cleanup audit events are append-only")) issues.push("Publication cleanup audit ledger must reject mutation.");
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
