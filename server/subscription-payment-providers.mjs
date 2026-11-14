@@ -49,7 +49,7 @@ function normalizePaddleEvent(event){
   const period=data.current_billing_period||{};
   return {
     ignored:false,provider:"paddle",eventId:text(event?.event_id),eventType:type,
-    ownerId:text(custom.owner_id),planCode:text(custom.plan_code),
+    ownerId:text(custom.owner_id),planCode:text(custom.plan_code),paymentId:text(custom.payment_id),reference:text(custom.reference),
     providerCustomerId:text(data.customer_id),providerSubscriptionId:subscriptionId,
     providerTransactionId:text(data.id&&type.startsWith("transaction.")?data.id:""),
     status:statusMap[type],currency:text(data.currency_code).toUpperCase(),
@@ -76,7 +76,7 @@ export function createPaddleSubscriptionProvider({
   if(!apiKey)throw fail("PADDLE_API_KEY_REQUIRED","Paddle API key is not configured.",500);
   if(typeof fetchImpl!=="function")throw fail("PAYMENT_FETCH_REQUIRED","A fetch implementation is required.",500);
 
-  async function createCheckout({planCode,ownerId,email,returnUrl,priceId:reservedPriceId,quantity=1}={}){
+  async function createCheckout({planCode,ownerId,email,returnUrl,paymentId,reference,priceId:reservedPriceId,quantity=1}={}){
     const plan=text(planCode).toLowerCase(),owner=text(ownerId),customerEmail=text(email).toLowerCase();
     const priceId=text(priceIds[plan]);
     if(!/^[a-z][a-z0-9_-]{1,63}$/.test(plan)||!owner||!EMAIL.test(customerEmail)||!priceId||!/^pri_[A-Za-z0-9]+$/.test(priceId)||(reservedPriceId&&text(reservedPriceId)!==priceId))
@@ -91,7 +91,7 @@ export function createPaddleSubscriptionProvider({
         customer:{email:customerEmail},
         collection_mode:"automatic",
         checkout:{...(successUrl?{url:successUrl}:{})},
-        custom_data:{owner_id:owner,plan_code:plan,product:"executive_visuals"}
+        custom_data:{owner_id:owner,plan_code:plan,payment_id:text(paymentId),reference:text(reference),product:"executive_visuals"}
       }
     });
     const transaction=result?.data;
