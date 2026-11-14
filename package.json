@@ -89,7 +89,9 @@
     "verify:caption-presets": "node --experimental-strip-types scripts/verify-caption-presets.mjs",
     "verify:timeline-templates": "node --experimental-strip-types scripts/verify-timeline-templates.mjs",
     "self-test:video-ai-upscale-worker": "node server/scripts/self-test-video-ai-upscale-worker.mjs",
-    "verify:video-ai-upscale-worker-self-test": "node --check server/scripts/self-test-video-ai-upscale-worker.mjs && node --test server/tests/video-ai-upscale.test.mjs"
+    "verify:video-ai-upscale-worker-self-test": "node --check server/scripts/self-test-video-ai-upscale-worker.mjs && node --test server/tests/video-ai-upscale.test.mjs",
+    "assess:upscale-pair": "node server/scripts/assess-upscale-pair.mjs",
+    "verify:upscale-lpips": "node --test server/tests/lpips-perceptual-assessor.test.mjs && python3 -m py_compile server/scripts/lpips_assess.py"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
