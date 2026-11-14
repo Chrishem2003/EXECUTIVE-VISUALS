@@ -2,7 +2,8 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Last reviewed:** 15 November 2026.  
-**Current main:** `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789`.
+**Current main:** `bc1226a3a0317c41ae4113d97cc1946775d68f5c` (documentation/staging-acceptance update).  
+**Current production deployment:** `baf834a29a3b4f6fd2612ffd2cb1994ac2e80789` (Google Omni integration; documentation-only commits have not redeployed production).
 
 ## Verified deployment
 
@@ -27,6 +28,19 @@
 - Supabase Free allows two free projects across organizations where the account is an owner/administrator. Both currently connected Supabase projects are already active; do not create a third project, repurpose either existing project, or upgrade the organization without an explicit cost decision.
 - Cloudflare D1 on Workers Free includes 5 million rows read/day, 100,000 rows written/day and 5 GB total database storage. Workers Free includes 100,000 requests/day and 10 ms CPU per invocation. These limits suit a small metadata staging workload, not FFmpeg rendering or long-running video generation.
 - Keep large media in private object storage. R2 remains unprovisioned/deferred; no card, billing setting or paid plan was changed.
+
+## Outstanding private Google Cloud Storage mirror — not yet in main
+
+- The current main branch contains the Gemini Files upload/recovery lifecycle and Google Omni worker integration, but it does **not** contain the separate Google Cloud Storage (GCS) private mirror modules or their `google_gcs_asset_sources` / mirror-attempt migrations.
+- The older implementation source is [PR #83](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/83). Its Quality checks and Cloud video PostgreSQL integration workflows passed on its exact head, but the branch is stacked on obsolete Google Files work and replaces large shared files (`server/index.mjs`, `server/cloud-worker-process.mjs`, `package.json`, UI and CI). Do not merge it wholesale.
+- PR #83's unique work includes private GCS upload/read-back verification, SHA-256/CRC32C checks, encrypted resumable-upload sessions, owner/project-scoped source records, IAM preflight and lease-fenced recovery. Related workload-identity hardening PRs #90–#96 must be reconciled before any extraction.
+- A safe implementation must be rebased onto current main as a focused change, with only required GCS modules, tests, additive migrations, server route and separately scheduled recovery worker. The migration assumes the isolated `executive_visuals` PostgreSQL/Supabase schema; the existing Cloudflare D1 staging database is not compatible with it.
+- Keep `GEMINI_GCS_MIRROR_ENABLED`, registration and recovery disabled until an isolated application database, private GCS bucket, Workload Identity Federation configuration, service-agent IAM and a unique encryption key are verified. Never reuse the NEMA/shared Supabase projects or put service-account keys in the app.
+
+## Hosting durability warning
+
+- Render Free web services are for preview/testing, not production workloads. They spin down after inactivity and have ephemeral filesystems; SQLite files and local uploads are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on the current Free web service.
+- A Free Render Postgres database is not a durable long-term answer: it expires after 30 days and does not provide backups. Any database/hosting move requires an isolated target, backup/restore acceptance and an explicit cost review.
 
 ## Mainline integrations now deployed
 
