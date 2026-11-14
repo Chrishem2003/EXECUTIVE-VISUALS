@@ -25,7 +25,7 @@ async function fixture(t,{temporalFrames=3,temporalWidth=256,temporalHeight=256,
   if(binary==="ffprobe"&&args.includes("-count_frames")){
    const isTemporal=target.includes("flashvsr-temporal-output.mp4");
    const isOutput=target===outputPath;
-   return {stdout:JSON.stringify({streams:isTemporal||isOutput?temporalStreams:sourceStreams,format:{duration:"1.5"}}),stderr:""};
+   return {stdout:JSON.stringify({streams:isOutput?outputStreams:isTemporal?temporalStreams:sourceStreams,format:{duration:"1.5"}}),stderr:""};
   }
   if(binary==="ffprobe"&&args.includes("-show_frames"))return {stdout:"0.000000\n0.500000\n1.000000\n",stderr:""};
   if(binary==="ffmpeg"&&args.some(value=>String(value).includes("gt(scene")))return {stdout:"",stderr:""};
