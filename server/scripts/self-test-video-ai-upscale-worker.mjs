@@ -19,7 +19,7 @@ function runCommand(binary,args,{timeoutMs=10*60*1000,signal,maxCaptureBytes=160
       if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener("abort",abort);
       if(error)reject(error);else resolvePromise(result);
     };
-    const abort=()=>{child.kill("SIGTERM");finish(fail("Video worker self-test was cancelled.","JOB_CANCELLED"));};
+    const abort=()=>{child.kill("SIGTERM");const killTimer=setTimeout(()=>child.kill("SIGKILL"),2000);killTimer.unref?.();finish(fail("Video worker self-test was cancelled.","JOB_CANCELLED"));};
     timer=setTimeout(()=>{child.kill("SIGKILL");finish(fail("Video worker self-test command timed out.","VIDEO_AI_UPSCALE_SELF_TEST_TIMEOUT"));},timeoutMs);
     timer.unref?.();
     signal?.addEventListener("abort",abort,{once:true});
