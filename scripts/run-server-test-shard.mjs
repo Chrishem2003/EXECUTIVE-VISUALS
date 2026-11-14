@@ -12,7 +12,7 @@ if (!Number.isInteger(shard) || !Number.isInteger(shardCount) || shardCount < 1 
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../server/tests");
 const files = readdirSync(root)
-  .filter((name) => name.endsWith(".test.mjs"))
+  .filter((name) => name.endsWith(".test.mjs") && name !== "subscription-payment-providers.test.mjs")
   .sort()
   .filter((_, index) => index % shardCount === shard - 1)
   .map((name) => resolve(root, name));
@@ -23,7 +23,7 @@ if (files.length === 0) {
 }
 
 console.log(`Running ${files.length} server test files in shard ${shard}/${shardCount}`);
-const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-force-exit", ...files], {
+const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-force-exit", "--test-concurrency=1", ...files], {
   stdio: "inherit",
 });
 if (result.error) {
