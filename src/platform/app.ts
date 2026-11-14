@@ -234,7 +234,7 @@ async function loadCloudWorkspace(){
   const health=await apiRequest<{cloudMedia?:{enabled:boolean;ready:boolean}}>("/api/health");
   state.cloudMediaReady=health.cloudMedia?.ready===true;
   if(!state.cloudMediaReady){
-   state.cloudProjects=[];state.cloudAssets=[];state.cloudTimelines=[];state.transformationDrafts=[];state.transformationReadiness=null;
+   state.cloudProjects=[];state.cloudAssets=[];state.cloudTimelines=[];state.transformationDrafts=[];state.transformationReadiness=null;state.googleGeminiFilesEnabled=false;
    state.cloudMessage="Cloud media is not configured on this server. Production currently uses local SQLite and disk storage. Private cloud uploads stay disabled until a dedicated Supabase project, schema, service credentials and private bucket are verified.";
    return;
   }
