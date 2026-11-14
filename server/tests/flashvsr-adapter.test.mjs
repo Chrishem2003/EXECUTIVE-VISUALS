@@ -76,17 +76,21 @@ test("FlashVSR rejects a subprocess response that does not prove temporal-model 
 });
 
 test("FlashVSR timeout escalates an unresponsive worker from SIGTERM to SIGKILL",async()=>{
+  const keepAlive=setInterval(()=>{},1000);
   const signals=[];
   const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,timeoutMs:5,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
-  await assert.rejects(adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4}),error=>error.code==="FLASHVSR_TIMEOUT");
+  try{await assert.rejects(adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4}),error=>error.code==="FLASHVSR_TIMEOUT");}
+  finally{clearInterval(keepAlive);}
   assert.deepEqual(signals,["SIGTERM","SIGKILL"]);
 });
 
 test("FlashVSR cancellation escalates an unresponsive worker and preserves cancellation status",async()=>{
+  const keepAlive=setInterval(()=>{},1000);
   const signals=[],controller=new AbortController();
   const adapter=createFlashVsrAdapter({repoRoot:tmpdir(),modelDir:tmpdir(),scriptPath:fileURLToPath(import.meta.url),enabled:true,selfTestPassed:true,qualityEvidencePassed:true,timeoutMs:60_000,processKillGraceMs:5,spawnImpl:stubbornSpawn(signals)});
   const pending=adapter.execute({inputPath:"/tmp/input.mp4",outputPath:"/tmp/output.mp4",scale:4,signal:controller.signal});
   controller.abort();
-  await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");
+  try{await assert.rejects(pending,error=>error.code==="JOB_CANCELLED");}
+  finally{clearInterval(keepAlive);}
   assert.deepEqual(signals,["SIGTERM","SIGKILL"]);
 });
