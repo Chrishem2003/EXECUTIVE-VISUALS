@@ -66,7 +66,7 @@ test("Paddle checkout rejects a provider price that differs from the reserved le
 });
 
 test("Paddle customer portal creates short-lived owner subscription management links",async()=>{
-  const customerId="ctm_01abcdefghijklmnopqrstuvwxyz",subscriptionId="sub_01abcdefghijklmnopqrstuvwxyz";
+  const customerId="ctm_01abcdefghijklmnopqrstuvwx",subscriptionId="sub_01abcdefghijklmnopqrstuvwx";
   let request;
   const provider=createPaddleSubscriptionProvider({
     apiKey:"sandbox-key",fetchImpl:async(url,options)=>{
@@ -103,9 +103,9 @@ test("Paddle webhook verifies raw-body HMAC and normalizes subscription activati
 
 test("Paddle transaction normalization uses the reserved subtotal, not tax-inclusive total",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000);
-  const event={event_id:"evt_01abcdefghijklmnopqrstuvwxyz",event_type:"transaction.completed",occurred_at:"2026-11-14T10:00:00Z",data:{
-    id:"txn_01abcdefghijklmnopqrstuvwxyz",status:"completed",customer_id:"ctm_01abcdefghijklmnopqrstuvwxyz",
-    subscription_id:"sub_01abcdefghijklmnopqrstuvwxyz",currency_code:"USD",origin:"web",
+  const event={event_id:"evt_01abcdefghijklmnopqrstuvwx",event_type:"transaction.completed",occurred_at:"2026-11-14T10:00:00Z",data:{
+    id:"txn_01abcdefghijklmnopqrstuvwx",status:"completed",customer_id:"ctm_01abcdefghijklmnopqrstuvwx",
+    subscription_id:"sub_01abcdefghijklmnopqrstuvwx",currency_code:"USD",origin:"web",
     custom_data:{owner_id:owner,plan_code:"creator",payment_id:"payment-123",reference:"EVS-order-123"},
     items:[{price:{id:"pri_01creator123"}}],
     details:{totals:{subtotal:"5000",discount:"0",tax:"500",grand_total:"5500"},
