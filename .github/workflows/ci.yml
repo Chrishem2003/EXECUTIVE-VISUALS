@@ -194,6 +194,16 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql
       - name: Apply lease-fenced Gemini upload recovery
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql
+      - name: Apply private GCS asset source registry
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105200000_google_gcs_asset_sources.sql
+      - name: Verify private GCS source scope, immutability and revocation
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-asset-sources-postgres-integration.sql
+      - name: Apply encrypted resumable GCS mirror attempts
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105210000_google_gcs_mirror_attempts.sql
+      - name: Enforce immutable CRC32C receipts for GCS mirror attempts
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105211000_google_gcs_mirror_attempt_crc32c.sql
+      - name: Verify GCS attempt encryption, leases and state transitions
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-mirror-attempts-postgres-integration.sql
       - name: Verify private provider-file mapping permissions and constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
       - name: Verify durable upload-attempt and recovery lease controls
