@@ -13,7 +13,7 @@ test("Paddle checkout uses a server-mapped price and returns hosted checkout onl
     apiKey:"sandbox-key",webhookSecret:"webhook-secret",priceIds:{creator:"pri_01creator123"},
     now,fetchImpl:async(url,options)=>{request={url:String(url),options,body:JSON.parse(options.body)};return json({data:{id:"txn_123",status:"draft",checkout:{url:"https://checkout.paddle.com/txn_123"}}});}
   });
-  const result=await provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",returnUrl:"https://executive-visuals.onrender.com/billing/return"});
+  const result=await provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",returnUrl:"https://executive-visuals.onrender.com/billing/return",paymentId:"payment-123",reference:"EVS-order-123"});
   assert.equal(result.checkoutUrl,"https://checkout.paddle.com/txn_123");
   assert.equal(result.transactionId,"txn_123");
   assert.equal(request.url,"https://sandbox-api.paddle.com/transactions");
