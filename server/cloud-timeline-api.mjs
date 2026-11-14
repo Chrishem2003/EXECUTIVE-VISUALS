@@ -468,7 +468,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
     return response(200,{jobs:Array.isArray(rows)?rows:[]});
    }
-   const jobMatch=path.match(/^\\/api\\/cloud\\/jobs\\/([0-9a-f-]+)(?:\\/(events|cancel))?$/i);
+   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events|cancel))?$/i);
    if(jobMatch&&safeId(jobMatch[1])){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
@@ -480,7 +480,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(permitted!==true)return response(cancelling?403:404,{error:{code:cancelling?"EDITOR_REQUIRED":"JOB_NOT_FOUND",message:cancelling?"Owner or editor access is required.":"Job not found."}});
     } else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
     if(cancelling){
-     const supported=job.job_type==="timeline.render"||job.job_type.startsWith("media.");
+     const supported=job.job_type==="timeline.render"||(typeof job.job_type==="string"&&job.job_type.startsWith("media."));
      if(!supported)return response(409,{error:{code:"JOB_CANCELLATION_UNSUPPORTED",message:"This job type requires its dedicated cancellation workflow."}});
      if(job.status==="cancelled")return response(200,{job,idempotentReplay:true,cancellationRequested:false});
      if(job.status==="processing"&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
