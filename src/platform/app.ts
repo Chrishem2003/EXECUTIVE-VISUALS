@@ -528,7 +528,8 @@ async function loadBillingWorkspace(){
    apiRequest<{notifications:Array<Record<string,unknown>>}>("/api/billing/notifications?limit=20"),
    apiRequest<{loyalty:{rewards:Array<Record<string,unknown>>;events:Array<Record<string,unknown>>;creditBalance:number;offer:Record<string,unknown>|null}}>("/api/billing/loyalty"),
    apiRequest<{referrals:{code:string|null;codeStatus:string;referrals:Array<Record<string,unknown>>;rewardsEarned:number;offer:Record<string,unknown>|null}}>("/api/billing/referrals"),
-   apiRequest<{success:{progress:Array<Record<string,unknown>>;milestones:Array<Record<string,unknown>>;points:number;completedCount:number;totalCount:number}}>("/api/customer-success/me")
+   apiRequest<{success:{progress:Array<Record<string,unknown>>;milestones:Array<Record<string,unknown>>;points:number;completedCount:number;totalCount:number}}>("/api/customer-success/me"),
+   apiRequest<{billing?:{paddlePesapal:{ready:boolean;enabled:boolean;paddle:{configured:boolean;environment:string};pesapal:{configured:boolean;environment:string}}}}>("/api/health")
   ]);
   billingState.subscription=subscription.subscription;billingState.plans=plans.plans||[];
   billingState.transactions=transactions.transactions||[];billingState.invoices=invoices.invoices||[];
