@@ -161,7 +161,7 @@ export function createGoogleOmniWorkerDependencies({
   for(const id of videoIds)parts.push(await filePart(id,"video"));
   parts.push({type:"text",text:input.prompt});
   if(parts.length>10)throw fail("Gemini Omni multimodal input exceeds the ten-part limit.","GEMINI_OMNI_UNSUPPORTED_INPUT");
-  const task=sourceVideoId?(operation==="extend"?"extend":"edit"):
+  const task=sourceVideoId||input.previousInteractionId?(operation==="extend"?"extend":"edit"):
    firstFrameId&&!imageIds.length&&!videoIds.length?"image_to_video":
    imageIds.length||videoIds.length?"reference_to_video":null;
   const payload={
