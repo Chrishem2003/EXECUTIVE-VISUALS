@@ -63,7 +63,7 @@ export function createPaddleSubscriptionProvider({
   webhookSecret=process.env.PADDLE_WEBHOOK_SECRET,
   baseUrl=process.env.PADDLE_API_BASE_URL||"https://sandbox-api.paddle.com",
   allowLive=process.env.PADDLE_ALLOW_LIVE==="true",
-  priceIds={},
+  priceIds=Object.fromEntries(Object.entries(process.env).filter(([key,value])=>key.startsWith("PADDLE_PRICE_ID_")&&value).map(([key,value])=>[key.slice("PADDLE_PRICE_ID_".length).toLowerCase(),value])),
   fetchImpl=globalThis.fetch,
   now=()=>Date.now()
 }={}){
@@ -72,6 +72,7 @@ export function createPaddleSubscriptionProvider({
   const live=base.hostname==="api.paddle.com";
   if(base.protocol!=="https:"||(!sandbox&&!live))throw fail("PADDLE_API_HOST_INVALID","Paddle API must use its documented sandbox or production HTTPS host.",500);
   if(live&&!allowLive)throw fail("PADDLE_LIVE_DISABLED","Live Paddle requests require PADDLE_ALLOW_LIVE=true.",500);
+  if(!apiKey)throw fail("PADDLE_API_KEY_REQUIRED","Paddle API key is not configured.",500);
   if(typeof fetchImpl!=="function")throw fail("PAYMENT_FETCH_REQUIRED","A fetch implementation is required.",500);
 
   async function createCheckout({planCode,ownerId,email,returnUrl,quantity=1}={}){
@@ -121,6 +122,7 @@ export function createPesapalSubscriptionProvider({
   const live=base.hostname==="pay.pesapal.com";
   if(base.protocol!=="https:"||(!sandbox&&!live))throw fail("PESAPAL_API_HOST_INVALID","Pesapal API must use its documented sandbox or production HTTPS host.",500);
   if(live&&!allowLive)throw fail("PESAPAL_LIVE_DISABLED","Live Pesapal requests require PESAPAL_ALLOW_LIVE=true.",500);
+  if(!consumerKey||!consumerSecret)throw fail("PESAPAL_CREDENTIALS_REQUIRED","Pesapal consumer key and secret are not configured.",500);
   if(typeof fetchImpl!=="function")throw fail("PAYMENT_FETCH_REQUIRED","A fetch implementation is required.",500);
   let token=null,tokenExpiresAt=0;
 
