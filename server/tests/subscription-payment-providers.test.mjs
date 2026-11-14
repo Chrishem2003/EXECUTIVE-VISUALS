@@ -90,6 +90,7 @@ test("Pesapal authenticates, registers IPN and creates a hosted recurring card o
   assert.equal(order.options.headers.authorization,"Bearer pesapal-token");
   assert.deepEqual(order.body.subscription_details,{start_date:"14-11-2026",end_date:"14-11-2027",frequency:"MONTHLY"});
   assert.equal(order.body.currency,"UGX");
+  assert.equal("account_number" in order.body,false);
   assert.equal(calls.filter(x=>x.url.endsWith("/api/Auth/RequestToken")).length,1);
 });
 
