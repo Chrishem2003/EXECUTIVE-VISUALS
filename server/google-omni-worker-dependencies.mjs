@@ -123,7 +123,7 @@ export function createGoogleOmniWorkerDependencies({
   };
   if(!await verifyApprovalContext(approvalContext,["prepared"]))throw fail("Gemini Omni private input preparation requires a current lease and consumed matching budget approval.","GEMINI_OMNI_APPROVAL_REQUIRED");
   if(input.lastFrameAssetId||input.endFrameAssetId)throw fail("Gemini Omni last-frame locking is not yet supported by this worker path.","GEMINI_OMNI_UNSUPPORTED_INPUT");
-  const operation=text(input.operation)||"generate";
+  const operation=text(input.operation)||(text(input.previousInteractionId)||text(input.sourceVideoAssetId)?"edit":"generate");
   if(!["generate","edit","extend"].includes(operation))throw fail("Gemini Omni operation is unsupported.","GEMINI_OMNI_UNSUPPORTED_INPUT");
   const aspectRatio=text(input.aspectRatio)||"16:9";
   if(!["16:9","9:16"].includes(aspectRatio))throw fail("Gemini Omni currently supports 16:9 or 9:16 output.","GEMINI_OMNI_UNSUPPORTED_INPUT");
@@ -162,7 +162,8 @@ export function createGoogleOmniWorkerDependencies({
   parts.push({type:"text",text:input.prompt});
   if(parts.length>10)throw fail("Gemini Omni multimodal input exceeds the ten-part limit.","GEMINI_OMNI_UNSUPPORTED_INPUT");
   const task=sourceVideoId?(operation==="extend"?"extend":"edit"):
-   firstFrameId||imageIds.length||videoIds.length?(imageIds.length+videoIds.length>1?"reference_to_video":"image_to_video"):null;
+   firstFrameId&&!imageIds.length&&!videoIds.length?"image_to_video":
+   imageIds.length||videoIds.length?"reference_to_video":null;
   const payload={
    model:MODEL,input:parts,
    response_format:{type:"video",aspect_ratio:aspectRatio,resolution:"720p",delivery:"uri"}
