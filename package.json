@@ -91,7 +91,7 @@
     "verify:video-ai-upscale-worker-self-test": "node --check server/scripts/self-test-video-ai-upscale-worker.mjs && node --test server/tests/video-ai-upscale.test.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
+    "typescript": "^7.0.2",
     "vite": "^6.3.5"
   },
   "overrides": {
