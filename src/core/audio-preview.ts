@@ -6,11 +6,12 @@ export interface AudioPreviewTrackInput {
  pan?:number;
  automation?:readonly AudioAutomationPoint[];
  automationTime?:number;
+ transitionGain?:number;
  muted?:boolean;
  solo?:boolean;
 }
 
-type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;panner:StereoPannerNode;gainDb:number;pan:number;automation:AudioAutomationPoint[];automationTime:number;muted:boolean;solo:boolean};
+type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;panner:StereoPannerNode;gainDb:number;pan:number;automation:AudioAutomationPoint[];automationTime:number;transitionGain:number;muted:boolean;solo:boolean};
 
 export function decibelsToGain(value:number,minDb=-60,maxDb=24):number{
  const db=Number.isFinite(value)?Math.max(minDb,Math.min(maxDb,value)):0;
@@ -81,10 +82,10 @@ export class AudioPreviewEngine{
    if(!entry){
     const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain(),panner=this.context.createStereoPanner();
     source.connect(gain);gain.connect(panner);panner.connect(this.master);
-    entry={media:track.media,source,gain,panner,gainDb:track.gainDb??0,pan:track.pan??0,automation:[],automationTime:0,muted:false,solo:false};
+    entry={media:track.media,source,gain,panner,gainDb:track.gainDb??0,pan:track.pan??0,automation:[],automationTime:0,transitionGain:1,muted:false,solo:false};
     this.connected.set(track.id,entry);
    }
-   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;entry.pan=Math.max(-1,Math.min(1,Number.isFinite(track.pan)?track.pan??0:0));entry.automation=normalizeAudioAutomation(track.automation);entry.automationTime=Math.max(0,Number.isFinite(track.automationTime)?track.automationTime??0:0);
+   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;entry.pan=Math.max(-1,Math.min(1,Number.isFinite(track.pan)?track.pan??0:0));entry.automation=normalizeAudioAutomation(track.automation);entry.automationTime=Math.max(0,Number.isFinite(track.automationTime)?track.automationTime??0:0);entry.transitionGain=Math.max(0,Math.min(1,Number.isFinite(track.transitionGain)?track.transitionGain??1:1));
   }
   this.applyTrackStates();
  }
@@ -105,7 +106,7 @@ export class AudioPreviewEngine{
    const suppressed=entry.muted||(hasSolo&&!entry.solo),gainParam=entry.gain.gain,panParam=entry.panner.pan;
    const gainDb=evaluateAudioAutomation(entry.automation,entry.automationTime,"gainDb",entry.gainDb);
    const pan=evaluateAudioAutomation(entry.automation,entry.automationTime,"pan",entry.pan);
-   gainParam.cancelScheduledValues?.(now);gainParam.setValueAtTime(suppressed?0:decibelsToGain(gainDb),now);
+   gainParam.cancelScheduledValues?.(now);gainParam.setValueAtTime(suppressed?0:decibelsToGain(gainDb)*entry.transitionGain,now);
    panParam.cancelScheduledValues?.(now);panParam.setValueAtTime(pan,now);
    for(const point of entry.automation){
     const at=now+(point.timeSeconds-entry.automationTime);if(at<=now)continue;

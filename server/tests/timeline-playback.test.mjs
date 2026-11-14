@@ -132,6 +132,31 @@ function transitionFixture(){
  return timeline;
 }
 
+test("audio crossfade preview applies matching linear envelopes to outgoing and incoming clips",()=>{
+ const timeline=createTimeline("project-audio-crossfade","timeline-audio-crossfade","Audio crossfade",{numerator:24,denominator:1});
+ let withTrack=addTrack(timeline,{id:"audio",name:"Music",kind:"audio",enabled:true,locked:false,clips:[]});
+ const clip=(id,start,transitionToNext)=>({id,assetId:"asset-"+id,name:id,sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(start,24),duration:rational(24,24),enabled:true,...(transitionToNext?{transitionToNext}:{})});
+ withTrack=addClip(withTrack,"audio",clip("outgoing",0));
+ withTrack=addClip(withTrack,"audio",clip("incoming",24));
+ withTrack.tracks[0].clips[0].transitionToNext={type:"crossfade",fadeFrames:6};
+ withTrack.tracks[0].clips[1].timelineStart=rational(18,24);
+ const start=getTimelinePlaybackFrame(withTrack,0.75).activeAudio;
+ const midpoint=getTimelinePlaybackFrame(withTrack,0.875).activeAudio;
+ const justBeforeEnd=getTimelinePlaybackFrame(withTrack,0.999).activeAudio;
+ const end=getTimelinePlaybackFrame(withTrack,1).activeAudio;
+ assert.equal(start.length,2);
+ assert.ok(Math.abs(start.find(item=>item.clipId==="outgoing").transitionGain-1)<0.001);
+ assert.ok(Math.abs(start.find(item=>item.clipId==="incoming").transitionGain)<0.001);
+ assert.ok(Math.abs(midpoint.find(item=>item.clipId==="outgoing").transitionGain-0.5)<0.001);
+ assert.ok(Math.abs(midpoint.find(item=>item.clipId==="incoming").transitionGain-0.5)<0.001);
+ assert.ok(justBeforeEnd.find(item=>item.clipId==="outgoing").transitionGain<0.01);
+ assert.ok(justBeforeEnd.find(item=>item.clipId==="incoming").transitionGain>0.99);
+ assert.equal(end.length,1,"the outgoing clip uses a half-open end boundary");
+ assert.equal(end[0].clipId,"incoming");
+ assert.ok(Math.abs(end[0].transitionGain-1)<0.001);
+ assert.equal(validateTimeline(withTrack).valid,true);
+});
+
 test("dip-to-black transitions validate and round-trip through OpenTimelineIO metadata",()=>{
  const timeline=transitionFixture();
  assert.equal(validateTimeline(timeline).valid,true);

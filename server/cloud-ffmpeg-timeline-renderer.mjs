@@ -206,8 +206,24 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(needsRubberband&&!/\brubberband\b/.test(filterListing))fail("Variable-speed audio export requires an FFmpeg build with librubberband support; this render worker does not provide that filter.","RUBBERBAND_UNAVAILABLE");
   if(motionClips.length&&!/\bminterpolate\b/.test(filterListing))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
  }
- if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
+ if(tracks.some(track=>["overlay","caption"].includes(track.kind)&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video and audio tracks.","INVALID_TIMELINE_TRANSITION");
  const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
+ const audioFadeInFrames=new Map(),audioFadeOutFrames=new Map();
+ for(const track of audios){
+  const trackClips=ordered([track]);
+  for(let index=0;index<trackClips.length;index++){
+   const clip=trackClips[index],transition=clip.transitionToNext;
+   if(transition===undefined)continue;
+   const fadeFrames=Number(transition?.fadeFrames),durationFrames=Math.round(seconds(clip.duration)*fps),next=trackClips[index+1];
+   if(transition?.type!=="crossfade"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>durationFrames)fail("Audio crossfades require a positive integer fade length no longer than the outgoing clip.","INVALID_TIMELINE_TRANSITION");
+   if(!next)fail("An audio crossfade requires the next enabled audio clip on the same track.","INVALID_TIMELINE_TRANSITION");
+   const nextDurationFrames=Math.round(seconds(next.duration)*fps),fadeDuration=fadeFrames/fps;
+   const expectedNextStart=seconds(clip.timelineStart)+seconds(clip.duration)-fadeDuration;
+   if(fadeFrames>nextDurationFrames||Math.abs(seconds(next.timelineStart)-expectedNextStart)>0.5/fps)fail("An audio crossfade requires the next clip to overlap the outgoing clip by exactly its configured fade duration.","INVALID_TIMELINE_TRANSITION");
+   audioFadeOutFrames.set(clip,fadeFrames);
+   audioFadeInFrames.set(next,fadeFrames);
+  }
+ }
  for(let index=0;index<clips.length;index++){
   const clip=clips[index],transition=clip.transitionToNext;
   if(transition===undefined)continue;
@@ -283,7 +299,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    }
    const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
    const panFilter=pan?","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
-    const audioFades=buildClipFadeFilters(clip,duration,"audio");
+    const fadeInFrames=audioFadeInFrames.get(clip)||0,fadeOutFrames=audioFadeOutFrames.get(clip)||0;
+   const crossfadeFilters=[...(fadeInFrames?[ "afade=t=in:st=0:d="+(fadeInFrames/fps).toFixed(6) ]:[]),...(fadeOutFrames?[ "afade=t=out:st="+Math.max(0,duration-fadeOutFrames/fps).toFixed(6)+":d="+(fadeOutFrames/fps).toFixed(6) ]:[])];
+   const audioFades=[...buildClipFadeFilters(clip,duration,"audio"),...crossfadeFilters];
    audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume='${gain}':eval=frame${panFilter}${audioFades.length?","+audioFades.join(","):""},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
    inputIndex++;
   }
@@ -343,7 +361,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,clipFadeClips:[...clips,...audioClips].filter(clip=>["fadeInSeconds","fadeOutSeconds"].some(key=>Number(clip.metadata?.[key])>0)).length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,audioCrossfades:audioFadeOutFrames.size,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,clipFadeClips:[...clips,...audioClips].filter(clip=>["fadeInSeconds","fadeOutSeconds"].some(key=>Number(clip.metadata?.[key])>0)).length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
