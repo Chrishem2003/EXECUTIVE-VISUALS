@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createStoryboardTimeline, reflowStoryboardTimelinePlan } from "../src/core/storyboard-timeline.ts";
 import { rational, validateTimeline } from "../src/core/timeline.ts";
-import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history.ts";
+import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history-operations.ts";
 
 const shot=(id,durationSeconds,number=1)=>({
  id,number,durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
