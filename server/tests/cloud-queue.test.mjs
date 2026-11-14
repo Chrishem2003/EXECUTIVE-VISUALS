@@ -45,6 +45,19 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   assert.deepEqual(requests[3].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
+test("cancellation polling is scoped to the exact active worker lease",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,options});return response([{id:"job-1",status:"processing",lease_owner:"worker-1",lease_token:"11111111-1111-4111-8111-111111111111",cancel_requested_at:"2026-11-14T06:00:00Z"}]);}});
+ assert.equal(await queue.cancellationRequested("job-1","worker-1","11111111-1111-4111-8111-111111111111"),true);
+ const request=requests[0];const parsed=new URL(request.url);
+ assert.equal(parsed.pathname,"/rest/v1/jobs");
+ assert.equal(parsed.searchParams.get("id"),"eq.job-1");assert.equal(parsed.searchParams.get("status"),"eq.processing");
+ assert.equal(parsed.searchParams.get("lease_owner"),"eq.worker-1");assert.equal(parsed.searchParams.get("lease_token"),"eq.11111111-1111-4111-8111-111111111111");
+ assert.equal(request.options.headers["accept-profile"],"executive_visuals");
+ const empty=createCloudQueue({...base,fetchImpl:async()=>response([])});
+ assert.equal(await empty.cancellationRequested("job-1","worker-1","11111111-1111-4111-8111-111111111111"),false);
+ await assert.rejects(()=>queue.cancellationRequested("job-1","worker-1","bad-token"),/lease token/);
+});
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
   assert.throws(()=>createCloudQueue({url:base.url}),/SUPABASE_SERVICE_ROLE_KEY/);
