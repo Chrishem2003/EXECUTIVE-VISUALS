@@ -1408,7 +1408,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
  const target=e.target as HTMLInputElement|HTMLTextAreaElement;
- if(target.matches("[data-model-storyboard-rights]")){if(!target.checked)storyboardPreflightContext=null;return;}
+ if(target.matches("[data-model-storyboard-rights]")){if(!(target as HTMLInputElement).checked)storyboardPreflightContext=null;return;}
  const project=state.projects.find(item=>item.id===state.activeProject),board=project?.modelStoryboard;
  if(!board)return;
  const sceneIndex=Number(target.dataset.sceneIndex),shotIndex=Number(target.dataset.shotIndex);
