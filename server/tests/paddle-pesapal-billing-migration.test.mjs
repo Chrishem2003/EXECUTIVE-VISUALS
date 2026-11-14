@@ -58,3 +58,11 @@ test("provider checkout reservation returns server-locked billing interval and p
   assert.match(migration,/providerPriceId',price_row\.provider_price_id/);
   assert.match(migration,/billing_interval/);
 });
+
+test("Pesapal manual renewals reserve and atomically extend only the matching provider subscription",()=>{
+  assert.match(migration,/reserve_pesapal_subscription_renewal/);
+  assert.match(migration,/finalize_subscription_renewal_for_provider/);
+  assert.match(migration,/provider='pesapal'/);
+  assert.match(migration,/A Pesapal renewal payment is already pending/);
+  assert.match(migration,/Subscription period extended after verified provider renewal payment/);
+});
