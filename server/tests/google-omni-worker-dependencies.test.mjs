@@ -90,6 +90,14 @@ test("Gemini Omni private image references are resolved through the owner-scoped
  assert.equal(plan.payload.input[0].uri,"https://generativelanguage.googleapis.com/v1beta/files/Abc123");
  assert.equal(plan.payload.generation_config.video_config.task,"image_to_video");
 });
+test("Gemini Omni reference images use the reference-to-video task and prior interactions remain project scoped",async()=>{
+ const {deps}=setup({ledgerState:"prepared"});
+ const reference=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Use this image as a visual reference.",operation:"generate",durationSeconds:5,referenceImageAssetIds:[assetId]},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
+ assert.equal(reference.payload.generation_config.video_config.task,"reference_to_video");
+ const edit=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Change the lighting.",operation:"edit",durationSeconds:5,previousInteractionId:"v1_abcdef123456"},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
+ assert.equal(edit.payload.previous_interaction_id,"v1_abcdef123456");
+ assert.equal(edit.payload.generation_config.video_config.task,"edit");
+});
 test("Gemini Omni connection verification performs a metadata GET, never a generation POST",async()=>{
  const {deps,calls}=setup();
  const result=await deps.assertConnection();
