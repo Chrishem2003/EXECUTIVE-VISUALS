@@ -57,7 +57,10 @@ export function buildModelStoryboardGenerationShots(
   if (sourceShots.length < 1 || sourceShots.length > 12) {
     throw new Error("Video generation supports 1–12 reviewed storyboard shots per approved production. Split larger storyboards into smaller segments.");
   }
-  const totalDurationSeconds = sourceShots.reduce((sum, shot) => sum + Number(shot?.durationSeconds || 0), 0);
+  if (sourceShots.some(shot => !shot || !Number.isInteger(shot.durationSeconds) || shot.durationSeconds < 1 || shot.durationSeconds > 60)) {
+    throw new Error("Every planned shot must have a whole-number duration between 1 and 60 seconds.");
+  }
+  const totalDurationSeconds = sourceShots.reduce((sum, shot) => sum + shot.durationSeconds, 0);
   if (!Number.isInteger(storyboard.targetDurationSeconds) || storyboard.targetDurationSeconds < 1) {
     throw new Error("The storyboard must retain a valid target runtime.");
   }
