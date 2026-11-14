@@ -12,7 +12,7 @@ test("provider migration extends existing ledger without removing Flutterwave co
 });
 
 test("provider pricing keeps Paddle supported currencies separate from Ugandan Pesapal pricing",()=>{
-  assert.match(migration,/provider='paddle'.*provider_price_id ~ '\^pri_/s);
+  assert.match(migration,/provider='paddle'.*provider_price_id is not null and provider_price_id ~ '\^pri_/s);
   assert.match(migration,/currency in \('USD','EUR','GBP'\)/);
   assert.match(migration,/provider='pesapal'.*provider_price_id is null and currency='UGX'/s);
   assert.match(migration,/unique\(plan_id,provider\)/);
