@@ -50,6 +50,7 @@ export function createFlashVsrAdapter({
   modelDir=process.env.FLASHVSR_MODEL_DIR||"",
   enabled=process.env.FLASHVSR_ENABLED==="true",
   selfTestPassed=process.env.FLASHVSR_SELF_TEST_PASSED==="true",
+  qualityEvidencePassed=process.env.FLASHVSR_QUALITY_EVIDENCE_PASSED==="true",
   scriptPath=join(process.cwd(),"server","scripts","flashvsr-infer.py"),
   spawnImpl=spawn,
   timeoutMs=2*60*60*1000,
@@ -67,11 +68,11 @@ export function createFlashVsrAdapter({
       const result=await run(["--probe"],{timeoutMs:120_000,maxCaptureBytes:256_000});
       const report=parseLastJson(result.stdout);
       const available=report.available===true;
-      return {available,executionEnabled:enabled,executionVerified:selfTestPassed,model:report.model||"FlashVSR-v1.1-tiny-long",license:report.license||"Apache-2.0",runtime:report.runtime||null,checks:report.checks||null,reason:report.reason||(!available?"Python dependencies, CUDA/bfloat16 support or model weights are not ready.":!enabled?"FLASHVSR_ENABLED is not true.":!selfTestPassed?"FLASHVSR_SELF_TEST_PASSED is not true.":null),ready:available&&enabled&&selfTestPassed};
+      return {available,executionEnabled:enabled,executionVerified:selfTestPassed,qualityEvidencePassed,model:report.model||"FlashVSR-v1.1-tiny-long",license:report.license||"Apache-2.0",runtime:report.runtime||null,checks:report.checks||null,reason:report.reason||(!available?"Python dependencies, CUDA/bfloat16 support or model weights are not ready.":!enabled?"FLASHVSR_ENABLED is not true.":!selfTestPassed?"FLASHVSR_SELF_TEST_PASSED is not true.":!qualityEvidencePassed?"FLASHVSR_QUALITY_EVIDENCE_PASSED is not true.":null),ready:available&&enabled&&selfTestPassed&&qualityEvidencePassed};
     }catch(error){return {available:false,executionEnabled:enabled,executionVerified:selfTestPassed,reason:error instanceof Error?error.message:"FlashVSR readiness check failed.",model:"FlashVSR-v1.1-tiny-long"};}
   }
   async function execute({inputPath,outputPath,scale=4,signal,onProgress=()=>{}}={}){
-    if(!enabled||!selfTestPassed)throw Object.assign(new Error("FlashVSR requires explicit enablement and a passed local model self-test."),{code:"FLASHVSR_NOT_ENABLED"});
+    if(!enabled||!selfTestPassed||!qualityEvidencePassed)throw Object.assign(new Error("FlashVSR requires explicit enablement, a passed local inference self-test and approved staging quality evidence."),{code:"FLASHVSR_NOT_ENABLED"});
     if(Number(scale)!==4)throw Object.assign(new Error("FlashVSR v1.1 currently supports 4x video super-resolution only."),{code:"FLASHVSR_SCALE_UNSUPPORTED"});
     const result=await run(["--input",resolve(inputPath),"--output",resolve(outputPath),"--scale","4"],{signal,timeoutMs,maxCaptureBytes:2_000_000});
     const report=parseLastJson(result.stdout);
