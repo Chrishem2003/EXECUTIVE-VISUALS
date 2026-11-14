@@ -337,7 +337,7 @@ export function createFinancialIntelligenceApi({
         return response(200,{plans:Array.isArray(result.data)?result.data:[]});
       }
       if(path==="/api/billing/subscription"&&method==="GET"){
-        const result=await dbRequest("customer_subscriptions?select=id,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
+        const result=await dbRequest("customer_subscriptions?select=id,provider,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
       }
