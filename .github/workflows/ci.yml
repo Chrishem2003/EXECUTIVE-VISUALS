@@ -200,6 +200,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-asset-sources-postgres-integration.sql
       - name: Apply encrypted resumable GCS mirror attempts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105210000_google_gcs_mirror_attempts.sql
+      - name: Enforce immutable CRC32C receipts for GCS mirror attempts
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105211000_google_gcs_mirror_attempt_crc32c.sql
       - name: Verify GCS attempt encryption, leases and state transitions
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-mirror-attempts-postgres-integration.sql
       - name: Verify private provider-file mapping permissions and constraints
