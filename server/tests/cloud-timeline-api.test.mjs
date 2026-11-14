@@ -126,6 +126,9 @@ test("cloud job cancellation requires editor access and excludes provider-manage
  assert.equal((await denied.api.handle({method:"POST",path:"/api/cloud/jobs/"+active.id+"/cancel",ownerId:owner})).status,403);
  assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
  const providerJob={...active,id:"623e4567-e89b-42d3-a456-426614174103",job_type:"video.generate"};
+ const unknownMedia={...active,id:"623e4567-e89b-42d3-a456-426614174104",job_type:"media.unregistered"};
+ const unknown=setup({existing:[unknownMedia]});
+ assert.equal((await unknown.api.handle({method:"POST",path:"/api/cloud/jobs/"+unknownMedia.id+"/cancel",ownerId:owner})).body.error.code,"JOB_CANCELLATION_UNSUPPORTED");
  const unsupported=setup({existing:[providerJob]});
  const result=await unsupported.api.handle({method:"POST",path:"/api/cloud/jobs/"+providerJob.id+"/cancel",ownerId:owner});
  assert.equal(result.status,409);assert.equal(result.body.error.code,"JOB_CANCELLATION_UNSUPPORTED");
