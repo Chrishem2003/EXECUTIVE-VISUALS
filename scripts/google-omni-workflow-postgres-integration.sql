@@ -10,6 +10,9 @@ declare
   approval_id constant uuid := 'd23e4567-e89b-42d3-a456-426614174000';
   request_id constant text := 'google-omni-workflow-postgres-1';
   request_hash constant text := repeat('a',64);
+  baseline_reserved numeric;
+  baseline_spent numeric;
+  recorded_quote_id uuid;
   config_id constant text := 'google-gemini-omni-flash';
   request_input jsonb;
   approved record;
@@ -19,15 +22,19 @@ declare
   policy executive_visuals.video_generation_budget_policies;
   approval executive_visuals.video_generation_budget_approvals;
 begin
-  insert into executive_visuals.video_workflow_quotes(
-    id,owner_id,project_id,request_id,request_hash,provider,model,operation,
-    routed_provider,routed_model,estimated_credits,estimated_amount,currency,
-    config_id,pricing_source,expires_at
-  ) values (
+  select p.reserved_amount,p.spent_amount into baseline_reserved,baseline_spent
+    from executive_visuals.video_generation_budget_policies p
+   where p.owner_id='123e4567-e89b-42d3-a456-426614174000'::uuid
+     and p.project_id='323e4567-e89b-42d3-a456-426614174000'::uuid
+     and p.provider='google' and p.model='gemini-omni-1.1-flash';
+  if baseline_reserved is null then raise exception 'Google Omni budget policy fixture is missing'; end if;
+
+  select executive_visuals.record_video_workflow_quote(
     quote_id,owner_id,project_id,request_id,request_hash,'google','gemini-omni-1.1-flash','generate',
-    'google','gemini-omni-1.1-flash',1106496,2.586464,'USD',
+    'google','gemini-omni-1.1-flash',259,2.586464,'USD',
     config_id,'google_gemini_omni_token_pricing_2026-11-05',clock_timestamp()+interval '5 minutes'
-  );
+  ) into recorded_quote_id;
+  if recorded_quote_id<>quote_id then raise exception 'Google Omni workflow quote did not persist'; end if;
 
   request_input:=jsonb_build_object(
     'projectId',project_id::text,'requestHash',request_hash,
@@ -69,8 +76,10 @@ begin
   select * into job_row from executive_visuals.jobs where id=approved.job_id;
   select * into reservation from executive_visuals.video_generation_budget_reservations where job_id=approved.job_id;
   select * into approval from executive_visuals.video_generation_budget_approvals where id=approval_id;
-  select * into policy from executive_visuals.video_generation_budget_policies
-   where owner_id=owner_id and project_id=project_id and provider='google' and model='gemini-omni-1.1-flash';
+  select p.* into policy from executive_visuals.video_generation_budget_policies p
+   where p.owner_id='123e4567-e89b-42d3-a456-426614174000'::uuid
+     and p.project_id='323e4567-e89b-42d3-a456-426614174000'::uuid
+     and p.provider='google' and p.model='gemini-omni-1.1-flash';
 
   if job_row.status<>'queued' or job_row.owner_id<>owner_id or job_row.project_id<>project_id
      or job_row.input->>'provider'<>'google' or job_row.input->>'model'<>'gemini-omni-1.1-flash'
@@ -78,7 +87,7 @@ begin
      or reservation.state<>'reserved' or reservation.provider<>'google'
      or reservation.model<>'gemini-omni-1.1-flash' or reservation.reserved_amount<>2.70
      or approval.consumed_at is null or approval.approved_max_amount<>2.70
-     or policy.reserved_amount<>2.70 or policy.spent_amount<>0 then
+     or policy.reserved_amount<>baseline_reserved+2.70 or policy.spent_amount<>baseline_spent then
     raise exception 'Google Omni workflow approval did not bind the quote, owner, provider, budget and job';
   end if;
 end
