@@ -165,6 +165,32 @@ test("refund initiation requires billing admin authorization",async()=>{
   assert.equal(result.body.error.code,"FINANCE_ADMIN_REQUIRED");
 });
 
+test("refund initiation fails closed for Paddle and Pesapal charges before calling Flutterwave",async t=>{
+  for(const provider of ["paddle","pesapal"]){
+    await t.test(provider,async()=>{
+      const calls=[];
+      const service=api(async(url,options={})=>{
+        const target=String(url);calls.push({target,method:options.method||"GET"});
+        if(target.includes("platform_admins"))return json([{role:"billing_admin"}]);
+        if(target.includes("payment_transactions?select=id,owner_id,provider,provider_transaction_id"))return json([{
+          id:paymentId,owner_id:owner,provider,provider_transaction_id:"txn_"+provider+"_verified",
+          amount_minor:5000,currency:provider==="paddle"?"USD":"UGX",status:"successful"
+        }]);
+        throw new Error("Unsupported provider refund must stop before any provider or RPC call: "+target);
+      });
+      const result=await service.handle({
+        method:"POST",path:"/api/admin/finance/refunds",ownerId:owner,
+        body:{paymentTransactionId:paymentId,amountMinor:1000,reason:"Customer request"},
+        idempotencyKey:"refund-key-"+provider+"-0001"
+      });
+      assert.equal(result.status,409);
+      assert.equal(result.body.error.code,"REFUND_PROVIDER_UNSUPPORTED");
+      assert.equal(calls.length,2);
+      assert.ok(!calls.some(call=>call.target.includes("flutterwave")||call.target.includes("/rpc/")));
+    });
+  }
+});
+
 test("v4 webhook rejects invalid signatures before writing event records",async()=>{
   let calls=0;
   const service=api(async()=>{calls++;return json([]);});
@@ -824,6 +850,7 @@ test("customer subscription management delegates ownership-bound cancellation to
   let rpcPayload=null;
   const service=api(async(url,options={})=>{
     const target=String(url);
+    if(target.includes("/customer_subscriptions?select=id,provider"))return json([{provider:"flutterwave"}]);
     if(target.endsWith("/rpc/manage_customer_subscription")){
       rpcPayload=JSON.parse(options.body);
       return json({subscriptionId:"44444444-4444-4444-8444-444444444444",status:"active",cancelAtPeriodEnd:true,effectiveAt:"2026-12-01T00:00:00Z"});

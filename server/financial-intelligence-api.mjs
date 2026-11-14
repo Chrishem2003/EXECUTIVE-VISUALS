@@ -337,7 +337,7 @@ export function createFinancialIntelligenceApi({
         return response(200,{plans:Array.isArray(result.data)?result.data:[]});
       }
       if(path==="/api/billing/subscription"&&method==="GET"){
-        const result=await dbRequest("customer_subscriptions?select=id,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
+        const result=await dbRequest("customer_subscriptions?select=id,provider,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
         const subscription=Array.isArray(result.data)?result.data[0]||null:null;
         return response(200,{subscription});
       }
@@ -366,6 +366,10 @@ export function createFinancialIntelligenceApi({
         if(!UUID.test(subscriptionId)||!allowed.includes(action)||
           (action==="schedule_plan_change"&&!/^[a-z][a-z0-9_-]{1,63}$/.test(planCode)))
           return error(400,"SUBSCRIPTION_MANAGEMENT_INPUT_INVALID","Provide a valid subscription and supported management action.");
+        const owned=await dbRequest("customer_subscriptions?select=id,provider&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        const current=Array.isArray(owned.data)?owned.data[0]:null;
+        if(!current)return error(404,"SUBSCRIPTION_NOT_FOUND","Subscription not found.");
+        if(current.provider==="paddle")return error(409,"PADDLE_MANAGEMENT_PORTAL_REQUIRED","Paddle subscription changes must be made through the provider customer portal. Local-only cancellation is blocked to prevent an unintended future charge.");
         const result=await rpc("manage_customer_subscription",{
           p_owner_id:ownerId,p_subscription_id:subscriptionId,p_action:action,
           p_plan_code:action==="schedule_plan_change"?planCode:null,
@@ -1668,9 +1672,10 @@ export function createFinancialIntelligenceApi({
         const key=String(idempotencyKey||"").trim();
         if(!UUID.test(paymentId)||!Number.isSafeInteger(amountMinor)||amountMinor<=0||reason.length<3||key.length<8||key.length>180)
           return error(400,"REFUND_INPUT_INVALID","Provide a payment ID, positive amount in minor units, reason and an idempotency key.");
-        const paymentResult=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,amount_minor,currency,status&id=eq."+encodeURIComponent(paymentId)+"&limit=1");
+        const paymentResult=await dbRequest("payment_transactions?select=id,owner_id,provider,provider_transaction_id,amount_minor,currency,status&id=eq."+encodeURIComponent(paymentId)+"&limit=1");
         const payment=Array.isArray(paymentResult.data)?paymentResult.data[0]:null;
         if(!payment)return error(404,"PAYMENT_NOT_FOUND","Payment transaction not found.");
+        if(payment.provider!=="flutterwave")return error(409,"REFUND_PROVIDER_UNSUPPORTED","Refund initiation is currently supported only for verified Flutterwave charges.");
         if(payment.status!=="successful"||!payment.provider_transaction_id)return error(409,"PAYMENT_NOT_REFUNDABLE","Only a verified successful Flutterwave charge can be refunded.");
         if(!Number.isSafeInteger(payment.amount_minor)||amountMinor>payment.amount_minor)return error(400,"REFUND_AMOUNT_INVALID","Refund amount exceeds the original payment.");
         const reservation=await rpc("reserve_payment_refund",{
