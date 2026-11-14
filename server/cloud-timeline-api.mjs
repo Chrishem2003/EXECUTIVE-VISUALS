@@ -54,14 +54,14 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
  if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
- const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
+ const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const reviews=service.projects?.get&&service.assets?.get&&service.timelines?.get
   ? createCloudReviewRepository({url,serviceRoleKey,fetchImpl,authorize:allow,projects:service.projects,assets:service.assets,timelines:service.timelines,timeoutMs})
   : null;
  const base=new URL(url).origin;
  const sourceResolver=runwaySourceResolver || (service.assets?.get&&service.assets?.createSignedUrl
-  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url})
+  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2AccountId:env.R2_ACCOUNT_ID,r2Bucket:env.R2_BUCKET})
   : null);
  const routerConfig=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
  const routerKey=String(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET||"");
@@ -616,14 +616,18 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }
   const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
   if(!Array.isArray(leaseColumns))throw new Error("Cloud timeline API readiness check failed for worker lease and cancellation columns.");
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{
-   const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
-   if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
-   const bucket=await result.json();
-   if(bucket.public!==false)throw new Error("Cloud timeline API refuses a media bucket that is not confirmed private.");
-  }catch(error){if(error?.name==="AbortError")throw new Error("Cloud timeline API storage readiness check timed out.");throw error;}
-  finally{clearTimeout(timer);}
+  if(typeof service.storage?.checkReadiness==="function"){
+   await service.storage.checkReadiness();
+  }else{
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+   try{
+    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
+    if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
+    const bucket=await result.json();
+    if(bucket.public!==false)throw new Error("Cloud timeline API refuses a media bucket that is not confirmed private.");
+   }catch(error){if(error?.name==="AbortError")throw new Error("Cloud timeline API storage readiness check timed out.");throw error;}
+   finally{clearTimeout(timer);}
+  }
   return{ready:true,storage:"private",schema:"executive_visuals"};
  }
  async function uploadAsset({req,ownerId,projectId=null,originalName="upload",mediaType="application/octet-stream"}={}){
