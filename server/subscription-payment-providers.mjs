@@ -64,6 +64,7 @@ function normalizePaddleEvent(event){
     discountMinor:Number.isSafeInteger(discountMinor)?discountMinor:null,
     origin:text(data.origin),
     periodStart:text(period.starts_at)||null,periodEnd:text(period.ends_at)||null,
+    cancelAtPeriodEnd:text(data.scheduled_change?.action).toLowerCase()==="cancel",
     occurredAt:text(event?.occurred_at)||null,rawEventType:type
   };
 }
