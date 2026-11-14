@@ -374,7 +374,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    const preservationOptions=new Set(["camera_motion","timing","composition","source_audio","subject_identity","pose","lighting","background"]);
    const mapTransformation=row=>{
     const input=row.input||{},approval=row.estimated_cost||{};
-    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
+    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.status==="cancelled"?"cancelled":row.status==="draft"?"draft":row.approved_at?"approved":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
    };
    if(path==="/api/cloud/transformations"&&method==="GET"){
     const projectId=String(query.projectId||"");
@@ -420,7 +420,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     await request("job_events",{method:"POST",body:{job_id:id,owner_id:ownerId,event_type:"transformation.draft_created",event_data:{operation,sourceAssetId}}});
     return response(201,{plan:mapTransformation(rows[0]),idempotentReplay:false});
    }
-   const cloudTransformationMatch=path.match(/^\/api\/cloud\/transformations\/([0-9a-f-]+)(?:\/(approve|submit))?$/i);
+   const cloudTransformationMatch=path.match(/^\/api\/cloud\/transformations\/([0-9a-f-]+)(?:\/(approve|submit|cancel))?$/i);
    if(cloudTransformationMatch&&safeId(cloudTransformationMatch[1])){
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,estimated_cost,approved_by,approved_at,created_at,updated_at&id=eq."+encodeURIComponent(cloudTransformationMatch[1])+"&job_type=eq.video.transform.plan&limit=1");
     const row=Array.isArray(rows)?rows[0]:null;
@@ -436,6 +436,15 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
      return response(200,{plan:mapTransformation(updated[0])});
+    }
+    if(cloudTransformationMatch[2]==="cancel"&&method==="POST"){
+     if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
+     if(row.status==="cancelled")return response(200,{plan:mapTransformation(row),idempotentReplay:true});
+     if(!["draft","awaiting_approval"].includes(row.status))return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an unsubmitted draft or approved plan can be cancelled. Active work requires worker-aware cancellation."}});
+     const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq."+encodeURIComponent(row.status),{method:"PATCH",prefer:"return=representation",body:{status:"cancelled",updated_at:new Date().toISOString(),error:{code:"TRANSFORMATION_CANCELLED",message:"Transformation plan was cancelled before provider submission."}}});
+     if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while cancellation was recorded."}});
+     await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.cancelled",event_data:{phase:"before_execution",previousStatus:row.status}}});
+     return response(200,{plan:mapTransformation(updated[0]),idempotentReplay:false});
     }
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
