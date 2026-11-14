@@ -1,0 +1,416 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { createGoogleGeminiFilesGateway } from "../google-gemini-files-gateway.mjs";
+
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const projectId = "22222222-2222-4222-8222-222222222222";
+const assetId = "33333333-3333-4333-8333-333333333333";
+const fileId = "gemini-file_123";
+const fileName = "files/" + fileId;
+const fileUri = "https://generativelanguage.googleapis.com/v1beta/files/" + fileId;
+const uploadUrl = "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=test-session";
+const bytes = Buffer.from("private-test-image-bytes");
+const sha256 = createHash("sha256").update(bytes).digest("hex");
+const env = { GEMINI_API_KEY: "server-test-key" };
+
+function response(status, body, headers = {}) {
+  return new Response(body === null ? null : JSON.stringify(body), { status, headers });
+}
+function privateAsset(overrides = {}) {
+  return {
+    asset: {
+      id: assetId, ownerId, projectId, mediaType: "image/png",
+      size: bytes.byteLength, sha256, storageBucket: "executive-visuals-media",
+      ...overrides
+    },
+    bytes,
+    size: bytes.byteLength,
+    sha256,
+    cleanup: async () => {}
+  };
+}
+function harness({ fileState = "PROCESSING", record = async () => {}, find, loader, authorize, createAttempt, updateAttempt } = {}) {
+  const calls = [];
+  const records = [];
+  let gets = 0;
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url) === "https://generativelanguage.googleapis.com/upload/v1beta/files") {
+      return response(200, {}, { "x-goog-upload-url": uploadUrl });
+    }
+    if (String(url) === uploadUrl) {
+      assert.equal(options.headers["X-Goog-Upload-Offset"], "0");
+      assert.equal(options.headers["X-Goog-Upload-Command"], "upload, finalize");
+      assert.equal(Buffer.from(options.body).byteLength, bytes.byteLength);
+      return response(200, { file: {
+        name: fileName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), state: fileState
+      }});
+    }
+    if (String(url) === "https://generativelanguage.googleapis.com/v1beta/files/" + fileId && options.method === "DELETE") {
+      return response(204, null);
+    }
+    if (String(url) === "https://generativelanguage.googleapis.com/v1beta/files/" + fileId) {
+      gets++;
+      return response(200, { file: {
+        name: fileName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), state: "ACTIVE"
+      }});
+    }
+    throw new Error("Unexpected URL: " + url);
+  };
+  const gateway = createGoogleGeminiFilesGateway({
+    env, fetchImpl, loadPrivateAsset: loader || (async () => privateAsset()),
+    authorizePrivateAsset: authorize || (async () => privateAsset().asset),
+    findProviderFile: find,
+    recordProviderFile: async value => { records.push(value); await record(value); },
+    createUploadAttempt: createAttempt,
+    updateUploadAttempt: updateAttempt,
+    timeoutMs: 3000, chunkSize: 256 * 1024, processingPollIntervalMs: 1000,
+    sleep: async () => {}, now: () => Date.parse("2026-11-05T00:00:00.000Z")
+  });
+  return { gateway, calls, records, getCount: () => gets };
+}
+
+test("uploads only an owner/project-authorized private asset through resumable Google Files API", async () => {
+  const h = harness();
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.deepEqual(result, {
+    uri: fileUri, mediaType: "image/png", providerFileName: fileName,
+    expiresAt: "2026-11-06T23:50:00.000Z"
+  });
+  assert.equal(h.calls.length, 3);
+  assert.equal(h.calls[0].options.method, "POST");
+  assert.equal(h.calls[0].options.headers["x-goog-api-key"], "server-test-key");
+  assert.equal(h.calls[0].options.headers["X-Goog-Upload-Protocol"], "resumable");
+  assert.equal(h.calls[0].options.headers["X-Goog-Upload-Command"], "start");
+  assert.equal(h.records.length, 1);
+  assert.equal(h.records[0].ownerId, ownerId);
+  assert.equal(h.records[0].projectId, projectId);
+  assert.equal(h.records[0].assetId, assetId);
+  assert.equal(h.records[0].state, "ACTIVE");
+  assert.equal(h.records[0].expiresAt, "2026-11-06T23:50:00.000Z");
+});
+
+test("reuses an unexpired provider-file mapping only for the exact owner, project and asset", async () => {
+  const h = harness({
+    find: async () => ({
+      ownerId, projectId, assetId, mimeType: "image/png", name: fileName,
+      uri: fileUri, state: "ACTIVE", sizeBytes: bytes.byteLength, sha256,
+      expiresAt: "2026-11-06T12:00:00.000Z"
+    })
+  });
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.records.length, 0);
+});
+
+test("ignores mismatched or untrusted cache records and reuploads from the private source", async () => {
+  const h = harness({
+    find: async () => ({
+      ownerId: "99999999-9999-4999-8999-999999999999", projectId, assetId,
+      mimeType: "image/png", name: fileName,
+      uri: "https://attacker.example/file", expiresAt: "2026-11-06T12:00:00.000Z"
+    })
+  });
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.equal(h.calls.length, 3);
+  assert.equal(h.records.length, 1);
+});
+
+test("fails closed for absent credentials, unsupported MIME and mismatched private asset scope", async () => {
+  const missing = createGoogleGeminiFilesGateway({
+    env: {}, fetchImpl: async () => { throw new Error("must not fetch"); },
+    loadPrivateAsset: async () => privateAsset(), recordProviderFile: async () => {}
+  });
+  await assert.rejects(() => missing.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_CONFIG_MISSING");
+
+  const h = harness();
+  await assert.rejects(() => h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "application/x-executable" }),
+    error => error.code === "GEMINI_FILE_MIME_UNSUPPORTED");
+
+  const wrongScope = harness({ loader: async () => privateAsset({ ownerId: "99999999-9999-4999-8999-999999999999" }) });
+  await assert.rejects(() => wrongScope.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ASSET_SCOPE_INVALID");
+});
+
+test("requires the upload mapping to be durable and attempts compensating provider deletion on persistence failure", async () => {
+  const h = harness({ record: async () => { throw new Error("database unavailable"); } });
+  await assert.rejects(() => h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_MAPPING_PERSIST_FAILED");
+  assert.equal(h.records.length, 1);
+});
+
+test("rejects unsafe resumable upload URLs and never follows redirects", async () => {
+  const gateway = createGoogleGeminiFilesGateway({
+    env, loadPrivateAsset: async () => privateAsset(), recordProviderFile: async () => {},
+    fetchImpl: async url => {
+      if (String(url).includes("/upload/v1beta/files")) {
+        return response(200, {}, { "x-goog-upload-url": "https://attacker.example/upload?token=x" });
+      }
+      throw new Error("Unexpected network call");
+    },
+    timeoutMs: 3000
+  });
+  await assert.rejects(() => gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_UPLOAD_URL_INVALID");
+});
+
+test("reports temporary materialization cleanup failures without exposing details or corrupting a successful upload", async () => {
+  const cleanupEvents = [];
+  // The gateway's cleanup observer is injected separately from provider operations.
+  const gateway = createGoogleGeminiFilesGateway({
+    env, fetchImpl: async (url, options = {}) => {
+      if (String(url) === "https://generativelanguage.googleapis.com/upload/v1beta/files") {
+        return response(200, {}, { "x-goog-upload-url": uploadUrl });
+      }
+      if (String(url) === uploadUrl) return response(200, { file: {
+        name: fileName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), state: "ACTIVE"
+      }});
+      throw new Error("Unexpected URL");
+    },
+    loadPrivateAsset: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path /tmp/private.mp4"); } }),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    onCleanupError: event => cleanupEvents.push(event),
+    timeoutMs: 3000, chunkSize: 256 * 1024,
+    now: () => Date.parse("2026-11-05T00:00:00.000Z")
+  });
+  const result = await gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.providerFileName, fileName);
+  assert.deepEqual(cleanupEvents, [{ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }]);
+  assert.equal(JSON.stringify(cleanupEvents).includes("/tmp/private.mp4"), false);
+});
+
+test("reports temporary materialization cleanup failures while preserving the original upload error", async () => {
+  const cleanupEvents = [];
+  const gateway = createGoogleGeminiFilesGateway({
+    env, fetchImpl: async () => { throw new Error("network failure"); },
+    loadPrivateAsset: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path"); } }),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    onCleanupError: event => cleanupEvents.push(event),
+    timeoutMs: 3000, chunkSize: 256 * 1024
+  });
+  await assert.rejects(
+    () => gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN"
+  );
+  assert.deepEqual(cleanupEvents, [{ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }]);
+});
+
+
+test("persists a deterministic upload attempt through provider creation and mapping completion", async () => {
+  const updates = [];
+  let created;
+  const h = harness({
+    createAttempt: async value => { created = value; return { id: "attempt-id", state: "PREPARED" }; },
+    updateAttempt: async value => { updates.push(value); }
+  });
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.match(created.attemptKey, /^[a-f0-9]{64}$/);
+  assert.equal(created.displayName, "executive-visuals-" + created.attemptKey.slice(0, 32));
+  assert.deepEqual(updates.map(value => value.state), ["UPLOADING", "PROVIDER_CREATED", "COMPLETED"]);
+  assert.equal(updates[1].providerFileName, fileName);
+  assert.equal(updates[2].attemptId, "attempt-id");
+});
+
+
+test("does not start a provider upload when the durable attempt claim loses a race", async () => {
+  const h = harness({
+    createAttempt: async () => ({ id: "attempt-race", state: "PREPARED" }),
+    updateAttempt: async () => { throw new Error("compare-and-set matched no row"); }
+  });
+  await assert.rejects(
+    () => h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ATTEMPT_CLAIM_FAILED"
+  );
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.records.length, 0);
+});
+
+test("quarantines ambiguous resumable upload outcomes and refuses blind retries", async () => {
+  const updates = [];
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => { throw new Error("simulated network disconnect"); },
+    loadPrivateAsset: async () => privateAsset(),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    createUploadAttempt: async () => ({ id: "attempt-unknown", state: "PREPARED" }),
+    updateUploadAttempt: async value => { updates.push(value); },
+    timeoutMs: 3000
+  });
+  await assert.rejects(
+    () => gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN"
+  );
+  assert.deepEqual(updates.map(value => value.state), ["UPLOADING", "OUTCOME_UNKNOWN"]);
+
+  let providerCalls = 0;
+  const retry = createGoogleGeminiFilesGateway({
+    env, fetchImpl: async () => { providerCalls++; throw new Error("must not upload"); },
+    loadPrivateAsset: async () => privateAsset(),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    createUploadAttempt: async () => ({ id: "attempt-unknown", state: "OUTCOME_UNKNOWN" }),
+    updateUploadAttempt: async () => {},
+    timeoutMs: 3000
+  });
+  await assert.rejects(
+    () => retry.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_RECONCILIATION_REQUIRED"
+  );
+  assert.equal(providerCalls, 0);
+});
+
+test("lists provider metadata with bounded pagination and preserves the base64 SHA-256 evidence", async () => {
+  const displayName = "executive-visuals-" + "a".repeat(32);
+  const hash = createHash("sha256").update(bytes).digest("base64");
+  const calls = [];
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return response(200, { files: [{
+        name: fileName, displayName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), sha256Hash: hash,
+        state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+      }], nextPageToken: "next-page" });
+    },
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  const result = await gateway.listProviderFiles({ pageSize: 100, pageToken: "cursor" });
+  assert.equal(result.files.length, 1);
+  assert.equal(result.files[0].displayName, displayName);
+  assert.equal(result.files[0].sha256Hash, hash);
+  assert.equal(result.nextPageToken, "next-page");
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/v1beta/files");
+  assert.equal(url.searchParams.get("pageSize"), "100");
+  assert.equal(url.searchParams.get("pageToken"), "cursor");
+  assert.equal(calls[0].options.headers["x-goog-api-key"], "server-test-key");
+  await assert.rejects(() => gateway.listProviderFiles({ pageSize: 101 }));
+});
+
+test("gets provider metadata needed for recovery without exposing the API key", async () => {
+  const hash = createHash("sha256").update(bytes).digest("base64");
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(200, { file: {
+      name: fileName, displayName: "executive-visuals-test", uri: fileUri,
+      mimeType: "image/png", sizeBytes: String(bytes.byteLength),
+      sha256Hash: hash, state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+    }}),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  const result = await gateway.getProviderFile(fileName);
+  assert.equal(result.sha256Hash, hash);
+  assert.equal(result.expirationTime, "2026-11-07T00:00:00.000Z");
+  assert.equal(JSON.stringify(result).includes("server-test-key"), false);
+});
+
+test("rejects malformed provider metadata returned by direct file lookup", async () => {
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(200, { file: {
+      name: fileName, displayName: "executive-visuals-test",
+      uri: "https://attacker.example/files/gemini-123",
+      mimeType: "image/png", sizeBytes: String(bytes.byteLength),
+      sha256Hash: createHash("sha256").update(bytes).digest("base64"),
+      state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+    }}),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  await assert.rejects(
+    () => gateway.getProviderFile(fileName),
+    error => error.code === "GEMINI_FILE_RESPONSE_INVALID"
+  );
+});
+
+test("does not expose API keys or resumable upload URLs in public results", async () => {
+  const h = harness();
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(JSON.stringify(result).includes("server-test-key"), false);
+  assert.equal(JSON.stringify(result).includes("upload_id"), false);
+});
+
+ 
+test("allows a project collaborator to upload a project asset owned by another member", async () => {
+  const collaboratorAsset = {
+    asset: {
+      id: assetId, ownerId: "99999999-9999-4999-8999-999999999999", projectId,
+      mediaType: "image/png", size: bytes.byteLength, sha256,
+      storageBucket: "executive-visuals-media"
+    },
+    bytes, size: bytes.byteLength, sha256, cleanup: async () => {}
+  };
+  const h = harness({ loader: async () => collaboratorAsset, authorize: async () => collaboratorAsset.asset });
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.equal(h.records[0].ownerId, ownerId);
+  assert.equal(h.records[0].projectId, projectId);
+});
+
+test("rejects personal assets belonging to another user and rejects tampered byte hashes", async () => {
+  const personalAsset = privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }).asset;
+  const personal = harness({
+    loader: async () => ({
+      ...privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }),
+      asset: personalAsset
+    }),
+    authorize: async () => personalAsset
+  });
+  await assert.rejects(
+    () => personal.gateway.resolveAsset({ assetId, ownerId, projectId: null, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ASSET_SCOPE_INVALID"
+  );
+
+  const tamperedBytes = Buffer.from("tampered bytes");
+  const tamperedAsset = privateAsset({ size: tamperedBytes.byteLength }).asset;
+  const tampered = harness({
+    authorize: async () => tamperedAsset,
+    loader: async () => ({
+      ...privateAsset({ size: tamperedBytes.byteLength }),
+      asset: tamperedAsset,
+      bytes: tamperedBytes,
+      size: tamperedBytes.byteLength
+    })
+  });
+  await assert.rejects(
+    () => tampered.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ASSET_HASH_MISMATCH"
+  );
+});
+
+test("rejects invalid polling configuration and missing durable mapping callback", () => {
+  assert.throws(() => createGoogleGeminiFilesGateway({
+    env, loadPrivateAsset: async () => privateAsset(), recordProviderFile: null
+  }));
+  assert.throws(() => createGoogleGeminiFilesGateway({
+    env, loadPrivateAsset: async () => privateAsset(), recordProviderFile: async () => {},
+    maxBytes: 3 * 1024 * 1024 * 1024
+  }));
+});
+
+test("exposes provider HTTP status so retention can reconcile an already-expired file", async () => {
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(404, { error: { message: "File not found" } }),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {}
+  });
+  await assert.rejects(() => gateway.deleteProviderFile(fileName), error => error.status === 404);
+});
