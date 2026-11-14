@@ -128,17 +128,21 @@ export async function startCloudWorkerProcess(env=process.env){
   timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
   maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
  }));
- if(config.publicationCleanup)workers.push(createCloudPublicationCleanupWorker({
-  ...cloudCredentials,
-  olderThanMs:config.cleanupOlderThanMs,
-  publicationLimit:config.cleanupPublicationLimit,
-  objectLimit:config.cleanupObjectLimit,
-  pollIntervalMs:config.cleanupPollIntervalMs,
-  dryRun:config.cleanupDryRun,
-  confirmDelete:config.cleanupConfirmDelete,
-  allowDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
-  onLog:event=>process.stdout.write(JSON.stringify(event)+"\\n")
- }));
+ if(config.publicationCleanup){
+  const cleanupWorker=createCloudPublicationCleanupWorker({
+   ...cloudCredentials,
+   olderThanMs:config.cleanupOlderThanMs,
+   publicationLimit:config.cleanupPublicationLimit,
+   objectLimit:config.cleanupObjectLimit,
+   pollIntervalMs:config.cleanupPollIntervalMs,
+   dryRun:config.cleanupDryRun,
+   confirmDelete:config.cleanupConfirmDelete,
+   allowDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
+   onLog:event=>process.stdout.write(JSON.stringify(event)+"\\n")
+  });
+  await cleanupWorker.checkReadiness();
+  workers.push(cleanupWorker);
+ }
  const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
  const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
  const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];
