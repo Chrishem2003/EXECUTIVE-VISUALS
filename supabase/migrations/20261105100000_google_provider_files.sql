@@ -15,6 +15,8 @@ create table if not exists executive_visuals.google_provider_files (
   state text not null check (state in ('ACTIVE', 'EXPIRED', 'DELETED', 'FAILED')),
   uploaded_at timestamptz not null,
   expires_at timestamptz not null,
+  source_type text not null default 'upload' check (source_type in ('upload', 'gcs')),
+  source_uri text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (provider, asset_id, owner_id)
