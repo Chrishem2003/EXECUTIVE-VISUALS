@@ -109,11 +109,19 @@ export function createProviderSubscriptionBilling({
       });
       return true;
     },
-    async markCheckoutUncertain({ownerId,paymentId,provider,errorCode}){
+    async markCheckoutUncertain({ownerId,paymentId,provider,providerCheckout,errorCode}){
       const payment=await getPayment(paymentId,ownerId);
       if(!payment||payment.provider!==provider)return false;
+      const providerTransactionId=provider==="paddle"?providerCheckout?.transactionId:providerCheckout?.trackingId;
       await dbRequest("payment_transactions?id=eq."+encodeURIComponent(paymentId)+"&owner_id=eq."+encodeURIComponent(ownerId),{
-        method:"PATCH",body:{metadata:{...payment.metadata,checkout_result_uncertain:true,checkout_error_code:errorCode,checkout_uncertain_at:new Date(now()).toISOString()},updated_at:new Date(now()).toISOString()},prefer:"return=minimal"
+        method:"PATCH",body:{
+          ...(providerTransactionId?{provider_transaction_id:String(providerTransactionId)}:{}),
+          metadata:{...payment.metadata,checkout_result_uncertain:true,checkout_error_code:errorCode,
+            ...(providerCheckout?.checkoutUrl?{provider_checkout_url:String(providerCheckout.checkoutUrl)}:{}),
+            ...(providerTransactionId?{provider_checkout_id:String(providerTransactionId)}:{}),
+            checkout_uncertain_at:new Date(now()).toISOString()},
+          updated_at:new Date(now()).toISOString()
+        },prefer:"return=minimal"
       });
       return true;
     },
