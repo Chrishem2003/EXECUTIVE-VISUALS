@@ -4,13 +4,6 @@ insert into auth.users(id,email) values
  ('44444444-4444-4444-8444-444444444444','pesapal-integration@example.com')
 on conflict(id) do nothing;
 
-insert into executive_visuals.subscription_plans(
-  plan_code,name,version,status,is_public,billing_interval,amount_minor,currency,included_credits,entitlements
-) values
- ('creator-monthly','Creator Monthly',1,'active',true,'monthly',25000,'UGX',1000,'{"projects":20,"ai_generation":true}'::jsonb)
-on conflict(plan_code) do update set
-  status='active',is_public=true,billing_interval='monthly',included_credits=1000;
-
 insert into executive_visuals.subscription_plan_provider_prices(
   plan_id,provider,provider_price_id,amount_minor,currency,active
 )
