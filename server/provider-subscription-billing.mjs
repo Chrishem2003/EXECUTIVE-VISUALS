@@ -168,11 +168,16 @@ export function createProviderSubscriptionBilling({
         occurredAt:event.occurredAt||null,adjustmentId:event.adjustmentId||null,
         adjustmentAction:event.adjustmentAction||null,adjustmentStatus:event.adjustmentStatus||null,
         adjustmentType:event.adjustmentType||null,adjustmentReason:event.adjustmentReason||null,
-        adjustmentUpdatedAt:event.adjustmentUpdatedAt||null,
+        adjustmentCreatedAt:event.adjustmentCreatedAt||null,adjustmentUpdatedAt:event.adjustmentUpdatedAt||null,
+        adjustmentCustomerId:event.adjustmentCustomerId||null,
         adjustmentCreditAppliedToBalance:event.adjustmentCreditAppliedToBalance===true,
         adjustmentAmount:event.adjustmentAmount||null,adjustmentSubtotal:event.adjustmentSubtotal||null,
         adjustmentTax:event.adjustmentTax||null,adjustmentFee:event.adjustmentFee||null,
-        adjustmentEarnings:event.adjustmentEarnings||null,adjustmentCurrency:event.adjustmentCurrency||null,
+        adjustmentRetainedFee:event.adjustmentRetainedFee||null,adjustmentEarnings:event.adjustmentEarnings||null,
+        adjustmentTotalsCurrency:event.adjustmentTotalsCurrency||null,adjustmentCurrency:event.adjustmentCurrency||null,
+        adjustmentPayoutTotals:event.adjustmentPayoutTotals||null,
+        adjustmentChargebackFee:event.adjustmentChargebackFee||null,
+        adjustmentTaxRates:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
         adjustmentItems:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]};
       const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
@@ -224,11 +229,15 @@ export function createProviderSubscriptionBilling({
           return {applied:false,needsReview:true,adjustment:{
             id:event.adjustmentId||null,transactionId:event.providerTransactionId||null,
             subscriptionId:event.providerSubscriptionId||null,action,status,type:event.adjustmentType||null,
-            reason:event.adjustmentReason||null,updatedAt:event.adjustmentUpdatedAt||null,
+            reason:event.adjustmentReason||null,createdAt:event.adjustmentCreatedAt||null,
+            updatedAt:event.adjustmentUpdatedAt||null,customerId:event.adjustmentCustomerId||null,
             creditAppliedToBalance:event.adjustmentCreditAppliedToBalance===true,
             amount:event.adjustmentAmount||null,subtotal:event.adjustmentSubtotal||null,
             tax:event.adjustmentTax||null,fee:event.adjustmentFee||null,
-            earnings:event.adjustmentEarnings||null,currency:event.adjustmentCurrency||null,
+            retainedFee:event.adjustmentRetainedFee||null,earnings:event.adjustmentEarnings||null,
+            currency:event.adjustmentCurrency||null,totalsCurrency:event.adjustmentTotalsCurrency||null,
+            payoutTotals:event.adjustmentPayoutTotals||null,chargebackFee:event.adjustmentChargebackFee||null,
+            taxRates:Array.isArray(event.adjustmentTaxRates)?event.adjustmentTaxRates:[],
             items:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]}};
         }
         if(provider==="paddle"&&event.eventType!=="transaction.completed"){
