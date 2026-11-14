@@ -135,7 +135,7 @@ test("verified Paddle transaction webhook settles only the matching reserved led
     if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
     throw new Error("unexpected database request "+target.pathname);
   };
-  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
   const result=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
   assert.equal(result.status,200);
   assert.equal(result.body.applied,true);
@@ -190,7 +190,7 @@ test("Pesapal IPN verifies the pending UGX order before invoking the atomic subs
     if(target.pathname.endsWith("/rpc/finalize_subscription_purchase_for_provider"))return json({status:"active",subscriptionId});
     throw new Error("unexpected database request "+target.pathname);
   };
-  const billing=createProviderSubscriptionBilling({...env,providers,fetchImpl});
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
   const result=await billing.handlePesapalIpn({
     OrderNotificationType:"IPNCHANGE",OrderTrackingId:"track-1",OrderMerchantReference:"EVP-pesapal-1"
   });
