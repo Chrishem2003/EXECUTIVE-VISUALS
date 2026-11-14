@@ -82,3 +82,21 @@ test("cloud worker supervisor rejects invalid maintenance task configuration",()
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceTasks:[null]}),/maintenance tasks/);
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceTasks:[async()=>{}],maintenanceIntervalMs:1000}),/maintenance interval/);
 });
+
+test("publication cleanup worker can run independently and remains dry-run by default",()=>{
+ const config=readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"false",CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true"});
+ assert.equal(config.publicationCleanup,true);
+ assert.equal(config.media,false);
+ assert.equal(config.timeline,false);
+ assert.equal(config.video,false);
+ assert.equal(config.cleanupDryRun,true);
+ assert.equal(config.cleanupConfirmDelete,false);
+ assert.equal(config.cleanupOlderThanMs,24*60*60*1000);
+});
+test("publication cleanup destructive mode requires explicit independent flags",()=>{
+ const config=readCloudWorkerConfig({...env,CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE:"true"});
+ assert.equal(config.cleanupDryRun,false);
+ assert.equal(config.cleanupConfirmDelete,true);
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_POLL_MS:"100"}),/poll interval/);
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED:"true",CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS:"31"}),/age in days/);
+});

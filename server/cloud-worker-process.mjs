@@ -9,14 +9,15 @@ import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
 import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-provider-worker-composition.mjs";
 import { createCloudAssetRepository } from "./cloud-assets.mjs";
 import { createCloudStorage } from "./cloud-storage.mjs";
+import { createCloudPublicationCleanupWorker } from "./cloud-publication-cleanup-worker.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED);
- if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED);
+ if(!media&&!timeline&&!video&&!publicationCleanup)throw new Error("Enable at least one supported cloud worker family.");
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
@@ -31,7 +32,13 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,
+  media,timeline,video,publicationCleanup,
+  cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
+  cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
+  cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
+  cleanupPublicationLimit:integer(env.CLOUD_PUBLICATION_CLEANUP_PUBLICATION_LIMIT,10,1,50,"Publication cleanup publication limit"),
+  cleanupObjectLimit:integer(env.CLOUD_PUBLICATION_CLEANUP_OBJECT_LIMIT,100,1,100,"Publication cleanup object limit"),
+  cleanupPollIntervalMs:integer(env.CLOUD_PUBLICATION_CLEANUP_POLL_MS,300000,10000,3600000,"Publication cleanup poll interval"),
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   cleanupIntervalMs:integer(env.CLOUD_STORAGE_CLEANUP_INTERVAL_MS,300000,60000,3600000,"Cloud storage cleanup interval"),
@@ -111,8 +118,7 @@ export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")) )throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
- const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes,env});
- await readiness.checkReadiness();
+ if(config.media||config.timeline||config.video){const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes,env});await readiness.checkReadiness();}
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
  if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
@@ -122,6 +128,21 @@ export async function startCloudWorkerProcess(env=process.env){
   timeoutMs:integer(env.CLOUD_VIDEO_PROVIDER_TIMEOUT_MS,30000,1000,120000,"Cloud video provider timeout"),
   maxBytesPerOutput:config.maxBytes,maxTotalBytes:config.maxBytes
  }));
+ if(config.publicationCleanup){
+  const cleanupWorker=createCloudPublicationCleanupWorker({
+   ...cloudCredentials,
+   olderThanMs:config.cleanupOlderThanMs,
+   publicationLimit:config.cleanupPublicationLimit,
+   objectLimit:config.cleanupObjectLimit,
+   pollIntervalMs:config.cleanupPollIntervalMs,
+   dryRun:config.cleanupDryRun,
+   confirmDelete:config.cleanupConfirmDelete,
+   allowDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
+   onLog:event=>process.stdout.write(JSON.stringify(event)+"\\n")
+  });
+  await cleanupWorker.checkReadiness();
+  workers.push(cleanupWorker);
+ }
  const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
  const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
  const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];

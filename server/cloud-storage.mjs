@@ -118,14 +118,18 @@ export function createCloudStorage({
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
     },
-    async uploadFile(objectPath,filePath,contentType,{upsert=false}={}) {
+    async uploadFile(objectPath,filePath,contentType,{upsert=false,signal:externalSignal}={}) {
       const path=safeObjectPath(objectPath);
       if(!MIME_TYPES.has(contentType))throw new Error("Unsupported cloud media content type.");
       const info=await stat(filePath);
       if(!info.isFile()||info.size<1||info.size>maxBytes)throw new Error("Cloud media file is empty or exceeds the configured size limit.");
       const digest=createHash("sha256");let size=0;
       const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>maxBytes){callback(Object.assign(new Error("Cloud media file exceeds the configured size limit."),{code:"CLOUD_STORAGE_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+      if(externalSignal?.aborted)throw Object.assign(new Error("Cloud media upload was cancelled before it started."),{code:"CLOUD_STORAGE_UPLOAD_ABORTED"});
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+      const abortFromCaller=()=>controller.abort(externalSignal?.reason);
+      externalSignal?.addEventListener("abort",abortFromCaller,{once:true});
+      if(externalSignal?.aborted)abortFromCaller();
       const source=createReadStream(filePath);source.on("error",error=>meter.destroy(error));
       const streamDone=pipeline(source,meter);
       try{
@@ -145,9 +149,37 @@ export function createCloudStorage({
       }catch(error){
         controller.abort();source.destroy();meter.destroy();
         await streamDone.catch(()=>{});
+        if(externalSignal?.aborted){const cancelled=new Error("Cloud media upload was cancelled because its worker lease or execution was lost.");cancelled.code="CLOUD_STORAGE_UPLOAD_ABORTED";throw cancelled;}
         if(error?.name==="AbortError"){const timeout=new Error("Cloud storage request timed out.");timeout.code="CLOUD_STORAGE_TIMEOUT";throw timeout;}
         throw error;
-      }finally{clearTimeout(timer);}
+      }finally{externalSignal?.removeEventListener("abort",abortFromCaller);clearTimeout(timer);}
+    },
+    async listObjects({prefix,limit=100,cursor=null}={}) {
+      const prefixParts=typeof prefix==="string"?prefix.split("/") : [];
+      if(prefixParts.length!==3||prefixParts[2]!==""||!UUID.test(prefixParts[0])||!UUID.test(prefixParts[1])) {
+        throw new Error("Storage listing requires an exact owner-or-project and asset UUID prefix.");
+      }
+      if(!Number.isInteger(limit)||limit<1||limit>1000||cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096)) {
+        throw new Error("Storage listing pagination is invalid.");
+      }
+      const body={prefix,limit,with_delimiter:false,sortBy:{column:"name",order:"asc"}};
+      if(cursor!==null)body.cursor=cursor;
+      const result=await request("/storage/v1/object/list-v2/"+BUCKET,{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify(body)
+      });
+      if(!result||!Array.isArray(result.objects)||typeof result.hasNext!=="boolean"||result.hasNext&&typeof result.nextCursor!=="string")throw new Error("Cloud storage returned an invalid cursor listing.");
+      return {
+        objects:result.objects.filter(item=>item&&typeof item.name==="string"&&item.id!==null).map(item=>({
+          name:item.name,
+          createdAt:item.created_at||item.createdAt||item.createdAtTime||null,
+          updatedAt:item.updated_at||item.updatedAt||null,
+          metadata:item.metadata&&typeof item.metadata==="object"?item.metadata:{}
+        })),
+        hasNext:result.hasNext,
+        nextCursor:result.hasNext?result.nextCursor:null
+      };
     },
     async createSignedUrl(objectPath, expiresIn = 300) {
       const path = safeObjectPath(objectPath);
