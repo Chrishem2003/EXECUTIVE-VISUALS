@@ -55,7 +55,8 @@ function verifyPaddleSignature(rawBody,signature,secret,{now=Date.now(),toleranc
   const timestamp=Number(fields.find(([key])=>key==="ts")?.[1]);
   const signatures=fields.filter(([key,value])=>key==="h1"&&/^[a-f0-9]{64}$/i.test(value)).map(([,value])=>value);
   if(!Number.isSafeInteger(timestamp)||!signatures.length||!secret)return false;
-  if(Math.abs(Math.floor(now/1000)-timestamp)>toleranceSeconds)return false;
+  const nowSeconds=Math.floor(now/1000);
+  if(timestamp>nowSeconds||nowSeconds-timestamp>toleranceSeconds)return false;
   const expected=createHmac("sha256",secret).update(String(timestamp)+":").update(rawBody).digest("hex");
   return signatures.some(provided=>same(expected,provided));
 }
