@@ -1,6 +1,40 @@
 const text=(value,max)=>String(value??"").slice(0,max);
 const records=(value,limit,fields)=>Array.isArray(value)?value.slice(0,limit).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>Object.fromEntries(fields.map(([key,max])=>[key,text(item[key],max)]))):[];
 const stringList=(value,limit=30,max=240)=>Array.isArray(value)?[...new Set(value.slice(0,limit).map(item=>text(item,max).trim()).filter(Boolean))]:[];
+function boundedProjectValue(value,depth=0,budget={nodes:0}){
+ budget.nodes++;
+ if(budget.nodes>12000||depth>10)throw Object.assign(new Error("Creative project artifact is too complex to store safely."),{code:"WORKSPACE_ARTIFACT_INVALID"});
+ if(value===null||typeof value==="boolean")return value;
+ if(typeof value==="number"){if(!Number.isFinite(value))throw Object.assign(new Error("Creative project artifact contains an invalid number."),{code:"WORKSPACE_ARTIFACT_INVALID"});return value;}
+ if(typeof value==="string"){if(value.length>6000)throw Object.assign(new Error("Creative project artifact contains an oversized text field."),{code:"WORKSPACE_ARTIFACT_INVALID"});return value;}
+ if(Array.isArray(value)){if(value.length>200)throw Object.assign(new Error("Creative project artifact contains an oversized list."),{code:"WORKSPACE_ARTIFACT_INVALID"});return value.map(item=>boundedProjectValue(item,depth+1,budget));}
+ if(!value||typeof value!=="object"||Object.getPrototypeOf(value)!==Object.prototype)throw Object.assign(new Error("Creative project artifact contains an invalid object."),{code:"WORKSPACE_ARTIFACT_INVALID"});
+ const entries=Object.entries(value);
+ if(entries.length>120)throw Object.assign(new Error("Creative project artifact contains too many fields."),{code:"WORKSPACE_ARTIFACT_INVALID"});
+ const output={};
+ for(const [key,item] of entries){
+  if(!/^[A-Za-z0-9_-]{1,80}$/.test(key)||["__proto__","prototype","constructor"].includes(key))continue;
+  output[key]=boundedProjectValue(item,depth+1,budget);
+ }
+ return output;
+}
+function creativeProjects(value){
+ if(!Array.isArray(value))return [];
+ return value.slice(0,100).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>{
+  const project={
+   id:text(item.id,80),name:text(item.name,160),brief:text(item.brief,10000),
+   audience:text(item.audience,2000),style:text(item.style,200),created:text(item.created,40)
+  };
+  for(const key of ["creativeDNA","creativeBriefInput","modelCreativeDirection","storyboard"]){
+   if(item[key]!==undefined&&item[key]!==null){
+    const artifact=boundedProjectValue(item[key]);
+    if(Buffer.byteLength(JSON.stringify(artifact),"utf8")>512*1024)throw Object.assign(new Error("A creative project artifact exceeds the 512 KiB limit."),{code:"WORKSPACE_ARTIFACT_TOO_LARGE"});
+    project[key]=artifact;
+   }
+  }
+  return project;
+ });
+}
 export function sanitizeCreativeWorkspaceDocument(input){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Object.assign(new Error("Workspace document must be a JSON object."),{code:"INVALID_WORKSPACE_DOCUMENT"});
  const sourceRows=Array.isArray(input.researchSources)?input.researchSources.slice(0,300).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
@@ -30,7 +64,7 @@ export function sanitizeCreativeWorkspaceDocument(input){
  });
  const document={
   schemaVersion:1,
-  creativeProjects:records(input.creativeProjects,100,[["id",80],["name",160],["brief",10000],["audience",2000],["style",200],["created",40]]),
+  creativeProjects:creativeProjects(input.creativeProjects),
   tasks:records(input.tasks,500,[["id",80],["name",200],["category",120],["status",40],["created",40],["detail",4000]]),
   shots:records(input.shots,500,[["id",80],["scene",200],["action",4000],["camera",300],["lens",120],["movement",300],["lighting",500]]).map((item,index)=>({
    ...item,
