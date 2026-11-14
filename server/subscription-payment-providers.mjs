@@ -156,7 +156,7 @@ export function createPesapalSubscriptionProvider({
       id:orderRef,currency:ccy,amount:value,description:text(description).slice(0,100),
       callback_url:text(callbackUrl),notification_id:text(notificationId),
       billing_address:{email_address:mail,phone_number:text(phone),country_code:text(countryCode).toUpperCase(),first_name:text(firstName),last_name:text(lastName)},
-      account_number:text(accountNumber||orderRef)
+      ...(text(accountNumber)?{account_number:text(accountNumber)}:{})
     };
     if(subscriptionDetails){
       const {startDate,endDate,frequency}=subscriptionDetails;
@@ -196,7 +196,7 @@ export function createPesapalSubscriptionProvider({
 
   async function handleNotification(query,{expectedAmount,expectedCurrency}={}){
     const type=text(query?.OrderNotificationType).toUpperCase();
-    if(!["CHANGE","RECURRING"].includes(type))throw fail("PESAPAL_NOTIFICATION_TYPE_INVALID","Unsupported Pesapal IPN notification type.");
+    if(!["IPNCHANGE","RECURRING"].includes(type))throw fail("PESAPAL_NOTIFICATION_TYPE_INVALID","Unsupported Pesapal IPN notification type.");
     const verified=await verifyNotification({
       trackingId:query?.OrderTrackingId,merchantReference:query?.OrderMerchantReference,
       expectedAmount,expectedCurrency
