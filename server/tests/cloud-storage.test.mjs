@@ -86,14 +86,17 @@ test("lists an exact asset prefix with Storage List V2 cursor pagination",async(
 test("aborts a streaming upload when its worker execution signal is cancelled",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-storage-abort-")),file=join(root,"render.mp4");
  await writeFile(file,Buffer.from("render"));
- const controller=new AbortController();
+ const controller=new AbortController();let markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  markStarted();
   if(options.signal.aborted)throw Object.assign(new Error("aborted"),{name:"AbortError"});
   return await new Promise((resolve,reject)=>{
    options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
   });
  }});
  const pending=storage.uploadFile(path,file,"video/mp4",{signal:controller.signal});
+ await started;
  controller.abort();
  await assert.rejects(()=>pending,error=>error.code==="CLOUD_STORAGE_UPLOAD_ABORTED");
  await rm(root,{recursive:true,force:true});
