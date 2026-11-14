@@ -139,14 +139,17 @@ export function createProviderSubscriptionBilling({
         paymentId:event.paymentId||paymentId||null,reference:event.reference||event.merchantReference||null,
         providerTransactionId:event.providerTransactionId||event.trackingId||null,
         currency:event.currency||null,amountMinor:event.amountMinor??null,occurredAt:event.occurredAt||null};
+      const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
         method:"POST",body:{provider,event_key:eventKey,event_type:String(event.eventType||"unknown"),
-          payload_hash:hash(JSON.stringify(payload)),signature_verified:true,
+          payload_hash:payloadHash,signature_verified:true,
           processing_status:"received",payload},prefer:"return=minimal",allowConflict:true
       });
       if(inserted.status===409){
-        const prior=await dbRequest("payment_webhook_events?select=processing_status&provider=eq."+provider+"&event_key=eq."+eventKey+"&limit=1");
-        const state=Array.isArray(prior.data)?prior.data[0]?.processing_status:null;
+        const prior=await dbRequest("payment_webhook_events?select=processing_status,payload_hash&provider=eq."+provider+"&event_key=eq."+eventKey+"&limit=1");
+        const priorRow=Array.isArray(prior.data)?prior.data[0]:null;
+        const state=priorRow?.processing_status||null;
+        if(priorRow?.payload_hash&&priorRow.payload_hash!==payloadHash)throw Object.assign(new Error("A provider event ID was replayed with different event content."),{code:"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT",status:409});
         if(state==="processed"||state==="ignored"||state==="needs_review")return {duplicate:true,processingStatus:state};
       }
       await dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
