@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
+import { buildClipFadeFilters } from "./timeline-transitions.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
@@ -260,7 +261,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const retimeFilter=speedExpression ? "setpts='"+speedExpression+"/TB'" : speed===1 ? null : "setpts=(PTS-STARTPTS)/"+speed.toFixed(6);
     const previous=clips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames:0,fadeOutFrames=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames:0;
     const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps;
-    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
+    const clipFades=buildClipFadeFilters(clip,duration,"video");
+    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...clipFades,...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
    segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
@@ -281,7 +283,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    }
    const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
    const panFilter=pan?","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
-   audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
+    const audioFades=buildClipFadeFilters(clip,duration,"audio");
+   audioFilters.push(`[${inputIndex}:a]atrim=duration=${sourceDuration.toFixed(6)},asetpts=PTS-STARTPTS${tempo?","+tempo:""},volume='${gain}':eval=frame${panFilter}${audioFades.length?","+audioFades.join(","):""},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
    inputIndex++;
   }
   for(const clip of overlayClips){
@@ -340,7 +343,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,clipFadeClips:[...clips,...audioClips].filter(clip=>["fadeInSeconds","fadeOutSeconds"].some(key=>Number(clip.metadata?.[key])>0)).length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
