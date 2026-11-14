@@ -55,6 +55,9 @@ import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attem
 import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
 import { createGoogleGeminiFilesComposition } from "./google-gemini-files-composition.mjs";
 import { createGoogleGeminiFilesUploadService } from "./google-gemini-files-upload-service.mjs";
+import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror-bootstrap.mjs";
+import { createGoogleGeminiGcsMirrorUploadService } from "./google-gemini-gcs-mirror-upload-service.mjs";
+import { createGoogleGeminiGcsFilesComposition } from "./google-gemini-gcs-composition.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
@@ -111,6 +114,39 @@ const googleGeminiFilesUpload=googleGeminiFilesGateway?createGoogleGeminiFilesUp
  canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(...args)=>audit(db,...args)
 }):null;
+const googleGeminiGcsMirrorEnabled=process.env.GEMINI_GCS_MIRROR_ENABLED==="true";
+if(googleGeminiGcsMirrorEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)){
+ throw new Error("Private GCS mirroring requires verified Supabase sessions and server-side Supabase credentials.");
+}
+let googleGeminiGcsMirrorUpload=null;
+if(googleGeminiGcsMirrorEnabled){
+ const bootstrap=await createGoogleGeminiGcsMirrorBootstrap({env:process.env,fetchImpl:globalThis.fetch});
+ const identity=await bootstrap.checkIdentity();
+ if(identity?.ready!==true)throw new Error("Private GCS mirroring requires a verified Google workload identity.");
+ const mirrorService=bootstrap.createService();
+ const gcsPrivateAssets=createCloudAssetService({
+  url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,
+  fetchImpl:globalThis.fetch,
+  maxBytes:Number(process.env.GEMINI_GCS_MAX_BYTES||process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)
+ });
+ const geminiGcsFiles=createGoogleGeminiGcsFilesComposition({
+  env:process.env,fetchImpl:globalThis.fetch,getAccessToken:bootstrap.getAccessToken,
+  maxBytes:Number(process.env.GEMINI_GCS_MAX_BYTES||process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES),
+  authorizePrivateAsset:async({assetId,ownerId,projectId,asset})=>{
+   const signed=await gcsPrivateAssets.assets.createSignedUrl({ownerId,assetId,expiresIn:60});
+   const current=signed?.asset;
+   return Boolean(current&&current.id===assetId&&current.ownerId===ownerId&&
+    (current.projectId||null)===(projectId||null)&&current.storageBucket==="executive-visuals-media"&&
+    !current.deletedAt&&current.mediaType===asset.mediaType&&current.size===asset.sizeBytes&&current.sha256===asset.sha256);
+  }
+ });
+ googleGeminiGcsMirrorUpload=createGoogleGeminiGcsMirrorUploadService({
+  mirrorService,geminiFiles:geminiGcsFiles,
+  getProjectAccess:(ownerId,projectId)=>getProjectAccess(db,ownerId,projectId),
+  canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+  audit:(...args)=>audit(db,...args)
+ });
+}
 const googleDriveOAuthEnabled=process.env.GOOGLE_DRIVE_OAUTH_ENABLED==="true";
 if(googleDriveOAuthEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY||!process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY||String(process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY).length<32||process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY===process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY)){
  throw new Error("Google Drive OAuth requires verified Supabase sessions and server-side Supabase credentials.");
@@ -533,8 +569,8 @@ export function createAppServer() {
         assertSameOriginMutation({origin:req.headers.origin,expectedOrigin,secFetchSite:req.headers["sec-fetch-site"]});
       }catch(error){fail(res,error.status||403,error.code||"CSRF_ORIGIN_DENIED",error.message);return;}
     }
-    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/creative/storyboard"&&req.method==="POST"?"/creative-storyboard":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"?5:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:ratePath==="/creative-director"?5:ratePath==="/creative-storyboard"?5:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path==="/api/cloud/publication-audit"?"/publication-audit":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/creative/storyboard"&&req.method==="POST"?"/creative-storyboard":path==="/api/auth/recover"?"/auth-recover":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":path.startsWith("/api/integrations/google-gcs/")?"/google-gcs-mirror":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth-recover"?3:ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"||ratePath==="/google-gcs-mirror"?5:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/publication-audit"?60:ratePath==="/creative-director"?5:ratePath==="/creative-storyboard"?5:30;const rateWindow=ratePath==="/auth-recover"?3600000:60000;if(!rateAllowed(key,limit,rateWindow)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -736,6 +772,50 @@ export function createAppServer() {
             error.code==="GEMINI_FILE_ASSET_UNAVAILABLE"?404:502
           );
           fail(res,status,error.code||"GOOGLE_GEMINI_FILES_PREPARE_FAILED",error.message||"Private asset could not be prepared for Gemini.");return;
+        }
+      }
+      if(path==="/api/integrations/google-gcs/mirror/status"&&req.method==="GET"){
+        send(res,200,{enabled:Boolean(googleGeminiGcsMirrorUpload)},cors);return;
+      }
+      if(path==="/api/integrations/google-gcs/register"&&req.method==="POST"){
+        if(!googleGeminiGcsMirrorUpload){fail(res,503,"GOOGLE_GCS_MIRROR_DISABLED","Private Gemini GCS registration is disabled by server policy.");return;}
+        const body=await readJson(req,12*1024);
+        try{
+          const result=await googleGeminiGcsMirrorUpload.registerWithGemini({
+            ownerId:user.id,projectId:body?.projectId||null,assetId:body?.assetId,mediaType:body?.mediaType
+          });
+          send(res,200,{file:result},cors);return;
+        }catch(error){
+          const status=error.status||(
+            error.code==="PROJECT_NOT_FOUND"?404:
+            error.code==="EDITOR_REQUIRED"?403:
+            error.code==="GEMINI_GCS_MIRROR_REQUEST_INVALID"?400:
+            ["GEMINI_GCS_ASSET_SCOPE_INVALID","GEMINI_GCS_ASSET_FORBIDDEN","GEMINI_GCS_ASSET_INVALID","GEMINI_GCS_IAM_ACCESS_DENIED"].includes(error.code)?403:
+            ["GEMINI_GCS_ASSET_NOT_FOUND","GEMINI_GCS_SOURCE_NOT_FOUND","GEMINI_GCS_SOURCE_FILE_MISSING"].includes(error.code)?404:
+            ["GEMINI_GCS_ATTEMPT_STORE_UNAVAILABLE","GEMINI_GCS_ATTEMPT_STORE_TIMEOUT"].includes(error.code)?503:
+            error.code==="GEMINI_GCS_RATE_LIMITED"?429:502
+          );
+          fail(res,status,error.code||"GOOGLE_GCS_REGISTRATION_FAILED",error.message||"Private asset could not be registered with Gemini.");return;
+        }
+      }
+      if(path==="/api/integrations/google-gcs/mirror"&&req.method==="POST"){
+        if(!googleGeminiGcsMirrorUpload){fail(res,503,"GOOGLE_GCS_MIRROR_DISABLED","Private GCS mirroring is disabled by server policy.");return;}
+        const body=await readJson(req,12*1024);
+        try{
+          const result=await googleGeminiGcsMirrorUpload.mirror({
+            ownerId:user.id,projectId:body?.projectId||null,assetId:body?.assetId
+          });
+          send(res,200,{mirror:result},cors);return;
+        }catch(error){
+          const status=error.status||(
+            error.code==="PROJECT_NOT_FOUND"?404:
+            error.code==="EDITOR_REQUIRED"?403:
+            error.code==="GEMINI_GCS_MIRROR_REQUEST_INVALID"?400:
+            ["GEMINI_GCS_ASSET_SCOPE_INVALID","GEMINI_GCS_ASSET_FORBIDDEN","GEMINI_GCS_ASSET_INVALID"].includes(error.code)?403:
+            error.code==="GEMINI_GCS_SOURCE_FILE_MISSING"?404:
+            ["GEMINI_GCS_ATTEMPT_STORE_UNAVAILABLE","GEMINI_GCS_ATTEMPT_STORE_TIMEOUT"].includes(error.code)?503:502
+          );
+          fail(res,status,error.code||"GOOGLE_GCS_MIRROR_FAILED",error.message||"Private asset could not be mirrored to Google Cloud Storage.");return;
         }
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
