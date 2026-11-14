@@ -167,7 +167,13 @@ export function createProviderSubscriptionBilling({
         cancelAtPeriodEnd:event.cancelAtPeriodEnd===true,origin:event.origin||null,providerPriceId:event.providerPriceId||null,
         occurredAt:event.occurredAt||null,adjustmentId:event.adjustmentId||null,
         adjustmentAction:event.adjustmentAction||null,adjustmentStatus:event.adjustmentStatus||null,
-        adjustmentAmount:event.adjustmentAmount||null,adjustmentCurrency:event.adjustmentCurrency||null};
+        adjustmentType:event.adjustmentType||null,adjustmentReason:event.adjustmentReason||null,
+        adjustmentUpdatedAt:event.adjustmentUpdatedAt||null,
+        adjustmentCreditAppliedToBalance:event.adjustmentCreditAppliedToBalance===true,
+        adjustmentAmount:event.adjustmentAmount||null,adjustmentSubtotal:event.adjustmentSubtotal||null,
+        adjustmentTax:event.adjustmentTax||null,adjustmentFee:event.adjustmentFee||null,
+        adjustmentEarnings:event.adjustmentEarnings||null,adjustmentCurrency:event.adjustmentCurrency||null,
+        adjustmentItems:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]};
       const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
         method:"POST",body:{provider,event_key:eventKey,event_type:String(event.eventType||"unknown"),
@@ -215,7 +221,15 @@ export function createProviderSubscriptionBilling({
               ?"Paddle refund adjustment requires approval/status reconciliation; subscription entitlements were not changed."
               :"Paddle credit or adjustment event requires financial review; subscription entitlements were not changed.";
           await updateEvent({processing_status:"needs_review",error_message:(reason+" Action="+action+"; status="+status+".").slice(0,500),processed_at:new Date(now()).toISOString()});
-          return {applied:false,needsReview:true,adjustment:{id:event.adjustmentId||null,action,status,amount:event.adjustmentAmount||null,currency:event.adjustmentCurrency||null}};
+          return {applied:false,needsReview:true,adjustment:{
+            id:event.adjustmentId||null,transactionId:event.providerTransactionId||null,
+            subscriptionId:event.providerSubscriptionId||null,action,status,type:event.adjustmentType||null,
+            reason:event.adjustmentReason||null,updatedAt:event.adjustmentUpdatedAt||null,
+            creditAppliedToBalance:event.adjustmentCreditAppliedToBalance===true,
+            amount:event.adjustmentAmount||null,subtotal:event.adjustmentSubtotal||null,
+            tax:event.adjustmentTax||null,fee:event.adjustmentFee||null,
+            earnings:event.adjustmentEarnings||null,currency:event.adjustmentCurrency||null,
+            items:Array.isArray(event.adjustmentItems)?event.adjustmentItems:[]}};
         }
         if(provider==="paddle"&&event.eventType!=="transaction.completed"){
           await updateEvent({processing_status:"needs_review",error_message:"Verified Paddle event awaits a supported transaction lifecycle action.",processed_at:new Date(now()).toISOString()});
