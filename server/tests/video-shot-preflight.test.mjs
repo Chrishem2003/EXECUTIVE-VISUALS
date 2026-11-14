@@ -8,7 +8,7 @@ const providerCatalog={providers:[video]};
 const pricing=[{provider:"runway",model:"seedance2_5",currency:"USD",sourceUrl:"https://provider.example/pricing",
  observedAt:"2026-11-10T00:00:00.000Z",expiresAt:"2026-12-10T00:00:00.000Z",
  ratesPerSecond:{"720p":0.2},billingIncrementSeconds:1}];
-const shot={id:"shot-01",provider:"runway",model:"seedance2_5",prompt:"A wide cinematic establishing shot.",durationSeconds:8,aspectRatio:"16:9",resolution:"720p",audioMode:"none",referenceImageCount:1};
+const shot={id:"shot-01",provider:"runway",model:"seedance2_5",prompt:"A wide cinematic establishing shot.",durationSeconds:8,aspectRatio:"16:9",resolution:"720p",audioMode:"none",referenceImageCount:1,rightsConfirmed:true};
 const now=()=>new Date("2026-11-11T12:00:00.000Z");
 
 test("provider-aware preflight verifies compatible shots and source-attributed production pricing",()=>{
@@ -96,4 +96,12 @@ test("preflight explicitly records the durable Runway worker adapter as supporte
  const result=preflightVideoProduction({shots:[shot],providerCatalog,pricingCatalog:pricing,now});
  assert.equal(result.status,"ready_for_approval");
  assert.equal(result.shots[0].checks.find(check=>check.id==="worker_adapter").status,"passed");
+});
+
+test("preflight blocks shots without explicit rights clearance",()=>{
+ for(const patch of [{rightsConfirmed:false},{rightsConfirmed:undefined}]){
+  const result=preflightVideoProduction({shots:[{...shot,...patch}],providerCatalog,pricingCatalog:pricing,now});
+  assert.equal(result.status,"blocked");
+  assert.equal(result.shots[0].checks.find(item=>item.id==="rights").status,"failed");
+ }
 });
