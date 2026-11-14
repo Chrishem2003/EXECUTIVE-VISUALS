@@ -57,7 +57,7 @@
     "verify:caption-evidence": "node --experimental-strip-types --test server/tests/caption-evidence.test.mjs",
     "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs",
     "verify:provenance": "node --test server/tests/provenance.test.mjs server/tests/c2pa-verification.test.mjs server/tests/c2pa-sdk-integration.test.mjs server/tests/local-c2pa-roundtrip.test.mjs server/tests/local-c2pa-timeline-roundtrip.test.mjs server/tests/local-c2pa-ai-upscale-roundtrip.test.mjs server/tests/c2pa-format-roundtrip.test.mjs server/tests/c2pa-transformation-recovery.test.mjs",
-    "verify:upscale-quality": "node --test server/tests/upscale-quality-evidence.test.mjs server/tests/upscale-benchmark-runner.test.mjs",
+    "verify:upscale-quality": "node --test server/tests/upscale-quality-evidence.test.mjs server/tests/upscale-benchmark-runner.test.mjs server/tests/upscale-visual-quality.test.mjs",
     "verify:upscale-evidence": "node server/scripts/verify-upscale-quality-evidence.mjs",
     "benchmark:upscale": "node server/scripts/run-upscale-benchmark.mjs",
     "verify:customer-lifetime-acquisition-economics": "node --test server/tests/customer-lifetime-acquisition-economics.test.mjs",
