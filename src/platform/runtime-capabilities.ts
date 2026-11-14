@@ -30,6 +30,17 @@ export type RuntimeCapabilityInput = {
   };
 };
 export type RuntimeCapability = { id: string; label: string; state: CapabilityState; detail: string };
+export type LocalAssetUploadHealth = { enabled?: boolean; code?: string | null; message?: string | null } | null | undefined;
+export type LocalAssetUploadReadiness = { enabled: boolean; message: string };
+
+export function resolveLocalAssetUploadReadiness(input: LocalAssetUploadHealth): LocalAssetUploadReadiness {
+  if (input?.enabled === true) return { enabled: true, message: "" };
+  const message = typeof input?.message === "string" && input.message.trim()
+    ? input.message.trim()
+    : "The server has not confirmed durable local media storage. Local uploads remain disabled.";
+  return { enabled: false, message };
+}
+
 
 export function describeRuntimeCapabilities(input: RuntimeCapabilityInput = {}): RuntimeCapability[] {
   const authMode = input.authMode || "local";
