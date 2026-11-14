@@ -17,6 +17,7 @@ create table if not exists executive_visuals.google_provider_files (
   expires_at timestamptz not null,
   source_type text not null default 'upload' check (source_type in ('upload', 'gcs')),
   source_uri text,
+  constraint google_provider_files_source_lineage_check check ((source_type = 'upload' and source_uri is null) or (source_type = 'gcs' and source_uri is not null)),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (provider, asset_id, owner_id)
