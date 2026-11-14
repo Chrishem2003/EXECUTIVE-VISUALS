@@ -19,7 +19,7 @@ test("Paddle checkout uses a server-mapped price and returns hosted checkout onl
   assert.equal(request.url,"https://sandbox-api.paddle.com/transactions");
   assert.equal(request.options.headers.authorization,"Bearer sandbox-key");
   assert.deepEqual(request.body.items,[{price_id:"pri_01creator123",quantity:1}]);
-  assert.deepEqual(request.body.custom_data,{owner_id:owner,plan_code:"creator",product:"executive_visuals"});
+  assert.deepEqual(request.body.custom_data,{owner_id:owner,plan_code:"creator",payment_id:"payment-123",reference:"EVS-order-123",product:"executive_visuals"});
 });
 
 test("Paddle checkout rejects client-controlled price IDs and invalid return URLs",async()=>{
