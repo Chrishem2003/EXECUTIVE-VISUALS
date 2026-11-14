@@ -76,8 +76,9 @@ export function createTransformationPlan(db,{ownerId,body,idempotencyKey}={}){
  if(body.preservation!==undefined&&(!Array.isArray(body.preservation)||body.preservation.length>10||body.preservation.some(value=>typeof value!=="string"||!PRESERVATION.has(value))))throw fail("One or more preservation constraints are unsupported.","TRANSFORMATION_PRESERVATION_INVALID");
  const preservation=body.preservation===undefined?[]:[...body.preservation];
  if(new Set(preservation).size!==preservation.length)throw fail("Preservation constraints cannot contain duplicates.","TRANSFORMATION_PRESERVATION_INVALID");
- const key=cleanText(idempotencyKey,180);
- if(key.length<8)throw fail("An idempotency key of at least 8 characters is required.","IDEMPOTENCY_KEY_REQUIRED");
+ if(typeof idempotencyKey!=="string")throw fail("An idempotency key must be a string.","IDEMPOTENCY_KEY_REQUIRED");
+ const key=idempotencyKey.trim();
+ if(key.length<8||key.length>180)throw fail("An idempotency key of 8 to 180 characters is required.","IDEMPOTENCY_KEY_REQUIRED");
  const existing=db.prepare("SELECT * FROM transformation_plans WHERE owner_id=? AND idempotency_key=?").get(ownerId,key);
  const canonical={projectId,sourceAssetId,operation,prompt,durationSeconds:duration,referenceAssetIds:refs,preservation,rightsConfirmed:true,subjectConsentConfirmed:body.subjectConsentConfirmed===true};
  if(existing){

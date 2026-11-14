@@ -793,7 +793,9 @@ export function createAppServer() {
       }
       if(path==="/api/transformations"&&req.method==="POST"){
         const body=await readJson(req,64*1024);
-        const result=createTransformationPlan(db,{ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+        const requestKey=req.headers["idempotency-key"]??body.idempotencyKey;
+        if(typeof requestKey!=="string"){fail(res,400,"IDEMPOTENCY_KEY_REQUIRED","An idempotency key must be a string of 8 to 180 characters.");return;}
+        const result=createTransformationPlan(db,{ownerId:user.id,body,idempotencyKey:requestKey});
         if(!result.idempotentReplay)audit(db,user.id,"transformation.draft_created","transformation",result.plan.id,{operation:result.plan.operation},result.plan.projectId);
         send(res,result.idempotentReplay?200:201,result,cors);return;
       }
