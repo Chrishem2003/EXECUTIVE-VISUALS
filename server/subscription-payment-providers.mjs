@@ -23,12 +23,13 @@ async function requestJson(fetchImpl,url,{method="GET",headers={},body,timeoutMs
 
 function verifyPaddleSignature(rawBody,signature,secret,{now=Date.now(),toleranceSeconds=5}={}){
   if(!Buffer.isBuffer(rawBody)||rawBody.length===0||rawBody.length>1024*1024)return false;
-  const fields=Object.fromEntries(String(signature||"").split(";").map(part=>part.split("=",2)).filter(pair=>pair.length===2));
-  const timestamp=Number(fields.ts),provided=fields.h1;
-  if(!Number.isSafeInteger(timestamp)||!provided||!secret)return false;
+  const fields=String(signature||"").split(";").map(part=>part.trim().split("=",2)).filter(pair=>pair.length===2);
+  const timestamp=Number(fields.find(([key])=>key==="ts")?.[1]);
+  const signatures=fields.filter(([key,value])=>key==="h1"&&/^[a-f0-9]{64}$/i.test(value)).map(([,value])=>value);
+  if(!Number.isSafeInteger(timestamp)||!signatures.length||!secret)return false;
   if(Math.abs(Math.floor(now/1000)-timestamp)>toleranceSeconds)return false;
   const expected=createHmac("sha256",secret).update(String(timestamp)+":").update(rawBody).digest("hex");
-  return same(expected,provided);
+  return signatures.some(provided=>same(expected,provided));
 }
 
 const PADDLE_EVENTS=new Set([
