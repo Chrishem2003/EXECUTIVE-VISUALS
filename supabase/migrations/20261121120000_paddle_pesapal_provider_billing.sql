@@ -131,6 +131,7 @@ begin
       'currency',existing_payment.currency,
       'provider',existing_payment.provider,
       'providerPriceId',existing_payment.metadata->>'provider_price_id',
+      'billingInterval',existing_payment.metadata->>'billing_interval',
       'status',existing_payment.status,
       'idempotentReplay',true
     );
@@ -190,6 +191,7 @@ begin
       else price_row.amount_minor::numeric/100 end,
     'currency',price_row.currency,'provider',lower(p_provider),
     'providerPriceId',price_row.provider_price_id,
+    'billingInterval',plan_row.billing_interval,
     'status','pending','idempotentReplay',false
   );
 end;
