@@ -567,7 +567,7 @@ document.addEventListener("click",event=>{
  if(cloudCancel){
   const id=cloudCancel.dataset.evCloudCancel||"";cloudCancel.setAttribute("disabled","true");
   void apiRequest<{job:{status:string;cancel_requested_at?:string|null};idempotentReplay:boolean;cancellationRequested:boolean}>("/api/cloud/jobs/"+encodeURIComponent(id)+"/cancel",{method:"POST"})
-   .then(async result=>{state.message=result.cancellationRequested?"Cancellation requested. The active worker will stop at its next cancellation check.":"Queued cloud job cancelled before execution.";await refresh();paint();})
+   .then(async result=>{state.message=result.cancellationRequested?(result.job.status==="queued"?"Cancellation queued. The worker will mark the job cancelled before starting execution.":"Cancellation requested. The active worker will stop at its next cancellation check."):"Cloud job cancelled.";await refresh();paint();})
    .catch(error=>{cloudCancel.removeAttribute("disabled");state.message=error instanceof Error?error.message:"Cloud job cancellation could not be recorded.";paint();});
   return;
  }
