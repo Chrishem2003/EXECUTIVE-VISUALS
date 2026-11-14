@@ -34,6 +34,7 @@ export function readCloudWorkerConfig(env=process.env){
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
+  if(env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&(!env.RUNWAY_VIDEO_ALLOW_REMOTE||!/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))||!Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)))throw new Error("Runway Model Router requires RUNWAY_VIDEO_ROUTER_CONFIG to name an existing saved config slug, explicit remote opt-in and a server-side API key.");
   const runwayRouterConfigured=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
    /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
   if(!falConfigured&&!runwayRouterConfigured&&!googleOmni)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router, or a fully gated Google Omni integration.");
