@@ -4,7 +4,7 @@ const PROVIDERS=new Set(["paddle","pesapal"]);
 
 export function createUnifiedSubscriptionBilling({providers,repository}={}){
   if(!providers?.paddle||!providers?.pesapal)throw new Error("Paddle and Pesapal providers are required.");
-  const required=["reserveCheckout","getCheckout","attachProviderCheckout","markCheckoutUncertain","applyProviderEvent","findPendingPesapalPayment"];
+  const required=["reserveCheckout","reserveRenewalCheckout","getCheckout","attachProviderCheckout","markCheckoutUncertain","applyProviderEvent","findPendingPesapalPayment"];
   for(const method of required)if(typeof repository?.[method]!=="function")throw new Error("Subscription repository must implement "+method+".");
 
   async function createCheckout({provider,ownerId,planCode,email,idempotencyKey,returnUrl,pesapalOrder}={}){
@@ -45,6 +45,38 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     }
   }
 
+  async function createRenewalCheckout({provider,ownerId,subscriptionId,email,idempotencyKey,pesapalOrder}={}){
+    const selected=text(provider).toLowerCase(),owner=text(ownerId),subscription=text(subscriptionId);
+    const key=text(idempotencyKey),customerEmail=text(email).toLowerCase();
+    if(selected!=="pesapal"||!owner||!subscription||!key||key.length<8||key.length>180||!customerEmail)
+      throw fail("SUBSCRIPTION_RENEWAL_INPUT_INVALID","Pesapal renewal requires an authenticated owner, subscription, email and idempotency key.");
+    const reservation=await repository.reserveRenewalCheckout({provider:selected,ownerId:owner,subscriptionId:subscription,email:customerEmail,idempotencyKey:key});
+    const reference=text(reservation?.reference||reservation?.txRef);
+    if(!reservation?.paymentId||!reference)
+      throw fail("SUBSCRIPTION_RENEWAL_RESERVATION_INVALID","The subscription ledger did not reserve a pending renewal payment.");
+    if(reservation.idempotentReplay){
+      const existing=await repository.getCheckout({paymentId:reservation.paymentId,ownerId:owner});
+      if(!existing)throw fail("SUBSCRIPTION_RENEWAL_REPLAY_UNAVAILABLE","The original renewal is being reconciled; do not create another charge.",409);
+      return {...existing,idempotentReplay:true};
+    }
+    let checkout=null;
+    try{
+      checkout=await providers.pesapal.createCheckout({
+        ...(pesapalOrder||{}),reference,amount:reservation.amountMajor,
+        currency:reservation.currency,email:customerEmail
+      });
+      await repository.attachProviderCheckout({ownerId:owner,paymentId:reservation.paymentId,
+        subscriptionId:subscription,provider:selected,providerCheckout:checkout});
+      return {paymentId:reservation.paymentId,subscriptionId:subscription,reference,
+        provider:selected,...checkout,idempotentReplay:false};
+    }catch(error){
+      await repository.markCheckoutUncertain({ownerId:owner,paymentId:reservation.paymentId,
+        subscriptionId:subscription,provider:selected,providerCheckout:checkout,
+        errorCode:error?.code||"PROVIDER_RESULT_UNCERTAIN"}).catch(()=>{});
+      throw fail("SUBSCRIPTION_RENEWAL_UNCERTAIN","The renewal result could not be confirmed. The pending reservation was retained; do not retry with a new idempotency key.",202);
+    }
+  }
+
   async function handlePaddleWebhook({rawBody,signature}={}){
     const event=providers.paddle.verifyWebhook(rawBody,signature);
     if(event.ignored)return {received:true,ignored:true,eventId:event.eventId||null};
@@ -66,5 +98,5 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     return {received:true,provider:"pesapal",eventId:event.eventId,...result};
   }
 
-  return Object.freeze({createCheckout,handlePaddleWebhook,handlePesapalNotification});
+  return Object.freeze({createCheckout,createRenewalCheckout,handlePaddleWebhook,handlePesapalNotification});
 }
