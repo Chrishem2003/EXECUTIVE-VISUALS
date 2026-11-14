@@ -43,7 +43,7 @@ function signingKey(secret, date) {
 function canonicalQuery(entries) {
   return [...entries]
     .map(([key, value]) => [awsEncode(key), awsEncode(value)])
-    .sort(([ak, av], [bk, bv]) => ak.localeCompare(bk) || av.localeCompare(bv))
+    .sort(([ak, av], [bk, bv]) => ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : av > bv ? 1 : 0)
     .map(([key, value]) => key + "=" + value)
     .join("&");
 }
@@ -164,6 +164,11 @@ export function createCloudflareR2Storage({
       }
       return response;
     } catch (error) {
+      if (signal?.aborted) {
+        const cancelled = new Error("R2 storage upload was cancelled.");
+        cancelled.code = "R2_STORAGE_ABORTED";
+        throw cancelled;
+      }
       if (error?.name === "AbortError") {
         const timeout = new Error("R2 storage request timed out.");
         timeout.code = "R2_STORAGE_TIMEOUT";
