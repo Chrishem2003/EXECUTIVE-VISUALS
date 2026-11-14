@@ -23,7 +23,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     try{
       let checkout;
       if(selected==="paddle"){
-        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,priceId:reservation.providerPriceId});
+        checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,paymentId:reservation.paymentId,reference,priceId:reservation.providerPriceId});
       }else{
         const order=pesapalOrder||{};
         checkout=await providers.pesapal.createCheckout({
@@ -48,7 +48,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
   async function handlePaddleWebhook({rawBody,signature}={}){
     const event=providers.paddle.verifyWebhook(rawBody,signature);
     if(event.ignored)return {received:true,ignored:true,eventId:event.eventId||null};
-    if(!event.eventId||!event.ownerId||!event.planCode)
+    if(!event.eventId||!event.ownerId||!event.planCode||(event.eventType==="transaction.completed"&&(!event.paymentId||!event.reference)))
       throw fail("PADDLE_EVENT_REQUIRES_REVIEW","Verified Paddle event lacks the application owner or plan mapping.",202);
     const result=await repository.applyProviderEvent({provider:"paddle",event});
     return {received:true,provider:"paddle",eventId:event.eventId,...result};
