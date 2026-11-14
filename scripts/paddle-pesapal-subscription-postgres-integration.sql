@@ -123,9 +123,30 @@ begin
 
   result:=executive_visuals.apply_paddle_subscription_lifecycle(
     paddle_subscription_key,'subscription.canceled',null,null,false,
-    '{"source":"postgres-integration"}'::jsonb
+    jsonb_build_object('source','postgres-integration','occurred_at',now()::text)
   );
   if result->>'status'<>'cancelled' then raise exception 'Paddle cancellation lifecycle event was not applied'; end if;
+
+  result:=executive_visuals.apply_paddle_subscription_lifecycle(
+    paddle_subscription_key,'subscription.resumed',null,null,false,
+    jsonb_build_object('source','postgres-integration','occurred_at',(now()-interval '1 day')::text)
+  );
+  if result->>'stale'<>'true' or result->>'status'<>'cancelled' then
+    raise exception 'Out-of-order Paddle resume event incorrectly reverted a newer cancellation';
+  end if;
+  select status into paddle_status from executive_visuals.customer_subscriptions
+    where id=paddle_subscription_id;
+  if paddle_status<>'cancelled' then
+    raise exception 'Stale Paddle lifecycle event changed the persisted subscription state';
+  end if;
+
+  result:=executive_visuals.apply_paddle_subscription_lifecycle(
+    paddle_subscription_key,'subscription.resumed',null,null,false,
+    '{"source":"postgres-integration"}'::jsonb
+  );
+  if result->>'needsReview'<>'true' or result->>'reason'<>'event_timestamp_missing' then
+    raise exception 'Paddle lifecycle event without occurred_at was not quarantined for review';
+  end if;
 
   result:=executive_visuals.reserve_subscription_purchase_for_provider(
     pesapal_owner,'creator-monthly','pesapal-integration@example.com','pesapal',
