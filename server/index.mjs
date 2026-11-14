@@ -708,6 +708,36 @@ export function createAppServer() {
           fail(res,status,code,error.message||"Creative direction could not be generated.");return;
         }
       }
+      if(path==="/api/creative/storyboard"&&req.method==="POST"){
+        const body=await readJson(req,48*1024);
+        const projectId=String(body.projectId||"").trim()||null;
+        if(projectId){
+          const access=getProjectAccess(db,user.id,projectId);
+          if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request a project storyboard.");return;}
+        }
+        try{
+          const result=await generateStoryboard({input:body.input});
+          const recordId=randomUUID();
+          audit(db,user.id,"creative.storyboard.generated","storyboard",recordId,{
+            model:result.model,
+            inputHash:result.storyboard.inputHash,
+            promptTokens:result.usage?.promptTokens??null,
+            completionTokens:result.usage?.completionTokens??null,
+            totalTokens:result.usage?.totalTokens??null,
+            outputSchemaVersion:result.storyboard.schemaVersion,
+            sceneCount:result.storyboard.scenes.length,
+            shotCount:result.storyboard.scenes.reduce((sum,scene)=>sum+scene.shots.length,0),
+            durationSeconds:result.storyboard.durationSeconds
+          },projectId);
+          send(res,200,{...result,recordId},cors);return;
+        }catch(error){
+          const code=error.code||"STORYBOARD_COMPILER_FAILED";
+          const status=["STORYBOARD_INPUT_INVALID","STORYBOARD_DIRECTION_REQUIRED","STORYBOARD_DIRECTION_INVALID"].includes(code)?400:
+            ["STORYBOARD_OUTPUT_INVALID","STORYBOARD_DURATION_MISMATCH"].includes(code)?502:503;
+          fail(res,status,code,error.message||"Storyboard could not be generated.");return;
+        }
+      }
       if(path==="/api/d1"||path.startsWith("/api/d1/")){
         const configuredWorker=String(process.env.D1_STAGING_WORKER_URL||"").trim();
         if(!configuredWorker){fail(res,503,"D1_STAGING_DISABLED","The isolated D1 staging bridge is not enabled in this environment.");return;}
