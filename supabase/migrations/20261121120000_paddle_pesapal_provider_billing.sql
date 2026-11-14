@@ -53,6 +53,8 @@ alter table executive_visuals.subscription_events
 alter table executive_visuals.customer_subscriptions
   add column if not exists provider_customer_id text,
   add column if not exists provider_price_id text;
+alter table executive_visuals.customer_subscriptions
+  add column if not exists provider_last_event_occurred_at timestamptz;
 
 create table if not exists executive_visuals.subscription_plan_provider_prices (
   id uuid primary key default gen_random_uuid(),
@@ -538,6 +540,7 @@ declare
   subscription_row executive_visuals.customer_subscriptions%rowtype;
   next_status text;
   ledger_event_type text;
+  event_occurred_at timestamptz;
 begin
   if p_provider_subscription_id !~ '^sub_[a-z0-9]{26}$'
      or p_event_type not in ('subscription.created','subscription.activated','subscription.updated',
@@ -547,11 +550,29 @@ begin
     raise exception 'Invalid Paddle subscription lifecycle event' using errcode='22023';
   end if;
 
+  begin
+    event_occurred_at:=nullif(p_event_data->>'occurred_at','')::timestamptz;
+  exception when invalid_datetime_format or datetime_field_overflow then
+    raise exception 'Paddle lifecycle event timestamp is invalid' using errcode='22007';
+  end;
+  if event_occurred_at is null then
+    return jsonb_build_object('applied',false,'needsReview',true,'reason','event_timestamp_missing');
+  end if;
+
   select * into subscription_row from customer_subscriptions
    where provider='paddle' and provider_subscription_id=p_provider_subscription_id
    for update;
   if not found then
     return jsonb_build_object('applied',false,'needsReview',true,'reason','subscription_not_mapped');
+  end if;
+
+  -- Paddle delivers events at least once and may deliver distinct events out of order.
+  -- Never let an older lifecycle event overwrite a newer subscription state.
+  if subscription_row.provider_last_event_occurred_at is not null
+     and event_occurred_at < subscription_row.provider_last_event_occurred_at then
+    return jsonb_build_object('applied',false,'stale',true,
+      'subscriptionId',subscription_row.id,'status',subscription_row.status,
+      'lastEventOccurredAt',subscription_row.provider_last_event_occurred_at);
   end if;
 
   next_status:=case p_event_type
@@ -574,8 +595,9 @@ begin
     current_period_start=coalesce(p_period_start,current_period_start),
     current_period_end=coalesce(p_period_end,current_period_end),
     cancel_at_period_end=coalesce(p_cancel_at_period_end,cancel_at_period_end),
-    cancelled_at=case when p_event_type='subscription.canceled' then coalesce(cancelled_at,now()) else cancelled_at end,
+    cancelled_at=case when p_event_type='subscription.canceled' then coalesce(cancelled_at,event_occurred_at) else cancelled_at end,
     grace_until=case when next_status='active' then null else grace_until end,
+    provider_last_event_occurred_at=event_occurred_at,
     updated_at=now()
    where id=subscription_row.id;
 
@@ -594,7 +616,8 @@ begin
       coalesce(p_event_data,'{}'::jsonb)||jsonb_build_object('provider_subscription_id',p_provider_subscription_id,'provider_event_type',p_event_type));
   end if;
 
-  return jsonb_build_object('applied',true,'subscriptionId',subscription_row.id,'status',next_status);
+  return jsonb_build_object('applied',true,'subscriptionId',subscription_row.id,'status',next_status,
+    'lastEventOccurredAt',event_occurred_at);
 end;
 $$;
 
