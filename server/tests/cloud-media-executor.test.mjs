@@ -675,3 +675,91 @@ test("AI upscale output MIME type is canonical and rejects unsupported formats",
  assert.equal(aiUpscaleMediaType("webp"),"image/webp");
  for(const format of ["jpeg","gif","svg",""])assert.throws(()=>aiUpscaleMediaType(format),error=>error.code==="INVALID_MEDIA_OPTIONS");
 });
+
+
+test("cloud video AI upscale worker publishes a separate verified video derivative", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-video-ai-upscale-"));
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "source-video");
+  let published = null, leaseChecks = 0, processorInput = null;
+  const processor = {
+    async process(input) {
+      processorInput = input;
+      await writeFile(input.outputPath, "enhanced-video-output");
+      return {
+        path: input.outputPath, byteSize: 21, sourceSha256: "a".repeat(64),
+        frameCount: 12, scale: 2, model: "realesrgan-x4plus",
+        frameProcessing: "sequential-image-model-inference",
+        temporalConsistency: "not-certified", qualityReviewRequired: true
+      };
+    }
+  };
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      c2paPreserver: noC2paPreservation,
+      videoAiUpscaleProcessor: processor,
+      videoAiUpscaleEnabled: true,
+      videoAiUpscaleWorkerSelfTestPassed: true,
+      mediaIO: {
+        async materialize(args) {
+          assert.deepEqual(args, { ownerId: "verified-owner", assetId: "video-source" });
+          return { path: source, asset: { id: "video-source", name: "scene.mp4", mediaType: "video/mp4", sha256: "a".repeat(64) }, async cleanup() {} };
+        },
+        async publish(args) {
+          published = args;
+          return { id: "video-derivative", name: args.filename, mediaType: args.mediaType, derivativeOf: args.derivativeOf };
+        }
+      }
+    });
+    const result = await execute({
+      job: { id: "video-ai-job", owner_id: "verified-owner", project_id: "project-1", job_type: "media.video-ai-upscale", lease_owner: "worker-1", lease_token: "11111111-1111-4111-8111-111111111111", input: { sourceAssetId: "video-source", model: "realesrgan-x4plus", scale: 2 } },
+      assertLease: async () => { leaseChecks++; return true; },
+      onProgress() {}
+    });
+    assert.equal(processorInput.model, "realesrgan-x4plus");
+    assert.equal(processorInput.scale, 2);
+    assert.equal(processorInput.expectedSourceSha256, "a".repeat(64));
+    assert.equal(published.mediaType, "video/mp4");
+    assert.equal(published.derivativeOf, "video-source");
+    assert.equal(published.filename, "scene-ai-upscaled.mp4");
+    assert.equal(published.metadata.operation, "media.video-ai-upscale");
+    assert.equal(published.metadata.processing.frameCount, 12);
+    assert.equal(published.metadata.processing.temporalConsistency, "not-certified");
+    assert.equal("path" in published.metadata.processing, false, "temporary filesystem paths must not enter asset metadata");
+    assert.equal(published.publicationKey, "video-ai-job:output:v1");
+    assert.equal(published.leaseContext.jobId, "video-ai-job");
+    assert.equal(result.outputAsset.id, "video-derivative");
+    assert.equal(leaseChecks, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud video AI upscale worker fails closed without explicit worker verification", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-video-ai-upscale-gate-"));
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "source-video");
+  let published = false, executed = false;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      c2paPreserver: noC2paPreservation,
+      videoAiUpscaleProcessor: { async process() { executed = true; throw new Error("must not execute"); } },
+      videoAiUpscaleEnabled: true,
+      videoAiUpscaleWorkerSelfTestPassed: false,
+      mediaIO: {
+        async materialize() { return { path: source, asset: { id: "video-source", name: "scene.mp4", mediaType: "video/mp4" }, async cleanup() {} }; },
+        async publish() { published = true; throw new Error("must not publish"); }
+      }
+    });
+    await assert.rejects(
+      execute({ job: { id: "video-ai-gated", owner_id: "owner", job_type: "media.video-ai-upscale", input: { sourceAssetId: "video-source" } } }),
+      error => error.code === "VIDEO_AI_UPSCALE_WORKER_NOT_VERIFIED"
+    );
+    assert.equal(executed, false);
+    assert.equal(published, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
