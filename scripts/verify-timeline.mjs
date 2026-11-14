@@ -84,8 +84,8 @@ audioTracks=addTrack(audioTracks,{id:"audio",name:"Audio",kind:"audio",enabled:t
 audioTracks=addClip(audioTracks,"audio",{id:"voice",assetId:"voice-asset",name:"Voice",sourceRange:{start:rational(0,1),duration:rational(4,1)},timelineStart:rational(0,1),duration:rational(4,1),enabled:true,gainDb:-3,pan:-.25,audioAutomation:automationPoints});
 assert.equal(validateTimeline(audioTracks).valid,true);
 const crossfadeTimeline={...audioTracks,tracks:audioTracks.tracks.map(track=>track.id==="audio"?{...track,clips:[
- {...track.clips[0],id:"crossfade-out",assetId:"music-a",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),transitionToNext:{type:"crossfade",fadeFrames:6}},
- {...track.clips[0],id:"crossfade-in",assetId:"music-b",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(18,24),duration:rational(24,24),transitionToNext:undefined}
+ {...track.clips[0],id:"crossfade-out",assetId:"music-a",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),transitionToNext:{type:"crossfade",fadeFrames:6},audioAutomation:[]},
+ {...track.clips[0],id:"crossfade-in",assetId:"music-b",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(18,24),duration:rational(24,24),transitionToNext:undefined,audioAutomation:[]}
  ]}:track)};
 assert.equal(validateTimeline(crossfadeTimeline).valid,true,"a frame-aligned audio crossfade must permit its intentional overlap");
 const invalidCrossfade={...crossfadeTimeline,tracks:crossfadeTimeline.tracks.map(track=>track.id==="audio"?{...track,clips:track.clips.map(clip=>clip.id==="crossfade-in"?{...clip,timelineStart:rational(17,24)}:clip)}:track)};
