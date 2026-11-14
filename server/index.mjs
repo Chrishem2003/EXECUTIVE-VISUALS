@@ -93,6 +93,8 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.video-ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
+const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
 const googleGeminiFilesEnabled=process.env.GOOGLE_GEMINI_FILES_ENABLED==="true";
 if(googleGeminiFilesEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)){
  throw new Error("Gemini Files uploads require verified Supabase sessions and server-side Supabase credentials.");
@@ -109,8 +111,6 @@ const googleGeminiFilesUpload=googleGeminiFilesGateway?createGoogleGeminiFilesUp
  canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(...args)=>audit(db,...args)
 }):null;
-const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
-const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
 const googleDriveOAuthEnabled=process.env.GOOGLE_DRIVE_OAUTH_ENABLED==="true";
 if(googleDriveOAuthEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY||!process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY||String(process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY).length<32||process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY===process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY)){
  throw new Error("Google Drive OAuth requires verified Supabase sessions and server-side Supabase credentials.");
