@@ -23,7 +23,7 @@ if (files.length === 0) {
 }
 
 console.log(`Running ${files.length} server test files in shard ${shard}/${shardCount}`);
-const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", ...files], {
+const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-force-exit", ...files], {
   stdio: "inherit",
 });
 if (result.error) {
