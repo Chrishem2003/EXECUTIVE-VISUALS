@@ -99,6 +99,37 @@ test("cloud render job event history is available only after job access is verif
  assert.equal(result.status,200);assert.deepEqual(result.body.events,[]);
 });
 
+test("cloud queued media cancellation atomically records a terminal state and is idempotent",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174100",owner_id:editor,project_id:project,job_type:"timeline.render",status:"queued",progress:0,input:{timelineId,timelineRevision:2},cancel_requested_at:null};
+ const f=setup({existing:[job]});
+ const first=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(first.status,200);assert.equal(first.body.job.status,"cancelled");assert.equal(first.body.idempotentReplay,false);
+ assert.equal(first.body.cancellationRequested,false);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="job.cancelled"));
+ const replay=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(replay.status,200);assert.equal(replay.body.idempotentReplay,true);
+});
+test("cloud active media cancellation records durable intent without pretending execution has stopped",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174101",owner_id:editor,project_id:project,job_type:"media.transcode",status:"processing",progress:35,input:{assetId:"723e4567-e89b-42d3-a456-426614174000"},cancel_requested_at:null};
+ const f=setup({existing:[job]});
+ const first=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(first.status,200);assert.equal(first.body.job.status,"processing");assert.equal(first.body.cancellationRequested,true);
+ assert.ok(first.body.job.cancel_requested_at);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("job_events")&&JSON.parse(call[2].body).event_type==="job.cancellation_requested"));
+ const replay=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(replay.status,200);assert.equal(replay.body.idempotentReplay,true);assert.equal(replay.body.cancellationRequested,true);
+ assert.equal(job.status,"processing");
+});
+test("cloud job cancellation requires editor access and excludes provider-managed video jobs",async()=>{
+ const active={id:"623e4567-e89b-42d3-a456-426614174102",owner_id:editor,project_id:project,job_type:"timeline.render",status:"processing",cancel_requested_at:null};
+ const denied=setup({canWrite:false,existing:[active]});
+ assert.equal((await denied.api.handle({method:"POST",path:"/api/cloud/jobs/"+active.id+"/cancel",ownerId:owner})).status,403);
+ assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
+ const providerJob={...active,id:"623e4567-e89b-42d3-a456-426614174103",job_type:"video.generate"};
+ const unsupported=setup({existing:[providerJob]});
+ const result=await unsupported.api.handle({method:"POST",path:"/api/cloud/jobs/"+providerJob.id+"/cancel",ownerId:owner});
+ assert.equal(result.status,409);assert.equal(result.body.error.code,"JOB_CANCELLATION_UNSUPPORTED");
+});
 test("cloud timeline API readiness requires exposed schema tables and a private bucket",async()=>{
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:false};}})});
  const result=await api.checkReadiness();assert.equal(result.ready,true);assert.equal(result.storage,"private");
