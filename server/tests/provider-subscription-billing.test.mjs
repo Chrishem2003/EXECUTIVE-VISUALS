@@ -116,6 +116,35 @@ test("verified Paddle transaction webhook settles only the matching reserved led
   assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
 });
 
+test("verified Pesapal renewal IPN extends the existing subscription through the renewal finalizer",async()=>{
+  const calls=[];
+  const renewalPayment={...payment,provider:"pesapal",provider_transaction_id:"track-renewal",
+    tx_ref:"EVR-order-1",amount_minor:50000,currency:"UGX",
+    metadata:{...payment.metadata,payment_purpose:"subscription_renewal"}};
+  const providers={
+    paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({})},
+    pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({
+      provider:"pesapal",eventId:"track-renewal",eventType:"payment.completed",
+      merchantReference:"EVR-order-1",trackingId:"track-renewal",amount:50000,currency:"UGX"
+    })}
+  };
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url);calls.push([options.method,target.pathname]);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+    if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+    if(target.pathname.endsWith("/payment_transactions")&&options.method==="GET")return json([renewalPayment]);
+    if(target.pathname.endsWith("/rpc/finalize_subscription_renewal_for_provider"))return json({status:"active",subscriptionId});
+    throw new Error("unexpected database request "+target.pathname);
+  };
+  const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+    paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+  const result=await billing.handlePesapalIpn({
+    OrderNotificationType:"IPNCHANGE",OrderTrackingId:"track-renewal",OrderMerchantReference:"EVR-order-1"
+  });
+  assert.equal(result.status,200);
+  assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_renewal_for_provider")));
+});
+
 test("Pesapal IPN verifies the pending UGX order before invoking the atomic subscription finalizer",async()=>{
   const calls=[];
   const pesapalPayment={...payment,provider:"pesapal",provider_transaction_id:"track-1",tx_ref:"EVP-pesapal-1",amount_minor:50000,currency:"UGX"};
