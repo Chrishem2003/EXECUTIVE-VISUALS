@@ -468,14 +468,40 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.timeline.render&order=created_at.desc&limit="+limit);
     return response(200,{jobs:Array.isArray(rows)?rows:[]});
    }
-   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
-   if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
-    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+   const jobMatch=path.match(/^\\/api\\/cloud\\/jobs\\/([0-9a-f-]+)(?:\\/(events|cancel))?$/i);
+   if(jobMatch&&safeId(jobMatch[1])){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
-    if(job.project_id){if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});}
-    else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
-    if(jobMatch[2]){
+    const cancelling=jobMatch[2]==="cancel"&&method==="POST";
+    if(jobMatch[2]==="cancel"&&!cancelling)return null;
+    if(job.project_id){
+     const permitted=await allow({ownerId,projectId:job.project_id,action:cancelling?"write":"read"});
+     if(permitted!==true)return response(cancelling?403:404,{error:{code:cancelling?"EDITOR_REQUIRED":"JOB_NOT_FOUND",message:cancelling?"Owner or editor access is required.":"Job not found."}});
+    } else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(cancelling){
+     const supported=job.job_type==="timeline.render"||job.job_type.startsWith("media.");
+     if(!supported)return response(409,{error:{code:"JOB_CANCELLATION_UNSUPPORTED",message:"This job type requires its dedicated cancellation workflow."}});
+     if(job.status==="cancelled")return response(200,{job,idempotentReplay:true,cancellationRequested:false});
+     if(job.status==="processing"&&job.cancel_requested_at)return response(200,{job,idempotentReplay:true,cancellationRequested:true});
+     if(!["queued","processing"].includes(job.status))return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"Only queued or processing media jobs can be cancelled."}});
+     const now=new Date().toISOString();
+     const patch=job.status==="queued"
+      ?{status:"cancelled",cancel_requested_at:now,updated_at:now,completed_at:now,error:{code:"JOB_CANCELLED",message:"Job was cancelled before execution began."}}
+      :{cancel_requested_at:now,updated_at:now};
+     const updated=await request("jobs?id=eq."+encodeURIComponent(job.id)+"&status=eq."+encodeURIComponent(job.status)+"&cancel_requested_at=is.null",{method:"PATCH",prefer:"return=representation",body:patch});
+     if(Array.isArray(updated)&&updated.length===1){
+      await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:job.owner_id,event_type:job.status==="queued"?"job.cancelled":"job.cancellation_requested",event_data:{phase:job.status==="queued"?"before_execution":"worker_requested",requestedBy:ownerId}}});
+      return response(200,{job:updated[0],idempotentReplay:false,cancellationRequested:job.status==="processing"});
+     }
+     const latestRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(job.id)+"&limit=1");
+     const latest=Array.isArray(latestRows)?latestRows[0]:null;
+     if(latest?.status==="cancelled")return response(200,{job:latest,idempotentReplay:true,cancellationRequested:false});
+     if(latest?.status==="processing"&&latest.cancel_requested_at)return response(200,{job:latest,idempotentReplay:true,cancellationRequested:true});
+     return response(409,{error:{code:"JOB_STATE_CONFLICT",message:"The job changed while cancellation was being recorded. Refresh its status and retry if it is still active."}});
+    }
+    if(method!=="GET")return null;
+    if(jobMatch[2]==="events"){
      const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
      return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
     }
