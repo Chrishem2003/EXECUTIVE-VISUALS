@@ -144,6 +144,26 @@ test("Paddle adjustment webhook normalizes refund and chargeback evidence withou
   assert.equal(normalized.adjustmentCurrency,"USD");
 });
 
+test("Paddle adjustment.updated normalizes approved refunds and chargeback reversals as adjustment evidence",()=>{
+  const secret="paddle-secret",timestamp=Math.floor(now()/1000);
+  for(const [action,status] of [["refund","approved"],["chargeback_reverse","reversed"],["chargeback_warning_reverse","reversed"],["credit_reverse","reversed"]]){
+    const event={event_id:"evt_01adjustmentupdatedabcdefghijkl",event_type:"adjustment.updated",occurred_at:"2026-11-14T11:00:00Z",data:{
+      id:"adj_01adjustmentupdatedabcdefgh",action,status,transaction_id:"txn_01transactionabcdefghijkl",
+      subscription_id:"sub_01subscriptionabcdefghijk",currency_code:"USD",totals:{total:"2500"}
+    }};
+    const raw=Buffer.from(JSON.stringify(event));
+    const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
+    const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
+    const normalized=provider.verifyWebhook(raw,"ts="+timestamp+";h1="+signature);
+    assert.equal(normalized.eventType,"adjustment.updated");
+    assert.equal(normalized.adjustmentAction,action);
+    assert.equal(normalized.adjustmentStatus,status);
+    assert.equal(normalized.adjustmentId,event.data.id);
+    assert.equal(normalized.providerTransactionId,event.data.transaction_id);
+    assert.equal(normalized.adjustmentAmount,"2500");
+  }
+});
+
 test("Paddle webhook rejects tampered and stale signatures",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000),raw=Buffer.from('{"event_id":"evt","event_type":"subscription.activated","data":{}}');
   const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
