@@ -913,7 +913,16 @@ export function createAppServer() {
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         const allowlistedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
         const upscaleProvider=catalog.providers.find(provider=>provider.id==="ai-upscale");
-        if(upscaleProvider)upscaleProvider.selfTestAllowed=allowlistedAdmins.includes(String(user.email||"").trim().toLowerCase());
+        if(upscaleProvider){
+          upscaleProvider.selfTestAllowed=allowlistedAdmins.includes(String(user.email||"").trim().toLowerCase());
+          upscaleProvider.videoAiUpscaleEnabled=process.env.AI_VIDEO_UPSCALE_ENABLED==="true";
+          upscaleProvider.videoAiUpscaleWorkerSelfTestPassed=process.env.AI_VIDEO_UPSCALE_WORKER_SELF_TEST_PASSED==="true";
+          upscaleProvider.videoAiUpscaleReason=!upscaleProvider.videoAiUpscaleEnabled
+            ?"Video AI upscaling is disabled on the cloud worker."
+            :!upscaleProvider.videoAiUpscaleWorkerSelfTestPassed
+              ?"A worker-side video inference self-test has not been confirmed."
+              :"Video AI upscaling is enabled; every result still requires human quality review.";
+        }
         send(res,200,catalog,cors);return;
       }
       if(path==="/api/usage"&&req.method==="GET"){
@@ -1472,6 +1481,14 @@ export function createAppServer() {
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
+        if(type==="media.video-ai-upscale"){
+          if(process.env.AI_VIDEO_UPSCALE_ENABLED!=="true"){
+            fail(res,409,"VIDEO_AI_UPSCALE_DISABLED","Video AI upscaling is disabled until the cloud worker is explicitly configured and verified.");return;
+          }
+          if(process.env.AI_VIDEO_UPSCALE_WORKER_SELF_TEST_PASSED!=="true"){
+            fail(res,409,"VIDEO_AI_UPSCALE_WORKER_NOT_VERIFIED","A worker-side video inference self-test must be completed before video enhancement jobs can be queued.");return;
+          }
+        }
         if(type==="media.ai-upscale"||type==="media.video-ai-upscale"){
           const model=String(body.model||"realesrgan-x4plus");
           const evidence=await loadUpscaleQualityEvidence();
