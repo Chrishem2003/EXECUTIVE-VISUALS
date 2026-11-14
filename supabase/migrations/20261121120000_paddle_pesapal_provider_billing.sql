@@ -38,6 +38,14 @@ alter table executive_visuals.chargeback_cases
 alter table executive_visuals.payment_webhook_events
   add constraint payment_webhook_events_provider_check
   check (provider in ('flutterwave','paddle','pesapal'));
+
+-- Provider webhook handlers quarantine verified events for operator review.
+-- The original financial-intelligence constraint predates this state.
+alter table executive_visuals.payment_webhook_events
+  drop constraint if exists payment_webhook_events_processing_status_check;
+alter table executive_visuals.payment_webhook_events
+  add constraint payment_webhook_events_processing_status_check
+  check (processing_status in ('received','processing','processed','ignored','failed','needs_review'));
 alter table executive_visuals.payment_reconciliation_runs
   add constraint payment_reconciliation_runs_provider_check
   check (provider in ('flutterwave','paddle','pesapal'));
