@@ -10,7 +10,7 @@ import { compileCreativeIntent, formatCreativeIntent, compileCreativeStoryboard,
 import { createStoryboardTimeline } from "../core/storyboard-timeline";
 import { buildModelStoryboardGenerationShots } from "../core/model-storyboard-generation";
 import { buildSeriesProductionPlan, buildEpisodeTimelineDocument, buildEpisodeShotPackage, buildSeriesPlanFromStoryboard, matchGeneratedStoryboardAssets, upsertStoryBibleEntry, setEpisodeDirectionOverrides, setEpisodeStoryBibleBindings, updateEpisodeShotDirection, type SeriesProductionPlan } from "../core/series-production";
-import { renderRuntimeWorkspace, renderAssetLibrary, renderAiUpscaleReadiness, renderEngineStatus, renderRuntimeOverview, renderImageModelOptions, renderImageModelNote, renderReferenceImageOptions, loadCreativeDraft, getCurrentProjectId, canEditCurrentProject, initRuntime } from "./runtime";
+import { renderRuntimeWorkspace, renderAssetLibrary, renderAiUpscaleReadiness, renderEngineStatus, renderRuntimeOverview, renderImageModelOptions, renderImageModelNote, renderReferenceImageOptions, renderCloudReferenceImageOptions, loadCreativeDraft, getCurrentProjectId, canEditCurrentProject, initRuntime } from "./runtime";
 import { renderTimelineWorkspace, initTimelineWorkspace, createCloudTimelineFromDocument } from "./timeline-workspace";
 import { renderWorkflowWorkspace, initWorkflowWorkspace, refreshWorkflowWorkspace } from "./workflow-workspace";
 import { renderKnowledgeWorkspace, initKnowledgeWorkspace } from "./knowledge-workspace";
