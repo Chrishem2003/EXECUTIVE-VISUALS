@@ -37,10 +37,10 @@ function statusItems(store){
  }
  return values.slice(0,MAX_VALIDATION_ITEMS).map(safeStatus).filter(Boolean);
 }
-function summarizeManifest(store){
+function summarizeManifest(store,activeManifest){
  const label=store.active_manifest;
- const manifest=label&&store.manifests&&typeof store.manifests==="object"?store.manifests[label]:null;
- if(!manifest||typeof manifest!=="object")return null;
+ const manifest=activeManifest;
+ if(!label||!manifest||typeof manifest!=="object"||Array.isArray(manifest))return null;
  const ingredients=Array.isArray(manifest.ingredients)?manifest.ingredients:[];
  return{
   activeManifestLabel:safeText(label,256),
@@ -119,10 +119,31 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
    status:"not_present",present:false,valid:false,trusted:false,assetSha256:first.sha256,
    validationState:null,findings:["C2PA_MANIFEST_NOT_PRESENT"],manifest:null,validationStatuses:[]
   };
-  const store=reader.json();
+  let store,activeManifest;
+  try{
+   store=reader.json();
+   if(store&&typeof store==="object"&&store.active_manifest&&store.manifests&&typeof store.manifests==="object"){
+    if(typeof reader.getActive!=="function")return{
+     status:"validation_unavailable",present:true,valid:false,trusted:false,assetSha256:first.sha256,
+     validationState:store.validation_state||null,findings:["C2PA_ACTIVE_MANIFEST_API_UNAVAILABLE"],manifest:null,validationStatuses:statusItems(store)
+    };
+    activeManifest=reader.getActive();
+   }
+  }catch{
+   return{
+    status:"validation_unavailable",present:true,valid:false,trusted:false,assetSha256:first.sha256,
+    validationState:store?.validation_state||null,findings:["C2PA_ACTIVE_MANIFEST_READ_FAILED"],manifest:null,
+    validationStatuses:store&&typeof store==="object"?statusItems(store):[]
+   };
+  }
   if(!store||typeof store!=="object"||!store.active_manifest||!store.manifests||typeof store.manifests!=="object")return{
    status:"not_present",present:false,valid:false,trusted:false,assetSha256:first.sha256,
    validationState:null,findings:["C2PA_MANIFEST_NOT_PRESENT"],manifest:null,validationStatuses:[]
+  };
+  if(!activeManifest||typeof activeManifest!=="object"||Array.isArray(activeManifest))return{
+   status:"validation_unavailable",present:true,valid:false,trusted:false,assetSha256:first.sha256,
+   validationState:store.validation_state||null,findings:["C2PA_ACTIVE_MANIFEST_UNAVAILABLE"],manifest:null,
+   validationStatuses:statusItems(store)
   };
   const state=verificationState(store);
   const validationStatuses=statusItems(store);
@@ -133,7 +154,7 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   return{
    status:state,present:true,valid:state==="trusted"||state==="valid_untrusted",
    trusted:state==="trusted",assetSha256:first.sha256,validationState:store.validation_state||null,
-   findings,manifest:summarizeManifest(store),validationStatuses
+   findings,manifest:summarizeManifest(store,activeManifest),validationStatuses
   };
  };
 }
