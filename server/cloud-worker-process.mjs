@@ -30,6 +30,7 @@ export function readCloudWorkerConfig(env=process.env){
   env.GOOGLE_OMNI_CONNECTION_STATUS==="connected"&&env.GEMINI_OMNI_PAID_TIER_CONFIRMED==="true"&&
   Boolean(String(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY||"").trim());
  if(googleOmniRequested&&!googleOmni)throw new Error("Google Omni worker requires both provider gates, both Gemini transport gates, a verified connection status, explicit paid-tier confirmation and a server-side API key.");
+ if(googleOmniRequested&&!video)throw new Error("Google Omni provider gates require CLOUD_VIDEO_WORKER_ENABLED=true.");
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
