@@ -67,3 +67,24 @@ test("Pesapal manual renewals reserve and atomically extend only the matching pr
   assert.match(migration,/A Pesapal renewal payment is already pending/);
   assert.match(migration,/Subscription period extended after verified provider renewal payment/);
 });
+
+test("provider SQL contains one definition per RPC and no orphaned fragments",()=>{
+  for(const name of [
+    "reserve_subscription_purchase_for_provider",
+    "finalize_subscription_purchase_for_provider",
+    "reserve_paddle_subscription_renewal",
+    "finalize_paddle_subscription_renewal",
+    "apply_paddle_subscription_lifecycle",
+    "reserve_pesapal_subscription_renewal",
+    "finalize_subscription_renewal_for_provider"
+  ]){
+    assert.equal(migration.split("create or replace function executive_visuals."+name+"(").length-1,1,
+      name+" must be defined exactly once");
+  }
+  assert.doesNotMatch(migration,/^\s+and currency in \('USD','EUR','GBP'\)\)/m);
+});
+
+test("Pesapal manual renewal persists the verified transaction ID during finalization",()=>{
+  assert.match(migration,/payment_row\.provider_transaction_id is not null and payment_row\.provider_transaction_id<>p_provider_transaction_id/);
+  assert.match(migration,/set status='successful',provider_transaction_id=p_provider_transaction_id/);
+});
