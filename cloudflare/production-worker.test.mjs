@@ -16,16 +16,61 @@ test("production Wrangler config matches the live Worker and verified API origin
   assert.equal(productionConfig.assets.run_worker_first, true);
 });
 
-test("edge health reports the API proxy configuration state", async () => {
+test("edge health verifies the live API dependency and reports safe capability flags", async t => {
+  let captured;
+  t.mock.method(globalThis, "fetch", async request => {
+    captured = request;
+    return Response.json({
+      status: "ok",
+      authMode: "supabase",
+      database: "sqlite",
+      storage: "local-disk",
+      cloudMedia: { ready: false },
+      localAssetUploads: { enabled: false }
+    });
+  });
+
   const response = await worker.fetch(new Request(`${edgeUrl}/edge-health`), {
     API_ORIGIN: apiOrigin
   });
+  assert.equal(captured.url, `${apiOrigin}/api/health`);
+  assert.equal(captured.headers.get("accept"), "application/json");
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     status: "ok",
     edge: "cloudflare-workers",
-    apiProxyConfigured: true
+    apiProxyConfigured: true,
+    api: {
+      reachable: true,
+      httpStatus: 200,
+      authMode: "supabase",
+      database: "sqlite",
+      storage: "local-disk",
+      cloudMediaReady: false,
+      localAssetUploadsEnabled: false
+    }
   });
+});
+
+test("edge health reports degraded when the API responds with a failure", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response("unavailable", { status: 503 }));
+  const response = await worker.fetch(new Request(`${edgeUrl}/edge-health`), {
+    API_ORIGIN: apiOrigin
+  });
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.status, "degraded");
+  assert.equal(body.api.reachable, false);
+  assert.equal(body.api.httpStatus, 503);
+});
+
+test("edge health reports degraded when the API origin cannot be reached", async t => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("upstream offline"); });
+  const response = await worker.fetch(new Request(`${edgeUrl}/edge-health`), {
+    API_ORIGIN: apiOrigin
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).api.errorCode, "API_UPSTREAM_UNAVAILABLE");
 });
 
 test("API requests preserve method and body and rewrite same-origin redirects", async t => {
