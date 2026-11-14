@@ -120,7 +120,7 @@
     "verify:server:shard:06": "node scripts/run-server-test-shard.mjs 6 8",
     "verify:server:shard:07": "node scripts/run-server-test-shard.mjs 7 8",
     "verify:server:shard:08": "node scripts/run-server-test-shard.mjs 8 8",
-    "verify:batch:10": "node --test --test-force-exit --test-concurrency=1 server/tests/google-gemini-files-gateway.test.mjs server/tests/google-gemini-files-repository.test.mjs server/tests/google-gemini-files-composition.test.mjs server/tests/google-gemini-files-upload-service.test.mjs server/tests/google-gemini-files-retention-worker.test.mjs server/tests/google-gemini-files-recovery-worker.test.mjs server/tests/google-omni-worker-dependencies.test.mjs server/tests/cloud-worker-process.test.mjs"
+    "verify:batch:10": "node --test --test-force-exit --test-concurrency=1 server/tests/google-gemini-files-gateway.test.mjs server/tests/google-gemini-files-repository.test.mjs server/tests/google-gemini-files-composition.test.mjs server/tests/google-gemini-files-upload-service.test.mjs server/tests/google-gemini-files-retention-worker.test.mjs server/tests/google-gemini-files-recovery-worker.test.mjs server/tests/google-omni-worker-dependencies.test.mjs server/tests/cloud-worker-process.test.mjs server/tests/google-omni-pricing.test.mjs server/tests/video-workflow-cloud-contract.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
