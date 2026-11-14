@@ -212,7 +212,7 @@ export function createVideoAiUpscaleProcessor({
         const samples=parseTemporalLumaSamples(temporalResult.stderr);
         if(samples.length<2)throw fail("FFmpeg returned too few temporal signal samples.","VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE");
         const findings=[...buildTemporalLumaFindings({samples,sceneChanges}),...buildTemporalColorFindings({samples,sceneChanges})];
-        temporalQuality={status:"completed",sampleRateFps:8,sampleCount:samples.length,sceneChangeCount:sceneChanges.length,findings,limitations:["Global frame-average luma and chroma are coarse screening signals, not motion-compensated temporal perceptual metrics.","This framewise image-model pipeline does not certify temporal consistency."]};
+        temporalQuality={status:"completed",sampleRateFps:8,sampleCount:samples.length,sceneChangeCount:sceneChanges.length,findings,limitations:["Global frame-average luma and chroma are coarse screening signals, not motion-compensated temporal perceptual metrics.","Global frame-average signals are not motion-compensated perceptual metrics and do not certify temporal consistency for either framewise or temporal-model output."]};
       }catch(error){
         if(signal?.aborted||error?.code==="JOB_CANCELLED")throw error;
         temporalQuality={status:"unavailable",sampleRateFps:8,sampleCount:0,sceneChangeCount:0,findings:[],reason:error?.code||"VIDEO_AI_UPSCALE_TEMPORAL_QA_UNAVAILABLE"};
