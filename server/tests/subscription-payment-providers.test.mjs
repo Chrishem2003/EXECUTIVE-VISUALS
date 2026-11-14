@@ -125,9 +125,11 @@ test("Paddle transaction normalization uses the reserved subtotal, not tax-inclu
 test("Paddle adjustment webhook normalizes refund and chargeback evidence without treating it as a payment",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000);
   const event={event_id:"evt_01adjustmentabcdefghijkl",event_type:"adjustment.created",occurred_at:"2026-11-14T10:00:00Z",data:{
-    id:"adj_01adjustmentabcdefghijkl",action:"chargeback",status:"pending_approval",
+    id:"adj_01adjustmentabcdefghijkl",action:"chargeback",status:"pending_approval",type:"partial",
+    reason:"customer dispute",updated_at:"2026-11-14T10:01:00Z",credit_applied_to_balance:false,
     transaction_id:"txn_01transactionabcdefghijkl",subscription_id:"sub_01subscriptionabcdefghijk",
-    currency_code:"USD",totals:{total:"5000"}
+    currency_code:"USD",totals:{total:"5000",subtotal:"4500",tax:"500",fee:"100",earnings:"4400"},
+    items:[{id:"adjitm_01adjustmentabcdefghijkl",item_id:"txnitm_01transactionabcdefghijkl",type:"partial",amount:"5000",totals:{subtotal:"4500",tax:"500",total:"5000"}}]
   }};
   const raw=Buffer.from(JSON.stringify(event));
   const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
@@ -141,6 +143,15 @@ test("Paddle adjustment webhook normalizes refund and chargeback evidence withou
   assert.equal(normalized.providerTransactionId,event.data.transaction_id);
   assert.equal(normalized.providerSubscriptionId,event.data.subscription_id);
   assert.equal(normalized.adjustmentAmount,"5000");
+  assert.equal(normalized.adjustmentSubtotal,"4500");
+  assert.equal(normalized.adjustmentTax,"500");
+  assert.equal(normalized.adjustmentFee,"100");
+  assert.equal(normalized.adjustmentEarnings,"4400");
+  assert.equal(normalized.adjustmentType,"partial");
+  assert.equal(normalized.adjustmentReason,"customer dispute");
+  assert.equal(normalized.adjustmentCreditAppliedToBalance,false);
+  assert.equal(normalized.adjustmentItems[0].transactionItemId,"txnitm_01transactionabcdefghijkl");
+  assert.equal(normalized.adjustmentItems[0].total,"5000");
   assert.equal(normalized.adjustmentCurrency,"USD");
 });
 
