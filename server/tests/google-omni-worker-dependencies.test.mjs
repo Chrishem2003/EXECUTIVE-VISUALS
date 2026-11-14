@@ -101,6 +101,8 @@ test("Gemini Omni connection verification performs a metadata GET, never a gener
 });
 test("Gemini Omni plan rejects unsupported last-frame semantics and unapproved scopes",async()=>{
  const {deps}=setup({ledgerState:"prepared"});
- await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,lastFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}}),/last-frame locking/);
- await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:null,job_type:"video.generate"}}),/project/);
+ const validJob={id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}};
+ await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,lastFrameAssetId:assetId},{job:validJob}),/last-frame locking/);
+ const noProject=setup({ledgerState:"prepared",reservationRow:{...reservation,project_id:null},approvalRow:{...approval,project_id:null}});
+ await assert.rejects(()=>noProject.deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,firstFrameAssetId:assetId},{job:{...validJob,project_id:null}}),/project/);
 });
