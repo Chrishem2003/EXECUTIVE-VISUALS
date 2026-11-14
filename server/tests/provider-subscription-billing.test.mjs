@@ -124,10 +124,16 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
         provider:"paddle",eventId:"evt-adjustment-"+adjustmentAction,eventType:"adjustment.created",
         providerTransactionId:"txn-original",providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",
         adjustmentId:"adj-"+adjustmentAction,adjustmentAction,adjustmentStatus:"pending_approval",
-        adjustmentType:"partial",adjustmentReason:"customer request",adjustmentUpdatedAt:"2026-11-14T10:01:00Z",
+        adjustmentType:"partial",adjustmentReason:"customer request",adjustmentCreatedAt:"2026-11-14T09:59:00Z",
+        adjustmentUpdatedAt:"2026-11-14T10:01:00Z",adjustmentCustomerId:"ctm-1",
         adjustmentCreditAppliedToBalance:false,adjustmentAmount:"5000",adjustmentSubtotal:"4500",
-        adjustmentTax:"500",adjustmentFee:"100",adjustmentEarnings:"4400",adjustmentCurrency:"USD",
-        adjustmentItems:[{id:"adjitm-1",transactionItemId:"txnitm-1",type:"partial",amount:"5000",total:"5000"}],
+        adjustmentTax:"500",adjustmentFee:"100",adjustmentRetainedFee:"20",adjustmentEarnings:"4400",
+        adjustmentTotalsCurrency:"USD",adjustmentCurrency:"USD",
+        adjustmentPayoutTotals:{total:"5000",earnings:"4400",currency:"USD"},
+        adjustmentChargebackFee:{amount:"150",originalAmount:"150",originalCurrency:"USD"},
+        adjustmentTaxRates:[{rate:"0.1111",subtotal:"4500",tax:"500",total:"5000"}],
+        adjustmentItems:[{id:"adjitm-1",transactionItemId:"txnitm-1",type:"partial",amount:"5000",total:"5000",
+          proration:{rate:"0.5",startsAt:"2026-11-01T00:00:00Z",endsAt:"2026-12-01T00:00:00Z"}}],
         occurredAt:"2026-11-14T10:00:00Z"
       })},
       pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
@@ -153,6 +159,12 @@ test("Paddle refund and chargeback adjustments are durably quarantined without c
     const stored=calls.find(call=>call.method==="POST").body.payload;
     assert.equal(stored.adjustmentId,"adj-"+adjustmentAction);
     assert.equal(stored.adjustmentItems[0].total,"5000");
+    assert.equal(stored.adjustmentPayoutTotals.earnings,"4400");
+    assert.equal(stored.adjustmentChargebackFee.originalCurrency,"USD");
+    assert.equal(stored.adjustmentTaxRates[0].rate,"0.1111");
+    assert.equal(stored.adjustmentItems[0].proration.rate,"0.5");
+    assert.equal(result.body.adjustment.retainedFee,"20");
+    assert.equal(result.body.adjustment.taxRates[0].rate,"0.1111");
     assert.equal(calls.filter(call=>call.method==="PATCH").length,2);
     assert.equal(calls.at(-1).body.processing_status,"needs_review");
     assert.ok(calls.every(call=>call.path.endsWith("/payment_webhook_events")));
