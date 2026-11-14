@@ -931,7 +931,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("click",e=>{const t=e.target as HTMLElement;
  const resumeProject=t.closest<HTMLElement>("[data-resume-project]");
- if(resumeProject){const project=state.projects.find(item=>item.id===resumeProject.dataset.resumeProject);if(project){state.activeProject=project.id;state.prompt=project.brief;state.plan=project.creativeDNA?formatCreativeIntent(project.creativeDNA):"";state.tab="director";save();render();}return;}
+ if(resumeProject){const project=state.projects.find(item=>item.id===resumeProject.dataset.resumeProject);if(project){storyboardPreflightContext=null;state.activeProject=project.id;state.prompt=project.brief;state.plan=project.creativeDNA?formatCreativeIntent(project.creativeDNA):"";state.tab="director";save();render();}return;}
  const resumeSeries=t.closest<HTMLElement>("[data-resume-series]");
  if(resumeSeries){state.activeSeriesId=resumeSeries.dataset.resumeSeries||"";state.tab="series";save();render();return;}
  if(t.closest("[data-readiness-refresh]")){void refreshLiveReadiness();return;}
@@ -1379,7 +1379,7 @@ document.addEventListener("click",e=>{
   body:JSON.stringify({...(cloudProjectId?{projectId:cloudProjectId}:{}),input:{creativeDirection:project.modelCreativeDirection,targetDurationSeconds:resolveCreativeDurationSeconds(project.creativeBriefInput.duration||"60 seconds"),aspectRatio,frameRate:24,constraints:project.creativeBriefInput.constraints||"",characters}})
  }).then(result=>{
   const current=state.projects.find(item=>item.id===project.id);
-  if(current)current.modelStoryboard=result.storyboard;
+  if(current)current.modelStoryboard=result.storyboard;storyboardPreflightContext=null;
   state.storyboardAiMessage="Model storyboard generated and schema-validated. Edit scene and shot details below; verify proof and rights before production."+(result.usage?" · "+result.usage.totalTokens+" reported tokens":"");
   state.storyboardAiBusy=false;save();render();
  }).catch(error=>{
