@@ -27,7 +27,6 @@ concurrency:
 jobs:
   deploy:
     name: Build, verify and deploy Cloudflare app
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -67,7 +66,21 @@ jobs:
           npm run typecheck
           npm run build
 
+      - name: Check whether Cloudflare deployment credentials are configured
+        id: cloudflare-token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN}" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare deployment skipped: add the CLOUDFLARE_API_TOKEN repository secret to enable automatic static-asset deployment."
+          fi
+
       - name: Deploy production Worker and freshly built static assets
+        if: steps.cloudflare-token.outputs.available == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx --yes wrangler@4.160.0 deploy --config wrangler.production.jsonc
