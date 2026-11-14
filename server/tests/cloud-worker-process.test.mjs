@@ -122,3 +122,35 @@ test("cloud worker supervisor supports maintenance-only operation",async()=>{
  assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
  await supervisor.stop();
 });
+
+test("Google Omni can be the sole explicitly gated cloud video provider",()=>{
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",
+  CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_VIDEO_OUTPUT_HOSTS:"generativelanguage.googleapis.com",
+  GOOGLE_OMNI_VIDEO_ENABLED:"true",GOOGLE_OMNI_VIDEO_ALLOW_REMOTE:"true",
+  GEMINI_OMNI_ENABLED:"true",GEMINI_OMNI_ALLOW_REMOTE:"true",
+  GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_OMNI_PAID_TIER_CONFIRMED:"true",
+  GEMINI_API_KEY:"server-only-test-key"
+ });
+ assert.equal(config.video,true);
+ assert.equal(config.googleOmni,true);
+});
+test("Google Omni worker gates fail closed when any transport, connection, paid-tier or credential check is missing",()=>{
+ const valid={
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",
+  CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_VIDEO_OUTPUT_HOSTS:"generativelanguage.googleapis.com",
+  GOOGLE_OMNI_VIDEO_ENABLED:"true",GOOGLE_OMNI_VIDEO_ALLOW_REMOTE:"true",
+  GEMINI_OMNI_ENABLED:"true",GEMINI_OMNI_ALLOW_REMOTE:"true",
+  GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_OMNI_PAID_TIER_CONFIRMED:"true",
+  GEMINI_API_KEY:"server-only-test-key"
+ };
+ for(const patch of [
+  {GEMINI_OMNI_ALLOW_REMOTE:"false"},
+  {GOOGLE_OMNI_CONNECTION_STATUS:"pending"},
+  {GEMINI_OMNI_PAID_TIER_CONFIRMED:"false"},
+  {GEMINI_API_KEY:""}
+ ])assert.throws(()=>readCloudWorkerConfig({...valid,...patch}),/Google Omni worker requires/);
+ assert.throws(()=>readCloudWorkerConfig({...valid,CLOUD_VIDEO_WORKER_ENABLED:"false"}),/CLOUD_VIDEO_WORKER_ENABLED=true/);
+});
