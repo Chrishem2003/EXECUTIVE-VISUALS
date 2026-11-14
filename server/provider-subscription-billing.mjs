@@ -165,7 +165,9 @@ export function createProviderSubscriptionBilling({
         currency:event.currency||null,amountMinor:event.amountMinor??null,totalPaidMinor:event.totalPaidMinor??null,
         status:event.status||null,periodStart:event.periodStart||null,periodEnd:event.periodEnd||null,
         cancelAtPeriodEnd:event.cancelAtPeriodEnd===true,origin:event.origin||null,providerPriceId:event.providerPriceId||null,
-        occurredAt:event.occurredAt||null};
+        occurredAt:event.occurredAt||null,adjustmentId:event.adjustmentId||null,
+        adjustmentAction:event.adjustmentAction||null,adjustmentStatus:event.adjustmentStatus||null,
+        adjustmentAmount:event.adjustmentAmount||null,adjustmentCurrency:event.adjustmentCurrency||null};
       const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
         method:"POST",body:{provider,event_key:eventKey,event_type:String(event.eventType||"unknown"),
@@ -203,6 +205,17 @@ export function createProviderSubscriptionBilling({
           }
           await updateEvent({processing_status:"processed",processed_at:new Date(now()).toISOString()});
           return {applied:true,lifecycle};
+        }
+        if(provider==="paddle"&&String(event.eventType||"").startsWith("adjustment.")){
+          const action=String(event.adjustmentAction||"unknown").toLowerCase();
+          const status=String(event.adjustmentStatus||"unknown").toLowerCase();
+          const reason=action==="chargeback"||action==="chargeback_warning"
+            ?"Paddle chargeback or dispute adjustment requires financial review; subscription entitlements were not changed."
+            :action==="refund"
+              ?"Paddle refund adjustment requires approval/status reconciliation; subscription entitlements were not changed."
+              :"Paddle credit or adjustment event requires financial review; subscription entitlements were not changed.";
+          await updateEvent({processing_status:"needs_review",error_message:(reason+" Action="+action+"; status="+status+".").slice(0,500),processed_at:new Date(now()).toISOString()});
+          return {applied:false,needsReview:true,adjustment:{id:event.adjustmentId||null,action,status,amount:event.adjustmentAmount||null,currency:event.adjustmentCurrency||null}};
         }
         if(provider==="paddle"&&event.eventType!=="transaction.completed"){
           await updateEvent({processing_status:"needs_review",error_message:"Verified Paddle event awaits a supported transaction lifecycle action.",processed_at:new Date(now()).toISOString()});
