@@ -28,6 +28,43 @@ test("Paddle checkout rejects client-controlled price IDs and invalid return URL
   await assert.rejects(()=>provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",returnUrl:"http://attacker.example/"}),{code:"PADDLE_RETURN_URL_INVALID"});
 });
 
+test("Paddle checkout verifies server-reserved price amount, currency and billing interval",async()=>{
+  const calls=[];
+  const provider=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-key",priceIds:{creator:"pri_01creator123"},
+    fetchImpl:async(url,options)=>{
+      calls.push({url:String(url),options});
+      if(String(url).endsWith("/prices/pri_01creator123"))return json({data:{
+        id:"pri_01creator123",status:"active",unit_price:{amount:"5000",currency_code:"USD"},
+        billing_cycle:{interval:"month",frequency:1}
+      }});
+      if(String(url).endsWith("/transactions"))return json({data:{id:"txn_123",status:"draft",checkout:{url:"https://checkout.paddle.com/txn_123"}}});
+      throw new Error("unexpected request "+url);
+    }
+  });
+  const result=await provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",
+    paymentId:"payment-123",reference:"EVS-order-123",priceId:"pri_01creator123",
+    expectedPrice:{amountMinor:5000,currency:"USD",billingInterval:"monthly"}});
+  assert.equal(result.checkoutUrl,"https://checkout.paddle.com/txn_123");
+  assert.ok(calls[0].url.endsWith("/prices/pri_01creator123"));
+  assert.ok(calls[1].url.endsWith("/transactions"));
+});
+
+test("Paddle checkout rejects a provider price that differs from the reserved ledger amount",async()=>{
+  let transactionCalled=false;
+  const provider=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-key",priceIds:{creator:"pri_01creator123"},
+    fetchImpl:async(url)=>String(url).endsWith("/prices/pri_01creator123")?json({data:{
+      id:"pri_01creator123",status:"active",unit_price:{amount:"6000",currency_code:"USD"},
+      billing_cycle:{interval:"month",frequency:1}
+    }}):(transactionCalled=true,json({data:{id:"txn",checkout:{url:"https://checkout.example"}}}))
+  });
+  await assert.rejects(()=>provider.createCheckout({planCode:"creator",ownerId:owner,email:"buyer@example.com",
+    priceId:"pri_01creator123",expectedPrice:{amountMinor:5000,currency:"USD",billingInterval:"monthly"}}),
+    {code:"PADDLE_PRICE_CONFIGURATION_MISMATCH"});
+  assert.equal(transactionCalled,false);
+});
+
 test("Paddle webhook verifies raw-body HMAC and normalizes subscription activation",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000);
   const raw=Buffer.from(JSON.stringify({event_id:"evt_1",event_type:"subscription.activated",occurred_at:"2026-11-14T10:00:00Z",data:{
