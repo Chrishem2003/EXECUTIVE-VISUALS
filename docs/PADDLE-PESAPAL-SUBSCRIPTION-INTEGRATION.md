@@ -47,12 +47,14 @@ Pesapal:
 - For recurring schedules, passes subscription details to the hosted iframe so the payer can explicitly consent. Pesapal's recurring IPN is only a notification; the adapter calls GetTransactionStatus and checks merchant reference, successful status, amount and currency before returning a normalized event.
 - Do not infer a recurring subscription solely from a checkout redirect or an unverified IPN query.
 
-server/unified-subscription-billing.mjs provides a provider-neutral orchestration contract. It reserves the internal subscription before checkout, reuses idempotent checkout records, retains uncertain provider outcomes for reconciliation, and routes only verified provider events to an atomic repository method. The concrete Supabase repository and HTTP routes are not wired yet.
+`supabase/migrations/20261121120000_paddle_pesapal_provider_billing.sql` extends the existing payment and subscription ledger to accept both providers, adds provider-specific plan prices, and adds service-role-only reservation and initial-purchase finalization RPCs. Paddle prices are separate from Pesapal UGX prices, so no unsafe currency assumption is made.
+
+`server/unified-subscription-billing.mjs` provides provider-neutral checkout and event orchestration. It reserves the internal subscription before checkout, reuses idempotent checkout records, carries the reserved price/payment identity to Paddle, retains uncertain provider outcomes for reconciliation, and delegates verified events to an atomic repository method. The concrete Supabase repository, recurring-renewal processor and HTTP routes are not wired yet.
 
 ## Required next integration before staging activation
 
-1. Add provider IDs to the dedicated Executive Visuals subscription/payment schema, with unique constraints for provider event IDs, provider transaction IDs and provider subscription IDs.
-2. Add a server-side checkout reservation RPC that locks the internal plan price and creates a pending subscription/payment record before calling a provider. Never trust client amount, currency or provider price ID.
+1. Apply and validate the new provider-ledger migration in an isolated Supabase preview/staging database; add explicit staging provider prices and verify unique provider transaction/subscription identities.
+2. Implement the concrete Supabase repository and wire authenticated checkout to `reserve_subscription_purchase_for_provider`; keep all plan price, currency and Paddle price-ID decisions server-side.
 3. Add an inbox/outbox lifecycle processor. Verify signatures/status first; persist every event idempotently; handle duplicate and out-of-order events; apply renewals/cancellations atomically; reconcile ambiguous events instead of granting access.
 4. Wire authenticated checkout, Paddle webhook and Pesapal IPN routes into the financial API using raw request bodies for Paddle.
 5. Add customer portal/session routes and customer-visible subscription status/cancellation semantics.
