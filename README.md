@@ -20,6 +20,12 @@ See [Storage persistence status and deployment truth](docs/STORAGE-PERSISTENCE-T
 
 CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
+## Isolated staging update — 15 November 2026
+
+The Cloudflare D1 staging foundation is already provisioned and has passed its isolated live acceptance workflow (PR #499). The existing `executive-visuals-staging` D1 database records migration `0001_initial.sql`; read-only checks confirm SQLite integrity, no foreign-key violations, complete project workspace documents and no orphaned assets/jobs. The staging Worker and Render staging deployment are present. This is **metadata/workspace staging only**: R2 is disabled, assets are not durably stored in object storage, and the staging-only local-auth allowlist must never be enabled in production.
+
+Do not create a third Supabase Free project or repurpose the two existing Chrishem Autos projects. Supabase Free allows two projects across organizations where the account is an owner/admin, and both existing projects are active. Cloudflare D1/Workers Free can support limited metadata staging (D1: 5M rows read/day, 100K rows written/day, 5 GB total; Workers: 100K requests/day, 10 ms CPU/request), but it is not a video-rendering runtime. No D1 data/schema, R2, billing setting, card or production service was changed during this review. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards. The AI Director now includes a deterministic Creative DNA compiler for audience promise, emotional journey, hook angles, visual grammar, sound identity, proof checks and platform cut planning.
 - Workflow canvas, typed media ports, server-side validation and targeted run planning.
