@@ -1345,7 +1345,7 @@ document.addEventListener("click",e=>{
  const channel=String(project.creativeBriefInput.channel||"").toLowerCase();
  const aspectRatio=channel.includes("tiktok")||channel.includes("reels")||channel.includes("shorts")?"9:16":"16:9";
  const cloudProjectId=state.cloudProjectLinks[project.id]?.id;
- const characters=state.characters.slice(0,12).map(item=>({id:item.id,name:item.name,description:item.description,appearance:"",wardrobe:"",voice:item.voice}));
+ const characters:ModelStoryboardCharacterSuggestion[]=[];
  void apiRequest<{storyboard:ModelStoryboard;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string}>("/api/creative/storyboard",{
   method:"POST",headers:{"content-type":"application/json"},
   body:JSON.stringify({...(cloudProjectId?{projectId:cloudProjectId}:{}),input:{creativeDirection:project.modelCreativeDirection,targetDurationSeconds:resolveCreativeDurationSeconds(project.creativeBriefInput.duration||"60 seconds"),aspectRatio,frameRate:24,constraints:project.creativeBriefInput.constraints||"",characters}})
