@@ -24,7 +24,7 @@ const approval={
  id:approvalId,owner_id:ownerId,project_id:projectId,provider:"google",model:"gemini-omni-1.1-flash",
  request_hash:requestHash,currency:"USD",approved_max_amount:"3.000000",consumed_at:"2026-11-15T00:00:00.000Z"
 };
-function setup({lease=true,reservationRow=reservation,approvalRow=approval}={}){
+function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledgerState="submitting"}={}){
  const calls=[];
  const fetchImpl=async(url,options={})=>{
   const parsed=new URL(url);calls.push({url:parsed.toString(),method:options.method||"GET",headers:options.headers||{}});
@@ -36,7 +36,7 @@ function setup({lease=true,reservationRow=reservation,approvalRow=approval}={}){
   return new Response(JSON.stringify(body),{status:200,headers:{"content-type":"application/json"}});
  };
  const queue={async assertLease(){return lease;}};
- const ledger={async get(){return{job_id:jobId,owner_id:ownerId,provider:"google",model:"gemini-omni-1.1-flash",request_hash:requestHash,state:"submitting"};}};
+ const ledger={async get(){return{job_id:jobId,owner_id:ownerId,provider:"google",model:"gemini-omni-1.1-flash",request_hash:requestHash,state:ledgerState};}};
  const interactions={async findInteraction(scope){return{
   provider:"google",model:"gemini-omni-1.1-flash",interactionId:scope.interactionId,
   jobId:scope.jobId,ownerId:scope.ownerId,projectId:scope.projectId,state:"succeeded",requestHash
@@ -75,8 +75,8 @@ test("Gemini Omni interaction authorization is owner, project and job scoped",as
  assert.equal(await deps.authorizeInteraction({interactionId:"invalid",context:baseContext}),false);
 });
 test("Gemini Omni text-to-video plan is approval gated and uses URI delivery",async()=>{
- const {deps}=setup();
- const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"A cinematic sunrise over Kampala.",operation:"generate",durationSeconds:5,aspectRatio:"16:9"},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate"}});
+ const {deps}=setup({ledgerState:"prepared"});
+ const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"A cinematic sunrise over Kampala.",operation:"generate",durationSeconds:5,aspectRatio:"16:9"},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
  assert.equal(plan.policy.requiresApproval,true);
  assert.equal(plan.payload.model,"gemini-omni-1.1-flash");
  assert.deepEqual(plan.payload.response_format,{type:"video",aspect_ratio:"16:9",resolution:"720p",delivery:"uri"});
@@ -84,8 +84,8 @@ test("Gemini Omni text-to-video plan is approval gated and uses URI delivery",as
  assert.equal(plan.payload.generation_config,undefined);
 });
 test("Gemini Omni private image references are resolved through the owner-scoped Files gateway",async()=>{
- const {deps}=setup();
- const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Animate the reference image.",operation:"generate",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate"}});
+ const {deps}=setup({ledgerState:"prepared"});
+ const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Animate the reference image.",operation:"generate",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
  assert.equal(plan.payload.input[0].type,"image");
  assert.equal(plan.payload.input[0].uri,"https://generativelanguage.googleapis.com/v1beta/files/Abc123");
  assert.equal(plan.payload.generation_config.video_config.task,"image_to_video");
@@ -100,7 +100,7 @@ test("Gemini Omni connection verification performs a metadata GET, never a gener
  assert.equal(calls[0].headers["x-goog-api-key"],key);
 });
 test("Gemini Omni plan rejects unsupported last-frame semantics and unapproved scopes",async()=>{
- const {deps}=setup();
- await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,lastFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate"}}),/last-frame locking/);
+ const {deps}=setup({ledgerState:"prepared"});
+ await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,lastFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}}),/last-frame locking/);
  await assert.rejects(()=>deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"x",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:null,job_type:"video.generate"}}),/project/);
 });
