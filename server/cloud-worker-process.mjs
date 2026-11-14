@@ -10,6 +10,10 @@ import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-pr
 import { createCloudAssetRepository } from "./cloud-assets.mjs";
 import { createCloudStorage } from "./cloud-storage.mjs";
 import { createCloudPublicationCleanupWorker } from "./cloud-publication-cleanup-worker.mjs";
+import { createGoogleGeminiFilesComposition } from "./google-gemini-files-composition.mjs";
+import { createGoogleGeminiFilesRepository } from "./google-gemini-files-repository.mjs";
+import { createGoogleGeminiFilesRetentionWorker } from "./google-gemini-files-retention-worker.mjs";
+import { createGoogleGeminiFilesRecoveryWorker } from "./google-gemini-files-recovery-worker.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
@@ -146,6 +150,25 @@ export async function startCloudWorkerProcess(env=process.env){
  const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
  const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
  const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];
+ const geminiFilesCleanupEnabled=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED);
+ const geminiFilesRecoveryEnabled=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
+ if(geminiFilesCleanupEnabled||geminiFilesRecoveryEnabled){
+  if(!String(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY||"").trim()){
+   throw new Error("Gemini Files maintenance requires a server-side Gemini API key.");
+  }
+  const filesRepository=createGoogleGeminiFilesRepository({...cloudCredentials,fetchImpl:globalThis.fetch});
+  const filesGateway=createGoogleGeminiFilesComposition({
+   ...cloudCredentials,env,fetchImpl:globalThis.fetch,repository:filesRepository,maxBytes:config.maxBytes
+  });
+  if(geminiFilesCleanupEnabled){
+   const cleanupWorker=createGoogleGeminiFilesRetentionWorker({repository:filesRepository,gateway:filesGateway});
+   maintenanceTasks.push(()=>cleanupWorker.run({limit:100}));
+  }
+  if(geminiFilesRecoveryEnabled){
+   const recoveryWorker=createGoogleGeminiFilesRecoveryWorker({repository:filesRepository,gateway:filesGateway});
+   maintenanceTasks.push(()=>recoveryWorker.run({limit:100}));
+  }
+ }
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceTasks,maintenanceIntervalMs:config.cleanupIntervalMs,
   leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
