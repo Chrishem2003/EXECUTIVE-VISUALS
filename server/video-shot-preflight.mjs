@@ -23,6 +23,8 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
   const id=text(shot.id,120)?shot.id.trim():"shot-"+(index+1);
   if(!text(shot.prompt,12000))fail("prompt","A non-empty prompt of at most 12,000 characters is required.");
   else pass("prompt","Prompt is present.");
+  if(shot.rightsConfirmed!==true)fail("rights","Explicit rights clearance is required for the prompts, references and any likeness or voice use.");
+  else pass("rights","The requester explicitly confirmed rights clearance.");
   if(video.status!=="ready")fail("provider",video.reason||"Video provider is not configured and opted in.");
   else pass("provider","Server-side provider is configured and remote opt-in is enabled.");
   const provider=String(shot.provider||"");
