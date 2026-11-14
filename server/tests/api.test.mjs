@@ -113,17 +113,26 @@ test("provider catalog exposes inference self-test only to allowlisted administr
   assert.equal(JSON.stringify(adminCatalog).includes("upscale-admin@example.test"),false);
 });
 
-test("AI upscale inference self-test endpoint rejects anonymous access and validates allowlisted administrator input",async()=>{
-  const anonymous=await fetch(base+"/api/admin/ai-upscale/self-test",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceAssetId:"not-a-valid-asset"})});
+test("AI upscale inference self-test rate limit is isolated per allowlisted administrator",async()=>{
+  const payload={method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceAssetId:"not-a-valid-asset"})};
+  const anonymous=await fetch(base+"/api/admin/ai-upscale/self-test",payload);
   assert.equal(anonymous.status,401);
 
-  // The endpoint deliberately allows only two attempts per minute. Keep this
-  // route-level test within that production security budget; ordinary-user
-  // denial is independently covered by the provider-catalog authorization test.
+  const userCookie=await register("upscale-route-user@example.test");
+  const forbidden=await request("/api/admin/ai-upscale/self-test",payload,userCookie);
+  assert.equal(forbidden.status,403);
+  assert.equal((await forbidden.json()).error.code,"AI_UPSCALE_ADMIN_REQUIRED");
+
   const adminCookie=await register("upscale-route-admin@example.test");
-  const invalidAsset=await request("/api/admin/ai-upscale/self-test",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceAssetId:"not-a-valid-asset"})},adminCookie);
-  assert.equal(invalidAsset.status,400);
-  assert.equal((await invalidAsset.json()).error.code,"AI_UPSCALE_INVALID_INPUT");
+  const first=await request("/api/admin/ai-upscale/self-test",payload,adminCookie);
+  assert.equal(first.status,400);
+  assert.equal((await first.json()).error.code,"AI_UPSCALE_INVALID_INPUT");
+  const second=await request("/api/admin/ai-upscale/self-test",payload,adminCookie);
+  assert.equal(second.status,400);
+  assert.equal((await second.json()).error.code,"AI_UPSCALE_INVALID_INPUT");
+  const third=await request("/api/admin/ai-upscale/self-test",payload,adminCookie);
+  assert.equal(third.status,429);
+  assert.equal((await third.json()).error.code,"RATE_LIMITED");
 });
 
 test("video cost estimate API is authenticated, read-only and uses configured model pricing",async()=>{
