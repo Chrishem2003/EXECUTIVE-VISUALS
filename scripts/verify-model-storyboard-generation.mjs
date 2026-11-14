@@ -5,6 +5,7 @@ import { buildModelStoryboardGenerationShots } from "../src/core/model-storyboar
 const storyboard = {
   id: "board-1",
   aspectRatio: "9:16",
+  targetDurationSeconds: 8,
   scenes: [{ shots: [{
     id: "shot-1", action: "A craftsperson shapes a clay vessel",
     visualPrompt: "Warm documentary close-up", motionPrompt: "Slow lateral camera move",
@@ -51,4 +52,11 @@ test("requires an exact configured provider, model and resolution", () => {
   assert.throws(() => buildModelStoryboardGenerationShots(storyboard, { provider: "", model: "seedance2_5", resolution: "720p" }), /provider and exact model/);
   assert.throws(() => buildModelStoryboardGenerationShots(storyboard, { provider: "runway", model: "", resolution: "720p" }), /provider and exact model/);
   assert.throws(() => buildModelStoryboardGenerationShots(storyboard, { provider: "runway", model: "seedance2_5", resolution: "" }), /resolution/);
+});
+
+test("rejects edited shot timing outside the approved storyboard runtime", () => {
+  const edited = { ...storyboard, targetDurationSeconds: 20 };
+  assert.throws(() => buildModelStoryboardGenerationShots(edited, {
+    provider: "runway", model: "seedance2_5", resolution: "720p"
+  }), /outside the target runtime/);
 });
