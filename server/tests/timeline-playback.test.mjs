@@ -136,8 +136,10 @@ test("audio crossfade preview applies matching linear envelopes to outgoing and 
  const timeline=createTimeline("project-audio-crossfade","timeline-audio-crossfade","Audio crossfade",{numerator:24,denominator:1});
  let withTrack=addTrack(timeline,{id:"audio",name:"Music",kind:"audio",enabled:true,locked:false,clips:[]});
  const clip=(id,start,transitionToNext)=>({id,assetId:"asset-"+id,name:id,sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(start,24),duration:rational(24,24),enabled:true,...(transitionToNext?{transitionToNext}:{})});
- withTrack=addClip(withTrack,"audio",clip("outgoing",0,{type:"crossfade",fadeFrames:6}));
- withTrack=addClip(withTrack,"audio",clip("incoming",18));
+ withTrack=addClip(withTrack,"audio",clip("outgoing",0));
+ withTrack=addClip(withTrack,"audio",clip("incoming",24));
+ withTrack.tracks[0].clips[0].transitionToNext={type:"crossfade",fadeFrames:6};
+ withTrack.tracks[0].clips[1].timelineStart=rational(18,24);
  const start=getTimelinePlaybackFrame(withTrack,0.75).activeAudio;
  const midpoint=getTimelinePlaybackFrame(withTrack,0.875).activeAudio;
  const end=getTimelinePlaybackFrame(withTrack,1).activeAudio;
