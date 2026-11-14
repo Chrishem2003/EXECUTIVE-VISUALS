@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createCloudQueue } from "../cloud-queue.mjs";
 
@@ -57,6 +58,15 @@ test("cancellation polling is scoped to the exact active worker lease",async()=>
  const empty=createCloudQueue({...base,fetchImpl:async()=>response([])});
  assert.equal(await empty.cancellationRequested("job-1","worker-1","11111111-1111-4111-8111-111111111111"),false);
  await assert.rejects(()=>queue.cancellationRequested("job-1","worker-1","bad-token"),/lease token/);
+});
+test("cloud job finalization is lease-fenced and atomically honors cancellation credits",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261114130000_atomic_cloud_job_cancellation_settlement.sql",import.meta.url),"utf8");
+ assert.ok(sql.includes("create or replace function executive_visuals.finish_job_v2"));
+ assert.ok(sql.includes("and lease_token = p_lease_token"));
+ assert.ok(sql.includes("case when cancel_requested_at is not null then 'cancelled' else p_status end"));
+ assert.ok(sql.includes("status='released'")||sql.includes("set status='released'"));
+ assert.ok(sql.includes("'ownerCancellationWon',cancellation_won"));
+ assert.ok(sql.includes("creditReservationStatus',reservation_status"));
 });
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
