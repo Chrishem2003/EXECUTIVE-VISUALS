@@ -1,3 +1,4 @@
+grant usage on schema executive_visuals to service_role;
 insert into auth.users(id,email) values
  ('33333333-3333-4333-8333-333333333333','paddle-integration@example.com'),
  ('44444444-4444-4444-8444-444444444444','pesapal-integration@example.com')
