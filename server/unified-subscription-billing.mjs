@@ -20,8 +20,8 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
       if(!existing)throw fail("SUBSCRIPTION_CHECKOUT_REPLAY_UNAVAILABLE","The original checkout is being reconciled; do not create another charge.",409);
       return {...existing,idempotentReplay:true};
     }
+    let checkout=null;
     try{
-      let checkout;
       if(selected==="paddle"){
         checkout=await providers.paddle.createCheckout({planCode:plan,ownerId:owner,email:customerEmail,returnUrl,paymentId:reservation.paymentId,reference,priceId:reservation.providerPriceId});
       }else{
@@ -39,7 +39,7 @@ export function createUnifiedSubscriptionBilling({providers,repository}={}){
     }catch(error){
       await repository.markCheckoutUncertain({
         ownerId:owner,paymentId:reservation.paymentId,subscriptionId:reservation.subscriptionId,
-        provider:selected,errorCode:error?.code||"PROVIDER_RESULT_UNCERTAIN"
+        provider:selected,providerCheckout:checkout,errorCode:error?.code||"PROVIDER_RESULT_UNCERTAIN"
       }).catch(()=>{});
       throw fail("SUBSCRIPTION_CHECKOUT_UNCERTAIN","Checkout could not be confirmed. The pending reservation was retained for reconciliation; do not retry with a new idempotency key.",202);
     }
