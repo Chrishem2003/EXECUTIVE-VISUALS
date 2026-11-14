@@ -37,7 +37,10 @@ function parseInput(value) {
   }
 }
 
-function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgress = () => {} } = {}) {
+function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgress = () => {}, maxCaptureBytes = 16000 } = {}) {
+  const captureLimit = Number.isSafeInteger(maxCaptureBytes) && maxCaptureBytes >= 1024
+    ? Math.min(maxCaptureBytes, 8_000_000)
+    : 16000;
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
     const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -67,8 +70,8 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
     const timer = setTimeout(() => terminate(Object.assign(new Error("Media operation timed out."), { code: "MEDIA_TIMEOUT" })), timeoutMs);
     timer.unref?.();
     signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-16000); });
-    child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });
+    child.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-captureLimit); });
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-captureLimit); });
     child.on("error", error => {
       // A failed kill can emit "error". Keep waiting for "close" once
       // termination starts so callers never clean files up under a live child.
