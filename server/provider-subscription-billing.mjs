@@ -138,66 +138,119 @@ export function createProviderSubscriptionBilling({
       const payload={provider,eventId,eventType:event.eventType,ownerId:event.ownerId||ownerId||null,
         paymentId:event.paymentId||paymentId||null,reference:event.reference||event.merchantReference||null,
         providerTransactionId:event.providerTransactionId||event.trackingId||null,
-        currency:event.currency||null,amountMinor:event.amountMinor??null,occurredAt:event.occurredAt||null};
+        providerSubscriptionId:event.providerSubscriptionId||null,
+        currency:event.currency||null,amountMinor:event.amountMinor??null,totalPaidMinor:event.totalPaidMinor??null,
+        occurredAt:event.occurredAt||null};
       const payloadHash=hash(JSON.stringify(payload));
       const inserted=await dbRequest("payment_webhook_events",{
         method:"POST",body:{provider,event_key:eventKey,event_type:String(event.eventType||"unknown"),
-          payload_hash:payloadHash,signature_verified:true,
-          processing_status:"received",payload},prefer:"return=minimal",allowConflict:true
+          payload_hash:payloadHash,signature_verified:true,processing_status:"received",payload},
+        prefer:"return=minimal",allowConflict:true
       });
       if(inserted.status===409){
         const prior=await dbRequest("payment_webhook_events?select=processing_status,payload_hash&provider=eq."+provider+"&event_key=eq."+eventKey+"&limit=1");
         const priorRow=Array.isArray(prior.data)?prior.data[0]:null;
         const state=priorRow?.processing_status||null;
-        if(priorRow?.payload_hash&&priorRow.payload_hash!==payloadHash)throw Object.assign(new Error("A provider event ID was replayed with different event content."),{code:"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT",status:409});
+        if(priorRow?.payload_hash&&priorRow.payload_hash!==payloadHash)
+          throw Object.assign(new Error("A provider event ID was replayed with different event content."),{code:"PROVIDER_EVENT_ID_PAYLOAD_CONFLICT",status:409});
         if(state==="processed"||state==="ignored"||state==="needs_review")return {duplicate:true,processingStatus:state};
       }
-      await dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
-        method:"PATCH",body:{processing_status:"processing",error_message:null},prefer:"return=minimal"
+      const updateEvent=async(body)=>dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
+        method:"PATCH",body,prefer:"return=minimal"
       });
+      await updateEvent({processing_status:"processing",error_message:null});
       try{
-        if(provider==="paddle"&&event.eventType!=="transaction.completed"){
-          await dbRequest("payment_webhook_events?provider=eq.paddle&event_key=eq."+eventKey,{
-            method:"PATCH",body:{processing_status:"needs_review",error_message:"Verified Paddle subscription lifecycle event awaits lifecycle processor.",processed_at:new Date(now()).toISOString()},prefer:"return=minimal"
+        if(provider==="paddle"&&String(event.eventType||"").startsWith("subscription.")){
+          if(!event.providerSubscriptionId){
+            await updateEvent({processing_status:"needs_review",error_message:"Paddle subscription lifecycle event has no subscription ID.",processed_at:new Date(now()).toISOString()});
+            return {applied:false,needsReview:true};
+          }
+          const lifecycle=await rpc("apply_paddle_subscription_lifecycle",{
+            p_provider_subscription_id:event.providerSubscriptionId,p_event_type:event.eventType,
+            p_period_start:event.periodStart,p_period_end:event.periodEnd,
+            p_cancel_at_period_end:event.cancelAtPeriodEnd===true,
+            p_event_data:{event_id:event.eventId,event_type:event.eventType,status:event.status,
+              customer_id:event.providerCustomerId||null,occurred_at:event.occurredAt||null}
           });
+          if(lifecycle?.needsReview){
+            await updateEvent({processing_status:"needs_review",error_message:"Paddle subscription ID is not mapped to an internal subscription yet.",processed_at:new Date(now()).toISOString()});
+            return {applied:false,needsReview:true};
+          }
+          await updateEvent({processing_status:"processed",processed_at:new Date(now()).toISOString()});
+          return {applied:true,lifecycle};
+        }
+        if(provider==="paddle"&&event.eventType!=="transaction.completed"){
+          await updateEvent({processing_status:"needs_review",error_message:"Verified Paddle event awaits a supported transaction lifecycle action.",processed_at:new Date(now()).toISOString()});
           return {applied:false,needsReview:true};
         }
-        let payment;
+
+        let settled,verifiedAt=event.occurredAt&&Number.isFinite(Date.parse(event.occurredAt))?event.occurredAt:new Date(now()).toISOString();
         if(provider==="paddle"){
-          if(!event.paymentId||!event.ownerId||!event.reference||!event.providerTransactionId||!Number.isSafeInteger(event.amountMinor)||!event.currency)
-            throw Object.assign(new Error("Paddle transaction event is missing its reserved ledger correlation or amount."),{code:"PADDLE_EVENT_LEDGER_MISMATCH",status:409});
-          payment=await getPayment(event.paymentId,event.ownerId);
-          if(!payment||payment.provider!=="paddle"||payment.tx_ref!==event.reference||payment.status!=="pending"||
-            (payment.provider_transaction_id&&payment.provider_transaction_id!==event.providerTransactionId))
-            throw Object.assign(new Error("Paddle transaction does not match a pending reserved payment."),{code:"PADDLE_EVENT_LEDGER_MISMATCH",status:409});
+          if(!event.providerTransactionId||!event.providerSubscriptionId||!Number.isSafeInteger(event.amountMinor)||
+             event.discountMinor!==0||!event.currency||!event.providerPriceId)
+            throw Object.assign(new Error("Paddle completed transaction is missing its subscription, price or verified subtotal."),{code:"PADDLE_EVENT_LEDGER_MISMATCH",status:409});
+
+          let payment=null;
+          if(event.paymentId&&event.ownerId)payment=await getPayment(event.paymentId,event.ownerId);
+          if(!payment&&event.reference){
+            const found=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata&provider=eq.paddle&tx_ref=eq."+encodeURIComponent(event.reference)+"&limit=1");
+            payment=Array.isArray(found.data)?found.data[0]||null:null;
+          }
+          if(payment&&payment.provider==="paddle"&&payment.status==="pending"){
+            if(payment.tx_ref!==event.reference||payment.provider_transaction_id!==event.providerTransactionId||
+               payment.currency!==event.currency||Number(payment.amount_minor)!==event.amountMinor||
+               payment.metadata?.provider_price_id!==event.providerPriceId)
+              throw Object.assign(new Error("Paddle initial transaction does not match the reserved provider price and payment."),{code:"PADDLE_EVENT_LEDGER_MISMATCH",status:409});
+            settled=await rpc("finalize_subscription_purchase_for_provider",{
+              p_payment_id:payment.id,p_provider_transaction_id:event.providerTransactionId,
+              p_provider_payload:{status:"succeeded",amount_minor:event.amountMinor,total_paid_minor:event.totalPaidMinor,
+                discount_minor:event.discountMinor,currency:event.currency,reference:payment.tx_ref,
+                provider_subscription_id:event.providerSubscriptionId,provider_customer_id:event.providerCustomerId||null,
+                provider_price_id:event.providerPriceId},
+              p_verified_at:verifiedAt
+            });
+          }else{
+            if(event.origin!=="subscription_recurring")
+              throw Object.assign(new Error("Paddle transaction does not match a pending initial purchase or recurring renewal."),{code:"PADDLE_EVENT_LEDGER_MISMATCH",status:409});
+            const subscriptionResult=await dbRequest("customer_subscriptions?select=id,owner_id,plan_code,provider_price_id,status&provider=eq.paddle&provider_subscription_id=eq."+encodeURIComponent(event.providerSubscriptionId)+"&limit=1");
+            const subscription=Array.isArray(subscriptionResult.data)?subscriptionResult.data[0]||null:null;
+            if(!subscription||subscription.provider_price_id!==event.providerPriceId||
+               (event.ownerId&&subscription.owner_id!==event.ownerId))
+              throw Object.assign(new Error("Paddle renewal does not match an active internal subscription and price."),{code:"PADDLE_RENEWAL_SUBSCRIPTION_MISMATCH",status:409});
+            const renewal=await rpc("reserve_paddle_subscription_renewal",{
+              p_owner_id:subscription.owner_id,p_provider_subscription_id:event.providerSubscriptionId,
+              p_provider_transaction_id:event.providerTransactionId,
+              p_idempotency_key:"paddle-renewal-"+event.eventId,
+              p_tx_ref:"EVR"+hash(event.eventId).slice(0,36)
+            });
+            settled=await rpc("finalize_paddle_subscription_renewal",{
+              p_payment_id:renewal.paymentId,p_provider_transaction_id:event.providerTransactionId,
+              p_provider_payload:{status:"succeeded",amount_minor:event.amountMinor,total_paid_minor:event.totalPaidMinor,
+                discount_minor:event.discountMinor,currency:event.currency,reference:renewal.txRef,
+                provider_subscription_id:event.providerSubscriptionId,provider_customer_id:event.providerCustomerId||null,
+                provider_price_id:event.providerPriceId},
+              p_verified_at:verifiedAt
+            });
+          }
         }else{
           const reference=text(event.merchantReference);
           const result=await dbRequest("payment_transactions?select=id,owner_id,provider_transaction_id,tx_ref,amount_minor,currency,status,metadata&provider=eq.pesapal&status=eq.pending&tx_ref=eq."+encodeURIComponent(reference)+"&limit=1");
-          payment=Array.isArray(result.data)?result.data[0]||null:null;
+          const payment=Array.isArray(result.data)?result.data[0]||null:null;
           if(!payment||payment.owner_id!==ownerId||payment.provider_transaction_id!==event.trackingId||payment.tx_ref!==reference)
             throw Object.assign(new Error("Pesapal transaction does not match a pending reserved payment."),{code:"PESAPAL_EVENT_LEDGER_MISMATCH",status:409});
           if(payment.currency!=="UGX"||event.currency!=="UGX"||!Number.isSafeInteger(Number(event.amount))||Number(event.amount)!==Number(payment.amount_minor))
             throw Object.assign(new Error("Pesapal amount or currency does not match the reserved payment."),{code:"PESAPAL_EVENT_AMOUNT_MISMATCH",status:409});
+          settled=await rpc("finalize_subscription_purchase_for_provider",{
+            p_payment_id:payment.id,p_provider_transaction_id:event.trackingId,
+            p_provider_payload:{status:"succeeded",amount_minor:Number(event.amount),currency:event.currency,
+              reference,provider_subscription_id:event.recurring?.correlationId||null,provider_customer_id:null},
+            p_verified_at:verifiedAt
+          });
         }
-        const amountMinor=provider==="paddle"?event.amountMinor:Number(event.amount);
-        const currency=provider==="paddle"?event.currency:event.currency;
-        const reference=provider==="paddle"?event.reference:event.merchantReference;
-        const providerTransactionId=provider==="paddle"?event.providerTransactionId:event.trackingId;
-        const settled=await rpc("finalize_subscription_purchase_for_provider",{
-          p_payment_id:payment.id,p_provider_transaction_id:providerTransactionId,
-          p_provider_payload:{status:"succeeded",amount_minor:amountMinor,currency,reference,
-            provider_subscription_id:event.providerSubscriptionId||event.recurring?.correlationId||null,
-            provider_customer_id:event.providerCustomerId||null},
-          p_verified_at:event.occurredAt&&Number.isFinite(Date.parse(event.occurredAt))?event.occurredAt:new Date(now()).toISOString()
-        });
-        await dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
-          method:"PATCH",body:{processing_status:"processed",processed_at:new Date(now()).toISOString()},prefer:"return=minimal"
-        });
+        await updateEvent({processing_status:"processed",processed_at:new Date(now()).toISOString()});
         return {applied:true,settlement:settled};
       }catch(error){
-        await dbRequest("payment_webhook_events?provider=eq."+provider+"&event_key=eq."+eventKey,{
-          method:"PATCH",body:{processing_status:"failed",error_message:String(error?.code||"PROVIDER_EVENT_PROCESSING_FAILED").slice(0,160)},prefer:"return=minimal"
-        }).catch(()=>{});
+        await updateEvent({processing_status:"failed",error_message:String(error?.code||"PROVIDER_EVENT_PROCESSING_FAILED").slice(0,160)}).catch(()=>{});
         throw error;
       }
     }
