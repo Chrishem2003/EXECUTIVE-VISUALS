@@ -30,6 +30,7 @@ export async function runCloudWorkerCycle({
   signal?.addEventListener("abort", abortForShutdown, { once: true });
   if (signal?.aborted) abortForShutdown();
   let leaseLost = false;
+  let cancellationRequested = false;
   let heartbeatPending = false;
   let heartbeatError = null;
   let heartbeatStopped = false;
@@ -47,11 +48,25 @@ export async function runCloudWorkerCycle({
       throw Object.assign(new Error("Worker lease verification failed; side effects are blocked."), { code: "CLOUD_WORKER_LEASE_LOST" });
     }
   }
+  if (typeof queue.cancellationRequested === "function") {
+    try {
+      cancellationRequested = await queue.cancellationRequested(job.id, workerId, job.lease_token);
+      if (cancellationRequested) controller.abort(new Error("Job cancellation was requested by its owner."));
+    } catch (error) {
+      leaseLost = true;
+      controller.abort(new Error("Worker could not verify the job cancellation state."));
+      onEvent({ type: "job.cancellation_check_failed", jobId: job.id, workerId, code: typeof error?.code === "string" ? error.code : "CANCELLATION_CHECK_FAILED" });
+      signal?.removeEventListener("abort", abortForShutdown);
+      return { claimed: true, finished: false, reason: "cancellation_check_failed", jobId: job.id };
+    }
+  }
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
   const finishCancelled = async () => {
     await stopHeartbeat();
-    const details = { code: "WORKER_SHUTDOWN", message: "Worker shutdown requested; the job was cancelled for recovery." };
+    const details = cancellationRequested
+      ? { code: "JOB_CANCELLED", message: "Job cancellation was requested by its owner." }
+      : { code: "WORKER_SHUTDOWN", message: "Worker shutdown requested; the job was cancelled for recovery." };
     try {
       if (leaseLost) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       await assertLease();
@@ -61,8 +76,9 @@ export async function runCloudWorkerCycle({
         onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
         return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       }
-      onEvent({ type: "job.cancelled", jobId: job.id, workerId, reason: "worker_shutdown" });
-      return { claimed: true, finished: true, status: "cancelled", reason: "worker_shutdown", jobId: job.id };
+      const reason = cancellationRequested ? "owner_request" : "worker_shutdown";
+      onEvent({ type: "job.cancelled", jobId: job.id, workerId, reason });
+      return { claimed: true, finished: true, status: "cancelled", reason, jobId: job.id };
     } catch (error) {
       if (leaseLost) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "job.cancel_finish_failed", jobId: job.id, workerId, code: typeof error?.code === "string" ? error.code : "CANCEL_FINISH_FAILED" });
@@ -75,6 +91,14 @@ export async function runCloudWorkerCycle({
     heartbeatPending = true;
     heartbeatInFlight = (async () => {
       try {
+        if (typeof queue.cancellationRequested === "function") {
+          cancellationRequested = await queue.cancellationRequested(job.id, workerId, job.lease_token);
+          if (cancellationRequested) {
+            controller.abort(new Error("Job cancellation was requested by its owner."));
+            onEvent({ type: "job.cancellation_observed", jobId: job.id, workerId });
+            return;
+          }
+        }
         const renewed = await queue.renew(job.id, workerId, leaseSeconds, job.lease_token);
         if (!renewed) {
           leaseLost = true;
