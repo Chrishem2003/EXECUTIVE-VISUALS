@@ -134,6 +134,23 @@ export function createPaddleSubscriptionProvider({
     return {provider:"paddle",transactionId:transaction.id,checkoutUrl:transaction.checkout.url,status:transaction.status||"draft"};
   }
 
+  async function createCustomerPortalSession({customerId,subscriptionId}={}){
+    const customer=text(customerId),subscription=text(subscriptionId);
+    if(!/^ctm_[a-z0-9]{26}$/.test(customer)||!/^sub_[a-z0-9]{26}$/.test(subscription))
+      throw fail("PADDLE_PORTAL_INPUT_INVALID","A verified Paddle customer and subscription ID are required.");
+    const result=await requestJson(fetchImpl,new URL("/customers/"+encodeURIComponent(customer)+"/portal-sessions",base),{
+      method:"POST",headers:{authorization:"Bearer "+apiKey},
+      body:{subscription_ids:[subscription]}
+    });
+    const urls=result?.data?.urls||{};
+    const subscriptionUrls=Array.isArray(urls.subscriptions)?urls.subscriptions.find(item=>item.id===subscription):null;
+    const portalUrl=text(subscriptionUrls?.view_subscription||urls.general?.overview);
+    if(!/^https:\/\/customer-portal\.paddle\.com\//.test(portalUrl))
+      throw fail("PADDLE_PORTAL_URL_MISSING","Paddle did not return a valid hosted customer portal URL.",502);
+    return {portalUrl,cancelUrl:text(subscriptionUrls?.cancel_subscription)||null,
+      paymentMethodUrl:text(subscriptionUrls?.update_subscription_payment_method)||null};
+  }
+
   function verifyWebhook(rawBody,signature){
     if(!verifyPaddleSignature(rawBody,signature,webhookSecret,{now:now()}))throw fail("PADDLE_WEBHOOK_SIGNATURE_INVALID","Paddle webhook signature is invalid or expired.",401);
     let event;try{event=JSON.parse(rawBody.toString("utf8"));}catch{throw fail("PADDLE_WEBHOOK_JSON_INVALID","Paddle webhook body must be valid JSON.");}
@@ -141,7 +158,7 @@ export function createPaddleSubscriptionProvider({
     return normalizePaddleEvent(event);
   }
 
-  return Object.freeze({name:"paddle",environment:sandbox?"sandbox":"live",getPrice,createCheckout,verifyWebhook});
+  return Object.freeze({name:"paddle",environment:sandbox?"sandbox":"live",getPrice,createCheckout,createCustomerPortalSession,verifyWebhook});
 }
 
 export function createPesapalSubscriptionProvider({
