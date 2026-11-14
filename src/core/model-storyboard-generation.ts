@@ -1,6 +1,7 @@
 export type ModelStoryboardGenerationInput = {
   id: string;
   aspectRatio: string;
+  targetDurationSeconds: number;
   scenes: Array<{ shots: Array<{
     id: string;
     action?: string;
@@ -55,6 +56,14 @@ export function buildModelStoryboardGenerationShots(
   const sourceShots = storyboard.scenes.flatMap(scene => Array.isArray(scene?.shots) ? scene.shots : []);
   if (sourceShots.length < 1 || sourceShots.length > 12) {
     throw new Error("Video generation supports 1–12 reviewed storyboard shots per approved production. Split larger storyboards into smaller segments.");
+  }
+  const totalDurationSeconds = sourceShots.reduce((sum, shot) => sum + Number(shot?.durationSeconds || 0), 0);
+  if (!Number.isInteger(storyboard.targetDurationSeconds) || storyboard.targetDurationSeconds < 1) {
+    throw new Error("The storyboard must retain a valid target runtime.");
+  }
+  const tolerance = Math.max(2, Math.round(storyboard.targetDurationSeconds * 0.05));
+  if (Math.abs(totalDurationSeconds - storyboard.targetDurationSeconds) > tolerance) {
+    throw new Error("Reviewed shot durations total " + totalDurationSeconds + " seconds, outside the target runtime of " + storyboard.targetDurationSeconds + " seconds. Rebalance the shots before generation.");
   }
   const ids = new Set<string>();
   return sourceShots.map((shot, index) => {
