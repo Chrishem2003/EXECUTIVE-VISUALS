@@ -65,6 +65,25 @@ test("Paddle checkout rejects a provider price that differs from the reserved le
   assert.equal(transactionCalled,false);
 });
 
+test("Paddle customer portal creates short-lived owner subscription management links",async()=>{
+  const customerId="ctm_01abcdefghijklmnopqrstuvwxyz",subscriptionId="sub_01abcdefghijklmnopqrstuvwxyz";
+  let request;
+  const provider=createPaddleSubscriptionProvider({
+    apiKey:"sandbox-key",fetchImpl:async(url,options)=>{
+      request={url:String(url),options,body:JSON.parse(options.body)};
+      return json({data:{urls:{general:{overview:"https://customer-portal.paddle.com/overview?token=abc"},
+        subscriptions:[{id:subscriptionId,view_subscription:"https://customer-portal.paddle.com/subscription?token=abc",
+          cancel_subscription:"https://customer-portal.paddle.com/cancel?token=abc",
+          update_subscription_payment_method:"https://customer-portal.paddle.com/payment?token=abc"}]}}},201);
+    }
+  });
+  const result=await provider.createCustomerPortalSession({customerId,subscriptionId});
+  assert.equal(request.url,"https://sandbox-api.paddle.com/customers/"+customerId+"/portal-sessions");
+  assert.deepEqual(request.body,{subscription_ids:[subscriptionId]});
+  assert.equal(result.portalUrl,"https://customer-portal.paddle.com/subscription?token=abc");
+  assert.equal(result.cancelUrl,"https://customer-portal.paddle.com/cancel?token=abc");
+});
+
 test("Paddle webhook verifies raw-body HMAC and normalizes subscription activation",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000);
   const raw=Buffer.from(JSON.stringify({event_id:"evt_1",event_type:"subscription.activated",occurred_at:"2026-11-14T10:00:00Z",data:{
