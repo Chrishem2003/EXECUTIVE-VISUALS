@@ -43,9 +43,10 @@ The worker honors a per-command output capture ceiling of 8 MB for frame timesta
 
 1. Install FFmpeg, FFprobe, the NCNN/Vulkan executable and the selected model files on the actual worker host.
 2. Keep `AI_UPSCALE_ENABLED` disabled until image-model execution self-test and quality evidence are complete.
-3. Run a real, non-sensitive video fixture through the exact cloud worker and verify output, audio/subtitles, lease recovery, cancellation and derivative publication.
-4. Only then set both video worker gates on the worker and API service, using the same reviewed configuration.
-5. Confirm the provider readiness panel reports the worker gates and the UI unlocks video enhancement.
-6. Keep production disabled if any gate, private storage, durable database or worker capacity is missing.
+3. Set `AI_VIDEO_UPSCALE_ENABLED=true` on the worker only, then run `npm run self-test:video-ai-upscale-worker`. The script generates a private four-frame synthetic clip, runs real NCNN/Vulkan inference, validates a 2× MP4 output and removes its temporary files.
+4. Review the JSON result on the exact worker host. Only after it passes, set `AI_VIDEO_UPSCALE_WORKER_SELF_TEST_PASSED=true` on both the worker and API service. The script does not set this attestation automatically.
+5. Verify output, audio/subtitles, lease recovery, cancellation and derivative publication using the normal cloud queue before enabling customer-facing use.
+6. Confirm the provider readiness panel reports the worker gates and the UI unlocks video enhancement.
+7. Keep production disabled if any gate, private storage, durable database or worker capacity is missing.
 
 No provider credentials, model downloads, production environment variables, paid infrastructure or deployment settings are changed by this code integration.
