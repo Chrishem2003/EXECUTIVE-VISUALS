@@ -116,6 +116,37 @@ test("authenticated Pesapal manual renewal reserves the active subscription and 
   assert.equal(order.accountNumber,undefined);
 });
 
+test("Paddle refund and chargeback adjustments are durably quarantined without changing subscription entitlements",async()=>{
+  const calls=[];
+  for(const adjustmentAction of ["refund","chargeback","chargeback_warning"]){
+    const providers={
+      paddle:{createCheckout:async()=>({}),verifyWebhook:()=>({
+        provider:"paddle",eventId:"evt-adjustment-"+adjustmentAction,eventType:"adjustment.created",
+        providerTransactionId:"txn-original",providerSubscriptionId:"sub_01abcdefghijklmnopqrstuvwxyz",
+        adjustmentId:"adj-"+adjustmentAction,adjustmentAction,adjustmentStatus:"pending_approval",
+        adjustmentAmount:"5000",adjustmentCurrency:"USD",occurredAt:"2026-11-14T10:00:00Z"
+      })},
+      pesapal:{createCheckout:async()=>({}),handleNotification:async()=>({})}
+    };
+    const fetchImpl=async(url,options)=>{
+      const target=new URL(url);calls.push({method:options.method,path:target.pathname,body:options.body?JSON.parse(options.body):null});
+      if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="POST")return empty(201);
+      if(target.pathname.endsWith("/payment_webhook_events")&&options.method==="PATCH")return empty();
+      throw new Error("Adjustment reconciliation must not invoke payment/subscription settlement: "+target.pathname);
+    };
+    const billing=createProviderSubscriptionBilling({supabaseUrl:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY,
+      paddleReturnUrl:env.PADDLE_RETURN_URL,pesapalCallbackUrl:env.PESAPAL_CALLBACK_URL,pesapalNotificationId:env.PESAPAL_IPN_ID,providers,fetchImpl});
+    const result=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
+    assert.equal(result.status,200);
+    assert.equal(result.body.applied,false);
+    assert.equal(result.body.needsReview,true);
+    assert.equal(result.body.adjustment.action,adjustmentAction);
+    assert.equal(calls.filter(call=>call.method==="POST").length,1);
+    assert.equal(calls.filter(call=>call.method==="PATCH").length,1);
+    assert.ok(calls.every(call=>call.path.endsWith("/payment_webhook_events")));
+  }
+});
+
 test("verified Paddle transaction webhook settles only the matching reserved ledger payment",async()=>{
   const calls=[];
   const providers={
