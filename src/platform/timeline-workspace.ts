@@ -1162,7 +1162,7 @@ document.addEventListener("click",event=>{
  if(cancelRender){
   const id=cancelRender.dataset.tlCancelJob||"";cancelRender.setAttribute("disabled","true");
   void apiRequest<{cancellationRequested:boolean}>("/api/cloud/jobs/"+encodeURIComponent(id)+"/cancel",{method:"POST"})
-   .then(async result=>{state.message=result.cancellationRequested?"Cancellation requested. The active render worker will stop at its next cancellation check.":"Queued render cancelled before execution.";await refreshCloudRenderJobs(true);paint();})
+   .then(async result=>{state.message=result.cancellationRequested?(result.job?.status==="queued"?"Cancellation queued. The render worker will cancel the job before rendering.":"Cancellation requested. The active render worker will stop at its next cancellation check."):"Cloud render cancelled.";await refreshCloudRenderJobs(true);paint();})
    .catch(error=>{cancelRender.removeAttribute("disabled");state.message=error instanceof Error?error.message:"Cloud render cancellation could not be recorded.";paint();});
   return;
  }
