@@ -122,6 +122,28 @@ test("Paddle transaction normalization uses the reserved subtotal, not tax-inclu
   assert.equal(normalized.origin,"web");
 });
 
+test("Paddle adjustment webhook normalizes refund and chargeback evidence without treating it as a payment",()=>{
+  const secret="paddle-secret",timestamp=Math.floor(now()/1000);
+  const event={event_id:"evt_01adjustmentabcdefghijkl",event_type:"adjustment.created",occurred_at:"2026-11-14T10:00:00Z",data:{
+    id:"adj_01adjustmentabcdefghijkl",action:"chargeback",status:"pending_approval",
+    transaction_id:"txn_01transactionabcdefghijkl",subscription_id:"sub_01subscriptionabcdefghijk",
+    currency_code:"USD",totals:{total:"5000"}
+  }};
+  const raw=Buffer.from(JSON.stringify(event));
+  const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
+  const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
+  const normalized=provider.verifyWebhook(raw,"ts="+timestamp+";h1="+signature);
+  assert.equal(normalized.ignored,false);
+  assert.equal(normalized.eventType,"adjustment.created");
+  assert.equal(normalized.adjustmentId,event.data.id);
+  assert.equal(normalized.adjustmentAction,"chargeback");
+  assert.equal(normalized.adjustmentStatus,"pending_approval");
+  assert.equal(normalized.providerTransactionId,event.data.transaction_id);
+  assert.equal(normalized.providerSubscriptionId,event.data.subscription_id);
+  assert.equal(normalized.adjustmentAmount,"5000");
+  assert.equal(normalized.adjustmentCurrency,"USD");
+});
+
 test("Paddle webhook rejects tampered and stale signatures",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000),raw=Buffer.from('{"event_id":"evt","event_type":"subscription.activated","data":{}}');
   const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
