@@ -19,6 +19,9 @@ export function createRunwaySourceAssetResolver({
   assets,
   fetchImpl = globalThis.fetch,
   supabaseUrl = process.env.SUPABASE_URL,
+  storageProvider = process.env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+  r2AccountId = process.env.R2_ACCOUNT_ID,
+  r2Bucket = process.env.R2_BUCKET || "executive-visuals-media",
   ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
   execFileImpl = execFile,
   maxBytes = 200 * 1024 * 1024,
@@ -30,12 +33,19 @@ export function createRunwaySourceAssetResolver({
   if (typeof fetchImpl !== "function" || typeof execFileImpl !== "function") throw new Error("Runway source resolver requires fetch and ffprobe execution.");
   if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > 500 * 1024 * 1024 ||
       !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Runway source resolver limits are invalid.");
-  let expectedOrigin;
+  let expectedOrigin, expectedPathPrefix;
   try {
-    const base = new URL(supabaseUrl);
-    if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error();
-    expectedOrigin = base.origin;
-  } catch { throw new Error("Runway source resolver requires a safe Supabase origin."); }
+    if (String(storageProvider).toLowerCase() === "r2") {
+      if (!/^[a-f0-9]{32}$/i.test(String(r2AccountId || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(r2Bucket))) throw new Error();
+      expectedOrigin = "https://" + r2AccountId + ".r2.cloudflarestorage.com";
+      expectedPathPrefix = "/" + r2Bucket + "/";
+    } else {
+      const base = new URL(supabaseUrl);
+      if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error();
+      expectedOrigin = base.origin;
+      expectedPathPrefix = "/storage/v1/object/sign/";
+    }
+  } catch { throw new Error("Runway source resolver requires a safe private-storage origin."); }
 
   async function resolveAsset({ ownerId, projectId = null, assetId, kinds = "video" } = {}) {
     if (typeof ownerId !== "string" || !ownerId || typeof assetId !== "string" || !assetId) {
@@ -59,7 +69,7 @@ export function createRunwaySourceAssetResolver({
     let url;
     try { url = new URL(signed.url); } catch { throw fail("Private source signing returned an invalid URL.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"); }
     if (url.origin !== expectedOrigin || url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
-        !url.pathname.startsWith("/storage/v1/object/sign/") || url.username || url.password || url.hash) {
+        !url.pathname.startsWith(expectedPathPrefix) || url.username || url.password || url.hash) {
       throw fail("Private source signing returned an untrusted storage URL.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
     }
     let response;
