@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import worker from "./production-worker.mjs";
 
 const edgeUrl = "https://executive-visuals.chrishem.workers.dev";
 const apiOrigin = "https://executive-visuals.onrender.com";
+const productionConfig = JSON.parse(await readFile(new URL("../wrangler.production.jsonc", import.meta.url), "utf8"));
+
+test("production Wrangler config matches the live Worker and verified API origin", () => {
+  assert.equal(productionConfig.name, "executive-visuals");
+  assert.equal(productionConfig.main, "./cloudflare/production-worker.mjs");
+  assert.equal(productionConfig.vars.API_ORIGIN, apiOrigin);
+  assert.equal(productionConfig.assets.binding, "ASSETS");
+  assert.equal(productionConfig.assets.directory, "./dist/");
+  assert.equal(productionConfig.assets.run_worker_first, true);
+});
 
 test("edge health reports the API proxy configuration state", async () => {
   const response = await worker.fetch(new Request(`${edgeUrl}/edge-health`), {
