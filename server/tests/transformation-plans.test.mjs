@@ -55,3 +55,11 @@ test("rejects coercion, truncation and duplicate transformation values",async()=
  ];
  for(let i=0;i<invalid.length;i++)assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:invalid[i][0],idempotencyKey:"strict-transform-"+String(i).padStart(3,"0")}),error=>error.code===invalid[i][1]);
 }finally{await f.close();}});
+
+test("local transformation idempotency keys reject coercion and truncation",async()=>{const f=await fixture();try{
+ const invalid=[undefined,null,42,{}, "short", "x".repeat(181), " ".repeat(181)];
+ for(const key of invalid)assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:f.body,idempotencyKey:key}),error=>error.code==="IDEMPOTENCY_KEY_REQUIRED");
+ const spaced="  strict-local-key-123  ";
+ const result=createTransformationPlan(f.db,{ownerId:f.owner,body:f.body,idempotencyKey:spaced});
+ assert.ok(result.plan.id);
+}finally{await f.close();}});
