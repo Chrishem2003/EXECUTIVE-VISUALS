@@ -97,7 +97,7 @@
     "verify:storyboard-compiler": "node --test server/tests/storyboard-compiler.test.mjs server/tests/storyboard-compiler-api.test.mjs",
     "verify:storyboard-timeline": "node --experimental-strip-types scripts/verify-storyboard-timeline.mjs",
     "verify:model-storyboard-generation": "node --experimental-strip-types scripts/verify-model-storyboard-generation.mjs",
-    "verify:subscription-payment-providers": "node --test server/tests/subscription-payment-providers.test.mjs server/tests/unified-subscription-billing.test.mjs"
+    "verify:subscription-payment-providers": "node --test server/tests/subscription-payment-providers.test.mjs server/tests/unified-subscription-billing.test.mjs server/tests/paddle-pesapal-billing-migration.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
