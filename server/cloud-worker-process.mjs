@@ -19,6 +19,7 @@ import { createGoogleGeminiFilesComposition } from "./google-gemini-files-compos
 import { createGoogleGeminiFilesRepository } from "./google-gemini-files-repository.mjs";
 import { createGoogleGeminiFilesRetentionWorker } from "./google-gemini-files-retention-worker.mjs";
 import { createGoogleGeminiFilesRecoveryWorker } from "./google-gemini-files-recovery-worker.mjs";
+import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror-bootstrap.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
@@ -131,6 +132,24 @@ export function createCloudWorkerSupervisor({workers,maintenanceTasks=[],mainten
  });
 }
 
+export async function createGoogleGeminiGcsMirrorRecoveryMaintenanceTask({
+ env=process.env,cloudCredentials={},fetchImpl=globalThis.fetch,
+ createBootstrap=createGoogleGeminiGcsMirrorBootstrap,maxBytes=250*1024*1024
+}={}){
+ if(typeof createBootstrap!=="function")throw new TypeError("GCS recovery bootstrap factory is required.");
+ const bootstrap=await createBootstrap({env,fetchImpl});
+ if(typeof bootstrap?.checkIdentity!=="function"||typeof bootstrap?.createService!=="function"){
+  throw new Error("GCS mirror bootstrap must expose identity verification and a service factory.");
+ }
+ const identity=await bootstrap.checkIdentity();
+ if(identity?.ready!==true)throw new Error("GCS mirror workload identity verification did not confirm readiness.");
+ const service=bootstrap.createService({...cloudCredentials,env,fetchImpl,maxBytes});
+ if(!service||typeof service.recoverMirrorAttempts!=="function"){
+  throw new Error("GCS mirror service must expose recoverMirrorAttempts.");
+ }
+ return Object.freeze({run:()=>service.recoverMirrorAttempts({limit:100})});
+}
+
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")) )throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
@@ -184,6 +203,13 @@ export async function startCloudWorkerProcess(env=process.env){
  const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
  const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
  const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];
+ const gcsMirrorRecoveryEnabled=truth(env.GEMINI_GCS_MIRROR_RECOVERY_ENABLED);
+ if(gcsMirrorRecoveryEnabled){
+  const task=await createGoogleGeminiGcsMirrorRecoveryMaintenanceTask({
+   env,cloudCredentials,fetchImpl:globalThis.fetch,maxBytes:config.maxBytes
+  });
+  maintenanceTasks.push(()=>task.run());
+ }
  const geminiFilesCleanupEnabled=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED);
  const geminiFilesRecoveryEnabled=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
  if(geminiFilesCleanupEnabled||geminiFilesRecoveryEnabled){
