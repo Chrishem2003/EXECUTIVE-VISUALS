@@ -22,7 +22,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",AI_UPSCALE_ADMIN_EMAILS:"upscale-admin@example.test",DISABLE_WORKER:"true",D1_STAGING_WORKER_URL:"http://127.0.0.1:"+d1ProxyPort},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),AI_UPSCALE_QUALITY_EVIDENCE_PATH:"",AI_UPSCALE_ADMIN_EMAILS:"upscale-admin@example.test,upscale-route-admin@example.test",DISABLE_WORKER:"true",D1_STAGING_WORKER_URL:"http://127.0.0.1:"+d1ProxyPort},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -111,6 +111,19 @@ test("provider catalog exposes inference self-test only to allowlisted administr
   const adminCatalog=await (await request("/api/providers",{},adminCookie)).json();
   assert.equal(adminCatalog.providers.find(item=>item.id==="ai-upscale").selfTestAllowed,true);
   assert.equal(JSON.stringify(adminCatalog).includes("upscale-admin@example.test"),false);
+});
+
+test("AI upscale inference self-test endpoint rejects anonymous access and validates allowlisted administrator input",async()=>{
+  const anonymous=await fetch(base+"/api/admin/ai-upscale/self-test",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceAssetId:"not-a-valid-asset"})});
+  assert.equal(anonymous.status,401);
+
+  // The endpoint deliberately allows only two attempts per minute. Keep this
+  // route-level test within that production security budget; ordinary-user
+  // denial is independently covered by the provider-catalog authorization test.
+  const adminCookie=await register("upscale-route-admin@example.test");
+  const invalidAsset=await request("/api/admin/ai-upscale/self-test",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceAssetId:"not-a-valid-asset"})},adminCookie);
+  assert.equal(invalidAsset.status,400);
+  assert.equal((await invalidAsset.json()).error.code,"AI_UPSCALE_INVALID_INPUT");
 });
 
 test("video cost estimate API is authenticated, read-only and uses configured model pricing",async()=>{
