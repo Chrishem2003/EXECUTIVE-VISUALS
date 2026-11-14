@@ -327,6 +327,23 @@ export function createProviderSubscriptionBilling({
         return jsonResponse(Number(error?.status)||502,{error:{code:error?.code||"PROVIDER_SUBSCRIPTION_CHECKOUT_FAILED",message:error?.message||"Provider checkout failed."}});
       }
     }
+    if(path==="/api/billing/subscription/provider-portal"&&method==="POST"){
+      const subscriptionId=text(body.subscriptionId);
+      if(!ownerId||!subscriptionId)return jsonResponse(400,{error:{code:"PADDLE_PORTAL_INPUT_INVALID",message:"A subscription ID is required."}});
+      try{
+        const result=await dbRequest("customer_subscriptions?select=id,provider,provider_customer_id,provider_subscription_id&owner_id=eq."+encodeURIComponent(ownerId)+"&id=eq."+encodeURIComponent(subscriptionId)+"&limit=1");
+        const subscription=Array.isArray(result.data)?result.data[0]||null:null;
+        if(!subscription)return jsonResponse(404,{error:{code:"SUBSCRIPTION_NOT_FOUND",message:"Subscription not found."}});
+        if(subscription.provider!=="paddle"||!subscription.provider_customer_id||!subscription.provider_subscription_id)
+          return jsonResponse(409,{error:{code:"PADDLE_PORTAL_NOT_AVAILABLE",message:"This subscription does not have a verified Paddle customer and subscription mapping."}});
+        const portal=await providers.paddle.createCustomerPortalSession({
+          customerId:subscription.provider_customer_id,subscriptionId:subscription.provider_subscription_id
+        });
+        return jsonResponse(200,{portal});
+      }catch(error){
+        return jsonResponse(Number(error?.status)||502,{error:{code:error?.code||"PADDLE_PORTAL_FAILED",message:error?.message||"Paddle customer portal could not be opened."}});
+      }
+    }
     if(path==="/api/billing/subscription/provider-renewal-checkout"&&method==="POST"){
       const subscriptionId=text(body.subscriptionId),email=text(body.email).toLowerCase(),key=text(idempotencyKey);
       if(!ownerId||!subscriptionId||!validEmail(email)||key.length<8||key.length>180||
