@@ -106,7 +106,7 @@ export class AudioPreviewEngine{
    const suppressed=entry.muted||(hasSolo&&!entry.solo),gainParam=entry.gain.gain,panParam=entry.panner.pan;
    const gainDb=evaluateAudioAutomation(entry.automation,entry.automationTime,"gainDb",entry.gainDb);
    const pan=evaluateAudioAutomation(entry.automation,entry.automationTime,"pan",entry.pan);
-   gainParam.cancelScheduledValues?.(now);gainParam.setValueAtTime(gainParam.value,now);gainParam.linearRampToValueAtTime(suppressed?0:decibelsToGain(gainDb)*entry.transitionGain,now+0.02);
+   gainParam.cancelScheduledValues?.(now);gainParam.setValueAtTime(suppressed?0:decibelsToGain(gainDb)*entry.transitionGain,now);
    panParam.cancelScheduledValues?.(now);panParam.setValueAtTime(pan,now);
    for(const point of entry.automation){
     const at=now+(point.timeSeconds-entry.automationTime);if(at<=now)continue;
