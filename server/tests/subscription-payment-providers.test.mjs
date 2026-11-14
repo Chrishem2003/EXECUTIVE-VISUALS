@@ -197,6 +197,14 @@ test("Paddle webhook rejects tampered and stale signatures",()=>{
   assert.throws(()=>provider.verifyWebhook(raw,"ts="+(timestamp-6)+";h1="+valid),{code:"PADDLE_WEBHOOK_SIGNATURE_INVALID"});
 });
 
+
+test("Paddle webhook rejects future-dated signatures even inside the replay tolerance",()=>{
+  const secret="paddle-secret",timestamp=Math.floor(now()/1000)+1,raw=Buffer.from('{"event_id":"evt-future","event_type":"subscription.activated","data":{}}');
+  const signature=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
+  const provider=createPaddleSubscriptionProvider({apiKey:"x",webhookSecret:secret,now,fetchImpl:async()=>json({})});
+  assert.throws(()=>provider.verifyWebhook(raw,"ts="+timestamp+";h1="+signature),{code:"PADDLE_WEBHOOK_SIGNATURE_INVALID"});
+});
+
 test("Paddle webhook accepts any valid h1 during endpoint secret rotation",()=>{
   const secret="paddle-secret",timestamp=Math.floor(now()/1000),raw=Buffer.from('{"event_id":"evt-rotation","event_type":"subscription.activated","data":{}}');
   const valid=createHmac("sha256",secret).update(String(timestamp)+":").update(raw).digest("hex");
