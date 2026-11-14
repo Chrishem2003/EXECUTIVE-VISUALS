@@ -139,7 +139,7 @@ test("verified Paddle transaction webhook settles only the matching reserved led
   const result=await billing.handlePaddleWebhook({rawBody:Buffer.from("{}"),signature:"signed"});
   assert.equal(result.status,200);
   assert.equal(result.body.applied,true);
-  assert.ok(calls.some(x=>x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
+  assert.ok(calls.some(x=>typeof x[1]==="string"&&x[1].endsWith("/rpc/finalize_subscription_purchase_for_provider")));
 });
 
 test("verified Pesapal renewal IPN extends the existing subscription through the renewal finalizer",async()=>{
