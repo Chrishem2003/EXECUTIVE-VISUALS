@@ -94,7 +94,7 @@ declare
         raise exception 'VIDEO_PRICE_SOURCE_OPERATION_MISMATCH';
       end if;
     elsif coalesce(p_input ->> 'operation','') = 'reframe' then
-      if coalesce(p_input ->> 'durationSeconds','') !~ '^[2-9]$|^[1-2][0-9]$|^30$' then
+      if coalesce(p_input ->> 'durationSeconds','') !~ '^[2-9]$|^10$' then
         raise exception 'VIDEO_PRICE_DURATION_INVALID';
       end if;
       if not (p_input ? 'sourceVideoAssetId') or p_input ? 'startFrameAssetId'
