@@ -65,7 +65,8 @@ test("Luma multi-keyframe workflow privately transfers every anchor before creat
   await writeFile(join(mediaRoot,"uploads","frame.png"),video);
   const result=await executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
-   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   probeMedia:async()=>({format:{duration:"5"},streams:[{codec_type:"video",duration:"5"}]})
   });
   assert.equal(result.awaitingApproval,true);
   const upload=f.calls.find(call=>call.method==="UPLOAD");
