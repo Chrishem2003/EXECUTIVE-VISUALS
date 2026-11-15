@@ -1280,6 +1280,15 @@ document.addEventListener("input",event=>{
 });
 document.addEventListener("change",async event=>{
  const target=event.target as HTMLInputElement|HTMLSelectElement;
+ if(target instanceof HTMLInputElement&&target.hasAttribute("data-tl-paper-cue")){
+  const form=target.closest<HTMLFormElement>("#tl-paper-edit");
+  if(form){
+   const boxes=Array.from(form.querySelectorAll<HTMLInputElement>("[data-tl-paper-cue]"));
+   const status=form.querySelector<HTMLElement>("#tl-paper-edit-selection-status");
+   if(status)status.textContent=boxes.length+" cues · "+boxes.filter(box=>box.checked).length+" selected";
+  }
+  return;
+ }
  if(target.id==="tl-paper-edit-file"){
   const file=(target as HTMLInputElement).files?.[0];
   if(!file)return;
