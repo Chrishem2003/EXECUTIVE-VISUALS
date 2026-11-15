@@ -210,10 +210,109 @@ export function createLumaRay32Adapter({
     } finally { clearTimeout(timer); }
   }
 
+  const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"]);
+  const MAX_FILE_BYTES = 250 * 1024 * 1024;
+
+  function validateUploadReceipt(body, expected) {
+    const file = body?.file || body;
+    const fileId = body?.id || file?.id;
+    const upload = body?.upload;
+    if (!plain(file) || typeof fileId !== "string" || !FILE_ID.test(fileId) ||
+        file.id !== fileId || file.mime_type !== expected.mimeType ||
+        Number(file.size_bytes) !== expected.sizeBytes || !["pending", "ready"].includes(file.state)) {
+      throw fail("Luma returned an invalid provider-file receipt.", "LUMA_FILE_RESPONSE_INVALID");
+    }
+    if (!plain(upload) || upload.method !== "PUT" || typeof upload.url !== "string") {
+      throw fail("Luma did not return a presigned PUT upload.", "LUMA_FILE_UPLOAD_URL_INVALID");
+    }
+    let url;
+    try { url = new URL(upload.url); } catch { throw fail("Luma returned an invalid presigned upload URL.", "LUMA_FILE_UPLOAD_URL_INVALID"); }
+    if (url.protocol !== "https:" || url.username || url.password || url.hash ||
+        !(url.hostname === "amazonaws.com" || url.hostname.endsWith(".amazonaws.com") ||
+          url.hostname === "amazonaws.com.cn" || url.hostname.endsWith(".amazonaws.com.cn")) ||
+        !Number.isFinite(Date.parse(upload.expires_at || "")) || Date.parse(upload.expires_at) <= now()) {
+      throw fail("Luma presigned upload URL must be an unexpired HTTPS object-storage URL.", "LUMA_FILE_UPLOAD_URL_INVALID");
+    }
+    const headers = plain(upload.headers) ? upload.headers : {};
+    for (const [name, value] of Object.entries(headers)) {
+      if (!/^(content-type|content-length|x-amz-[a-z0-9-]+)$/i.test(name) ||
+          typeof value !== "string" || value.length > 2048 || /[\r\n]/.test(value)) {
+        throw fail("Luma returned unsafe presigned upload headers.", "LUMA_FILE_RESPONSE_INVALID");
+      }
+    }
+    return Object.freeze({ fileId, state: file.state, mimeType: expected.mimeType, sizeBytes: expected.sizeBytes,
+      upload: Object.freeze({ url: url.toString(), method: "PUT", headers: Object.freeze({ ...headers }), expiresAt: upload.expires_at }) });
+  }
+
   return Object.freeze({
     provider: "luma",
     model: "ray-3.2",
     minimumPollIntervalMs: 5000,
+    async createFileUpload({ mimeType, sizeBytes, filename, purpose = "input", userId } = {}) {
+      const normalizedMime = typeof mimeType === "string" ? mimeType.toLowerCase().trim() : "";
+      if (!FILE_MIME_TYPES.has(normalizedMime) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > MAX_FILE_BYTES ||
+          !["input", "reference"].includes(purpose) ||
+          (filename !== undefined && (typeof filename !== "string" || !filename.trim() || filename.length > 255 || /[\\r\\n]/.test(filename))) ||
+          (userId !== undefined && (typeof userId !== "string" || !userId.trim() || userId.length > 256))) {
+        throw fail("Luma file upload requires a supported media type, bounded size and valid metadata.", "LUMA_FILE_INPUT_INVALID");
+      }
+      const body = await request("/files", { method: "POST", body: JSON.stringify({
+        mime_type: normalizedMime, size_bytes: sizeBytes, purpose,
+        ...(filename ? { filename: filename.trim() } : {}),
+        ...(userId ? { user_id: userId.trim() } : {})
+      }) });
+      return validateUploadReceipt(body, { mimeType: normalizedMime, sizeBytes });
+    },
+    async uploadFileBytes({ upload, bytes, mimeType } = {}) {
+      if (!plain(upload) || upload.method !== "PUT" || typeof upload.url !== "string" ||
+          !(bytes instanceof Uint8Array) || bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES ||
+          typeof mimeType !== "string" || !FILE_MIME_TYPES.has(mimeType.toLowerCase())) {
+        throw fail("Luma file upload requires a valid upload receipt and bounded media bytes.", "LUMA_FILE_INPUT_INVALID");
+      }
+      const url = new URL(upload.url);
+      if (url.protocol !== "https:" || !(url.hostname === "amazonaws.com" || url.hostname.endsWith(".amazonaws.com") ||
+          url.hostname === "amazonaws.com.cn" || url.hostname.endsWith(".amazonaws.com.cn")) ||
+          !Number.isFinite(Date.parse(upload.expiresAt || "")) || Date.parse(upload.expiresAt) <= now()) {
+        throw fail("Luma presigned upload receipt is invalid or expired.", "LUMA_FILE_UPLOAD_URL_INVALID");
+      }
+      const headers = { ...(upload.headers || {}), "content-type": mimeType.toLowerCase(), "content-length": String(bytes.byteLength) };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetchImpl(url.toString(), { method: "PUT", headers, body: Buffer.from(bytes), redirect: "error", signal: controller.signal });
+        if (!response.ok) {
+          const error = fail("Luma object-storage upload failed with HTTP " + response.status + ".", "LUMA_FILE_UPLOAD_FAILED");
+          error.status = response.status;
+          error.retryable = response.status === 429 || response.status >= 500;
+          throw error;
+        }
+        return { uploadedBytes: bytes.byteLength, mimeType: mimeType.toLowerCase() };
+      } catch (error) {
+        if (error?.name === "AbortError") throw fail("Luma object-storage upload timed out.", "LUMA_FILE_UPLOAD_OUTCOME_UNKNOWN");
+        throw error;
+      } finally { clearTimeout(timer); }
+    },
+    async completeFileUpload(fileId) {
+      if (typeof fileId !== "string" || !FILE_ID.test(fileId)) throw fail("Luma file ID is invalid.", "LUMA_FILE_ID_INVALID");
+      const body = await request("/files/" + encodeURIComponent(fileId) + "/complete", { method: "POST" });
+      const file = body.file || body;
+      if (file.id !== fileId || !["pending", "ready"].includes(file.state)) throw fail("Luma file completion returned an invalid resource.", "LUMA_FILE_RESPONSE_INVALID");
+      return { fileId, state: file.state };
+    },
+    async getFile(fileId) {
+      if (typeof fileId !== "string" || !FILE_ID.test(fileId)) throw fail("Luma file ID is invalid.", "LUMA_FILE_ID_INVALID");
+      const body = await request("/files/" + encodeURIComponent(fileId));
+      const file = body.file || body;
+      if (file.id !== fileId || !["pending", "ready", "failed", "deleted"].includes(file.state)) throw fail("Luma file lookup returned an invalid resource.", "LUMA_FILE_RESPONSE_INVALID");
+      return { fileId, state: file.state, mimeType: file.mime_type || null, sizeBytes: Number.isSafeInteger(Number(file.size_bytes)) ? Number(file.size_bytes) : null,
+        failureReason: typeof file.failure_reason === "string" ? file.failure_reason.slice(0, 500) : null };
+    },
+    async deleteFile(fileId) {
+      if (typeof fileId !== "string" || !FILE_ID.test(fileId)) throw fail("Luma file ID is invalid.", "LUMA_FILE_ID_INVALID");
+      const body = await request("/files/" + encodeURIComponent(fileId), { method: "DELETE" });
+      return { fileId, deleted: body.deleted === true || body.state === "deleted" };
+    },
     async prepareInput(input) { return validateInput(input); },
     async submit(payload) {
       const body = await request("/generations", { method: "POST", body: JSON.stringify(payload) });
