@@ -284,7 +284,10 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     try{
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
-     if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
+     const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:workflowRouterAdapter;
+     if(!quoteAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
+     if(workflowRequest.provider==="luma"&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
+      return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must be verified private image assets in this exact project."}});
      if(workflowRequest.input.sourceVideoAssetId){
       if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
       const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
@@ -315,7 +318,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       p_routed_provider:estimate.provider,p_routed_model:estimate.model,
       p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
       p_currency:estimate.currency,p_config_id:String(estimate.configId||""),
-      p_pricing_source:"runway_model_router_dry_run",p_expires_at:expiresAt
+      p_pricing_source:String(estimate.pricingSource||"runway_model_router_dry_run"),p_expires_at:expiresAt
      }});
      if(quoteRecord!==quoteId)throw Object.assign(new Error("The non-billable workflow quote could not be durably recorded."),{code:"VIDEO_WORKFLOW_QUOTE_PERSISTENCE_FAILED"});
      return response(200,{quote:{
@@ -325,7 +328,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       routedProvider:estimate.provider,routedModel:estimate.model,
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
       currency:estimate.currency,configId:estimate.configId,
-      pricingSource:"runway_model_router_dry_run",billable:false,
+      pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:cloudVideoWorkerLaunchConfigured(env),
       expiresAt
      }});
