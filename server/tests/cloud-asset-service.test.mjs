@@ -17,3 +17,15 @@ test("composes private storage, fail-closed authorization and metadata repositor
 test("factory requires valid credentials even when adapters are injected",()=>{
  assert.throws(()=>createCloudAssetService({storage:{},authorize:async()=>true}),/credentials/);
 });
+
+test("R2 asset composition rejects a custom bucket while metadata and cleanup contracts pin the canonical bucket",()=>{
+ const base={
+  url:"https://example.supabase.co",serviceRoleKey:"private",
+  storageProvider:"r2",
+  r2:{accountId:"0123456789abcdef0123456789abcdef",accessKeyId:"0123456789abcdef",secretAccessKey:"s".repeat(40)},
+  fetchImpl:async()=>{throw new Error("metadata network must not run during composition");}
+ };
+ const service=createCloudAssetService(base);
+ assert.equal(service.storage.bucket,"executive-visuals-media");
+ assert.throws(()=>createCloudAssetService({...base,r2:{...base.r2,bucket:"custom-media-bucket"}}),/R2_BUCKET must be executive-visuals-media/);
+});
