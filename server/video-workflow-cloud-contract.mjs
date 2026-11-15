@@ -109,12 +109,12 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  if(new Set(allAssetIds).size!==allAssetIds.length)throw fail("A Luma source frame cannot be assigned to more than one frame role.","VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT");
  const normalized=normalizeVideoGenerationRequest({
   requestId,projectId:projectId.trim(),provider:"luma",model:"ray-3.2",
-  prompt,durationSeconds,aspectRatio,resolution,audioMode:"none",
+  prompt,operation:"generate",durationSeconds,aspectRatio,resolution,audioMode:"none",
   rightsConfirmed:config.rightsConfirmed===true,
   ...(startFrameAssetId?{startFrameAssetId}:{}),
   ...(endFrameAssetId?{endFrameAssetId}:{})
  });
- const operation=startFrameAssetId||endFrameAssetId?"image-to-video":"text-to-video";
+ const operation="generate";
  const requestHash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
  const input=deepFreeze({...normalized,requestHash});
  return deepFreeze({provider:"luma",model:"ray-3.2",operation,requestId,projectId:projectId.trim(),requestHash,input});
