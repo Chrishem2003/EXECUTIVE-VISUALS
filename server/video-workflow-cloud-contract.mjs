@@ -173,8 +173,8 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  * obtain a quote, bind an explicit approval, reserve funds and use the durable
  * cloud enqueue/ledger. No provider or storage network calls occur here.
  *
- * The first supported workflow adapter is Runway Model Router because it has
- * a dedicated durable worker, dry-run price ceiling and task-level settlement.
+ * Runway Model Router and Luma Ray 3.2 have dedicated governed quote/approval
+ * adapters, private-source resolution, durable workers and task-level settlement.
  */
 export function createVideoWorkflowCloudRequest({
   node, values = {}, projectId, requestId
