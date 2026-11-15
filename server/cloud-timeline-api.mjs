@@ -356,7 +356,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     try{
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
      const isLuma=workflowRequest.provider==="luma";
-     const configId=isLuma?"ray-3.2":String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+     const configId=isLuma?"luma-ray32":String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
      const quoteAdapter=isLuma?lumaWorkflowAdapter:workflowRouterAdapter;
      const remoteReady=isLuma?lumaQuoteReady:
       env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
