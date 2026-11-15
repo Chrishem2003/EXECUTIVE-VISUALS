@@ -513,6 +513,27 @@ document.addEventListener("click",event=>{
 });
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
+ if(form.id==="ev-media-batch-form"){
+  event.preventDefault();
+  const data=new FormData(form),jobType=String(data.get("jobType")||"");
+  const selected=Array.from(document.querySelectorAll<HTMLInputElement>("[data-ev-batch-media-asset]:checked")).map(input=>input.dataset.evBatchMediaAsset||"").filter(Boolean);
+  if(!selected.length){alert("Select at least one original video in the current project.");return;}
+  if(selected.length>50){alert("A video finishing batch can contain at most 50 source videos.");return;}
+  const number=(name:string,fallback:number)=>{const value=Number(data.get(name));return Number.isFinite(value)?value:fallback;};
+  const options:Record<string,unknown>={};
+  if(jobType==="media.color")Object.assign(options,{brightness:number("brightness",0),contrast:number("contrast",1),saturation:number("saturation",1)});
+  if(jobType==="media.denoise")Object.assign(options,{luma:number("luma",4),chroma:number("chroma",3)});
+  if(jobType==="media.resize")Object.assign(options,{width:number("width",1920),height:number("height",1080),fit:String(data.get("fit")||"contain")});
+  if(jobType==="media.interpolate")Object.assign(options,{fps:number("fps",30)});
+  if(jobType==="media.proxy")Object.assign(options,{proxyWidth:number("proxyWidth",960),proxyCrf:number("proxyCrf",28)});
+  const button=form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if(button){button.disabled=true;button.textContent="Validating and queueing…";}
+  void apiRequest<{batchId:string;total:number;status:string}>("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({projectId:state.projectId||null,jobType,options,items:selected.map(sourceAssetId=>({sourceAssetId}))})})
+   .then(async result=>{state.message=result.status==="replayed"?"Existing media batch restored · "+result.total+" jobs.":"Video finishing batch queued · "+result.total+" independent jobs. Originals remain unchanged.";await refresh();paint();})
+   .catch(error=>{state.message=error instanceof Error?error.message:"Video finishing batch could not be queued.";paint();})
+   .finally(()=>{const current=document.querySelector<HTMLButtonElement>('#ev-media-batch-form button[type="submit"]');if(current){current.disabled=state.status!=="online";current.textContent="Queue selected video batch";}});
+  return;
+ }
  if(form.id==="ev-auth-recover"){event.preventDefault();const email=String(new FormData(form).get("email")||"");void apiRequest<{ok:boolean;message:string}>("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(result=>{state.message=result.message;paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not request a recovery email.";paint();});return;}
  if(form.id==="ev-auth-reset"){event.preventDefault();const data=new FormData(form),password=String(data.get("password")||""),confirmPassword=String(data.get("confirmPassword")||"");if(password!==confirmPassword){state.message="The two passwords do not match.";paint();return;}if(password.length<12){state.message="Use a password with at least 12 characters.";paint();return;}if(!state.recoveryToken){state.message="Your recovery session is missing. Request a new recovery email.";state.authView="login";paint();return;}void apiRequestWithBearer<{ok:boolean}>("/api/auth/password",state.recoveryToken,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({password})}).then(()=>{state.recoveryToken="";state.authView="login";state.message="Password updated. Sign in with your new password.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not update your password.";paint();});return;}
  if(form.id==="ev-auth"){event.preventDefault();void authenticate(form);}
