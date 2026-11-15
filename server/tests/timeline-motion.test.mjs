@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateMotionKeyframes, evaluateMotionProperty, normalizeMotionKeyframes } from "../../src/core/timeline-motion.ts";
+import { evaluateMotionKeyframes, evaluateMotionProperty, normalizeMotionKeyframes, retimeMotionKeyframes } from "../../src/core/timeline-motion.ts";
 import { createTimeline, addTrack, addClip, rational, validateTimeline } from "../../src/core/timeline.ts";
 const base={x:100,y:40,width:320,height:180,opacity:1,rotation:0};
 test("motion keyframes interpolate every supported transform property",()=>{
@@ -17,6 +17,19 @@ test("motion keyframes clamp supported ranges and return a sorted immutable copy
  const result=normalizeMotionKeyframes(input,2);
  assert.deepEqual(result,[{timeSeconds:0,interpolation:"linear",x:-16384,opacity:0},{timeSeconds:1,interpolation:"linear",x:16384,opacity:1}]);
  assert.equal(input[0].x,20000);
+});
+test("motion clipboard retimes keyframes to the destination clip without changing curve shape",()=>{
+ const source=[{timeSeconds:0,x:10,opacity:0},{timeSeconds:2,x:210,opacity:1,interpolation:"bezier",bezier:{x1:0.2,y1:0.1,x2:0.8,y2:0.9}}];
+ const pasted=retimeMotionKeyframes(source,2,4);
+ assert.equal(pasted[0].timeSeconds,0);
+ assert.equal(pasted[1].timeSeconds,4);
+ assert.deepEqual(pasted[1].bezier,{x1:0.2,y1:0.1,x2:0.8,y2:0.9});
+ assert.equal(evaluateMotionProperty(pasted,2,"x",0,4),evaluateMotionProperty(source,1,"x",0,2));
+ assert.notEqual(pasted[1],source[1]);
+});
+test("motion clipboard rejects invalid source or destination durations",()=>{
+ assert.throws(()=>retimeMotionKeyframes([{timeSeconds:0,x:1}],0,2),/positive and finite/);
+ assert.throws(()=>retimeMotionKeyframes([{timeSeconds:0,x:1}],2,Number.NaN),/positive and finite/);
 });
 test("motion keyframes reject duplicate times, empty points, excessive count and out-of-range times",()=>{
  assert.throws(()=>normalizeMotionKeyframes([{timeSeconds:0,x:1},{timeSeconds:0,y:2}],2),/unique/);
