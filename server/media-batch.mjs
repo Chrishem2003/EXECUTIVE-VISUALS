@@ -64,3 +64,22 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
  if(selectedProject&&!canWriteProject(ownerId,selectedProject))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
  return Object.freeze({projectId:selectedProject,jobType,items:normalizedItems});
 }
+
+/** Compare an existing per-item idempotency set with the exact requested batch. */
+export function inspectMediaBatchReplay(existingJobs,items,projectId,jobType){
+ if(!Array.isArray(existingJobs)||!Array.isArray(items)||existingJobs.length!==items.length)throw new Error("Media batch replay inspection requires aligned jobs and items.");
+ const exists=existingJobs.some(Boolean);
+ if(!exists)return{exists:false,matches:false,batchId:null};
+ if(existingJobs.some(job=>!job))return{exists:true,matches:false,batchId:null};
+ let first;try{first=JSON.parse(existingJobs[0].input_json||"{}");}catch{return{exists:true,matches:false,batchId:null};}
+ const batchId=typeof first.batchId==="string"&&first.batchId?first.batchId:null;
+ if(!batchId)return{exists:true,matches:false,batchId:null};
+ const matches=existingJobs.every((job,index)=>{
+  if(job.job_type!==jobType||job.project_id!==projectId)return false;
+  let input;try{input=JSON.parse(job.input_json||"{}");}catch{return false;}
+  const comparable={...input};delete comparable.batchId;delete comparable.batchIndex;delete comparable.batchTotal;
+  const expected={sourceAssetId:items[index].sourceAssetId,...items[index].options,batchOperation:jobType};
+  return input.batchId===batchId&&input.batchIndex===index&&input.batchTotal===items.length&&JSON.stringify(comparable,Object.keys(comparable).sort())===JSON.stringify(expected,Object.keys(expected).sort());
+ });
+ return{exists:true,matches,batchId};
+}
