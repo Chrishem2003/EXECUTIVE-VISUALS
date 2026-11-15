@@ -65,8 +65,8 @@ test("Luma source-video edit and reframe quotes use operation-specific pricing a
   resolution:"540p",aspectRatio:"9:16",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},sourceVideoAssetId:assetId
  },{job:{owner_id:ownerId}});
  assert.deepEqual(seen[1].sourceVideo,{file_id:assetId});
- const reframeQuote=await adapter.preflight(reframe,{sourceMetadata:{durationSeconds:12.4}});
- assert.equal(reframeQuote.estimatedCredits,estimateLumaRay32Cost({operation:"video_reframe",resolution:"540p",durationSeconds:13}).credits);
+ const reframeQuote=await adapter.preflight(reframe,{sourceMetadata:{durationSeconds:9.4}});
+ assert.equal(reframeQuote.estimatedCredits,estimateLumaRay32Cost({operation:"video_reframe",resolution:"540p",durationSeconds:10}).credits);
  assert.equal(reframeQuote.billable,false);
 });
 test("Luma workflow quote rejects missing rates and invalid prepared requests",async()=>{
