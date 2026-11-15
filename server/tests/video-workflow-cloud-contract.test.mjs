@@ -351,7 +351,7 @@ test("Luma source-video edit and reframe contracts bind private assets and opera
  assert.equal(edited.input.sourceVideoAssetId,sourceVideoAssetId);
  assert.equal(edited.input.editStrength,"reimagine_2");
  const reframed=createVideoWorkflowCloudRequest({
-  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"540p",aspectRatio:"9:16",sourceVideoAssetId,sourcePosition:{x_norm:0.1,y_norm:-0.2,w_norm:0.8,h_norm:1.2},rightsConfirmed:true}},
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"540p",aspectRatio:"9:16",sourceVideoAssetId,sourcePosition:{x_norm:0.1,y_norm:-0.2,w_norm:0.8,h_norm:1.2},rightsConfirmed:true}},
   projectId:"project-1",requestId:"luma-reframe-1",values:{prompt:"Recompose for vertical social video"}
  });
  assert.equal(reframed.operation,"video_reframe");
@@ -362,7 +362,7 @@ test("Luma source-video edit and reframe reject missing sources, generation anch
  const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",rightsConfirmed:true}},projectId:"project-1",requestId:"luma-source-invalid",values:{prompt:"Edit the shot"}};
  assert.throws(()=>createVideoWorkflowCloudRequest(base),error=>error.code==="VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,sourceVideoAssetId:"source",keyframeAssetIds:["frame"],keyframeIndexes:[0]}}}),/cannot be combined with generation frame anchors/);
- assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,operation:"reframe",durationSeconds:13,resolution:"1080p",sourceVideoAssetId:"source"}}}),/1080p reframe is not enabled/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,operation:"reframe",durationSeconds:10,resolution:"1080p",sourceVideoAssetId:"source"}}}),/1080p reframe is not enabled/);
  assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,operation:"extend",sourceVideoAssetId:"source"}}}),/extension remains gated/);
 });
 test("Luma multi-keyframe workflow rejects mismatched, unordered, duplicate and unlicensed frames",()=>{
