@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression } from "../../src/core/audio-automation.ts";
+import { normalizeAudioAutomation, evaluateAudioAutomation, buildGainAutomationExpression, createAudioDuckingAutomation } from "../../src/core/audio-automation.ts";
 import { createTimeline, addTrack, addClip, rational, validateTimeline, toOpenTimelineIo } from "../../src/core/timeline.ts";
 
 const points=[{timeSeconds:1,gainDb:-12,pan:-1,interpolation:"linear"},{timeSeconds:3,gainDb:-24,pan:1,interpolation:"step"}];
