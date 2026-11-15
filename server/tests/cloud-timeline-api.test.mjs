@@ -720,6 +720,32 @@ test("Luma Ray 3.2 workflow quote validates private frame assets and records acc
  assert.equal(writes[0].p_operation,"generate");
 });
 
+test("Luma multi-keyframe quotes revalidate every private anchor in the exact project",async()=>{
+ const checked=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){checked.push(assetId);return{id:assetId,projectId:project,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },
+  authorize:async()=>true
+ });
+ const frameA="b23e4567-e89b-42d3-a456-426614174001";
+ const frameB="b23e4567-e89b-42d3-a456-426614174002";
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"luma-keyframe-quote-001",
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",keyframeAssetIds:[frameA,frameB],keyframeIndexes:[0,120],rightsConfirmed:true}},
+  values:{prompt:"A continuous cinematic camera move"}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.deepEqual(checked,[frameA,frameB]);
+ assert.equal(result.body.quote.estimatedCredits,100);
+ assert.equal(result.body.quote.billable,false);
+});
 test("Luma quote stays blocked until schema and private frame scope are ready",async()=>{
  let writes=0;
  const makeApi=(env,assetProject=project)=>createCloudTimelineApi({
