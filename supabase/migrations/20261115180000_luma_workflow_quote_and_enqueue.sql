@@ -94,68 +94,27 @@ declare
   function_oid regprocedure;
   function_sql text;
   old_provider_gate text := $old$  if not (
-    (p_provider = 'runway' and p_model = 'gen4.5')
+    (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
   ) then
     raise exception 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED';
   end if;$old$;
   new_provider_gate text := $new$  if not (
-    (p_provider = 'runway' and p_model in ('gen4.5','model-router'))
+    (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
     or (p_provider = 'luma' and p_model = 'ray-3.2')
   ) then
     raise exception 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED';
   end if;$new$;
-  old_price_branch text := $old$  if p_provider = 'runway' then
-    if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
-    end if;
-    if p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12) then
-      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
-    end if;
-  else
+  old_google_branch text := $old$  else
     -- Gemini Omni direct API preflight: 1,048,576 input tokens at $1.50/M
     -- plus 57,920 output video tokens (10s at 5,792 tokens/s) at $17.50/M.
     -- The reservation is deliberately conservative; actual usage is reconciled
-    -- from the completed interaction before budget settlement.
-    if coalesce(p_input ->> 'durationSeconds','') not in ('3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
+    -- from the completed interaction before budget settlement.$old$;
+  new_google_branch text := $new$  elsif p_provider = 'luma' then
+    if coalesce(p_input ->> 'operation','') <> 'generate' then
+      raise exception 'VIDEO_PRICE_OPERATION_INVALID';
     end if;
-    if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','720p') then
-      raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
-    end if;
-    if p_reserved_amount < 2.586464 then
-      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
-    end if;
-  end if;$old$;
-  new_price_branch text := $new$  if p_provider = 'runway' and p_model = 'gen4.5' then
-    if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
-    end if;
-    if p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12) then
-      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
-    end if;
-  elsif p_provider = 'runway' and p_model = 'model-router' then
-    if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
-    end if;
-    if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','480p','540p','720p','1080p','1440p','2160p','1k','2k','4k') then
-      raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
-    end if;
-    -- The immutable quote RPC and owner-approved ceiling are the price evidence.
-  elsif p_provider = 'google' then
-    -- Gemini Omni direct API preflight: 1,048,576 input tokens at $1.50/M
-    -- plus 57,920 output video tokens (10s at 5,792 tokens/s) at $17.50/M.
-    if coalesce(p_input ->> 'durationSeconds','') not in ('3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
-    end if;
-    if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','720p') then
-      raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
-    end if;
-    if p_reserved_amount < 2.586464 then
-      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
-    end if;
-  elsif p_provider = 'luma' then
     if coalesce(p_input ->> 'durationSeconds','') not in ('5','10') then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
@@ -165,22 +124,24 @@ declare
     if coalesce(p_input ->> 'audioMode','none') <> 'none' then
       raise exception 'VIDEO_PRICE_UNSUPPORTED_AUDIO_MODE';
     end if;
-    -- Luma's exact credit estimate is recorded in the immutable workflow quote.
-    -- The approved ceiling is checked against that quote before this enqueue RPC.
+    -- Exact Luma credits multiplied by the account/contract rate are recorded
+    -- in the immutable quote. Approval RPC enforces the approved ceiling.
   else
-    raise exception 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED';
-  end if;$new$;
+    -- Gemini Omni direct API preflight: 1,048,576 input tokens at $1.50/M
+    -- plus 57,920 output video tokens (10s at 5,792 tokens/s) at $17.50/M.
+    -- The reservation is deliberately conservative; actual usage is reconciled
+    -- from the completed interaction before budget settlement.$new$;
 begin
   function_oid := to_regprocedure(
     'executive_visuals.enqueue_video_generation_job(uuid,uuid,text,text,text,text,jsonb,uuid,numeric,text)'
   );
   if function_oid is null then raise exception 'LUMA_VIDEO_ENQUEUE_RPC_NOT_FOUND'; end if;
   function_sql := pg_get_functiondef(function_oid);
-  if strpos(function_sql,old_provider_gate)>0 and strpos(function_sql,old_price_branch)>0 then
+  if strpos(function_sql,old_provider_gate)>0 and strpos(function_sql,old_google_branch)>0 then
     function_sql := replace(function_sql,old_provider_gate,new_provider_gate);
-    function_sql := replace(function_sql,old_price_branch,new_price_branch);
+    function_sql := replace(function_sql,old_google_branch,new_google_branch);
     execute function_sql;
-  elsif strpos(function_sql,new_provider_gate)>0 and strpos(function_sql,new_price_branch)>0 then
+  elsif strpos(function_sql,new_provider_gate)>0 and strpos(function_sql,new_google_branch)>0 then
     null;
   else
     raise exception 'LUMA_VIDEO_ENQUEUE_RPC_SOURCE_MISMATCH';
