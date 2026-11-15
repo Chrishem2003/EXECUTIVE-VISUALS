@@ -21,6 +21,9 @@ test("renderer emits animated scale, alpha, rotation and position filters",()=>{
 });
 test("static metadata remains unchanged when no motion keyframes are present",()=>{
  assert.equal(buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2),null);
+ const rotated=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5,rotation:25},2);
+ assert.ok(rotated.filters.some(filter=>filter.includes("rotw(PI/4)")));
+ assert.match(rotated.overlay,/overlay_w/);
 });
 test("renderer rejects invalid or unsafe keyframe values",()=>{
  assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1},{timeSeconds:0,x:2}],2),/unique/);
