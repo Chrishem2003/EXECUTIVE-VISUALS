@@ -48,5 +48,5 @@ export function buildTimelineMotionFilters(metadata={},durationSeconds){
  const alpha=animated.opacity?"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*("+expression("opacity","T")+")'": "colorchannelmixer=aa="+number(base.opacity);
  const widthExpression=animated.width?expression("width"):""+number(base.width),heightExpression=animated.height?expression("height"):""+number(base.height),x=animated.x?expression("x"):""+number(base.x),y=animated.y?expression("y"):""+number(base.y),overlayX=rotated?"("+x+")+(("+widthExpression+")-"+rotationCanvas+")/2":x,overlayY=rotated?"("+y+")+(("+heightExpression+")-"+rotationCanvas+")/2":y;
  const finalFilters=rotated?[scale,"format=rgba","pad="+rotationCanvas+":"+rotationCanvas+":(ow-iw)/2:(oh-ih)/2:color=black@0",rotate,alpha]:[scale,"format=rgba",alpha];
- return {filters:finalFilters,overlay:"overlay=x='max(0,min(main_w-overlay_w,"+overlayX+"))':y='max(0,min(main_h-overlay_h,"+overlayY+"))':eval=frame:eof_action=pass",animated};
+ return {filters:finalFilters,overlay:"overlay=x='"+overlayX+"':y='"+overlayY+"':eval=frame:eof_action=pass",animated};
 }
