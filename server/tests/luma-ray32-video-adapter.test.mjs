@@ -52,10 +52,10 @@ test("Luma adapter supports first/last anchors and up to 16 indexed keyframes", 
   assert.deepEqual(anchored.video.start_frame, { url: "https://assets.example.test/first.png" });
   assert.deepEqual(anchored.video.end_frame, { file_id: "file_123" });
   const keyframes = Array.from({ length: 16 }, (_, i) => ({ file_id: "frame_" + i }));
-  const indexes = Array.from({ length: 64 }, (_, i) => i);
+  const indexes = Array.from({ length: 16 }, (_, i) => i);
   const multi = await adapter.prepareInput({ prompt: "Keyframed sequence", durationSeconds: 5, keyframes, keyframeIndexes: indexes });
   assert.equal(multi.video.keyframes.length, 16);
-  assert.equal(multi.video.keyframe_indexes[15], 63);
+  assert.equal(multi.video.keyframe_indexes[15], 15);\n  await assert.rejects(adapter.prepareInput({ prompt: "Too many frames", keyframes: Array.from({ length: 17 }, (_, i) => ({ file_id: "overflow_" + i })), keyframeIndexes: Array.from({ length: 17 }, (_, i) => i) }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   await assert.rejects(adapter.prepareInput({
     prompt: "Ten second HDR multi-keyframe sequence", durationSeconds: 10,
     resolution: "1080p", hdr: true, keyframes: [{ file_id: "hdr-frame-1" }],
