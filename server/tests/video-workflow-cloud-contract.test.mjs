@@ -340,6 +340,31 @@ test("Luma ten-second workflow requires multi-keyframe mode instead of first/las
   rightsConfirmed:true,startFrameAssetId:"frame-first",endFrameAssetId:"frame-last"
  }},projectId:"project-1",requestId:"luma-first-last-10",values:{prompt:"A scene"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
+test("Luma source-video edit and reframe contracts bind private assets and operation-specific controls",()=>{
+ const sourceVideoAssetId="b23e4567-e89b-42d3-a456-426614174010";
+ const edited=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",editStrength:"reimagine_2",sourceVideoAssetId,rightsConfirmed:true}},
+  projectId:"project-1",requestId:"luma-edit-1",values:{prompt:"Replace the background while preserving subject motion"}
+ });
+ assert.equal(edited.operation,"video_edit");
+ assert.equal(edited.input.operation,"edit");
+ assert.equal(edited.input.sourceVideoAssetId,sourceVideoAssetId);
+ assert.equal(edited.input.editStrength,"reimagine_2");
+ const reframed=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"540p",aspectRatio:"9:16",sourceVideoAssetId,sourcePosition:{x_norm:0.1,y_norm:-0.2,w_norm:0.8,h_norm:1.2},rightsConfirmed:true}},
+  projectId:"project-1",requestId:"luma-reframe-1",values:{prompt:"Recompose for vertical social video"}
+ });
+ assert.equal(reframed.operation,"video_reframe");
+ assert.equal(reframed.input.operation,"reframe");
+ assert.deepEqual(reframed.input.sourcePosition,{x_norm:0.1,y_norm:-0.2,w_norm:0.8,h_norm:1.2});
+});
+test("Luma source-video edit and reframe reject missing sources, generation anchors and unverified tiers",()=>{
+ const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",rightsConfirmed:true}},projectId:"project-1",requestId:"luma-source-invalid",values:{prompt:"Edit the shot"}};
+ assert.throws(()=>createVideoWorkflowCloudRequest(base),error=>error.code==="VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,sourceVideoAssetId:"source",keyframeAssetIds:["frame"],keyframeIndexes:[0]}}}),/cannot be combined with generation frame anchors/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,operation:"reframe",durationSeconds:13,resolution:"1080p",sourceVideoAssetId:"source"}}}),/1080p reframe is not enabled/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,operation:"extend",sourceVideoAssetId:"source"}}}),/extension remains gated/);
+});
 test("Luma multi-keyframe workflow rejects mismatched, unordered, duplicate and unlicensed frames",()=>{
  const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,rightsConfirmed:true,keyframeAssetIds:["a","b"],keyframeIndexes:[0,24]}},projectId:"project-1",requestId:"luma-invalid-frames",values:{prompt:"A scene"}};
  assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,keyframeIndexes:[0]}}}),/matching output-frame index/);
