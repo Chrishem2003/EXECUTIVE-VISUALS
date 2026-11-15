@@ -54,10 +54,19 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
    resolutions:modelProfile.resolutions||[],
    referenceImages:modelProfile.constraints?.multipleReferenceImages??modelProfile.referenceImages??false,
    maxReferenceImages:modelProfile.maxReferenceImages??video.modelCapabilities?.maxReferenceImages,
-   audioModes:Array.isArray(modelProfile.audioModes)?modelProfile.audioModes:(Array.isArray(video.modelCapabilities?.audioModes)?video.modelCapabilities.audioModes:[])
+   audioModes:Array.isArray(modelProfile.audioModes)?modelProfile.audioModes:(Array.isArray(video.modelCapabilities?.audioModes)?video.modelCapabilities.audioModes:[]),
+   durationsSeconds:modelProfile.durationsSeconds||video.modelCapabilities?.durationsSeconds||[],
+   operations:modelProfile.operations||video.modelCapabilities?.operations||[]
   }:null;
-  if(!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>30)fail("duration","Shot duration must be 1–30 whole seconds.");
-  else if(caps&&(!Number.isFinite(caps.minDurationSeconds)||!Number.isFinite(caps.maxDurationSeconds)||shot.durationSeconds<caps.minDurationSeconds||shot.durationSeconds>caps.maxDurationSeconds))fail("duration","Duration is outside the selected model's documented range.");
+  const operation=String(shot.operation||"generate");
+  if(video.provider==="luma"&&caps&&!caps.operations.includes(operation))fail("operation","Operation is not supported by the selected Ray 3.2 adapter.");
+  else if(!["generate","edit","reframe","extend"].includes(operation))fail("operation","Select a supported generation, edit, reframe or extend operation.");
+  else pass("operation","Selected operation is supported by the provider adapter.");
+  if(!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>300)fail("duration","Duration must be a whole number between 1 and 300 seconds.");
+  else if(video.provider==="luma"&&operation==="reframe"&&(shot.durationSeconds<1||shot.durationSeconds>300))fail("duration","Reframe source duration must be 1–300 seconds.");
+  else if(video.provider==="luma"&&caps&&!caps.durationsSeconds.includes(shot.durationSeconds))fail("duration","Ray 3.2 generation, editing and extension support only 5- or 10-second outputs.");
+  else if(video.provider!=="luma"&&shot.durationSeconds>30)fail("duration","Shot duration exceeds the selected model's 30-second preflight limit.");
+  else if(video.provider!=="luma"&&caps&&(!Number.isFinite(caps.minDurationSeconds)||!Number.isFinite(caps.maxDurationSeconds)||shot.durationSeconds<caps.minDurationSeconds||shot.durationSeconds>caps.maxDurationSeconds))fail("duration","Duration is outside the selected model's documented range.");
   else pass("duration","Duration is within the model's supported range.");
   const ratio=String(shot.aspectRatio||"");
   if(!ratio)fail("aspect_ratio","Select an explicit aspect ratio.");
@@ -104,9 +113,11 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
   const priced=[];
   try{
    for(const shot of shots){
+    const lumaOperation={generate:"video",edit:"video_edit",reframe:"video_reframe",extend:"video_extend"}[shot.operation||"generate"];
     const estimate=estimateVideoGenerationCost({
-     provider:"luma",model:shot.model,operation:shot.operation||"video",
-     durationSeconds:shot.durationSeconds,resolution:shot.resolution||"720p"
+     provider:"luma",model:shot.model,operation:lumaOperation,
+     durationSeconds:shot.durationSeconds,resolution:shot.resolution||"720p",
+     hdr:shot.hdr===true,exrExport:shot.exrExport===true
     });
     const amount=Number((estimate.credits*Number(rateText)).toFixed(6));
     if(!Number.isFinite(amount)||amount<0)throw new Error("Luma estimate is invalid.");
