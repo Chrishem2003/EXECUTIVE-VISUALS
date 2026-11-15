@@ -38,7 +38,7 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    throw fail("Luma quote could not be converted using the configured account rate.","VIDEO_WORKFLOW_QUOTE_INVALID");
   return Object.freeze({
    provider:"luma",model:"ray-3.2",estimatedCredits:estimate.credits,estimatedUsd,
-   currency:"USD",billable:false,configId:"ray-3.2",
+   currency:"USD",billable:false,configId:"luma-ray32",
    pricingSource:"luma_ray32_published_credits_contract_rate",pricingUrl:estimate.pricingSource,pricingDate:estimate.pricingDate,
    pricingFormula:estimate.pricingFormula,creditToUsdRate:rateText,
    pricingStatus:estimate.pricingStatus
