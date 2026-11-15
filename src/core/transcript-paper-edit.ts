@@ -3,7 +3,7 @@ import {
  type EditorialTimeline, type TimelineClip
 } from "./timeline.ts";
 
-export interface TranscriptCue { index:number; start:number; end:number; text:string }
+export interface TranscriptCue { index:number; start:number; end:number; text:string; speaker?:string }
 const MAX_BYTES=2*1024*1024;
 const MAX_CUES=5000;
 function parseTimestamp(value:string):number|null{
@@ -27,9 +27,12 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
   const start=match?parseTimestamp(match[1]):null,end=match?parseTimestamp(match[2]):null;
   i++;const body:string[]=[];
   while(i<lines.length&&lines[i].trim()){body.push(lines[i]);i++;}
-  const cueText=body.join(" ").replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
+  const rawBody=body.join(" ");
+  const voice=rawBody.match(/<v(?:\\s+([^>]+))?>/i);
+  const speaker=voice?.[1]?.trim().replace(/\\s+/g," ").slice(0,100);
+  const cueText=rawBody.replace(/<v(?:\\s+[^>]*)?>/gi,"").replace(/<\\/v>/gi,"").replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
   if(start===null||end===null||end<=start||!cueText)throw new Error("Transcript cue "+(cues.length+1)+" has invalid timing or empty text.");
-  cues.push({index:cues.length,start,end,text:cueText});
+  cues.push({index:cues.length,start,end,text:cueText,...(speaker?{speaker}:{})});
   if(cues.length>MAX_CUES)throw new Error("Transcript exceeds the 5,000 cue limit.");
  }
  if(!cues.length)throw new Error("Transcript contains no usable cues.");
