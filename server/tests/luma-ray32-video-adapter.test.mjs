@@ -143,7 +143,7 @@ test("Luma Ray 3.2 supports governed video edit and reframe request shapes", asy
   });
   assert.equal(edited.type, "video_edit");
   assert.deepEqual(edited.source, { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" });
-  assert.deepEqual(edited.video.edit, { auto_controls: true, strength: "adhere_2" });
+  assert.deepEqual(edited.video.edit, { strength: "adhere_2" });
   const reframed = await adapter.prepareInput({
     operation: "reframe", prompt: "Extend the environment naturally",
     sourceVideo: { file_id: "file_video_123" }, aspectRatio: "9:16", resolution: "720p"
