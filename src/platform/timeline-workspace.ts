@@ -1559,6 +1559,23 @@ document.addEventListener("keydown",event=>{
   }
   return;
  }
+ const motionKeyframe=target.closest<HTMLElement>("[data-tl-motion-keyframe]");
+ if(motionKeyframe&&state.timeline){
+  const track=state.timeline.tracks.find(item=>item.id===motionKeyframe.dataset.track),clip=track?.clips.find(item=>item.id===motionKeyframe.dataset.clip),form=document.querySelector<HTMLFormElement>("#tl-clip-inspector");
+  if(track?.kind==="overlay"&&clip&&form){
+   const localTime=state.playheadFrame/fps()-clip.timelineStart.value/clip.timelineStart.rate,duration=clip.duration.value/clip.duration.rate;
+   if(localTime<0||localTime>duration){alert("Move the playhead inside the selected overlay clip before adding a transform keyframe.");return;}
+   const values=new FormData(form),point:MotionKeyframe={timeSeconds:Number(localTime.toFixed(4)),x:Number(values.get("x"))||0,y:Number(values.get("y"))||0,width:Math.max(16,Number(values.get("width"))||16),height:Math.max(16,Number(values.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(values.get("opacity")??1))),rotation:Number(values.get("rotation"))||0,interpolation:"linear"};
+   try{
+    const previous=normalizeMotionKeyframes((clip.metadata?.motionKeyframes as MotionKeyframe[]|undefined),duration),existing=previous.findIndex(item=>Math.abs(item.timeSeconds-point.timeSeconds)<0.0005);
+    if(existing>=0)previous[existing]=point;else previous.push(point);
+    const next=normalizeMotionKeyframes(previous,duration);
+    recordUndo();clip.metadata={...clip.metadata,motionKeyframes:next};commitUndo("Add transform keyframe");state.selectedTrack=track.id;state.selectedClipId=clip.id;state.message="Saving transform keyframe…";
+    void persist().then(()=>{state.message="Transform keyframe saved. Preview and cloud render use the same linear interpolation.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not save transform keyframe.";paint();});
+   }catch(error){alert(error instanceof Error?error.message:"Transform keyframe is invalid.");}
+  }
+  return;
+ }
  const keyframe=target.closest<HTMLElement>("[data-tl-audio-keyframe]");
  if(keyframe&&state.timeline){
   const track=state.timeline.tracks.find(item=>item.id===keyframe.dataset.track),clip=track?.clips.find(item=>item.id===keyframe.dataset.clip),form=document.querySelector<HTMLFormElement>("#tl-clip-inspector");
