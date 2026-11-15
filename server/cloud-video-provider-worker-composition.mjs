@@ -230,7 +230,9 @@ export function createProviderAwareCloudVideoWorkerComposition({
         });
         const lumaFileService = providerDependencies.lumaFileService || createLumaProviderFileService({
           assets: privateAssets.assets, adapter: lumaClient, repository: lumaFileRepository,
-          fetchImpl, timeoutMs: Math.min(timeoutMs, 30000), maxBytes: maxBytesPerOutput
+          fetchImpl, timeoutMs: Math.min(timeoutMs, 30000), maxBytes: maxBytesPerOutput,
+          supabaseUrl: url, storageProvider: env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+          r2AccountId: env.R2_ACCOUNT_ID, r2Bucket: env.R2_BUCKET || "executive-visuals-media"
         });
         lumaPrepareInput = lumaFileService.resolveInput;
       }
