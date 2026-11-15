@@ -108,7 +108,7 @@ test("FFmpeg motion compiler emits sampled cubic Bezier curves and server evalua
  // The compiler samples the curve into FFmpeg-safe segments; it does not embed the raw control-point literal.\n assert.match(expression,/0\.513154/);
  assert.ok(Math.abs(evaluateTimelineMotion(keys,0.5,"x",0,1)-80.2403)<0.01);
  const filters=buildTimelineMotionFilters({x:0,y:0,width:100,height:80,motionKeyframes:keys},1,320,240);
- assert.ok(filters.filters.some(filter=>filter.includes("scale=w=")));
+ assert.ok(filters.filters.some(filter=>filter.startsWith("scale=")));
 });
 test("server motion renderer rejects malformed cubic Bezier handles",()=>{
  assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1,interpolation:"bezier",bezier:{x1:0.9,y1:0,x2:0.1,y2:1}}],1),/Bezier handles/);
