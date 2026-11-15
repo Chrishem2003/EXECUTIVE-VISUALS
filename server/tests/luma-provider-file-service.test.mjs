@@ -96,3 +96,20 @@ test("generation input resolver rejects caller-supplied provider file IDs",async
  const f=fixture();
  await assert.rejects(f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"edit",sourceVideo:{file_id:fileId}},{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_UNSCOPED_REFERENCE");
 });
+
+test("generation input resolver maps multiple private keyframe assets and preserves frame indexes",async()=>{
+ const f=fixture();
+ const resolved=await f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",prompt:"animate",
+  keyframeAssetIds:[assetId],keyframeIndexes:[0]
+ },{job:{owner_id:ownerId,project_id:projectId}});
+ assert.deepEqual(resolved.keyframes,[{file_id:fileId}]);
+ assert.deepEqual(resolved.keyframeIndexes,[0]);
+});
+
+test("generation input resolver rejects unsupported generic reference asset lists",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",prompt:"animate",referenceAssetIds:[assetId]
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_REFERENCE_MODE_UNSUPPORTED");
+});
