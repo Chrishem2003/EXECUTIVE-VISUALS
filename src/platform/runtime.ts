@@ -443,6 +443,14 @@ export function renderVideoModelOptions(){
  });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
+export function renderVideoAspectRatioOptions(){
+ const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
+ const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
+  .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
+   (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
+ if(selected?.provider.provider==="luma")return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9</option>';
+ return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option>';
+}
 export function renderVideoResolutionOptions(){
  const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
  const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
