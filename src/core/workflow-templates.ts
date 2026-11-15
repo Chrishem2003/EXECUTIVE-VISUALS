@@ -64,7 +64,7 @@ export function createVideoCaptionLocalizationWorkflow({id,projectId=""}:{id:str
   node("transcribe-audio","voice.transcribe","Transcribe source audio",[
    port("audio","audio",true),port("approval","any")
   ],[
-   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),
+   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("words","structured-data"),
    port("sourceAudio","audio"),port("language","text")
   ],{x:40,y:360}),
   node("review-transcript","approval","Review transcript and approve translation",[
