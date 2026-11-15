@@ -2,8 +2,16 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Last reviewed:** 15 November 2026.  
-**Current main:** `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1` (private GCS mirror code integration).  
-**Current production deployment:** `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1` (live on Render; GCS feature flags remain off).
+**Current main:** `d55c6e3b854a84fea8b793f41f6635746a161f3e` (PR #602: Google Auth runtime dependency and lockfile).  
+**Current production deployment:** `d55c6e3b854a84fea8b793f41f6635746a161f3e` (live on Render; GCS feature flags remain off).
+
+## Mainline checkpoint — 15 November 2026
+
+- PR #602 is merged as commit `d55c6e3b854a84fea8b793f41f6635746a161f3e`. It declares `google-auth-library@11.3.3` in `package.json` and the lockfile. The merged mainline Quality, Release Integration, Billing self-service, Google Drive recovery, Financial intelligence and Remediation workflows all passed.
+- Render deployment `dep-dbsl5cs9v7es73c1rpmg` is live on that exact commit. This confirms the runtime dependency is present in the deployed build; it does not activate GCS or certify durable customer storage.
+- The Google Omni worker composition, owner/project-scoped interaction repository, private output ingestion, worker dependency checks and dedicated tests are already present on current main. The old draft PR #72 is based on a heavily diverged branch and must not be merged as a substitute for the current composition.
+- The remaining production blockers are unchanged: isolated Executive Visuals identity/database, durable private media storage, live storage acceptance, independently operated durable workers, provider credentials and billing controls, subscription sandbox acceptance, and backup/restore evidence.
+- The application entry bundle remains oversized (the last recorded build was 784.39 kB JavaScript). Treat code splitting as a separate performance milestone, not a release gate substitute.
 
 ## Verified deployment
 
@@ -34,7 +42,7 @@
 - PR [#600](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/600) is merged into main. The focused extraction includes private GCS upload/read-back verification, SHA-256/CRC32C checks, encrypted resumable-upload attempts, owner/project-scoped source records, WIF identity validation, authenticated/rate-limited API routes and a separately gated recovery maintenance task.
 - The complete GitHub Quality workflow passed: application build, all 24 quality/product jobs, focused GCS unit tests, and disposable PostgreSQL integration for both GCS migrations, CRC32C immutability, source scope and recovery-attempt state transitions.
 - This is a code integration and CI acceptance result, **not a real-cloud staging acceptance**. The GCS migrations were applied only to disposable CI PostgreSQL; they have not been applied to a connected Supabase environment. No real GCS bucket, IAM policy, WIF provider, or customer asset was touched.
-- The runtime dependency `google-auth-library` is not yet present in `package.json` / `package-lock.json`. Do not enable `GEMINI_GCS_MIRROR_ENABLED` or `GEMINI_GCS_MIRROR_RECOVERY_ENABLED` until that dependency is added with a committed lockfile and verified in the deployment build.
+- The runtime dependency `google-auth-library@11.3.3` is now declared and locked by PR #602, and the mainline Render build is live on that commit. This closes the missing-package blocker only. Do not enable `GEMINI_GCS_MIRROR_ENABLED` or `GEMINI_GCS_MIRROR_RECOVERY_ENABLED` until isolated database migrations, a private allowlisted GCS bucket, WIF identity/IAM, encryption key, and real-cloud upload/read-back/checksum/ownership/revocation/recovery acceptance are complete.
 - After dependency resolution, configure an isolated Executive Visuals PostgreSQL/Supabase schema, a private allowlisted GCS bucket, a dedicated Workload Identity Federation or attached Compute identity, the required service-agent IAM grants, and a unique 32-byte `GEMINI_GCS_SESSION_ENCRYPTION_KEY`. Run live upload/read-back, checksum, ownership, revocation and recovery acceptance before enabling either flag.
 - The GCS bootstrap rejects local user ADC and unapproved credential sources. Never use service-account key files or per-user Google Drive OAuth tokens as the GCS workload identity. Do not reuse the NEMA/shared Supabase projects or store secrets in source control.
 
