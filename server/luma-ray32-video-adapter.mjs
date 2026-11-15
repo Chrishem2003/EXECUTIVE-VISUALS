@@ -2,7 +2,7 @@ const BASE_URL = "https://agents.lumalabs.ai/v1";
 const fail = (message, code = "LUMA_VIDEO_ADAPTER_ERROR") => Object.assign(new Error(message), { code });
 const plain = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const allowedRatios = new Set(["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"]);
-const allowedResolutions = new Set(["540p", "720p", "1080p"]);
+const allowedResolutions = new Set(["360p", "540p", "720p", "1080p"]);
 
 function safeImageRef(value, label) {
   if (!plain(value)) throw fail(label + " must be a typed image reference.", "LUMA_VIDEO_INPUT_INVALID");
@@ -87,6 +87,20 @@ function validateInput(input) {
       } else {
         if (aspectRatio === undefined) throw fail("Luma video reframe requires a target aspectRatio.", "LUMA_VIDEO_INPUT_INVALID");
         payload.aspect_ratio = aspectRatio;
+        if (input.sourcePosition !== undefined) {
+          const position = input.sourcePosition;
+          if (!plain(position) ||
+              !Number.isFinite(position.x_norm) || position.x_norm < -2 || position.x_norm > 2 ||
+              !Number.isFinite(position.y_norm) || position.y_norm < -2 || position.y_norm > 2 ||
+              !Number.isFinite(position.w_norm) || position.w_norm <= 0 || position.w_norm > 2 ||
+              !Number.isFinite(position.h_norm) || position.h_norm <= 0 || position.h_norm > 2) {
+            throw fail("Luma sourcePosition requires normalized x/y coordinates in [-2,2] and positive width/height up to 2.", "LUMA_VIDEO_INPUT_INVALID");
+          }
+          payload.source_position = {
+            x_norm: position.x_norm, y_norm: position.y_norm,
+            w_norm: position.w_norm, h_norm: position.h_norm
+          };
+        }
       }
       return payload;
     }
