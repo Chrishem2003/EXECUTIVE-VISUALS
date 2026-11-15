@@ -34,7 +34,7 @@ type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number
 type CloudProject={id:string;name:string};
 type CloudReview={id:string;projectId:string;assetId:string|null;timelineId:string|null;timelineRevision:number|null;frameNumber:number|null;durationFrames:number|null;timecodeSeconds:number|null;body:string;decision:"comment"|"approve"|"request_changes";status:"open"|"resolved"|"dismissed";visibility:"project"|"internal";authorId:string;createdAt:string;updatedAt:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-type CloudRenderJob={id:string;status:string;progress?:number;input?:{timelineId?:string;timelineRevision?:number};output?:{outputAsset?:{id:string;name?:string}};error?:{code?:string;message?:string};cancel_requested_at?:string|null;created_at?:string};
+type CloudRenderJob={id:string;status:string;progress?:number;input?:{timelineId?:string;timelineRevision?:number};output?:{outputAsset?:{id:string;name?:string};render?:{audioMastering?:CloudAudioMasteringReceipt}};error?:{code?:string;message?:string};cancel_requested_at?:string|null;created_at?:string};
 type TimelineRevisionSummary={timelineId:string;revision:number;name:string;createdAt:string};
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
@@ -576,10 +576,14 @@ function renderCloudRenderOutput(){
 }
 function renderCloudRenderHistory(){
  if(state.mode!=="cloud"||!state.cloudRenderJobs.length)return "";
- return "<section id='cloud-render-history' class='panel timeline-quality'><div class='eyebrow'>DURABLE CLOUD RENDER HISTORY</div><h3>Recent master renders</h3><p id='cloud-render-refresh-status' class='muted' aria-live='polite'>"+esc(cloudRenderPollingStatus)+"</p>"+state.cloudRenderJobs.slice(0,10).map(job=>{
+ const queued=state.cloudRenderJobs.filter(job=>["queued","processing"].includes(job.status)).length,failed=state.cloudRenderJobs.filter(job=>["failed","blocked","cancelled"].includes(job.status)).length;
+ return "<section id='cloud-render-history' class='panel timeline-quality'><div class='eyebrow'>DURABLE CLOUD RENDER HISTORY</div><h3>Recent master renders</h3><p id='cloud-render-refresh-status' class='muted' aria-live='polite'>"+esc(cloudRenderPollingStatus)+"</p><p class='creative-plan-meta'><span>"+queued+" active or queued</span><span>"+failed+" failed / blocked / cancelled</span><span>Refresh every 5 seconds while open</span></p>"+state.cloudRenderJobs.slice(0,10).map(job=>{
   const revision=Number(job.input?.timelineRevision)||0,created=job.created_at?new Date(job.created_at).toLocaleString():"",status=job.cancel_requested_at?"cancellation requested":String(job.status||"unknown");
+  const ageMs=job.created_at?Date.now()-Date.parse(job.created_at):0,needsInspection=["queued","processing"].includes(job.status)&&Number.isFinite(ageMs)&&ageMs>10*60*1000;
+  const mastering=job.output?.render?.audioMastering,measurement=mastering?.measurement,qc=mastering?.qualityControl;
+  const masteringSummary=mastering?.applied?"<div class='timeline-quality-item info'><b>Audio mastering · "+esc(mastering.profile||"custom")+"</b><p>Measured "+esc(measurement?.integratedLoudness??"—")+" LUFS · LRA "+esc(measurement?.loudnessRange??"—")+" LU · true peak "+esc(measurement?.truePeak??"—")+" dBTP</p><span class='job-status'>"+(qc?.passed===true?"QC PASSED":qc?.passed===false?"QC NEEDS REVIEW":"QC UNKNOWN")+"</span></div>":"";
   const cancelButton=["queued","processing"].includes(job.status)&&!job.cancel_requested_at?"<button class='secondary' data-tl-cancel-job='"+esc(job.id)+"'>Cancel render</button>":"";
-  return "<article class='timeline-quality-item info'><b>Revision "+revision+"</b><span class='job-status'>"+esc(status)+"</span><p>"+esc(created)+(job.progress!==undefined?" · "+Math.round(Number(job.progress)||0)+"%":"")+"</p>"+(job.error?.message?"<small>"+esc(job.error.code||"RENDER_FAILED")+" · "+esc(job.error.message)+"</small>":"")+"<button class='secondary' data-tl-load-job='"+esc(job.id)+"'>Inspect render</button>"+cancelButton+"</article>";
+  return "<article class='timeline-quality-item info'><b>Revision "+revision+"</b><span class='job-status'>"+esc(status)+"</span><p>"+esc(created)+(job.progress!==undefined?" · "+Math.round(Number(job.progress)||0)+"%":"")+"</p>"+(needsInspection?"<small>Long-running job · inspect queue and worker health before submitting another render. This is an age warning, not proof of a stuck worker.</small>":"")+masteringSummary+(job.error?.message?"<small>"+esc(job.error.code||"RENDER_FAILED")+" · "+esc(job.error.message)+"</small>":"")+"<button class='secondary' data-tl-load-job='"+esc(job.id)+"'>Inspect render</button>"+cancelButton+"</article>";
  }).join("")+"</section>";
 }
 function currentStoryboardTimelinePlan():StoryboardTimelinePlan|null{
