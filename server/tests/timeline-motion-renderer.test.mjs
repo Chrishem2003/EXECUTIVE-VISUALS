@@ -52,10 +52,11 @@ test("FFmpeg compiler emits supported easing expressions for motion curves",()=>
 
 test("FFmpeg motion expressions support loop and ping-pong playback modes",()=>{
  const keys=[{timeSeconds:0,x:0},{timeSeconds:1,x:100}];
- const loop=buildTimelineMotionExpression(keys,"x",0,2,"t","loop"),pingPong=buildTimelineMotionExpression(keys,"x",0,2,"t","ping-pong");
+ const loop=buildTimelineMotionExpression(keys,"x",0,2,"t","loop"),pingPong=buildTimelineMotionExpression(keys,"x",0,2,"t","ping-pong"),compiled=buildTimelineMotionFilters({x:0,y:0,width:100,height:80,motionPlaybackMode:"ping-pong",motionKeyframes:keys},2,320,240);
  assert.match(loop,/mod\(/);
  assert.match(pingPong,/mod\(/);
  assert.match(pingPong,/abs\(/);
+ assert.ok(compiled.filters.some(filter=>filter.includes("mod(")));
  assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"loop"),25);
  assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"ping-pong"),75);
 });
