@@ -110,7 +110,7 @@ const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"read
  capabilities:["video.generate"],
  modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["360p","540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],operations:["generate","edit","reframe","extend"]},
  availableModels:[{id:"ray-3.2",label:"Luma Ray 3.2",readiness:"ready",available:true,executionVerified:true,
-  minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],
+  minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["360p","540p","720p","1080p"],
   referenceImages:true,maxReferenceImages:1,audioModes:["none"]}]};
 const lumaShot={id:"luma-shot-01",provider:"luma",model:"ray-3.2",prompt:"A cinematic portrait of a city at sunrise.",
  durationSeconds:5,aspectRatio:"9:16",resolution:"720p",audioMode:"none",referenceImageCount:1,rightsConfirmed:true};
