@@ -325,6 +325,21 @@ test("builds immutable Luma multi-keyframe workflow inputs with rights and order
  assert.match(request.requestHash,/^[a-f0-9]{64}$/);
  assert.equal(Object.isFrozen(request.input.keyframeAssetIds),true);
 });
+test("Luma five-second workflow supports private first and last frame anchors",()=>{
+ const request=createVideoWorkflowCloudRequest({node:{kind:"video.generate",config:{
+  provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",
+  rightsConfirmed:true,startFrameAssetId:"frame-first",endFrameAssetId:"frame-last"
+ }},projectId:"project-1",requestId:"luma-first-last-1",values:{prompt:"Move from the opening frame to the final composition"}});
+ assert.equal(request.input.startFrameAssetId,"frame-first");
+ assert.equal(request.input.endFrameAssetId,"frame-last");
+ assert.equal(request.input.rightsConfirmed,true);
+});
+test("Luma ten-second workflow requires multi-keyframe mode instead of first/last anchors",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({node:{kind:"video.generate",config:{
+  provider:"luma",model:"ray-3.2",durationSeconds:10,resolution:"720p",aspectRatio:"16:9",
+  rightsConfirmed:true,startFrameAssetId:"frame-first",endFrameAssetId:"frame-last"
+ }},projectId:"project-1",requestId:"luma-first-last-10",values:{prompt:"A scene"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
 test("Luma multi-keyframe workflow rejects mismatched, unordered, duplicate and unlicensed frames",()=>{
  const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,rightsConfirmed:true,keyframeAssetIds:["a","b"],keyframeIndexes:[0,24]}},projectId:"project-1",requestId:"luma-invalid-frames",values:{prompt:"A scene"}};
  assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,keyframeIndexes:[0]}}}),/matching output-frame index/);
