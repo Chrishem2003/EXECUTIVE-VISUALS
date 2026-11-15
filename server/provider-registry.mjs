@@ -29,7 +29,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
  video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
- const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+ const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";
  const luma=gatewayState({
   enabled:env.LUMA_VIDEO_ENABLED==="true",
