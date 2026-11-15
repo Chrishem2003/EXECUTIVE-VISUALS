@@ -1,4 +1,5 @@
 import { normalizeAudioAutomation, type AudioAutomationPoint } from "./audio-automation.ts";
+import { normalizeMotionKeyframes, type MotionKeyframe } from "./timeline-motion.ts";
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
@@ -352,6 +353,8 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
       if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
       if(clip.audioAutomation!==undefined){try{const points=normalizeAudioAutomation(clip.audioAutomation);if(points.some(point=>point.timeSeconds>duration))throw new Error("Audio automation keyframes must fall inside the clip duration.");}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
+      const motionKeyframes=(clip.metadata as Record<string,unknown>|undefined)?.motionKeyframes as MotionKeyframe[]|undefined;
+      if(motionKeyframes!==undefined){try{if(track.kind!=="overlay")throw new Error("Transform keyframes are currently supported on image overlay clips.");normalizeMotionKeyframes(motionKeyframes,duration);}catch(error){issues.push({code:"invalid_motion_keyframes",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Motion keyframes are invalid."});}}
       const previousEnabled=enabledClips.filter(item=>seconds(item.timelineStart)<start).at(-1);
       const previousFadeFrames=Number(previousEnabled?.transitionToNext?.fadeFrames)||0;
       const allowedAudioCrossfade=track.kind==="audio"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-(seconds(previousEnabled.timelineStart)+seconds(previousEnabled.duration)-previousFadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator)))<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
