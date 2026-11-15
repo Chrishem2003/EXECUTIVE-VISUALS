@@ -1,8 +1,15 @@
 # Executive Visuals — implementation status
 
 **Updated:** 15 November 2026  
-**Branch:** `main` (latest main is `d55c6e3b854a84fea8b793f41f6635746a161f3e`; PR #602 is merged; Render deployment `dep-dbsl5cs9v7es73c1rpmg` is live; isolated D1 staging remains separate from production)
+**Branch:** `main` (latest main is `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`; PR #604 is merged; Render deployment `dep-dbsld3mq1p3s73euq2o0` is live; isolated D1 staging remains separate from production)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
+
+## Mainline delta — 15 November 2026 (latest)
+
+- **R2 asset contract guard — PR #604:** merged as `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`. The cloud asset service now rejects a custom R2 bucket because the current metadata, publication and cleanup contracts pin the canonical bucket to `executive-visuals-media`. Regression tests cover canonical selection, empty-value fallback and rejection of custom buckets. This is a safety guard, not R2 activation.
+- **Verification:** exact-main Quality checks passed (24/24 jobs); Release Integration, Google Drive export recovery, asset-publication PostgreSQL and cloud-video PostgreSQL checks passed. Render deployment `dep-dbsld3mq1p3s73euq2o0` is live on the merged commit.
+- **Runway Model Router workflow:** current main already has non-billable provider preflight, immutable workflow quote persistence, explicit project-owner approval, atomic `approve_and_enqueue_video_workflow` budget reservation/job creation, workflow-canvas approval controls and generated-video timeline handoff. Historical PR #67 was closed as superseded; its separate Runway-only approval ledger must not be merged over the generic current-main workflow.
+- **Release posture:** public release remains NOT APPROVED. Render production still uses local SQLite/ephemeral disk; R2 and the private GCS mirror remain inactive; hosted identity, isolated production metadata, independently operated worker, provider credentials, payment acceptance and backup/restore evidence remain release blockers.
 
 ## Mainline delta — 13 November 2026
 
