@@ -219,6 +219,9 @@ export function createProviderAwareCloudVideoWorkerComposition({
         fetchImpl: providerFetch,
         timeoutMs: Math.min(timeoutMs, 30000)
       });
+      if (!lumaClient || typeof lumaClient.prepareInput !== "function" || typeof lumaClient.submit !== "function" || typeof lumaClient.getStatus !== "function") {
+        throw Object.assign(new Error("Luma registration requires a compatible Ray 3.2 client."), { code: "LUMA_VIDEO_CLIENT_INVALID" });
+      }
       const model = "ray-3.2";
       const assertLumaEnabled = () => {
         if (providerEnv.VIDEO_GATEWAY_ENABLED !== "true" || providerEnv.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
