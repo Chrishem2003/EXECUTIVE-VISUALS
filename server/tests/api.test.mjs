@@ -896,11 +896,21 @@ test("batch video finishing API authenticates, scopes sources, queues FFmpeg job
   const retryReplay=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:retryHeaders},owner);
   assert.equal(retryReplay.status,200);
   assert.equal((await retryReplay.json()).idempotentReplay,true);
+  const duplicateWhileQueued=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-duplicate-001"}},owner);
+  assert.equal(duplicateWhileQueued.status,409);
+  assert.equal((await duplicateWhileQueued.json()).error.code,"JOB_RETRY_ALREADY_ACTIVE");
+  let lastRetryId=retryBody.job.id;
   for(let attempt=2;attempt<=5;attempt++){
+    const failRetryDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+    try{const stamp=new Date().toISOString();failRetryDb.prepare("UPDATE jobs SET status='failed',updated_at=?,completed_at=? WHERE id=?").run(stamp,stamp,lastRetryId);}finally{failRetryDb.close();}
     const additional=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-"+String(attempt).padStart(3,"0")}},owner);
     assert.equal(additional.status,202,await additional.clone().text());
-    assert.equal((await additional.json()).job.input.retrySequence,attempt);
+    const additionalBody=await additional.json();
+    assert.equal(additionalBody.job.input.retrySequence,attempt);
+    lastRetryId=additionalBody.job.id;
   }
+  const failLastRetryDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{const stamp=new Date().toISOString();failLastRetryDb.prepare("UPDATE jobs SET status='failed',updated_at=?,completed_at=? WHERE id=?").run(stamp,stamp,lastRetryId);}finally{failLastRetryDb.close();}
   const retryLimit=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-006"}},owner);
   assert.equal(retryLimit.status,409);
   assert.equal((await retryLimit.json()).error.code,"JOB_RETRY_LIMIT");
