@@ -572,7 +572,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
-    if(streams.some(stream=>["video","audio"].includes(stream.codec_type)))metadata.qualityReport=buildMediaQualityReport(metadata,{requireVideo:streams.some(stream=>stream.codec_type==="video")});
+    const sourceIsVideo=source.media_type.startsWith("video/"),sourceIsAudio=source.media_type.startsWith("audio/");
+    if(sourceIsVideo||sourceIsAudio)metadata.qualityReport=buildMediaQualityReport(metadata,{requireVideo:sourceIsVideo,requireAudio:sourceIsAudio});
     return { metadata, outputAsset:null };
   }
 
