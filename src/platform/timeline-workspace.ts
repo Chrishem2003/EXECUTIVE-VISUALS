@@ -936,13 +936,14 @@ async function runAction(action:HTMLElement){
       const unavailable=analysis?.unavailable?.map(item=>item.check||item.reason).filter(Boolean).join(", ");
       state.message=unavailable?"Scene analysis unavailable: "+unavailable+". No markers were inserted.":"The worker returned no scene-analysis evidence. No markers were inserted.";
      }else{
+      if(clip.speedCurve?.length){state.message="Scene markers are not auto-mapped for variable-speed clips yet. Analyze a constant-speed source clip to avoid inaccurate timecodes.";state.mediaJobId="";state.mediaJobType="";state.mediaClipId="";paint();return;}
       const sourceRate=Number(clip.sourceRange.start.rate);
       const sourceStartSeconds=Number(clip.sourceRange.start.value)/sourceRate;
       const sourceDurationSeconds=Number(clip.sourceRange.duration.value)/Number(clip.sourceRange.duration.rate);
       const frames=mapSceneChangesToTimelineFrames({
        sceneChanges:cuts,sourceStartSeconds,sourceDurationSeconds,
        timelineStartFrame:clip.timelineStart.value,timelineDurationFrames:clip.duration.value,
-       timelineFps:fps(),existingMarkerFrames:state.timeline?.markers.map(marker=>marker.start.value)||[]
+       timelineFps:fps(),playbackSpeed:Number(clip.speed||1),existingMarkerFrames:state.timeline?.markers.map(marker=>marker.start.value)||[]
       });
       if(frames.length){
        recordUndo();
