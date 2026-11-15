@@ -201,3 +201,32 @@ test("trimming the outgoing edge removes a transition whose adjacency would be b
  const trimmed=trimClip(timeline,"video","outgoing",0,1);
  assert.equal(trimmed.tracks[0].clips.find(item=>item.id==="outgoing").transitionToNext,undefined);
 });
+
+
+test("video crossfade preview composites outgoing and incoming clips with matching opacity ramps",()=>{
+ const timeline=transitionFixture();
+ timeline.tracks[0].clips[0].transitionToNext={type:"crossfade",fadeFrames:6};
+ timeline.tracks[0].clips[1].timelineStart=rational(18,24);
+ assert.equal(validateTimeline(timeline).valid,true);
+ const start=getTimelinePlaybackFrame(timeline,0.75).activeVideo;
+ const midpoint=getTimelinePlaybackFrame(timeline,0.875).activeVideo;
+ const end=getTimelinePlaybackFrame(timeline,0.999).activeVideo;
+ const after=getTimelinePlaybackFrame(timeline,1).activeVideo;
+ assert.equal(start.length,2);
+ assert.ok(Math.abs(start.find(item=>item.clipId==="outgoing").opacity-1)<0.001);
+ assert.ok(Math.abs(start.find(item=>item.clipId==="incoming").opacity)<0.001);
+ assert.ok(Math.abs(midpoint.find(item=>item.clipId==="outgoing").opacity-0.5)<0.001);
+ assert.ok(Math.abs(midpoint.find(item=>item.clipId==="incoming").opacity-0.5)<0.001);
+ assert.ok(end.find(item=>item.clipId==="outgoing").opacity<0.01);
+ assert.ok(end.find(item=>item.clipId==="incoming").opacity>0.99);
+ assert.equal(after.length,1);
+ assert.equal(after[0].clipId,"incoming");
+ assert.equal(after[0].opacity,1);
+});
+
+test("video crossfade overlap must match the configured frame duration",()=>{
+ const timeline=transitionFixture();
+ timeline.tracks[0].clips[0].transitionToNext={type:"crossfade",fadeFrames:6};
+ timeline.tracks[0].clips[1].timelineStart=rational(20,24);
+ assert.ok(validateTimeline(timeline).issues.some(issue=>issue.code==="crossfade_overlap_mismatch"));
+});
