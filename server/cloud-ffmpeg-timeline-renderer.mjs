@@ -339,8 +339,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
    const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index,motion=buildTimelineMotionFilters({x,y,width:ow,height:oh,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
    if(motion){
-    const scale=motion.filters[0].startsWith("scale=")?motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease") :motion.filters[0];
-    videoEffects.push(`[${item.inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
+    videoEffects.push(`[${item.inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
     videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    }else{
     const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
