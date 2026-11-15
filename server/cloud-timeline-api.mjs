@@ -33,7 +33,7 @@ function cloudVideoWorkerLaunchConfigured(env={}) {
   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
-  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&lumaPrivateStorageReady&&
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  return common&&(runwayReady||lumaReady);
 }
@@ -85,6 +85,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    : null
  );
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
+ const lumaPrivateStorageReady=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()!=="r2"||
+  Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY);
  const lumaQuoteReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
   env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
