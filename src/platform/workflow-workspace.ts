@@ -87,6 +87,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
  const videoAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("video/"));
+ const imageAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("image/"));
+ const selectedKeyframes=new Set(Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.map(String):[]);
  const selectedSource=String(config.sourceVideoAssetId||"");
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
  '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
@@ -99,7 +101,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
  '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
- '<label>Private keyframe asset IDs · Generate only<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
+ '<label>Choose keyframe images from this project · select in timeline order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
  '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
@@ -323,7 +326,7 @@ document.addEventListener("submit",event=>{
  if(provider==="luma")config.operation=operation;else delete config.operation;
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
- const assetText=String(data.get("keyframeAssetIds")||"").trim(),indexText=String(data.get("keyframeIndexes")||"").trim();
+ const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);\n const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
  if(operation==="generate"){
   if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
   if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId||assetText||indexText))throw new Error("Private frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
