@@ -23,15 +23,11 @@ function number(value){return Number(value.toFixed(6)).toString();}
 export function buildTimelineMotionExpression(points,property,fallback,durationSeconds,timeVariable="t"){
  const keys=normalizeTimelineMotion(points,durationSeconds).filter(point=>point[property]!==undefined);
  if(!keys.length)return number(fallback);
- let expression=number(keys[keys.length-1][property]);
- for(let i=keys.length-1;i>=1;i--){
-  const left=keys[i-1],right=keys[i],start=left.timeSeconds,end=right.timeSeconds,from=left[property],to=right[property];
-  const r="("+timeVariable+"-"+number(start)+")/"+number(end-start),eased=right.interpolation==="step"?"0":right.interpolation==="ease-in"?"pow("+r+"\\,3)":right.interpolation==="ease-out"?"1-pow(1-"+r+"\\,3)":right.interpolation==="ease-in-out"?"if(lt("+r+"\\,0.5)\\,4*pow("+r+"\\,3)\\,1-pow(-2*"+r+"+2\\,3)/2)":r;const value=right.interpolation==="step"?number(from):number(from)+"+("+number(to-from)+")*("+eased+")";
-  expression="if(lt("+timeVariable+"\\,"+number(end)+")\\,"+value+"\\,"+expression+")";
- }
+ const ratio=(mode,raw,time)=>{const u="clip("+raw+"\\,0\\,1)";if(mode==="step")return "gte("+timeVariable+"\\,"+number(time)+")";if(mode==="ease-in")return "("+u+")*("+u+")*("+u+")";if(mode==="ease-out")return "1-(1-("+u+"))*(1-("+u+"))*(1-("+u+"))";if(mode==="ease-in-out")return "("+u+")*("+u+")*(3-2*("+u+"))";return u;};
  const first=keys[0];
- if(first.timeSeconds>0){const r="("+timeVariable+")/"+number(first.timeSeconds),eased=first.interpolation==="step"?"0":first.interpolation==="ease-in"?"pow("+r+"\\,3)":first.interpolation==="ease-out"?"1-pow(1-"+r+"\\,3)":first.interpolation==="ease-in-out"?"if(lt("+r+"\\,0.5)\\,4*pow("+r+"\\,3)\\,1-pow(-2*"+r+"+2\\,3)/2)":r;const value=first.interpolation==="step"?number(fallback):number(fallback)+"+("+number(first[property]-fallback)+")*("+eased+")";expression="if(lt("+timeVariable+"\\,"+number(first.timeSeconds)+")\\,"+value+"\\,"+expression+")";}
- else expression="if(lt("+timeVariable+"\\,0)\\,"+number(first[property])+"\\,"+expression+")";
+ let expression=number(first[property]);
+ if(first.timeSeconds>0){const raw=timeVariable+"/"+number(first.timeSeconds);expression=number(fallback)+"+("+number(first[property]-fallback)+")*("+ratio(first.interpolation,raw,first.timeSeconds)+")";}
+ for(let i=1;i<keys.length;i++){const left=keys[i-1],right=keys[i],raw="("+timeVariable+"-"+number(left.timeSeconds)+")/"+number(right.timeSeconds-left.timeSeconds);expression+="+("+number(right[property]-left[property])+")*("+ratio(right.interpolation,raw,right.timeSeconds)+")";}
  return expression;
 }
 export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWidth=1920,canvasHeight=1080){
@@ -45,10 +41,15 @@ export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWid
  const opacity=animated.opacity?expression("opacity","T"):""+number(base.opacity),rotated=animated.rotation||base.rotation!==0;
  const maxWidth=Math.max(base.width,...points.map(point=>point.width??base.width)),maxHeight=Math.max(base.height,...points.map(point=>point.height??base.height));
  const rotationCanvas=rotated?Math.min(16384,Math.ceil(Math.hypot(maxWidth,maxHeight))):0;
- const scale=animated.width||animated.height?"scale=w='"+widthExpression+"':h='"+heightExpression+"':eval=frame:force_original_aspect_ratio=decrease":"scale="+Math.round(base.width)+":"+Math.round(base.height)+":force_original_aspect_ratio=decrease";
- const rotate=rotated?"rotate=angle='("+expression("rotation")+")*PI/180':ow="+rotationCanvas+":oh="+rotationCanvas+":c=none":null;
  const alpha=animated.opacity?"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*("+opacity+")'":"colorchannelmixer=aa="+number(base.opacity);
- const overlayX=rotated?"("+x+")+(("+widthExpression+")-"+rotationCanvas+")/2":x,overlayY=rotated?"("+y+")+(("+heightExpression+")-"+rotationCanvas+")/2":y;
- const filters=[scale,"format=rgba",...(rotate?[rotate]:[]),alpha];
- return {filters,overlay:"overlay=x='"+overlayX+"':y='"+overlayY+"':eval=frame:eof_action=pass",animated};
+ const filters=[];
+ if(rotated){
+  const rotatedWidth="("+rotationCanvas+")*("+widthExpression+")/"+number(maxWidth),rotatedHeight="("+rotationCanvas+")*("+heightExpression+")/"+number(maxHeight);
+  filters.push("scale="+Math.round(maxWidth)+":"+Math.round(maxHeight)+":force_original_aspect_ratio=decrease","format=rgba","pad="+Math.round(maxWidth)+":"+Math.round(maxHeight)+":(ow-iw)/2:(oh-ih)/2:color=black@0",alpha,"rotate=angle='("+expression("rotation")+")*PI/180':ow="+rotationCanvas+":oh="+rotationCanvas+":c=none","scale=w='"+rotatedWidth+"':h='"+rotatedHeight+"':eval=frame");
+  const overlayX="("+x+")+(("+widthExpression+")-("+rotatedWidth+"))/2",overlayY="("+y+")+(("+heightExpression+")-("+rotatedHeight+"))/2";
+  return {filters,overlay:"overlay=x='"+overlayX+"':y='"+overlayY+"':eval=frame:eof_action=pass",animated};
+ }
+ const scale=animated.width||animated.height?"scale=w='"+widthExpression+"':h='"+heightExpression+"':eval=frame:force_original_aspect_ratio=decrease":"scale="+Math.round(base.width)+":"+Math.round(base.height)+":force_original_aspect_ratio=decrease";
+ filters.push("format=rgba",alpha,scale);
+ return {filters,overlay:"overlay=x='"+x+"':y='"+y+"':eval=frame:eof_action=pass",animated};
 }
