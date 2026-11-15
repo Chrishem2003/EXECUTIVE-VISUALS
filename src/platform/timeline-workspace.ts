@@ -1389,7 +1389,6 @@ document.addEventListener("click",event=>{
   }
   return;
  }
- const target=event.target as HTMLElement;
  const loadJob=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-load-job]");
  if(loadJob){const job=state.cloudRenderJobs.find(item=>item.id===loadJob.dataset.tlLoadJob);if(job){state.cloudRenderJobId=job.id;state.cloudRenderJobStatus=job.status;const outputAsset=job.output?.outputAsset;if(job.status==="succeeded"&&outputAsset?.id){state.cloudRenderOutputAssetId=outputAsset.id;state.cloudRenderOutputName=outputAsset.name||"Verified cloud master";state.cloudRenderOutputUrl="";state.message="Selected verified render from revision "+Number(job.input?.timelineRevision||0)+".";}else{state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";state.message="Selected render job · "+job.status+(job.error?.message?": "+job.error.message:"");}paint();}return;}
  
