@@ -39,6 +39,31 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
  return cues.sort((a,b)=>a.start-b.start||a.index-b.index);
 }
 
+export interface TranscriptTextFlag {
+ cueIndex:number;
+ kind:"filler"|"repetition";
+ token:string;
+ occurrences:number;
+}
+const FILLER_WORDS=/\b(?:um+|uh+|erm+|er+|ah+|hmm+)\b/gi;
+export function analyzeTranscriptText(cues:TranscriptCue[]):TranscriptTextFlag[]{
+ const flags:TranscriptTextFlag[]=[];
+ for(const cue of cues){
+  const counts=new Map<string,number>();
+  for(const match of cue.text.matchAll(FILLER_WORDS)){
+   const token=match[0].toLocaleLowerCase();
+   counts.set(token,(counts.get(token)||0)+1);
+  }
+  for(const [token,occurrences] of counts)flags.push({cueIndex:cue.index,kind:"filler",token,occurrences});
+  const repeated=/\b([\p{L}']{2,})[\s,]+\1\b/giu;
+  for(const match of cue.text.matchAll(repeated)){
+   const token=match[1].toLocaleLowerCase();
+   flags.push({cueIndex:cue.index,kind:"repetition",token,occurrences:1});
+  }
+ }
+ return flags.sort((a,b)=>a.cueIndex-b.cueIndex||a.kind.localeCompare(b.kind)||a.token.localeCompare(b.token));
+}
+
 export interface TranscriptPause { start:number; end:number; duration:number; afterCueIndex:number; beforeCueIndex:number }
 export function analyzeTranscriptPauses(cues:TranscriptCue[],minimumDuration=0.75):TranscriptPause[]{
  if(!Number.isFinite(minimumDuration)||minimumDuration<0.1||minimumDuration>30)throw new Error("Pause threshold must be between 0.1 and 30 seconds.");

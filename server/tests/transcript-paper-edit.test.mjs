@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {addClip,addTrack,createGeneratedVideoClip,createTimeline} from "../../src/core/timeline.ts";
-import {analyzeTranscriptPauses,createTranscriptPaperEditTrack,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
+import {analyzeTranscriptPauses,analyzeTranscriptText,createTranscriptPaperEditTrack,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
 
 const vtt=`WEBVTT
 
@@ -35,6 +35,20 @@ test("preserves WebVTT voice speaker labels while stripping voice markup from di
   {speaker:"Jamie",text:"Welcome back."},
   {speaker:undefined,text:"No speaker label."}
  ]);
+});
+
+test("flags clear filler words and adjacent repeated words for human review",()=>{
+ const cues=parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:04.000\nUm, I think we should, uh, go go now.\n\n00:00:04.000 --> 00:00:06.000\nThis is actually useful.\n");
+ assert.deepEqual(analyzeTranscriptText(cues),[
+  {cueIndex:0,kind:"filler",token:"uh",occurrences:1},
+  {cueIndex:0,kind:"filler",token:"um",occurrences:1},
+  {cueIndex:0,kind:"repetition",token:"go",occurrences:1}
+ ]);
+});
+
+test("does not flag ordinary words that can be context-dependent fillers",()=>{
+ const cues=parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nI like the sound and I know the answer.\n");
+ assert.deepEqual(analyzeTranscriptText(cues),[]);
 });
 
 test("detects only gaps at or above the requested pause threshold",()=>{
