@@ -12,6 +12,8 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
 import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
+import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
+import { createLumaWorkflowQuoteAdapter } from "./luma-workflow-quote-adapter.mjs";
 import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,14 +22,18 @@ const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","medi
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
- const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
- return env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+ const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\\*\\.)?[a-z0-9.-]{1,253}$/i.test(host));
+ const common=env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
-  env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+  Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&validOutputHosts;
+ const runwayReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
   /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&
-  Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&
-  Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&validOutputHosts&&
-  !String(env.RUNWAY_VIDEO_MODELS||"").trim();
+  Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
+ const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
+ const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
+  /^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+ return common&&(runwayReady||lumaReady);
 }
 
 function timelineDurationSeconds(timeline){
@@ -76,6 +82,26 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      })
    : null
  );
+ const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
+ const lumaQuoteReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
+  env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+  env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
+  /^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+ const lumaWorkflowAdapter=lumaQuoteReady?createLumaWorkflowQuoteAdapter({
+  client:createLumaRay32Adapter({apiKey:env.LUMA_AGENTS_API_KEY,fetchImpl}),
+  usdPerCredit:lumaRate
+ }):null;
+ async function validateLumaFrameAssets(ownerId,projectId,input){
+  for(const assetId of [input?.startFrameAssetId,input?.endFrameAssetId].filter(Boolean)){
+   const asset=await service.assets.get({ownerId,assetId});
+   if(!asset||asset.id!==assetId||(asset.projectId||null)!==projectId||
+      !["image/jpeg","image/png","image/webp","image/gif"].includes(String(asset.mediaType||"").toLowerCase())||
+      !Number.isSafeInteger(asset.size)||asset.size<1||asset.size>250*1024*1024||
+      !/^[a-f0-9]{64}$/i.test(asset.sha256||""))return false;
+  }
+  return true;
+ }
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
