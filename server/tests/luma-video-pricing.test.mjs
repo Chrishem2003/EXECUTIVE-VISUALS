@@ -36,7 +36,11 @@ test("extend is one fixed 5-second block and reframe is billed per second", () =
 });
 
 test("fails closed for draft resolution, unsupported combinations and missing pricing evidence", () => {
-  assert.throws(()=>estimateLumaRay32Cost({resolution:"360p",durationSeconds:5,pricingDate:date}),e=>e.code==="LUMA_PRICE_UNSUPPORTED_RESOLUTION");
+  assert.deepEqual(
+    [estimateLumaRay32Cost({resolution:"360p",durationSeconds:5,pricingDate:date}).credits,
+     estimateLumaRay32Cost({resolution:"360p",durationSeconds:5,pricingDate:date}).amount],
+    [20,0.06]
+  );
   assert.throws(()=>estimateLumaRay32Cost({resolution:"720p",durationSeconds:7,pricingDate:date}));
   assert.throws(()=>estimateLumaRay32Cost({resolution:"720p",durationSeconds:5}),e=>e.code==="LUMA_PRICE_DATE_REQUIRED");
   assert.throws(()=>estimateLumaRay32Cost({resolution:"720p",durationSeconds:5,pricingDate:"2026-02-31"}),e=>e.code==="LUMA_PRICE_DATE_REQUIRED");
@@ -53,4 +57,9 @@ test("estimates are immutable and never marked billable or settlement eligible",
   assert.equal(estimate.basis,"default_list_rate_usd_per_credit");
   assert.equal(estimate.monetaryEstimateScope,"default_list_rate_only_account_plan_or_contract_rate_may_differ");
   assert.ok(Object.isFrozen(estimate));
+});
+test("prices the documented 360p draft tier for edit, extend and reframe",()=>{
+ assert.equal(estimateLumaRay32Cost({operation:"video_edit",resolution:"360p",durationSeconds:5,pricingDate:date}).credits,180);
+ assert.equal(estimateLumaRay32Cost({operation:"video_extend",resolution:"360p",pricingDate:date}).credits,20);
+ assert.equal(estimateLumaRay32Cost({operation:"video_reframe",resolution:"360p",durationSeconds:10,pricingDate:date}).credits,100);
 });
