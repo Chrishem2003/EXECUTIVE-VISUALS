@@ -896,6 +896,14 @@ test("batch video finishing API authenticates, scopes sources, queues FFmpeg job
   const retryReplay=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:retryHeaders},owner);
   assert.equal(retryReplay.status,200);
   assert.equal((await retryReplay.json()).idempotentReplay,true);
+  for(let attempt=2;attempt<=5;attempt++){
+    const additional=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-"+String(attempt).padStart(3,"0")}},owner);
+    assert.equal(additional.status,202,await additional.clone().text());
+    assert.equal((await additional.json()).job.input.retrySequence,attempt);
+  }
+  const retryLimit=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-006"}},owner);
+  assert.equal(retryLimit.status,409);
+  assert.equal((await retryLimit.json()).error.code,"JOB_RETRY_LIMIT");
   const activeRetry=await request("/api/jobs/"+result.jobs[1].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-active-001"}},owner);
   assert.equal(activeRetry.status,409);
   assert.equal((await activeRetry.json()).error.code,"JOB_NOT_RETRYABLE");
