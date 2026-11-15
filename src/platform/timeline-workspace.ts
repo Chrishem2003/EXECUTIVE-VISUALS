@@ -549,7 +549,7 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">CLOUD AUDIO MASTERING</div>'+(state.mode==="cloud"?'<form id="tl-audio-mastering" class="timeline-mastering-form"><label class="inline-check"><input name="enabled" type="checkbox" '+(state.timeline?.audioMastering?.enabled===true?'checked':'')+'> Enable loudness mastering</label><label class="inline-check"><input name="dualMono" type="checkbox" '+(state.timeline?.audioMastering?.dualMono===true?'checked':'')+'> Treat mono sources as dual-mono</label><label>Mastering profile</label><select name="profile"><option value="web-podcast" '+(state.timeline?.audioMastering?.profile!=="ebu-r128"&&state.timeline?.audioMastering?.profile!=="custom"?"selected":"")+ '>Web / Podcast (-16 LUFS)</option><option value="ebu-r128" '+(state.timeline?.audioMastering?.profile==="ebu-r128"?"selected":"")+ '>EBU R128 broadcast (-23 LUFS)</option><option value="custom" '+(state.timeline?.audioMastering?.profile==="custom"?"selected":"")+ '>Custom target</option></select><div class="form-grid"><div><label>Integrated loudness (LUFS)</label><input name="integratedLoudness" type="number" min="-70" max="-5" step="0.1" value="'+Number(state.timeline?.audioMastering?.integratedLoudness??-16)+'" '+(state.timeline?.audioMastering?.profile==="custom"?"":"disabled")+' aria-describedby="tl-mastering-profile-help"></div><div><label>Loudness range (LU)</label><input name="loudnessRange" type="number" min="1" max="50" step="0.1" value="'+Number(state.timeline?.audioMastering?.loudnessRange??11)+'"></div><div><label>True peak (dBTP)</label><input name="truePeak" type="number" min="-9" max="0" step="0.1" value="'+Number(state.timeline?.audioMastering?.truePeak??-1.5)+'"></div></div><button class="secondary" type="submit">Save mastering settings</button><small id="tl-mastering-profile-help" class="muted">Applied by cloud rendering only. Web / Podcast targets -16 LUFS; EBU R128 targets -23 LUFS and enforces a maximum -1 dBTP ceiling. The integrated loudness target is editable only for Custom. LRA and true peak remain editable for every profile. After encoding, the renderer measures actual LUFS, LRA and true peak and reports delivery QC in the cloud render status.</small></form>':'<p class="muted">Switch to a cloud project to configure EBU R128 mastering. Local rendering is unchanged.</p>')+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-detect-scenes"><div class="eyebrow" style="margin-top:18px">AI-ASSISTED SCENE DETECTION</div><label>Video clip to analyze</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><small>Runs FFmpeg scene-change detection on the selected source, then adds review markers at detected cuts. It never splits, trims or deletes footage automatically.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+'>⌁ Detect scene changes and add markers</button></form>'+
- '<form id="tl-paper-edit" style="margin-top:18px"><div class="eyebrow">TRANSCRIPT PAPER EDIT</div><label>Source video clip</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><label>Import WebVTT file</label><input id="tl-paper-edit-file" type="file" accept=".vtt,text/vtt"><small id="tl-paper-edit-file-status">Choose a .vtt file or paste its contents below. Maximum 2 MiB and 5,000 cues.</small><label>WebVTT transcript</label><textarea id="tl-paper-edit-transcript" name="transcript" rows="7" required maxlength="2097152" placeholder="WEBVTT&#10;&#10;00:00:00.000 --> 00:00:03.000&#10;Keep this moment in the edit."></textarea><div class="row" style="gap:8px;margin-top:8px"><button type="button" class="secondary" data-tl-paper-select-all>Select all cues</button><button type="button" class="secondary" data-tl-paper-select-none>Clear selection</button><small id="tl-paper-edit-selection-status">Import or paste a transcript to review individual cues.</small></div><div id="tl-paper-edit-cues" role="group" aria-label="Transcript cue selection" style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px"></div><small>Choose the dialogue moments to keep. Selected cues become separate editable clips on a new track. Source footage stays untouched. Constant-speed clips only.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+' >＋ Build paper edit from transcript</button></form>'+
+ '<form id="tl-paper-edit" style="margin-top:18px"><div class="eyebrow">TRANSCRIPT PAPER EDIT</div><label>Source video clip</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><label>Import WebVTT file</label><input id="tl-paper-edit-file" type="file" accept=".vtt,text/vtt"><small id="tl-paper-edit-file-status">Choose a .vtt file or paste its contents below. Maximum 2 MiB and 5,000 cues.</small><label>WebVTT transcript</label><textarea id="tl-paper-edit-transcript" name="transcript" rows="7" required maxlength="2097152" placeholder="WEBVTT&#10;&#10;00:00:00.000 --> 00:00:03.000&#10;Keep this moment in the edit."></textarea><label for="tl-paper-edit-search">Find moments in transcript</label><input id="tl-paper-edit-search" type="search" maxlength="120" placeholder="Search words or phrases…"><div class="row" style="gap:8px;margin-top:8px"><button type="button" class="secondary" data-tl-paper-select-all>Select all cues</button><button type="button" class="secondary" data-tl-paper-select-none>Clear selection</button><small id="tl-paper-edit-selection-status">Import or paste a transcript to review individual cues.</small></div><div id="tl-paper-edit-cues" role="group" aria-label="Transcript cue selection" style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px"></div><small>Choose the dialogue moments to keep. Selected cues become separate editable clips on a new track. Source footage stays untouched. Constant-speed clips only.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+' >＋ Build paper edit from transcript</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
@@ -1255,6 +1255,22 @@ document.addEventListener("keydown",event=>{
 });
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void refreshCloudRenderJobs();});
 window.addEventListener("beforeunload",()=>{if(cloudRenderPollingTimer)clearInterval(cloudRenderPollingTimer);cloudRenderPollingTimer=null;});
+function filterPaperEditCueSelection(){
+ const query=(document.getElementById("tl-paper-edit-search") as HTMLInputElement|null)?.value.trim().toLocaleLowerCase()||"";
+ const rows=Array.from(document.querySelectorAll<HTMLElement>("[data-tl-paper-cue-row]"));
+ let visible=0;
+ rows.forEach(row=>{
+  const match=!query||row.textContent?.toLocaleLowerCase().includes(query)===true;
+  row.hidden=!match;
+  if(match)visible++;
+ });
+ const status=document.getElementById("tl-paper-edit-selection-status");
+ if(status){
+  const boxes=Array.from(document.querySelectorAll<HTMLInputElement>("[data-tl-paper-cue]"));
+  const selected=boxes.filter(box=>box.checked).length;
+  status.textContent=boxes.length+" cues · "+selected+" selected · "+visible+" shown";
+ }
+}
 function renderPaperEditCueSelection(){
  const transcript=document.getElementById("tl-paper-edit-transcript") as HTMLTextAreaElement|null;
  const list=document.getElementById("tl-paper-edit-cues");
@@ -1263,8 +1279,9 @@ function renderPaperEditCueSelection(){
  if(!transcript.value.trim()){list.innerHTML="";status.textContent="Import or paste a transcript to review individual cues.";return;}
  try{
   const cues=parseTranscriptWebVtt(transcript.value);
-  list.innerHTML=cues.map(cue=>'<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 2px;border-bottom:1px solid var(--border)"><input type="checkbox" data-tl-paper-cue="'+cue.index+'" checked style="margin-top:3px"><span><strong>'+String(cue.index+1)+'</strong> · '+cue.start.toFixed(2)+'–'+cue.end.toFixed(2)+'s<br>'+esc(cue.text)+'</span></label>').join("");
+  list.innerHTML=cues.map(cue=>'<label data-tl-paper-cue-row style="display:flex;gap:8px;align-items:flex-start;padding:6px 2px;border-bottom:1px solid var(--border)"><input type="checkbox" data-tl-paper-cue="'+cue.index+'" checked style="margin-top:3px"><span><strong>'+String(cue.index+1)+'</strong> · '+cue.start.toFixed(2)+'–'+cue.end.toFixed(2)+'s<br>'+esc(cue.text)+'</span></label>').join("");
   status.textContent=cues.length+" cues · "+cues.length+" selected";
+  filterPaperEditCueSelection();
  }catch(error){
   list.innerHTML="";
   status.textContent=error instanceof Error?error.message:"Transcript preview unavailable.";
@@ -1273,6 +1290,7 @@ function renderPaperEditCueSelection(){
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="tl-paper-edit-transcript"){renderPaperEditCueSelection();return;}
+ if(target.id==="tl-paper-edit-search"){filterPaperEditCueSelection();return;}
  if(target.id==="tl-audio-master-volume"){
   state.audioMasterVolume=Math.max(0,Math.min(1,Number(target.value)||0));
   state.audioPreviewEngine?.setMasterVolume(state.audioMasterVolume);
@@ -1282,11 +1300,7 @@ document.addEventListener("change",async event=>{
  const target=event.target as HTMLInputElement|HTMLSelectElement;
  if(target instanceof HTMLInputElement&&target.hasAttribute("data-tl-paper-cue")){
   const form=target.closest<HTMLFormElement>("#tl-paper-edit");
-  if(form){
-   const boxes=Array.from(form.querySelectorAll<HTMLInputElement>("[data-tl-paper-cue]"));
-   const status=form.querySelector<HTMLElement>("#tl-paper-edit-selection-status");
-   if(status)status.textContent=boxes.length+" cues · "+boxes.filter(box=>box.checked).length+" selected";
-  }
+  if(form)filterPaperEditCueSelection();
   return;
  }
  if(target.id==="tl-paper-edit-file"){
