@@ -102,7 +102,7 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  const aspectRatio=String(config.aspectRatio??"16:9");
  if(!["16:9","9:16","1:1","4:3","3:4","21:9"].includes(aspectRatio))throw fail("Luma Ray 3.2 aspect ratio is unsupported.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const resolution=String(config.resolution??"720p");
- if(!["540p","720p","1080p"].includes(resolution))throw fail("Luma Ray 3.2 supports quoted 540p, 720p or 1080p output.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(!["360p","540p","720p","1080p"].includes(resolution))throw fail("Luma Ray 3.2 supports quoted 540p, 720p or 1080p output.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if((startFrameAssetId||endFrameAssetId||keyframeAssetIds.length)&&config.rightsConfirmed!==true)
   throw fail("Explicit rights clearance is required for Luma source frames.","MEDIA_RIGHTS_REQUIRED");
  const allAssetIds=[startFrameAssetId,endFrameAssetId].filter(Boolean);
