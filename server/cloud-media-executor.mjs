@@ -11,6 +11,7 @@ import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { parseSceneChangeTimes, parseFreezeEvents } from "./media-signal-analysis.mjs";
+import { buildMediaQualityReport } from "./media-quality.mjs";
 
 export function aiUpscaleMediaType(format) {
   const types = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
@@ -311,6 +312,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           }else signalAnalysis.unavailable.push({check:"scene-change",reason:"MEDIA_ENGINE_MISSING"});
         }
         metadata.signalAnalysis=signalAnalysis;
+        const sourceIsVideo=String(materialized.asset.mediaType||"").startsWith("video/"),sourceIsAudio=String(materialized.asset.mediaType||"").startsWith("audio/");
+        if(sourceIsVideo||sourceIsAudio)metadata.qualityReport=buildMediaQualityReport(metadata,{requireVideo:sourceIsVideo,requireAudio:sourceIsAudio});
         return { sourceAssetId: sourceId, metadata };
       }
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });

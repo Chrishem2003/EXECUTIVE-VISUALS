@@ -73,6 +73,9 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
     assert.equal(result.metadata.format.duration, "1.25");
     assert.deepEqual(result.metadata.signalAnalysis.sceneChanges,[0.5,1]);
     assert.deepEqual(result.metadata.signalAnalysis.freezes,[{startSeconds:0.5,endSeconds:1,durationSeconds:0.5}]);
+    assert.equal(result.metadata.qualityReport.schemaVersion,2);
+    assert.equal(result.metadata.qualityReport.status,"review","sub-HD cloud video should be flagged for delivery review");
+    assert.ok(result.metadata.qualityReport.findings.some(item=>item.code==="BELOW_HD"));
     assert.equal(result.sourceAssetId, "asset-1");
     assert.equal(cleaned, true);
   } finally {
@@ -101,6 +104,8 @@ exit 1`);
   assert.equal(result.metadata.format.duration,"2.0");
   assert.deepEqual(result.metadata.signalAnalysis.sceneChanges,[]);
   assert.equal(result.metadata.signalAnalysis.unavailable[0].check,"scene-change");
+  assert.equal(result.metadata.qualityReport.status,"needs-attention","missing video dimensions must not be presented as a clean pass");
+  assert.ok(result.metadata.qualityReport.findings.some(item=>item.code==="INVALID_VIDEO_DIMENSIONS"));
  }finally{
   if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
   if(previousFfmpeg===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previousFfmpeg;
