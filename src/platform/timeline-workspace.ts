@@ -1071,7 +1071,7 @@ document.addEventListener("submit",event=>{
   }
   const startSeconds=Number(data.get("startSeconds"));
   try{
-   const next=insertWorkflowCaptionAsset(state.timeline,{id:crypto.randomUUID(),trackId:"",assetId:asset.id,name:asset.name,mediaType:asset.mediaType,durationSeconds,startSeconds,newTrackId:crypto.randomUUID()});
+   const next=insertWorkflowCaptionAsset(state.timeline,{id:crypto.randomUUID(),assetId:asset.id,name:asset.name,mediaType:asset.mediaType,durationSeconds,startSeconds,newTrackId:crypto.randomUUID()});
    recordUndo();state.timeline=next;commitUndo("Insert workflow captions");
    state.message="Caption sidecar inserted as an editable timeline caption clip. Choose a style preset, preview, then render to burn captions into the master.";
    void persist().then(paint).catch(error=>{state.message=error instanceof Error?error.message:"Caption timeline save failed.";paint();});
