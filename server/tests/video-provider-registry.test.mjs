@@ -109,10 +109,15 @@ test("Luma no-cancel and temporary output semantics remain explicit", () => {
   assert.equal(model.capabilities.videoSource, true);
   assert.equal(model.capabilities.videoEdit, true);
   assert.equal(model.capabilities.videoReframe, true);
+  assert.deepEqual(model.executionCapabilities, ["textToVideo", "imageToVideo", "videoEdit", "videoReframe"]);
+  assert.deepEqual(model.constraints.adapterImplementedOperations, ["video", "text_to_video", "image_to_video", "video_edit", "video_reframe"]);
+  assert.deepEqual(model.constraints.adapterPendingOperations, ["video_extend"]);
+  assert.deepEqual(model.constraints.workflowQuotedEditDurationsSeconds, [5, 10]);
+  assert.deepEqual(model.constraints.videoReframeResolutions, ["360p", "540p", "720p"]);
   assert.equal(model.capabilities.hdr, true);
   assert.equal(model.capabilities.exrExport, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"]);
-  assert.deepEqual(model.capabilities.resolutions, ["540p", "720p", "1080p"]);
+  assert.deepEqual(model.capabilities.resolutions, ["360p", "540p", "720p", "1080p"]);
   assert.equal(model.constraints.maxKeyframes, 64);
   assert.equal(model.constraints.maxVideoEditSourceSeconds, 18);
   assert.equal(model.constraints.maxVideoReframeSourceSeconds, 10);
