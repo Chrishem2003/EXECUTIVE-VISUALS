@@ -105,3 +105,90 @@ test("preflight blocks shots without explicit rights clearance",()=>{
   assert.equal(result.shots[0].checks.find(item=>item.id==="rights").status,"failed");
  }
 });
+
+const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"ready",reason:"configured",
+ capabilities:["video.generate"],
+ modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,audioModes:["none"]},
+ availableModels:[{id:"ray-3.2",label:"Luma Ray 3.2",readiness:"ready",available:true,executionVerified:true,
+  minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],
+  referenceImages:true,maxReferenceImages:1,audioModes:["none"]}]};
+const lumaShot={id:"luma-shot-01",provider:"luma",model:"ray-3.2",prompt:"A cinematic portrait of a city at sunrise.",
+ durationSeconds:5,aspectRatio:"9:16",resolution:"720p",audioMode:"none",referenceImageCount:1,rightsConfirmed:true};
+
+test("Luma Ray 3.2 passes exact model, first-frame and account-rate preflight without submitting work",()=>{
+ const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[video,lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.readyForApproval,true);
+ assert.equal(result.requestsSubmitted,false);
+ assert.equal(result.pricing.quote.amount,0.3);
+ assert.equal(result.pricing.quote.shots[0].provider,"luma");
+ assert.equal(result.pricing.quote.shots[0].pricing.credits,100);
+ assert.match(result.pricing.quote.shots[0].pricing.sourceUrl,/lumalabs\.ai/);
+ assert.ok(result.pricing.quote.shots[0].pricing.expiresAt>result.pricing.quote.shots[0].pricing.observedAt);
+ assert.ok(result.shots[0].checks.every(check=>check.status==="passed"));
+});
+
+test("Luma preflight rejects unsupported resolution, excessive references and missing account rate",()=>{
+ const unsupported=preflightVideoProduction({shots:[{...lumaShot,resolution:"360p"}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(unsupported.status,"blocked");
+ const tooMany=preflightVideoProduction({shots:[{...lumaShot,referenceImageCount:2}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(tooMany.status,"blocked");
+ const noRate=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[lumaProvider]},now});
+ assert.equal(noRate.status,"pricing_unverified");
+ assert.equal(noRate.requestsSubmitted,false);
+});
+
+test("Luma preflight refuses to proceed when its provider or worker readiness gate is closed",()=>{
+ const blockedProvider={...lumaProvider,status:"needs_configuration",reason:"Apply private file migration."};
+ const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[blockedProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(result.status,"blocked");
+ assert.equal(result.shots[0].checks.find(check=>check.id==="provider").status,"failed");
+});
+
+const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"ready",reason:"configured",
+ capabilities:["video.generate"],modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,
+ aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],resolutions:["360p","540p","720p","1080p"],
+ referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],
+ operations:["generate","edit","reframe","extend"]},
+ availableModels:[{id:"ray-3.2",minDurationSeconds:5,maxDurationSeconds:10,
+ aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],resolutions:["360p","540p","720p","1080p"],
+ referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],
+ operations:["generate","edit","reframe","extend"]}]};
+const lumaCatalog={providers:[lumaProvider]};
+const privateSourceId="182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e";
+const lumaShot={id:"luma-shot",provider:"luma",model:"ray-3.2",prompt:"A quiet sunrise over a mountain lake.",
+ durationSeconds:5,aspectRatio:"16:9",resolution:"360p",audioMode:"none",referenceImageCount:0,rightsConfirmed:true};
+
+test("Luma Ray 3.2 preflight uses the configured account rate and supports 360p draft without submitting",()=>{
+ const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.004",now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.pricing.quote.amount,0.08);
+ assert.equal(result.pricing.quote.shots[0].pricing.credits,20);
+ assert.equal(result.requestsSubmitted,false);
+});
+test("Luma preflight rejects unsupported durations and requires explicit account pricing",()=>{
+ const duration=preflightVideoProduction({shots:[{...lumaShot,durationSeconds:7}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.004",now});
+ assert.equal(duration.status,"blocked");
+ assert.equal(duration.shots[0].checks.find(x=>x.id==="duration").status,"failed");
+ const rate=preflightVideoProduction({shots:[lumaShot],providerCatalog:lumaCatalog,lumaUsdPerCredit:"",now});
+ assert.equal(rate.status,"pricing_unverified");
+ assert.equal(rate.requestsSubmitted,false);
+});
+test("Luma preflight prices edit, extend and reframe with distinct published credit schedules",()=>{
+ const edit=preflightVideoProduction({shots:[{...lumaShot,operation:"edit",resolution:"720p",sourceVideoAssetId:privateSourceId}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.003",now});
+ assert.equal(edit.status,"ready_for_approval");
+ assert.equal(edit.pricing.quote.shots[0].pricing.credits,360);
+ const extend=preflightVideoProduction({shots:[{...lumaShot,operation:"extend",resolution:"720p",durationSeconds:10,sourceGenerationId:privateSourceId}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.003",now});
+ assert.equal(extend.status,"ready_for_approval");
+ assert.equal(extend.pricing.quote.shots[0].pricing.credits,100);
+ const reframe=preflightVideoProduction({shots:[{...lumaShot,operation:"reframe",resolution:"720p",durationSeconds:20,sourceVideoAssetId:privateSourceId}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.003",now});
+ assert.equal(reframe.status,"ready_for_approval");
+ assert.equal(reframe.pricing.quote.shots[0].pricing.credits,800);
+});
+test("Luma edit, reframe and extension preflight reject missing or malformed source identity",()=>{
+ for(const patch of [{operation:"edit"},{operation:"reframe",sourceVideoAssetId:"not-a-uuid"},{operation:"extend",sourceGenerationId:"bad"}]){
+  const result=preflightVideoProduction({shots:[{...lumaShot,...patch}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.003",now});
+  assert.equal(result.status,"blocked");
+  assert.equal(result.shots[0].checks.find(x=>x.id==="source_video").status,"failed");
+ }
+});
