@@ -18,6 +18,8 @@ import { createGoogleVideoInteractionRepository } from "./google-video-interacti
 import { createGoogleInteractionRetentionPolicy } from "./google-interaction-retention-policy.mjs";
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
 import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
+import { createLumaProviderFileRepository } from "./luma-provider-file-repository.mjs";
+import { createLumaProviderFileService } from "./luma-provider-file-service.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -211,7 +213,6 @@ export function createProviderAwareCloudVideoWorkerComposition({
       if (providerEnv.LUMA_VIDEO_ENABLED !== "true" || providerEnv.LUMA_VIDEO_ALLOW_REMOTE !== "true") {
         throw Object.assign(new Error("Luma requires both LUMA_VIDEO_ENABLED=true and LUMA_VIDEO_ALLOW_REMOTE=true."), { code: "LUMA_VIDEO_REMOTE_DISABLED" });
       }
-      const lumaPrepareInput = providerDependencies.lumaPrepareInput;
       const resolveLumaActualCost = providerDependencies.resolveLumaActualCost ||
         createLumaActualCostResolver({ usdPerCredit: providerEnv.LUMA_USD_PER_CREDIT });
       const lumaClient = providerDependencies.lumaClient || createLumaRay32Adapter({
@@ -221,6 +222,17 @@ export function createProviderAwareCloudVideoWorkerComposition({
       });
       if (!lumaClient || typeof lumaClient.prepareInput !== "function" || typeof lumaClient.submit !== "function" || typeof lumaClient.getStatus !== "function") {
         throw Object.assign(new Error("Luma registration requires a compatible Ray 3.2 client."), { code: "LUMA_VIDEO_CLIENT_INVALID" });
+      }
+      let lumaPrepareInput = providerDependencies.lumaPrepareInput;
+      if (!lumaPrepareInput) {
+        const lumaFileRepository = providerDependencies.lumaFileRepository || createLumaProviderFileRepository({
+          ...clientOptions, timeoutMs: Math.min(timeoutMs, 30000)
+        });
+        const lumaFileService = providerDependencies.lumaFileService || createLumaProviderFileService({
+          assets: privateAssets.assets, adapter: lumaClient, repository: lumaFileRepository,
+          fetchImpl, timeoutMs: Math.min(timeoutMs, 30000), maxBytes: maxBytesPerOutput
+        });
+        lumaPrepareInput = lumaFileService.resolveInput;
       }
       const model = "ray-3.2";
       const assertLumaEnabled = () => {
@@ -237,9 +249,10 @@ export function createProviderAwareCloudVideoWorkerComposition({
           if (!input || typeof input !== "object" || Array.isArray(input) || input.provider !== "luma" || input.model !== model) {
             throw Object.assign(new Error("Luma job provider/model identity does not match Ray 3.2."), { code: "VIDEO_JOB_INPUT_MISMATCH" });
           }
-          const hasReferences = Boolean(input.startFrame || input.endFrame || input.sourceVideoAssetId ||
-            input.sourceVideo || input.source || input.sourceGenerationId) ||
+          const hasReferences = Boolean(input.startFrame || input.endFrame || input.startFrameAssetId ||
+            input.endFrameAssetId || input.sourceVideoAssetId || input.sourceVideo || input.source || input.sourceGenerationId) ||
             (Array.isArray(input.keyframes) && input.keyframes.length > 0) ||
+            (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0) ||
             (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0);
           if (hasReferences && typeof lumaPrepareInput !== "function") {
             throw Object.assign(new Error("Luma reference media requires an authenticated owner/project-scoped resolver."), { code: "LUMA_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED" });
