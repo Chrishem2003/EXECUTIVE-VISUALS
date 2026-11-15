@@ -1833,28 +1833,40 @@ export function createAppServer() {
           const idempotencyKey=String(req.headers["idempotency-key"]||"");
           if(!idempotencyKey||idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Job retries require an idempotency key no longer than 180 characters.");return;}
           const originalInput=parseJson(job.input_json,{});
-          const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
-          if(existing){
-            const existingInput=parseJson(existing.input_json,{});
-            if(existing.job_type!==job.job_type||existing.project_id!==job.project_id||existingInput.retryOfJobId!==job.id||!Number.isSafeInteger(existingInput.retrySequence)||existingInput.retrySequence<1){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job retry.");return;}
-            send(res,200,{job:recordJob(existing),retryOfJobId:job.id,idempotentReplay:true},cors);return;
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
+            if(existing){
+              const existingInput=parseJson(existing.input_json,{});
+              if(existing.job_type!==job.job_type||existing.project_id!==job.project_id||existingInput.retryOfJobId!==job.id||!Number.isSafeInteger(existingInput.retrySequence)||existingInput.retrySequence<1){
+                db.exec("ROLLBACK");fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job retry.");return;
+              }
+              db.exec("COMMIT");
+              send(res,200,{job:recordJob(existing),retryOfJobId:job.id,idempotentReplay:true},cors);return;
+            }
+            const retryCount=db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").get(user.id,job.id).count;
+            const retrySequence=Number(retryCount)+1;
+            if(retrySequence>5){db.exec("ROLLBACK");fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
+            if(job.job_type==="timeline.render"){
+              const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(originalInput.timelineId||""));
+              if(!timeline||timeline.project_id!==job.project_id||(timeline.project_id?!canWriteProject(db,user.id,timeline.project_id):timeline.owner_id!==user.id)){
+                db.exec("ROLLBACK");fail(res,404,"TIMELINE_NOT_FOUND","The original timeline is no longer accessible for retry.");return;
+              }
+            }else{
+              const source=getAccessibleAsset(db,user.id,String(originalInput.sourceAssetId||""),true);
+              if(!source){db.exec("ROLLBACK");fail(res,404,"SOURCE_ASSET_NOT_FOUND","The original source asset is no longer accessible for retry.");return;}
+            }
+            const id=randomUUID(),retryInput={...originalInput,retryOfJobId:job.id,retrySequence};
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
+              .run(id,user.id,job.project_id,job.job_type,json(retryInput),idempotencyKey);
+            addJobEvent(db,id,user.id,"job.retry_queued",{retryOfJobId:job.id,retrySequence,jobType:job.job_type});
+            audit(db,user.id,"job.retry_queued","job",id,{retryOfJobId:job.id,retrySequence,jobType:job.job_type},job.project_id);
+            db.exec("COMMIT");
+            send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)),retryOfJobId:job.id,idempotentReplay:false},cors);return;
+          }catch(error){
+            try{db.exec("ROLLBACK");}catch{}
+            throw error;
           }
-          const retryCount=db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").get(user.id,job.id).count;
-          const retrySequence=Number(retryCount)+1;
-          if(retrySequence>5){fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
-          if(job.job_type==="timeline.render"){
-            const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(originalInput.timelineId||""));
-            if(!timeline||timeline.project_id!==job.project_id||(timeline.project_id?!canWriteProject(db,user.id,timeline.project_id):timeline.owner_id!==user.id)){fail(res,404,"TIMELINE_NOT_FOUND","The original timeline is no longer accessible for retry.");return;}
-          }else{
-            const source=getAccessibleAsset(db,user.id,String(originalInput.sourceAssetId||""),true);
-            if(!source){fail(res,404,"SOURCE_ASSET_NOT_FOUND","The original source asset is no longer accessible for retry.");return;}
-          }
-          const id=randomUUID(),retryInput={...originalInput,retryOfJobId:job.id,retrySequence};
-          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-            .run(id,user.id,job.project_id,job.job_type,json(retryInput),idempotencyKey);
-          addJobEvent(db,id,user.id,"job.retry_queued",{retryOfJobId:job.id,retrySequence,jobType:job.job_type});
-          audit(db,user.id,"job.retry_queued","job",id,{retryOfJobId:job.id,retrySequence,jobType:job.job_type},job.project_id);
-          send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)),retryOfJobId:job.id,idempotentReplay:false},cors);return;
         }
         if(jobMatch[2]==="cancel"&&req.method==="POST"){
           if(["succeeded","failed","cancelled"].includes(job.status)){fail(res,409,"JOB_TERMINAL","This job has already finished.");return;}
