@@ -35,7 +35,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
   enabled:env.LUMA_VIDEO_ENABLED==="true",
   configured:Boolean(env.LUMA_AGENTS_API_KEY&&lumaRateValid&&lumaSchemaReady),
   url:"https://agents.lumalabs.ai",
-  allowRemote:env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true",
+  allowRemote:env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true",
   model:"ray-3.2",provider:"luma",id:"video-luma",
   capabilities:["video.generate","video.image_to_video","video.video_to_video","video.reframe","video.extend"],
   reasonIfMissing:"Set LUMA_AGENTS_API_KEY and LUMA_USD_PER_CREDIT, apply the Luma provider-file migration and set LUMA_PROVIDER_FILES_SCHEMA_READY=true."
