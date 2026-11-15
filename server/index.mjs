@@ -1844,8 +1844,11 @@ export function createAppServer() {
               db.exec("COMMIT");
               send(res,200,{job:recordJob(existing),retryOfJobId:job.id,idempotentReplay:true},cors);return;
             }
-            const retryCount=db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").get(user.id,job.id).count;
-            const retrySequence=Number(retryCount)+1;
+            const priorRetries=db.prepare("SELECT status FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").all(user.id,job.id);
+            if(priorRetries.some(item=>["queued","running","succeeded"].includes(item.status))){
+              db.exec("ROLLBACK");fail(res,409,"JOB_RETRY_ALREADY_ACTIVE","A retry for this job is already queued, running or completed.");return;
+            }
+            const retrySequence=priorRetries.length+1;
             if(retrySequence>5){db.exec("ROLLBACK");fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
             if(job.job_type==="timeline.render"){
               const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(originalInput.timelineId||""));
