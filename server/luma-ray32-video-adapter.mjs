@@ -89,7 +89,7 @@ export function createLumaRay32Adapter({
   fetchImpl = globalThis.fetch,
   baseUrl = BASE_URL,
   timeoutMs = 30000,
-  billingSettlementMaxWaitMs = 10 * 60 * 1000,
+  billingSettlementMaxWaitMs = 20 * 60 * 1000,
   now = () => Date.now()
 } = {}) {
   if (typeof apiKey !== "string" || !apiKey.trim() || apiKey.length > 4096) {
