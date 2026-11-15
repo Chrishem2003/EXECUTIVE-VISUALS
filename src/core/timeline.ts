@@ -174,7 +174,7 @@ export function insertWorkflowCaptionAsset(timeline:EditorialTimeline,input:{
  if(!Number.isFinite(fps)||fps<=0)throw new Error("Timeline frame rate must be positive.");
  const startFrame=Math.round(startSeconds*fps),durationFrames=Math.max(1,Math.ceil(durationSeconds*fps));
  const start=startFrame/fps,end=start+durationFrames/fps;
- const available=timeline.tracks.find(track=>track.kind==="caption"&&!track.locked&&
+ const available=timeline.tracks.find(track=>track.kind==="caption"&&track.enabled&&!track.locked&&
   !track.clips.some(clip=>clip.enabled!==false&&seconds(clip.timelineStart)<end&&seconds(clip.timelineStart)+seconds(clip.duration)>start));
  let next=timeline,targetTrackId=available?.id||"";
  if(!targetTrackId){
