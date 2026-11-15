@@ -92,7 +92,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const selectedSource=String(config.sourceVideoAssetId||"");
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
  '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
- '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation==="generate"?"5":"2")+'" max="'+(luma&&operation==="edit"?"18":luma?"10":"30")+'" step="'+(luma&&operation==="generate"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
+ '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation!=="reframe"?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma&&operation!=="reframe"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!luma||operation==="generate"?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
@@ -350,7 +350,7 @@ document.addEventListener("submit",event=>{
   if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
-  if(operation==="edit"&&(!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>18))throw new Error("Luma Edit accepts source videos from 2 to 18 seconds.");
+  if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers; longer edits remain blocked until pricing is verified.");
   if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
   config.sourceVideoAssetId=sourceVideoAssetId;
   delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
@@ -425,8 +425,8 @@ window.addEventListener("ev:timeline-luma-edit-requested",event=>{
  const asset=state.assets.find(item=>item.id===detail.sourceVideoAssetId&&item.projectId===detail.projectId&&item.mediaType.toLowerCase().startsWith("video/"));
  if(!asset){state.message="The selected private source video is not in the active workflow project's asset list. Refresh the workflow and try again.";paint();return;}
  const durationSeconds=Number(detail.durationSeconds);
- if(!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>18){
-  state.message="Luma video editing requires a verified source duration from 2 to 18 seconds.";paint();return;
+ if(![5,10].includes(durationSeconds)){
+  state.message="Luma video editing quotes currently support the published 5- or 10-second pricing tiers.";paint();return;
  }
  let node=state.graph.nodes.find(item=>item.id===state.selectedNode&&item.kind==="video.generate")||state.graph.nodes.find(item=>item.kind==="video.generate");
  if(!node){
