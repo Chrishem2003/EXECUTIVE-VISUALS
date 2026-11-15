@@ -90,12 +90,12 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
   config.startFrameAssetId,config.referenceAssetId);
  const endFrameAssetId=firstString(values.endFrameAssetId,values["end-frame"],config.endFrameAssetId);
  const keyframeAssetIds=assetList(config.keyframeAssetIds??values.keyframeAssetIds,"Luma keyframe assets",64);
+ if(keyframeAssetIds.length)throw fail("Multi-keyframe selection is available in the provider adapter but is not yet exposed in the workflow composer. Use a start frame for now.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const referenceAssetIds=assetList(config.referenceAssetIds??values.referenceAssetIds??values.references,"Luma generic references",1);
  if(referenceAssetIds.length)throw fail("Luma Ray 3.2 workflow quotes accept explicit start/end frame or keyframe assets, not a generic reference list.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId))
   throw fail("Luma source-video editing is not exposed in this workflow composer yet. Use text-to-video or image-to-video.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
- if(startFrameAssetId&&endFrameAssetId)throw fail("Luma start/end frames cannot be combined with multi-keyframe mode.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
- if(keyframeAssetIds.length&&(startFrameAssetId||endFrameAssetId))throw fail("Luma keyframe mode cannot be combined with start/end frame inputs.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ if(startFrameAssetId&&endFrameAssetId)throw fail("Luma start/end frames cannot be combined in this workflow composer yet.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(!prompt)throw fail("Luma Ray 3.2 requires a non-empty prompt.","PROMPT_REQUIRED");
  if(![5,10].includes(Number(config.durationSeconds??config.duration??5)))throw fail("Luma Ray 3.2 generation duration must be 5 or 10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const durationSeconds=Number(config.durationSeconds??config.duration??5);
@@ -105,17 +105,16 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  if(!["540p","720p","1080p"].includes(resolution))throw fail("Luma Ray 3.2 supports quoted 540p, 720p or 1080p output.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if((startFrameAssetId||endFrameAssetId||keyframeAssetIds.length)&&config.rightsConfirmed!==true)
   throw fail("Explicit rights clearance is required for Luma source frames.","MEDIA_RIGHTS_REQUIRED");
- const allAssetIds=[startFrameAssetId,endFrameAssetId,...keyframeAssetIds].filter(Boolean);
+ const allAssetIds=[startFrameAssetId,endFrameAssetId].filter(Boolean);
  if(new Set(allAssetIds).size!==allAssetIds.length)throw fail("A Luma source frame cannot be assigned to more than one frame role.","VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT");
  const normalized=normalizeVideoGenerationRequest({
   requestId,projectId:projectId.trim(),provider:"luma",model:"ray-3.2",
   prompt,durationSeconds,aspectRatio,resolution,audioMode:"none",
   rightsConfirmed:config.rightsConfirmed===true,
   ...(startFrameAssetId?{startFrameAssetId}:{}),
-  ...(endFrameAssetId?{endFrameAssetId}:{}),
-  ...(keyframeAssetIds.length?{keyframeAssetIds}:{})
+  ...(endFrameAssetId?{endFrameAssetId}:{})
  });
- const operation=keyframeAssetIds.length?"multi-keyframe":startFrameAssetId||endFrameAssetId?"image-to-video":"text-to-video";
+ const operation=startFrameAssetId||endFrameAssetId?"image-to-video":"text-to-video";
  const requestHash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
  const input=deepFreeze({...normalized,requestHash});
  return deepFreeze({provider:"luma",model:"ray-3.2",operation,requestId,projectId:projectId.trim(),requestHash,input});
