@@ -8,7 +8,7 @@ import { buildTimelineMotionExpression, buildTimelineMotionFilters, evaluateTime
 const keys=[{timeSeconds:0,x:20,y:30,width:100,height:80,opacity:0,rotation:0},{timeSeconds:2,x:220,y:130,width:300,height:180,opacity:1,rotation:90}];
 test("FFmpeg motion expressions are bounded numeric expressions with frame-time interpolation",()=>{
  const expression=buildTimelineMotionExpression(keys,"x",0,2);
- assert.match(expression,/if\(lt\(t\\,2\)/);
+ assert.match(expression,/clip\(/);
  assert.match(expression,/200/);
  assert.doesNotMatch(expression,/[;\[\]{}]/);
 });
@@ -43,8 +43,8 @@ test("renderer rejects invalid or unsafe keyframe values",()=>{
 test("FFmpeg compiler emits supported easing expressions for motion curves",()=>{
  const ease=[{timeSeconds:0,x:0},{timeSeconds:2,x:100,interpolation:"ease-in-out"}];
  const expression=buildTimelineMotionExpression(ease,"x",0,2);
- assert.match(expression,/pow\(/);
- assert.match(expression,/0\.5/);
+ assert.match(expression,/clip\(/);
+ assert.match(expression,/3-2/);
  const step=[{timeSeconds:0,x:10},{timeSeconds:1,x:50,interpolation:"step"}];
  assert.match(buildTimelineMotionExpression(step,"x",0,1),/10/);
 });
