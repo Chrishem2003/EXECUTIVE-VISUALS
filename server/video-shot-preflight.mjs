@@ -62,6 +62,13 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
   if(video.provider==="luma"&&caps&&!caps.operations.includes(operation))fail("operation","Operation is not supported by the selected Ray 3.2 adapter.");
   else if(!["generate","edit","reframe","extend"].includes(operation))fail("operation","Select a supported generation, edit, reframe or extend operation.");
   else pass("operation","Selected operation is supported by the provider adapter.");
+  if(video.provider==="luma"&&(operation==="edit"||operation==="reframe")&&
+     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(shot.sourceVideoAssetId||"")))
+   fail("source_video","Video editing and reframing require an authorized private source-video asset.");
+  else if(video.provider==="luma"&&operation==="extend"&&
+     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(shot.sourceGenerationId||"")))
+   fail("source_video","Video extension requires a valid prior Luma generation ID owned by the same caller.");
+  else pass("source_video","Source-video requirements are satisfied for the selected operation.");
   if(!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>300)fail("duration","Duration must be a whole number between 1 and 300 seconds.");
   else if(video.provider==="luma"&&operation==="reframe"&&(shot.durationSeconds<1||shot.durationSeconds>300))fail("duration","Reframe source duration must be 1–300 seconds.");
   else if(video.provider==="luma"&&caps&&!caps.durationsSeconds.includes(shot.durationSeconds))fail("duration","Ray 3.2 generation, editing and extension support only 5- or 10-second outputs.");
