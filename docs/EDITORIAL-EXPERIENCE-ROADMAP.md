@@ -38,7 +38,7 @@ These foundations do not imply that every advanced effect or AI feature below is
    - Frame-accurate playhead navigation and a responsive preview monitor.
    - Waveforms, clip thumbnails and marker navigation.
 4. **Audio finishing**
-   - Track gain automation, fades, ducking and voice/music balance.
+   - Track gain automation, fades, ducking and voice/music balance. Dialogue-aware music ducking is implemented in the timeline inspector: choose a dialogue track, configure reduction/attack/release, generate editable gain keyframes, preserve pan automation and undo the operation; preview and FFmpeg render reuse the existing audio automation path.
    - Keep loudness targets explicit per delivery profile; never silently normalize a user's master.
 
 ### P1 — Creator-speed automation
