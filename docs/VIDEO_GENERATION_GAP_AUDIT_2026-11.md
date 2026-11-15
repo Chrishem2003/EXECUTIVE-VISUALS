@@ -350,3 +350,14 @@ The preflight returns the provider/model selected by Runway and its estimated cr
 Official contract: https://docs.dev.runwayml.com/api/ — `POST /v1/generate/video`, pinned API version `2024-11-06`, with `dryRun: true` returning a routing decision without task creation or billing.
 
 The offline contract tests are included in `verify:video-routing`. No provider API calls, paid generation, credentials, migrations, production registration or deployment were performed.
+
+
+### Runway router approval fingerprint and credit ceiling — 2026-11-05
+
+Extended the non-billable preflight contract with a canonical SHA-256 `inputHash` over the saved router config ID and normalized input payload (excluding the dry-run flag). The fingerprint lets a later approval/submission workflow prove that the live request is the same request that was reviewed, without returning private signed media URLs as approval metadata.
+
+The preflight accepts an optional caller-supplied `maxEstimatedCredits` ceiling. It rejects invalid ceilings and fails closed with `RUNWAY_ROUTER_BUDGET_EXCEEDED` when the router estimate exceeds the ceiling. This is a decision gate only; it does not reserve money or authorize execution.
+
+The client now classifies Runway's documented `no_eligible_model` and inaccessible-router (404) responses as stable application errors without exposing provider response details.
+
+Offline tests cover canonical fingerprint stability, changed-input detection, exact/over-budget behavior, invalid ceilings, and eligibility/configuration errors. The request remains hardcoded to `dryRun: true`; no paid request, provider task, budget reservation, or production write is possible through this module.
