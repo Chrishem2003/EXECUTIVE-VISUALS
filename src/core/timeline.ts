@@ -65,6 +65,16 @@ export function evaluateSpeedCurve(curve:SpeedKeyframe[]|undefined,timeSeconds:n
   }
   return curve[curve.length-1].speed;
 }
+/** Move one visual speed keyframe while preserving ordered clip-local times and bounded playback speed. */
+export function moveSpeedKeyframe(curve:SpeedKeyframe[],index:number,timeSeconds:number,speed:number,durationSeconds:number):SpeedKeyframe[] {
+ if(!Array.isArray(curve)||curve.length<2||curve.length>64||!Number.isSafeInteger(index)||index<0||index>=curve.length)throw new Error("Select a valid speed keyframe.");
+ if(!Number.isFinite(durationSeconds)||durationSeconds<=0||!Number.isFinite(timeSeconds)||!Number.isFinite(speed))throw new Error("Speed keyframe position and duration must be finite.");
+ const next=curve.map(point=>({...point})),minimumGap=0.001;
+ const time=index===0?0:index===next.length-1?durationSeconds:Math.max(next[index-1].timeSeconds+minimumGap,Math.min(next[index+1].timeSeconds-minimumGap,timeSeconds));
+ if(index>0&&index<next.length-1&&next[index+1].timeSeconds-next[index-1].timeSeconds<minimumGap*2)throw new Error("There is not enough space to move this keyframe.");
+ next[index]={timeSeconds:Number(time.toFixed(4)),speed:Number(Math.max(0.25,Math.min(4,speed)).toFixed(2))};
+ return next;
+}
 export function integrateSpeedCurve(curve:SpeedKeyframe[]|undefined,durationSeconds:number,fallback=1):number {
   if(!curve?.length)return durationSeconds*fallback;
   const end=Math.max(0,durationSeconds);
