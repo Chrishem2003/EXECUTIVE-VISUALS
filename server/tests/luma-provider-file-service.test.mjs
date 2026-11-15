@@ -162,6 +162,12 @@ test("invalid or unordered Luma keyframe indexes are rejected before any provide
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
 });
+test("Luma private file resolver rejects more than sixteen keyframe assets before provider upload",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",rightsConfirmed:true,keyframeAssetIds:Array.from({length:17},()=>assetId),keyframeIndexes:Array.from({length:17},(_,i)=>i)},{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
+
 test("Luma keyframe mode rejects mixed source-video operations before provider uploads",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
