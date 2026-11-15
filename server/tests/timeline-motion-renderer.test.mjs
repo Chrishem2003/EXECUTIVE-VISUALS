@@ -9,24 +9,25 @@ const keys=[{timeSeconds:0,x:20,y:30,width:100,height:80,opacity:0,rotation:0},{
 test("FFmpeg motion expressions are bounded numeric expressions with frame-time interpolation",()=>{
  const expression=buildTimelineMotionExpression(keys,"x",0,2);
  assert.match(expression,/if\(lt\(t\\,2\)/);
- assert.match(expression,/100/);
+ assert.match(expression,/200/);
  assert.doesNotMatch(expression,/[;\[\]{}]/);
 });
 test("motion evaluator matches the editor's linear transform interpolation",()=>{
- assert.deepEqual(evaluateTimelineMotion(keys,1,{x:0,y:0,width:16,height:16,opacity:1,rotation:0},2),{x:120,y:80,width:200,height:130,opacity:0.5,rotation:45});
+ assert.deepEqual({x:evaluateTimelineMotion(keys,1,"x",0,2),y:evaluateTimelineMotion(keys,1,"y",0,2),width:evaluateTimelineMotion(keys,1,"width",16,2),height:evaluateTimelineMotion(keys,1,"height",16,2),opacity:evaluateTimelineMotion(keys,1,"opacity",1,2),rotation:evaluateTimelineMotion(keys,1,"rotation",0,2)},{x:120,y:80,width:200,height:130,opacity:0.5,rotation:45});
 });
 test("renderer emits animated scale, alpha, rotation and position filters",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:1,rotation:0,motionKeyframes:keys},2);
  assert.ok(result.filters.some(filter=>filter.startsWith("scale=w=")&&filter.includes("eval=frame")));
  assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
- assert.ok(result.filters.some(filter=>filter.startsWith("geq=a=")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
  assert.match(result.overlay,/eval=frame/);
  assert.deepEqual(result.animated,{x:true,y:true,width:true,height:true,opacity:true,rotation:true});
 });
 test("static metadata remains unchanged when no motion keyframes are present",()=>{
  assert.equal(buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2),null);
  const rotated=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5,rotation:25},2);
- assert.ok(rotated.filters.some(filter=>filter.includes("rotw(PI/4)")));
+ assert.ok(rotated.filters.some(filter=>filter.startsWith("pad=")));
+ assert.ok(rotated.filters.some(filter=>filter.includes("ow=iw:oh=ih")));
  assert.match(rotated.overlay,/overlay_w/);
 });
 test("renderer rejects invalid or unsafe keyframe values",()=>{
@@ -52,7 +53,8 @@ test("renderer interpolates from the clip's base transform before the first keyf
 });
 test("rotated overlays keep their visual center anchored while using a safe diagonal canvas",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
- assert.ok(result.filters.some(filter=>filter.includes("rotw(PI/4)")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("pad=")));
+ assert.ok(result.filters.some(filter=>filter.includes("ow=iw:oh=ih")));
  assert.match(result.overlay,/overlay_w/);
  assert.match(result.overlay,/overlay_h/);
 });
