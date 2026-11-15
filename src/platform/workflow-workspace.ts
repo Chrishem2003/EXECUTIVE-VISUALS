@@ -87,6 +87,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(provider==="luma"?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
  '<div class="wf-video-provider-grid"><label>Duration · seconds<input name="videoDuration" type="number" min="'+(luma?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
+ '<label>Private first-frame asset ID · Luma only<input name="startFrameAssetId" value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Private last-frame asset ID · Luma only<input name="endFrameAssetId" value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private keyframe asset IDs · Luma only<input name="keyframeAssetIds" value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
  '<p>For Ray 3.2 multi-keyframe generation, use 1–64 private image asset IDs and matching strictly increasing frame indexes (24 fps; maximum index is duration × 24). Assets are checked against this project before quote and again before approval. Source-video editing, reframing and extension remain disabled in this workflow composer.</p>'+
@@ -301,9 +303,16 @@ document.addEventListener("submit",event=>{
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
  config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
+ const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
+ if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId))throw new Error("Private first/last frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
+ if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
+ if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+ if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
+ if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
  const assetText=String(data.get("keyframeAssetIds")||"").trim(),indexText=String(data.get("keyframeIndexes")||"").trim();
  if(assetText||indexText){
   if(provider!=="luma")throw new Error("Multi-keyframe inputs are currently supported only by Luma Ray 3.2.");
+  if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
   const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
   const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
   if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
