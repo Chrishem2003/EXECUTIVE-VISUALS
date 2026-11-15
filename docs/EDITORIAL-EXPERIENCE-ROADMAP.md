@@ -62,7 +62,7 @@ These foundations do not imply that every advanced effect or AI feature below is
 ### P2 — Motion and visual effects
 
 1. Keyframes for position, scale, rotation, opacity and audio gain.
-   - Image-overlay and primary-video clips now support clip-local X/Y, width/height, opacity and rotation keyframes; the editor exposes an add-at-playhead workflow with linear, step, ease-in, ease-out and ease-in-out interpolation.
+   - Image-overlay and primary-video clips now support clip-local X/Y, width/height, opacity and rotation keyframes; the editor exposes an add-at-playhead workflow with linear, step, ease-in, ease-out and ease-in-out interpolation, with once, loop and ping-pong playback modes.
    - The same bounded keyframe model drives browser preview and both local and cloud FFmpeg renders; source media remains untouched and the timeline stores the animation non-destructively. Primary-video transforms composite onto the sequence canvas; rotation uses a fixed diagonal canvas to prevent FFmpeg frame-size changes during animated scaling.
    - Audio gain/pan automation remains available on audio clips. Transform keyframe lanes for primary video clips, editable Bezier influence handles and reusable motion presets remain outstanding.
 2. Curve editor and speed ramps with explicit interpolation modes.
