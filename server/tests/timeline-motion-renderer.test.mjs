@@ -114,3 +114,16 @@ test("server motion renderer rejects malformed cubic Bezier handles",()=>{
  assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1,interpolation:"bezier",bezier:{x1:0.9,y1:0,x2:0.1,y2:1}}],1),/Bezier handles/);
  assert.throws(()=>buildTimelineMotionFilters({motionKeyframes:[{timeSeconds:0,x:1,interpolation:"bezier",bezier:{x1:0.2,y1:4,x2:0.8,y2:1}}]},1),/Bezier handles/);
 });
+
+test("custom cubic Bezier transform graph renders a real FFmpeg video",async t=>{
+ const binary=process.env.FFMPEG_PATH||"ffmpeg",version=spawnSync(binary,["-version"],{stdio:"ignore"});
+ if(version.status!==0){t.skip("FFmpeg is unavailable in this test environment");return;}
+ const duration=1,metadata={x:20,y:20,width:100,height:80,opacity:1,rotation:0,motionKeyframes:[{timeSeconds:0,x:20,y:20,width:100,height:80},{timeSeconds:1,x:100,y:60,width:160,height:120,interpolation:"bezier",bezier:{x1:0.25,y1:0.1,x2:0.25,y2:1}}]},motion=buildTimelineMotionFilters(metadata,duration,320,240);
+ const graph="[1:v]"+motion.filters.join(",")+"[over];[0:v][over]"+motion.overlay+"[out]";
+ const dir=await mkdtemp(join(tmpdir(),"ev-bezier-render-")),output=join(dir,"bezier.mp4");
+ try{
+  const result=spawnSync(binary,["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-f","lavfi","-i","testsrc2=s=100x80:r=24:d=1","-filter_complex",graph,"-map","[out]","-t","1","-c:v","libx264","-pix_fmt","yuv420p","-y",output],{encoding:"utf8",timeout:60000});
+  assert.equal(result.status,0,result.stderr||"FFmpeg failed to render cubic Bezier transform graph");
+  assert.ok((await stat(output)).size>0,"FFmpeg must produce a non-empty Bezier-animated video");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
