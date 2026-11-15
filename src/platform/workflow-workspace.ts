@@ -101,7 +101,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private keyframe asset IDs · Generate only<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
+ '<p>Generate supports text-to-video, first/last anchors and up to 16 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
 function renderVideoCostEstimate(){
@@ -335,7 +335,7 @@ document.addEventListener("submit",event=>{
    if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
    const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
    const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
-   if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
+   if(assetIds.length<1||assetIds.length>16||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–16 unique private asset IDs and the same number of integer frame indexes.");
    let previous=-1;
    for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
    if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
