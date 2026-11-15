@@ -125,7 +125,7 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
   if(startFrameAssetId||endFrameAssetId||keyframeAssetIds.length||keyframeIndexes!==undefined)
    throw fail("Luma source-video edit/reframe cannot be combined with generation frame anchors.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   if(requestedOperation==="edit"){
-   if(![5,10].includes(durationSeconds))throw fail("Luma video edit supports 5- or 10-second source clips only.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+   if(durationSeconds<2||durationSeconds>18)throw fail("Luma video edit source clips must be 2–18 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
    if(!["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].includes(editStrength))
     throw fail("Luma edit strength is unsupported.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   }else{
