@@ -188,6 +188,12 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Verify cloud-video submission, budget and recovery contracts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply Gemini Omni workflow quote and approval contract
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115100000_google_omni_workflow_quote_approval.sql
+      - name: Apply Luma Ray 3.2 workflow quote, approval and enqueue contract
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115180000_luma_workflow_quote_and_enqueue.sql
+      - name: Verify Luma Ray 3.2 quote, budget approval and idempotent enqueue
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/luma-workflow-quote-postgres-integration.sql
       - name: Apply private Gemini provider-file mappings
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
       - name: Apply durable Gemini upload-attempt ledger
