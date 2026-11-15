@@ -1,7 +1,7 @@
 import "./style.css";
 import { buildFinancialGovernanceAssessment } from "./financial-governance";
 import { initNavigation } from "./navigation";
-import { renderAdminOperationsWorkspace, initAdminOperationsWorkspace, loadAdminOperationsWorkspace, isAdminOperationsAllowed } from "./admin-operations-workspace";
+import { isAdminOperationsAllowed, initializeAdminOperationsCapability } from "./admin-operations-capability";
 import { CAPABILITY_ATLAS, type CapabilityDefinition } from "../core/capability-atlas";
 import { apiRequest } from "../core/api";
 import { createGeneratedVideoClip } from "../core/timeline";
@@ -69,6 +69,23 @@ function renderD1StagingWorkspacePanel():string{
  if(d1StagingWorkspace)return d1StagingWorkspace.renderD1StagingWorkspace();
  if(!d1StagingWorkspaceLoad)void ensureD1StagingWorkspace().then(()=>{if(state.tab==="cloud")render();});
  return d1StagingWorkspaceError?'<div class="notice error">Cloud staging workspace unavailable: '+esc(d1StagingWorkspaceError)+'</div>':'<div class="panel loading-state" role="status">Loading cloud staging tools…</div>';
+}
+type AdminOperationsModule=typeof import("./admin-operations-workspace");
+let adminOperations:AdminOperationsModule|null=null,adminOperationsLoad:Promise<void>|null=null,adminOperationsError="";
+function ensureAdminOperationsWorkspace():Promise<void>{
+ if(adminOperations)return Promise.resolve();
+ if(!adminOperationsLoad)adminOperationsLoad=import("./admin-operations-workspace").then(module=>{adminOperations=module;module.initAdminOperationsWorkspace();}).catch(error=>{adminOperationsError=error instanceof Error?error.message:"Administrator workspace failed to load.";});
+ return adminOperationsLoad;
+}
+function renderAdminOperationsWorkspacePanel():string{
+ if(adminOperations)return adminOperations.renderAdminOperationsWorkspace();
+ if(!adminOperationsLoad)void ensureAdminOperationsWorkspace().then(()=>{if(state.tab==="admin")render();});
+ return adminOperationsError?'<div class="notice error">Administrator workspace unavailable: '+esc(adminOperationsError)+'</div>':'<div class="panel loading-state" role="status">Loading restricted operations workspace…</div>';
+}
+async function loadAdminOperationsWorkspace():Promise<void>{
+ await ensureAdminOperationsWorkspace();
+ if(!adminOperations)throw new Error(adminOperationsError||"Administrator workspace failed to load.");
+ await adminOperations.loadAdminOperationsWorkspace();
 }
 type Tab="home"|"explore"|"cloud"|"knowledge"|"series"|"director"|"canvas"|"characters"|"cinema"|"images"|"video"|"voice"|"enhance"|"campaigns"|"library"|"engines"|"provenance"|"settings"|"capabilities"|"runtime"|"readiness"|"billing"|"finance"|"admin";
 type Shot={id:string;scene:string;action:string;camera:string;lens:string;movement:string;lighting:string;duration:number};
@@ -949,7 +966,7 @@ async function exportFinanceReport(kind:string){
  }catch(error){financeState.error=error instanceof Error?error.message:"Financial export failed.";}render();
 }
 function renderNav(){const groups=["Workspace","Explore","Plan & direct","Create","Refine","Manage"];$<HTMLElement>("#nav").innerHTML=groups.map(g=>'<div class="nav-group"><small>'+g+'</small>'+tabs.filter(t=>t.group===g&&(t.id!=="admin"||isAdminOperationsAllowed())).map(t=>'<button class="nav-item '+(state.tab===t.id?"active":"")+'" data-tab="'+t.id+'"><i>'+t.icon+'</i><span>'+t.label+'</span></button>').join("")+'</div>').join("");}
-function render(){renderNav();const views:Record<Tab,()=>string>={home,explore,cloud:cloudWorkspace,knowledge:renderKnowledgeWorkspacePanel,series,director,canvas,characters,cinema,images,video,voice,enhance,campaigns,library,engines,settings,capabilities,provenance,runtime,readiness,billing:billingWorkspace,finance:financeWorkspace,admin:renderAdminOperationsWorkspace};$<HTMLElement>("#view").innerHTML=views[state.tab]();$<HTMLElement>("#view").dataset.knowledgeView=state.tab==="knowledge"?"true":"false";$<HTMLElement>("#view").dataset.adminOperations=state.tab==="admin"?"true":"false";$<HTMLElement>("#crumb").textContent=tabs.find(t=>t.id===state.tab)?.label||"Workspace";}
+function render(){renderNav();const views:Record<Tab,()=>string>={home,explore,cloud:cloudWorkspace,knowledge:renderKnowledgeWorkspacePanel,series,director,canvas,characters,cinema,images,video,voice,enhance,campaigns,library,engines,settings,capabilities,provenance,runtime,readiness,billing:billingWorkspace,finance:financeWorkspace,admin:renderAdminOperationsWorkspacePanel};$<HTMLElement>("#view").innerHTML=views[state.tab]();$<HTMLElement>("#view").dataset.knowledgeView=state.tab==="knowledge"?"true":"false";$<HTMLElement>("#view").dataset.adminOperations=state.tab==="admin"?"true":"false";$<HTMLElement>("#crumb").textContent=tabs.find(t=>t.id===state.tab)?.label||"Workspace";}
 function exportData(){const blob=new Blob([JSON.stringify({product:"EXECUTIVE VISUALS",schemaVersion:2,projects:state.projects,tasks:state.tasks,shots:state.shots,characters:state.characters,seriesPlans:state.seriesPlans,brandKit:state.brandKit,campaignTemplates:state.campaignTemplates,assets:state.assets,workflow:state.graph,transformationDrafts:state.transformationDrafts},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="executive-visuals-project.json";a.click();URL.revokeObjectURL(url);}
 async function publishBriefToCloud(){
  const project=state.projects.find(item=>item.id===state.activeProject);
@@ -1516,4 +1533,4 @@ document.addEventListener("click",e=>{
  const blob=new Blob([JSON.stringify(board,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");
  link.href=url;link.download="executive-visuals-storyboard-"+board.id+".json";link.click();URL.revokeObjectURL(url);
 });
-render();initNavigation();initAdminOperationsWorkspace();void initRuntime();
+render();initNavigation();window.addEventListener("ev:admin-operations-capability",()=>renderNav());void initializeAdminOperationsCapability();void initRuntime();

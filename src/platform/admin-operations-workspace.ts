@@ -1,5 +1,7 @@
 import { apiRequest } from "../core/api";
 
+import { isAdminOperationsAllowed } from "./admin-operations-capability";
+
 type Overview={users:number;projects:number;assets:number;jobs:number;jobsByStatus:Record<string,number>;queueHealth:{queued:number;running:number;failed24h:number;expiredLeaseJobs:number;missingLeaseJobs:number;oldestQueuedAt:string|null;oldestRunningAt:string|null;oldestQueuedAgeSeconds:number|null;oldestRunningAgeSeconds:number|null;status:"healthy"|"warning"|"critical"};usage30d:{operations:number;estimatedCostMicros:number};generatedAt:string;runtime:{authMode:string;dataPersistence:string;persistentDataRequired:boolean}};
 type UserRow={id:string;email:string;authSource:string;createdAt:string;projects:number;jobs:number;usage30d:number};
 type JobRow={id:string;email:string;jobType:string;status:string;progress:number;attempts:number;createdAt:string;updatedAt:string;completedAt:string|null;leaseExpiresAt?:string|null;leaseHeartbeatAt?:string|null;leaseState?:"active"|"expired"|"missing"|"not_running"};
@@ -10,8 +12,7 @@ type GenerationReadiness={status:"ready"|"blocked";canSubmit:boolean;checks:Reco
 type AuditRow={id:number;ownerId:string;email:string;eventType:string;subjectType:string;subjectId:string;createdAt:string};
 type BillingOps={access:"ready"|"restricted"|"partial";provider:any;reconciliation:any;recovery:any;message:string;actionMessage:string};
 let refreshSequence=0;
-const state:{allowed:boolean;loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];providerSummary:ProviderSummary;generationReadiness:GenerationReadiness|null;audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={allowed:false,loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],providerSummary:{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0},generationReadiness:null,audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked.",actionMessage:""},updatedAt:""};
-export function isAdminOperationsAllowed(){return state.allowed;}
+const state:{loading:boolean;error:string;overview:Overview|null;users:UserRow[];jobs:JobRow[];providers:ProviderRow[];providerSummary:ProviderSummary;generationReadiness:GenerationReadiness|null;audit:AuditRow[];userQuery:string;billingOps:BillingOps;updatedAt:string}={loading:false,error:"Checking administrator access…",overview:null,users:[],jobs:[],providers:[],providerSummary:{total:0,ready:0,disabled:0,unverified:0,needsConfiguration:0,remoteOptInRequired:0,unavailable:0,models:0,qualityVerifiedModels:0},generationReadiness:null,audit:[],userQuery:"",billingOps:{access:"restricted",provider:null,reconciliation:null,recovery:null,message:"Billing administrator role has not been checked.",actionMessage:""},updatedAt:""};
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(value:string|null|undefined)=>{if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString();};
 const duration=(value:number|null|undefined)=>{if(value===null||value===undefined||!Number.isFinite(value))return "—";const seconds=Math.max(0,Math.floor(value));if(seconds<60)return seconds+"s";const minutes=Math.floor(seconds/60);if(minutes<60)return minutes+"m";const hours=Math.floor(minutes/60);if(hours<24)return hours+"h "+(minutes%60)+"m";return Math.floor(hours/24)+"d "+(hours%24)+"h";};
@@ -26,6 +27,7 @@ function renderGenerationReadiness(){
 }
 function statusClass(value:string){return ["ready","succeeded","completed","active"].includes(value)?"good":["failed","disabled","needs_configuration","remote_opt_in_required"].includes(value)?"warn":"neutral";}
 export function renderAdminOperationsWorkspace(){
+ if(!isAdminOperationsAllowed())return '<div class="notice warning">Administrator access is required to view this workspace.</div>';
  const o=state.overview;
  const metric=(label:string,value:string|number,detail:string)=>'<article class="admin-ops-metric"><small>'+esc(label)+'</small><strong>'+esc(value)+'</strong><span>'+esc(detail)+'</span></article>';
  return '<div class="admin-ops-head"><div><div class="eyebrow">RESTRICTED · PLATFORM OPERATIONS</div><h1>Administrator control centre</h1><p>Live operational visibility for accounts, workloads, model providers and audit activity. Sensitive provider credentials are never returned to this screen.</p></div><button class="secondary" data-admin-ops-refresh '+(state.loading?'disabled':'')+'>↻ '+(state.loading?'Refreshing':'Refresh live data')+'</button></div>'+
@@ -54,6 +56,7 @@ export function renderAdminOperationsWorkspace(){
  '<div class="admin-ops-links"><button class="secondary" data-tab="finance">Open financial command centre</button><button class="secondary" data-tab="readiness">Open release readiness</button><button class="secondary" data-tab="engines">Open creative engines</button></div>';
 }
 export async function loadAdminOperationsWorkspace(){
+ if(!isAdminOperationsAllowed()){state.error="Administrator access is required to load operations data.";state.loading=false;paint();return;}
  const requestId=++refreshSequence;
  state.loading=true;state.error="";paint();
  try{
@@ -137,9 +140,5 @@ export function initAdminOperationsWorkspace(){
   state.userQuery=input instanceof HTMLInputElement?input.value.trim().slice(0,120):"";
   void loadAdminOperationsWorkspace();
  });
- void apiRequest<{capabilities:{admin:boolean}}>("/api/me").then(result=>{
-  state.allowed=result.capabilities?.admin===true;
-  state.error=state.allowed?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
-  window.dispatchEvent(new CustomEvent("ev:admin-operations-capability"));
- }).catch(()=>{state.allowed=false;state.error="Sign in with an allowlisted administrator account to access this workspace.";window.dispatchEvent(new CustomEvent("ev:admin-operations-capability"));});
+ state.error=isAdminOperationsAllowed()?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
 }
