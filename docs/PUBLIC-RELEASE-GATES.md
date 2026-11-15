@@ -2,12 +2,13 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Last reviewed:** 15 November 2026.  
-**Current main:** `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f` (PR #604: canonical R2 asset bucket contract guard).  
-**Current production deployment:** `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f` (Render deployment `dep-dbsld3mq1p3s73euq2o0` is live; R2/GCS feature flags remain off).
+**Current main:** `6ef500f78f9e820d29b782085e9294c549545932` (PR #606: undoable track-wide caption presets).  
+**Current production deployment:** `6ef500f78f9e820d29b782085e9294c549545932` (Render deployment `dep-dbslg15bedkc73caub50` is live; R2/GCS feature flags remain off).
 
 ## Mainline checkpoint — 15 November 2026
 
 - PR #602 remains merged in history and supplies `google-auth-library@11.3.3` for the fail-closed GCS Workload Identity Federation bootstrap.
+- PR #606 is merged as commit `6ef500f78f9e820d29b782085e9294c549545932`. It adds an explicit, undoable caption-track preset action with clip/timing/metadata preservation; exact-head Quality checks passed (27/27 jobs), and Render deployment `dep-dbslg15bedkc73caub50` is live. This is an editor capability, not a change to storage, billing or provider execution.
 - PR #604 is merged as commit `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`. It rejects custom R2 bucket names until asset metadata, publication and cleanup support configurable buckets; tests cover canonical, empty and custom bucket values. It does not provision or activate R2.
 - Exact-main Quality checks passed (24/24 jobs); Release Integration, Google Drive recovery, asset-publication PostgreSQL and cloud-video PostgreSQL checks passed. Render deployment `dep-dbsld3mq1p3s73euq2o0` is live on the current main commit. This does not certify durable customer storage.
 - Current main contains the generic Runway Model Router quote and approval path, including immutable non-billable quote records and atomic owner-approved budget reservation/job enqueue. Historical PR #67 was closed as superseded because its separate approval ledger duplicates this newer workflow and its branch is substantially diverged.
