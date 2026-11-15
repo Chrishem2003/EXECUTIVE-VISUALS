@@ -171,8 +171,8 @@ export function createLumaProviderFileService({
     throw fail("Luma edit/reframe requires one private source-video asset and cannot include generation-only frame controls.","LUMA_FILE_INPUT_INVALID",400);
    if(operation==="edit"&&![5,10].includes(Number(input.durationSeconds)))
     throw fail("Luma edit source duration must be 5 or 10 seconds.","LUMA_FILE_INPUT_INVALID",400);
-   if(operation==="reframe"&&(!Number.isSafeInteger(input.durationSeconds)||input.durationSeconds<2||input.durationSeconds>30||input.resolution==="1080p"))
-    throw fail("Luma reframe requires a 2–30 second source and an enabled resolution tier.","LUMA_FILE_INPUT_INVALID",400);
+   if(operation==="reframe"&&(!Number.isSafeInteger(input.durationSeconds)||input.durationSeconds<2||input.durationSeconds>10||input.resolution==="1080p"))
+    throw fail("Luma reframe requires a 2–10 second source and an enabled resolution tier.","LUMA_FILE_INPUT_INVALID",400);
   }
   const keyframeAssetIds=input.keyframeAssetIds;
   if(keyframeAssetIds!==undefined){
