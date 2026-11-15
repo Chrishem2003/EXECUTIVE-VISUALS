@@ -90,7 +90,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  const lumaQuoteReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
   env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
-  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&lumaPrivateStorageReady&&
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaWorkflowAdapter=lumaQuoteReady?createLumaWorkflowQuoteAdapter({
   client:createLumaRay32Adapter({apiKey:env.LUMA_AGENTS_API_KEY,fetchImpl}),
