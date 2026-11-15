@@ -50,3 +50,16 @@ test("motion loop and ping-pong playback wrap deterministically",()=>{
  assert.equal(evaluateMotionKeyframes(keys,2,base,2,"loop").x,0);
  assert.equal(evaluateMotionKeyframes(keys,2,base,2,"ping-pong").x,0);
 });
+
+test("custom cubic Bezier interpolation is deterministic and matches the expected ease curve",()=>{
+ const keys=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"bezier",bezier:{x1:0.25,y1:0.1,x2:0.25,y2:1}}];
+ assert.ok(Math.abs(evaluateMotionProperty(keys,0.5,"x",0,1)-80.2403)<0.01);
+ const custom=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"bezier",bezier:{x1:0.42,y1:0,x2:0.58,y2:1}}];
+ assert.ok(Math.abs(evaluateMotionProperty(custom,0.25,"x",0,1)-12.9)<0.3);
+});
+test("custom cubic Bezier handles are bounded, ordered and normalized",()=>{
+ const normalized=normalizeMotionKeyframes([{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"bezier",bezier:{x1:0.2,y1:-0.5,x2:0.8,y2:1.5}}],1);
+ assert.deepEqual(normalized[1].bezier,{x1:0.2,y1:-0.5,x2:0.8,y2:1.5});
+ assert.throws(()=>normalizeMotionKeyframes([{timeSeconds:0,x:0,interpolation:"bezier",bezier:{x1:0.8,y1:0,x2:0.2,y2:1}}],1),/Bezier handles/);
+ assert.throws(()=>normalizeMotionKeyframes([{timeSeconds:0,x:0,interpolation:"bezier",bezier:{x1:0.2,y1:3,x2:0.8,y2:1}}],1),/Bezier handles/);
+});
