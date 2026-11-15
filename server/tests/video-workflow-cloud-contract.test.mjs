@@ -316,6 +316,23 @@ test("builds exact Luma Ray 3.2 text-to-video and image-to-video contracts",()=>
  assert.match(imageRequest.requestHash,/^[a-f0-9]{64}$/);
 });
 
+test("builds immutable Luma multi-keyframe workflow inputs with rights and ordered frame indexes",()=>{
+ const node={kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:10,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,keyframeAssetIds:["frame-a","frame-b","frame-c"],keyframeIndexes:[0,72,240]}};
+ const request=createVideoWorkflowCloudRequest({node,projectId:"project-1",requestId:"luma-keyframes-1",values:{prompt:"A continuous cinematic camera move"}});
+ assert.deepEqual(request.input.keyframeAssetIds,["frame-a","frame-b","frame-c"]);
+ assert.deepEqual(request.input.keyframeIndexes,[0,72,240]);
+ assert.equal(request.input.rightsConfirmed,true);
+ assert.match(request.requestHash,/^[a-f0-9]{64}$/);
+ assert.equal(Object.isFrozen(request.input.keyframeAssetIds),true);
+});
+test("Luma multi-keyframe workflow rejects mismatched, unordered, duplicate and unlicensed frames",()=>{
+ const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,rightsConfirmed:true,keyframeAssetIds:["a","b"],keyframeIndexes:[0,24]}},projectId:"project-1",requestId:"luma-invalid-frames",values:{prompt:"A scene"}};
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,keyframeIndexes:[0]}}}),/matching output-frame index/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,keyframeIndexes:[24,0]}}}),/strictly increasing/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,keyframeAssetIds:["a","a"]}}}),/duplicate asset IDs/);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,rightsConfirmed:false}}}),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,startFrameAssetId:"start"}}}),/cannot be combined/);
+});
 test("Luma workflow contract rejects unpriced, unsupported or unscoped source operations",()=>{
  const lumaBase={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5}},projectId:"project-1",requestId:"luma-invalid",values:{prompt:"A scene"}};
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,resolution:"4k"}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
