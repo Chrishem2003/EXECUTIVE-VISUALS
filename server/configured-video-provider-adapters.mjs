@@ -110,7 +110,7 @@ export function createConfiguredVideoProviderAdapters({
       minimumPollIntervalMs: client.minimumPollIntervalMs || 5000,
       async prepareInput(input, context) {
         assertIdentity(input, "luma", model);
-        const hasReferences = Boolean(input.startFrame || input.endFrame) ||
+        const hasReferences = Boolean(input.sourceVideo || input.startFrame || input.endFrame) ||
           (Array.isArray(input.keyframes) && input.keyframes.length > 0) ||
           (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0);
         if (hasReferences && typeof lumaPrepareInput !== "function") {
