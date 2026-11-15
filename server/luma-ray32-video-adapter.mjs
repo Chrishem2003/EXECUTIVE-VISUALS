@@ -39,8 +39,12 @@ function validateInput(input) {
     if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 2 || durationSeconds > 10) {
       throw fail("Ray 3.2 reframe source duration must be a whole number from 2 to 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
     }
+  } else if (operation === "edit") {
+    if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 2 || durationSeconds > 18) {
+      throw fail("Ray 3.2 video edit source duration must be a whole number from 2 to 18 seconds.", "LUMA_VIDEO_INPUT_INVALID");
+    }
   } else if (![5, 10].includes(durationSeconds)) {
-    throw fail("Ray 3.2 generation/edit duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
+    throw fail("Ray 3.2 generation/extension duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
   }
   const resolution = input.resolution ?? "720p";
   if (!allowedResolutions.has(resolution)) throw fail("Ray 3.2 resolution must be 360p, 540p, 720p or 1080p.", "LUMA_VIDEO_INPUT_INVALID");
