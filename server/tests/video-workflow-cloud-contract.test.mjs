@@ -345,12 +345,12 @@ test("Luma ten-second workflow requires multi-keyframe mode instead of first/las
   rightsConfirmed:true,startFrameAssetId:"frame-first",endFrameAssetId:"frame-last"
  }},projectId:"project-1",requestId:"luma-first-last-10",values:{prompt:"A scene"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
-test("Luma edit contract accepts documented source durations through eighteen seconds",()=>{
- const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:18,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,sourceVideoAssetId:"source-video"}},projectId:"project-1",requestId:"luma-edit-18s",values:{prompt:"Restyle while preserving motion"}};
+test("Luma edit workflow contract accepts only published five- and ten-second quote tiers",()=>{
+ const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:10,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,sourceVideoAssetId:"source-video"}},projectId:"project-1",requestId:"luma-edit-10s",values:{prompt:"Restyle while preserving motion"}};
  const result=createVideoWorkflowCloudRequest(base);
  assert.equal(result.operation,"video_edit");
- assert.equal(result.input.durationSeconds,18);
- assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,durationSeconds:19}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.equal(result.input.durationSeconds,10);
+ for(const durationSeconds of [6,18,19])assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,durationSeconds}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
 
 test("Luma source-video edit and reframe contracts bind private assets and operation-specific controls",()=>{
