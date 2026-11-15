@@ -1490,6 +1490,49 @@ document.addEventListener("input",event=>{
   const output=document.querySelector<HTMLElement>("#tl-preview-time");if(output)output.textContent=formatPlaybackTime(state.playheadFrame);
  }
 });
+type MotionBezierDrag={pointerId:number;svg:SVGSVGElement;form:HTMLFormElement;index:1|2};
+let motionBezierDrag:MotionBezierDrag|null=null;
+function updateMotionBezierGraph(svg:SVGSVGElement,curve:{x1:number;y1:number;x2:number;y2:number}){
+ const px=(x:number)=>18+264*x,py=(y:number)=>50-20*y;
+ const line1=svg.querySelector<SVGLineElement>('[data-motion-bezier-line="1"]'),line2=svg.querySelector<SVGLineElement>('[data-motion-bezier-line="2"]'),path=svg.querySelector<SVGPathElement>("[data-motion-bezier-path]"),h1=svg.querySelector<SVGCircleElement>('[data-tl-bezier-handle="1"]'),h2=svg.querySelector<SVGCircleElement>('[data-tl-bezier-handle="2"]');
+ if(line1){line1.setAttribute("x2",px(curve.x1).toFixed(1));line1.setAttribute("y2",py(curve.y1).toFixed(1));}
+ if(line2){line2.setAttribute("x1","282");line2.setAttribute("y1","10");line2.setAttribute("x2",px(curve.x2).toFixed(1));line2.setAttribute("y2",py(curve.y2).toFixed(1));}
+ if(path)path.setAttribute("d","M18 90 C"+px(curve.x1).toFixed(1)+" "+py(curve.y1).toFixed(1)+" "+px(curve.x2).toFixed(1)+" "+py(curve.y2).toFixed(1)+" 282 10");
+ if(h1){h1.setAttribute("cx",px(curve.x1).toFixed(1));h1.setAttribute("cy",py(curve.y1).toFixed(1));}
+ if(h2){h2.setAttribute("cx",px(curve.x2).toFixed(1));h2.setAttribute("cy",py(curve.y2).toFixed(1));}
+}
+document.addEventListener("pointerdown",event=>{
+ const target=event.target as Element|null,handle=target?.closest<SVGCircleElement>("[data-tl-bezier-handle]"),svg=handle?.closest<SVGSVGElement>(".motion-bezier-graph"),form=svg?.closest<HTMLFormElement>("#tl-clip-inspector");
+ if(!handle||!svg||!form)return;
+ const index=Number(handle.dataset.tlBezierHandle);if(index!==1&&index!==2)return;
+ motionBezierDrag={pointerId:event.pointerId,svg,form,index};svg.setPointerCapture(event.pointerId);event.preventDefault();
+});
+window.addEventListener("pointermove",event=>{
+ const drag=motionBezierDrag;if(!drag||event.pointerId!==drag.pointerId)return;
+ const rect=drag.svg.getBoundingClientRect();if(!rect.width||!rect.height)return;
+ const x=Math.max(0,Math.min(1,((event.clientX-rect.left)/rect.width*300-18)/264)),y=Math.max(-2,Math.min(2,(50-(event.clientY-rect.top)/rect.height*110)/20));
+ const read=(name:string,fallback:number)=>Number((drag.form.elements.namedItem(name) as HTMLInputElement|null)?.value??fallback);
+ let x1=read("bezierX1",0.25),y1=read("bezierY1",0.1),x2=read("bezierX2",0.25),y2=read("bezierY2",1);
+ if(drag.index===1){x1=Math.min(x,x2);y1=y;}else{x2=Math.max(x,x1);y2=y;}
+ const values={bezierX1:x1,bezierY1:y1,bezierX2:x2,bezierY2:y2};
+ for(const [name,value] of Object.entries(values)){const input=drag.form.elements.namedItem(name) as HTMLInputElement|null;if(input)input.value=value.toFixed(2);}
+ updateMotionBezierGraph(drag.svg,{x1,y1,x2,y2});event.preventDefault();
+});
+const finishMotionBezierDrag=(event:PointerEvent)=>{if(motionBezierDrag&&event.pointerId===motionBezierDrag.pointerId)motionBezierDrag=null;};
+window.addEventListener("pointerup",finishMotionBezierDrag);
+window.addEventListener("pointercancel",finishMotionBezierDrag);
+document.addEventListener("keydown",event=>{
+ const key=event as KeyboardEvent,handle=(key.target as Element|null)?.closest<SVGCircleElement>("[data-tl-bezier-handle]"),svg=handle?.closest<SVGSVGElement>(".motion-bezier-graph"),form=svg?.closest<HTMLFormElement>("#tl-clip-inspector");
+ if(!handle||!svg||!form||!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key.key))return;
+ const index=Number(handle.dataset.tlBezierHandle);if(index!==1&&index!==2)return;
+ const read=(name:string,fallback:number)=>Number((form.elements.namedItem(name) as HTMLInputElement|null)?.value??fallback);
+ let x1=read("bezierX1",0.25),y1=read("bezierY1",0.1),x2=read("bezierX2",0.25),y2=read("bezierY2",1);
+ const delta=key.shiftKey?0.05:0.01;
+ if(index===1){if(key.key==="ArrowLeft")x1=Math.max(0,x1-delta);if(key.key==="ArrowRight")x1=Math.min(x2,x1+delta);if(key.key==="ArrowUp")y1=Math.min(2,y1+delta);if(key.key==="ArrowDown")y1=Math.max(-2,y1-delta);}
+ else{if(key.key==="ArrowLeft")x2=Math.max(x1,x2-delta);if(key.key==="ArrowRight")x2=Math.min(1,x2+delta);if(key.key==="ArrowUp")y2=Math.min(2,y2+delta);if(key.key==="ArrowDown")y2=Math.max(-2,y2-delta);}
+ for(const [name,value] of Object.entries({bezierX1:x1,bezierY1:y1,bezierX2:x2,bezierY2:y2})){const input=form.elements.namedItem(name) as HTMLInputElement|null;if(input)input.value=value.toFixed(2);}
+ updateMotionBezierGraph(svg,{x1,y1,x2,y2});key.preventDefault();
+});
 type SpeedCurveDrag={pointerId:number;svg:SVGSVGElement;trackId:string;clipId:string;index:number;duration:number;curve:SpeedKeyframe[];changed:boolean};
 let speedCurveDrag:SpeedCurveDrag|null=null;
 document.addEventListener("pointerdown",event=>{
