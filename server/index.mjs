@@ -16,7 +16,7 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { createBatchIdempotencyKeys, inspectBatchReplay } from "./batch-idempotency.mjs";
-import { normalizeMediaBatchRequest } from "./media-batch.mjs";
+import { normalizeMediaBatchRequest, inspectMediaBatchReplay } from "./media-batch.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -1616,24 +1616,9 @@ export function createAppServer() {
         const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"");
         if(!idempotencyKey||idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Media batches require an idempotency key no longer than 180 characters.");return;}
         const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.items.length);
-        const inspectReplay=existing=>{
-          const exists=existing.some(Boolean);
-          if(!exists)return{exists:false,matches:false,batchId:null};
-          if(existing.some(job=>!job))return{exists:true,matches:false,batchId:null};
-          let first;try{first=parseJson(existing[0].input_json);}catch{return{exists:true,matches:false,batchId:null};}
-          const batchId=typeof first.batchId==="string"&&first.batchId?first.batchId:null;
-          if(!batchId)return{exists:true,matches:false,batchId:null};
-          const matches=existing.every((job,index)=>{
-            if(job.job_type!==jobType||job.project_id!==normalized.projectId)return false;
-            const input=parseJson(job.input_json,{});
-            const comparable={...input};delete comparable.batchId;delete comparable.batchIndex;delete comparable.batchTotal;
-            const expected={sourceAssetId:normalized.items[index].sourceAssetId,...normalized.items[index].options,batchOperation:jobType};
-            return input.batchId===batchId&&input.batchIndex===index&&input.batchTotal===normalized.items.length&&stableJson(comparable)===stableJson(expected);
-          });
-          return{exists:true,matches,batchId};
-        };
+
         const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
-        const replay=inspectReplay(existing);
+        const replay=inspectMediaBatchReplay(existing,normalized.items,normalized.projectId,jobType);
         if(replay.exists){
           if(!replay.matches){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different or incomplete media batch.");return;}
           const jobs=existing.map(recordJob);
@@ -1643,7 +1628,7 @@ export function createAppServer() {
         db.exec("BEGIN IMMEDIATE");
         try{
           const concurrent=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
-          const concurrentReplay=inspectReplay(concurrent);
+          const concurrentReplay=inspectMediaBatchReplay(concurrent,normalized.items,normalized.projectId,jobType);
           if(concurrentReplay.exists){
             if(!concurrentReplay.matches){db.exec("ROLLBACK");fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was concurrently used for a different or incomplete media batch.");return;}
             db.exec("COMMIT");
