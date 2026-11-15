@@ -27,7 +27,7 @@ test("closes trailing silence against the known media duration",()=>{
 
 test("parses audio clipping, peak, RMS and integrated loudness",()=>{
  const metrics=parseAudioMetrics("Peak level dB: -0.4\nRMS level dB: -18.2\nNumber of samples clipped: 12\n I: -16.7 LUFS");
- assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,rmsDbfs:-18.2,integratedLufs:-16.7});
+ assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,rmsDbfs:-18.2,integratedLufs:-16.7,truePeakDbfs:null});
 });
 test("flags clipped samples and near-full-scale peaks without imposing a loudness target",()=>{
  const findings=buildAudioMetricFindings({clippedSamples:4,peakDbfs:-0.5,rmsDbfs:-18,integratedLufs:-16});
