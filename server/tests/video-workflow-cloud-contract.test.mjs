@@ -376,7 +376,7 @@ test("Luma multi-keyframe workflow rejects mismatched, unordered, duplicate and 
 test("Luma workflow contract rejects unpriced, unsupported or unscoped source operations",()=>{
  const lumaBase={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5}},projectId:"project-1",requestId:"luma-invalid",values:{prompt:"A scene"}};
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,resolution:"4k"}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
- assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,sourceVideoAssetId:"source-video"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,sourceVideoAssetId:"source-video"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,referenceAssetIds:["generic-reference"]}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,rightsConfirmed:false,referenceAssetId:"frame-asset"}}}),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
 });
