@@ -179,11 +179,11 @@ export function createLumaProviderFileService({
   }
   const keyframeAssetIds=input.keyframeAssetIds;
   if(keyframeAssetIds!==undefined){
-   if(!Array.isArray(keyframeAssetIds)||keyframeAssetIds.length<1||keyframeAssetIds.length>16||
+   if(!Array.isArray(keyframeAssetIds)||keyframeAssetIds.length<1||keyframeAssetIds.length>64||
       !Array.isArray(input.keyframeIndexes)||input.keyframeIndexes.length!==keyframeAssetIds.length||
       keyframeAssetIds.some(assetId=>typeof assetId!=="string"||!UUID.test(assetId))||
       new Set(keyframeAssetIds).size!==keyframeAssetIds.length)
-    throw fail("Luma keyframe assets and indexes must contain 1 to 16 unique, matching entries.","LUMA_FILE_INPUT_INVALID",400);
+    throw fail("Luma keyframe assets and indexes must contain 1 to 64 unique, matching entries.","LUMA_FILE_INPUT_INVALID",400);
    const duration=Number(input.durationSeconds??5),maxFrame=duration*24;
    let previous=-1;
    if(![5,10].includes(duration)||input.startFrameAssetId||input.endFrameAssetId||input.sourceVideoAssetId||
