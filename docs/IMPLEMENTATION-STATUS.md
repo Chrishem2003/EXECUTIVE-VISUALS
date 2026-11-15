@@ -1,11 +1,12 @@
 # Executive Visuals — implementation status
 
 **Updated:** 15 November 2026  
-**Branch:** `main` (latest main is `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`; PR #604 is merged; Render deployment `dep-dbsld3mq1p3s73euq2o0` is live; isolated D1 staging remains separate from production)
+**Branch:** `main` (latest main is `6ef500f78f9e820d29b782085e9294c549545932`; PR #606 is merged; Render deployment `dep-dbslg15bedkc73caub50` is live; isolated D1 staging remains separate from production)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
 ## Mainline delta — 15 November 2026 (latest)
 
+- **Caption track presets — PR #606:** the Timeline Editor can now apply the selected caption preset to every clip on the selected caption track. The operation preserves clip IDs, timing, source references and unrelated metadata; locked tracks are rejected; timeline validation, one-step undo and revision-safe persistence are used. Exact-head Quality checks passed (27/27 jobs), and Render deployment `dep-dbslg15bedkc73caub50` is live on commit `6ef500f78f9e820d29b782085e9294c549545932`. Safe-area preview and brand-kit preset persistence remain separate roadmap items.
 - **R2 asset contract guard — PR #604:** merged as `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`. The cloud asset service now rejects a custom R2 bucket because the current metadata, publication and cleanup contracts pin the canonical bucket to `executive-visuals-media`. Regression tests cover canonical selection, empty-value fallback and rejection of custom buckets. This is a safety guard, not R2 activation.
 - **Verification:** exact-main Quality checks passed (24/24 jobs); Release Integration, Google Drive export recovery, asset-publication PostgreSQL and cloud-video PostgreSQL checks passed. Render deployment `dep-dbsld3mq1p3s73euq2o0` is live on the merged commit.
 - **Runway Model Router workflow:** current main already has non-billable provider preflight, immutable workflow quote persistence, explicit project-owner approval, atomic `approve_and_enqueue_video_workflow` budget reservation/job creation, workflow-canvas approval controls and generated-video timeline handoff. Historical PR #67 was closed as superseded; its separate Runway-only approval ledger must not be merged over the generic current-main workflow.
