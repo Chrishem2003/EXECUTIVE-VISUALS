@@ -155,6 +155,10 @@ export function createLumaProviderFileService({
   if(Array.isArray(input.referenceAssetIds)&&input.referenceAssetIds.length>0)throw fail("Ray 3.2 does not accept a generic referenceAssetIds list; use startFrameAssetId, endFrameAssetId or keyframeAssetIds.","LUMA_FILE_REFERENCE_MODE_UNSUPPORTED",400);
   const resolved={...input};
   const operation=String(input.operation??"generate");
+  const hasPrivateSource=Boolean(input.sourceVideoAssetId||input.startFrameAssetId||input.endFrameAssetId||
+   (Array.isArray(input.keyframeAssetIds)&&input.keyframeAssetIds.length));
+  if(hasPrivateSource&&input.rightsConfirmed!==true)
+   throw fail("Explicit media-rights confirmation is required before private source uploads.","LUMA_FILE_RIGHTS_REQUIRED",403);
   if(!["generate","edit","reframe"].includes(operation))
    throw fail("Luma private-file workflow supports generation, edit and reframe only; extension requires a separately verified source generation.","LUMA_FILE_INPUT_INVALID",400);
   if(operation==="generate"&&input.sourceVideoAssetId)
