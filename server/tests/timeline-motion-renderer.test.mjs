@@ -36,3 +36,16 @@ test("FFmpeg compiler emits supported easing expressions for motion curves",()=>
  const step=[{timeSeconds:0,x:10},{timeSeconds:1,x:50,interpolation:"step"}];
  assert.match(buildTimelineMotionExpression(step,"x",0,1),/10/);
 });
+
+test("renderer interpolates from the clip's base transform before the first keyframe",()=>{
+ const keys=[{timeSeconds:1,x:100},{timeSeconds:2,x:200}];
+ const expression=buildTimelineMotionExpression(keys,"x",20,2);
+ assert.match(expression,/20\+\(80\)/);
+ assert.equal(evaluateTimelineMotion(keys,0.5,"x",20,2),60);
+});
+test("rotated overlays keep their visual center anchored while using a safe diagonal canvas",()=>{
+ const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
+ assert.ok(result.filters.some(filter=>filter.includes("rotw(PI/4)")));
+ assert.match(result.overlay,/overlay_w/);
+ assert.match(result.overlay,/overlay_h/);
+});
