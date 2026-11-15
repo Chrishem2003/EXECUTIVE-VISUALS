@@ -81,11 +81,12 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
  const luma=provider==="luma";
  const resolutions=luma?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":"provider_default");
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(provider==="luma"?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
  '<div class="wf-video-provider-grid"><label>Duration · seconds<input name="videoDuration" type="number" min="'+(luma?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
- '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(String(config.resolution||"provider_default")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
+ '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<label>Private keyframe asset IDs · Luma only<input name="keyframeAssetIds" value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
  '<p>For Ray 3.2 multi-keyframe generation, use 1–64 private image asset IDs and matching strictly increasing frame indexes (24 fps; maximum index is duration × 24). Assets are checked against this project before quote and again before approval. Source-video editing, reframing and extension remain disabled in this workflow composer.</p>'+
@@ -318,6 +319,15 @@ document.addEventListener("submit",event=>{
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
  if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
+ if(target.name==="videoProvider"){
+  const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const model=form?.querySelector<HTMLSelectElement>('[name="videoModel"]');
+  const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
+  const duration=form?.querySelector<HTMLInputElement>('[name="videoDuration"]');
+  if(model)model.value=target.value==="luma"?"ray-3.2":"model-router";
+  if(resolution){const values=target.value==="luma"?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===(target.value==="luma"?"720p":"provider_default")?"selected":"")+'>'+value+'</option>').join("");}
+  if(duration){duration.min=target.value==="luma"?"5":"2";duration.max=target.value==="luma"?"10":"30";duration.step=target.value==="luma"?"5":"1";if(target.value==="luma"&&!["5","10"].includes(duration.value))duration.value="5";}
+ }
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
 document.addEventListener("dragstart",event=>{
