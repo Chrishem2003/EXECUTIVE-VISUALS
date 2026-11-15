@@ -669,3 +669,100 @@ test("cloud transformation cancellation refuses active work and unauthorized edi
  assert.equal(forbidden.status,403);
  assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
 });
+
+const lumaFrame="b23e4567-e89b-42d3-a456-426614174000";
+const lumaQuote="c23e4567-e89b-42d3-a456-426614174000";
+const lumaWorkerEnv={
+ CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+ VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+ LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
+ LUMA_PROVIDER_FILES_SCHEMA_READY:"true",LUMA_AGENTS_API_KEY:"server-test-key",
+ LUMA_USD_PER_CREDIT:"0.003",SUPABASE_URL:"https://example.supabase.co",
+ SUPABASE_SERVICE_ROLE_KEY:"server-service-key",CLOUD_VIDEO_OUTPUT_HOSTS:"media.example.com"
+};
+
+test("Luma Ray 3.2 workflow quote validates private frame assets and records account-priced non-billable quote",async()=>{
+ const writes=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   const route=url.split("/rest/v1/")[1]||"";
+   if(route==="rpc/record_video_workflow_quote"){
+    writes.push(JSON.parse(options.body));
+    return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){return{id:assetId,projectId:project,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"luma-ui-quote-001",
+  node:{id:"luma-video",kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"9:16",referenceAssetId:lumaFrame,rightsConfirmed:true}},
+  values:{prompt:"Animate a cinematic city skyline"}
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.provider,"luma");
+ assert.equal(result.body.quote.model,"ray-3.2");
+ assert.equal(result.body.quote.operation,"generate");
+ assert.equal(result.body.quote.estimatedCredits,100);
+ assert.equal(result.body.quote.estimatedAmount,0.3);
+ assert.equal(result.body.quote.pricingSource,"luma_ray32_published_credits_contract_rate");
+ assert.match(result.body.quote.pricingUrl,/lumalabs\.ai/);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.paidExecutionEnabled,true);
+ assert.equal(writes.length,1);
+ assert.equal(writes[0].p_config_id,"luma-ray32");
+ assert.equal(writes[0].p_pricing_source,"luma_ray32_published_credits_contract_rate");
+ assert.equal(writes[0].p_operation,"generate");
+});
+
+test("Luma quote stays blocked until schema and private frame scope are ready",async()=>{
+ let writes=0;
+ const makeApi=(env,assetProject=project)=>createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){return{id:assetId,projectId:assetProject,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },authorize:async()=>true
+ });
+ const body={projectId:project,requestId:"luma-ui-quote-002",node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",referenceAssetId:lumaFrame,rightsConfirmed:true}},values:{prompt:"A cinematic scene"}};
+ const schemaBlocked=await makeApi({...lumaWorkerEnv,LUMA_PROVIDER_FILES_SCHEMA_READY:"false"}).handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body});
+ assert.equal(schemaBlocked.status,503);
+ const wrongProject=await makeApi(lumaWorkerEnv,"d23e4567-e89b-42d3-a456-426614174000").handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body});
+ assert.equal(wrongProject.status,422);
+ assert.equal(writes,0);
+});
+
+test("Luma approval uses the same governed quote adapter and stable config ID",async()=>{
+ let approvalArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{job_id:"e23e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,budget_reservation_id:"f23e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"}]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},assets:{async get(){return null;}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:lumaQuote,requestId:"luma-ui-approval-001",
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:0.5,approvalNote:"Approve this exact Luma generation."
+ }});
+ assert.equal(result.status,202);
+ assert.equal(approvalArgs.p_config_id,"luma-ray32");
+ assert.equal(approvalArgs.p_input.provider,"luma");
+ assert.equal(approvalArgs.p_input.model,"ray-3.2");
+ assert.equal(approvalArgs.p_input.operation,"generate");
+});
