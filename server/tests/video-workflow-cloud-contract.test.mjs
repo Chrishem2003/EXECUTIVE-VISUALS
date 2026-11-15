@@ -295,3 +295,31 @@ test("rejects duplicate or excessive reference assets", () => {
     /at most 4/
   );
 });
+
+test("builds exact Luma Ray 3.2 text-to-video and image-to-video contracts",()=>{
+ const lumaNode={id:"luma-video-1",kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,aspectRatio:"9:16",resolution:"720p"}};
+ const textRequest=createVideoWorkflowCloudRequest({node:lumaNode,projectId:"project-1",requestId:"luma-text-1",values:{prompt:"A cinematic city scene"}});
+ assert.equal(textRequest.provider,"luma");
+ assert.equal(textRequest.model,"ray-3.2");
+ assert.equal(textRequest.operation,"generate");
+ assert.equal(textRequest.input.operation,"generate");
+ assert.equal(textRequest.input.durationSeconds,5);
+ assert.equal(textRequest.input.resolution,"720p");
+ assert.equal(textRequest.input.audioMode,"none");
+ const imageRequest=createVideoWorkflowCloudRequest({
+  node:{...lumaNode,config:{...lumaNode.config,rightsConfirmed:true,referenceAssetId:"frame-asset"}},
+  projectId:"project-1",requestId:"luma-image-1",values:{prompt:"Animate this frame"}
+ });
+ assert.equal(imageRequest.operation,"generate");
+ assert.equal(imageRequest.input.startFrameAssetId,"frame-asset");
+ assert.equal(imageRequest.input.rightsConfirmed,true);
+ assert.match(imageRequest.requestHash,/^[a-f0-9]{64}$/);
+});
+
+test("Luma workflow contract rejects unpriced, unsupported or unscoped source operations",()=>{
+ const lumaBase={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5}},projectId:"project-1",requestId:"luma-invalid",values:{prompt:"A scene"}};
+ assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,resolution:"4k"}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,sourceVideoAssetId:"source-video"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,referenceAssetIds:["generic-reference"]}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,rightsConfirmed:false,referenceAssetId:"frame-asset"}}}),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
+});
