@@ -29,3 +29,20 @@ assert.equal(previous.fontSize,18,"preset application must not mutate the input 
 assert.equal(getCaptionPreset("unknown"),undefined);
 assert.throws(()=>applyCaptionPreset("unknown"),/unknown caption preset/i);
 console.log("Caption preset checks passed: unique presets, renderer output mapping, supported ranges, immutable application and unknown-preset rejection.");
+
+const trackClips=[
+ {id:"caption-1",timelineStart:0,duration:48,metadata:{custom:"preserve",fontSize:20}},
+ {id:"caption-2",timelineStart:48,duration:72,metadata:{speaker:"narrator",fontSize:24}},
+ {id:"caption-3",timelineStart:120,duration:36,metadata:{creativeTrace:{storyBeat:"payoff"}}}
+];
+const trackResult=applyCaptionPresetToClips(trackClips,"cinematic");
+assert.equal(trackResult.length,3);
+assert.deepEqual(trackResult.map(item=>item.metadata?.presetId),["cinematic","cinematic","cinematic"]);
+assert.deepEqual(trackResult.map(item=>item.metadata?.fontSize),[34,34,34]);
+assert.equal(trackResult[0].metadata?.custom,"preserve");
+assert.equal(trackResult[1].metadata?.speaker,"narrator");
+assert.deepEqual(trackResult[2].metadata?.creativeTrace,{storyBeat:"payoff"});
+assert.equal(trackClips[0].metadata?.fontSize,20,"track application must not mutate the original clips");
+assert.equal(trackResult[0].id,"caption-1");
+assert.equal(trackResult[1].timelineStart,48);
+console.log("Caption track preset checks passed: every clip styled, clip timing/identity preserved, unrelated metadata retained and source clips unchanged.");
