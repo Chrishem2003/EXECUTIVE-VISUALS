@@ -48,7 +48,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  luma.modelCapabilities={
   minDurationSeconds:5,maxDurationSeconds:10,
   aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
-  resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,
+  resolutions:["360p","540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,
   audioModes:["none"],durationsSeconds:[5,10],operations:["generate","edit","reframe","extend"]
  };
  luma.availableModels=[{
