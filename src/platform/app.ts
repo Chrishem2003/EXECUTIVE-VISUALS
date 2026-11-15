@@ -1458,7 +1458,7 @@ window.addEventListener("ev:project-changed",async event=>{
 });
 load();window.addEventListener("ev:workflow-video-ready",()=>{state.tab="video";render();});
 window.addEventListener("ev:timeline-luma-edit-requested",event=>{
- if(workflowWorkspace)return;
+ if(workflowWorkspace){state.tab="canvas";render();return;}
  const detail=(event as CustomEvent).detail;
  void ensureWorkflowWorkspace().then(()=>{
   state.tab="canvas";render();
