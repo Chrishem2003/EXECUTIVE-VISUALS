@@ -43,16 +43,31 @@ export function sanitizeCreativeWorkspaceDocument(input){
  const knowledgeRows=Array.isArray(input.knowledgeRecords)?input.knowledgeRecords.slice(0,500).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
  const knowledgeRecords=knowledgeRows.map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)).filter(id=>sourceIds.has(id)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)}));
  if(knowledgeRecords.some(item=>item.status==="Verified"&&item.sourceIds.length===0))throw Object.assign(new Error("Verified knowledge records must cite at least one saved project source."),{code:"KNOWLEDGE_EVIDENCE_REQUIRED"});
- const rawBrand=input.brandKit&&typeof input.brandKit==="object"&&!Array.isArray(input.brandKit)?input.brandKit:{};
- const color=(value,fallback)=>{const candidate=String(value??"").trim();if(!candidate)return fallback;if(candidate.length!==7||!/^#[0-9a-fA-F]{6}$/.test(candidate))throw Object.assign(new Error("Brand colors must use six-digit hexadecimal values."),{code:"INVALID_BRAND_COLOR"});return candidate.toUpperCase();};
- const brandKit={
-  version:1,name:text(rawBrand.name,120).trim(),tagline:text(rawBrand.tagline,240).trim(),
-  voice:text(rawBrand.voice,1200).trim(),visualStyle:text(rawBrand.visualStyle,1200).trim(),
-  colors:{primary:color(rawBrand.colors?.primary,"#202124"),secondary:color(rawBrand.colors?.secondary,"#5F6368"),accent:color(rawBrand.colors?.accent,"#7C5CFC"),background:color(rawBrand.colors?.background,"#FFFFFF"),text:color(rawBrand.colors?.text,"#202124")},
-  typography:{heading:text(rawBrand.typography?.heading,80).trim(),body:text(rawBrand.typography?.body,80).trim()},
-  logoAssetIds:stringList(rawBrand.logoAssetIds,12,80),prohibitedTerms:stringList(rawBrand.prohibitedTerms,40,120),
-  legalFooter:text(rawBrand.legalFooter,600).trim(),updatedAt:text(rawBrand.updatedAt,40)
+ const sanitizeBrandKit=rawValue=>{
+  const raw=rawValue&&typeof rawValue==="object"&&!Array.isArray(rawValue)?rawValue:{};
+  const color=(value,fallback)=>{const candidate=String(value??"").trim();if(!candidate)return fallback;if(candidate.length!==7||!/^#[0-9a-fA-F]{6}$/.test(candidate))throw Object.assign(new Error("Brand colors must use six-digit hexadecimal values."),{code:"INVALID_BRAND_COLOR"});return candidate.toUpperCase();};
+  return {
+   version:1,name:text(raw.name,120).trim(),tagline:text(raw.tagline,240).trim(),
+   voice:text(raw.voice,1200).trim(),visualStyle:text(raw.visualStyle,1200).trim(),
+   colors:{primary:color(raw.colors?.primary,"#202124"),secondary:color(raw.colors?.secondary,"#5F6368"),accent:color(raw.colors?.accent,"#7C5CFC"),background:color(raw.colors?.background,"#FFFFFF"),text:color(raw.colors?.text,"#202124")},
+   typography:{heading:text(raw.typography?.heading,80).trim(),body:text(raw.typography?.body,80).trim()},
+   logoAssetIds:stringList(raw.logoAssetIds,12,80),prohibitedTerms:stringList(raw.prohibitedTerms,40,120),
+   legalFooter:text(raw.legalFooter,600).trim(),updatedAt:text(raw.updatedAt,40)
+  };
  };
+ const brandKit=sanitizeBrandKit(input.brandKit);
+ const presetRows=Array.isArray(input.brandKits)?input.brandKits.slice(0,20).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
+ const presetIds=new Set(),presetNames=new Set();
+ const brandKits=presetRows.map(item=>{
+  const id=text(item.id,80).trim(),name=text(item.name,120).trim();
+  if(!/^[A-Za-z0-9_-]{1,80}$/.test(id)||!name)throw Object.assign(new Error("Saved brand presets require a valid ID and non-empty name."),{code:"INVALID_BRAND_PRESET"});
+  const normalized=name.toLocaleLowerCase();
+  if(presetIds.has(id)||presetNames.has(normalized))throw Object.assign(new Error("Saved brand preset IDs and names must be unique."),{code:"DUPLICATE_BRAND_PRESET"});
+  presetIds.add(id);presetNames.add(normalized);
+  return {id,name,brandKit:sanitizeBrandKit(item.brandKit),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)};
+ });
+ const requestedActivePresetId=text(input.activeBrandKitPresetId,80);
+ const activeBrandKitPresetId=brandKits.some(item=>item.id===requestedActivePresetId)?requestedActivePresetId:"";
  const templateRows=Array.isArray(input.campaignTemplates)?input.campaignTemplates.slice(0,40).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
  const campaignTemplates=templateRows.map(item=>{
   const width=Math.max(1,Math.min(8192,Math.trunc(Number(item.width)||1080)));
@@ -95,6 +110,8 @@ export function sanitizeCreativeWorkspaceDocument(input){
   researchSources:sources,
   knowledgeRecords,
   brandKit,
+  brandKits,
+  activeBrandKitPresetId,
   campaignTemplates,
  };
  if(Buffer.byteLength(JSON.stringify(document),"utf8")>2*1024*1024)throw Object.assign(new Error("Workspace document exceeds the 2 MiB limit."),{code:"WORKSPACE_TOO_LARGE"});

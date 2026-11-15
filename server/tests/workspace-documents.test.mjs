@@ -60,3 +60,35 @@ test("creative workspace rejects unsafe or oversized nested project artifacts",(
  assert.throws(()=>sanitizeCreativeWorkspaceDocument({creativeProjects:[{id:"p",name:"Deep",storyboard:nested}]}),error=>error.code==="WORKSPACE_ARTIFACT_INVALID");
  assert.throws(()=>sanitizeCreativeWorkspaceDocument({creativeProjects:[{id:"p",name:"Too many",storyboard:{items:Array.from({length:201},(_,i)=>i)}}]}),error=>error.code==="WORKSPACE_ARTIFACT_INVALID");
 });
+
+test("workspace sanitizer persists multiple named brand-kit presets and active selection",()=>{
+ const makeKit=(name,accent)=>({name,colors:{accent},typography:{heading:"Inter Display",body:"Inter"},prohibitedTerms:["unverified claim"]});
+ const document=sanitizeCreativeWorkspaceDocument({
+  brandKit:makeKit("Current","#112233"),
+  brandKits:[
+   {id:"brand-a",name:"Northstar",brandKit:makeKit("Northstar","#AABBCC"),createdAt:"2026-11-15T00:00:00.000Z",updatedAt:"2026-11-15T00:01:00.000Z"},
+   {id:"brand-b",name:"Studio Noir",brandKit:makeKit("Studio Noir","#334455"),createdAt:"2026-11-15T00:00:00.000Z",updatedAt:"2026-11-15T00:02:00.000Z"}
+  ],
+  activeBrandKitPresetId:"brand-b"
+ });
+ assert.equal(document.brandKit.name,"Current");
+ assert.equal(document.brandKits.length,2);
+ assert.equal(document.brandKits[0].brandKit.colors.accent,"#AABBCC");
+ assert.equal(document.brandKits[1].brandKit.colors.accent,"#334455");
+ assert.equal(document.activeBrandKitPresetId,"brand-b");
+});
+
+test("workspace sanitizer bounds saved brand presets and clears unknown active preset IDs",()=>{
+ const brandKits=Array.from({length:24},(_,index)=>({id:"brand-"+index,name:"Brand "+index,brandKit:{name:"Brand "+index}}));
+ const document=sanitizeCreativeWorkspaceDocument({brandKits,activeBrandKitPresetId:"missing"});
+ assert.equal(document.brandKits.length,20);
+ assert.equal(document.activeBrandKitPresetId,"");
+});
+
+test("workspace sanitizer rejects invalid and duplicate saved brand-kit presets",()=>{
+ assert.throws(()=>sanitizeCreativeWorkspaceDocument({brandKits:[{id:"",name:"Missing ID",brandKit:{}}]}),error=>error.code==="INVALID_BRAND_PRESET");
+ assert.throws(()=>sanitizeCreativeWorkspaceDocument({brandKits:[{id:"same",name:"One",brandKit:{}},{id:"same",name:"Two",brandKit:{}}]}),error=>error.code==="DUPLICATE_BRAND_PRESET");
+ assert.throws(()=>sanitizeCreativeWorkspaceDocument({brandKits:[{id:"one",name:"Same",brandKit:{}},{id:"two",name:" same ",brandKit:{}}]}),error=>error.code==="DUPLICATE_BRAND_PRESET");
+ assert.throws(()=>sanitizeCreativeWorkspaceDocument({brandKits:[{id:"one",name:"Broken",brandKit:{colors:{primary:"not-a-color"}}}]}),error=>error.code==="INVALID_BRAND_COLOR");
+});
+
