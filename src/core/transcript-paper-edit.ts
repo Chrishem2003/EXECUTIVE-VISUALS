@@ -1,6 +1,6 @@
 import {
  addClip, addTrack, rational, seconds, validateTimeline,
- type EditorialTimeline, type TimelineClip, type TimelineTrack
+ type EditorialTimeline, type TimelineClip
 } from "./timeline.ts";
 
 export interface TranscriptCue { index:number; start:number; end:number; text:string }
