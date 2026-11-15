@@ -83,7 +83,7 @@ function validateInput(input) {
         if (!["adhere_1", "adhere_2", "adhere_3", "flex_1", "flex_2", "flex_3", "reimagine_1", "reimagine_2", "reimagine_3"].includes(strength)) {
           throw fail("Luma editStrength is not a supported Ray 3.2 strength.", "LUMA_VIDEO_INPUT_INVALID");
         }
-        payload.video.edit = { auto_controls: true, strength };
+        payload.video.edit = { strength };
       } else {
         if (aspectRatio === undefined) throw fail("Luma video reframe requires a target aspectRatio.", "LUMA_VIDEO_INPUT_INVALID");
         payload.aspect_ratio = aspectRatio;
