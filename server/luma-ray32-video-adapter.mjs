@@ -37,6 +37,77 @@ function validateInput(input) {
   const aspectRatio = input.aspectRatio ?? input.aspect_ratio;
   if (aspectRatio !== undefined && !allowedRatios.has(aspectRatio)) throw fail("Ray 3.2 aspect ratio is unsupported.", "LUMA_VIDEO_INPUT_INVALID");
 
+  const operation = input.operation ?? "generate";
+  if (!["generate", "edit", "reframe", "extend"].includes(operation)) {
+    throw fail("Luma operation must be generate, edit, reframe or extend.", "LUMA_VIDEO_INPUT_INVALID");
+  }
+  if (operation !== "generate") {
+    if (input.hdr === true || input.exrExport === true || input.loop === true || input.keyframes !== undefined ||
+        input.keyframeIndexes !== undefined || input.startFrame !== undefined || input.endFrame !== undefined) {
+      throw fail("Generation-only controls cannot be combined with edit, reframe or extend operations.", "LUMA_VIDEO_INPUT_INVALID");
+    }
+    if (operation === "edit" || operation === "reframe") {
+      const source = input.sourceVideo ?? input.source;
+      if (!plain(source)) throw fail("Luma video edit and reframe require an owner-resolved sourceVideo reference.", "LUMA_VIDEO_INPUT_INVALID");
+      let sourceRef;
+      if (typeof source.generation_id === "string" && source.generation_id.trim() && source.generation_id.length <= 128) {
+        sourceRef = { generation_id: source.generation_id.trim() };
+      } else if (typeof source.file_id === "string" && source.file_id.trim() && source.file_id.length <= 256) {
+        sourceRef = { file_id: source.file_id.trim() };
+      } else if (typeof source.url === "string") {
+        let url;
+        try { url = new URL(source.url); } catch { throw fail("Source video URL is invalid.", "LUMA_VIDEO_INPUT_INVALID"); }
+        if (url.protocol !== "https:" || url.username || url.password || url.hash || source.url.length > 4096 ||
+            typeof source.media_type !== "string" || !/^video\/[a-z0-9.+-]+$/i.test(source.media_type)) {
+          throw fail("Source video URL requires credential-free HTTPS and an explicit video media_type.", "LUMA_VIDEO_INPUT_INVALID");
+        }
+        sourceRef = { url: url.toString(), media_type: source.media_type };
+      } else {
+        throw fail("Source video must contain generation_id, file_id or a typed HTTPS URL.", "LUMA_VIDEO_INPUT_INVALID");
+      }
+      const payload = {
+        model: "ray-3.2",
+        type: operation === "edit" ? "video_edit" : "video_reframe",
+        prompt: prompt.trim(),
+        source: sourceRef,
+        video: { resolution }
+      };
+      if (input.user_id !== undefined) {
+        if (typeof input.user_id !== "string" || !input.user_id.trim() || input.user_id.length > 256) {
+          throw fail("Luma user_id must be a stable opaque identifier of at most 256 characters.", "LUMA_VIDEO_INPUT_INVALID");
+        }
+        payload.user_id = input.user_id.trim();
+      }
+      if (operation === "edit") {
+        const strength = input.editStrength ?? "flex_2";
+        if (!["adhere_1", "adhere_2", "adhere_3", "flex_1", "flex_2", "flex_3", "reimagine_1", "reimagine_2", "reimagine_3"].includes(strength)) {
+          throw fail("Luma editStrength is not a supported Ray 3.2 strength.", "LUMA_VIDEO_INPUT_INVALID");
+        }
+        payload.video.edit = { auto_controls: true, strength };
+      } else {
+        if (aspectRatio === undefined) throw fail("Luma video reframe requires a target aspectRatio.", "LUMA_VIDEO_INPUT_INVALID");
+        payload.aspect_ratio = aspectRatio;
+      }
+      return payload;
+    }
+    const generationId = input.sourceGenerationId;
+    if (typeof generationId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(generationId)) {
+      throw fail("Luma extension requires a valid sourceGenerationId owned by the same caller.", "LUMA_VIDEO_INPUT_INVALID");
+    }
+    const payload = {
+      model: "ray-3.2", type: "video", prompt: prompt.trim(),
+      video: { resolution, duration: durationSeconds + "s", start_frame: { generation_id: generationId } }
+    };
+    if (input.user_id !== undefined) {
+      if (typeof input.user_id !== "string" || !input.user_id.trim() || input.user_id.length > 256) {
+        throw fail("Luma user_id must be a stable opaque identifier of at most 256 characters.", "LUMA_VIDEO_INPUT_INVALID");
+      }
+      payload.user_id = input.user_id.trim();
+    }
+    if (aspectRatio !== undefined) payload.aspect_ratio = aspectRatio;
+    return payload;
+  }
+
   const video = { resolution, duration: durationSeconds + "s" };
   if (input.hdr === true) video.hdr = true;
   if (input.exrExport === true) video.exr_export = true;
