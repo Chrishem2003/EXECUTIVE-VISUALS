@@ -16,7 +16,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, moveTrack, removeClip, removeTrack, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
+import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, moveTrack, moveSpeedKeyframe, removeClip, removeTrack, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
 import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { createTimelineHistory, createTimelineHistoryOperation, applyTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory, type TimelineHistory } from "../core/timeline-history-operations";
@@ -1467,8 +1467,8 @@ document.addEventListener("pointerdown",event=>{
 window.addEventListener("pointermove",event=>{
  const drag=speedCurveDrag;if(!drag||event.pointerId!==drag.pointerId)return;const rect=drag.svg.getBoundingClientRect();if(!rect.width||!rect.height)return;
  const px=Math.max(12,Math.min(288,12+(event.clientX-rect.left)/rect.width*276)),py=Math.max(8,Math.min(68,8+(event.clientY-rect.top)/rect.height*60)),previous=drag.curve[drag.index];if(!previous)return;
- const minGap=0.001,time=drag.index===0?0:drag.index===drag.curve.length-1?drag.duration:Math.max(drag.curve[drag.index-1].timeSeconds+minGap,Math.min(drag.curve[drag.index+1].timeSeconds-minGap,(px-12)/276*drag.duration)),speed=Math.max(0.25,Math.min(4,0.25+(68-py)/60*3.75));
- drag.curve[drag.index]={timeSeconds:Number(time.toFixed(4)),speed:Number(speed.toFixed(2))};drag.changed=drag.changed||Math.abs(previous.timeSeconds-time)>0.00005||Math.abs(previous.speed-speed)>0.005;
+ const time=(px-12)/276*drag.duration,speed=0.25+(68-py)/60*3.75,next=moveSpeedKeyframe(drag.curve,drag.index,time,speed,drag.duration),moved=next[drag.index];
+ drag.curve=next;drag.changed=drag.changed||Math.abs(previous.timeSeconds-moved.timeSeconds)>0.00005||Math.abs(previous.speed-moved.speed)>0.005;
  const x=(value:number)=>12+Math.max(0,Math.min(1,value/Math.max(drag.duration,0.000001)))*276,y=(value:number)=>68-(Math.max(0.25,Math.min(4,value))-0.25)/3.75*60,line=drag.svg.querySelector<SVGPolylineElement>("[data-speed-curve-line]");
  if(line)line.setAttribute("points",drag.curve.map(point=>x(point.timeSeconds).toFixed(1)+","+y(point.speed).toFixed(1)).join(" "));
  drag.curve.forEach((point,index)=>{const circle=drag.svg.querySelector<SVGCircleElement>('[data-speed-curve-point="'+index+'"]');if(circle){circle.setAttribute("cx",x(point.timeSeconds).toFixed(1));circle.setAttribute("cy",y(point.speed).toFixed(1));circle.setAttribute("aria-valuenow",point.speed.toFixed(2));}});event.preventDefault();
