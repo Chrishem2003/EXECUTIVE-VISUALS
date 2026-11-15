@@ -17,6 +17,7 @@ import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
+import { buildMediaQualityReport } from "./media-quality.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -571,6 +572,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
+    if(streams.some(stream=>["video","audio"].includes(stream.codec_type)))metadata.qualityReport=buildMediaQualityReport(metadata,{requireVideo:streams.some(stream=>stream.codec_type==="video")});
     return { metadata, outputAsset:null };
   }
 
