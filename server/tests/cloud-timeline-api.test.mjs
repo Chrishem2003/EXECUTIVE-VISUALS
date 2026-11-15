@@ -723,7 +723,7 @@ test("Luma Ray 3.2 workflow quote validates private frame assets and records acc
 test("Luma source-video edit and reframe quotes use private metadata and operation-specific rates",async()=>{
  const sourceId="b23e4567-e89b-42d3-a456-426614174011";
  const writes=[];
- const metadataByOperation={edit:5,reframe:12.4};
+ const metadataByOperation={edit:5,reframe:9.4};
  let activeOperation="edit";
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
@@ -751,7 +751,7 @@ test("Luma source-video edit and reframe quotes use private metadata and operati
  activeOperation="reframe";
  const reframe=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
   projectId:project,requestId:"luma-source-reframe-quote",
-  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"540p",aspectRatio:"9:16",sourceVideoAssetId:sourceId,sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},rightsConfirmed:true}},
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"540p",aspectRatio:"9:16",sourceVideoAssetId:sourceId,sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},rightsConfirmed:true}},
   values:{prompt:"Recompose for a vertical social video"}
  }});
  assert.equal(reframe.status,200,JSON.stringify(reframe.body));
