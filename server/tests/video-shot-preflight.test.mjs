@@ -105,3 +105,42 @@ test("preflight blocks shots without explicit rights clearance",()=>{
   assert.equal(result.shots[0].checks.find(item=>item.id==="rights").status,"failed");
  }
 });
+
+const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"ready",reason:"configured",
+ capabilities:["video.generate"],
+ modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,audioModes:["none"]},
+ availableModels:[{id:"ray-3.2",label:"Luma Ray 3.2",readiness:"ready",available:true,executionVerified:true,
+  minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],
+  referenceImages:true,maxReferenceImages:1,audioModes:["none"]}]};
+const lumaShot={id:"luma-shot-01",provider:"luma",model:"ray-3.2",prompt:"A cinematic portrait of a city at sunrise.",
+ durationSeconds:5,aspectRatio:"9:16",resolution:"720p",audioMode:"none",referenceImageCount:1,rightsConfirmed:true};
+
+test("Luma Ray 3.2 passes exact model, first-frame and account-rate preflight without submitting work",()=>{
+ const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[video,lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.readyForApproval,true);
+ assert.equal(result.requestsSubmitted,false);
+ assert.equal(result.pricing.quote.amount,0.3);
+ assert.equal(result.pricing.quote.shots[0].provider,"luma");
+ assert.equal(result.pricing.quote.shots[0].pricing.credits,100);
+ assert.match(result.pricing.quote.shots[0].pricing.sourceUrl,/lumalabs\.ai/);
+ assert.ok(result.pricing.quote.shots[0].pricing.expiresAt>result.pricing.quote.shots[0].pricing.observedAt);
+ assert.ok(result.shots[0].checks.every(check=>check.status==="passed"));
+});
+
+test("Luma preflight rejects unsupported resolution, excessive references and missing account rate",()=>{
+ const unsupported=preflightVideoProduction({shots:[{...lumaShot,resolution:"360p"}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(unsupported.status,"blocked");
+ const tooMany=preflightVideoProduction({shots:[{...lumaShot,referenceImageCount:2}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(tooMany.status,"blocked");
+ const noRate=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[lumaProvider]},now});
+ assert.equal(noRate.status,"pricing_unverified");
+ assert.equal(noRate.requestsSubmitted,false);
+});
+
+test("Luma preflight refuses to proceed when its provider or worker readiness gate is closed",()=>{
+ const blockedProvider={...lumaProvider,status:"needs_configuration",reason:"Apply private file migration."};
+ const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[blockedProvider]},lumaUsdPerCredit:"0.003",now});
+ assert.equal(result.status,"blocked");
+ assert.equal(result.shots[0].checks.find(check=>check.id==="provider").status,"failed");
+});
