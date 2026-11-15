@@ -79,11 +79,13 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
+ const luma=provider==="luma";
+ const resolutions=luma?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(provider==="luma"?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
- '<div class="wf-video-provider-grid"><label>Duration · seconds<input name="videoDuration" type="number" min="5" max="10" step="5" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
- '<label>Output resolution<select name="videoResolution">'+["provider_default","360p","480p","540p","720p","1080p"].map(value=>'<option value="'+value+'" '+(String(config.resolution||"provider_default")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
+ '<div class="wf-video-provider-grid"><label>Duration · seconds<input name="videoDuration" type="number" min="'+(luma?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
+ '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(String(config.resolution||"provider_default")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<label>Private keyframe asset IDs · Luma only<input name="keyframeAssetIds" value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
  '<p>For Ray 3.2 multi-keyframe generation, use 1–64 private image asset IDs and matching strictly increasing frame indexes (24 fps; maximum index is duration × 24). Assets are checked against this project before quote and again before approval. Source-video editing, reframing and extension remain disabled in this workflow composer.</p>'+
@@ -293,7 +295,7 @@ document.addEventListener("submit",event=>{
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
  if(!((provider==="runway"&&model==="model-router")||(provider==="luma"&&model==="ray-3.2")))throw new Error("Choose a supported provider/model pair.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- if(![5,10].includes(durationSeconds))throw new Error("Video duration must be 5 or 10 seconds.");
+ if(provider==="luma"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<2||durationSeconds>30))throw new Error(provider==="luma"?"Luma duration must be 5 or 10 seconds.":"Runway Model Router duration must be 2–30 seconds.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
  config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
@@ -303,7 +305,9 @@ document.addEventListener("submit",event=>{
   if(provider!=="luma")throw new Error("Multi-keyframe inputs are currently supported only by Luma Ray 3.2.");
   const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
   const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
-  if(assetIds.length<1||assetIds.length>64||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 private asset IDs and the same number of integer frame indexes.");
+  if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
+  let previous=-1;
+  for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
   config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
  }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
