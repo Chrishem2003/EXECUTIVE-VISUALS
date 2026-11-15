@@ -43,7 +43,7 @@ test("Luma adapter submits Ray 3.2 text-to-video and polls into normalized outpu
   assert.equal(calls[1].url, "https://agents.lumalabs.ai/v1/generations/182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e");
 });
 
-test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", async () => {
+test("Luma adapter supports first/last anchors and up to 16 indexed keyframes", async () => {
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({ id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "queued" }, 201) });
   const anchored = await adapter.prepareInput({
     prompt: "Animate between two images", durationSeconds: 5, startFrame: { url: "https://assets.example.test/first.png" },
@@ -51,11 +51,11 @@ test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", 
   });
   assert.deepEqual(anchored.video.start_frame, { url: "https://assets.example.test/first.png" });
   assert.deepEqual(anchored.video.end_frame, { file_id: "file_123" });
-  const keyframes = Array.from({ length: 64 }, (_, i) => ({ file_id: "frame_" + i }));
+  const keyframes = Array.from({ length: 16 }, (_, i) => ({ file_id: "frame_" + i }));
   const indexes = Array.from({ length: 64 }, (_, i) => i);
   const multi = await adapter.prepareInput({ prompt: "Keyframed sequence", durationSeconds: 5, keyframes, keyframeIndexes: indexes });
-  assert.equal(multi.video.keyframes.length, 64);
-  assert.equal(multi.video.keyframe_indexes[63], 63);
+  assert.equal(multi.video.keyframes.length, 16);
+  assert.equal(multi.video.keyframe_indexes[15], 63);
   await assert.rejects(adapter.prepareInput({
     prompt: "Ten second HDR multi-keyframe sequence", durationSeconds: 10,
     resolution: "1080p", hdr: true, keyframes: [{ file_id: "hdr-frame-1" }],
