@@ -21,7 +21,9 @@ begin
   end if;
   select pg_get_constraintdef(oid) into constraint_def
     from pg_constraint where conrelid=quotes_oid and conname='video_workflow_quotes_operation_check';
-  if constraint_def is null or position('generate' in constraint_def)=0 or position('luma' in constraint_def)=0 then
+  if constraint_def is null or position('generate' in constraint_def)=0
+     or position('video_edit' in constraint_def)=0 or position('video_reframe' in constraint_def)=0
+     or position('luma' in constraint_def)=0 or position('video_extend' in constraint_def)>0 then
     raise exception 'LUMA_QUOTE_OPERATION_CONSTRAINT_MISSING';
   end if;
   select pg_get_constraintdef(oid) into constraint_def
@@ -39,13 +41,16 @@ begin
   enqueue_rpc := pg_get_functiondef(to_regprocedure(
     'executive_visuals.enqueue_video_generation_job(uuid,uuid,text,text,text,text,jsonb,uuid,numeric,text)'
   ));
-  if position('luma' in quote_rpc)=0 or position('ray-3.2' in quote_rpc)=0 then
+  if position('luma' in quote_rpc)=0 or position('ray-3.2' in quote_rpc)=0
+     or position('video_edit' in quote_rpc)=0 or position('video_reframe' in quote_rpc)=0 then
     raise exception 'LUMA_QUOTE_RPC_IDENTITY_GATE_MISSING';
   end if;
   if position('luma' in approval_rpc)=0 or position('ray-3.2' in approval_rpc)=0 then
     raise exception 'LUMA_APPROVAL_RPC_IDENTITY_GATE_MISSING';
   end if;
-  if position('luma' in enqueue_rpc)=0 or position('ray-3.2' in enqueue_rpc)=0 then
+  if position('luma' in enqueue_rpc)=0 or position('ray-3.2' in enqueue_rpc)=0
+     or position('edit' in enqueue_rpc)=0 or position('reframe' in enqueue_rpc)=0
+     or position('MEDIA_RIGHTS_REQUIRED' in enqueue_rpc)=0 then
     raise exception 'LUMA_ENQUEUE_RPC_PROVIDER_GATE_MISSING';
   end if;
 end
