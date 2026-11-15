@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMediaBatchRequest } from "../media-batch.mjs";
+import { normalizeMediaBatchRequest, inspectMediaBatchReplay } from "../media-batch.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="223e4567-e89b-42d3-a456-426614174000";
@@ -59,4 +59,19 @@ test("enforces project write permission and rejects mixed-project or non-video s
  assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.color",items,...mixed}),error=>error.code==="PROJECT_MISMATCH");
  const image=fixture({assets:{[videoA]:{id:videoA,project_id:project,media_type:"image/png"}}});
  assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.color",items:[items[0]],...image}),error=>error.code==="UNSUPPORTED_MEDIA_TYPE");
+});
+
+test("media batch idempotency replays exact batches and rejects partial or changed requests",()=>{
+ const batchItems=[{sourceAssetId:videoA,options:{brightness:0,contrast:1,saturation:1}},{sourceAssetId:videoB,options:{brightness:0,contrast:1,saturation:1}}];
+ const batchId="media-batch-1";
+ const jobs=batchItems.map((item,index)=>({
+  job_type:"media.color",project_id:project,
+  input_json:JSON.stringify({sourceAssetId:item.sourceAssetId,...item.options,batchOperation:"media.color",batchId,batchIndex:index,batchTotal:2})
+ }));
+ assert.deepEqual(inspectMediaBatchReplay([null,null],batchItems,project,"media.color"),{exists:false,matches:false,batchId:null});
+ assert.deepEqual(inspectMediaBatchReplay(jobs,batchItems,project,"media.color"),{exists:true,matches:true,batchId});
+ assert.equal(inspectMediaBatchReplay([jobs[0],null],batchItems,project,"media.color").matches,false);
+ const changed=[...batchItems];changed[1]={...changed[1],options:{brightness:.2,contrast:1,saturation:1}};
+ assert.equal(inspectMediaBatchReplay(jobs,changed,project,"media.color").matches,false);
+ assert.equal(inspectMediaBatchReplay(jobs,batchItems,videoA,"media.color").matches,false);
 });
