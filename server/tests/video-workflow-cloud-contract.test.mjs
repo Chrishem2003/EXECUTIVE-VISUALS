@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createVideoWorkflowCloudRequest } from "../video-workflow-cloud-contract.mjs";
 import { createRunwaySourceAssetResolver } from "../runway-source-asset-resolver.mjs";
 
@@ -392,4 +393,16 @@ test("Luma workflow contract rejects unpriced, unsupported or unscoped source op
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,sourceVideoAssetId:"source-video"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,values:{...lumaBase.values,referenceAssetIds:["generic-reference"]}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  assert.throws(()=>createVideoWorkflowCloudRequest({...lumaBase,node:{...lumaBase.node,config:{...lumaBase.node.config,rightsConfirmed:false,referenceAssetId:"frame-asset"}}}),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
+});
+
+test("direct Video Studio exposes governed Luma source edit and reframe controls",()=>{
+ const app=readFileSync(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+ assert.match(app,/name="operation" data-luma-operation/);
+ assert.match(app,/name="sourceVideoAssetId" data-luma-source/);
+ assert.match(app,/name="editStrength" data-luma-edit/);
+ assert.match(app,/sourceVideoAssetId:String\(d\.get\("sourceVideoAssetId"\)/);
+ assert.match(app,/lumaOperation!=="generate"&&!sourceVideoAssetId/);
+ assert.match(app,/config\.sourceVideoAssetId/);
+ assert.match(app,/sourceVideoAssetId\|\|/);
+ assert.match(app,/MEDIA_RIGHTS_REQUIRED|rightsConfirmed===true/);
 });
