@@ -223,7 +223,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     if(sourceAssetId&&(!source||!String(source.media_type||"").startsWith("audio/")))throw Object.assign(new Error("Caption source audio is missing or inaccessible."),{code:"SOURCE_AUDIO_NOT_FOUND"});
     const vtt=buildWebVtt(segments,{offsetSeconds:Number(config.offsetSeconds??0)});
     const asset=await storeCaptionAsset({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,sourceAssetId:source?.id||"",language:String(values.language||config.language||""),segments,content:vtt});
-    output=nodeOutput(node,asset.id);output.asset=asset.id;output.subtitle=asset.id;output.subtitleAssetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.sourceAssetId=source?.id||null;output.cueCount=segments.length;
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.subtitle=asset.id;output.subtitleAssetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.sourceAssetId=source?.id||null;output.cueCount=segments.length;output.wordLevel=Boolean(words);
    }else if(node.kind==="image.generate"){
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
