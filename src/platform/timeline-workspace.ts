@@ -622,7 +622,7 @@ async function updateStoryboardTimelineShot(form:HTMLFormElement){
  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Planned shot save failed.";}
  paint();
 }
-async function addMediaSearchAssetToTimeline(assetId:string){
+async function addMediaSearchAssetToTimeline(assetId:string,startSeconds=0){
  if(!state.timeline)throw new Error("Create or open a timeline before placing media.");
  const asset=state.assets.find(item=>item.id===assetId);
  if(!asset)throw new Error("The selected search result is no longer in the accessible asset library.");
@@ -637,11 +637,14 @@ async function addMediaSearchAssetToTimeline(assetId:string){
   const sourceFps=sourceRate(asset,kind);
   const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
   const declaredDuration=Number(asset.metadata?.durationSeconds??probe?.format?.duration);
-  const durationSeconds=Number.isFinite(declaredDuration)&&declaredDuration>0?Math.min(1800,declaredDuration):5;
+  if(!Number.isFinite(startSeconds)||startSeconds<0)throw new Error("The transcript match timecode is invalid.");
+  if(Number.isFinite(declaredDuration)&&declaredDuration>0&&startSeconds>=declaredDuration)throw new Error("The transcript match is outside the source asset duration.");
+  const availableDuration=Number.isFinite(declaredDuration)&&declaredDuration>0?Math.max(1/frameRate,declaredDuration-startSeconds):5;
+  const durationSeconds=Math.min(1800,availableDuration);
   const frameRate=fps(),durationFrames=Math.max(1,Math.round(durationSeconds*frameRate));
   const endFrame=Math.max(0,...state.timeline.tracks.flatMap(item=>item.clips.map(clip=>Math.ceil(clip.timelineStart.value/clip.timelineStart.rate*frameRate+clip.duration.value/clip.duration.rate*frameRate))));
   const clipId=crypto.randomUUID();
-  state.timeline=addClip(state.timeline,track.id,{id:clipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceFps),duration:rational(durationFrames/frameRate*sourceFps,sourceFps)},timelineStart:rational(endFrame,frameRate),duration:rational(durationFrames,frameRate),enabled:true,metadata:{mediaSearchPlacement:true,searchQuery:state.mediaSearchQuery.slice(0,200)}});
+  state.timeline=addClip(state.timeline,track.id,{id:clipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(startSeconds*sourceFps,sourceFps),duration:rational(durationFrames/frameRate*sourceFps,sourceFps)},timelineStart:rational(endFrame,frameRate),duration:rational(durationFrames,frameRate),enabled:true,metadata:{mediaSearchPlacement:true,searchQuery:state.mediaSearchQuery.slice(0,200)}});
   commitUndo("Add media search result");
   state.selectedTrack=track.id;state.selectedClipId=clipId;
   await persist();
@@ -650,7 +653,7 @@ async function addMediaSearchAssetToTimeline(assetId:string){
  }catch(error){state.timeline=previous;state.timelineHistory=previousHistory;cancelPendingTimelineEdit();throw error;}
 }
 function renderMediaSearchPanel(){
- return '<section class="timeline-media-intelligence" style="margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:12px"><div class="eyebrow">MEDIA INTELLIGENCE</div><h3>Find footage, dialogue & assets</h3><form id="tl-media-search"><label for="tl-media-search-query">Search accessible media</label><div class="row" style="gap:8px"><input id="tl-media-search-query" name="query" type="search" maxlength="200" value="'+esc(state.mediaSearchQuery)+'" placeholder="e.g. solar panels, customer interview, Kampala" required style="flex:1"><button class="secondary" type="submit">Search</button></div><small>Searches available filenames, tags, descriptions and transcript timestamps. Results stay within assets already accessible to this workspace; no external AI or paid indexing is called.</small></form><div id="tl-media-search-status" class="muted" aria-live="polite" style="margin:8px 0">'+esc(state.mediaSearchStatus)+'</div>'+(state.mediaSearchResults.length?'<div class="timeline-media-search-results">'+state.mediaSearchResults.map(hit=>'<article style="padding:10px 0;border-top:1px solid var(--border)"><div class="row" style="justify-content:space-between;gap:8px"><b>'+esc(hit.asset.name)+'</b><small>'+esc(hit.asset.mediaType)+'</small></div><p class="muted" style="margin:5px 0">'+esc(hit.snippet)+'</p><small>'+esc(hit.field==='transcript'?'Transcript match':hit.field==='name'?'Filename match':'Metadata match')+(hit.timeSeconds!==undefined?' · '+hit.timeSeconds.toFixed(2)+'s':'')+' · '+hit.matchedTerms.length+' matched terms</small>'+(hit.asset.mediaType.startsWith('video/')||hit.asset.mediaType.startsWith('audio/')||hit.asset.mediaType.startsWith('image/')?'<button type="button" class="secondary" data-tl-media-search-add="'+esc(hit.asset.id)+'" style="margin-top:6px">＋ Add to timeline</button>':'<small class="muted">Not a playable timeline source</small>')+'</article>').join('')+'</div>':(state.mediaSearchQuery?'<small class="muted">No matching assets. Try fewer or different terms.</small>':''))+'</section>';
+ return '<section class="timeline-media-intelligence" style="margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:12px"><div class="eyebrow">MEDIA INTELLIGENCE</div><h3>Find footage, dialogue & assets</h3><form id="tl-media-search"><label for="tl-media-search-query">Search accessible media</label><div class="row" style="gap:8px"><input id="tl-media-search-query" name="query" type="search" maxlength="200" value="'+esc(state.mediaSearchQuery)+'" placeholder="e.g. solar panels, customer interview, Kampala" required style="flex:1"><button class="secondary" type="submit">Search</button></div><small>Searches available filenames, tags, descriptions and transcript timestamps. Results stay within assets already accessible to this workspace; no external AI or paid indexing is called.</small></form><div id="tl-media-search-status" class="muted" aria-live="polite" style="margin:8px 0">'+esc(state.mediaSearchStatus)+'</div>'+(state.mediaSearchResults.length?'<div class="timeline-media-search-results">'+state.mediaSearchResults.map(hit=>'<article style="padding:10px 0;border-top:1px solid var(--border)"><div class="row" style="justify-content:space-between;gap:8px"><b>'+esc(hit.asset.name)+'</b><small>'+esc(hit.asset.mediaType)+'</small></div><p class="muted" style="margin:5px 0">'+esc(hit.snippet)+'</p><small>'+esc(hit.field==='transcript'?'Transcript match':hit.field==='name'?'Filename match':'Metadata match')+(hit.timeSeconds!==undefined?' · '+hit.timeSeconds.toFixed(2)+'s':'')+' · '+hit.matchedTerms.length+' matched terms</small>'+(hit.asset.mediaType.startsWith('video/')||hit.asset.mediaType.startsWith('audio/')||hit.asset.mediaType.startsWith('image/')?'<button type="button" class="secondary" data-tl-media-search-add="'+esc(hit.asset.id)+'" data-tl-media-search-time="'+(hit.timeSeconds!==undefined?String(hit.timeSeconds):"0")+'" style="margin-top:6px">＋ Add to timeline</button>':'<small class="muted">Not a playable timeline source</small>')+'</article>').join('')+'</div>':(state.mediaSearchQuery?'<small class="muted">No matching assets. Try fewer or different terms.</small>':''))+'</section>';
 }
 function renderCreativeDirectorPanel(){
  const plan=state.creativePlan,storyboard=state.storyboard;
@@ -1859,7 +1862,7 @@ document.addEventListener("click",event=>{
   return;
  }
  const mediaSearchAdd=target.closest<HTMLElement>("[data-tl-media-search-add]");
- if(mediaSearchAdd){const id=mediaSearchAdd.dataset.tlMediaSearchAdd||"";mediaSearchAdd.setAttribute("disabled","true");void addMediaSearchAssetToTimeline(id).catch(error=>{state.message=error instanceof Error?error.message:"Media could not be placed on the timeline.";paint();});return;}
+ if(mediaSearchAdd){const id=mediaSearchAdd.dataset.tlMediaSearchAdd||"",time=Number(mediaSearchAdd.dataset.tlMediaSearchTime||0);mediaSearchAdd.setAttribute("disabled","true");void addMediaSearchAssetToTimeline(id,time).catch(error=>{state.message=error instanceof Error?error.message:"Media could not be placed on the timeline.";paint();});return;}
  const select=target.closest<HTMLElement>("[data-tl-select]");
  if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";paint();}
  const action=target.closest<HTMLElement>("[data-tl-action]");
