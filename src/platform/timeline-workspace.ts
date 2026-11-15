@@ -634,7 +634,7 @@ export function renderTimelineWorkspace(){
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  timelinePlaybackPanel()+clipInspector()+variantComparisonPanel()+timelineRevisionPanel()+cloudReviewPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
- '<div class="notice">Master rendering supports synchronized audio, frame-accurate audio crossfades, image overlays, SRT/VTT captions and dip-to-black transitions. Other transition families, animated overlays and video-on-video compositing remain future milestones.</div></div>';
+ '<div class="notice">Master rendering supports synchronized audio, frame-accurate audio and primary-track video crossfades, dip-to-black transitions, image overlays and SRT/VTT captions. Advanced transition families such as wipes and morphs, animated overlays and video-on-video compositing remain future milestones.</div></div>';
 }
 async function loadCloudReviews(){
  if(state.mode!=="cloud"||!state.cloudProjectId){state.reviews=[];return;}
