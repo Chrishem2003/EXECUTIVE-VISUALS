@@ -33,7 +33,7 @@ function cloudVideoWorkerLaunchConfigured(env={}) {
   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
-  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&lumaPrivateStorageReady&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&lumaPrivateStorageReady&&lumaPrivateStorageReady&&
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  return common&&(runwayReady||lumaReady);
 }
