@@ -74,6 +74,12 @@ function validateInput(input) {
     if (hasEnd) video.end_frame = safeImageRef(input.endFrame, "endFrame");
   }
   const payload = { model: "ray-3.2", type: "video", prompt: prompt.trim(), video };
+  if (input.user_id !== undefined) {
+    if (typeof input.user_id !== "string" || !input.user_id.trim() || input.user_id.length > 256) {
+      throw fail("Luma user_id must be a stable opaque identifier of at most 256 characters.", "LUMA_VIDEO_INPUT_INVALID");
+    }
+    payload.user_id = input.user_id.trim();
+  }
   if (aspectRatio !== undefined) payload.aspect_ratio = aspectRatio;
   return payload;
 }
