@@ -1,6 +1,7 @@
 -- End-to-end disposable PostgreSQL test for the Luma Ray 3.2 quote/approval/enqueue path.
 -- No provider network calls are made and no production data is touched.
 
+begin;
 set local search_path = executive_visuals, public;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',true);
 select set_config('request.jwt.claim.role','authenticated',true);
@@ -118,4 +119,4 @@ begin
 end
 $luma_workflow_replay_assertion$;
 
-select 'Luma Ray 3.2 workflow quote, approval, budget and enqueue integration passed' as result;
+select 'Luma Ray 3.2 workflow quote, approval, budget and enqueue integration passed' as result;\ncommit;
