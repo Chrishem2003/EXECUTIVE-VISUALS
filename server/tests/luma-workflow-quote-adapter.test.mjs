@@ -29,6 +29,22 @@ test("Luma workflow quote validates private first-frame input and returns a non-
  assert.match(quote.pricingUrl,/lumalabs\.ai/);
 });
 
+test("Luma workflow quote maps private indexed keyframe assets to provider references",async()=>{
+ let received;
+ const adapter=createLumaWorkflowQuoteAdapter({
+  client:{prepareInput(input){received=input;return{model:"ray-3.2",type:"video",video:{resolution:input.resolution,duration:input.durationSeconds+"s",keyframes:input.keyframes,keyframe_indexes:input.keyframeIndexes}};}},
+  usdPerCredit:"0.003",now:()=>new Date("2026-11-15T12:00:00.000Z")
+ });
+ const prepared=await adapter.prepareInput({
+  provider:"luma",model:"ray-3.2",prompt:"A continuous cinematic shot",durationSeconds:10,
+  resolution:"720p",aspectRatio:"16:9",keyframeAssetIds:[assetId,"423e4567-e89b-42d3-a456-426614174000"],keyframeIndexes:[0,120]
+ },{job:{owner_id:ownerId}});
+ assert.deepEqual(received.keyframes,[{file_id:assetId},{file_id:"423e4567-e89b-42d3-a456-426614174000"}]);
+ assert.deepEqual(prepared.video.keyframe_indexes,[0,120]);
+ const quote=await adapter.preflight(prepared);
+ assert.equal(quote.estimatedCredits,300);
+ assert.equal(quote.estimatedUsd,0.9);
+});
 test("Luma workflow quote rejects missing rates and invalid prepared requests",async()=>{
  assert.throws(()=>createLumaWorkflowQuoteAdapter({client:{prepareInput(){return{};}},usdPerCredit:""}),error=>error.code==="LUMA_BILLING_RATE_REQUIRED");
  const adapter=createLumaWorkflowQuoteAdapter({client:{prepareInput(){return{};}},usdPerCredit:"0.003"});
