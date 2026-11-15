@@ -105,9 +105,10 @@ export function createLumaProviderFileService({
    const afterUpload=await repository.updateAttempt({id:attempt.id,fromStates:["PROVIDER_CREATED"],state:"PROVIDER_CREATED",patch:{upload_completed_at:new Date(now()).toISOString(),last_error_code:null}});
    return inspectProviderFile(identity,afterUpload);
   }catch(error){
-   const latest=receipt? "PROVIDER_CREATED":"UPLOADING";
+   if(error?.code==="LUMA_FILE_INGEST_PENDING")throw error;
+   const fromStates=receipt?["UPLOADING","PROVIDER_CREATED"]:["UPLOADING"];
    const target=error?.code==="LUMA_FILE_UPLOAD_OUTCOME_UNKNOWN"?"OUTCOME_UNKNOWN":"FAILED";
-   try{await repository.updateAttempt({id:attempt.id,fromStates:[latest],state:target,patch:{last_error_code:String(error?.code||"LUMA_FILE_UPLOAD_FAILED").slice(0,120)}});}catch{}
+   try{await repository.updateAttempt({id:attempt.id,fromStates,state:target,patch:{last_error_code:String(error?.code||"LUMA_FILE_UPLOAD_FAILED").slice(0,120)}});}catch{}
    if(receipt&&target==="FAILED"){
     try{await adapter.deleteFile(receipt.fileId);}catch{}
    }
@@ -128,6 +129,11 @@ export function createLumaProviderFileService({
    resolved.sourceVideo={file_id:file.fileId};
   }else if(plain(input.sourceVideo)&&input.sourceVideo.file_id){
    throw fail("Caller-supplied Luma file IDs are not accepted; use an owner-scoped private asset ID.","LUMA_FILE_UNSCOPED_REFERENCE",403);
+  }else if(plain(input.source)&&input.source.file_id){
+   throw fail("Caller-supplied Luma file IDs are not accepted; use an owner-scoped private asset ID.","LUMA_FILE_UNSCOPED_REFERENCE",403);
+  }else if(plain(input.source)&&input.source.assetId){
+   const file=await prepareAsset({ownerId,projectId,assetId:input.source.assetId,purpose:"input"});
+   resolved.sourceVideo={file_id:file.fileId};
   }
   if(input.startFrameAssetId){
    const file=await prepareAsset({ownerId,projectId,assetId:input.startFrameAssetId,purpose:"reference"});
