@@ -119,6 +119,15 @@ test("invalid or unordered Luma keyframe indexes are rejected before any provide
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
 });
+test("Luma keyframe mode rejects mixed source-video operations before provider uploads",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"video_edit",prompt:"edit",
+  sourceVideoAssetId:assetId,durationSeconds:5,
+  keyframeAssetIds:[assetId],keyframeIndexes:[0]
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
 test("generation input resolver rejects unsupported generic reference asset lists",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
