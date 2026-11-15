@@ -299,10 +299,15 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const signalAnalysis={schemaVersion:1,method:"ffmpeg-scene-change-detection",sceneChanges:[],freezes:[],performed:[],unavailable:[],limitations:["Scene cuts are heuristic FFmpeg detections. Review every marker before splitting or deleting footage.","The detector does not infer semantic shots, camera intent or editorial meaning."]};
         if(streams.some(stream=>stream.codec_type==="video")){
           if(executableAvailable("ffmpeg")){
-            const motion=await runProcess(ffmpeg,["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{signal,timeoutMs:Math.min(timeoutMs,10*60*1000),onProgress,maxCaptureBytes:2_000_000});
-            signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.stderr);
-            signalAnalysis.freezes=parseFreezeEvents(motion.stderr);
-            signalAnalysis.performed.push("scene-change","freeze-detect");
+            try{
+              const motion=await runProcess(ffmpeg,["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{signal,timeoutMs:Math.min(timeoutMs,10*60*1000),onProgress,maxCaptureBytes:2_000_000});
+              signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.stderr);
+              signalAnalysis.freezes=parseFreezeEvents(motion.stderr);
+              signalAnalysis.performed.push("scene-change","freeze-detect");
+            }catch(error){
+              if(signal?.aborted||error?.code==="JOB_CANCELLED")throw error;
+              signalAnalysis.unavailable.push({check:"scene-change",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)});
+            }
           }else signalAnalysis.unavailable.push({check:"scene-change",reason:"MEDIA_ENGINE_MISSING"});
         }
         metadata.signalAnalysis=signalAnalysis;
