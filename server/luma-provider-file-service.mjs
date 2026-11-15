@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES=new Set(["image/jpeg","image/png","image/webp","image/gif","video/mp4","video/webm","video/quicktime"]);
 const MAX_BYTES=250*1024*1024;
+const MAX_VIDEO_BYTES=200*1024*1024;
 const fail=(message,code,status=400)=>Object.assign(new Error(message),{code,status});
 const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 
@@ -43,7 +44,9 @@ export function createLumaProviderFileService({
   if(!UUID.test(ownerId||"")||!UUID.test(assetId||"")||(projectId!==null&&projectId!==undefined&&!UUID.test(projectId)))throw fail("Authenticated owner, project and asset identifiers are required.","LUMA_FILE_SCOPE_INVALID",400);
   const asset=await assets.get({ownerId,assetId});
   if(!asset||asset.id!==assetId||(asset.projectId||null)!==(projectId||null)||(!projectId&&asset.ownerId!==ownerId))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
-  if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>maxBytes||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
+  if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
+  const assetLimit=asset.mediaType.startsWith("video/")?Math.min(maxBytes,MAX_VIDEO_BYTES):maxBytes;
+  if(asset.size>assetLimit)throw fail(asset.mediaType.startsWith("video/")?"Luma source video exceeds the 200 MB provider limit.":"Luma source asset exceeds the configured upload limit.","LUMA_FILE_SIZE_INVALID",413);
   const signed=await assets.createSignedUrl({ownerId,assetId,expiresIn:300});
   if(!signed||signed.asset?.id!==assetId||signed.asset.ownerId!==asset.ownerId||(signed.asset.projectId||null)!==(asset.projectId||null)||typeof signed.url!=="string")throw fail("Private asset gateway did not return a matching owner/project-scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
   let url;try{url=new URL(signed.url);}catch{throw fail("Private asset gateway returned an invalid signed URL.","LUMA_FILE_SIGNED_URL_INVALID",502);}
@@ -154,6 +157,26 @@ export function createLumaProviderFileService({
   if(typeof ownerId!=="string"||!UUID.test(ownerId))throw fail("Luma source media requires an authenticated internal owner.","LUMA_FILE_SCOPE_INVALID",403);
   if(Array.isArray(input.referenceAssetIds)&&input.referenceAssetIds.length>0)throw fail("Ray 3.2 does not accept a generic referenceAssetIds list; use startFrameAssetId, endFrameAssetId or keyframeAssetIds.","LUMA_FILE_REFERENCE_MODE_UNSUPPORTED",400);
   const resolved={...input};
+  const operation=String(input.operation??"generate");
+  const hasPrivateSource=Boolean(input.sourceVideoAssetId||input.startFrameAssetId||input.endFrameAssetId||
+   (Array.isArray(input.keyframeAssetIds)&&input.keyframeAssetIds.length));
+  if(hasPrivateSource&&input.rightsConfirmed!==true)
+   throw fail("Explicit media-rights confirmation is required before private source uploads.","LUMA_FILE_RIGHTS_REQUIRED",403);
+  if(!["generate","edit","reframe"].includes(operation))
+   throw fail("Luma private-file workflow supports generation, edit and reframe only; extension requires a separately verified source generation.","LUMA_FILE_INPUT_INVALID",400);
+  if(operation==="generate"&&input.sourceVideoAssetId)
+   throw fail("Luma generation cannot include a source-video asset.","LUMA_FILE_INPUT_INVALID",400);
+  if(["edit","reframe"].includes(operation)){
+   if(typeof input.sourceVideoAssetId!=="string"||!UUID.test(input.sourceVideoAssetId)||
+      input.startFrameAssetId||input.endFrameAssetId||input.keyframeAssetIds!==undefined||input.keyframeIndexes!==undefined||
+      input.loop===true||input.sourcePosition!==undefined&&operation!=="reframe"||
+      input.editStrength!==undefined&&operation!=="edit")
+    throw fail("Luma edit/reframe requires one private source-video asset and cannot include generation-only frame controls.","LUMA_FILE_INPUT_INVALID",400);
+   if(operation==="edit"&&![5,10].includes(Number(input.durationSeconds)))
+    throw fail("Luma edit source duration must be 5 or 10 seconds.","LUMA_FILE_INPUT_INVALID",400);
+   if(operation==="reframe"&&(!Number.isSafeInteger(input.durationSeconds)||input.durationSeconds<2||input.durationSeconds>10||input.resolution==="1080p"))
+    throw fail("Luma reframe requires a 2–10 second source and an enabled resolution tier.","LUMA_FILE_INPUT_INVALID",400);
+  }
   const keyframeAssetIds=input.keyframeAssetIds;
   if(keyframeAssetIds!==undefined){
    if(!Array.isArray(keyframeAssetIds)||keyframeAssetIds.length<1||keyframeAssetIds.length>64||

@@ -62,7 +62,7 @@ These foundations do not imply that every advanced effect or AI feature below is
 ### P2 — Motion and visual effects
 
 1. Keyframes for position, scale, rotation, opacity and audio gain.
-2. Curve editor and speed ramps with explicit interpolation modes.
+2. **Motion curve editor** — cubic-Bezier easing with draggable and keyboard-accessible control handles, numeric editing, bounded validation, and matching browser-preview / FFmpeg-render interpolation. Implemented in PR #641; after shaping a curve, record the selected keyframe again at the playhead to persist it.
 3. Transition library with duration, handles and render-time validation.
 4. Masks, blend modes, chroma key and background removal.
 5. Motion tracking for titles, stickers and overlays.

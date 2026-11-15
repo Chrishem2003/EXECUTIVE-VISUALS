@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTimeline, addTrack, addClip, trimClip, splitClip, validateTimeline, rational, seconds } from "../../src/core/timeline.ts";
+import { createTimeline, addTrack, addClip, trimClip, splitClip, validateTimeline, moveSpeedKeyframe, rational, seconds } from "../../src/core/timeline.ts";
 
 function fixture(){
  let timeline=createTimeline("project","timeline","Speed edit",{numerator:24,denominator:1});
@@ -39,4 +39,19 @@ test("split preserves playback speed and partitions the source range at the matc
  assert.equal(seconds(second.timelineStart),1);
  assert.equal(seconds(second.sourceRange.start),4);
  assert.equal(seconds(second.sourceRange.duration),2);
+});
+
+test("visual keyframe dragging preserves clip boundaries, order and speed limits",()=>{
+ const curve=[{timeSeconds:0,speed:1},{timeSeconds:1,speed:1.5},{timeSeconds:2,speed:2}];
+ const moved=moveSpeedKeyframe(curve,1,1.4,3.25,2);
+ assert.deepEqual(moved,[{timeSeconds:0,speed:1},{timeSeconds:1.4,speed:3.25},{timeSeconds:2,speed:2}]);
+ assert.equal(curve[1].timeSeconds,1,"the source curve is not mutated");
+ assert.equal(moveSpeedKeyframe(curve,0,0.7,9,2)[0].timeSeconds,0,"first keyframe remains at clip start");
+ assert.equal(moveSpeedKeyframe(curve,2,1.1,-1,2)[2].timeSeconds,2,"last keyframe remains at clip end");
+ assert.equal(moveSpeedKeyframe(curve,1,2.1,0.1,2)[1].timeSeconds,1.999,"interior keyframe cannot cross its next neighbor");
+ assert.equal(moveSpeedKeyframe(curve,1,1,9,2)[1].speed,4,"speed is clamped to 4x");
+ assert.throws(()=>moveSpeedKeyframe(curve,4,1,1,2),/valid speed keyframe/);
+ assert.throws(()=>moveSpeedKeyframe(curve,1,Number.NaN,1,2),/finite/);
+ const dense=[{timeSeconds:0,speed:1},{timeSeconds:0.0005,speed:1.5},{timeSeconds:0.001,speed:2}];
+ assert.equal(moveSpeedKeyframe(dense,1,0.0008,2,1)[1].timeSeconds,0.0005,"dense valid curves remain stable when a minimum gap cannot be created");
 });

@@ -13,6 +13,7 @@ import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
+import { buildTimelineMotionFilters } from "./timeline-motion.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
@@ -349,12 +350,26 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     if(asset.media_type.startsWith("image/")){if(speed!==1||clip.speedCurve!==undefined)throw Object.assign(new Error("Still-image clips do not support speed changes."),{code:"UNSUPPORTED_IMAGE_TIME_REMAP"});args.push("-loop","1","-t",duration.toFixed(6),"-i",file);}
     else if(asset.media_type.startsWith("video/")){args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);}
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    const effect=buildTimelineClipEffects(clip.metadata||{});
+    const effect=buildTimelineClipEffects(clip.metadata||{}),metadata=clip.metadata||{},motionPoints=Array.isArray(metadata.motionKeyframes)?metadata.motionKeyframes:[];
+    const hasMotion=motionPoints.length>0||Number(metadata.x||0)!==0||Number(metadata.y||0)!==0||(metadata.width!==undefined&&Number(metadata.width)!==width)||(metadata.height!==undefined&&Number(metadata.height)!==height)||Number(metadata.opacity??1)!==1||Number(metadata.rotation||0)!==0;
     const retimeFilters=speedExpression?["setpts=\'"+speedExpression+"/TB\'"]:speed===1?[]:["setpts=(PTS-STARTPTS)/"+speed.toFixed(6)];
-    const filterParts=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...retimeFilters,...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
-    const filter="["+inputIndex+":v]"+filterParts.join(",")+"["+label+"]";
-    segments.push({label,filter,effectsEnabled:effect.enabled});
-    inputIndex++;cursor=start+duration;
+    const sourceInputIndex=inputIndex,baseFilters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...retimeFilters,...effect.preScale];
+    if(hasMotion){
+      const motion=buildTimelineMotionFilters({x:0,y:0,width,height,opacity:1,rotation:0,...metadata},duration,width,height);
+      if(!motion)throw Object.assign(new Error("Video transform settings could not be compiled."),{code:"INVALID_MOTION_KEYFRAMES"});
+      const blackInputIndex=sourceInputIndex+1,transformLabel=label+"-transform";
+      args.push("-f","lavfi","-t",duration.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
+      inputIndex+=2;
+      const sourceFilter="["+sourceInputIndex+":v]"+[...baseFilters,...motion.filters,"fps="+fpsNum+"/"+fpsDen,...effect.postScale,"setsar=1"].join(",")+"["+transformLabel+"]";
+      const compositeFilter="["+blackInputIndex+":v]["+transformLabel+"]"+motion.overlay+"["+label+"]";
+      segments.push({label,filter:sourceFilter+";"+compositeFilter,effectsEnabled:effect.enabled});
+    }else{
+      const filterParts=[...baseFilters,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1"];
+      const filter="["+sourceInputIndex+":v]"+filterParts.join(",")+"["+label+"]";
+      segments.push({label,filter,effectsEnabled:effect.enabled});
+      inputIndex++;
+    }
+    cursor=start+duration;
     onProgress(Math.min(70,10+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)throw Object.assign(new Error("No renderable clips were found."),{code:"EMPTY_TIMELINE"});
@@ -393,9 +408,15 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
     const file=join(mediaRoot,asset.storage_path);
     args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
-    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++;
-    videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
+    if(motion){
+      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    }else{
+      const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
+      videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    }
     currentVideo=`[${videoLabel}]`;inputIndex++;
   }
   for(const clip of captionClips){

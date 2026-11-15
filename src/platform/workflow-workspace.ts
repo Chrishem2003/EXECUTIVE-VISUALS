@@ -3,10 +3,11 @@ import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type Medi
 import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
+type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null;output?:{videoQuote?:{quoteId:string;requestId:string;requestHash:string;routedModel:string;estimatedAmount:number;currency:string;expiresAt:string;paidExecutionEnabled:boolean;cloudNode:WorkflowNode;cloudValues:Record<string,unknown>};cloudJobId?:string;status?:string;quoteId?:string;approvedMaxAmount?:number;actualAmount?:number;currency?:string;assetId?:string;asset?:string;video?:string;assetIds?:string[];provider?:string;model?:string;mimeType?:string;cloudAssetIds?:string[];durationSeconds?:number;transcript?:string;segments?:Array<{start:number;end:number;text:string}>;language?:string;duration?:number;subtitleAssetId?:string;cueCount?:number;sha256?:string}|null};
 type VideoCostEstimate={available:boolean;estimated:boolean;reason?:string;provider?:string;model?:string;currency?:string;amount?:number;billableSeconds?:number;breakdown?:{video:number;audio:number;references:number;minimumApplied:number};pricing?:{sourceUrl:string;observedAt:string;expiresAt:string};disclaimer?:string};
-const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null}={
- graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null;assets:WorkflowAsset[]}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null,assets:[]
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
@@ -79,19 +80,31 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma";
- const resolutions=luma?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];
+ const luma=provider==="luma",operation=String(config.operation||"generate");
+ const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
  const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":"provider_default");
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
- return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(provider==="luma"?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
- '<div class="wf-video-provider-grid"><label>Duration · seconds<input name="videoDuration" type="number" min="'+(luma?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
+ const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
+ const videoAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("video/"));
+ const imageAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("image/"));
+ const selectedKeyframes=new Set(Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.map(String):[]);
+ const selectedSource=String(config.sourceVideoAssetId||"");
+ return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
+ '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
+ '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation!=="reframe"?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma&&operation!=="reframe"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- '<label>Private first-frame asset ID · Luma only<input name="startFrameAssetId" value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
- '<label>Private last-frame asset ID · Luma only<input name="endFrameAssetId" value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
- '<label>Private keyframe asset IDs · Luma only<input name="keyframeAssetIds" value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
- '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<p>For Ray 3.2 multi-keyframe generation, use 1–64 private image asset IDs and matching strictly increasing frame indexes (24 fps; maximum index is duration × 24). Assets are checked against this project before quote and again before approval. Source-video editing, reframing and extension remain disabled in this workflow composer.</p>'+
+ '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!luma||operation==="generate"?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
+ '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
+ '<div class="wf-video-provider-grid"><label>Reframe crop X<input name="sourcePositionX" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.x_norm??0)+'"></label><label>Reframe crop Y<input name="sourcePositionY" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.y_norm??0)+'"></label></div>'+
+ '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
+ '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Choose keyframe images from this project · asset-library order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
+ '<label>Output-frame indexes · match selected asset-library order<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
+ '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
 function renderVideoCostEstimate(){
@@ -126,6 +139,11 @@ async function refresh(){
   state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;
  }
  state.selectedNode=state.graph?.nodes[0]?.id||"";state.costEstimate=null;
+ state.assets=[];
+ if(state.graph?.projectId){
+  try{const assetResponse=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId));state.assets=assetResponse.assets.filter(asset=>asset.projectId===state.graph?.projectId);}
+  catch{state.assets=[];}
+ }
  const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
  state.latestRunId=runs.runs[0]?.id||"";
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
@@ -297,45 +315,92 @@ document.addEventListener("submit",event=>{
   try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
  if(!((provider==="runway"&&model==="model-router")||(provider==="luma"&&model==="ray-3.2")))throw new Error("Choose a supported provider/model pair.");
+ const operation=provider==="luma"?String(data.get("videoOperation")||"generate"):"generate";
+ if(!["generate","edit","reframe"].includes(operation))throw new Error("Choose a supported Luma operation.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- if(provider==="luma"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<2||durationSeconds>30))throw new Error(provider==="luma"?"Luma duration must be 5 or 10 seconds.":"Runway Model Router duration must be 2–30 seconds.");
+ if(provider==="luma"&&operation!=="reframe"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<(provider==="luma"?2:2)||durationSeconds>(provider==="luma"?10:30)))throw new Error(operation==="reframe"?"Reframe source duration must be 2–10 whole seconds.":"Generation/edit duration must be 5 or 10 seconds.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
  config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
+ if(provider==="luma")config.operation=operation;else delete config.operation;
+ const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
- if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId))throw new Error("Private first/last frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
- if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
- if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
- if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
- if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
- const assetText=String(data.get("keyframeAssetIds")||"").trim(),indexText=String(data.get("keyframeIndexes")||"").trim();
- if(assetText||indexText){
-  if(provider!=="luma")throw new Error("Multi-keyframe inputs are currently supported only by Luma Ray 3.2.");
-  if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
-  const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
-  const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
-  if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
-  let previous=-1;
-  for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
-  if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
-  config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
- }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
+ const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
+ const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
+ if(operation==="generate"){
+  if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
+  if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId||assetText||indexText))throw new Error("Private frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
+  if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
+  if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+  if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
+  if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
+  if(assetText||indexText){
+   if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
+   const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
+   const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
+   if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
+   let previous=-1;
+   for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
+   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
+   config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
+  }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
+  delete config.sourceVideoAssetId;delete config.sourcePosition;delete config.editStrength;
+ }else{
+  if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
+  if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
+  if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
+  if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers; longer edits remain blocked until pricing is verified.");
+  if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
+  config.sourceVideoAssetId=sourceVideoAssetId;
+  delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+  if(operation==="edit"){config.editStrength=String(data.get("editStrength")||"flex_2");delete config.sourcePosition;}
+  else{
+   delete config.editStrength;
+   const sourcePosition={x_norm:Number(data.get("sourcePositionX")||0),y_norm:Number(data.get("sourcePositionY")||0),w_norm:Number(data.get("sourcePositionW")||1),h_norm:Number(data.get("sourcePositionH")||1)};
+   if(!Number.isFinite(sourcePosition.x_norm)||sourcePosition.x_norm< -2||sourcePosition.x_norm>2||!Number.isFinite(sourcePosition.y_norm)||sourcePosition.y_norm< -2||sourcePosition.y_norm>2||!Number.isFinite(sourcePosition.w_norm)||sourcePosition.w_norm<=0||sourcePosition.w_norm>2||!Number.isFinite(sourcePosition.h_norm)||sourcePosition.h_norm<=0||sourcePosition.h_norm>2)throw new Error("Reframe crop coordinates must be normalized and within the supported bounds.");
+   config.sourcePosition=sourcePosition;
+  }
+ }
  }node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.costEstimate=null;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
   catch(error){alert(error instanceof Error?error.message:String(error));}
  }
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
- if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
- if(target.name==="videoProvider"){
+ if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
+ if(target.name==="videoProvider"||target.name==="videoOperation"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
+  const operationSelect=form?.querySelector<HTMLSelectElement>('[name="videoOperation"]');
   const model=form?.querySelector<HTMLSelectElement>('[name="videoModel"]');
   const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
   const duration=form?.querySelector<HTMLInputElement>('[name="videoDuration"]');
-  if(model)model.value=target.value==="luma"?"ray-3.2":"model-router";
-  if(resolution){const values=target.value==="luma"?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===(target.value==="luma"?"720p":"provider_default")?"selected":"")+'>'+value+'</option>').join("");}
-  if(duration){duration.min=target.value==="luma"?"5":"2";duration.max=target.value==="luma"?"10":"30";duration.step=target.value==="luma"?"5":"1";if(target.value==="luma"&&!["5","10"].includes(duration.value))duration.value="5";}
+  if(target.name==="videoProvider"){
+   if(model)model.value=provider==="luma"?"ray-3.2":"model-router";
+   if(operationSelect)operationSelect.value="generate";
+  }
+  const operation=provider==="luma"?(operationSelect?.value||"generate"):"generate";
+  const luma=provider==="luma";
+  if(operationSelect)operationSelect.disabled=!luma;
+  for(const name of ["sourceVideoAssetId"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation==="generate";}
+  for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="edit";}
+  for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="reframe";}
+  for(const name of ["startFrameAssetId","endFrameAssetId","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="generate";}
+  const values=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
+  if(resolution){
+   const previous=resolution.value;
+   const fallback=luma?"720p":"provider_default";
+   const selected=values.includes(previous)&&!(operation==="reframe"&&previous==="1080p")?previous:fallback;
+   resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===selected?"selected":"")+'>'+value+'</option>').join("");
+  }
+  if(duration){
+   const min=luma&&operation==="generate"?"5":"2",max=luma&&operation==="edit"?"18":luma?"10":"30",step=luma&&operation==="generate"?"5":"1";
+   duration.min=min;duration.max=max;duration.step=step;
+   if(luma&&operation==="generate"&&!["5","10"].includes(duration.value))duration.value="5";
+   else if(Number(duration.value)<Number(min))duration.value=min;
+   else if(Number(duration.value)>Number(max))duration.value=max;
+  }
  }
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
@@ -349,6 +414,58 @@ document.addEventListener("drop",event=>{
  event.preventDefault();const id=event.dataTransfer?.getData("text/plain")||"",node=state.graph.nodes.find(n=>n.id===id);if(!node)return;
  const rect=canvas.getBoundingClientRect(),x=Math.max(0,Math.round(event.clientX-rect.left)),y=Math.max(0,Math.round(event.clientY-rect.top));
  node.position={x,y};state.graph={...state.graph,revision:state.graph.revision+1};void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+});
+window.addEventListener("ev:timeline-luma-edit-requested",event=>{
+ const detail=(event as CustomEvent<{projectId:string;sourceVideoAssetId:string;durationSeconds:number;assetName?:string}>).detail;
+ if(!detail||!state.graph)return;
+ if(state.graph.projectId!==detail.projectId){
+  state.message="Open a workflow for the same cloud project as the selected timeline before sending a clip to Luma.";
+  paint();return;
+ }
+ const asset=state.assets.find(item=>item.id===detail.sourceVideoAssetId&&item.projectId===detail.projectId&&item.mediaType.toLowerCase().startsWith("video/"));
+ if(!asset){state.message="The selected private source video is not in the active workflow project's asset list. Refresh the workflow and try again.";paint();return;}
+ const durationSeconds=Number(detail.durationSeconds);
+ if(![5,10].includes(durationSeconds)){
+  state.message="Luma Reframe requires a verified 2–10 second source clip.";paint();return;
+ }
+ let node=state.graph.nodes.find(item=>item.id===state.selectedNode&&item.kind==="video.generate")||state.graph.nodes.find(item=>item.kind==="video.generate");
+ if(!node){
+  const spec=palette.video,id=crypto.randomUUID();
+  node={id,kind:spec.kind,label:"Reframe · "+String(detail.assetName||asset.name).slice(0,80),inputs:spec.inputs.map(port=>({...port})),outputs:spec.outputs.map(port=>({...port})),config:{},position:nodePosition(state.graph.nodes.length)};
+  state.graph={...state.graph,nodes:[...state.graph.nodes,node]};
+ }
+ node.config={...node.config,provider:"luma",model:"ray-3.2",operation:"edit",sourceVideoAssetId:asset.id,durationSeconds,aspectRatio:"16:9",resolution:"720p",editStrength:"flex_2",rightsConfirmed:false};
+ node.label="Luma Edit · "+String(detail.assetName||asset.name).slice(0,72);
+ state.selectedNode=node.id;state.costEstimate=null;state.plan="";
+ state.graph={...state.graph,revision:state.graph.revision+1};
+ state.message="Selected timeline source connected to Luma Ray 3.2. Review the prompt, confirm source rights, estimate cost and obtain approval before execution.";
+ void persist().then(()=>{paint();window.dispatchEvent(new Event("ev:workflow-luma-edit-ready"));}).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
+});
+window.addEventListener("ev:timeline-luma-reframe-requested",event=>{
+ const detail=(event as CustomEvent<{projectId:string;sourceVideoAssetId:string;durationSeconds:number;assetName?:string}>).detail;
+ if(!detail||!state.graph)return;
+ if(state.graph.projectId!==detail.projectId){
+  state.message="Open a workflow for the same cloud project as the selected timeline before sending a clip to Luma.";
+  paint();return;
+ }
+ const asset=state.assets.find(item=>item.id===detail.sourceVideoAssetId&&item.projectId===detail.projectId&&item.mediaType.toLowerCase().startsWith("video/"));
+ if(!asset){state.message="The selected private source video is not in the active workflow project's asset list. Refresh the workflow and try again.";paint();return;}
+ const durationSeconds=Number(detail.durationSeconds);
+ if(!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>10){
+  state.message="Luma Reframe requires a verified 2–10 second source clip.";paint();return;
+ }
+ let node=state.graph.nodes.find(item=>item.id===state.selectedNode&&item.kind==="video.generate")||state.graph.nodes.find(item=>item.kind==="video.generate");
+ if(!node){
+  const spec=palette.video,id=crypto.randomUUID();
+  node={id,kind:spec.kind,label:"Reframe · "+String(detail.assetName||asset.name).slice(0,80),inputs:spec.inputs.map(port=>({...port})),outputs:spec.outputs.map(port=>({...port})),config:{},position:nodePosition(state.graph.nodes.length)};
+  state.graph={...state.graph,nodes:[...state.graph.nodes,node]};
+ }
+ node.config={...node.config,provider:"luma",model:"ray-3.2",operation:"reframe",sourceVideoAssetId:asset.id,durationSeconds,aspectRatio:"9:16",resolution:"720p",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},rightsConfirmed:false};
+ node.label="Luma Reframe · "+String(detail.assetName||asset.name).slice(0,72);
+ state.selectedNode=node.id;state.costEstimate=null;state.plan="";
+ state.graph={...state.graph,revision:state.graph.revision+1};
+ state.message="Selected timeline source connected to Luma Ray 3.2. Review the prompt, confirm source rights, estimate cost and obtain approval before execution.";
+ void persist().then(()=>{paint();window.dispatchEvent(new Event("ev:workflow-luma-reframe-ready"));}).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
 });
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
 window.addEventListener("ev:jobs-updated",()=>{if(!state.latestRunId)return;void loadRun().then(paint).catch(error=>{state.message=error instanceof Error?"Workflow status could not be refreshed: "+error.message:"Workflow status could not be refreshed. The last known run state is still shown.";paint();});});

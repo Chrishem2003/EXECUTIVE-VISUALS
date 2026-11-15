@@ -121,6 +121,16 @@ test("accepts the documented unsigned 32-bit provider seed range",()=>{
   assert.throws(()=>normalizeVideoGenerationRequest({...base,seed:4294967296}),VideoGenerationValidationError);
 });
 
+test("normalizes provider-specific video reframe requests without rewriting the operation",()=>{
+ const request=normalizeVideoGenerationRequest({
+  operation:"reframe",sourceVideoAssetId:"b23e4567-e89b-42d3-a456-426614174020",
+  prompt:"Recompose for vertical video",durationSeconds:13,resolution:"540p",aspectRatio:"9:16",audioMode:"none"
+ });
+ assert.equal(request.operation,"reframe");
+ assert.equal(request.sourceVideoAssetId,"b23e4567-e89b-42d3-a456-426614174020");
+ assert.equal(request.durationSeconds,13);
+ assert.equal(request.resolution,"540p");
+});
 test("normalizes video-to-video source assets and ordered keyframe asset references", () => {
   const request = normalizeVideoGenerationRequest({
     ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",

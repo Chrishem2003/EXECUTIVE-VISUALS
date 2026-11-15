@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLumaWorkflowQuoteAdapter } from "../luma-workflow-quote-adapter.mjs";
+import { estimateLumaRay32Cost } from "../luma-video-pricing.mjs";
 
 const assetId="123e4567-e89b-42d3-a456-426614174000";
 const ownerId="223e4567-e89b-42d3-a456-426614174000";
@@ -44,6 +45,31 @@ test("Luma workflow quote maps private indexed keyframe assets to provider refer
  const quote=await adapter.preflight(prepared);
  assert.equal(quote.estimatedCredits,300);
  assert.equal(quote.estimatedUsd,0.9);
+});
+test("Luma source-video edit and reframe quotes use operation-specific pricing and private file references",async()=>{
+ const seen=[];
+ const adapter=createLumaWorkflowQuoteAdapter({
+  client:{prepareInput(input){seen.push(input);return{model:"ray-3.2",type:input.operation==="edit"?"video_edit":"video_reframe",video:{resolution:input.resolution}};}},
+  usdPerCredit:"0.003",now:()=>new Date("2026-11-15T12:00:00.000Z")
+ });
+ const edit=await adapter.prepareInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",prompt:"Replace the background",durationSeconds:5,
+  resolution:"720p",aspectRatio:"16:9",editStrength:"reimagine_2",sourceVideoAssetId:assetId
+ },{job:{owner_id:ownerId}});
+ assert.deepEqual(seen[0].sourceVideo,{file_id:assetId});
+ assert.equal(seen[0].editStrength,"reimagine_2");
+ const editQuote=await adapter.preflight(edit);
+ assert.equal(editQuote.estimatedCredits,estimateLumaRay32Cost({operation:"video_edit",resolution:"720p",durationSeconds:5,pricingDate:"2026-11-15"}).credits);
+ const longerEdit=await adapter.prepareInput({provider:"luma",model:"ray-3.2",operation:"edit",prompt:"Long source edit",durationSeconds:18,resolution:"720p",editStrength:"flex_2",sourceVideoAssetId:assetId},{job:{owner_id:ownerId}});
+ await assert.rejects(adapter.preflight(longerEdit),error=>error.code==="LUMA_PRICE_INVALID_INPUT");
+ const reframe=await adapter.prepareInput({
+  provider:"luma",model:"ray-3.2",operation:"reframe",prompt:"Recompose vertically",durationSeconds:10,
+  resolution:"540p",aspectRatio:"9:16",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},sourceVideoAssetId:assetId
+ },{job:{owner_id:ownerId}});
+ assert.deepEqual(seen[1].sourceVideo,{file_id:assetId});
+ const reframeQuote=await adapter.preflight(reframe,{sourceMetadata:{durationSeconds:9.4}});
+ assert.equal(reframeQuote.estimatedCredits,estimateLumaRay32Cost({operation:"video_reframe",resolution:"540p",durationSeconds:10,pricingDate:"2026-11-15"}).credits);
+ assert.equal(reframeQuote.billable,false);
 });
 test("Luma workflow quote rejects missing rates and invalid prepared requests",async()=>{
  assert.throws(()=>createLumaWorkflowQuoteAdapter({client:{prepareInput(){return{};}},usdPerCredit:""}),error=>error.code==="LUMA_BILLING_RATE_REQUIRED");

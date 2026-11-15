@@ -16,7 +16,12 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
  async function prepareInput(input,{job}={}){
   if(!input||typeof input!=="object"||Array.isArray(input)||input.provider!=="luma"||input.model!=="ray-3.2")
    throw fail("Luma workflow quote requires the exact provider/model contract.","VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE");
-  const prepared={...input,user_id:job?.owner_id};
+  const prepared={...input,user_id:job?.owner_id,workflowDurationSeconds:input.durationSeconds};
+  if(input.sourceVideoAssetId){
+   if(typeof input.sourceVideoAssetId!=="string"||!input.sourceVideoAssetId.trim())
+    throw fail("Luma source-video asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
+   prepared.sourceVideo={file_id:input.sourceVideoAssetId};
+  }
   if(input.startFrameAssetId){
    if(typeof input.startFrameAssetId!=="string")throw fail("Luma first-frame asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
    prepared.startFrame={file_id:input.startFrameAssetId};
@@ -35,14 +40,22 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    });
    prepared.keyframeIndexes=[...input.keyframeIndexes];
   }
-  return client.prepareInput(prepared);
+  const payload=await client.prepareInput(prepared);
+  return {...payload,workflowDurationSeconds:input.durationSeconds};
  }
- async function preflight(prepared){
-  if(!prepared||prepared.model!=="ray-3.2"||prepared.type!=="video"||!prepared.video)
-   throw fail("Luma quote input did not normalize to a Ray 3.2 video request.","VIDEO_WORKFLOW_QUOTE_INVALID");
-  const duration=Number(String(prepared.video.duration||"").replace(/s$/,""));
+ async function preflight(prepared,{sourceMetadata=null}={}){
+  if(!prepared||prepared.model!=="ray-3.2"||!["video","video_edit","video_reframe"].includes(prepared.type)||!prepared.video)
+   throw fail("Luma quote input did not normalize to a supported Ray 3.2 video operation.","VIDEO_WORKFLOW_QUOTE_INVALID");
+  const operation=prepared.type;
+  const duration=operation==="video_reframe"
+   ? Math.ceil(Number(sourceMetadata?.durationSeconds))
+   : operation==="video_edit"
+    ? Number(prepared.workflowDurationSeconds)
+    : Number(String(prepared.video.duration||"").replace(/s$/,""));
   const resolution=prepared.video.resolution;
-  const estimate=estimateLumaRay32Cost({operation:"video",resolution,durationSeconds:duration,pricingDate:new Date(now()).toISOString().slice(0,10)});
+  if(!Number.isFinite(duration)||duration<=0)
+   throw fail("Luma operation quote requires a verified source duration.","VIDEO_WORKFLOW_QUOTE_INVALID");
+  const estimate=estimateLumaRay32Cost({operation,resolution,durationSeconds:duration,pricingDate:new Date(now()).toISOString().slice(0,10)});
   const estimatedUsd=Number((estimate.credits*Number(rateText)).toFixed(6));
   if(!Number.isSafeInteger(estimate.credits)||estimate.credits<=0||!Number.isFinite(estimatedUsd)||estimatedUsd<=0)
    throw fail("Luma quote could not be converted using the configured account rate.","VIDEO_WORKFLOW_QUOTE_INVALID");

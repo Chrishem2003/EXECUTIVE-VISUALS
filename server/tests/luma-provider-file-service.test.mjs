@@ -11,11 +11,11 @@ const bytes=new Uint8Array([1,2,3,4]);
 const sha256=createHash("sha256").update(bytes).digest("hex");
 const asset={id:assetId,ownerId,projectId,name:"source.mp4",mediaType:"video/mp4",size:bytes.byteLength,sha256};
 
-function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256}={}){
+function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256,assetSize=bytes.byteLength}={}){
  const calls={create:0,upload:0,complete:0,get:0,delete:0};
  const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:ownerId,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
  const assets={
-  async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,sha256:checksum}:null;},
+  async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,size:assetSize,sha256:checksum}:null;},
   async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:assetOwner,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
  };
  const repository={
@@ -87,11 +87,54 @@ test("private source checksum is verified before provider upload",async()=>{
 
 test("generation input resolver replaces internal asset IDs with owner-scoped Luma file IDs",async()=>{
  const f=fixture();
- const resolved=await f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",startFrameAssetId:assetId},{job:{owner_id:ownerId,project_id:projectId}});
+ const resolved=await f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",startFrameAssetId:assetId,rightsConfirmed:true},{job:{owner_id:ownerId,project_id:projectId}});
  assert.deepEqual(resolved.startFrame,{file_id:fileId});
  assert.equal(resolved.startFrameAssetId,assetId);
 });
 
+test("Luma source-video edit and reframe resolve private project assets before provider submission",async()=>{
+ const editFixture=fixture();
+ const edited=await editFixture.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,editStrength:"flex_2",rightsConfirmed:true
+ },{job:{owner_id:ownerId,project_id:projectId}});
+ assert.deepEqual(edited.sourceVideo,{file_id:fileId});
+ assert.equal(editFixture.calls.create,1);
+ const reframeFixture=fixture();
+ const reframed=await reframeFixture.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"540p",
+  sourceVideoAssetId:assetId,aspectRatio:"9:16",rightsConfirmed:true
+ },{job:{owner_id:ownerId,project_id:projectId}});
+ assert.deepEqual(reframed.sourceVideo,{file_id:fileId});
+ assert.equal(reframeFixture.calls.create,1);
+});
+test("Luma source-video assets above the provider 200 MB limit are rejected before upload",async()=>{
+ const f=fixture({assetSize:200*1024*1024+1});
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,rightsConfirmed:true
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_SIZE_INVALID");
+ assert.equal(f.calls.create,0);
+ assert.equal(f.calls.upload,0);
+});
+test("Luma private source uploads require explicit rights confirmation before provider file creation",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,rightsConfirmed:false
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_RIGHTS_REQUIRED");
+ assert.equal(f.calls.create,0);
+});
+test("Luma source-video operations fail closed before upload without valid operation inputs",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p"
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"1080p",sourceVideoAssetId:assetId,rightsConfirmed:true
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
 test("generation input resolver rejects caller-supplied provider file IDs",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"edit",sourceVideo:{file_id:fileId}},{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_UNSCOPED_REFERENCE");
@@ -100,7 +143,7 @@ test("generation input resolver rejects caller-supplied provider file IDs",async
 test("generation input resolver maps multiple private keyframe assets and preserves frame indexes",async()=>{
  const f=fixture();
  const resolved=await f.service.resolveInput({
-  provider:"luma",model:"ray-3.2",prompt:"animate",
+  provider:"luma",model:"ray-3.2",prompt:"animate",rightsConfirmed:true,
   keyframeAssetIds:[assetId],keyframeIndexes:[0]
  },{job:{owner_id:ownerId,project_id:projectId}});
  assert.deepEqual(resolved.keyframes,[{file_id:fileId}]);
@@ -110,20 +153,26 @@ test("generation input resolver maps multiple private keyframe assets and preser
 test("invalid or unordered Luma keyframe indexes are rejected before any provider upload",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
-  provider:"luma",model:"ray-3.2",prompt:"animate",durationSeconds:5,
+  provider:"luma",model:"ray-3.2",prompt:"animate",durationSeconds:5,rightsConfirmed:true,
   keyframeAssetIds:[assetId,"623e4567-e89b-42d3-a456-426614174000"],keyframeIndexes:[24,0]
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
  await assert.rejects(f.service.resolveInput({
-  provider:"luma",model:"ray-3.2",prompt:"animate",keyframeAssetIds:[assetId]
+  provider:"luma",model:"ray-3.2",prompt:"animate",rightsConfirmed:true,keyframeAssetIds:[assetId]
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
 });
+test("Luma private file resolver rejects more than sixty-four keyframe assets before provider upload",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",rightsConfirmed:true,keyframeAssetIds:Array.from({length:65},()=>assetId),keyframeIndexes:Array.from({length:65},(_,i)=>i)},{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
+
 test("Luma keyframe mode rejects mixed source-video operations before provider uploads",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
   provider:"luma",model:"ray-3.2",operation:"video_edit",prompt:"edit",
-  sourceVideoAssetId:assetId,durationSeconds:5,
+  sourceVideoAssetId:assetId,durationSeconds:5,rightsConfirmed:true,
   keyframeAssetIds:[assetId],keyframeIndexes:[0]
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);

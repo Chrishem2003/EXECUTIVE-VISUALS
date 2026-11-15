@@ -65,7 +65,8 @@ test("Luma multi-keyframe workflow privately transfers every anchor before creat
   await writeFile(join(mediaRoot,"uploads","frame.png"),video);
   const result=await executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
-   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   probeMedia:async()=>({format:{duration:"1.5"},streams:[{codec_type:"video",duration:"1.5"}]})
   });
   assert.equal(result.awaitingApproval,true);
   const upload=f.calls.find(call=>call.method==="UPLOAD");
@@ -100,6 +101,34 @@ test("Luma last-frame workflow privately transfers its anchor into the linked cl
   assert.equal(f.calls.find(call=>call.method==="UPLOAD")?.mediaType,"image/png");
   const quote=f.calls.find(call=>call.path==="/api/cloud/workflows/video/quote");
   assert.equal(quote.body.values.endFrameAssetId,"a23e4567-e89b-42d3-a456-426614174000");
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+test("Luma source-video edit privately transfers the project video before quoting",async()=>{
+ const sourceId="b23e4567-e89b-42d3-a456-426614174021";
+ const f=fixture({values:{sourceVideoAssetId:sourceId},assetMediaType:"video/mp4"});
+ f.node.config={provider:"luma",model:"ray-3.2",operation:"edit",prompt:"Replace the background",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",editStrength:"flex_2",rightsConfirmed:true};
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-luma-edit-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  await mkdir(join(mediaRoot,"uploads"),{recursive:true});
+  await writeFile(join(mediaRoot,"uploads","source.mp4"),video);
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:f.values,mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   probeMedia:async()=>({format:{duration:"5"},streams:[{codec_type:"video",duration:"5"}]})
+  });
+  assert.equal(result.awaitingApproval,true);
+  const upload=f.calls.find(call=>call.method==="UPLOAD");
+  assert.ok(upload);
+  assert.equal(upload.ownerId,owner);
+  assert.equal(upload.projectId,projectId);
+  assert.equal(upload.mediaType,"video/mp4");
+  const quote=f.calls.find(call=>call.path==="/api/cloud/workflows/video/quote");
+  assert.equal(quote.body.node.config.operation,"edit");
+  assert.equal(quote.body.values.sourceVideoAssetId,"a23e4567-e89b-42d3-a456-426614174000");
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});

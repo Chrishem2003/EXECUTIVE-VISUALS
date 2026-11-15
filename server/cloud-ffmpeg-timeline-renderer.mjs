@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 import { buildClipFadeFilters } from "./timeline-transitions.mjs";
+import { buildTimelineMotionFilters } from "./timeline-motion.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
@@ -272,15 +273,29 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(mediaType.startsWith("image/")){if(speed!==1||clip.speedCurve!==undefined)fail("Still-image clips do not support speed changes.","UNSUPPORTED_IMAGE_TIME_REMAP");args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);}
    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
-   const label="v"+segmentIndex++;
-   const effect=buildTimelineClipEffects(clip.metadata||{});
+   const label="v"+segmentIndex++,sourceInputIndex=inputIndex,metadata=clip.metadata||{},effect=buildTimelineClipEffects(metadata);
    const retimeFilter=speedExpression ? "setpts='"+speedExpression+"/TB'" : speed===1 ? null : "setpts=(PTS-STARTPTS)/"+speed.toFixed(6);
     const previous=clips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames:0,fadeOutFrames=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames:0;
-    const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps;
-    const clipFades=buildClipFadeFilters(clip,duration,"video");
-    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...clipFades,...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
-   segments.push({label,filter:`[${inputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
-   inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
+    const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps,clipFades=buildClipFadeFilters(clip,duration,"video"),fadeFilters=[...clipFades,...(fadeIn>0?["fade=t=in:st=0:d="+fadeIn.toFixed(6)+":color=black"]:[]),...(fadeOut>0?["fade=t=out:st="+Math.max(0,duration-fadeOut).toFixed(6)+":d="+fadeOut.toFixed(6)+":color=black"]:[])];
+   const motionPoints=Array.isArray(metadata.motionKeyframes)?metadata.motionKeyframes:[];
+   const hasMotion=motionPoints.length>0||Number(metadata.x||0)!==0||Number(metadata.y||0)!==0||(metadata.width!==undefined&&Number(metadata.width)!==width)||(metadata.height!==undefined&&Number(metadata.height)!==height)||Number(metadata.opacity??1)!==1||Number(metadata.rotation||0)!==0;
+   if(hasMotion){
+    const motion=buildTimelineMotionFilters({x:0,y:0,width,height,opacity:1,rotation:0,...metadata},duration,width,height);
+    if(!motion)fail("Video transform settings could not be compiled.","INVALID_MOTION_KEYFRAMES");
+    const blackInputIndex=sourceInputIndex+1,transformLabel=label+"-transform",compositeLabel=label+"-composite";
+    args.push("-f","lavfi","-t",duration.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
+    inputIndex+=2;
+    const sourceFilters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,...motion.filters,"fps="+fpsNum+"/"+fpsDen,...effect.postScale,"setsar=1"];
+    const sourceGraph="["+sourceInputIndex+":v]"+sourceFilters.join(",")+"["+transformLabel+"]";
+    const compositeGraph="["+blackInputIndex+":v]["+transformLabel+"]"+motion.overlay+"["+compositeLabel+"]";
+    const finishGraph=fadeFilters.length?"["+compositeLabel+"]"+fadeFilters.join(",")+"["+label+"]":"["+compositeLabel+"]null["+label+"]";
+    segments.push({label,filter:sourceGraph+";"+compositeGraph+";"+finishGraph,effectsEnabled:effect.enabled});
+   }else{
+    const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...fadeFilters];
+    segments.push({label,filter:`[${sourceInputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
+    inputIndex++;
+   }
+   cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
   let audioIndex=0;
@@ -322,9 +337,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const asset=getAsset(clip.assetId),metadata=clip.metadata||{};
    const ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
-   const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index;
-   videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index,motion=buildTimelineMotionFilters({x,y,width:ow,height:oh,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
+   if(motion){
+    videoEffects.push(`[${item.inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+    videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   }else{
+    const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
+    videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   }
    currentVideo=`[${videoLabel}]`;
   }
   for(const clip of captionClips){

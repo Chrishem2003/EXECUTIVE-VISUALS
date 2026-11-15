@@ -56,6 +56,7 @@ test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", 
   const multi = await adapter.prepareInput({ prompt: "Keyframed sequence", durationSeconds: 5, keyframes, keyframeIndexes: indexes });
   assert.equal(multi.video.keyframes.length, 64);
   assert.equal(multi.video.keyframe_indexes[63], 63);
+  await assert.rejects(adapter.prepareInput({ prompt: "Too many frames", keyframes: Array.from({ length: 65 }, (_, i) => ({ file_id: "overflow_" + i })), keyframeIndexes: Array.from({ length: 65 }, (_, i) => i) }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   await assert.rejects(adapter.prepareInput({
     prompt: "Ten second HDR multi-keyframe sequence", durationSeconds: 10,
     resolution: "1080p", hdr: true, keyframes: [{ file_id: "hdr-frame-1" }],
@@ -137,11 +138,12 @@ test("Luma completed jobs remain pollable until credits settle, with bounded exp
 test("Luma Ray 3.2 supports governed video edit and reframe request shapes", async () => {
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
   const edited = await adapter.prepareInput({
-    operation: "edit", prompt: "Restyle the scene as golden-hour cinema",
+    operation: "edit", prompt: "Restyle the scene as golden-hour cinema", durationSeconds: 18,
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
     editStrength: "adhere_2"
   });
   assert.equal(edited.type, "video_edit");
+  await assert.rejects(adapter.prepareInput({operation:"edit",prompt:"Too long",durationSeconds:19,sourceVideo:{generation_id:"182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"}}),error=>error.code==="LUMA_VIDEO_INPUT_INVALID");
   assert.deepEqual(edited.source, { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" });
   assert.deepEqual(edited.video.edit, { strength: "adhere_2" });
   const reframed = await adapter.prepareInput({
@@ -268,7 +270,7 @@ test("Luma file deletion accepts the documented empty 204 response and upload ca
 test("Luma Ray 3.2 reframe supports validated normalized source crop positioning and 360p drafts", async () => {
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
   const payload = await adapter.prepareInput({
-    operation: "reframe", prompt: "Recompose for vertical social video",
+    operation: "reframe", prompt: "Recompose for vertical social video", durationSeconds: 3,
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
     aspectRatio: "9:16", resolution: "360p",
     sourcePosition: { x_norm: 0.1, y_norm: -0.2, w_norm: 0.8, h_norm: 1.2 }
@@ -282,6 +284,11 @@ test("Luma Ray 3.2 reframe supports validated normalized source crop positioning
     sourcePosition: { x_norm: 0.1, y_norm: -0.2, w_norm: 0.8, h_norm: 1.2 }
   });
   assert.equal(draft540.video.resolution, "540p");
+  await assert.rejects(adapter.prepareInput({
+    operation: "reframe", prompt: "Source exceeds the reframe limit", durationSeconds: 11,
+    sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
+    aspectRatio: "9:16", resolution: "720p"
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   await assert.rejects(adapter.prepareInput({
     operation: "reframe", prompt: "Invalid crop",
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
