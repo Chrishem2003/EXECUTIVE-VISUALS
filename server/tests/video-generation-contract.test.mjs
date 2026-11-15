@@ -224,3 +224,8 @@ test("source video counts toward the two-video Runway Router limit", () => {
   assert.equal(request.referenceVideoAssetIds.length + 1, 2);
 });
 
+
+test("normalized video contract accepts the published Luma 540p draft tier",()=>{
+ const request=normalizeVideoGenerationRequest({provider:"luma",model:"ray-3.2",prompt:"A scene",durationSeconds:5,aspectRatio:"16:9",resolution:"540p"});
+ assert.equal(request.resolution,"540p");
+});
