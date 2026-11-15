@@ -86,6 +86,7 @@ test("approved transcription workflow verifies source audio and persists timesta
   const captionAsset=db.prepare("SELECT * FROM assets WHERE id=?").get(captionOutput.subtitleAssetId);
   assert.equal(captionAsset.media_type,"text/vtt");
   assert.equal(captionOutput.cueCount,3);
+  assert.equal(captionOutput.wordLevel,true);
   const transcriptRow=db.prepare("SELECT output_json FROM workflow_node_runs WHERE run_id=? AND node_id=?").get("run-1","transcribe");
   assert.deepEqual(JSON.parse(transcriptRow.output_json).words.map(word=>word.word),["A","clear","transcript"]);
   assert.equal(JSON.parse(captionAsset.metadata_json).language,"en");
