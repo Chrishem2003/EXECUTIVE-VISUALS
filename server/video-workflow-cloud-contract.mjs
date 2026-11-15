@@ -58,7 +58,6 @@ function createGoogleOmniWorkflowRequest({node,values,config,projectId,requestId
   if(sourceVideoAssetId&&startFrameAssetId)throw fail("Gemini Omni source-video and first-frame inputs must be separate operations.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
   if(referenceAudioAssetIds.length||config.audioMode==="reference"||values.audioMode==="reference")throw fail("Gemini Omni workflow quotes do not yet support reference-audio inputs.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   const durationSeconds=Number(config.durationSeconds??config.duration??5);
- if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw fail("Luma 10-second generation requires multi-keyframe mode instead of a single start/end frame.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   if(!Number.isInteger(durationSeconds)||durationSeconds<3||durationSeconds>10)throw fail("Gemini Omni duration must be between 3 and 10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   const aspectRatio=String(config.aspectRatio??"16:9");
   if(!["16:9","9:16"].includes(aspectRatio))throw fail("Gemini Omni supports 16:9 or 9:16 output only.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
