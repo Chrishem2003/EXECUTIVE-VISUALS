@@ -154,6 +154,22 @@ export function createLumaProviderFileService({
   if(typeof ownerId!=="string"||!UUID.test(ownerId))throw fail("Luma source media requires an authenticated internal owner.","LUMA_FILE_SCOPE_INVALID",403);
   if(Array.isArray(input.referenceAssetIds)&&input.referenceAssetIds.length>0)throw fail("Ray 3.2 does not accept a generic referenceAssetIds list; use startFrameAssetId, endFrameAssetId or keyframeAssetIds.","LUMA_FILE_REFERENCE_MODE_UNSUPPORTED",400);
   const resolved={...input};
+  const operation=String(input.operation??"generate");
+  if(!["generate","edit","reframe"].includes(operation))
+   throw fail("Luma private-file workflow supports generation, edit and reframe only; extension requires a separately verified source generation.","LUMA_FILE_INPUT_INVALID",400);
+  if(operation==="generate"&&input.sourceVideoAssetId)
+   throw fail("Luma generation cannot include a source-video asset.","LUMA_FILE_INPUT_INVALID",400);
+  if(["edit","reframe"].includes(operation)){
+   if(typeof input.sourceVideoAssetId!=="string"||!UUID.test(input.sourceVideoAssetId)||
+      input.startFrameAssetId||input.endFrameAssetId||input.keyframeAssetIds!==undefined||input.keyframeIndexes!==undefined||
+      input.loop===true||input.sourcePosition!==undefined&&operation!=="reframe"||
+      input.editStrength!==undefined&&operation!=="edit")
+    throw fail("Luma edit/reframe requires one private source-video asset and cannot include generation-only frame controls.","LUMA_FILE_INPUT_INVALID",400);
+   if(operation==="edit"&&![5,10].includes(Number(input.durationSeconds)))
+    throw fail("Luma edit source duration must be 5 or 10 seconds.","LUMA_FILE_INPUT_INVALID",400);
+   if(operation==="reframe"&&(!Number.isSafeInteger(input.durationSeconds)||input.durationSeconds<2||input.durationSeconds>30||input.resolution==="1080p"))
+    throw fail("Luma reframe requires a 2–30 second source and an enabled resolution tier.","LUMA_FILE_INPUT_INVALID",400);
+  }
   const keyframeAssetIds=input.keyframeAssetIds;
   if(keyframeAssetIds!==undefined){
    if(!Array.isArray(keyframeAssetIds)||keyframeAssetIds.length<1||keyframeAssetIds.length>64||
