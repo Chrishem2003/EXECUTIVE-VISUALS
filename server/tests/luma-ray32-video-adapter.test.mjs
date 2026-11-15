@@ -138,11 +138,12 @@ test("Luma completed jobs remain pollable until credits settle, with bounded exp
 test("Luma Ray 3.2 supports governed video edit and reframe request shapes", async () => {
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
   const edited = await adapter.prepareInput({
-    operation: "edit", prompt: "Restyle the scene as golden-hour cinema",
+    operation: "edit", prompt: "Restyle the scene as golden-hour cinema", durationSeconds: 18,
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
     editStrength: "adhere_2"
   });
   assert.equal(edited.type, "video_edit");
+  await assert.rejects(adapter.prepareInput({operation:"edit",prompt:"Too long",durationSeconds:19,sourceVideo:{generation_id:"182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"}}),error=>error.code==="LUMA_VIDEO_INPUT_INVALID");
   assert.deepEqual(edited.source, { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" });
   assert.deepEqual(edited.video.edit, { strength: "adhere_2" });
   const reframed = await adapter.prepareInput({
