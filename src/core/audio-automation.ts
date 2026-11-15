@@ -42,3 +42,64 @@ export function buildGainAutomationExpression(points:readonly AudioAutomationPoi
  }
  return expression;
 }
+
+
+export interface AudioDuckingInterval { startSeconds:number; endSeconds:number }
+export interface AudioDuckingOptions { attenuationDb?:number; attackSeconds?:number; releaseSeconds?:number; mergeGapSeconds?:number }
+
+/**
+ * Build editable gain automation that lowers a music clip under explicitly
+ * selected dialogue intervals. Existing pan automation is retained.
+ */
+export function createAudioDuckingAutomation(
+ existing:readonly AudioAutomationPoint[]|undefined,
+ musicStartSeconds:number,
+ musicDurationSeconds:number,
+ voiceIntervals:readonly AudioDuckingInterval[],
+ baseGainDb=0,
+ options:AudioDuckingOptions={}
+):AudioAutomationPoint[]{
+ if(!Number.isFinite(musicStartSeconds)||!Number.isFinite(musicDurationSeconds)||musicStartSeconds<0||musicDurationSeconds<=0)
+  throw new Error("Music clip timing must be finite, non-negative and have a positive duration.");
+ if(!Number.isFinite(baseGainDb))throw new Error("Music base gain must be finite.");
+ const attenuation=options.attenuationDb??12,attack=options.attackSeconds??0.12,release=options.releaseSeconds??0.3,mergeGap=options.mergeGapSeconds??0.15;
+ if(!Number.isFinite(attenuation)||attenuation<0||attenuation>36||!Number.isFinite(attack)||attack<0.01||attack>2||
+    !Number.isFinite(release)||release<0.01||release>5||!Number.isFinite(mergeGap)||mergeGap<0||mergeGap>2)
+  throw new Error("Ducking reduction, attack, release or merge-gap setting is outside its supported range.");
+ const end=musicStartSeconds+musicDurationSeconds;
+ const intervals=voiceIntervals.map(item=>{
+  if(!Number.isFinite(item.startSeconds)||!Number.isFinite(item.endSeconds)||item.endSeconds<=item.startSeconds)
+   throw new Error("Dialogue intervals must have finite, increasing start and end times.");
+  return {start:Math.max(musicStartSeconds,item.startSeconds),end:Math.min(end,item.endSeconds)};
+ }).filter(item=>item.end>item.start).sort((a,b)=>a.start-b.start);
+ if(!intervals.length)throw new Error("The selected dialogue track does not overlap this music clip.");
+ const merged:Array<{start:number;end:number}>=[];
+ for(const item of intervals){
+  const previous=merged.at(-1);
+  if(previous&&item.start-previous.end<=mergeGap)previous.end=Math.max(previous.end,item.end);
+  else merged.push({...item});
+ }
+ const base=Math.max(-60,Math.min(24,baseGainDb)),ducked=Math.max(-60,base-attenuation);
+ const generated:AudioAutomationPoint[]=[];
+ for(const interval of merged){
+  const start=interval.start-musicStartSeconds,finish=interval.end-musicStartSeconds;
+  const alreadySpeaking=interval.start<=musicStartSeconds;
+  const continuesPastClip=interval.end>=end;
+  if(alreadySpeaking)generated.push({timeSeconds:0,gainDb:ducked});
+  else generated.push({timeSeconds:Number(start.toFixed(4)),gainDb:base});
+  const attackLength=Math.min(attack,Math.max(0,(finish-start)/2));
+  if(!alreadySpeaking&&attackLength>0)generated.push({timeSeconds:Number((start+attackLength).toFixed(4)),gainDb:ducked});
+  if(continuesPastClip)continue;
+  const releaseLength=Math.min(release,Math.max(0,(finish-start)/2));
+  if(releaseLength>0)generated.push({timeSeconds:Number((finish-releaseLength).toFixed(4)),gainDb:ducked});
+  generated.push({timeSeconds:Number(finish.toFixed(4)),gainDb:base});
+ }
+ const panPoints=normalizeAudioAutomation(existing).filter(point=>point.pan!==undefined).map(point=>({timeSeconds:point.timeSeconds,pan:point.pan,interpolation:point.interpolation}));
+ const combined=new Map<number,AudioAutomationPoint>();
+ for(const point of panPoints)combined.set(point.timeSeconds,{...point});
+ for(const point of generated){
+  const previous=combined.get(point.timeSeconds);
+  combined.set(point.timeSeconds,{...previous,...point,timeSeconds:point.timeSeconds});
+ }
+ return normalizeAudioAutomation([...combined.values()]);
+}
