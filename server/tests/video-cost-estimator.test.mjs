@@ -33,6 +33,17 @@ test("never guesses pricing for an unknown provider/model or missing resolution 
  assert.equal(estimateVideoGenerationCost(request,[],{now}).available,false);
 });
 
+test("accepts explicitly priced Luma 360p and 540p draft tiers without resolution substitution",()=>{
+ const luma=[{provider:"luma",model:"ray-3.2",currency:"USD",sourceUrl:"https://lumalabs.ai/pricing",
+  observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-11-08T00:00:00.000Z",
+  ratesPerSecond:{"360p":0.01,"540p":0.025,"720p":0.06}}];
+ for(const [resolution,expected] of [["360p",0.05],["540p",0.125]]){
+  const quote=estimateVideoGenerationCost({provider:"luma",model:"ray-3.2",durationSeconds:5,resolution,audioMode:"none",referenceImageCount:0},luma,{now});
+  assert.equal(quote.available,true);
+  assert.equal(quote.amount,expected);
+ }
+ assert.equal(estimateVideoGenerationCost({provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"1080p",audioMode:"none"},luma,{now}).available,false);
+});
 test("supports explicitly priced 1k, 2k and 4k provider tiers without resolution substitution",()=>{
  const highRes=[{...pricing[0],ratesPerSecond:{...pricing[0].ratesPerSecond,"1k":0.15,"2k":0.22,"4k":0.4}}];
  for(const [resolution,expected] of [["1k",0.9],["2k",1.32],["4k",2.4]]){
