@@ -56,7 +56,7 @@ test("FFmpeg motion expressions support loop and ping-pong playback modes",()=>{
  assert.match(loop,/mod\(/);
  assert.match(pingPong,/mod\(/);
  assert.match(pingPong,/abs\(/);
- assert.ok(compiled.filters.some(filter=>filter.includes("mod(")));
+ assert.ok(compiled.overlay.includes("mod("));
  assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"loop"),25);
  assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"ping-pong"),75);
 });
