@@ -97,7 +97,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   usdPerCredit:lumaRate
  }):null;
  async function validateLumaFrameAssets(ownerId,projectId,input){
-  for(const assetId of [input?.startFrameAssetId,input?.endFrameAssetId].filter(Boolean)){
+  const keyframeAssetIds=Array.isArray(input?.keyframeAssetIds)?input.keyframeAssetIds:[];
+  if(keyframeAssetIds.length>64)return false;
+  for(const assetId of [input?.startFrameAssetId,input?.endFrameAssetId,...keyframeAssetIds].filter(Boolean)){
    const asset=await service.assets.get({ownerId,assetId});
    if(!asset||asset.id!==assetId||(asset.projectId||null)!==projectId||
       !["image/jpeg","image/png","image/webp","image/gif"].includes(String(asset.mediaType||"").toLowerCase())||
