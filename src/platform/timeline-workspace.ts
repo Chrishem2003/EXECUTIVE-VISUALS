@@ -1496,7 +1496,8 @@ document.addEventListener("keydown",event=>{
  const duration=clip.duration.value/clip.duration.rate,fallback=Number(clip.speed??1),curve=clip.speedCurve?.map(point=>({...point}))||[{timeSeconds:0,speed:fallback},{timeSeconds:duration,speed:fallback}],point=curve[index];if(!point)return;
  const nextTime=point.timeSeconds+(keyEvent.key==="ArrowRight"?1/fps():keyEvent.key==="ArrowLeft"?-1/fps():0),nextSpeed=point.speed+(keyEvent.key==="ArrowUp"?0.05:keyEvent.key==="ArrowDown"?-0.05:0);
  const moved=moveSpeedKeyframe(curve,index,nextTime,nextSpeed,duration);keyEvent.preventDefault();applySpeedCurveEdit(track,clip,moved);
-});\ndocument.addEventListener("click",event=>{
+});
+document.addEventListener("click",event=>{
  const flaggedCue=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-paper-flag-cue]");
  if(flaggedCue){
   const cueIndex=flaggedCue.dataset.tlPaperFlagCue;
