@@ -108,6 +108,14 @@ test("Luma source-video edit and reframe resolve private project assets before p
  assert.deepEqual(reframed.sourceVideo,{file_id:"luma-file-1"});
  assert.equal(reframeFixture.calls.create,1);
 });
+test("Luma private source uploads require explicit rights confirmation before provider file creation",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,rightsConfirmed:false
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_RIGHTS_REQUIRED");
+ assert.equal(f.calls.create,0);
+});
 test("Luma source-video operations fail closed before upload without valid operation inputs",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
