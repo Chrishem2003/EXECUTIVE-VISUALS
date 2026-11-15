@@ -24,7 +24,7 @@ export function normalizeMotionKeyframes(points:readonly MotionKeyframe[]|undefi
  for(let index=1;index<sorted.length;index++)if(sorted[index].timeSeconds===sorted[index-1].timeSeconds)throw new Error("Motion keyframe times must be unique.");
  return sorted;
 }
-function easeMotionRatio(ratio:number,mode:MotionKeyframe["interpolation"]){const t=Math.max(0,Math.min(1,ratio));if(mode==="ease-in")return t*t*t;if(mode==="ease-out")return 1-Math.pow(1-t,3);if(mode==="ease-in-out")return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;return t;}
+function easeMotionRatio(ratio:number,mode:MotionKeyframe["interpolation"]){const t=Math.max(0,Math.min(1,ratio));if(mode==="ease-in")return t*t*t;if(mode==="ease-out")return 1-Math.pow(1-t,3);if(mode==="ease-in-out")return t*t*(3-2*t);return t;}
 export function evaluateMotionProperty(points:readonly MotionKeyframe[]|undefined,timeSeconds:number,property:MotionProperty,fallback:number,durationSeconds:number):number{
  const keys=normalizeMotionKeyframes(points,durationSeconds).filter(point=>point[property]!==undefined),time=Math.max(0,Math.min(durationSeconds,Number.isFinite(timeSeconds)?timeSeconds:0));
  if(!keys.length)return fallback;
