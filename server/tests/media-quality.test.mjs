@@ -96,3 +96,11 @@ test("surfaces temporal color-instability findings and the measured sample rate"
  assert.ok(report.findings.some(item=>item.code==="ALTERNATING_SATURATION_INSTABILITY"));
  assert.ok(report.signalAnalysis.temporalColorFindings.length>0);
 });
+
+
+test("surfaces measured true peak and flags near-ceiling output for review",()=>{
+ const report=buildMediaQualityReport({format:{duration:"9"},streams:[{codec_type:"audio",sample_rate:"48000",channels:2}],signalAnalysis:{audioMetrics:{truePeakDbfs:-0.4},performed:["audio-metrics"]}});
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="AUDIO_TRUE_PEAK_NEAR_CEILING"&&item.truePeakDbfs===-0.4));
+ assert.equal(report.signalAnalysis.audioMetrics.truePeakDbfs,-0.4);
+});
