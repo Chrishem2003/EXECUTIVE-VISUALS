@@ -354,6 +354,12 @@ function syncPreviewAtFrame(frame:number){
   }else{
    media.muted=audioActive||item.clipId!==topVideo?.clipId;
    media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
+   if(pictureClip){
+    const metadata=pictureClip.metadata||{},duration=pictureClip.duration.value/pictureClip.duration.rate,localTime=Math.max(0,seconds-pictureClip.timelineStart.value/pictureClip.timelineStart.rate),base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||state.timeline!.width),height:Math.max(16,Number(metadata.height)||state.timeline!.height),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Number(metadata.rotation)||0},motion=evaluateMotionKeyframes(metadata.motionKeyframes as MotionKeyframe[]|undefined,localTime,base,duration);
+    media.style.left=(motion.x/state.timeline!.width*100)+"%";media.style.top=(motion.y/state.timeline!.height*100)+"%";media.style.right="auto";media.style.bottom="auto";media.style.width=(motion.width/state.timeline!.width*100)+"%";media.style.height=(motion.height/state.timeline!.height*100)+"%";media.style.opacity=String(motion.opacity);media.style.transform="rotate("+motion.rotation+"deg)";media.style.transformOrigin="center center";
+   }else{
+    media.style.left="0";media.style.top="0";media.style.right="0";media.style.bottom="0";media.style.width="100%";media.style.height="100%";media.style.opacity="1";media.style.transform="none";
+   }
   }
   if(state.isPlaying&&media.paused)void media.play().catch(()=>{state.message="Browser playback was blocked. Press Play again after interacting with the preview.";stopTimelinePlayback();paint();});
   if(!state.isPlaying&&!media.paused)media.pause();
