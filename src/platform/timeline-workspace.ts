@@ -1831,8 +1831,33 @@ document.addEventListener("click",event=>{
   return;
  }
  const storyboardCompile=target.closest<HTMLElement>("[data-tl-storyboard-compile]");
- if(storyboardCompile){if(!state.creativePlan){state.storyboardStatus="Generate and review creative direction first.";paint();return;}const form=document.querySelector<HTMLFormElement>("#tl-creative-director");const data=form?new FormData(form):null;const targetDurationSeconds=Number(data?.get("targetDurationSeconds")||60),aspectRatio=String(data?.get("aspectRatio")||"9:16"),frameRate=Number(data?.get("frameRate")||30);if(!window.confirm("Send the reviewed creative direction to the configured text model to compile an editable storyboard? Model usage may incur charges."))return;storyboardCompile.setAttribute("disabled","true");state.storyboardStatus="Compiling scenes, shots and continuity…";paint();void apiRequest<{storyboard:Record<string,unknown>;model:string;usage?:{totalTokens?:number}|null}>("/api/creative/storyboard",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.mode==="cloud"?state.cloudProjectId||undefined:state.timeline?.projectId||undefined,input:{creativeDirection:state.creativePlan,targetDurationSeconds,aspectRatio,frameRate}})}).then(result=>{state.storyboard=result.storyboard;state.storyboardStatus="Storyboard validated · "+result.model;paint();}).catch(error=>{state.storyboardStatus=error instanceof Error?error.message:"Storyboard compilation failed.";paint();});return;}
- const storyboardTimeline=target.closest<HTMLElement>("[data-tl-storyboard-create-timeline]");\n if(storyboardTimeline){if(state.mode!=="cloud"||!state.cloudProjectId||!state.storyboard){state.storyboardStatus="Select a cloud project and compile a storyboard first.";paint();return;}storyboardTimeline.setAttribute("disabled","true");void (async()=>{const timeline=createStoryboardTimeline(state.cloudProjectId,crypto.randomUUID(),state.storyboard as unknown as Parameters<typeof createStoryboardTimeline>[2]);const saved=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:timeline.name,timeline,otio:toOpenTimelineIo(timeline)})});state.timeline=saved.timeline.timeline;state.serverRevision=saved.timeline.revision;state.cloudTimelines=[saved.timeline,...state.cloudTimelines.filter(item=>item.id!==saved.timeline.id)];resetTimelineHistory(state.timeline.id);state.selectedTrack=state.timeline.tracks[0]?.id||"";state.storyboardStatus="Saved as a new cloud timeline · planned shots only · no provider jobs submitted.";state.message="Storyboard converted into an editable planned timeline. Assign approved media to each shot before rendering.";await refresh();paint();})().catch(error=>{state.storyboardStatus=error instanceof Error?error.message:"Storyboard timeline could not be saved.";paint();});return;}
+ if(storyboardCompile){
+  if(!state.creativePlan){state.storyboardStatus="Generate and review creative direction first.";paint();return;}
+  const form=document.querySelector<HTMLFormElement>("#tl-creative-director"),data=form?new FormData(form):null;
+  const targetDurationSeconds=Number(data?.get("targetDurationSeconds")||60),aspectRatio=String(data?.get("aspectRatio")||"9:16"),frameRate=Number(data?.get("frameRate")||30);
+  if(!window.confirm("Send the reviewed creative direction to the configured text model to compile an editable storyboard? Model usage may incur charges."))return;
+  storyboardCompile.setAttribute("disabled","true");state.storyboardStatus="Compiling scenes, shots and continuity…";paint();
+  void apiRequest<{storyboard:Record<string,unknown>;model:string;usage?:{totalTokens?:number}|null}>("/api/creative/storyboard",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.mode==="cloud"?state.cloudProjectId||undefined:state.timeline?.projectId||undefined,input:{creativeDirection:state.creativePlan,targetDurationSeconds,aspectRatio,frameRate}})})
+   .then(result=>{state.storyboard=result.storyboard;state.storyboardStatus="Storyboard validated · "+result.model;paint();})
+   .catch(error=>{state.storyboardStatus=error instanceof Error?error.message:"Storyboard compilation failed.";paint();});
+  return;
+ }
+ const storyboardTimeline=target.closest<HTMLElement>("[data-tl-storyboard-create-timeline]");
+ if(storyboardTimeline){
+  if(state.mode!=="cloud"||!state.cloudProjectId||!state.storyboard){state.storyboardStatus="Select a cloud project and compile a storyboard first.";paint();return;}
+  storyboardTimeline.setAttribute("disabled","true");
+  void (async()=>{
+   const timeline=createStoryboardTimeline(state.cloudProjectId,crypto.randomUUID(),state.storyboard as unknown as Parameters<typeof createStoryboardTimeline>[2]);
+   const saved=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:timeline.name,timeline,otio:toOpenTimelineIo(timeline)})});
+   state.timeline=saved.timeline.timeline;state.serverRevision=saved.timeline.revision;
+   state.cloudTimelines=[saved.timeline,...state.cloudTimelines.filter(item=>item.id!==saved.timeline.id)];
+   resetTimelineHistory(state.timeline.id);state.selectedTrack=state.timeline.tracks[0]?.id||"";
+   state.storyboardStatus="Saved as a new cloud timeline · planned shots only · no provider jobs submitted.";
+   state.message="Storyboard converted into an editable planned timeline. Assign approved media to each shot before rendering.";
+   await refresh();paint();
+  })().catch(error=>{state.storyboardStatus=error instanceof Error?error.message:"Storyboard timeline could not be saved.";paint();});
+  return;
+ }
  const mediaSearchAdd=target.closest<HTMLElement>("[data-tl-media-search-add]");
  if(mediaSearchAdd){const id=mediaSearchAdd.dataset.tlMediaSearchAdd||"";mediaSearchAdd.setAttribute("disabled","true");void addMediaSearchAssetToTimeline(id).catch(error=>{state.message=error instanceof Error?error.message:"Media could not be placed on the timeline.";paint();});return;}
  const select=target.closest<HTMLElement>("[data-tl-select]");
