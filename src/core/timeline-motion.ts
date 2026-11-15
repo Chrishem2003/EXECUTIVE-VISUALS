@@ -33,6 +33,14 @@ export function normalizeMotionKeyframes(points:readonly MotionKeyframe[]|undefi
  for(let index=1;index<sorted.length;index++)if(sorted[index].timeSeconds===sorted[index-1].timeSeconds)throw new Error("Motion keyframe times must be unique.");
  return sorted;
 }
+/** Copy a motion curve to another clip while preserving its shape and scaling clip-local timing. */
+export function retimeMotionKeyframes(points:readonly MotionKeyframe[]|undefined,sourceDurationSeconds:number,targetDurationSeconds:number):MotionKeyframe[]{
+ if(!Number.isFinite(sourceDurationSeconds)||sourceDurationSeconds<=0||!Number.isFinite(targetDurationSeconds)||targetDurationSeconds<=0)
+  throw new Error("Source and target motion durations must be positive and finite.");
+ const source=normalizeMotionKeyframes(points,sourceDurationSeconds);
+ const ratio=targetDurationSeconds/sourceDurationSeconds;
+ return normalizeMotionKeyframes(source.map(point=>({...point,timeSeconds:Number((point.timeSeconds*ratio).toFixed(4)),...(point.bezier?{bezier:{...point.bezier}}:{})})),targetDurationSeconds);
+}
 function cubicBezierCoordinate(t:number,a:number,b:number){const u=1-t;return 3*u*u*t*a+3*u*t*t*b+t*t*t;}
 function easeMotionRatio(ratio:number,mode:MotionKeyframe["interpolation"],curve?:MotionKeyframe["bezier"]){
  const x=Math.max(0,Math.min(1,ratio));
