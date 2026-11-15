@@ -132,3 +132,55 @@ test("Luma completed jobs remain pollable until credits settle, with bounded exp
   assert.equal(expired.status, "succeeded");
   assert.equal(expired.usage.credits_charged, null);
 });
+
+
+test("Luma Ray 3.2 supports governed video edit and reframe request shapes", async () => {
+  const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
+  const edited = await adapter.prepareInput({
+    operation: "edit", prompt: "Restyle the scene as golden-hour cinema",
+    sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
+    editStrength: "adhere_2"
+  });
+  assert.equal(edited.type, "video_edit");
+  assert.deepEqual(edited.source, { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" });
+  assert.deepEqual(edited.video.edit, { auto_controls: true, strength: "adhere_2" });
+  const reframed = await adapter.prepareInput({
+    operation: "reframe", prompt: "Extend the environment naturally",
+    sourceVideo: { file_id: "file_video_123" }, aspectRatio: "9:16", resolution: "720p"
+  });
+  assert.equal(reframed.type, "video_reframe");
+  assert.equal(reframed.aspect_ratio, "9:16");
+  assert.deepEqual(reframed.source, { file_id: "file_video_123" });
+});
+
+test("Luma Ray 3.2 supports extension from an owned prior generation", async () => {
+  const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
+  const payload = await adapter.prepareInput({
+    operation: "extend", prompt: "Continue the camera movement smoothly",
+    sourceGenerationId: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e",
+    durationSeconds: 5
+  });
+  assert.equal(payload.type, "video");
+  assert.deepEqual(payload.video.start_frame, {
+    generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"
+  });
+});
+
+test("Luma edit and reframe reject untyped, unsafe or incomplete source references", async () => {
+  const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
+  await assert.rejects(adapter.prepareInput({
+    operation: "edit", prompt: "Restyle", sourceVideo: { url: "http://127.0.0.1/private.mp4", media_type: "video/mp4" }
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+  await assert.rejects(adapter.prepareInput({
+    operation: "reframe", prompt: "Reframe", sourceVideo: { url: "https://cdn.example.test/source.mp4" }, aspectRatio: "9:16"
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+  await assert.rejects(adapter.prepareInput({
+    operation: "reframe", prompt: "Reframe", sourceVideo: { file_id: "file_video_123" }
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+  await assert.rejects(adapter.prepareInput({
+    operation: "extend", prompt: "Continue", sourceGenerationId: "../foreign"
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+  await assert.rejects(adapter.prepareInput({
+    operation: "edit", prompt: "Restyle", sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" }, editStrength: "wild"
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+});
