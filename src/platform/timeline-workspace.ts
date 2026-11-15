@@ -1309,6 +1309,7 @@ document.addEventListener("input",event=>{
 });
 document.addEventListener("change",async event=>{
  const target=event.target as HTMLInputElement|HTMLSelectElement;
+ if(target.id==="tl-paper-edit-speaker"){filterPaperEditCueSelection();return;}
  if(target instanceof HTMLInputElement&&target.hasAttribute("data-tl-paper-cue")){
   const form=target.closest<HTMLFormElement>("#tl-paper-edit");
   if(form)filterPaperEditCueSelection();
