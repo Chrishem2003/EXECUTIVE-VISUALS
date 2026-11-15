@@ -1570,7 +1570,7 @@ document.addEventListener("keydown",event=>{
     const previous=normalizeMotionKeyframes((clip.metadata?.motionKeyframes as MotionKeyframe[]|undefined),duration),existing=previous.findIndex(item=>Math.abs(item.timeSeconds-point.timeSeconds)<0.0005);
     if(existing>=0)previous[existing]=point;else previous.push(point);
     const next=normalizeMotionKeyframes(previous,duration);
-    recordUndo();clip.metadata={...clip.metadata,motionKeyframes:next};commitUndo("Add transform keyframe");state.selectedTrack=track.id;state.selectedClipId=clip.id;state.message="Saving transform keyframe…";
+    recordUndo();clip.metadata={...clip.metadata,x:point.x,y:point.y,width:point.width,height:point.height,opacity:point.opacity,rotation:point.rotation,motionKeyframes:next};commitUndo("Add transform keyframe");state.selectedTrack=track.id;state.selectedClipId=clip.id;state.message="Saving transform keyframe…";
     void persist().then(()=>{state.message="Transform keyframe saved. Preview and local/cloud renders use the selected interpolation mode.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not save transform keyframe.";paint();});
    }catch(error){alert(error instanceof Error?error.message:"Transform keyframe is invalid.");}
   }
