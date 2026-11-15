@@ -237,7 +237,8 @@ export function createProviderAwareCloudVideoWorkerComposition({
           if (!input || typeof input !== "object" || Array.isArray(input) || input.provider !== "luma" || input.model !== model) {
             throw Object.assign(new Error("Luma job provider/model identity does not match Ray 3.2."), { code: "VIDEO_JOB_INPUT_MISMATCH" });
           }
-          const hasReferences = Boolean(input.startFrame || input.endFrame) ||
+          const hasReferences = Boolean(input.startFrame || input.endFrame || input.sourceVideoAssetId ||
+            input.sourceVideo || input.source || input.sourceGenerationId) ||
             (Array.isArray(input.keyframes) && input.keyframes.length > 0) ||
             (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0);
           if (hasReferences && typeof lumaPrepareInput !== "function") {
