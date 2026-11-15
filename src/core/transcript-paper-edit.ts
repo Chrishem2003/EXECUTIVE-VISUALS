@@ -45,7 +45,7 @@ export interface TranscriptTextFlag {
  token:string;
  occurrences:number;
 }
-const FILLER_WORDS=/\\b(?:um+|uh+|erm+|er+|ah+|hmm+)\\b/gi;
+const FILLER_WORDS=/\b(?:um+|uh+|erm+|er+|ah+|hmm+)\b/gi;
 export function analyzeTranscriptText(cues:TranscriptCue[]):TranscriptTextFlag[]{
  const flags:TranscriptTextFlag[]=[];
  for(const cue of cues){
@@ -55,7 +55,7 @@ export function analyzeTranscriptText(cues:TranscriptCue[]):TranscriptTextFlag[]
    counts.set(token,(counts.get(token)||0)+1);
   }
   for(const [token,occurrences] of counts)flags.push({cueIndex:cue.index,kind:"filler",token,occurrences});
-  const repeated=/\\b([\\p{L}']{2,})[\\s,]+\\1\\b/giu;
+  const repeated=/\b([\p{L}']{2,})[\s,]+\1\b/giu;
   for(const match of cue.text.matchAll(repeated)){
    const token=match[1].toLocaleLowerCase();
    flags.push({cueIndex:cue.index,kind:"repetition",token,occurrences:1});
