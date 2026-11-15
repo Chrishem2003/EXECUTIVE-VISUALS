@@ -102,7 +102,7 @@ test("Luma source-video edit and reframe resolve private project assets before p
  assert.equal(editFixture.calls.create,1);
  const reframeFixture=fixture();
  const reframed=await reframeFixture.service.resolveInput({
-  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"540p",
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"540p",
   sourceVideoAssetId:assetId,aspectRatio:"9:16"
  },{job:{owner_id:ownerId,project_id:projectId}});
  assert.deepEqual(reframed.sourceVideo,{file_id:"luma-file-1"});
@@ -122,7 +122,7 @@ test("Luma source-video operations fail closed before upload without valid opera
   provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p"
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  await assert.rejects(f.service.resolveInput({
-  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"1080p",sourceVideoAssetId:assetId
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"1080p",sourceVideoAssetId:assetId
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
 });
