@@ -63,6 +63,9 @@ These foundations do not imply that every advanced effect or AI feature below is
 
 1. Keyframes for position, scale, rotation, opacity and audio gain.
 2. Curve editor and speed ramps with explicit interpolation modes.
+   - Variable-speed curves are persisted and used by local/cloud render paths; a visual graph now supports direct pointer dragging of clip-local keyframes, with fixed clip boundaries, ordered-point constraints and bounded 0.25×–4× speed.
+   - Numeric keyframe controls remain available for precise entry; drag edits commit as one undoable, revision-safe save.
+   - Explicit Bezier/ease/loop interpolation modes remain outstanding; the current renderer uses linear speed interpolation.
 3. Transition library with duration, handles and render-time validation.
 4. Masks, blend modes, chroma key and background removal.
 5. Motion tracking for titles, stickers and overlays.
