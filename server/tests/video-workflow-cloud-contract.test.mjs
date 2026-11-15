@@ -345,6 +345,14 @@ test("Luma ten-second workflow requires multi-keyframe mode instead of first/las
   rightsConfirmed:true,startFrameAssetId:"frame-first",endFrameAssetId:"frame-last"
  }},projectId:"project-1",requestId:"luma-first-last-10",values:{prompt:"A scene"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
+test("Luma edit contract accepts documented source durations through eighteen seconds",()=>{
+ const base={node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:18,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,sourceVideoAssetId:"source-video"}},projectId:"project-1",requestId:"luma-edit-18s",values:{prompt:"Restyle while preserving motion"}};
+ const result=createVideoWorkflowCloudRequest(base);
+ assert.equal(result.operation,"video_edit");
+ assert.equal(result.input.durationSeconds,18);
+ assert.throws(()=>createVideoWorkflowCloudRequest({...base,node:{...base.node,config:{...base.node.config,durationSeconds:19}}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
+
 test("Luma source-video edit and reframe contracts bind private assets and operation-specific controls",()=>{
  const sourceVideoAssetId="b23e4567-e89b-42d3-a456-426614174010";
  const edited=createVideoWorkflowCloudRequest({
