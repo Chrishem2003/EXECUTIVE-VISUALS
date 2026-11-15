@@ -201,7 +201,7 @@ test("Luma Ray 3.2 is exposed only after credentials, contract pricing, schema a
  assert.equal(luma.status,"ready");
  assert.equal(luma.provider,"luma");
  assert.equal(luma.model,"ray-3.2");
- assert.deepEqual(luma.modelCapabilities.resolutions,["540p","720p","1080p"]);
+ assert.deepEqual(luma.modelCapabilities.resolutions,["360p","540p","720p","1080p"]);
  assert.equal(luma.availableModels[0].readiness,"ready");
  assert.equal(luma.availableModels[0].available,true);
  assert.equal(JSON.stringify(catalog).includes("never-return-this"),false);
@@ -216,7 +216,8 @@ test("Luma Ray 3.2 is exposed only after credentials, contract pricing, schema a
 test("Luma Ray 3.2 readiness requires the actual worker gate, private schema, price rate and all explicit remote opt-ins",()=>{
  const env={
   LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
-  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  SUPABASE_URL:"https://project.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-only",CLOUD_VIDEO_OUTPUT_HOSTS:"media.example.com",
   LUMA_AGENTS_API_KEY:"never-return-this",LUMA_USD_PER_CREDIT:"0.003",
   LUMA_PROVIDER_FILES_SCHEMA_READY:"true"
  };
