@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 13 November 2026  
-**Branch:** `main` (PRs #540, #541 and #542 are also merged; main is `e2ccf5930aae0ae67e48e908c15f7759458454ef`; Render deployment `dep-dbrndk0jo6nc73eqt2tg` is live; isolated D1 staging Worker version 9 is active)
+**Updated:** 15 November 2026  
+**Branch:** `main` (latest main is `d55c6e3b854a84fea8b793f41f6635746a161f3e`; PR #602 is merged; Render deployment `dep-dbsl5cs9v7es73c1rpmg` is live; isolated D1 staging remains separate from production)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
 ## Mainline delta — 13 November 2026
