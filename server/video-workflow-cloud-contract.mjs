@@ -129,7 +129,7 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
    if(!["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].includes(editStrength))
     throw fail("Luma edit strength is unsupported.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   }else{
-   if(durationSeconds<2||durationSeconds>30)throw fail("Luma reframe source duration must be 2–30 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+   if(durationSeconds<2||durationSeconds>10)throw fail("Luma reframe source duration must be 2–10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
    if(resolution==="1080p")throw fail("Luma 1080p reframe is not enabled for this workflow until the provider account capability is verified.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
   }
  }
