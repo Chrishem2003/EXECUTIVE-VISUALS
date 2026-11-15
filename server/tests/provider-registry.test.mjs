@@ -4,10 +4,11 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,7);
+ assert.equal(catalog.summary.total,8);
  assert.equal(catalog.summary.ready,0);
- assert.equal(catalog.summary.disabled,5);
+ assert.equal(catalog.summary.disabled,6);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
+ assert.equal(catalog.providers.find(x=>x.id==="video-luma").status,"disabled");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
  assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:false,requestsSubmitted:false});
  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
@@ -185,4 +186,28 @@ test("upscale model readiness is reported independently and never inferred from 
  assert.equal(models.find(model=>model.id==="realesrgan-x4plus").readiness,"ready");
  assert.equal(models.find(model=>model.id==="realesrgan-x4plus-anime").readiness,"unavailable");
  assert.equal(models.find(model=>model.id==="realesrgan-x4plus-anime").qualityVerified,false);
+});
+
+test("Luma Ray 3.2 is exposed only after credentials, contract pricing, schema and every remote gate are ready",()=>{
+ const env={
+  LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  LUMA_AGENTS_API_KEY:"never-return-this",LUMA_USD_PER_CREDIT:"0.003",
+  LUMA_PROVIDER_FILES_SCHEMA_READY:"true"
+ };
+ const catalog=getProviderCatalog(env);
+ const luma=catalog.providers.find(item=>item.id==="video-luma");
+ assert.equal(luma.status,"ready");
+ assert.equal(luma.provider,"luma");
+ assert.equal(luma.model,"ray-3.2");
+ assert.deepEqual(luma.modelCapabilities.resolutions,["540p","720p","1080p"]);
+ assert.equal(luma.availableModels[0].readiness,"ready");
+ assert.equal(luma.availableModels[0].available,true);
+ assert.equal(JSON.stringify(catalog).includes("never-return-this"),false);
+ const schemaBlocked=getProviderCatalog({...env,LUMA_PROVIDER_FILES_SCHEMA_READY:"false"});
+ assert.equal(schemaBlocked.providers.find(item=>item.id==="video-luma").status,"needs_configuration");
+ const globalOptInBlocked=getProviderCatalog({...env,VIDEO_GATEWAY_ALLOW_REMOTE:"false"});
+ assert.equal(globalOptInBlocked.providers.find(item=>item.id==="video-luma").status,"remote_opt_in_required");
+ const missingRate=getProviderCatalog({...env,LUMA_USD_PER_CREDIT:""});
+ assert.equal(missingRate.providers.find(item=>item.id==="video-luma").status,"needs_configuration");
 });
