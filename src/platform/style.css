@@ -1495,3 +1495,11 @@ body{
 .continue-card p{margin:0 0 9px;color:var(--muted,#667085);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
 .continue-card button{align-self:flex-start}
 @media(max-width:680px){.onboarding-heading{display:grid}.onboarding-progress{display:flex;justify-content:center;gap:7px;width:max-content;min-width:0}.onboarding-step{grid-template-columns:30px minmax(0,1fr);align-items:start}.onboarding-step button{grid-column:2;justify-self:start}.continue-grid{grid-template-columns:1fr}}
+
+
+/* Preview-only caption/title safe-area guides. These never affect rendered output. */
+.timeline-safe-area-overlay{position:absolute;inset:0;z-index:10000;pointer-events:none;color:#f5f3ff;font:600 10px/1.2 system-ui,sans-serif;text-shadow:0 1px 3px #000,0 0 5px #000}
+.timeline-safe-area-title-guide{position:absolute;border:1px dashed rgba(196,181,253,.9);box-shadow:inset 0 0 0 1px rgba(15,12,24,.35)}
+.timeline-safe-area-title-guide>span,.timeline-safe-area-subtitle-guide>span{position:absolute;top:4px;left:6px;padding:3px 5px;border-radius:4px;background:rgba(15,12,24,.72);letter-spacing:.02em}
+.timeline-safe-area-subtitle-guide{position:absolute;border:1px dashed rgba(250,204,21,.95);background:rgba(250,204,21,.045)}
+.timeline-safe-area-subtitle-guide>span{top:auto;bottom:4px;left:6px}
