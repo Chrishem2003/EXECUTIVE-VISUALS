@@ -176,10 +176,26 @@ export function createLumaProviderFileService({
    const file=await prepareAsset({ownerId,projectId,assetId:input.endFrameAssetId,purpose:"reference"});
    resolved.endFrame={file_id:file.fileId};
   }
-  if(Array.isArray(input.keyframeAssetIds)){
-   if(input.keyframeAssetIds.length<1||input.keyframeAssetIds.length>64)throw fail("Luma keyframe assets must contain 1 to 64 images.","LUMA_FILE_INPUT_INVALID",400);
+  if(input.keyframeAssetIds!==undefined){
+   if(!Array.isArray(input.keyframeAssetIds)||input.keyframeAssetIds.length<1||input.keyframeAssetIds.length>64||
+      !Array.isArray(input.keyframeIndexes)||input.keyframeIndexes.length!==input.keyframeAssetIds.length||
+      input.keyframeAssetIds.some(assetId=>typeof assetId!=="string"||!UUID.test(assetId))||
+      new Set(input.keyframeAssetIds).size!==input.keyframeAssetIds.length)
+    throw fail("Luma keyframe assets and indexes must contain 1 to 64 unique, matching entries.","LUMA_FILE_INPUT_INVALID",400);
+   const duration=Number(input.durationSeconds??5),maxFrame=duration*24;
+   let previous=-1;
+   if(![5,10].includes(duration)||input.startFrameAssetId||input.endFrameAssetId||input.loop===true)
+    throw fail("Luma multi-keyframe input cannot be combined with start/end frames or looping and requires a supported duration.","LUMA_FILE_INPUT_INVALID",400);
+   for(const index of input.keyframeIndexes){
+    if(!Number.isSafeInteger(index)||index<0||index>maxFrame||index<=previous)
+     throw fail("Luma keyframe indexes must be unique, strictly increasing output-frame positions within the selected duration.","LUMA_FILE_INPUT_INVALID",400);
+    previous=index;
+   }
    const files=await Promise.all(input.keyframeAssetIds.map(assetId=>prepareAsset({ownerId,projectId,assetId,purpose:"reference"})));
    resolved.keyframes=files.map(file=>({file_id:file.fileId}));
+   resolved.keyframeIndexes=[...input.keyframeIndexes];
+  }else if(input.keyframeIndexes!==undefined){
+   throw fail("Luma keyframe indexes require matching private keyframe assets.","LUMA_FILE_INPUT_INVALID",400);
   }
   for(const field of ["startFrame","endFrame"]){
    if(plain(input[field])&&input[field].file_id)throw fail("Caller-supplied Luma file IDs are not accepted; use an owner-scoped private asset ID.","LUMA_FILE_UNSCOPED_REFERENCE",403);
