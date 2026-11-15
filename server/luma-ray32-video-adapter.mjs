@@ -218,7 +218,7 @@ export function createLumaRay32Adapter({
   const FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"]);
   const MAX_FILE_BYTES = 250 * 1024 * 1024;
 
-  const issuedUploadReceipts = new WeakSet();
+  const issuedUploadReceipts = new WeakMap();
 
   function validateUploadReceipt(body, expected) {
     const file = body?.file || body;
@@ -248,7 +248,7 @@ export function createLumaRay32Adapter({
       }
     }
     const uploadReceipt = Object.freeze({ url: url.toString(), method: "PUT", headers: Object.freeze({ ...headers }), expiresAt: upload.expires_at });
-    issuedUploadReceipts.add(uploadReceipt);
+    issuedUploadReceipts.set(uploadReceipt, { mimeType: expected.mimeType, sizeBytes: expected.sizeBytes });
     return Object.freeze({ fileId, state: file.state, mimeType: expected.mimeType, sizeBytes: expected.sizeBytes, upload: uploadReceipt });
   }
 
@@ -272,9 +272,10 @@ export function createLumaRay32Adapter({
       return validateUploadReceipt(body, { mimeType: normalizedMime, sizeBytes });
     },
     async uploadFileBytes({ upload, bytes, mimeType } = {}) {
-      if (!plain(upload) || !issuedUploadReceipts.has(upload) || upload.method !== "PUT" || typeof upload.url !== "string" ||
-          !(bytes instanceof Uint8Array) || bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES ||
-          typeof mimeType !== "string" || !FILE_MIME_TYPES.has(mimeType.toLowerCase())) {
+      const expected = plain(upload) ? issuedUploadReceipts.get(upload) : null;
+      if (!expected || upload.method !== "PUT" || typeof upload.url !== "string" ||
+          !(bytes instanceof Uint8Array) || bytes.byteLength !== expected.sizeBytes ||
+          typeof mimeType !== "string" || mimeType.toLowerCase() !== expected.mimeType) {
         throw fail("Luma file upload requires a valid upload receipt and bounded media bytes.", "LUMA_FILE_INPUT_INVALID");
       }
       const url = new URL(upload.url);
