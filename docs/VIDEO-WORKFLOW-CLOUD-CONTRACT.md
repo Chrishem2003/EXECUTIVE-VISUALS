@@ -34,8 +34,8 @@ This document describes the current server-side contract and the boundaries betw
 ## Current UI and remaining work
 
 - Current direct Video Studio: text-to-video and one first-frame image-to-video for Luma.
-- Server-side workflow contract and quote support: up to 64 indexed private keyframes.
-- Remaining UI polish: direct Video Studio/timeline handoff and a visual keyframe upload/order/timing editor; the Workflow Canvas now has a project-scoped source-video picker and accepts saved project first/last frame and keyframe asset IDs.
+- Server-side workflow contract and quote support: up to 64 indexed private keyframes (per the Luma Agents API schema).
+- Remaining UI polish: direct Video Studio/timeline handoff and drag-to-order/timing controls; the Workflow Canvas now has a project-scoped private source-video picker and multi-select project image picker for keyframe assets, with explicit output-frame index entry.
 - Still gated: Luma source-video edit/reframe in the direct Video Studio composer, and video extension in all workflow surfaces.
 - Required before calling the complete studio flow production-ready: exact-head CI, PostgreSQL migration integration, staging-only end-to-end verification, private output ingestion acceptance, durable storage/worker readiness, and a successful delivery-gate run.
 
