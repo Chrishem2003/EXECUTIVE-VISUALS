@@ -369,6 +369,11 @@ document.addEventListener("change",event=>{
   }
   const operation=provider==="luma"?(operationSelect?.value||"generate"):"generate";
   const luma=provider==="luma";
+  if(operationSelect)operationSelect.disabled=!luma;
+  for(const name of ["sourceVideoAssetId"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation==="generate";}
+  for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="edit";}
+  for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="reframe";}
+  for(const name of ["startFrameAssetId","endFrameAssetId","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="generate";}
   const values=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
   if(resolution){
    const previous=resolution.value;
