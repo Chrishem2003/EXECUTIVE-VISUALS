@@ -93,7 +93,7 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
   config.startFrameAssetId,config.referenceAssetId);
  const endFrameAssetId=firstString(values.endFrameAssetId,values["end-frame"],config.endFrameAssetId);
  const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
- const keyframeAssetIds=assetList(config.keyframeAssetIds??values.keyframeAssetIds,"Luma keyframe assets",16);
+ const keyframeAssetIds=assetList(config.keyframeAssetIds??values.keyframeAssetIds,"Luma keyframe assets",64);
  const keyframeIndexes=config.keyframeIndexes??values.keyframeIndexes;
  const referenceAssetIds=assetList(config.referenceAssetIds??values.referenceAssetIds??values.references,"Luma generic references",1);
  if(referenceAssetIds.length)throw fail("Luma Ray 3.2 workflow quotes accept explicit private frame assets, not a generic reference list.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
