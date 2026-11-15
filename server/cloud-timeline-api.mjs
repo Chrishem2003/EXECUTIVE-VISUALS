@@ -300,7 +300,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
       }
      }
-     const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
+     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
      const estimate=await workflowRouterAdapter.preflight(prepared);
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
         !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
@@ -353,14 +353,19 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     }
     const approvalNote=typeof body.approvalNote==="string"?body.approvalNote.trim():"Approved by project editor in Video Studio";
     if(!approvalNote||approvalNote.length>1000)return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_NOTE_INVALID",message:"Approval note must contain 1 to 1,000 characters."}});
-    const configId=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
-    const remoteReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
-     env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
-     env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
-     Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-    if(!workflowRouterAdapter||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"Cloud video approval and enqueue remain disabled until the router, worker, remote-execution and gateway release gates are explicitly configured."}});
     try{
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     const isLuma=workflowRequest.provider==="luma";
+     const configId=isLuma?"ray-3.2":String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+     const quoteAdapter=isLuma?lumaWorkflowAdapter:workflowRouterAdapter;
+     const remoteReady=isLuma?lumaQuoteReady:
+      env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+      env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
+      env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
+      Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
+     if(!quoteAdapter||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"The selected provider's worker, remote-execution, private-file and gateway release gates are not all configured."}});
+     if(isLuma&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
+      return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must remain verified private image assets in this exact project."}});
      if(workflowRequest.input.sourceVideoAssetId){
       if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video approval requires a private server-side source metadata probe."}});
       const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
