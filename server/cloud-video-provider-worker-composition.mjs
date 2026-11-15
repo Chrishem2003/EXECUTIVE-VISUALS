@@ -247,7 +247,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
           if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || resolved.provider !== "luma" || resolved.model !== model) {
             throw Object.assign(new Error("Luma input resolver returned an invalid or mismatched request."), { code: "LUMA_VIDEO_INPUT_INVALID" });
           }
-          return Object.freeze({ provider: "luma", model, payload: await lumaClient.prepareInput(resolved) });
+          const ownerId = context?.job?.owner_id;
+          if (typeof ownerId !== "string" || !ownerId.trim() || ownerId.length > 256) {
+            throw Object.assign(new Error("Luma user attribution requires the stable internal owner ID."), { code: "LUMA_VIDEO_OWNER_ID_REQUIRED" });
+          }
+          return Object.freeze({ provider: "luma", model, payload: await lumaClient.prepareInput({ ...resolved, user_id: ownerId }) });
         },
         async submit(prepared) {
           assertLumaEnabled();
