@@ -260,9 +260,9 @@ export function createProviderAwareCloudVideoWorkerComposition({
           }
           return lumaClient.submit(prepared.payload);
         },
-        async getStatus(taskId) {
+        async getStatus(taskId, context) {
           assertLumaEnabled();
-          return lumaClient.getStatus(taskId);
+          return lumaClient.getStatus(taskId, context);
         },
         async ingestOutputs(args) {
           return ingest({ ...args, provider: "luma", model });
