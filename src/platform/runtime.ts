@@ -427,13 +427,30 @@ export function renderImageModelNote(){
 }
 export function renderVideoModelOptions(){
  const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
- const options=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>{
-  const ready=provider.status==="ready"&&model.available===true&&model.executionVerified===true&&(model.qualityVerified===true||model.readiness==="ready");
+ const models=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})));
+ const selected=models.find(({provider,model})=>provider.status==="ready"&&model.available===true&&
+  model.executionVerified===true&&(model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
+ const options=models.map(({provider,model})=>{
+  const ready=provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
+   (model.qualityVerified===true||model.readiness==="ready");
   const reason=ready?"":String(model.reason||provider.reason||model.readiness||provider.status||"Not verified");
-  const duration=Number.isFinite(model.minDurationSeconds)&&Number.isFinite(model.maxDurationSeconds)?" · "+model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":"";
-  return '<option value="'+esc(model.id)+'" data-provider="'+esc(provider.provider)+'" '+(provider.model===model.id?"selected ":"")+(ready?"":"disabled ")+'>'+esc(model.label)+duration+(ready?"":" · "+esc(reason.slice(0,90)))+'</option>';
- }));
+  const duration=Number.isFinite(model.minDurationSeconds)&&Number.isFinite(model.maxDurationSeconds)
+   ?" · "+model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":"";
+  const selectedModel=selected?.provider===provider&&selected?.model===model;
+  return '<option value="'+esc(model.id)+'" data-provider="'+esc(provider.provider)+'" '+
+   (selectedModel?"selected ":"")+(ready?"":"disabled ")+
+   '>'+esc(model.label)+duration+(ready?"":" · "+esc(reason.slice(0,90)))+'</option>';
+ });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
+}
+export function renderVideoResolutionOptions(){
+ const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
+ const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
+  .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
+   (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
+ if(selected?.provider.provider==="luma")return '<option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
+ if(selected?.provider.provider==="google")return '<option value="720p" selected>720p · Gemini Omni</option>';
+ return '<option value="provider_default" selected>Provider default</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>';
 }
 export function renderVideoModelNote(){
  const luma=state.providers.find(item=>item.provider==="luma");
