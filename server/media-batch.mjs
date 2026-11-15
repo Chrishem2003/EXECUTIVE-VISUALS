@@ -40,12 +40,12 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
   "media.audio_extract":{}
  };
  const operationOptions={...defaults[jobType],...normalizedOptions};
+ if(jobType==="media.proxy"&&(!Number.isInteger(operationOptions.proxyWidth)||operationOptions.proxyWidth<320||operationOptions.proxyWidth>1920||!Number.isInteger(operationOptions.proxyCrf)||operationOptions.proxyCrf<18||operationOptions.proxyCrf>35))throw fail("Proxy width must be 320–1920 and CRF must be 18–35.","INVALID_MEDIA_OPTIONS");
  try{
   if(jobType==="media.proxy")buildProxyVideoArgs({sourcePath:"/tmp/ev-batch-source.mp4",outputPath:"/tmp/ev-batch-proxy.mp4",input:operationOptions});
   else if(jobType!=="media.audio_extract")buildMediaOperationArgs({jobType,input:operationOptions,sourcePath:"/tmp/ev-batch-source.mp4",outputPath:"/tmp/ev-batch-output.mp4"});
  }catch(error){throw fail(error.message||"Media batch options are invalid.",error.code||"INVALID_MEDIA_OPTIONS");}
  let selectedProject=projectId==null||projectId===""?null:String(projectId);
- if(selectedProject&&!canWriteProject(ownerId,selectedProject))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
  const seen=new Set(),normalizedItems=[];
  for(const item of items){
   if(!plain(item))throw fail("Every media batch item must be an object.","INVALID_MEDIA_BATCH_ITEM");
@@ -61,5 +61,6 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
   if(sourceProjectId!==selectedProject)throw fail("All batch videos must belong to the same selected project or private workspace.","PROJECT_MISMATCH");
   normalizedItems.push({sourceAssetId,options:{...operationOptions}});
  }
+ if(selectedProject&&!canWriteProject(ownerId,selectedProject))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
  return Object.freeze({projectId:selectedProject,jobType,items:normalizedItems});
 }
