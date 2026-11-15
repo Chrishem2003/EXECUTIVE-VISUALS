@@ -191,7 +191,7 @@ test("upscale model readiness is reported independently and never inferred from 
 test("Luma Ray 3.2 is exposed only after credentials, contract pricing, schema and every remote gate are ready",()=>{
  const env={
   LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
-  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
   LUMA_AGENTS_API_KEY:"never-return-this",LUMA_USD_PER_CREDIT:"0.003",
   LUMA_PROVIDER_FILES_SCHEMA_READY:"true",SUPABASE_URL:"https://project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY:"server-only",CLOUD_VIDEO_OUTPUT_HOSTS:"media.example.com"
