@@ -31,11 +31,13 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";
+ const lumaStorageReady=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()!=="r2"||
+  Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY);
  const luma=gatewayState({
   enabled:env.LUMA_VIDEO_ENABLED==="true",
-  configured:Boolean(env.LUMA_AGENTS_API_KEY&&lumaRateValid&&lumaSchemaReady&&env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY&&String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim()),
+  configured:Boolean(env.LUMA_AGENTS_API_KEY&&lumaRateValid&&lumaSchemaReady&&lumaStorageReady&&env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY&&String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim()),
   url:"https://agents.lumalabs.ai",
-  allowRemote:env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true",
+  allowRemote:env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true",
   model:"ray-3.2",provider:"luma",id:"video-luma",
   capabilities:["video.generate","video.image_to_video","video.video_to_video","video.reframe","video.extend"],
   reasonIfMissing:"Set LUMA_AGENTS_API_KEY and LUMA_USD_PER_CREDIT, configure private Supabase storage and output hosts, apply the Luma provider-file migration and set LUMA_PROVIDER_FILES_SCHEMA_READY=true."
@@ -47,14 +49,14 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
   minDurationSeconds:5,maxDurationSeconds:10,
   aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
   resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,
-  audioModes:["none"],operations:["video","video_edit","video_extend","video_reframe"]
+  audioModes:["none"],durationsSeconds:[5,10],operations:["generate","edit","reframe","extend"]
  };
  luma.availableModels=[{
   id:"ray-3.2",label:"Luma Ray 3.2",readiness:luma.status==="ready"?"ready":luma.status,
   available:luma.status==="ready",executionVerified:luma.status==="ready",
   minDurationSeconds:5,maxDurationSeconds:10,
   aspectRatios:[...luma.modelCapabilities.aspectRatios],resolutions:[...luma.modelCapabilities.resolutions],
-  referenceImages:true,maxReferenceImages:1,audioModes:["none"],reason:luma.reason
+  referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],operations:[...luma.modelCapabilities.operations],reason:luma.reason
  }];
  const voice=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&env.VOICE_GATEWAY_MODEL),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_GATEWAY_MODEL,provider:"voice",capabilities:["voice.generate"]});
  const transcription=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true"&&env.VOICE_TRANSCRIPTION_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&(env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL)),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL,provider:"transcription",capabilities:["voice.transcribe"]});
