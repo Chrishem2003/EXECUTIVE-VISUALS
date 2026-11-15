@@ -147,7 +147,7 @@ async function applyMotionPreset(track:TimelineTrack,clip:TimelineTrack["clips"]
  const duration=clip.duration.value/clip.duration.rate;
  if(!Number.isFinite(duration)||duration<=0){state.message="This clip has no valid duration for a motion preset.";paint();return;}
  const metadata=clip.metadata||{},base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||(track.kind==="video"?state.timeline.width:Math.round(state.timeline.width*.24))),height:Math.max(16,Number(metadata.height)||(track.kind==="video"?state.timeline.height:Math.round(state.timeline.height*.24))),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Number(metadata.rotation)||0};
- const endTime=Number(Math.min(duration,0.6).toFixed(4)),from={timeSeconds:0,...base},to={timeSeconds:endTime,...base};
+ const endTime=Number(Math.min(duration,0.6).toFixed(4)),from:MotionKeyframe={timeSeconds:0,...base},to:MotionKeyframe={timeSeconds:endTime,...base};
  const offset=Math.max(48,Math.min(240,Math.round(state.timeline.width*.12)));
  if(preset==="fade-in"){from.opacity=0;to.opacity=base.opacity;to.interpolation="ease-in-out";}
  else if(preset==="slide-left"){from.x=base.x-offset;to.x=base.x;to.interpolation="ease-out";}
