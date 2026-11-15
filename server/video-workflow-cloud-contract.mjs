@@ -96,6 +96,7 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  if(firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId))
   throw fail("Luma source-video editing is not exposed in this workflow composer yet. Use text-to-video or image-to-video.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(startFrameAssetId&&endFrameAssetId)throw fail("Luma start/end frames cannot be combined in this workflow composer yet.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw fail("Luma 10-second generation requires multi-keyframe mode instead of a single start/end frame.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(!prompt)throw fail("Luma Ray 3.2 requires a non-empty prompt.","PROMPT_REQUIRED");
  if(![5,10].includes(Number(config.durationSeconds??config.duration??5)))throw fail("Luma Ray 3.2 generation duration must be 5 or 10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const durationSeconds=Number(config.durationSeconds??config.duration??5);
