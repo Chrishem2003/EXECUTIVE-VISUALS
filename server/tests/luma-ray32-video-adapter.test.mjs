@@ -12,9 +12,9 @@ test("Luma adapter submits Ray 3.2 text-to-video and polls into normalized outpu
     apiKey: "test-secret",
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
-      if (init.method === "POST") return response({ id: "gen_12345678", state: "queued", model: "ray-3.2" }, 201);
+      if (init.method === "POST") return response({ id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "queued", model: "ray-3.2" }, 201);
       return response({
-        id: "gen_12345678", state: "completed",
+        id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "completed",
         output: [{ type: "video", url: "https://cdn.example.test/out.mp4?sig=temporary" }],
         usage: { credits_charged: 100 }
       });
@@ -26,18 +26,18 @@ test("Luma adapter submits Ray 3.2 text-to-video and polls into normalized outpu
     aspect_ratio: "16:9", video: { resolution: "720p", duration: "5s" }
   });
   const submitted = await adapter.submit(payload);
-  assert.deepEqual(submitted, { taskId: "gen_12345678", status: "queued" });
+  assert.deepEqual(submitted, { taskId: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", status: "queued" });
   const status = await adapter.getStatus(submitted.taskId);
   assert.equal(status.status, "succeeded");
   assert.equal(status.outputUrls[0], "https://cdn.example.test/out.mp4?sig=temporary");
   assert.equal(status.usage.credits_charged, 100);
   assert.equal(calls[0].url, "https://agents.lumalabs.ai/v1/generations");
   assert.equal(calls[0].init.headers.authorization, "Bearer test-secret");
-  assert.equal(calls[1].url, "https://agents.lumalabs.ai/v1/generations/gen_12345678");
+  assert.equal(calls[1].url, "https://agents.lumalabs.ai/v1/generations/182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e");
 });
 
 test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", async () => {
-  const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({ id: "gen_12345678", state: "queued" }, 201) });
+  const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({ id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "queued" }, 201) });
   const anchored = await adapter.prepareInput({
     prompt: "Animate between two images", durationSeconds: 5, startFrame: { url: "https://assets.example.test/first.png" },
     endFrame: { file_id: "file_123" }
@@ -65,11 +65,11 @@ test("Luma adapter rejects unsupported duration, anchor conflicts and unsafe med
 });
 
 test("Luma adapter validates completed output URLs and reports provider failures", async () => {
-  let body = { id: "gen_12345678", state: "completed", output: [{ type: "video", url: "http://evil.example/out.mp4" }] };
+  let body = { id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "completed", output: [{ type: "video", url: "http://evil.example/out.mp4" }] };
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response(body) });
-  await assert.rejects(adapter.getStatus("gen_12345678"), error => error.code === "LUMA_VIDEO_OUTPUT_INVALID");
-  body = { id: "gen_12345678", state: "failed", failure_reason: "moderation rejected", failure_code: "CONTENT_POLICY" };
-  const failed = await adapter.getStatus("gen_12345678");
+  await assert.rejects(adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"), error => error.code === "LUMA_VIDEO_OUTPUT_INVALID");
+  body = { id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "failed", failure_reason: "moderation rejected", failure_code: "CONTENT_POLICY" };
+  const failed = await adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e");
   assert.equal(failed.status, "failed");
   assert.equal(failed.failureCode, "CONTENT_POLICY");
 });
@@ -87,8 +87,8 @@ test("Luma adapter rejects malformed boolean controls, untrusted API origins and
   }), error => error.code === "LUMA_VIDEO_ADAPTER_ERROR");
   const adapter = createLumaRay32Adapter({
     apiKey: "test-secret",
-    fetchImpl: async () => response({ id: "gen_other123", state: "queued" })
+    fetchImpl: async () => response({ id: "182bd5e5-6e1a-4fe4-b799-aa6d9a6ab26e", state: "queued" })
   });
   await assert.rejects(adapter.prepareInput({ prompt: "invalid control", hdr: "true" }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
-  await assert.rejects(adapter.getStatus("gen_12345678"), error => error.code === "LUMA_VIDEO_RESPONSE_MISMATCH");
+  await assert.rejects(adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"), error => error.code === "LUMA_VIDEO_RESPONSE_MISMATCH");
 });

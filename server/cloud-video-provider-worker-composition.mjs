@@ -7,8 +7,7 @@ import {
   createPrivateVideoOutputIngestor
 } from "./private-video-output-ingestion.mjs";
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
-import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
-import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
+import { createConfiguredVideoProviderAdapters } from "./configured-video-provider-adapters.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 
 /**
@@ -27,6 +26,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   env = process.env,
   fetchImpl = globalThis.fetch,
   createAdapters,
+  providerDependencies = {},
   prepareRunwayInput,
   resolveRunwaySourceMetadata,
   resolveRunwayActualCost,
@@ -95,38 +95,12 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const enqueue = createCloudVideoEnqueue({
     ...clientOptions, env, resolveRunwaySourceMetadata: resolveSourceMetadata
   });
-  const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
-    const adapters = [
-      createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
-    ];
-    if (runwayModels.length) {
-      if (typeof resolveRunwayActualCost !== "function") {
-        throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
-      }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) &&
-          typeof prepareInput !== "function") {
-        throw new Error("Runway source operations require an owner-scoped source-media resolver.");
-      }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
-          typeof resolveSourceMetadata !== "function") {
-        throw new Error("Runway source operations require a server-side media metadata resolver for safe budget reservation.");
-      }
-      for (const model of runwayModels) {
-        adapters.push(createRunwayCloudVideoAdapter({
-          model,
-          apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
-          enabled: providerEnv.VIDEO_GATEWAY_ENABLED === "true",
-          allowRemote: providerEnv.RUNWAY_VIDEO_ALLOW_REMOTE === "true",
-          fetchImpl: providerFetch,
-          prepareInput,
-          ingestOutputs: ingest,
-          resolveActualCost: resolveRunwayActualCost,
-          timeoutMs: Math.min(timeoutMs, 30000)
-        }));
-      }
-    }
-    return adapters;
-  });
+  const adapterFactory = createAdapters || (dependencies => createConfiguredVideoProviderAdapters({
+    ...dependencies,
+    ...providerDependencies,
+    runwayPrepareInput: providerDependencies.runwayPrepareInput || prepareInput,
+    resolveRunwayActualCost: providerDependencies.resolveRunwayActualCost || resolveRunwayActualCost
+  }));
   const adapters = adapterFactory({
     env,
     fetchImpl,

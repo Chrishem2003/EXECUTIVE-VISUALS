@@ -316,3 +316,24 @@ Official references:
 - API reference and task lifecycle: https://docs.dev.runwayml.com/api/
 - API getting started: https://docs.dev.runwayml.com/guides/using-the-api/
 - Output URL retention: https://docs.dev.runwayml.com/assets/outputs/
+
+
+### Explicit multi-provider registration — 2026-11-05
+
+Added `createConfiguredVideoProviderAdapters` to register FAL, Runway Gen-4.5 and Luma Ray 3.2 as exact-match adapters behind the shared worker. FAL retains its request-ID billing-event resolver. Runway and Luma require provider-specific enablement plus global gateway gates and injected authoritative settlement resolvers. Runway/Luma published pricing estimates are never treated as billed cost evidence.
+
+Luma reference frames/keyframes require an owner/project-scoped preparation callback. Its completed-task usage is passed to the injected settlement resolver; a missing or unsettled `credits_charged` value must keep the reservation unresolved rather than converting list prices into actual cost. The composition factory exposes explicit `providerDependencies` for these trusted server-side callbacks.
+
+No provider is enabled by default. The runtime still requires all global opt-in flags, explicit provider-specific flags, private-output host allowlisting and a host-controlled worker invocation. No API key, live provider call, generation, migration or production registration was added.
+
+
+### Luma task-ID contract correction — 2026-11-05
+
+The current Luma Agents Create/Get API schema declares generation IDs as UUIDs. The adapter previously accepted arbitrary 8–128 character identifiers, which was broader than the documented contract. Tightened both persisted task-ID and response matching to UUIDv4 syntax and updated fixtures to use UUID-shaped generation IDs. This is a fail-closed validation correction; it does not change API calls or provider enablement.
+
+
+### Luma settled-credit cost resolver — 2026-11-05
+
+Added `createLumaActualCostResolver`. It converts the generation-specific `usage.credits_charged` value returned by Luma's GET generation endpoint into USD using an explicit `LUMA_USD_PER_CREDIT` account/contract rate. The resolver rejects missing, null, non-integer or unsettled usage and never substitutes the published $0.003 list rate. A confirmed zero charge remains a valid settled zero.
+
+This uses the documented task-level charge rather than aggregate usage. The rate must be configured from the account's actual plan/contract or the documented default list rate when appropriate; it is not inferred by the application.
