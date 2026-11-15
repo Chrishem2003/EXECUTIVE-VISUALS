@@ -145,20 +145,6 @@ test("Luma preflight refuses to proceed when its provider or worker readiness ga
  assert.equal(result.shots[0].checks.find(check=>check.id==="provider").status,"failed");
 });
 
-const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"ready",reason:"configured",
- capabilities:["video.generate"],modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,
- aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],resolutions:["360p","540p","720p","1080p"],
- referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],
- operations:["generate","edit","reframe","extend"]},
- availableModels:[{id:"ray-3.2",minDurationSeconds:5,maxDurationSeconds:10,
- aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],resolutions:["360p","540p","720p","1080p"],
- referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],
- operations:["generate","edit","reframe","extend"]}]};
-const lumaCatalog={providers:[lumaProvider]};
-const privateSourceId="182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e";
-const lumaShot={id:"luma-shot",provider:"luma",model:"ray-3.2",prompt:"A quiet sunrise over a mountain lake.",
- durationSeconds:5,aspectRatio:"16:9",resolution:"360p",audioMode:"none",referenceImageCount:0,rightsConfirmed:true};
-
 test("Luma Ray 3.2 preflight uses the configured account rate and supports 360p draft without submitting",()=>{
  const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.004",now});
  assert.equal(result.status,"ready_for_approval");
