@@ -97,7 +97,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private keyframe asset IDs · Generate only<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · one per keyframe<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports 2–30 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
+ '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
 function renderVideoCostEstimate(){
@@ -382,7 +382,7 @@ document.addEventListener("change",event=>{
    resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===selected?"selected":"")+'>'+value+'</option>').join("");
   }
   if(duration){
-   const min=luma&&operation!=="reframe"?"5":"2",max=luma&&operation!=="reframe"?"10":"30",step=luma&&operation!=="reframe"?"5":"1";
+   const min=luma&&operation!=="reframe"?"5":"2",max=luma?"10":"30",step=luma&&operation!=="reframe"?"5":"1";
    duration.min=min;duration.max=max;duration.step=step;
    if(luma&&operation!=="reframe"&&!["5","10"].includes(duration.value))duration.value="5";
    else if(Number(duration.value)<Number(min))duration.value=min;
