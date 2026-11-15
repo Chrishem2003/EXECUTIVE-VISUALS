@@ -84,7 +84,11 @@ export function createLumaProviderFileService({
   const attempt=await repository.createAttempt({...identity,attemptKey:key,filename:safeFilename(asset.name)});
   if(attempt.state==="COMPLETED"){
    const saved=await repository.getFileByAsset({assetId,ownerId,purpose});
-   if(saved?.state==="READY"&&saved.sha256===asset.sha256)return Object.freeze({fileId:saved.provider_file_id,state:"ready",assetId,purpose});
+   if(saved?.state==="READY"&&saved.sha256===asset.sha256){
+    const remote=await adapter.getFile(saved.provider_file_id);
+    if(remote.state==="ready")return Object.freeze({fileId:saved.provider_file_id,state:"ready",assetId,purpose});
+    throw fail("The durable Luma provider-file mapping is no longer ready; refusing to reuse a stale file ID.","LUMA_FILE_MAPPING_STALE",409);
+   }
    throw fail("Completed Luma upload attempt is missing its durable provider-file mapping.","LUMA_FILE_MAPPING_MISSING",409);
   }
   if(attempt.state==="PROVIDER_CREATED")return inspectProviderFile(identity,attempt);
@@ -107,7 +111,9 @@ export function createLumaProviderFileService({
   }catch(error){
    if(error?.code==="LUMA_FILE_INGEST_PENDING")throw error;
    const fromStates=receipt?["UPLOADING","PROVIDER_CREATED"]:["UPLOADING"];
-   const target=error?.code==="LUMA_FILE_UPLOAD_OUTCOME_UNKNOWN"?"OUTCOME_UNKNOWN":"FAILED";
+   const outcomeUnknown=error?.code==="LUMA_FILE_UPLOAD_OUTCOME_UNKNOWN"||
+    (!receipt&&(error?.code==="LUMA_VIDEO_TIMEOUT"||error?.name==="TypeError"));
+   const target=outcomeUnknown?"OUTCOME_UNKNOWN":"FAILED";
    try{await repository.updateAttempt({id:attempt.id,fromStates,state:target,patch:{last_error_code:String(error?.code||"LUMA_FILE_UPLOAD_FAILED").slice(0,120)}});}catch{}
    if(receipt&&target==="FAILED"){
     try{await adapter.deleteFile(receipt.fileId);}catch{}
