@@ -930,6 +930,7 @@ async function runAction(action:HTMLElement){
      const jobMetadata=result.job.output?.metadata;
      const storedProbe=asset?.metadata?.probe as {signalAnalysis?:{sceneChanges?:number[];unavailable?:{check?:string;reason?:string}[]}}|undefined;
      const analysis=jobMetadata?.signalAnalysis||storedProbe?.signalAnalysis;
+     const cuts=Array.isArray(analysis?.sceneChanges)?analysis.sceneChanges:[];
      if(!clip||!asset){state.message="Scene analysis completed, but the source clip is no longer on this timeline. No markers were inserted.";state.mediaJobId="";state.mediaJobType="";paint();return;}
      if(!Array.isArray(analysis?.sceneChanges)){
       const unavailable=analysis?.unavailable?.map(item=>item.check||item.reason).filter(Boolean).join(", ");
@@ -1102,15 +1103,18 @@ document.addEventListener("submit",event=>{
   const clip=state.timeline.tracks.flatMap(track=>track.kind==="video"?track.clips:[]).find(item=>item.id===clipId);
   const asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
   if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Choose an accessible video clip on the current timeline.";paint();return;}
-  try{
-   const queued=state.mode==="cloud"
-    ?await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe"})})
-    :await apiRequest<{job:{id:string;status:string}}>("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe",sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined})});
-   state.mediaJobId=queued.job.id;state.mediaJobType="media.probe";state.mediaClipId=clip.id;
-   state.message="Scene analysis queued. Check media job when FFmpeg finishes; detected cuts will become editable review markers.";
-   window.dispatchEvent(new Event("ev:jobs-updated"));
-  }catch(error){state.message=error instanceof Error?error.message:"Scene analysis could not be queued.";}
-  paint();return;
+  void (async()=>{
+   try{
+    const queued=state.mode==="cloud"
+     ?await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe"})})
+     :await apiRequest<{job:{id:string;status:string}}>("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe",sourceAssetId:asset.id,projectId:state.timeline?.projectId||undefined})});
+    state.mediaJobId=queued.job.id;state.mediaJobType="media.probe";state.mediaClipId=clip.id;
+    state.message="Scene analysis queued. Check media job when FFmpeg finishes; detected cuts will become editable review markers.";
+    window.dispatchEvent(new Event("ev:jobs-updated"));
+   }catch(error){state.message=error instanceof Error?error.message:"Scene analysis could not be queued.";}
+   paint();
+  })();
+  return;
  }
  if(form.id==="tl-insert-workflow-caption"){
   event.preventDefault();
