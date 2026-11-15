@@ -41,10 +41,12 @@ export function buildTimelineMotionFilters(metadata={},durationSeconds){
  const animated=Object.fromEntries(Object.keys(LIMITS).map(property=>[property,points.some(point=>point[property]!==undefined)]));
  const expression=(property,variable="t")=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,variable);
  const scale=animated.width||animated.height?"scale=w='"+expression("width")+"':h='"+expression("height")+"':eval=frame": "scale="+Math.round(base.width)+":"+Math.round(base.height);
- const rotate=animated.rotation?"rotate=angle='("+expression("rotation")+")*PI/180':ow=rotw(iw):oh=roth(ih):c=none":(base.rotation?"rotate=angle="+number(base.rotation*Math.PI/180)+":ow=rotw(iw):oh=roth(ih):c=none":null);
+ const rotated=animated.rotation||base.rotation!==0;
+ const maxWidth=Math.max(base.width,...points.map(point=>point.width??base.width)),maxHeight=Math.max(base.height,...points.map(point=>point.height??base.height));
+ const rotationCanvas=rotated?Math.ceil(Math.hypot(maxWidth,maxHeight)):0;
+ const rotate=rotated?"rotate=angle='("+expression("rotation")+")*PI/180':ow=iw:oh=ih:c=none":null;
  const alpha=animated.opacity?"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*("+expression("opacity","T")+")'": "colorchannelmixer=aa="+number(base.opacity);
- const widthExpression=animated.width?expression("width"):""+number(base.width),heightExpression=animated.height?expression("height"):""+number(base.height),x=animated.x?expression("x"):""+number(base.x),y=animated.y?expression("y"):""+number(base.y),rotated=animated.rotation||base.rotation!==0,overlayX=rotated?"("+x+")+(("+widthExpression+")-overlay_w)/2":x,overlayY=rotated?"("+y+")+(("+heightExpression+")-overlay_h)/2":y;
- const rotateOptions="ow=rotw(PI/4):oh=roth(PI/4)";
- const finalFilters=rotate? [scale,"format=rgba",rotate.replace(/ow=rotw\(iw\):oh=roth\(ih\)/,rotateOptions),alpha]:[scale,"format=rgba",alpha];
+ const widthExpression=animated.width?expression("width"):""+number(base.width),heightExpression=animated.height?expression("height"):""+number(base.height),x=animated.x?expression("x"):""+number(base.x),y=animated.y?expression("y"):""+number(base.y),overlayX=rotated?"("+x+")+(("+widthExpression+")-"+rotationCanvas+")/2":x,overlayY=rotated?"("+y+")+(("+heightExpression+")-"+rotationCanvas+")/2":y;
+ const finalFilters=rotated?[scale,"format=rgba","pad="+rotationCanvas+":"+rotationCanvas+":(ow-iw)/2:(oh-ih)/2:color=black@0",rotate,alpha]:[scale,"format=rgba",alpha];
  return {filters:finalFilters,overlay:"overlay=x='max(0,min(main_w-overlay_w,"+overlayX+"))':y='max(0,min(main_h-overlay_h,"+overlayY+"))':eval=frame:eof_action=pass",animated};
 }
