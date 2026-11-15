@@ -53,31 +53,31 @@ export function createVideoCaptionLocalizationWorkflow({id,projectId=""}:{id:str
  const nodes=[
   node("source-video","upload","Select source video",[],[
    port("asset","asset"),port("media","media"),port("video","video")
-  ],{x:40,y:250},{assetId:""}),
+  ],{x:40,y:100},{assetId:""}),
   node("extract-audio","video.extract-audio","Extract source audio",[
    port("media","media",true)
-  ],[port("audio","audio"),port("asset","asset")],{x:340,y:250}),
+  ],[port("audio","audio"),port("asset","asset")],{x:480,y:100}),
   node("approve-transcription","approval","Approve transcription",[
    port("input","any",true)
-  ],[port("result","any"),port("approved","structured-data")],{x:650,y:90}),
+  ],[port("result","any"),port("approved","structured-data")],{x:920,y:100}),
   node("transcribe-audio","voice.transcribe","Transcribe source audio",[
    port("audio","audio",true),port("approval","any")
   ],[
    port("transcript","transcript"),port("text","text"),port("segments","structured-data"),
    port("sourceAudio","audio"),port("language","text")
-  ],{x:960,y:250}),
+  ],{x:40,y:360}),
   node("review-transcript","approval","Review transcript and approve translation",[
    port("input","any",true)
-  ],[port("result","any"),port("approved","structured-data")],{x:1270,y:90}),
+  ],[port("result","any"),port("approved","structured-data")],{x:480,y:360}),
   node("translate-captions","voice.translate","Translate timed captions",[
    port("segments","structured-data",true),port("approval","any"),port("language","text")
-  ],[port("segments","structured-data"),port("language","text")],{x:1580,y:250},{targetLanguage:""}),
+  ],[port("segments","structured-data"),port("language","text")],{x:920,y:360},{targetLanguage:""}),
   node("create-captions","voice.caption","Create translated WebVTT",[
    port("segments","structured-data",true),port("sourceAudio","audio"),port("language","text")
-  ],[port("subtitle","subtitle-file"),port("asset","asset")],{x:1890,y:250}),
+  ],[port("subtitle","subtitle-file"),port("asset","asset")],{x:40,y:620}),
   node("export-captions","export","Export caption sidecar",[
    port("media","media",true)
-  ],[port("deliverable","asset")],{x:2200,y:250})
+  ],[port("deliverable","asset")],{x:480,y:620})
  ];
  const edges:WorkflowEdge[]=[
   {id:"video-to-audio",sourceNodeId:"source-video",sourcePortId:"media",targetNodeId:"extract-audio",targetPortId:"media"},
