@@ -33,7 +33,7 @@ function validateInput(input) {
   const durationSeconds = input.durationSeconds ?? 5;
   if (![5, 10].includes(durationSeconds)) throw fail("Ray 3.2 duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
   const resolution = input.resolution ?? "720p";
-  if (!allowedResolutions.has(resolution)) throw fail("Ray 3.2 resolution must be 540p, 720p or 1080p.", "LUMA_VIDEO_INPUT_INVALID");
+  if (!allowedResolutions.has(resolution)) throw fail("Ray 3.2 resolution must be 360p, 540p, 720p or 1080p.", "LUMA_VIDEO_INPUT_INVALID");
   const aspectRatio = input.aspectRatio ?? input.aspect_ratio;
   if (aspectRatio !== undefined && !allowedRatios.has(aspectRatio)) throw fail("Ray 3.2 aspect ratio is unsupported.", "LUMA_VIDEO_INPUT_INVALID");
 
