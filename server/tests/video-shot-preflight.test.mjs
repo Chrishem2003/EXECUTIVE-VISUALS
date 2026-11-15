@@ -108,12 +108,14 @@ test("preflight blocks shots without explicit rights clearance",()=>{
 
 const lumaProvider={id:"video-luma",provider:"luma",model:"ray-3.2",status:"ready",reason:"configured",
  capabilities:["video.generate"],
- modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,audioModes:["none"]},
+ modelCapabilities:{minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["360p","540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,audioModes:["none"],durationsSeconds:[5,10],operations:["generate","edit","reframe","extend"]},
  availableModels:[{id:"ray-3.2",label:"Luma Ray 3.2",readiness:"ready",available:true,executionVerified:true,
   minDurationSeconds:5,maxDurationSeconds:10,aspectRatios:["16:9","9:16","1:1"],resolutions:["540p","720p","1080p"],
   referenceImages:true,maxReferenceImages:1,audioModes:["none"]}]};
 const lumaShot={id:"luma-shot-01",provider:"luma",model:"ray-3.2",prompt:"A cinematic portrait of a city at sunrise.",
  durationSeconds:5,aspectRatio:"9:16",resolution:"720p",audioMode:"none",referenceImageCount:1,rightsConfirmed:true};
+const lumaCatalog={providers:[lumaProvider]};
+const privateSourceId="182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e";
 
 test("Luma Ray 3.2 passes exact model, first-frame and account-rate preflight without submitting work",()=>{
  const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:{providers:[video,lumaProvider]},lumaUsdPerCredit:"0.003",now});
@@ -129,7 +131,7 @@ test("Luma Ray 3.2 passes exact model, first-frame and account-rate preflight wi
 });
 
 test("Luma preflight rejects unsupported resolution, excessive references and missing account rate",()=>{
- const unsupported=preflightVideoProduction({shots:[{...lumaShot,resolution:"360p"}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
+ const unsupported=preflightVideoProduction({shots:[{...lumaShot,resolution:"4k"}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
  assert.equal(unsupported.status,"blocked");
  const tooMany=preflightVideoProduction({shots:[{...lumaShot,referenceImageCount:2}],providerCatalog:{providers:[lumaProvider]},lumaUsdPerCredit:"0.003",now});
  assert.equal(tooMany.status,"blocked");
