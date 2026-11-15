@@ -55,7 +55,7 @@ test("renderer interpolates from the clip's base transform before the first keyf
  assert.match(expression,/20\+\(80\)/);
  assert.equal(evaluateTimelineMotion(keys,0.5,"x",20,2),60);
 });
-test("rotated overlays keep their visual center anchored while using a safe diagonal canvas",()=>{
+test("rotated overlays preserve their center on a fixed sequence canvas",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
  assert.ok(result.filters.some(filter=>filter.startsWith("pad=320:240")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
