@@ -118,7 +118,7 @@ declare
     if coalesce(p_input ->> 'durationSeconds','') not in ('5','10') then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
-    if coalesce(p_input ->> 'resolution','') not in ('540p','720p','1080p') then
+    if coalesce(p_input ->> 'resolution','') not in ('360p','540p','720p','1080p') then
       raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
     end if;
     if coalesce(p_input ->> 'audioMode','none') <> 'none' then
