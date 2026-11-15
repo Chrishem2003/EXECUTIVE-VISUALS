@@ -304,7 +304,7 @@ function renderJobs(){
   const batchTotal=Number.isSafeInteger(j.input?.batchTotal)?Number(j.input.batchTotal):0;
   const batchOperation=typeof j.input?.batchOperation==="string"?j.input.batchOperation.replace("media.","").replaceAll("-"," "):"image enhancement";
   const batchMeta=batchId?'<small class="runtime-job-batch">Batch '+esc(batchId.slice(0,8))+' · '+esc(batchOperation)+' · item '+(batchIndex||"—")+'/'+(batchTotal||"—")+'</small>':"";
-  return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div>'+batchMeta+'<code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
+  return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div>'+batchMeta+'<code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+(j.status==="failed"&&["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"].includes(j.jobType)?'<button class="secondary" data-ev-retry="'+esc(j.id)+'">Retry job</button>':"")+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
  }).join("")+'</div>';
 }
 function persistenceNoticeMarkup(){
@@ -664,6 +664,15 @@ document.addEventListener("click",event=>{
  if(reviewAsset){const form=document.querySelector<HTMLFormElement>("#ev-review-form");if(form){const field=form.elements.namedItem("assetId") as HTMLInputElement|null;if(field)field.value=reviewAsset.dataset.evReviewAsset||"";const asset=state.assets.find(item=>item.id===field?.value);const label=document.querySelector<HTMLElement>("#ev-review-target");if(label)label.textContent="Review attached to: "+(asset?.name||"selected media");form.scrollIntoView({behavior:"smooth",block:"center"});(form.elements.namedItem("body") as HTMLTextAreaElement|null)?.focus();}return;}
  const review=target.closest<HTMLElement>("[data-ev-review-status]");
  if(review){void apiRequest("/api/reviews/"+review.dataset.evReviewId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({status:review.dataset.evReviewStatus})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
+ const retry=target.closest<HTMLElement>("[data-ev-retry]");
+ if(retry){
+  const id=retry.dataset.evRetry||"";
+  retry.setAttribute("disabled","true");
+  void apiRequest<{job:RuntimeJob;idempotentReplay:boolean}>("/api/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST",headers:{"idempotency-key":crypto.randomUUID()}})
+   .then(async result=>{state.message=result.idempotentReplay?"The existing retry job was restored.":"A new retry job was queued. The failed job remains in history.";await refresh();paint();})
+   .catch(error=>{state.message=error instanceof Error?error.message:"The failed job could not be retried.";paint();});
+  return;
+ }
  const cancel=target.closest<HTMLElement>("[data-ev-cancel]");
  if(cancel){void apiRequest("/api/jobs/"+cancel.dataset.evCancel+"/cancel",{method:"POST"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
 });
