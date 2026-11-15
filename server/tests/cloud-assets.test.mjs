@@ -116,7 +116,7 @@ test("finds an existing generated video output only within owner, project, task 
  const f=fixture({assetMetadata:metadata});
  const found=await f.repo.findVideoGenerationOutput({ownerId,projectId,providerTaskId:"runway-task-1",outputIndex:0});
  assert.equal(found.id,assetId);assert.equal(found.ownerId,ownerId);assert.equal(found.projectId,projectId);
- assert.ok(f.calls[0].url.includes("metadata->>source=eq.video-generation"));
+ assert.ok(f.calls[0].url.includes("metadata->>source=in.(video-generation,video-to-audio)"));
  assert.ok(f.calls[0].url.includes("metadata->>providerTaskId=eq.runway-task-1"));
  assert.ok(f.calls[0].url.includes("metadata->>outputIndex=eq.0"));
 });
