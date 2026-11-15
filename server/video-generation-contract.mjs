@@ -79,7 +79,7 @@ export function normalizeVideoGenerationRequest(input) {
   }
 
   const resolution = input.resolution ?? (operation === "video-upscale" ? "2k" : "provider_default");
-  if (!["provider_default", "480p", "720p", "1080p", "1440p", "2160p", "1k", "2k", "4k"].includes(resolution)) {
+  if (!["provider_default", "480p", "540p", "720p", "1080p", "1440p", "2160p", "1k", "2k", "4k"].includes(resolution)) {
     throw new VideoGenerationValidationError("resolution must be a documented provider resolution tier");
   }
 

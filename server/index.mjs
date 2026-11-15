@@ -1068,7 +1068,7 @@ export function createAppServer() {
         if(idempotencyKey.length<8||idempotencyKey.length>180){fail(res,400,"IDEMPOTENCY_KEY_REQUIRED","Provide an idempotency key between 8 and 180 characters.");return;}
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const catalog=getProviderCatalog(process.env);
-        const preflight=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing});
+        const preflight=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing,lumaUsdPerCredit:process.env.LUMA_USD_PER_CREDIT});
         let approval;
         try{
           approval=buildVideoGenerationApproval({shots:body.shots,preflight,budget:body.budget,confirmed:body.confirm===true});
@@ -1123,7 +1123,7 @@ export function createAppServer() {
         const body=await readJson(req,32*1024);
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const catalog=getProviderCatalog(process.env);
-        const result=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing});
+        const result=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing,lumaUsdPerCredit:process.env.LUMA_USD_PER_CREDIT});
         send(res,200,result,cors);return;
       }
       if(path==="/api/capabilities"&&req.method==="GET"){
