@@ -13,6 +13,7 @@ import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
+import { buildTimelineMotionFilters } from "./timeline-motion.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const defaultC2paPreserver=createC2paTransformationPreserver();
@@ -393,9 +394,16 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
     const file=join(mediaRoot,asset.storage_path);
     args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
-    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++;
-    videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters(metadata,duration);
+    if(motion){
+      const scale=motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease");
+      videoEffects.push(`[${inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    }else{
+      const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
+      videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    }
     currentVideo=`[${videoLabel}]`;inputIndex++;
   }
   for(const clip of captionClips){
