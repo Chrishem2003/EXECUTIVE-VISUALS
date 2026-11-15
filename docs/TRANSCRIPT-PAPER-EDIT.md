@@ -11,8 +11,8 @@ Paper Edit turns a timestamped WebVTT transcript into an editable video track. I
 3. Open **Transcript Paper Edit** in the clip tools panel.
 4. Select the source video clip.
 5. Import a timestamped `.vtt` file, or paste its contents into the transcript field. The editor validates the file before placing its contents in the transcript field.
-6. Remove complete cue blocks for dialogue you do not want to keep. Keep the `WEBVTT` header and the timestamps for the moments you want.
-7. Choose **Build paper edit from transcript**.
+6. Review the parsed cue list. Each cue is independently selectable; use **Select all cues** or **Clear selection** to change the selection quickly.
+7. Choose **Build paper edit from transcript**. Only checked cues are assembled, in source-time order.
 8. Review the new **Paper Edit** video track at the end of the sequence. Each cue is a separate, editable clip referencing the original video asset.
 
 A timestamped WebVTT transcript can be produced by the existing review-first transcription and Video → Localized Captions workflows. The Paper Edit action itself does not call a speech provider or incur AI usage.
