@@ -272,13 +272,38 @@ function renderCloudAssetLibrary(){
  const upload=state.cloudProjectId?'<label class="upload primary">＋ Upload to selected cloud project<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>':'<button class="secondary" disabled>＋ Upload unavailable · select a cloud project</button>';
  return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><div><span id="cloud-media-job-count">'+state.cloudMediaJobs.length+' recent jobs</span> <button type="button" class="secondary" data-ev-cloud-jobs-refresh '+(state.cloudMediaJobsEnabled?'':'disabled')+'>↻ Refresh queue</button></div></div><small id="cloud-media-job-refresh-status">Auto-refreshes every 5 seconds while this library is open.</small><div id="cloud-media-jobs-list">'+renderCloudMediaJobs()+'</div></section>';
 }
+async function refreshLocalJobs(){
+ if(localJobPollingBusy||!state.user||state.status!=="online")return;
+ if(document.visibilityState!=="visible"||!document.querySelector<HTMLElement>('#runtime-workspace[data-runtime-view="library"]'))return;
+ localJobPollingBusy=true;
+ try{
+  const response=await apiRequest<{jobs:RuntimeJob[]}>("/api/jobs");
+  const next=Array.isArray(response.jobs)?response.jobs:[];
+  const prior=new Map(state.jobs.map(job=>[job.id,String(job.status||"").toLowerCase()]));
+  const terminal=new Set(["completed","succeeded","failed","cancelled","canceled"]);
+  const finished=next.some(job=>terminal.has(String(job.status||"").toLowerCase())&&prior.has(job.id)&&!terminal.has(prior.get(job.id)||""));
+  state.jobs=next;
+  if(finished){await refresh();paint();return;}
+  const list=document.querySelector<HTMLElement>("#local-media-jobs-list");
+  if(list)list.innerHTML=renderJobs();
+  const status=document.querySelector<HTMLElement>("#local-media-job-refresh-status");
+  if(status)status.textContent="Live · updated "+new Date().toLocaleTimeString();
+ }catch{
+  const status=document.querySelector<HTMLElement>("#local-media-job-refresh-status");
+  if(status)status.textContent="Refresh unavailable · showing the last known job status";
+ }finally{localJobPollingBusy=false;}
+}
+function startLocalJobPolling(){
+ if(!localJobPollingTimer)localJobPollingTimer=setInterval(()=>{void refreshLocalJobs();},5000);
+}
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
  return '<div class="runtime-jobs">'+state.jobs.map(j=>{
   const batchId=typeof j.input?.batchId==="string"?j.input.batchId:"";
   const batchIndex=Number.isSafeInteger(j.input?.batchIndex)?Number(j.input.batchIndex)+1:0;
   const batchTotal=Number.isSafeInteger(j.input?.batchTotal)?Number(j.input.batchTotal):0;
-  const batchMeta=batchId?'<small class="runtime-job-batch">Batch '+esc(batchId.slice(0,8))+' · image '+(batchIndex||"—")+'/'+(batchTotal||"—")+'</small>':"";
+  const batchOperation=typeof j.input?.batchOperation==="string"?j.input.batchOperation.replace("media.","").replaceAll("-"," "):"image enhancement";
+  const batchMeta=batchId?'<small class="runtime-job-batch">Batch '+esc(batchId.slice(0,8))+' · '+esc(batchOperation)+' · item '+(batchIndex||"—")+'/'+(batchTotal||"—")+'</small>':"";
   return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div>'+batchMeta+'<code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
  }).join("")+'</div>';
 }
@@ -504,8 +529,8 @@ document.addEventListener("input",event=>{
  if(compare)compare.style.setProperty("--ev-compare",value+"%");
  target.setAttribute("aria-valuetext",value+"% enhanced revealed");
 });
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void refreshCloudMediaJobs();});
-window.addEventListener("beforeunload",()=>{if(cloudJobPollingTimer)clearInterval(cloudJobPollingTimer);cloudJobPollingTimer=null;});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){void refreshCloudMediaJobs();void refreshLocalJobs();}});
+window.addEventListener("beforeunload",()=>{if(cloudJobPollingTimer)clearInterval(cloudJobPollingTimer);cloudJobPollingTimer=null;if(localJobPollingTimer)clearInterval(localJobPollingTimer);localJobPollingTimer=null;});
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
