@@ -23,6 +23,7 @@ import { createTimelineHistory, createTimelineHistoryOperation, applyTimelineHis
 import { retryTimelineSave } from "../core/timeline-save-retry";
 import { reflowStoryboardTimelinePlan, type StoryboardTimelinePlan } from "../core/storyboard-timeline";
 import { insertWorkflowCaptionAsset } from "../core/timeline.ts";
+import { mapSceneChangesToTimelineFrames } from "../core/scene-detection.ts";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -34,7 +35,7 @@ type TimelineRevisionSummary={timelineId:string;revision:number;name:string;crea
 type TimelineRevisionSnapshot=TimelineRevisionSummary&{timeline:EditorialTimeline;otio:Record<string,unknown>|null};
 type CloudAudioMasteringReceipt={applied?:boolean;profile?:string;measurement?:{integratedLoudness?:number|null;loudnessRange?:number|null;truePeak?:number|null};qualityControl?:{passed?:boolean}};
 type CloudTimelineJobOutput={outputAsset?:{id:string;name?:string};render?:{audioMastering?:CloudAudioMasteringReceipt}};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudRenderJobs:CloudRenderJob[];cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;previewSafeAreaVisible:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;recoveryServerSnapshot:EditorialTimeline|null;recoveryComparison:TimelineVariantComparison|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;cloudWaveformPreviews:Record<string,string>;cloudWaveformStatus:Record<string,string>;timelineHistory:TimelineHistory}={
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudRenderJobs:CloudRenderJob[];cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;revisionHistory:TimelineRevisionSummary[];revisionHistoryOpen:boolean;selectedHistoryRevision:number;historyCompareTimeline:EditorialTimeline|null;historyComparison:TimelineVariantComparison|null;reviews:CloudReview[];reviewMessage:string;reviewLoading:boolean;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;mediaJobId:string;mediaJobType:"media.proxy"|"media.thumbnail"|"media.probe"|"";mediaClipId:string;previewFrameUrl:string;proxyPreviewUrl:string;previewAssetUrls:Record<string,string>;previewAssetUrlExpiresAt:Record<string,number>;previewLoaded:boolean;previewLoading:boolean;previewSafeAreaVisible:boolean;playheadFrame:number;isPlaying:boolean;playbackRaf:number;playbackLastTimestamp:number;previewUnavailableAssetIds:string[];previewRefreshAttemptedAssetIds:string[];recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;recoveryServerSnapshot:EditorialTimeline|null;recoveryComparison:TimelineVariantComparison|null;previewDiagnostics:{droppedFrames:number;totalFrames:number;stalls:number;errors:number;sourceCount:number;proxyCount:number;proxyFallbacks:number};audioPreviewEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;cloudWaveformPreviews:Record<string,string>;cloudWaveformStatus:Record<string,string>;timelineHistory:TimelineHistory}={
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudRenderJobs:[],cloudRenderOutputAssetId:"",cloudRenderOutputName:"",cloudRenderOutputUrl:"",cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",revisionHistory:[],revisionHistoryOpen:false,selectedHistoryRevision:0,historyCompareTimeline:null,historyComparison:null,reviews:[],reviewMessage:"",reviewLoading:false,assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,mediaJobId:"",mediaJobType:"",mediaClipId:"",previewFrameUrl:"",proxyPreviewUrl:"",previewAssetUrls:{},previewAssetUrlExpiresAt:{},previewLoaded:false,previewLoading:false,previewSafeAreaVisible:false,playheadFrame:0,isPlaying:false,playbackRaf:0,playbackLastTimestamp:0,previewUnavailableAssetIds:[],previewRefreshAttemptedAssetIds:[],recoveryStatus:"idle",recoveredDraft:null,recoveryServerSnapshot:null,recoveryComparison:null,previewDiagnostics:{droppedFrames:0,totalFrames:0,stalls:0,errors:0,sourceCount:0,proxyCount:0,proxyFallbacks:0},audioPreviewEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},cloudWaveformPreviews:{},cloudWaveformStatus:{},timelineHistory:createTimelineHistory()
 };
 let timelineHistoryTimelineId="";
@@ -546,7 +547,8 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">WORKFLOW CAPTION HANDOFF</div><form id="tl-insert-workflow-caption"><label>Generated WebVTT caption asset</label><select name="assetId" required>'+state.assets.filter(asset=>asset.mediaType==="text/vtt"&&asset.name.toLowerCase().endsWith(".vtt")&&Number(asset.metadata?.durationSeconds)>0).map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+' · '+Number(asset.metadata?.durationSeconds).toFixed(1)+'s</option>').join("")+'</select><label>Insert at timeline time (seconds)</label><input name="startSeconds" type="number" min="0" max="604800" step="0.01" value="'+(state.playheadFrame/fps()).toFixed(2)+'"><small>Choose a WebVTT asset produced by the review-first caption workflow. The editor creates or reuses an unlocked caption lane; your source video and caption sidecar remain unchanged.</small><button class="secondary wide" type="submit" '+(state.assets.some(asset=>asset.mediaType==="text/vtt"&&asset.name.toLowerCase().endsWith(".vtt")&&Number(asset.metadata?.durationSeconds)>0)?"":"disabled")+'>＋ Insert captions into timeline</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">CLOUD AUDIO MASTERING</div>'+(state.mode==="cloud"?'<form id="tl-audio-mastering" class="timeline-mastering-form"><label class="inline-check"><input name="enabled" type="checkbox" '+(state.timeline?.audioMastering?.enabled===true?'checked':'')+'> Enable loudness mastering</label><label class="inline-check"><input name="dualMono" type="checkbox" '+(state.timeline?.audioMastering?.dualMono===true?'checked':'')+'> Treat mono sources as dual-mono</label><label>Mastering profile</label><select name="profile"><option value="web-podcast" '+(state.timeline?.audioMastering?.profile!=="ebu-r128"&&state.timeline?.audioMastering?.profile!=="custom"?"selected":"")+ '>Web / Podcast (-16 LUFS)</option><option value="ebu-r128" '+(state.timeline?.audioMastering?.profile==="ebu-r128"?"selected":"")+ '>EBU R128 broadcast (-23 LUFS)</option><option value="custom" '+(state.timeline?.audioMastering?.profile==="custom"?"selected":"")+ '>Custom target</option></select><div class="form-grid"><div><label>Integrated loudness (LUFS)</label><input name="integratedLoudness" type="number" min="-70" max="-5" step="0.1" value="'+Number(state.timeline?.audioMastering?.integratedLoudness??-16)+'" '+(state.timeline?.audioMastering?.profile==="custom"?"":"disabled")+' aria-describedby="tl-mastering-profile-help"></div><div><label>Loudness range (LU)</label><input name="loudnessRange" type="number" min="1" max="50" step="0.1" value="'+Number(state.timeline?.audioMastering?.loudnessRange??11)+'"></div><div><label>True peak (dBTP)</label><input name="truePeak" type="number" min="-9" max="0" step="0.1" value="'+Number(state.timeline?.audioMastering?.truePeak??-1.5)+'"></div></div><button class="secondary" type="submit">Save mastering settings</button><small id="tl-mastering-profile-help" class="muted">Applied by cloud rendering only. Web / Podcast targets -16 LUFS; EBU R128 targets -23 LUFS and enforces a maximum -1 dBTP ceiling. The integrated loudness target is editable only for Custom. LRA and true peak remain editable for every profile. After encoding, the renderer measures actual LUFS, LRA and true peak and reports delivery QC in the cloud render status.</small></form>':'<p class="muted">Switch to a cloud project to configure EBU R128 mastering. Local rendering is unchanged.</p>')+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
- '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
+ '<form id="tl-detect-scenes"><div class="eyebrow" style="margin-top:18px">AI-ASSISTED SCENE DETECTION</div><label>Video clip to analyze</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><small>Runs FFmpeg scene-change detection on the selected source, then adds review markers at detected cuts. It never splits, trims or deletes footage automatically.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+'>⌁ Detect scene changes and add markers</button></form>'+
+ <form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  timelinePlaybackPanel()+clipInspector()+variantComparisonPanel()+timelineRevisionPanel()+cloudReviewPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
@@ -917,11 +919,44 @@ async function runAction(action:HTMLElement){
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;} 
  if(type==="media-job-check"&&state.mediaJobId){
   try{
-   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string}};error?:{message?:string}}}>((state.mode==="cloud"?"/api/cloud/jobs/":"/api/jobs/")+state.mediaJobId);
+   const result=await apiRequest<{job:{status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string;sha256?:string};metadata?:{signalAnalysis?:{sceneChanges?:number[];unavailable?:{check?:string;reason?:string}[]}}};error?:{message?:string}}}>((state.mode==="cloud"?"/api/cloud/jobs/":"/api/jobs/")+state.mediaJobId);
    state.message="Media job "+result.job.status+" · "+Number(result.job.progress||0)+"%";
    if(result.job.status==="succeeded"){
+    const kind=state.mediaJobType,clipId=state.mediaClipId;
+    if(kind==="media.probe"){
+     await refresh();
+     const clip=state.timeline?.tracks.flatMap(track=>track.clips).find(item=>item.id===clipId);
+     const asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+     const jobMetadata=result.job.output?.metadata;
+     const storedProbe=asset?.metadata?.probe as {signalAnalysis?:{sceneChanges?:number[];unavailable?:{check?:string;reason?:string}[]}}|undefined;
+     const analysis=jobMetadata?.signalAnalysis||storedProbe?.signalAnalysis;
+     const cuts=Array.isArray(analysis?.sceneChanges)?analysis.sceneChanges:[];
+     if(!clip||!asset){state.message="Scene analysis completed, but the source clip is no longer on this timeline. No markers were inserted.";state.mediaJobId="";state.mediaJobType="";paint();return;}
+     if(!Array.isArray(analysis?.sceneChanges)){
+      const unavailable=analysis?.unavailable?.map(item=>item.check||item.reason).filter(Boolean).join(", ");
+      state.message=unavailable?"Scene analysis unavailable: "+unavailable+". No markers were inserted.":"The worker returned no scene-analysis evidence. No markers were inserted.";
+     }else{
+      const sourceRate=Number(clip.sourceRange.start.rate);
+      const sourceStartSeconds=Number(clip.sourceRange.start.value)/sourceRate;
+      const sourceDurationSeconds=Number(clip.sourceRange.duration.value)/Number(clip.sourceRange.duration.rate);
+      const frames=mapSceneChangesToTimelineFrames({
+       sceneChanges:cuts,sourceStartSeconds,sourceDurationSeconds,
+       timelineStartFrame:clip.timelineStart.value,timelineDurationFrames:clip.duration.value,
+       timelineFps:fps(),existingMarkerFrames:state.timeline?.markers.map(marker=>marker.start.value)||[]
+      });
+      if(frames.length){
+       recordUndo();
+       frames.forEach((frame,index)=>{state.timeline=addMarker(state.timeline!,{id:crypto.randomUUID(),name:"Scene cut "+String(index+1).padStart(2,"0")+" · "+clip.name,start:rational(frame,fps()),color:"YELLOW"});});
+       commitUndo("Add detected scene markers");
+       await persist();
+       state.message=frames.length+" scene-change review markers added. Inspect each cut before splitting or changing the edit; source footage was not modified.";
+      }else state.message="No new scene cuts were found inside the selected clip range. Existing markers and footage were left unchanged.";
+     }
+     state.mediaJobId="";state.mediaJobType="";state.mediaClipId="";
+     paint();return;
+    }
     const output=result.job.output?.outputAsset;if(!output?.id)throw new Error("The completed media job did not return an output asset.");
-    const kind=state.mediaJobType,clipId=state.mediaClipId;await refresh();
+    await refresh();
     if(kind==="media.proxy"){
      const track=state.timeline?.tracks.find(item=>item.clips.some(clip=>clip.id===clipId)),clip=track?.clips.find(item=>item.id===clipId);
      if(!clip)throw new Error("The source clip is no longer in the selected timeline. The proxy remains in your asset library.");
@@ -1060,6 +1095,22 @@ document.addEventListener("submit",event=>{
   state.message="Saving cloud audio mastering settings…";
   void persist().then(()=>{state.message="Cloud audio mastering settings saved to this timeline revision.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Mastering settings could not be saved.";paint();});
   return;
+ }
+ if(form.id==="tl-detect-scenes"){
+  event.preventDefault();
+  const data=new FormData(form),clipId=String(data.get("clipId")||"");
+  const clip=state.timeline.tracks.flatMap(track=>track.kind==="video"?track.clips:[]).find(item=>item.id===clipId);
+  const asset=clip?state.assets.find(item=>item.id===clip.assetId):null;
+  if(!clip||!asset||!asset.mediaType.startsWith("video/")){state.message="Choose an accessible video clip on the current timeline.";paint();return;}
+  try{
+   const queued=state.mode==="cloud"
+    ?await apiRequest<{job:{id:string;status:string}}>("/api/cloud/assets/"+encodeURIComponent(asset.id)+"/media-jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe"})})
+    :await apiRequest<{job:{id:string;status:string}}>("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"media.probe",sourceAssetId:asset.id,projectId:state.timeline.projectId||undefined})});
+   state.mediaJobId=queued.job.id;state.mediaJobType="media.probe";state.mediaClipId=clip.id;
+   state.message="Scene analysis queued. Check media job when FFmpeg finishes; detected cuts will become editable review markers.";
+   window.dispatchEvent(new Event("ev:jobs-updated"));
+  }catch(error){state.message=error instanceof Error?error.message:"Scene analysis could not be queued.";}
+  paint();return;
  }
  if(form.id==="tl-insert-workflow-caption"){
   event.preventDefault();
