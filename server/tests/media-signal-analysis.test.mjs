@@ -109,11 +109,17 @@ test("flags alternating chroma-vector reversals but excludes scene-cut neighborh
 });
 
 
-test("parses the ebur128 true-peak summary separately from sample peak",()=>{
- const metrics=parseAudioMetrics("Sample peak:\n Peak: -0.8 dBFS\n\n True peak:\n Peak: -0.4 dBFS\n");
+test("parses FFmpeg ebur128 TPK channel measurements and keeps them separate from SPK",()=>{
+ const stderr="[Parsed_ebur128] t: 0.100 TARGET:-23 LUFS M:-20.0 S:-20.0 I:-20.0 LUFS LRA:0.0 LU SPK: -0.8 -0.7 dBFS FTPK: -0.5 -0.6 dBFS TPK: -0.4 -0.3 dBFS\n[Parsed_ebur128] t: 0.200 TARGET:-23 LUFS M:-20.0 S:-20.0 I:-20.0 LUFS LRA:0.0 LU SPK: -0.8 -0.7 dBFS FTPK: -0.2 -0.3 dBFS TPK: -0.2 -0.3 dBFS";
+ const metrics=parseAudioMetrics(stderr);
+ assert.equal(metrics.truePeakDbfs,-0.2);
  assert.equal(metrics.peakDbfs,null);
+ assert.equal(parseAudioMetrics("Peak level dB: -2.0\nSPK: -0.1 -0.2 dBFS").truePeakDbfs,null);
+});
+
+test("retains compatibility with legacy true-peak summary output",()=>{
+ const metrics=parseAudioMetrics("Sample peak:\n Peak: -0.8 dBFS\n\n True peak:\n Peak: -0.4 dBFS\n");
  assert.equal(metrics.truePeakDbfs,-0.4);
- assert.equal(parseAudioMetrics("Peak level dB: -2.0").truePeakDbfs,null);
 });
 
 test("flags measured true peak near full scale without imposing a delivery target",()=>{
