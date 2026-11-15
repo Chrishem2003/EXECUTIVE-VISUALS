@@ -1,7 +1,8 @@
 import { estimateVideoProductionCost } from "./video-cost-estimator.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 
 const MAX_SHOTS=12;
-const CLOUD_WORKER_VIDEO_PROVIDERS=new Set(["runway","fal"]);
+const CLOUD_WORKER_VIDEO_PROVIDERS=new Set(["runway","fal","luma"]);
 const text=(value,max)=>typeof value==="string"&&value.trim().length>0&&value.trim().length<=max;
 const blocked=(reason,checks=[])=>({status:"blocked",readyForApproval:false,checks,reason});
 
@@ -10,10 +11,12 @@ const blocked=(reason,checks=[])=>({status:"blocked",readyForApproval:false,chec
  * A shot is ready only when the exact configured model, provider state,
  * duration, framing, resolution, reference inputs and current price are verified.
  */
-export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,now}={}){
+export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,lumaUsdPerCredit,now}={}){
  if(!Array.isArray(shots)||shots.length<1||shots.length>MAX_SHOTS)
   return blocked("Provide 1–12 planned shots for preflight.");
- const video=providerCatalog?.providers?.find(item=>item.id==="video");
+ const requestedProvider=String(shots[0]?.provider||"");
+ const video=providerCatalog?.providers?.find(item=>item.provider===requestedProvider&&item.capabilities?.includes("video.generate"))||
+  providerCatalog?.providers?.find(item=>item.id==="video");
  if(!video)return blocked("The video provider catalog is unavailable.");
  const results=shots.map((shot,index)=>{
   const checks=[];
@@ -34,7 +37,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
   if(!CLOUD_WORKER_VIDEO_PROVIDERS.has(provider))fail("worker_adapter","The durable cloud worker has no restart-safe task adapter for this provider yet. Select Runway or Fal, or wait until this provider's asynchronous submit, poll and reconciliation adapter is verified.");
   else pass("worker_adapter","The durable cloud worker has a restart-safe task adapter for this provider.");
   let modelProfile=null;
-  if(video.provider==="runway")modelProfile=(video.availableModels||[]).find(item=>item.id===model)||null;
+  if(video.provider==="runway"||video.provider==="luma")modelProfile=(video.availableModels||[]).find(item=>item.id===model)||null;
   else if(video.provider==="fal"&&model===video.model)modelProfile={
    id:model,minDurationSeconds:video.modelCapabilities?.minDurationSeconds,
    maxDurationSeconds:video.modelCapabilities?.maxDurationSeconds,
@@ -50,6 +53,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
    aspectRatios:modelProfile.aspectRatios||[],
    resolutions:modelProfile.resolutions||[],
    referenceImages:modelProfile.constraints?.multipleReferenceImages??modelProfile.referenceImages??false,
+   maxReferenceImages:modelProfile.maxReferenceImages??video.modelCapabilities?.maxReferenceImages,
    audioModes:Array.isArray(modelProfile.audioModes)?modelProfile.audioModes:(Array.isArray(video.modelCapabilities?.audioModes)?video.modelCapabilities.audioModes:[])
   }:null;
   if(!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>30)fail("duration","Shot duration must be 1–30 whole seconds.");
@@ -65,6 +69,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
   const referenceImageCount=shot.referenceImageCount??0;
   if(!Number.isInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>12)fail("references","Reference image count must be 0–12.");
   else if(referenceImageCount>0&&caps&&!caps.referenceImages)fail("references","Selected model does not support reference images.");
+  else if(caps&&Number.isInteger(caps.maxReferenceImages)&&referenceImageCount>caps.maxReferenceImages)fail("references","Reference image count exceeds the selected model's maximum.");
   else pass("references","Reference image requirements are compatible.");
   const audioMode=String(shot.audioMode||"provider_default");
   const supportedAudioModes=new Set((caps?.audioModes||[]).map(value=>String(value).toLowerCase()));
@@ -82,16 +87,59 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,n
   requestsSubmitted:false,
   reason:blockedShots.length+" shot(s) failed technical preflight. Correct the listed issues before requesting approval."
  };
- const quote=estimateVideoProductionCost({shots:shots.map(shot=>({
-  id:shot.id,provider:shot.provider,model:shot.model,durationSeconds:shot.durationSeconds,
-  resolution:shot.resolution||"provider_default",audioMode:shot.audioMode||"none",
-  referenceImageCount:shot.referenceImageCount||0
- }))},pricingCatalog,{now});
+ let quote;
+ if(video.provider==="luma"){
+  const rateText=String(lumaUsdPerCredit??"").trim();
+  const rateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(rateText)&&Number(rateText)>0&&Number(rateText)<=1000;
+  if(!rateValid)return {
+   status:"pricing_unverified",readyForApproval:false,shotCount:shots.length,shots:results,
+   pricing:{status:"unavailable",reason:"A positive LUMA_USD_PER_CREDIT account/contract rate is required."},
+   requestsSubmitted:false,
+   reason:"Technical checks passed, but the Luma account/contract credit rate is unavailable. No generation jobs were submitted."
+  };
+  const clock=typeof now==="function"?now():now;
+  const observed=new Date(clock??Date.now());
+  if(!Number.isFinite(observed.getTime()))return blocked("The pricing clock is invalid.");
+  const observedAt=observed.toISOString(),expiresAt=new Date(observed.getTime()+24*60*60*1000).toISOString();
+  const priced=[];
+  try{
+   for(const shot of shots){
+    const estimate=estimateVideoGenerationCost({
+     provider:"luma",model:shot.model,operation:shot.operation||"video",
+     durationSeconds:shot.durationSeconds,resolution:shot.resolution||"720p"
+    });
+    const amount=Number((estimate.credits*Number(rateText)).toFixed(6));
+    if(!Number.isFinite(amount)||amount<0)throw new Error("Luma estimate is invalid.");
+    priced.push({
+     shotId:shot.id,durationSeconds:shot.durationSeconds,provider:"luma",model:shot.model,
+     currency:"USD",amount,breakdown:{video:amount,audio:0,references:0,minimumApplied:0},
+     pricing:{sourceUrl:estimate.pricingSource,observedAt,expiresAt,pricingDate:estimate.pricingDate,
+      credits:estimate.credits,usdPerCredit:rateText,formula:estimate.pricingFormula,
+      status:estimate.pricingStatus,scope:estimate.monetaryEstimateScope}
+    });
+   }
+  }catch(error){
+   return {status:"pricing_unverified",readyForApproval:false,shotCount:shots.length,shots:results,
+    pricing:{status:"unavailable",reason:String(error?.message||"Luma pricing is unavailable.")},
+    requestsSubmitted:false,reason:"Technical checks passed, but this exact Luma operation, duration and resolution has no verified price."};
+  }
+  const amount=Number(priced.reduce((sum,item)=>sum+item.amount,0).toFixed(6));
+  const totalDurationSeconds=shots.reduce((sum,shot)=>sum+shot.durationSeconds,0);
+  quote={available:true,estimated:true,shotCount:shots.length,totalDurationSeconds,currency:"USD",amount,
+   breakdown:{video:amount,audio:0,references:0,minimumApplied:0},shots:priced,
+   disclaimer:"Estimate uses published Luma credit requirements multiplied by the configured account/contract USD-per-credit rate. Provider pricing can change; quote expires after 24 hours. No generation jobs were submitted."};
+ }else{
+  quote=estimateVideoProductionCost({shots:shots.map(shot=>({
+   id:shot.id,provider:shot.provider,model:shot.model,durationSeconds:shot.durationSeconds,
+   resolution:shot.resolution||"provider_default",audioMode:shot.audioMode||"none",
+   referenceImageCount:shot.referenceImageCount||0
+  }))},pricingCatalog,{now});
+ }
  if(!quote.available)return {
   status:"pricing_unverified",readyForApproval:false,shotCount:shots.length,shots:results,
   pricing:{status:"unavailable",reason:quote.reason},
   requestsSubmitted:false,
-  reason:"Technical checks passed, but verified current pricing is unavailable. No estimated price will be invented; obtain a current rate card before budget approval."
+  reason:"Technical checks passed, but current source-attributed pricing is unavailable. No estimated price will be invented; obtain a current rate card before budget approval."
  };
  return {
   status:"ready_for_approval",readyForApproval:true,shotCount:shots.length,shots:results,
