@@ -84,6 +84,30 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   }
 });
 
+test("cloud probe preserves ffprobe metadata when optional scene analysis is unavailable",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-probe-optional-"));
+ const previousProbe=process.env.FFPROBE_PATH,previousFfmpeg=process.env.FFMPEG_PATH;
+ const source=join(directory,"source.mp4");await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"video"}],"format":{"duration":"2.0"}}'`);
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+exit 1`);
+ process.env.FFPROBE_PATH=ffprobe;process.env.FFMPEG_PATH=ffmpeg;
+ try{
+  const execute=createCloudMediaExecutor({c2paPreserver:noC2paPreservation,tempRoot:directory,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"asset-optional",name:"clip.mp4",mediaType:"video/mp4",sha256:"a".repeat(64)},async cleanup(){}};},
+   async publish(){throw new Error("Probe jobs must not publish derivatives.");}
+  }});
+  const result=await execute({job:{id:"job-optional",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-optional"}},onProgress(){}});
+  assert.equal(result.metadata.format.duration,"2.0");
+  assert.deepEqual(result.metadata.signalAnalysis.sceneChanges,[]);
+  assert.equal(result.metadata.signalAnalysis.unavailable[0].check,"scene-change");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  if(previousFfmpeg===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previousFfmpeg;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
 test("cloud media enhancement publishes a checksummed derivative using the claimed job identity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-executor-test-"));
   const previous = process.env.FFMPEG_PATH;
