@@ -5,7 +5,7 @@ export function normalizeTimelineMotion(points,durationSeconds){
  if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Motion clip duration must be positive and finite."),{code:"INVALID_MOTION_KEYFRAMES"});
  const sorted=points.map(point=>{
   if(!point||!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>durationSeconds)throw Object.assign(new Error("Motion keyframe time must stay inside its clip."),{code:"INVALID_MOTION_KEYFRAMES"});
-  const next={timeSeconds:Number(point.timeSeconds),interpolation:["step","ease-in","ease-out","ease-in-out"].includes(point.interpolation)?point.interpolation:"linear"};let count=0;
+  const next={timeSeconds:Number(point.timeSeconds),interpolation:["step","ease-in","ease-out","ease-in-out","bezier"].includes(point.interpolation)?point.interpolation:"linear"};if(next.interpolation==="bezier"){const curve=point.bezier??{x1:0.25,y1:0.1,x2:0.25,y2:1};const {x1,y1,x2,y2}=curve;if(![x1,y1,x2,y2].every(Number.isFinite)||x1<0||x1>1||x2<0||x2>1||x1>x2||y1< -2||y1>2||y2< -2||y2>2)throw Object.assign(new Error("Bezier handles require 0 ≤ x1 ≤ x2 ≤ 1 and y values between -2 and 2."),{code:"INVALID_MOTION_KEYFRAMES"});next.bezier={x1:Number(x1),y1:Number(y1),x2:Number(x2),y2:Number(y2)};}let count=0;
   for(const [property,[min,max]] of Object.entries(LIMITS)){if(point[property]===undefined)continue;if(!Number.isFinite(point[property]))throw Object.assign(new Error("Motion keyframe values must be finite."),{code:"INVALID_MOTION_KEYFRAMES"});next[property]=Math.max(min,Math.min(max,Number(point[property])));count++;}
   if(!count)throw Object.assign(new Error("Motion keyframe must define at least one animated property."),{code:"INVALID_MOTION_KEYFRAMES"});
   return next;
@@ -13,10 +13,12 @@ export function normalizeTimelineMotion(points,durationSeconds){
  for(let i=1;i<sorted.length;i++)if(sorted[i].timeSeconds===sorted[i-1].timeSeconds)throw Object.assign(new Error("Motion keyframe times must be unique."),{code:"INVALID_MOTION_KEYFRAMES"});
  return sorted;
 }
+function cubicBezierCoordinate(t,a,b){const u=1-t;return 3*u*u*t*a+3*u*t*t*b+t*t*t;}
+function easeTimelineMotionRatio(x,mode,curve){if(mode==="ease-in")return x*x*x;if(mode==="ease-out")return 1-Math.pow(1-x,3);if(mode==="ease-in-out")return x*x*(3-2*x);if(mode==="bezier"){const {x1,y1,x2,y2}=curve??{x1:0.25,y1:0.1,x2:0.25,y2:1};let low=0,high=1,t=x;for(let index=0;index<24;index++){const estimate=cubicBezierCoordinate(t,x1,x2);if(Math.abs(estimate-x)<1e-7)break;if(estimate<x)low=t;else high=t;t=(low+high)/2;}return cubicBezierCoordinate(t,y1,y2);}return x;}
 export function evaluateTimelineMotion(points,timeSeconds,property,fallback,durationSeconds,playbackMode="none"){
  const all=normalizeTimelineMotion(points,durationSeconds),keys=all.filter(point=>point[property]!==undefined),first=all[0]?.timeSeconds??0,last=all[all.length-1]?.timeSeconds??0,span=last-first;let mapped=Number.isFinite(timeSeconds)?timeSeconds:0;if(span>0&&first===0&&mapped>=first){const elapsed=mapped-first;if(playbackMode==="loop")mapped=first+((elapsed%span)+span)%span;else if(playbackMode==="ping-pong"){const cycle=((elapsed%(span*2))+span*2)%(span*2);mapped=first+(cycle<=span?cycle:span*2-cycle);}}const time=Math.max(0,Math.min(durationSeconds,mapped));
  if(!keys.length)return fallback;let previousTime=0,previousValue=fallback;
- for(const point of keys){const value=point[property];if(time<point.timeSeconds){if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;const raw=(time-previousTime)/(point.timeSeconds-previousTime),t=Math.max(0,Math.min(1,raw)),ratio=point.interpolation==="ease-in"?t*t*t:point.interpolation==="ease-out"?1-Math.pow(1-t,3):point.interpolation==="ease-in-out"?t*t*(3-2*t):t;return previousValue+(value-previousValue)*ratio;}previousTime=point.timeSeconds;previousValue=value;}
+ for(const point of keys){const value=point[property];if(time<point.timeSeconds){if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;const raw=(time-previousTime)/(point.timeSeconds-previousTime),t=Math.max(0,Math.min(1,raw)),ratio=easeTimelineMotionRatio(t,point.interpolation,point.bezier);return previousValue+(value-previousValue)*ratio;}previousTime=point.timeSeconds;previousValue=value;}
  return previousValue;
 }
 function number(value){return Number(value.toFixed(6)).toString();}
@@ -26,10 +28,10 @@ export function buildTimelineMotionExpression(points,property,fallback,durationS
  const first=keys[0],last=keys[keys.length-1],span=last.timeSeconds-first.timeSeconds;let clock=timeVariable;
  if(span>0&&first.timeSeconds===0&&playbackMode==="loop")clock=number(first.timeSeconds)+"+mod("+timeVariable+"-"+number(first.timeSeconds)+"\\,"+number(span)+")";
  else if(span>0&&first.timeSeconds===0&&playbackMode==="ping-pong")clock=number(first.timeSeconds)+"+("+number(span)+"-abs(mod("+timeVariable+"-"+number(first.timeSeconds)+"\\,"+number(span*2)+")-"+number(span)+"))";
- const ratio=(mode,raw,time)=>{const u="clip("+raw+"\\,0\\,1)";if(mode==="step")return "gte("+clock+"\\,"+number(time)+")";if(mode==="ease-in")return "("+u+")*("+u+")*("+u+")";if(mode==="ease-out")return "1-(1-("+u+"))*(1-("+u+"))*(1-("+u+"))";if(mode==="ease-in-out")return "("+u+")*("+u+")*(3-2*("+u+"))";return u;};
+ const ratio=(mode,raw,time,curve)=>{const u="clip("+raw+"\\,0\\,1)";if(mode==="step")return "gte("+clock+"\\,"+number(time)+")";if(mode==="ease-in")return "("+u+")*("+u+")*("+u+")";if(mode==="ease-out")return "1-(1-("+u+"))*(1-("+u+"))*(1-("+u+"))";if(mode==="ease-in-out")return "("+u+")*("+u+")*(3-2*("+u+"))";if(mode==="bezier"){const c=curve??{x1:0.25,y1:0.1,x2:0.25,y2:1},samples=32,points=Array.from({length:samples+1},(_,i)=>{const t=i/samples,q=1-t;return {x:3*q*q*t*c.x1+3*q*t*t*c.x2+t*t*t,y:3*q*q*t*c.y1+3*q*t*t*c.y2+t*t*t};});let expression=number(points[samples].y);for(let i=samples;i>0;i--){const a=points[i-1],b=points[i],dx=b.x-a.x;if(dx<1e-9)continue;const segment=number(a.y)+"+("+u+"-"+number(a.x)+")*"+number((b.y-a.y)/dx);expression="if(lte("+u+"\\,"+number(b.x)+")\\,"+segment+"\\,"+expression+")";}return expression;}return u;};
  let expression=number(first[property]);
- if(first.timeSeconds>0){const raw=clock+"/"+number(first.timeSeconds);expression=number(fallback)+"+("+number(first[property]-fallback)+")*("+ratio(first.interpolation,raw,first.timeSeconds)+")";}
- for(let i=1;i<keys.length;i++){const left=keys[i-1],right=keys[i],raw="("+clock+"-"+number(left.timeSeconds)+")/"+number(right.timeSeconds-left.timeSeconds);expression+="+("+number(right[property]-left[property])+")*("+ratio(right.interpolation,raw,right.timeSeconds)+")";}
+ if(first.timeSeconds>0){const raw=clock+"/"+number(first.timeSeconds);expression=number(fallback)+"+("+number(first[property]-fallback)+")*("+ratio(first.interpolation,raw,first.timeSeconds,first.bezier)+")";}
+ for(let i=1;i<keys.length;i++){const left=keys[i-1],right=keys[i],raw="("+clock+"-"+number(left.timeSeconds)+")/"+number(right.timeSeconds-left.timeSeconds);expression+="+("+number(right[property]-left[property])+")*("+ratio(right.interpolation,raw,right.timeSeconds,right.bezier)+")";}
  return expression;
 }
 export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWidth=1920,canvasHeight=1080){
