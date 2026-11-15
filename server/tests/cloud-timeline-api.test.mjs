@@ -759,6 +759,41 @@ test("Luma source-video edit and reframe quotes use private metadata and operati
  assert.equal(writes[1].p_operation,"video_reframe");
  assert.ok(reframe.body.quote.estimatedCredits>0);
 });
+test("Luma source-video edit approval revalidates private source metadata before durable enqueue",async()=>{
+ const sourceId="b23e4567-e89b-42d3-a456-426614174012";
+ let metadataCalls=0,enqueueArgs=null;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  runwaySourceResolver:{async resolveMetadata({ownerId,projectId,assetId}){
+   metadataCalls++;
+   return{ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:5};
+  }},
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    enqueueArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{
+     job_id:"b23e4567-e89b-42d3-a456-426614174013",job_status:"queued",
+     idempotent_replay:false,budget_reservation_id:"b23e4567-e89b-42d3-a456-426614174014",
+     approval_id:"b23e4567-e89b-42d3-a456-426614174015"
+    }]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"b23e4567-e89b-42d3-a456-426614174016",
+  requestId:"luma-edit-approval-1",
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",sourceVideoAssetId:sourceId,editStrength:"flex_2",rightsConfirmed:true}},
+  values:{prompt:"Replace the background"},approvedMaxAmount:2,approvalNote:"Approved source-video edit"
+ }});
+ assert.equal(result.status,202,JSON.stringify(result.body));
+ assert.equal(metadataCalls,1);
+ assert.equal(enqueueArgs.p_input.operation,"edit");
+ assert.equal(enqueueArgs.p_input.sourceVideoAssetId,sourceId);
+ assert.equal(enqueueArgs.p_approved_max_amount,2);
+});
 test("Luma multi-keyframe quotes revalidate every private anchor in the exact project",async()=>{
  const checked=[];
  const api=createCloudTimelineApi({
