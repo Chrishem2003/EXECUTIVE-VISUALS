@@ -636,12 +636,11 @@ async function addMediaSearchAssetToTimeline(assetId:string,startSeconds=0){
   if(!track){const nextTrack:TimelineTrack={id:crypto.randomUUID(),name:(kind==="video"?"Video ":"Audio ")+(state.timeline.tracks.filter(item=>item.kind===kind).length+1),kind,enabled:true,locked:false,clips:[]};state.timeline=addTrack(state.timeline,nextTrack);track=nextTrack;}
   const sourceFps=sourceRate(asset,kind);
   const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
-  const declaredDuration=Number(asset.metadata?.durationSeconds??probe?.format?.duration);
+  const declaredDuration=Number(asset.metadata?.durationSeconds??probe?.format?.duration),frameRate=fps();
   if(!Number.isFinite(startSeconds)||startSeconds<0)throw new Error("The transcript match timecode is invalid.");
   if(Number.isFinite(declaredDuration)&&declaredDuration>0&&startSeconds>=declaredDuration)throw new Error("The transcript match is outside the source asset duration.");
   const availableDuration=Number.isFinite(declaredDuration)&&declaredDuration>0?Math.max(1/frameRate,declaredDuration-startSeconds):5;
-  const durationSeconds=Math.min(1800,availableDuration);
-  const frameRate=fps(),durationFrames=Math.max(1,Math.round(durationSeconds*frameRate));
+  const durationSeconds=Math.min(1800,availableDuration),durationFrames=Math.max(1,Math.round(durationSeconds*frameRate));
   const endFrame=Math.max(0,...state.timeline.tracks.flatMap(item=>item.clips.map(clip=>Math.ceil(clip.timelineStart.value/clip.timelineStart.rate*frameRate+clip.duration.value/clip.duration.rate*frameRate))));
   const clipId=crypto.randomUUID();
   state.timeline=addClip(state.timeline,track.id,{id:clipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(startSeconds*sourceFps,sourceFps),duration:rational(durationFrames/frameRate*sourceFps,sourceFps)},timelineStart:rational(endFrame,frameRate),duration:rational(durationFrames,frameRate),enabled:true,metadata:{mediaSearchPlacement:true,searchQuery:state.mediaSearchQuery.slice(0,200)}});
