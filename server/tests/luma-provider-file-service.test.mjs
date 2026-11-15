@@ -107,6 +107,18 @@ test("generation input resolver maps multiple private keyframe assets and preser
  assert.deepEqual(resolved.keyframeIndexes,[0]);
 });
 
+test("invalid or unordered Luma keyframe indexes are rejected before any provider upload",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",prompt:"animate",durationSeconds:5,
+  keyframeAssetIds:[assetId,"623e4567-e89b-42d3-a456-426614174000"],keyframeIndexes:[24,0]
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",prompt:"animate",keyframeAssetIds:[assetId]
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
 test("generation input resolver rejects unsupported generic reference asset lists",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({
