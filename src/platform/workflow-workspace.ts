@@ -452,12 +452,12 @@ window.addEventListener("ev:timeline-luma-reframe-requested",event=>{
  if(!asset){state.message="The selected private source video is not in the active workflow project's asset list. Refresh the workflow and try again.";paint();return;}
  const durationSeconds=Number(detail.durationSeconds);
  if(!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>10){
-  state.message="Luma video editing quotes currently support the published 5- or 10-second pricing tiers.";paint();return;
+  state.message="Luma Reframe requires a verified 2–10 second source clip.";paint();return;
  }
  let node=state.graph.nodes.find(item=>item.id===state.selectedNode&&item.kind==="video.generate")||state.graph.nodes.find(item=>item.kind==="video.generate");
  if(!node){
   const spec=palette.video,id=crypto.randomUUID();
-  node={id,kind:spec.kind,label:"Edit · "+String(detail.assetName||asset.name).slice(0,80),inputs:spec.inputs.map(port=>({...port})),outputs:spec.outputs.map(port=>({...port})),config:{},position:nodePosition(state.graph.nodes.length)};
+  node={id,kind:spec.kind,label:"Reframe · "+String(detail.assetName||asset.name).slice(0,80),inputs:spec.inputs.map(port=>({...port})),outputs:spec.outputs.map(port=>({...port})),config:{},position:nodePosition(state.graph.nodes.length)};
   state.graph={...state.graph,nodes:[...state.graph.nodes,node]};
  }
  node.config={...node.config,provider:"luma",model:"ray-3.2",operation:"reframe",sourceVideoAssetId:asset.id,durationSeconds,aspectRatio:"9:16",resolution:"720p",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},rightsConfirmed:false};
