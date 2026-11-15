@@ -441,6 +441,32 @@ window.addEventListener("ev:timeline-luma-edit-requested",event=>{
  state.message="Selected timeline source connected to Luma Ray 3.2. Review the prompt, confirm source rights, estimate cost and obtain approval before execution.";
  void persist().then(()=>{paint();window.dispatchEvent(new Event("ev:workflow-luma-edit-ready"));}).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
 });
+window.addEventListener("ev:timeline-luma-reframe-requested",event=>{
+ const detail=(event as CustomEvent<{projectId:string;sourceVideoAssetId:string;durationSeconds:number;assetName?:string}>).detail;
+ if(!detail||!state.graph)return;
+ if(state.graph.projectId!==detail.projectId){
+  state.message="Open a workflow for the same cloud project as the selected timeline before sending a clip to Luma.";
+  paint();return;
+ }
+ const asset=state.assets.find(item=>item.id===detail.sourceVideoAssetId&&item.projectId===detail.projectId&&item.mediaType.toLowerCase().startsWith("video/"));
+ if(!asset){state.message="The selected private source video is not in the active workflow project's asset list. Refresh the workflow and try again.";paint();return;}
+ const durationSeconds=Number(detail.durationSeconds);
+ if(!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>10){
+  state.message="Luma video editing quotes currently support the published 5- or 10-second pricing tiers.";paint();return;
+ }
+ let node=state.graph.nodes.find(item=>item.id===state.selectedNode&&item.kind==="video.generate")||state.graph.nodes.find(item=>item.kind==="video.generate");
+ if(!node){
+  const spec=palette.video,id=crypto.randomUUID();
+  node={id,kind:spec.kind,label:"Edit · "+String(detail.assetName||asset.name).slice(0,80),inputs:spec.inputs.map(port=>({...port})),outputs:spec.outputs.map(port=>({...port})),config:{},position:nodePosition(state.graph.nodes.length)};
+  state.graph={...state.graph,nodes:[...state.graph.nodes,node]};
+ }
+ node.config={...node.config,provider:"luma",model:"ray-3.2",operation:"reframe",sourceVideoAssetId:asset.id,durationSeconds,aspectRatio:"9:16",resolution:"720p",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},rightsConfirmed:false};
+ node.label="Luma Reframe · "+String(detail.assetName||asset.name).slice(0,72);
+ state.selectedNode=node.id;state.costEstimate=null;state.plan="";
+ state.graph={...state.graph,revision:state.graph.revision+1};
+ state.message="Selected timeline source connected to Luma Ray 3.2. Review the prompt, confirm source rights, estimate cost and obtain approval before execution.";
+ void persist().then(()=>{paint();window.dispatchEvent(new Event("ev:workflow-luma-reframe-ready"));}).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
+});
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
 window.addEventListener("ev:jobs-updated",()=>{if(!state.latestRunId)return;void loadRun().then(paint).catch(error=>{state.message=error instanceof Error?"Workflow status could not be refreshed: "+error.message:"Workflow status could not be refreshed. The last known run state is still shown.";paint();});});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")scheduleWorkflowRunPoll(1000);});
