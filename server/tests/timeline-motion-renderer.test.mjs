@@ -79,7 +79,7 @@ test("animated overlay transform filter graph renders successfully with FFmpeg",
 test("primary video transform graph composites onto the sequence canvas and renders",async t=>{
  const binary=process.env.FFMPEG_PATH||"ffmpeg",version=spawnSync(binary,["-version"],{stdio:"ignore"});
  if(version.status!==0){t.skip("FFmpeg is unavailable in this test environment");return;}
- const duration=2,metadata={x:0,y:0,width:160,height:90,opacity:1,rotation:0,motionKeyframes:[{timeSeconds:0,x:0,y:0,width:160,height:90,rotation:0},{timeSeconds:2,x:80,y:40,width:120,height:68,rotation:25,interpolation:"ease-in-out"}]},motion=buildTimelineMotionFilters(metadata,duration);
+ const duration=2,metadata={x:0,y:0,width:160,height:90,opacity:1,rotation:0,motionKeyframes:[{timeSeconds:0,x:0,y:0,width:160,height:90,rotation:0},{timeSeconds:2,x:80,y:40,width:120,height:68,rotation:25,interpolation:"ease-in-out"}]},motion=buildTimelineMotionFilters(metadata,duration,320,240);
  const graph="[1:v]"+motion.filters.join(",")+"[transformed];[0:v][transformed]"+motion.overlay+"[out]";
  const dir=await mkdtemp(join(tmpdir(),"ev-primary-motion-")),output=join(dir,"primary-motion.mp4");
  try{
