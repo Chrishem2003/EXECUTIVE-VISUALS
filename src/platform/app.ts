@@ -1465,6 +1465,14 @@ window.addEventListener("ev:timeline-luma-edit-requested",event=>{
   window.dispatchEvent(new CustomEvent("ev:timeline-luma-edit-requested",{detail}));
  });
 });
+window.addEventListener("ev:timeline-luma-reframe-requested",event=>{
+ if(workflowWorkspace){state.tab="canvas";render();return;}
+ const detail=(event as CustomEvent).detail;
+ void ensureWorkflowWorkspace().then(()=>{
+  state.tab="canvas";render();
+  window.dispatchEvent(new CustomEvent("ev:timeline-luma-reframe-requested",{detail}));
+ });
+});
 window.addEventListener("ev:workflow-luma-edit-ready",()=>{state.tab="canvas";render();});window.addEventListener("ev:workflow-luma-reframe-ready",()=>{state.tab="canvas";render();});window.addEventListener("ev:admin-operations-capability",()=>renderNav());window.addEventListener("ev:authenticated",()=>trackCustomerSuccessEvent("session_started"));$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS STUDIO</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Overview</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New production</button></div></header><section id="view" class="content"></section></main></div>';document.addEventListener("click",e=>{
  const button=(e.target as HTMLElement).closest<HTMLElement>("[data-creative-director-generate]");
  if(!button)return;
