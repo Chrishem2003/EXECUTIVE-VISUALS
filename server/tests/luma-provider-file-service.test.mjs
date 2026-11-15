@@ -11,11 +11,11 @@ const bytes=new Uint8Array([1,2,3,4]);
 const sha256=createHash("sha256").update(bytes).digest("hex");
 const asset={id:assetId,ownerId,projectId,name:"source.mp4",mediaType:"video/mp4",size:bytes.byteLength,sha256};
 
-function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256}={}){
+function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256,assetSize=bytes.byteLength}={}){
  const calls={create:0,upload:0,complete:0,get:0,delete:0};
  const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:ownerId,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
  const assets={
-  async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,sha256:checksum}:null;},
+  async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,size:assetSize,sha256:checksum}:null;},
   async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:assetOwner,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
  };
  const repository={
@@ -107,6 +107,15 @@ test("Luma source-video edit and reframe resolve private project assets before p
  },{job:{owner_id:ownerId,project_id:projectId}});
  assert.deepEqual(reframed.sourceVideo,{file_id:"luma-file-1"});
  assert.equal(reframeFixture.calls.create,1);
+});
+test("Luma source-video assets above the provider 200 MB limit are rejected before upload",async()=>{
+ const f=fixture({assetSize:200*1024*1024+1});
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,rightsConfirmed:true
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_SIZE_INVALID");
+ assert.equal(f.calls.create,0);
+ assert.equal(f.calls.upload,0);
 });
 test("Luma private source uploads require explicit rights confirmation before provider file creation",async()=>{
  const f=fixture();
