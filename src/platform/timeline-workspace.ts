@@ -643,7 +643,7 @@ async function addMediaSearchAssetToTimeline(assetId:string,startSeconds=0){
   const durationSeconds=Math.min(1800,availableDuration),durationFrames=Math.max(1,Math.round(durationSeconds*frameRate));
   const endFrame=Math.max(0,...state.timeline.tracks.flatMap(item=>item.clips.map(clip=>Math.ceil(clip.timelineStart.value/clip.timelineStart.rate*frameRate+clip.duration.value/clip.duration.rate*frameRate))));
   const clipId=crypto.randomUUID();
-  state.timeline=addClip(state.timeline,track.id,{id:clipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(startSeconds*sourceFps,sourceFps),duration:rational(durationFrames/frameRate*sourceFps,sourceFps)},timelineStart:rational(endFrame,frameRate),duration:rational(durationFrames,frameRate),enabled:true,metadata:{mediaSearchPlacement:true,searchQuery:state.mediaSearchQuery.slice(0,200)}});
+  state.timeline=addClip(state.timeline,track.id,{id:clipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(Math.round(startSeconds*sourceFps),sourceFps),duration:rational(durationFrames/frameRate*sourceFps,sourceFps)},timelineStart:rational(endFrame,frameRate),duration:rational(durationFrames,frameRate),enabled:true,metadata:{mediaSearchPlacement:true,searchQuery:state.mediaSearchQuery.slice(0,200)}});
   commitUndo("Add media search result");
   state.selectedTrack=track.id;state.selectedClipId=clipId;
   await persist();
