@@ -184,3 +184,53 @@ test("Luma edit and reframe reject untyped, unsafe or incomplete source referenc
     operation: "edit", prompt: "Restyle", sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" }, editStrength: "wild"
   }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
 });
+
+
+test("Luma Files API creates presigned uploads, transfers bytes without bearer credentials and completes ingestion", async () => {
+  const calls = [];
+  const fileId = "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e";
+  const adapter = createLumaRay32Adapter({
+    apiKey: "server-secret",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/files") && init.method === "POST") return response({
+        id: fileId, file: { id: fileId, mime_type: "video/mp4", size_bytes: 4, state: "pending" },
+        upload: { method: "PUT", url: "https://bucket.s3.amazonaws.com/object?signature=temporary",
+          expires_at: "2026-11-16T12:00:00.000Z", headers: { "x-amz-meta-test": "ok" } }
+      }, 201);
+      if (url.includes("/complete")) return response({ file: { id: fileId, state: "pending" } });
+      if (url.includes("/files/")) return response({ file: { id: fileId, state: "ready", mime_type: "video/mp4", size_bytes: 4 } });
+      if (url.includes("s3.amazonaws.com")) return { ok: true, status: 200, async text() { return ""; } };
+      throw new Error("unexpected URL");
+    },
+    now: () => Date.parse("2026-11-15T12:00:00.000Z")
+  });
+  const receipt = await adapter.createFileUpload({ mimeType: "video/mp4", sizeBytes: 4, filename: "source.mp4", purpose: "input", userId: "opaque-user" });
+  assert.equal(receipt.fileId, fileId);
+  assert.equal(receipt.upload.method, "PUT");
+  const uploaded = await adapter.uploadFileBytes({ upload: receipt.upload, bytes: new Uint8Array([1, 2, 3, 4]), mimeType: "video/mp4" });
+  assert.equal(uploaded.uploadedBytes, 4);
+  assert.equal(calls[1].init.method, "PUT");
+  assert.equal(calls[1].init.headers.authorization, undefined);
+  assert.equal(calls[1].init.headers["x-amz-meta-test"], "ok");
+  assert.deepEqual(await adapter.completeFileUpload(fileId), { fileId, state: "pending" });
+  assert.equal((await adapter.getFile(fileId)).state, "ready");
+  assert.equal(calls[0].url, "https://agents.lumalabs.ai/v1/files");
+  assert.equal(calls[0].init.headers.authorization, "Bearer server-secret");
+});
+
+test("Luma Files API rejects unsafe upload origins, metadata and file identifiers", async () => {
+  const adapter = createLumaRay32Adapter({
+    apiKey: "server-secret",
+    fetchImpl: async () => response({
+      id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e",
+      file: { id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", mime_type: "video/mp4", size_bytes: 4, state: "pending" },
+      upload: { method: "PUT", url: "https://127.0.0.1/private", expires_at: "2026-11-16T12:00:00.000Z" }
+    }),
+    now: () => Date.parse("2026-11-15T12:00:00.000Z")
+  });
+  await assert.rejects(adapter.createFileUpload({ mimeType: "video/mp4", sizeBytes: 4 }), error => error.code === "LUMA_FILE_UPLOAD_URL_INVALID");
+  await assert.rejects(adapter.createFileUpload({ mimeType: "video/mp4", sizeBytes: 0 }), error => error.code === "LUMA_FILE_INPUT_INVALID");
+  await assert.rejects(adapter.createFileUpload({ mimeType: "application/pdf", sizeBytes: 4 }), error => error.code === "LUMA_FILE_INPUT_INVALID");
+  await assert.rejects(adapter.getFile("../private"), error => error.code === "LUMA_FILE_ID_INVALID");
+});
