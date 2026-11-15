@@ -11,12 +11,12 @@ const bytes=new Uint8Array([1,2,3,4]);
 const sha256=createHash("sha256").update(bytes).digest("hex");
 const asset={id:assetId,ownerId,projectId,name:"source.mp4",mediaType:"video/mp4",size:bytes.byteLength,sha256};
 
-function fixture({attemptState="PREPARED",remoteState="ready",owner=ownerId,checksum=sha256}={}){
+function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256}={}){
  const calls={create:0,upload:0,complete:0,get:0,delete:0};
  const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:owner,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
  const assets={
-  async get({ownerId:requested,assetId:requestedAsset}){return requested===owner&&requestedAsset===assetId?{...asset,sha256:checksum}:null;},
-  async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:requested,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
+  async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,sha256:checksum}:null;},
+  async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:assetOwner,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
  };
  const repository={
   async getFileByAsset(){return state.file;},
@@ -74,7 +74,7 @@ test("unknown interrupted upload is quarantined rather than duplicated",async()=
 });
 
 test("private source ownership and project scope are checked before provider upload",async()=>{
- const f=fixture({owner:"923e4567-e89b-42d3-a456-426614174000"});
+ const f=fixture({authorized:false});
  await assert.rejects(f.service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="LUMA_FILE_ASSET_NOT_FOUND");
  assert.equal(f.calls.create,0);
 });
@@ -112,4 +112,11 @@ test("generation input resolver rejects unsupported generic reference asset list
  await assert.rejects(f.service.resolveInput({
   provider:"luma",model:"ray-3.2",prompt:"animate",referenceAssetIds:[assetId]
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_REFERENCE_MODE_UNSUPPORTED");
+});
+
+test("project collaborators can prepare an asset owned by another project member after scoped authorization",async()=>{
+ const f=fixture({assetOwner:"923e4567-e89b-42d3-a456-426614174000"});
+ const result=await f.service.prepareAsset({ownerId,projectId,assetId});
+ assert.equal(result.fileId,fileId);
+ assert.equal(f.state.file.ownerId,ownerId);
 });
