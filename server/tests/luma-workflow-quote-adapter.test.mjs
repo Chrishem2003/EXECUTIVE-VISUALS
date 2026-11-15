@@ -61,7 +61,7 @@ test("Luma source-video edit and reframe quotes use operation-specific pricing a
  const editQuote=await adapter.preflight(edit);
  assert.equal(editQuote.estimatedCredits,estimateLumaRay32Cost({operation:"video_edit",resolution:"720p",durationSeconds:5}).credits);
  const reframe=await adapter.prepareInput({
-  provider:"luma",model:"ray-3.2",operation:"reframe",prompt:"Recompose vertically",durationSeconds:13,
+  provider:"luma",model:"ray-3.2",operation:"reframe",prompt:"Recompose vertically",durationSeconds:10,
   resolution:"540p",aspectRatio:"9:16",sourcePosition:{x_norm:0,y_norm:0,w_norm:1,h_norm:1},sourceVideoAssetId:assetId
  },{job:{owner_id:ownerId}});
  assert.deepEqual(seen[1].sourceVideo,{file_id:assetId});
