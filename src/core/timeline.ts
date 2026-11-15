@@ -338,15 +338,16 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
         const transition=clip.transitionToNext,position=enabledClips.findIndex(item=>item.id===clip.id),next=enabledClips[position+1];
         const fadeFrames=Number(transition?.fadeFrames),fps=timeline.frameRate.numerator/timeline.frameRate.denominator,clipFrames=Math.round(duration*fps);
         const videoDip=track.kind==="video"&&transition?.type==="dip-to-black";
+        const videoCrossfade=track.kind==="video"&&transition?.type==="crossfade";
         const audioCrossfade=track.kind==="audio"&&transition?.type==="crossfade";
-        if((!videoDip&&!audioCrossfade)||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)
-          issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black and audio crossfade transitions require a positive integer fade length no longer than the outgoing clip."});
+        if((!videoDip&&!videoCrossfade&&!audioCrossfade)||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)
+          issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black and video/audio crossfade transitions require a positive integer fade length no longer than the outgoing clip."});
         else if(!next)
           issues.push({code:"transition_requires_next_clip",trackId:track.id,clipId:clip.id,message:"A transition requires the next enabled clip on the same track."});
         else if(videoDip&&Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)
           issues.push({code:"transition_requires_adjacent_clip",trackId:track.id,clipId:clip.id,message:"A dip-to-black transition requires the next enabled video clip to begin immediately after this clip."});
-        else if(audioCrossfade&&Math.abs(seconds(next.timelineStart)-(start+duration-fadeFrames/fps))>0.5/fps)
-          issues.push({code:"crossfade_overlap_mismatch",trackId:track.id,clipId:clip.id,message:"An audio crossfade requires the next clip to overlap the outgoing clip by exactly its configured fade duration."});
+        else if((videoCrossfade||audioCrossfade)&&Math.abs(seconds(next.timelineStart)-(start+duration-fadeFrames/fps))>0.5/fps)
+          issues.push({code:"crossfade_overlap_mismatch",trackId:track.id,clipId:clip.id,message:"A crossfade requires the next clip to overlap the outgoing clip by exactly its configured fade duration."});
         else if(fadeFrames>Math.round(seconds(next.duration)*fps))
           issues.push({code:"transition_exceeds_incoming_clip",trackId:track.id,clipId:clip.id,message:"The transition fade cannot be longer than the incoming clip."});
       }
