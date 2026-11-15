@@ -42,10 +42,13 @@ async function executable(directory, name, body) {
 test("cloud media probe uses the leased owner and cleans up its materialized source", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-executor-test-"));
   const previous = process.env.FFPROBE_PATH;
+  const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "fixture");
   const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360}],"format":{"duration":"1.25"}}'`);
   process.env.FFPROBE_PATH = ffprobe;
+  const ffmpeg = await executable(directory, "ffmpeg", String.raw`if [ "$1" = "-version" ]; then exit 0; fi; printf "%s\n" "[Parsed_showinfo] n: 1 pts_time: 0.500" "[Parsed_showinfo] n: 2 pts_time: 1.000" "[freezedetect] freeze_start: 0.500" "[freezedetect] freeze_end: 1.000 | freeze_duration: 0.500" >&2`);
+  process.env.FFMPEG_PATH = ffmpeg;
   let materializedArgs, cleaned = false;
   try {
     const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
@@ -68,13 +71,41 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
     });
     assert.deepEqual(materializedArgs, { ownerId: "verified-owner", assetId: "asset-1" });
     assert.equal(result.metadata.format.duration, "1.25");
+    assert.deepEqual(result.metadata.signalAnalysis.sceneChanges,[0.5,1]);
+    assert.deepEqual(result.metadata.signalAnalysis.freezes,[{startSeconds:0.5,endSeconds:1,durationSeconds:0.5}]);
     assert.equal(result.sourceAssetId, "asset-1");
     assert.equal(cleaned, true);
   } finally {
     if (previous === undefined) delete process.env.FFPROBE_PATH;
     else process.env.FFPROBE_PATH = previous;
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = previousFfmpeg;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("cloud probe preserves ffprobe metadata when optional scene analysis is unavailable",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-probe-optional-"));
+ const previousProbe=process.env.FFPROBE_PATH,previousFfmpeg=process.env.FFMPEG_PATH;
+ const source=join(directory,"source.mp4");await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"video"}],"format":{"duration":"2.0"}}'`);
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+exit 1`);
+ process.env.FFPROBE_PATH=ffprobe;process.env.FFMPEG_PATH=ffmpeg;
+ try{
+  const execute=createCloudMediaExecutor({c2paPreserver:noC2paPreservation,tempRoot:directory,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"asset-optional",name:"clip.mp4",mediaType:"video/mp4",sha256:"a".repeat(64)},async cleanup(){}};},
+   async publish(){throw new Error("Probe jobs must not publish derivatives.");}
+  }});
+  const result=await execute({job:{id:"job-optional",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-optional"}},onProgress(){}});
+  assert.equal(result.metadata.format.duration,"2.0");
+  assert.deepEqual(result.metadata.signalAnalysis.sceneChanges,[]);
+  assert.equal(result.metadata.signalAnalysis.unavailable[0].check,"scene-change");
+ }finally{
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  if(previousFfmpeg===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previousFfmpeg;
+  await rm(directory,{recursive:true,force:true});
+ }
 });
 
 test("cloud media enhancement publishes a checksummed derivative using the claimed job identity", async () => {

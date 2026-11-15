@@ -10,6 +10,7 @@ import { createC2paTransformationPreserver } from "./c2pa-transformation-preserv
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
+import { parseSceneChangeTimes, parseFreezeEvents } from "./media-signal-analysis.mjs";
 
 export function aiUpscaleMediaType(format) {
   const types = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
@@ -294,6 +295,22 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let metadata;
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
+        const streams=Array.isArray(metadata.streams)?metadata.streams:[];
+        const signalAnalysis={schemaVersion:1,method:"ffmpeg-scene-change-detection",sceneChanges:[],freezes:[],performed:[],unavailable:[],limitations:["Scene cuts are heuristic FFmpeg detections. Review every marker before splitting or deleting footage.","The detector does not infer semantic shots, camera intent or editorial meaning."]};
+        if(streams.some(stream=>stream.codec_type==="video")){
+          if(executableAvailable("ffmpeg")){
+            try{
+              const motion=await runProcess(ffmpeg,["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","freezedetect=n=-60dB:d=2,select='gt(scene,0.3)',showinfo","-an","-f","null","-"],{signal,timeoutMs:Math.min(timeoutMs,10*60*1000),onProgress,maxCaptureBytes:2_000_000});
+              signalAnalysis.sceneChanges=parseSceneChangeTimes(motion.stderr);
+              signalAnalysis.freezes=parseFreezeEvents(motion.stderr);
+              signalAnalysis.performed.push("scene-change","freeze-detect");
+            }catch(error){
+              if(signal?.aborted||error?.code==="JOB_CANCELLED")throw error;
+              signalAnalysis.unavailable.push({check:"scene-change",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)});
+            }
+          }else signalAnalysis.unavailable.push({check:"scene-change",reason:"MEDIA_ENGINE_MISSING"});
+        }
+        metadata.signalAnalysis=signalAnalysis;
         return { sourceAssetId: sourceId, metadata };
       }
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
