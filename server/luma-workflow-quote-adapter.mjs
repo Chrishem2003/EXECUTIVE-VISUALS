@@ -40,7 +40,8 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    });
    prepared.keyframeIndexes=[...input.keyframeIndexes];
   }
-  return client.prepareInput(prepared);
+  const payload=await client.prepareInput(prepared);
+  return {...payload,workflowDurationSeconds:input.durationSeconds};
  }
  async function preflight(prepared,{sourceMetadata=null}={}){
   if(!prepared||prepared.model!=="ray-3.2"||!["video","video_edit","video_reframe"].includes(prepared.type)||!prepared.video)
