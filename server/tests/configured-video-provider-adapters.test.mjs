@@ -87,3 +87,12 @@ test("requires exact provider/model identity before Luma preparation", async () 
     provider: "runway", model: "gen4.5", prompt: "wrong provider"
   }), error => error.code === "VIDEO_JOB_INPUT_MISMATCH");
 });
+
+test("requires owner-scoped resolution before Luma source-video edit or reframe is submitted",async()=>{
+ const [adapter]=createConfiguredVideoProviderAdapters(base);
+ await assert.rejects(adapter.prepareInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",prompt:"Restyle the scene",
+  sourceVideo:{file_id:"private-video-file"},video:{resolution:"720p"}
+ },{job:{owner_id:"owner-1",project_id:"project-1"}}),
+ error=>error.code==="LUMA_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+});
