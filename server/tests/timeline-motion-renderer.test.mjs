@@ -57,10 +57,10 @@ test("renderer interpolates from the clip's base transform before the first keyf
 });
 test("rotated overlays preserve their center with fixed rotation output dimensions",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
- assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
- assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
- assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
- assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
+ assert.ok(result.filters.some(filter=>filter.startsWith("scale=100:80")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")&&filter.includes("ow=129:oh=129")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("scale=w=")&&filter.includes("eval=frame")));
+ assert.match(result.overlay,/eval=frame/);
 });
 
 test("animated overlay transform filter graph renders successfully with FFmpeg",async t=>{
