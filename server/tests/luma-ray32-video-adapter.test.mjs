@@ -25,6 +25,13 @@ test("Luma adapter submits Ray 3.2 text-to-video and polls into normalized outpu
     model: "ray-3.2", type: "video", prompt: "A cinematic aerial view",
     aspect_ratio: "16:9", video: { resolution: "720p", duration: "5s" }
   });
+  const attributed = await adapter.prepareInput({
+    prompt: "A cinematic aerial view", user_id: "opaque-owner-123"
+  });
+  assert.equal(attributed.user_id, "opaque-owner-123");
+  await assert.rejects(adapter.prepareInput({
+    prompt: "A cinematic aerial view", user_id: "x".repeat(257)
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   const submitted = await adapter.submit(payload);
   assert.deepEqual(submitted, { taskId: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", status: "queued" });
   const status = await adapter.getStatus(submitted.taskId);
