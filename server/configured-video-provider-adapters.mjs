@@ -59,16 +59,26 @@ export function createConfiguredVideoProviderAdapters({
     if (typeof resolveRunwayActualCost !== "function") {
       throw fail("Runway registration requires an authoritative task-level billing resolver; pricing estimates are not settlement evidence.", "RUNWAY_BILLING_RESOLVER_REQUIRED");
     }
-    adapters.push(createRunwayCloudVideoAdapter({
-      model: env.RUNWAY_VIDEO_MODEL || "gen4.5",
-      apiKey: env.RUNWAY_API_KEY || env.RUNWAYML_API_SECRET,
-      enabled: globalEnabled,
-      allowRemote: true,
-      fetchImpl,
-      prepareInput: runwayPrepareInput,
-      ingestOutputs,
-      resolveActualCost: resolveRunwayActualCost
-    }));
+    const runwayModels = String(env.RUNWAY_VIDEO_MODELS || env.RUNWAY_VIDEO_MODEL || "gen4.5")
+      .split(",").map(value => value.trim()).filter(Boolean);
+    const supportedRunwayModels = new Set(["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby", "mirelo_sfx_2_0"]);
+    if (runwayModels.length < 1 || runwayModels.length > 10 ||
+        runwayModels.some(model => !supportedRunwayModels.has(model)) ||
+        new Set(runwayModels).size !== runwayModels.length) {
+      throw fail("Runway model registration must be a unique list of explicitly supported model profiles.", "RUNWAY_MODEL_CONFIGURATION_INVALID");
+    }
+    for (const model of runwayModels) {
+      adapters.push(createRunwayCloudVideoAdapter({
+        model,
+        apiKey: env.RUNWAY_API_KEY || env.RUNWAYML_API_SECRET,
+        enabled: globalEnabled,
+        allowRemote: true,
+        fetchImpl,
+        prepareInput: runwayPrepareInput,
+        ingestOutputs,
+        resolveActualCost: resolveRunwayActualCost
+      }));
+    }
   }
 
   if (env.LUMA_VIDEO_ENABLED === "true" || env.LUMA_VIDEO_ALLOW_REMOTE === "true") {
