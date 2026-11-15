@@ -814,6 +814,16 @@ async function applyHistoryAction(direction:"undo"|"redo"):Promise<void>{
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="send-to-luma-edit"){
+  const assetId=String(action.dataset.tlAssetId||"");
+  const durationSeconds=Number(action.dataset.tlSourceDuration);
+  const asset=state.assets.find(item=>item.id===assetId);
+  if(state.mode!=="cloud"||!state.cloudProjectId||!asset||asset.projectId!==state.cloudProjectId||!asset.mediaType.startsWith("video/")||!Number.isSafeInteger(durationSeconds)||durationSeconds<2||durationSeconds>18){
+   state.message="Choose a verified private cloud video asset in this project with a source duration of 2–18 seconds.";paint();return;
+  }
+  window.dispatchEvent(new CustomEvent("ev:timeline-luma-edit-requested",{detail:{projectId:state.cloudProjectId,sourceVideoAssetId:asset.id,durationSeconds,assetName:asset.name}}));
+  state.message="Connecting the selected source to a Luma Edit workflow…";paint();return;
+ }
  if(type==="toggle-safe-area"){state.previewSafeAreaVisible=!state.previewSafeAreaVisible;paint();return;}
  if(type==="apply-caption-preset-track"){
   const form=document.querySelector<HTMLFormElement>("#tl-clip-inspector");
