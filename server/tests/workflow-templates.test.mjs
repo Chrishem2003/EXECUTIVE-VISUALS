@@ -48,6 +48,7 @@ test("video caption localization is a valid review-first graph with private sour
  assert.equal(translation.config.targetLanguage,"");
  assert.ok(graph.edges.some(edge=>edge.sourceNodeId==="create-captions"&&edge.targetNodeId==="export-captions"));
  assert.ok(transcription.inputs.some(port=>port.id==="approval"));
+ assert.ok(transcription.outputs.some(port=>port.id==="words"&&port.type==="structured-data"));
 });
 
 test("video caption localization requires an explicit workflow ID",()=>{
