@@ -27,5 +27,6 @@ test("R2 asset composition rejects a custom bucket while metadata and cleanup co
  };
  const service=createCloudAssetService(base);
  assert.equal(service.storage.bucket,"executive-visuals-media");
+ assert.equal(createCloudAssetService({...base,r2:{...base.r2,bucket:""}}).storage.bucket,"executive-visuals-media");
  assert.throws(()=>createCloudAssetService({...base,r2:{...base.r2,bucket:"custom-media-bucket"}}),/R2_BUCKET must be executive-visuals-media/);
 });
