@@ -92,6 +92,32 @@ test("generation input resolver replaces internal asset IDs with owner-scoped Lu
  assert.equal(resolved.startFrameAssetId,assetId);
 });
 
+test("Luma source-video edit and reframe resolve private project assets before provider submission",async()=>{
+ const editFixture=fixture();
+ const edited=await editFixture.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p",
+  sourceVideoAssetId:assetId,editStrength:"flex_2"
+ },{job:{owner_id:ownerId,project_id:projectId}});
+ assert.deepEqual(edited.sourceVideo,{file_id:"luma-file-1"});
+ assert.equal(editFixture.calls.create,1);
+ const reframeFixture=fixture();
+ const reframed=await reframeFixture.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"540p",
+  sourceVideoAssetId:assetId,aspectRatio:"9:16"
+ },{job:{owner_id:ownerId,project_id:projectId}});
+ assert.deepEqual(reframed.sourceVideo,{file_id:"luma-file-1"});
+ assert.equal(reframeFixture.calls.create,1);
+});
+test("Luma source-video operations fail closed before upload without valid operation inputs",async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p"
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ await assert.rejects(f.service.resolveInput({
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:13,resolution:"1080p",sourceVideoAssetId:assetId
+ },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
+ assert.equal(f.calls.create,0);
+});
 test("generation input resolver rejects caller-supplied provider file IDs",async()=>{
  const f=fixture();
  await assert.rejects(f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"edit",sourceVideo:{file_id:fileId}},{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_UNSCOPED_REFERENCE");
