@@ -426,18 +426,42 @@ export function renderImageModelNote(){
  return esc(provider.status==="ready"?"Selected Gemini image model "+provider.model+" is configured. Google API charges apply to approved generations.":provider.reason)+" The image workspace now accepts one validated reference asset for image editing.";
 }
 export function renderVideoModelOptions(){
- const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google");
- const options=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>{
-  const ready=provider.status==="ready"&&model.available===true&&model.executionVerified===true&&model.qualityVerified===true;
+ const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
+ const models=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})));
+ const selected=models.find(({provider,model})=>provider.status==="ready"&&model.available===true&&
+  model.executionVerified===true&&(model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
+ const options=models.map(({provider,model})=>{
+  const ready=provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
+   (model.qualityVerified===true||model.readiness==="ready");
   const reason=ready?"":String(model.reason||provider.reason||model.readiness||provider.status||"Not verified");
-  const duration=Number.isFinite(model.minDurationSeconds)&&Number.isFinite(model.maxDurationSeconds)?" · "+model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":"";
-  return '<option value="'+esc(model.id)+'" data-provider="'+esc(provider.provider)+'" '+(provider.model===model.id?"selected ":"")+(ready?"":"disabled ")+'>'+esc(model.label)+duration+(ready?"":" · "+esc(reason.slice(0,90)))+'</option>';
- }));
+  const duration=Number.isFinite(model.minDurationSeconds)&&Number.isFinite(model.maxDurationSeconds)
+   ?" · "+model.minDurationSeconds+"–"+model.maxDurationSeconds+"s":"";
+  const selectedModel=selected?.provider===provider&&selected?.model===model;
+  return '<option value="'+esc(model.id)+'" data-provider="'+esc(provider.provider)+'" '+
+   (selectedModel?"selected ":"")+(ready?"":"disabled ")+
+   '>'+esc(model.label)+duration+(ready?"":" · "+esc(reason.slice(0,90)))+'</option>';
+ });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
+export function renderVideoResolutionOptions(){
+ const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
+ const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
+  .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
+   (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
+ if(selected?.provider.provider==="luma")return '<option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
+ if(selected?.provider.provider==="google")return '<option value="720p" selected>720p · Gemini Omni</option>';
+ return '<option value="provider_default" selected>Provider default</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>';
+}
 export function renderVideoModelNote(){
+ const luma=state.providers.find(item=>item.provider==="luma");
+ if(luma){
+  const note=luma.status==="ready"
+   ?"Luma Ray 3.2 is ready for approved text-to-video and first-frame image-to-video. Supported quoted tiers: 540p, 720p and 1080p; 5- or 10-second clips. Private references are uploaded through the owner/project-scoped Luma Files service."
+   :"Luma Ray 3.2 is not selectable: "+String(luma.reason||"Provider readiness is incomplete.");
+  return esc(note)+" No provider request is submitted until the exact quote is approved.";
+ }
  const provider=state.providers.find(item=>item.provider==="runway");
- if(!provider)return "The active provider is configured server-side. Runway model selection appears when the Runway adapter is selected by the administrator.";
+ if(!provider)return "The active provider is configured server-side. Verified Runway and Luma models appear only when their worker and governance gates are ready.";
  return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The adapter supports text-to-video and one first-frame image-to-video reference. Multi-frame references, video-to-video and native audio controls are not yet enabled.";
 }
 export function renderEngineStatus(){
