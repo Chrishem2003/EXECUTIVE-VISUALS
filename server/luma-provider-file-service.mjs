@@ -19,29 +19,55 @@ function attemptKey(identity){
 }
 
 export function createLumaProviderFileService({
- assets,adapter,repository,fetchImpl=globalThis.fetch,timeoutMs=30000,maxBytes=MAX_BYTES,now=()=>Date.now()
+ assets,adapter,repository,fetchImpl=globalThis.fetch,timeoutMs=30000,maxBytes=MAX_BYTES,now=()=>Date.now(),
+ supabaseUrl=process.env.SUPABASE_URL,storageProvider=process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",
+ r2AccountId=process.env.R2_ACCOUNT_ID,r2Bucket=process.env.R2_BUCKET||"executive-visuals-media"
 }={}){
  if(!assets||typeof assets.get!=="function"||typeof assets.createSignedUrl!=="function")throw new TypeError("Luma file service requires the authorized private asset repository.");
  for(const method of ["createFileUpload","uploadFileBytes","completeFileUpload","getFile","deleteFile"])if(typeof adapter?.[method]!=="function")throw new TypeError("Luma file service requires a complete Files API adapter.");
  for(const method of ["createAttempt","updateAttempt","getFileByAsset","upsertFile"])if(typeof repository?.[method]!=="function")throw new TypeError("Luma file service requires the durable provider-file repository.");
  if(typeof fetchImpl!=="function"||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>MAX_BYTES||typeof now!=="function")throw new TypeError("Luma file service runtime configuration is invalid.");
+ let expectedOrigin,expectedPathPrefix;
+ try{
+  if(String(storageProvider).toLowerCase()==="r2"){
+   if(!/^[a-f0-9]{32}$/i.test(String(r2AccountId||""))||!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(r2Bucket)))throw new Error();
+   expectedOrigin="https://"+r2AccountId+".r2.cloudflarestorage.com";expectedPathPrefix="/"+r2Bucket+"/";
+  }else{
+   const base=new URL(supabaseUrl);
+   if(base.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(base.hostname))throw new Error();
+   expectedOrigin=base.origin;expectedPathPrefix="/storage/v1/object/sign/";
+  }
+ }catch{throw new TypeError("Luma file service requires a safe private-storage origin.");}
 
  async function readPrivateAsset({ownerId,projectId,assetId}){
   if(!UUID.test(ownerId||"")||!UUID.test(assetId||"")||(projectId!==null&&projectId!==undefined&&!UUID.test(projectId)))throw fail("Authenticated owner, project and asset identifiers are required.","LUMA_FILE_SCOPE_INVALID",400);
   const asset=await assets.get({ownerId,assetId});
-  if(!asset||asset.ownerId!==ownerId||(asset.projectId||null)!==(projectId||null))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
+  if(!asset||asset.id!==assetId||asset.ownerId!==ownerId||(asset.projectId||null)!==(projectId||null))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
   if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>maxBytes||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
   const signed=await assets.createSignedUrl({ownerId,assetId,expiresIn:300});
-  if(!signed||signed.asset?.id!==assetId||typeof signed.url!=="string")throw fail("Private asset gateway did not return a scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
+  if(!signed||signed.asset?.id!==assetId||signed.asset.ownerId!==ownerId||(signed.asset.projectId||null)!==(asset.projectId||null)||typeof signed.url!=="string")throw fail("Private asset gateway did not return a matching owner/project-scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
   let url;try{url=new URL(signed.url);}catch{throw fail("Private asset gateway returned an invalid signed URL.","LUMA_FILE_SIGNED_URL_INVALID",502);}
-  if(url.protocol!=="https:"||url.username||url.password||url.hash)throw fail("Private asset signed URL must use credential-free HTTPS.","LUMA_FILE_SIGNED_URL_INVALID",502);
+  if(url.origin!==expectedOrigin||!url.pathname.startsWith(expectedPathPrefix)||url.username||url.password||url.hash)throw fail("Private asset signed URL does not match the configured private-storage origin.","LUMA_FILE_SIGNED_URL_INVALID",502);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
    const response=await fetchImpl(url.toString(),{method:"GET",redirect:"error",signal:controller.signal});
    if(!response.ok)throw fail("Private asset download failed with HTTP "+response.status+".","LUMA_FILE_ASSET_DOWNLOAD_FAILED",response.status);
-   const declared=Number(response.headers?.get?.("content-length"));
-   if(Number.isFinite(declared)&&declared>0&&declared!==asset.size)throw fail("Private asset download length does not match stored metadata.","LUMA_FILE_ASSET_CHECKSUM_MISMATCH",409);
-   const bytes=new Uint8Array(await response.arrayBuffer());
+   const contentType=String(response.headers?.get?.("content-type")||"").split(";")[0].trim().toLowerCase();
+   const declared=Number(response.headers?.get?.("content-length")||0);
+   if(contentType!==asset.mediaType||declared>maxBytes||(declared>0&&declared!==asset.size))throw fail("Private asset response headers do not match stored metadata.","LUMA_FILE_ASSET_CHECKSUM_MISMATCH",409);
+   const reader=response.body?.getReader?.();
+   if(!reader)throw fail("Private asset response is not stream-readable.","LUMA_FILE_ASSET_DOWNLOAD_FAILED",502);
+   const chunks=[];let total=0;
+   try{
+    while(true){
+     const {done,value}=await reader.read();if(done)break;
+     const chunk=Buffer.from(value);total+=chunk.length;
+     if(total>Math.min(maxBytes,asset.size)){await reader.cancel().catch(()=>{});throw fail("Private asset exceeded its stored byte limit.","LUMA_FILE_ASSET_CHECKSUM_MISMATCH",409);}
+     chunks.push(chunk);
+    }
+   }catch(error){if(error?.code==="LUMA_FILE_ASSET_CHECKSUM_MISMATCH")throw error;throw fail("Private asset download failed while streaming.","LUMA_FILE_ASSET_DOWNLOAD_FAILED",502);}
+   finally{reader.releaseLock();}
+   const bytes=Buffer.concat(chunks,total);
    if(bytes.byteLength!==asset.size||bytes.byteLength>maxBytes)throw fail("Private asset download size does not match stored metadata.","LUMA_FILE_ASSET_CHECKSUM_MISMATCH",409);
    const digest=createHash("sha256").update(bytes).digest("hex");
    if(digest!==asset.sha256)throw fail("Private asset checksum does not match stored metadata.","LUMA_FILE_ASSET_CHECKSUM_MISMATCH",409);
