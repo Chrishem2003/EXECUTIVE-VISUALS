@@ -23,9 +23,11 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
  const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
+ const privateStorageReady=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()!=="r2"||
+  Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY);
  const common=env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
-  Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&validOutputHosts;
+  Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&privateStorageReady&&validOutputHosts;
  const runwayReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
   /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&
   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
