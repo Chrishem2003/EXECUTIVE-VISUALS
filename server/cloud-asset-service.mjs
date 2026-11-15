@@ -12,6 +12,11 @@ export function createCloudAssetService(options={}) {
  const shared={url:options.url,serviceRoleKey:options.serviceRoleKey,fetchImpl:options.fetchImpl};
  const storageProvider=String(options.storageProvider??process.env.CLOUD_MEDIA_STORAGE_PROVIDER??"supabase").trim().toLowerCase();
  let storage=options.storage||null;
+ // The current asset metadata schema, publication RPCs and cleanup ledger intentionally
+ // pin all objects to this bucket. Reject a custom R2 bucket before any upload can occur.
+ if(!storage&&storageProvider==="r2"&&String(options.r2?.bucket??process.env.R2_BUCKET??"executive-visuals-media")!=="executive-visuals-media"){
+  throw new Error("R2_BUCKET must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.");
+ }
  if(!storage&&storageProvider==="r2")storage=createCloudflareR2Storage({
   ...(options.r2||{}),fetchImpl:options.storageFetchImpl||options.fetchImpl||globalThis.fetch,
   timeoutMs:options.storageTimeoutMs??30000,maxBytes:options.maxBytes??250*1024*1024
