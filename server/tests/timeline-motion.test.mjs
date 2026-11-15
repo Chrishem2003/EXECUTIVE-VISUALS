@@ -42,3 +42,11 @@ test("ease-in, ease-out and ease-in-out transform interpolation are deterministi
  assert.equal(evaluateMotionProperty(easeBoth,0.25,"x",0,1),15.625);
  assert.equal(evaluateMotionProperty(easeBoth,0.75,"x",0,1),84.375);
 });
+
+test("motion loop and ping-pong playback wrap deterministically",()=>{
+ const keys=[{timeSeconds:0,x:0},{timeSeconds:1,x:100}],base={x:0,y:0,width:100,height:100,opacity:1,rotation:0};
+ assert.equal(evaluateMotionKeyframes(keys,1.25,base,2,"loop").x,25);
+ assert.equal(evaluateMotionKeyframes(keys,1.25,base,2,"ping-pong").x,75);
+ assert.equal(evaluateMotionKeyframes(keys,2,base,2,"loop").x,0);
+ assert.equal(evaluateMotionKeyframes(keys,2,base,2,"ping-pong").x,0);
+});
