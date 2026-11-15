@@ -108,7 +108,9 @@ export async function runCloudVideoWorkerCycle({
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
     if (code === "VIDEO_PROVIDER_POLL_DEFERRED") {
-      const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds: deferSeconds, reasonCode: code });
+      const delaySeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
+        ? error.retryAfterSeconds : deferSeconds;
+      const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds, reasonCode: code });
       if (!deferred) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "video.job.deferred", jobId: job.id, workerId, reasonCode: code });
       return { claimed: true, finished: true, status: "queued", jobId: job.id, reason: code };

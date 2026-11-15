@@ -164,7 +164,11 @@ export async function executeCloudVideoGenerationJob({
     if (task.status !== "queued" && task.status !== "running") {
       throw fail("Provider returned an unsupported task state.", "VIDEO_PROVIDER_STATUS_INVALID");
     }
-    throw fail("Video generation is still running; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+    const deferred = fail("Video generation is still running; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+    if (Number.isSafeInteger(task.retryAfterSeconds) && task.retryAfterSeconds >= 5 && task.retryAfterSeconds <= 900) {
+      deferred.retryAfterSeconds = task.retryAfterSeconds;
+    }
+    throw deferred;
   }
   if (!Array.isArray(task.outputUrls) || task.outputUrls.length < 1 || task.outputUrls.length > 10) {
     throw fail("Provider completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");

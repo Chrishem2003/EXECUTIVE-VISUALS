@@ -249,3 +249,12 @@ test("persists provider routing metadata and reuses it after a worker restart", 
   assert.equal(resolved.providerTaskId, taskId);
   assert.equal(resumed.calls.some(call => call[0] === "submit"), false);
 });
+
+
+test("cloud executor preserves bounded provider retry-after hints for later worker leases", async () => {
+  const f = fixture({ status: { taskId, status: "running", retryAfterSeconds: 120 } });
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 120
+  );
+});

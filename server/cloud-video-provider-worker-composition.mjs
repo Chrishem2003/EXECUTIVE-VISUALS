@@ -16,6 +16,8 @@ import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video
 import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
 import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
 import { createGoogleInteractionRetentionPolicy } from "./google-interaction-retention-policy.mjs";
+import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
+import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -203,6 +205,73 @@ export function createProviderAwareCloudVideoWorkerComposition({
           timeoutMs: Math.min(timeoutMs, 30000)
         }));
       }
+    }
+    const lumaRequested = providerEnv.LUMA_VIDEO_ENABLED === "true" || providerEnv.LUMA_VIDEO_ALLOW_REMOTE === "true";
+    if (lumaRequested) {
+      if (providerEnv.LUMA_VIDEO_ENABLED !== "true" || providerEnv.LUMA_VIDEO_ALLOW_REMOTE !== "true") {
+        throw Object.assign(new Error("Luma requires both LUMA_VIDEO_ENABLED=true and LUMA_VIDEO_ALLOW_REMOTE=true."), { code: "LUMA_VIDEO_REMOTE_DISABLED" });
+      }
+      const lumaPrepareInput = providerDependencies.lumaPrepareInput;
+      const resolveLumaActualCost = providerDependencies.resolveLumaActualCost ||
+        createLumaActualCostResolver({ usdPerCredit: providerEnv.LUMA_USD_PER_CREDIT });
+      const lumaClient = providerDependencies.lumaClient || createLumaRay32Adapter({
+        apiKey: providerEnv.LUMA_AGENTS_API_KEY,
+        fetchImpl: providerFetch,
+        timeoutMs: Math.min(timeoutMs, 30000)
+      });
+      if (!lumaClient || typeof lumaClient.prepareInput !== "function" || typeof lumaClient.submit !== "function" || typeof lumaClient.getStatus !== "function") {
+        throw Object.assign(new Error("Luma registration requires a compatible Ray 3.2 client."), { code: "LUMA_VIDEO_CLIENT_INVALID" });
+      }
+      const model = "ray-3.2";
+      const assertLumaEnabled = () => {
+        if (providerEnv.VIDEO_GATEWAY_ENABLED !== "true" || providerEnv.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
+            providerEnv.LUMA_VIDEO_ENABLED !== "true" || providerEnv.LUMA_VIDEO_ALLOW_REMOTE !== "true") {
+          throw Object.assign(new Error("Luma remote video execution is disabled."), { code: "LUMA_VIDEO_REMOTE_DISABLED" });
+        }
+      };
+      adapters.push(Object.freeze({
+        provider: "luma",
+        model,
+        minimumPollIntervalMs: lumaClient.minimumPollIntervalMs || 5000,
+        async prepareInput(input, context) {
+          if (!input || typeof input !== "object" || Array.isArray(input) || input.provider !== "luma" || input.model !== model) {
+            throw Object.assign(new Error("Luma job provider/model identity does not match Ray 3.2."), { code: "VIDEO_JOB_INPUT_MISMATCH" });
+          }
+          const hasReferences = Boolean(input.startFrame || input.endFrame || input.sourceVideoAssetId ||
+            input.sourceVideo || input.source || input.sourceGenerationId) ||
+            (Array.isArray(input.keyframes) && input.keyframes.length > 0) ||
+            (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0);
+          if (hasReferences && typeof lumaPrepareInput !== "function") {
+            throw Object.assign(new Error("Luma reference media requires an authenticated owner/project-scoped resolver."), { code: "LUMA_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED" });
+          }
+          const resolved = typeof lumaPrepareInput === "function" ? await lumaPrepareInput(input, context) : input;
+          if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || resolved.provider !== "luma" || resolved.model !== model) {
+            throw Object.assign(new Error("Luma input resolver returned an invalid or mismatched request."), { code: "LUMA_VIDEO_INPUT_INVALID" });
+          }
+          const ownerId = context?.job?.owner_id;
+          if (typeof ownerId !== "string" || !ownerId.trim() || ownerId.length > 256) {
+            throw Object.assign(new Error("Luma user attribution requires the stable internal owner ID."), { code: "LUMA_VIDEO_OWNER_ID_REQUIRED" });
+          }
+          return Object.freeze({ provider: "luma", model, payload: await lumaClient.prepareInput({ ...resolved, user_id: ownerId }) });
+        },
+        async submit(prepared) {
+          assertLumaEnabled();
+          if (!prepared || prepared.provider !== "luma" || prepared.model !== model || !prepared.payload || typeof prepared.payload !== "object") {
+            throw Object.assign(new Error("Luma prepared payload does not match Ray 3.2."), { code: "VIDEO_JOB_INPUT_MISMATCH" });
+          }
+          return lumaClient.submit(prepared.payload);
+        },
+        async getStatus(taskId, context) {
+          assertLumaEnabled();
+          return lumaClient.getStatus(taskId, context);
+        },
+        async ingestOutputs(args) {
+          return ingest({ ...args, provider: "luma", model });
+        },
+        async resolveActualCost(args) {
+          return resolveLumaActualCost({ ...args, provider: "luma", model });
+        }
+      }));
     }
     if (providerEnv.RUNWAY_MODEL_ROUTER_ENABLED === "true") {
       const configId = String(providerEnv.RUNWAY_VIDEO_ROUTER_CONFIG || "");

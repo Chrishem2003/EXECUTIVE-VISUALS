@@ -81,6 +81,41 @@ test("rejects providers without provider-owned ingestion and actual billing evid
 });
 
 
+
+
+test("registers Luma Ray 3.2 only behind global and provider-specific gates with settled-cost evidence", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      LUMA_VIDEO_ENABLED: "true",
+      LUMA_VIDEO_ALLOW_REMOTE: "true",
+      LUMA_AGENTS_API_KEY: "test-luma-key",
+      LUMA_USD_PER_CREDIT: "0.003"
+    }
+  });
+  assert.ok(worker.listSupported().includes("luma:ray-3.2"));
+});
+
+test("Luma registration fails closed for partial enablement, missing credentials or missing billing rate", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: { ...env, LUMA_VIDEO_ENABLED: "true", LUMA_AGENTS_API_KEY: "test-luma-key", LUMA_USD_PER_CREDIT: "0.003" }
+  }), error => error.code === "LUMA_VIDEO_REMOTE_DISABLED");
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: { ...env, LUMA_VIDEO_ENABLED: "true", LUMA_VIDEO_ALLOW_REMOTE: "true", LUMA_USD_PER_CREDIT: "0.003" }
+  }), error => error.code === "LUMA_VIDEO_CONFIGURATION_MISSING");
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: { ...env, LUMA_VIDEO_ENABLED: "true", LUMA_VIDEO_ALLOW_REMOTE: "true", LUMA_AGENTS_API_KEY: "test-luma-key" }
+  }), error => error.code === "LUMA_BILLING_RATE_REQUIRED");
+});
+
 test("defaults to the exact FAL provider registration when no custom adapter factory is supplied", () => {
   let networkCalls = 0;
   const worker = createProviderAwareCloudVideoWorkerComposition({
