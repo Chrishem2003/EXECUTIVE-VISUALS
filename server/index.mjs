@@ -16,6 +16,7 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createFlashVsrAdapter } from "./flashvsr-adapter.mjs";
 import { loadUpscaleQualityEvidence } from "./upscale-quality-evidence.mjs";
 import { createBatchIdempotencyKeys, inspectBatchReplay } from "./batch-idempotency.mjs";
+import { normalizeMediaBatchRequest, inspectMediaBatchReplay } from "./media-batch.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -1597,6 +1598,58 @@ export function createAppServer() {
           audit(db,user.id,"workflow.updated","workflow",workflow.id,{revision:workflow.revision+1,graphHash},workflow.project_id);
           send(res,200,{ok:true,revision:workflow.revision+1,graphHash},cors);return;
         }
+      }
+      if(path==="/api/jobs/media-batch"&&req.method==="POST"){
+        const body=await readJson(req);
+        const jobType=String(body.jobType||"");
+        let normalized;
+        try{
+          normalized=normalizeMediaBatchRequest({
+            ownerId:user.id,projectId:body.projectId??null,jobType,
+            options:body.options??{},items:body.items,
+            getAsset:assetId=>getAccessibleAsset(db,user.id,assetId,true),
+            canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId)
+          });
+        }catch(error){
+          fail(res,Number(error.status)||400,String(error.code||"INVALID_MEDIA_BATCH"),String(error.message||"Media batch request is invalid."));return;
+        }
+        const idempotencyKey=String(req.headers["idempotency-key"]||body.idempotencyKey||"");
+        if(!idempotencyKey||idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Media batches require an idempotency key no longer than 180 characters.");return;}
+        const batchKeys=createBatchIdempotencyKeys(idempotencyKey,normalized.items.length);
+
+        const existing=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
+        const replay=inspectMediaBatchReplay(existing,normalized.items,normalized.projectId,jobType);
+        if(replay.exists){
+          if(!replay.matches){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different or incomplete media batch.");return;}
+          const jobs=existing.map(recordJob);
+          send(res,200,{batchId:replay.batchId,status:"replayed",total:jobs.length,jobs,idempotentReplay:true},cors);return;
+        }
+        const batchId=randomUUID(),jobs=[];
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          const concurrent=batchKeys.map(key=>db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key)||null);
+          const concurrentReplay=inspectMediaBatchReplay(concurrent,normalized.items,normalized.projectId,jobType);
+          if(concurrentReplay.exists){
+            if(!concurrentReplay.matches){db.exec("ROLLBACK");fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was concurrently used for a different or incomplete media batch.");return;}
+            db.exec("COMMIT");
+            const replayJobs=concurrent.map(recordJob);
+            send(res,200,{batchId:concurrentReplay.batchId,status:"replayed",total:replayJobs.length,jobs:replayJobs,idempotentReplay:true},cors);return;
+          }
+          for(const [index,item] of normalized.items.entries()){
+            const id=randomUUID();
+            const input={sourceAssetId:item.sourceAssetId,...item.options,batchOperation:jobType,batchId,batchIndex:index,batchTotal:normalized.items.length};
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
+              .run(id,user.id,normalized.projectId,jobType,json(input),batchKeys[index]);
+            addJobEvent(db,id,user.id,"job.queued",{jobType,batchId,batchIndex:index,batchTotal:normalized.items.length});
+            jobs.push(recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)));
+          }
+          audit(db,user.id,"media.batch_queued","batch",batchId,{total:jobs.length,jobType},normalized.projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          try{db.exec("ROLLBACK");}catch{}
+          throw error;
+        }
+        send(res,202,{batchId,status:"queued",total:jobs.length,jobs},cors);return;
       }
       if(path==="/api/jobs/batch"&&req.method==="POST"){
         const body=await readJson(req);
