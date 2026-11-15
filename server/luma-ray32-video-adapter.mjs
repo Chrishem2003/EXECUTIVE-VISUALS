@@ -88,7 +88,9 @@ export function createLumaRay32Adapter({
   apiKey = process.env.LUMA_AGENTS_API_KEY,
   fetchImpl = globalThis.fetch,
   baseUrl = BASE_URL,
-  timeoutMs = 30000
+  timeoutMs = 30000,
+  billingSettlementMaxWaitMs = 10 * 60 * 1000,
+  now = () => Date.now()
 } = {}) {
   if (typeof apiKey !== "string" || !apiKey.trim() || apiKey.length > 4096) {
     throw fail("LUMA_AGENTS_API_KEY is required on the server.", "LUMA_VIDEO_CONFIGURATION_MISSING");
@@ -100,6 +102,7 @@ export function createLumaRay32Adapter({
     throw fail("Luma base URL must be credential-free HTTPS.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail("Luma timeout must be between 1 and 120 seconds.");
+  if (!Number.isInteger(billingSettlementMaxWaitMs) || billingSettlementMaxWaitMs < 60000 || billingSettlementMaxWaitMs > 60 * 60 * 1000 || typeof now !== "function") throw fail("Luma billing-settlement wait configuration is invalid.");
 
   async function request(path, init = {}) {
     const controller = new AbortController();
@@ -142,7 +145,7 @@ export function createLumaRay32Adapter({
       }
       return { taskId: body.id, status: body.state || "queued" };
     },
-    async getStatus(taskId) {
+    async getStatus(taskId, context = {}) {
       if (typeof taskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId)) {
         throw fail("Luma generation ID is invalid.", "LUMA_VIDEO_TASK_ID_INVALID");
       }
@@ -153,6 +156,16 @@ export function createLumaRay32Adapter({
         return { taskId, status: "failed", failure: String(body.failure_reason || "Luma generation failed.").slice(0, 500), failureCode: String(body.failure_code || "LUMA_GENERATION_FAILED").slice(0, 100), usage: body.usage || null };
       }
       if (state === "completed") {
+        const usage = body.usage || null;
+        if (usage?.credits_charged === null || usage?.credits_charged === undefined) {
+          const createdAt = Date.parse(body.created_at || context.job?.created_at || "");
+          const ageMs = Number.isFinite(createdAt) ? Math.max(0, now() - createdAt) : billingSettlementMaxWaitMs;
+          if (ageMs < billingSettlementMaxWaitMs) {
+            const attempts = Number.isSafeInteger(context.job?.attempt_count) ? Math.max(0, context.job.attempt_count - 1) : 0;
+            const retryAfterSeconds = Math.min(300, 30 * (2 ** Math.min(4, attempts)));
+            return { taskId, status: "running", providerState: "completed_billing_pending", billingPending: true, retryAfterSeconds };
+          }
+        }
         const outputUrls = Array.isArray(body.output)
           ? body.output.filter(item => item?.type === "video" && typeof item.url === "string").map(item => item.url)
           : [];
@@ -164,7 +177,7 @@ export function createLumaRay32Adapter({
         })) {
           throw fail("Luma completed without a valid bounded HTTPS video output.", "LUMA_VIDEO_OUTPUT_INVALID");
         }
-        return { taskId, status: "succeeded", outputUrls, usage: body.usage || null, providerGenerationId: body.id };
+        return { taskId, status: "succeeded", outputUrls, usage, providerGenerationId: body.id };
       }
       return { taskId, status: state === "queued" ? "queued" : "running", providerState: typeof state === "string" ? state.slice(0, 80) : "unknown" };
     }
