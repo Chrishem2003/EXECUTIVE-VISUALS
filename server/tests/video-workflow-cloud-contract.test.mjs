@@ -406,3 +406,18 @@ test("direct Video Studio exposes governed Luma source edit and reframe controls
  assert.match(app,/sourceVideoAssetId\|\|/);
  assert.match(app,/MEDIA_RIGHTS_REQUIRED|rightsConfirmed===true/);
 });
+
+test("Luma source edit and reframe produce immutable operation-specific workflow requests",()=>{
+ const sourceVideoAssetId="123e4567-e89b-42d3-a456-426614174000";
+ const baseNode={kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",sourceVideoAssetId,rightsConfirmed:true}};
+ const edit=createVideoWorkflowCloudRequest({node:{...baseNode,config:{...baseNode.config,operation:"edit",editStrength:"reimagine_2"}},projectId:"project-1",requestId:"luma-direct-edit",values:{prompt:"Replace the environment while preserving subject motion"}});
+ assert.equal(edit.operation,"video_edit");
+ assert.equal(edit.input.sourceVideoAssetId,sourceVideoAssetId);
+ assert.equal(edit.input.editStrength,"reimagine_2");
+ assert.match(edit.requestHash,/^[a-f0-9]{64}$/);
+ const reframe=createVideoWorkflowCloudRequest({node:{...baseNode,config:{...baseNode.config,operation:"reframe",durationSeconds:8,resolution:"540p",aspectRatio:"9:16",sourcePosition:{x_norm:0.1,y_norm:0,w_norm:0.8,h_norm:1}}},projectId:"project-1",requestId:"luma-direct-reframe",values:{prompt:"Extend the composition vertically"}});
+ assert.equal(reframe.operation,"video_reframe");
+ assert.equal(reframe.input.sourceVideoAssetId,sourceVideoAssetId);
+ assert.equal(reframe.input.aspectRatio,"9:16");
+ assert.equal(reframe.input.sourcePosition.w_norm,0.8);
+});
