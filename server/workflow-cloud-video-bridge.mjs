@@ -81,7 +81,7 @@ export async function executeCloudVideoWorkflowNode({
 
  const initial=createVideoWorkflowCloudRequest({node,values,projectId,requestId:"workflow-"+createHash("sha256").update(String(run.id)+":"+String(node.id)).digest("hex")});
  const localIds=[...new Set([
-  initial.input.sourceVideoAssetId,initial.input.startFrameAssetId,
+  initial.input.sourceVideoAssetId,initial.input.startFrameAssetId,initial.input.endFrameAssetId,
   ...(initial.input.keyframeAssetIds||[]),
   ...(initial.input.referenceAssetIds||[]),...(initial.input.referenceImageAssetIds||[]),
   ...(initial.input.referenceVideoAssetIds||[]),...(initial.input.referenceAudioAssetIds||[])
