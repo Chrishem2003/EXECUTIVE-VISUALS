@@ -24,4 +24,5 @@ test("rejects malformed timing and non-array detector output without creating ma
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,sceneChanges:null}),[]);
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,timelineFps:0,sceneChanges:[3]}),[]);
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,sourceDurationSeconds:-1,sceneChanges:[3]}),[]);
+ assert.deepEqual(mapSceneChangesToTimelineFrames({...base,playbackSpeed:0,sceneChanges:[3]}),[]);
 });
