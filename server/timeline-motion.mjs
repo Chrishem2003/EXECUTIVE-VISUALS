@@ -5,7 +5,7 @@ export function normalizeTimelineMotion(points,durationSeconds){
  if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Motion clip duration must be positive and finite."),{code:"INVALID_MOTION_KEYFRAMES"});
  const sorted=points.map(point=>{
   if(!point||!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>durationSeconds)throw Object.assign(new Error("Motion keyframe time must stay inside its clip."),{code:"INVALID_MOTION_KEYFRAMES"});
-  const next={timeSeconds:Number(point.timeSeconds),interpolation:point.interpolation==="step"?"step":"linear"};let count=0;
+  const next={timeSeconds:Number(point.timeSeconds),interpolation:["step","ease-in","ease-out","ease-in-out"].includes(point.interpolation)?point.interpolation:"linear"};let count=0;
   for(const [property,[min,max]] of Object.entries(LIMITS)){if(point[property]===undefined)continue;if(!Number.isFinite(point[property]))throw Object.assign(new Error("Motion keyframe values must be finite."),{code:"INVALID_MOTION_KEYFRAMES"});next[property]=Math.max(min,Math.min(max,Number(point[property])));count++;}
   if(!count)throw Object.assign(new Error("Motion keyframe must define at least one animated property."),{code:"INVALID_MOTION_KEYFRAMES"});
   return next;
@@ -16,7 +16,7 @@ export function normalizeTimelineMotion(points,durationSeconds){
 export function evaluateTimelineMotion(points,timeSeconds,property,fallback,durationSeconds){
  const keys=normalizeTimelineMotion(points,durationSeconds).filter(point=>point[property]!==undefined),time=Math.max(0,Math.min(durationSeconds,Number.isFinite(timeSeconds)?timeSeconds:0));
  if(!keys.length)return fallback;let previousTime=0,previousValue=fallback;
- for(const point of keys){const value=point[property];if(time<point.timeSeconds){if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;const ratio=(time-previousTime)/(point.timeSeconds-previousTime);return previousValue+(value-previousValue)*Math.max(0,Math.min(1,ratio));}previousTime=point.timeSeconds;previousValue=value;}
+ for(const point of keys){const value=point[property];if(time<point.timeSeconds){if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;const raw=(time-previousTime)/(point.timeSeconds-previousTime),t=Math.max(0,Math.min(1,raw)),ratio=point.interpolation==="ease-in"?t*t*t:point.interpolation==="ease-out"?1-Math.pow(1-t,3):point.interpolation==="ease-in-out"?(t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2):t;return previousValue+(value-previousValue)*ratio;}previousTime=point.timeSeconds;previousValue=value;}
  return previousValue;
 }
 function number(value){return Number(value.toFixed(6)).toString();}
@@ -26,7 +26,7 @@ export function buildTimelineMotionExpression(points,property,fallback,durationS
  let expression=number(keys[keys.length-1][property]);
  for(let i=keys.length-1;i>=1;i--){
   const left=keys[i-1],right=keys[i],start=left.timeSeconds,end=right.timeSeconds,from=left[property],to=right[property];
-  const value=right.interpolation==="step"?number(from):number(from)+"+("+timeVariable+"-"+number(start)+")*("+number((to-from)/(end-start))+")";
+  const r="("+timeVariable+"-"+number(start)+")/"+number(end-start),eased=right.interpolation==="step"?"0":right.interpolation==="ease-in"?"pow("+r+"\\,3)":right.interpolation==="ease-out"?"1-pow(1-"+r+"\\,3)":right.interpolation==="ease-in-out"?"if(lt("+r+"\\,0.5)\\,4*pow("+r+"\\,3)\\,1-pow(-2*"+r+"+2\\,3)/2)":r;const value=right.interpolation==="step"?number(from):number(from)+"+("+number(to-from)+")*("+eased+")";
   expression="if(lt("+timeVariable+"\\,"+number(end)+")\\,"+value+"\\,"+expression+")";
  }
  const first=keys[0];
