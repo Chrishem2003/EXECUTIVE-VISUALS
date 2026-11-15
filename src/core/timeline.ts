@@ -358,8 +358,10 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(motionKeyframes!==undefined){try{if(track.kind!=="overlay")throw new Error("Transform keyframes are currently supported on image overlay clips.");normalizeMotionKeyframes(motionKeyframes,duration);}catch(error){issues.push({code:"invalid_motion_keyframes",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Motion keyframes are invalid."});}}
       const previousEnabled=enabledClips.filter(item=>seconds(item.timelineStart)<start).at(-1);
       const previousFadeFrames=Number(previousEnabled?.transitionToNext?.fadeFrames)||0;
-      const allowedAudioCrossfade=track.kind==="audio"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-(seconds(previousEnabled.timelineStart)+seconds(previousEnabled.duration)-previousFadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator)))<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
-      if(clip.enabled&&start+0.000001<end&&!allowedAudioCrossfade)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use a validated audio crossfade or another track."});
+      const expectedCrossfadeStart=seconds(previousEnabled?.timelineStart??clip.timelineStart)+seconds(previousEnabled?.duration??clip.duration)-previousFadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator);
+      const allowedAudioCrossfade=track.kind==="audio"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-expectedCrossfadeStart)<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
+      const allowedVideoCrossfade=track.kind==="video"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-expectedCrossfadeStart)<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
+      if(clip.enabled&&start+0.000001<end&&!allowedAudioCrossfade&&!allowedVideoCrossfade)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use a validated video/audio crossfade or another track."});
       end=Math.max(end,start+duration);
     }
   }
