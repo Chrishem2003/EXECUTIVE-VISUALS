@@ -26,8 +26,13 @@ begin
      has_table_privilege('authenticated',attempts_oid,'select') then
     raise exception 'Luma provider-file ledgers must not be readable by anon or authenticated roles';
   end if;
-  if not has_table_privilege('service_role',files_oid,'select,insert,update,delete') or
-     not has_table_privilege('service_role',attempts_oid,'select,insert,update') then
+  if not (has_table_privilege('service_role',files_oid,'select') and
+          has_table_privilege('service_role',files_oid,'insert') and
+          has_table_privilege('service_role',files_oid,'update') and
+          has_table_privilege('service_role',files_oid,'delete')) or
+     not (has_table_privilege('service_role',attempts_oid,'select') and
+          has_table_privilege('service_role',attempts_oid,'insert') and
+          has_table_privilege('service_role',attempts_oid,'update')) then
     raise exception 'Luma provider-file service role privileges are incomplete';
   end if;
 
