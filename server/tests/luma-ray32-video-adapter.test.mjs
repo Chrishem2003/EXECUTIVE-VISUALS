@@ -92,3 +92,36 @@ test("Luma adapter rejects malformed boolean controls, untrusted API origins and
   await assert.rejects(adapter.prepareInput({ prompt: "invalid control", hdr: "true" }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   await assert.rejects(adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"), error => error.code === "LUMA_VIDEO_RESPONSE_MISMATCH");
 });
+
+
+test("Luma completed jobs remain pollable until credits settle, with bounded exponential retry", async () => {
+  let now = Date.parse("2026-11-15T15:00:00.000Z");
+  let body = {
+    id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e",
+    state: "completed",
+    created_at: "2026-11-15T14:59:00.000Z",
+    output: [{ type: "video", url: "https://cdn.example.test/out.mp4?sig=temporary" }],
+    usage: { credits_charged: null }
+  };
+  const adapter = createLumaRay32Adapter({
+    apiKey: "test-secret",
+    now: () => now,
+    billingSettlementMaxWaitMs: 600000,
+    fetchImpl: async () => response(body)
+  });
+  const pending = await adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", { job: { attempt_count: 3 } });
+  assert.equal(pending.status, "running");
+  assert.equal(pending.providerState, "completed_billing_pending");
+  assert.equal(pending.billingPending, true);
+  assert.equal(pending.retryAfterSeconds, 120);
+  body = { ...body, usage: { credits_charged: 100 } };
+  const settled = await adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e");
+  assert.equal(settled.status, "succeeded");
+  assert.equal(settled.usage.credits_charged, 100);
+  assert.equal(settled.outputUrls.length, 1);
+  now += 11 * 60 * 1000;
+  body = { ...body, usage: { credits_charged: null } };
+  const expired = await adapter.getStatus("182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e");
+  assert.equal(expired.status, "succeeded");
+  assert.equal(expired.usage.credits_charged, null);
+});
