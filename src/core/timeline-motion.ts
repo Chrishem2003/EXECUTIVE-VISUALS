@@ -33,8 +33,8 @@ export function evaluateMotionProperty(points:readonly MotionKeyframe[]|undefine
   const value=point[property] as number;
   if(time<point.timeSeconds){
    if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;
-   const ratio=(time-previousTime)/(point.timeSeconds-previousTime);
-   return previousValue+(value-previousValue)*Math.max(0,Math.min(1,ratio));
+   const ratio=easeMotionRatio((time-previousTime)/(point.timeSeconds-previousTime),point.interpolation);
+   return previousValue+(value-previousValue)*ratio;
   }
   previousTime=point.timeSeconds;previousValue=value;
  }
