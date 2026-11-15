@@ -27,3 +27,12 @@ test("renderer rejects invalid or unsafe keyframe values",()=>{
  assert.throws(()=>buildTimelineMotionFilters({motionKeyframes:[{timeSeconds:0,x:1},{timeSeconds:3,x:2}]},2),/inside its clip/);
  assert.throws(()=>buildTimelineMotionFilters({motionKeyframes:[{timeSeconds:0,x:1},{timeSeconds:1,opacity:NaN}]},2),/finite/);
 });
+
+test("FFmpeg compiler emits supported easing expressions for motion curves",()=>{
+ const ease=[{timeSeconds:0,x:0},{timeSeconds:2,x:100,interpolation:"ease-in-out"}];
+ const expression=buildTimelineMotionExpression(ease,"x",0,2);
+ assert.match(expression,/pow\(/);
+ assert.match(expression,/0\.5/);
+ const step=[{timeSeconds:0,x:10},{timeSeconds:1,x:50,interpolation:"step"}];
+ assert.match(buildTimelineMotionExpression(step,"x",0,1),/10/);
+});
