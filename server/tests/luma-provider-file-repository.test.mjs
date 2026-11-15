@@ -17,7 +17,7 @@ function fixture(handler){
 }
 
 test("Luma repository creates an immutable identity-bound upload attempt",async()=>{
- const {repository,calls}=fixture((url,init)=>response([{id:attemptId,...identity,attempt_key:"b".repeat(64),state:"PREPARED",attempt_count:1}]));
+ const {repository,calls}=fixture((url,init)=>response([{id:attemptId,asset_id:assetId,owner_id:ownerId,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,attempt_key:"b".repeat(64),state:"PREPARED",attempt_count:1}]));
  const row=await repository.createAttempt({...identity,attemptKey:"b".repeat(64),filename:"source.mp4"});
  assert.equal(row.id,attemptId);
  assert.equal(calls[0].init.method,"POST");
@@ -31,14 +31,14 @@ test("Luma repository creates an immutable identity-bound upload attempt",async(
 test("Luma repository resolves idempotent insert conflicts and rejects identity substitution",async()=>{
  const {repository,calls}=fixture((url,init)=>{
   if(init.method==="POST")return response({message:"duplicate key"},409);
-  return response([{id:attemptId,...identity,attempt_key:"b".repeat(64),state:"PREPARED",attempt_count:1}]);
+  return response([{id:attemptId,asset_id:assetId,owner_id:ownerId,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,attempt_key:"b".repeat(64),state:"PREPARED",attempt_count:1}]);
  });
  const row=await repository.createAttempt({...identity,attemptKey:"b".repeat(64),filename:"source.mp4"});
  assert.equal(row.id,attemptId);
  assert.equal(calls.length,2);
  const bad=fixture((url,init)=>{
   if(init.method==="POST")return response({message:"duplicate key"},409);
-  return response([{id:attemptId,...identity,owner_id:"923e4567-e89b-42d3-a456-426614174000",attempt_key:"b".repeat(64),state:"PREPARED"}]);
+  return response([{id:attemptId,asset_id:assetId,owner_id:"923e4567-e89b-42d3-a456-426614174000",project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,attempt_key:"b".repeat(64),state:"PREPARED"}]);
  });
  await assert.rejects(bad.repository.createAttempt({...identity,attemptKey:"b".repeat(64),filename:"source.mp4"}),error=>error.code==="LUMA_FILE_ATTEMPT_CONFLICT");
 });
