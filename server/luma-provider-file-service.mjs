@@ -42,10 +42,10 @@ export function createLumaProviderFileService({
  async function readPrivateAsset({ownerId,projectId,assetId}){
   if(!UUID.test(ownerId||"")||!UUID.test(assetId||"")||(projectId!==null&&projectId!==undefined&&!UUID.test(projectId)))throw fail("Authenticated owner, project and asset identifiers are required.","LUMA_FILE_SCOPE_INVALID",400);
   const asset=await assets.get({ownerId,assetId});
-  if(!asset||asset.id!==assetId||asset.ownerId!==ownerId||(asset.projectId||null)!==(projectId||null))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
+  if(!asset||asset.id!==assetId||(asset.projectId||null)!==(projectId||null)||(!projectId&&asset.ownerId!==ownerId))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
   if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>maxBytes||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
   const signed=await assets.createSignedUrl({ownerId,assetId,expiresIn:300});
-  if(!signed||signed.asset?.id!==assetId||signed.asset.ownerId!==ownerId||(signed.asset.projectId||null)!==(asset.projectId||null)||typeof signed.url!=="string")throw fail("Private asset gateway did not return a matching owner/project-scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
+  if(!signed||signed.asset?.id!==assetId||signed.asset.ownerId!==asset.ownerId||(signed.asset.projectId||null)!==(asset.projectId||null)||typeof signed.url!=="string")throw fail("Private asset gateway did not return a matching owner/project-scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
   let url;try{url=new URL(signed.url);}catch{throw fail("Private asset gateway returned an invalid signed URL.","LUMA_FILE_SIGNED_URL_INVALID",502);}
   if(url.origin!==expectedOrigin||!url.pathname.startsWith(expectedPathPrefix)||url.username||url.password||url.hash)throw fail("Private asset signed URL does not match the configured private-storage origin.","LUMA_FILE_SIGNED_URL_INVALID",502);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
