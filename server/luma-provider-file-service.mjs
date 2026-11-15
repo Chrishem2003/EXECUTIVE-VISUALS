@@ -126,6 +126,7 @@ export function createLumaProviderFileService({
   if(!plain(input))throw fail("Luma generation input must be an object.","LUMA_FILE_INPUT_INVALID",400);
   const ownerId=context?.job?.owner_id,projectId=context?.job?.project_id||null;
   if(typeof ownerId!=="string"||!UUID.test(ownerId))throw fail("Luma source media requires an authenticated internal owner.","LUMA_FILE_SCOPE_INVALID",403);
+  if(Array.isArray(input.referenceAssetIds)&&input.referenceAssetIds.length>0)throw fail("Ray 3.2 does not accept a generic referenceAssetIds list; use startFrameAssetId, endFrameAssetId or keyframeAssetIds.","LUMA_FILE_REFERENCE_MODE_UNSUPPORTED",400);
   const resolved={...input};
   if(input.sourceVideoAssetId){
    const file=await prepareAsset({ownerId,projectId,assetId:input.sourceVideoAssetId,purpose:"input"});
