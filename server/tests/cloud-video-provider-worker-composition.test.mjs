@@ -108,7 +108,8 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
       FAL_BILLING_KEY: "billing-test-key",
       RUNWAY_VIDEO_MODELS: "gen4.5,aleph2,magnific_video_upscaler_creative,ruby",
       RUNWAY_API_KEY: "runway-test-key",
-      RUNWAY_VIDEO_ALLOW_REMOTE: "false"
+      RUNWAY_VIDEO_ENABLED: "true",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true"
     },
     resolveRunwayActualCost: async () => ({
       amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
