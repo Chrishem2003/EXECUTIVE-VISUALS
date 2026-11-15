@@ -24,6 +24,7 @@ import { retryTimelineSave } from "../core/timeline-save-retry";
 import { reflowStoryboardTimelinePlan, type StoryboardTimelinePlan } from "../core/storyboard-timeline";
 import { insertWorkflowCaptionAsset } from "../core/timeline.ts";
 import { mapSceneChangesToTimelineFrames } from "../core/scene-detection.ts";
+import { createTranscriptPaperEditTrack, parseTranscriptWebVtt } from "../core/transcript-paper-edit.ts";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -548,6 +549,7 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">CLOUD AUDIO MASTERING</div>'+(state.mode==="cloud"?'<form id="tl-audio-mastering" class="timeline-mastering-form"><label class="inline-check"><input name="enabled" type="checkbox" '+(state.timeline?.audioMastering?.enabled===true?'checked':'')+'> Enable loudness mastering</label><label class="inline-check"><input name="dualMono" type="checkbox" '+(state.timeline?.audioMastering?.dualMono===true?'checked':'')+'> Treat mono sources as dual-mono</label><label>Mastering profile</label><select name="profile"><option value="web-podcast" '+(state.timeline?.audioMastering?.profile!=="ebu-r128"&&state.timeline?.audioMastering?.profile!=="custom"?"selected":"")+ '>Web / Podcast (-16 LUFS)</option><option value="ebu-r128" '+(state.timeline?.audioMastering?.profile==="ebu-r128"?"selected":"")+ '>EBU R128 broadcast (-23 LUFS)</option><option value="custom" '+(state.timeline?.audioMastering?.profile==="custom"?"selected":"")+ '>Custom target</option></select><div class="form-grid"><div><label>Integrated loudness (LUFS)</label><input name="integratedLoudness" type="number" min="-70" max="-5" step="0.1" value="'+Number(state.timeline?.audioMastering?.integratedLoudness??-16)+'" '+(state.timeline?.audioMastering?.profile==="custom"?"":"disabled")+' aria-describedby="tl-mastering-profile-help"></div><div><label>Loudness range (LU)</label><input name="loudnessRange" type="number" min="1" max="50" step="0.1" value="'+Number(state.timeline?.audioMastering?.loudnessRange??11)+'"></div><div><label>True peak (dBTP)</label><input name="truePeak" type="number" min="-9" max="0" step="0.1" value="'+Number(state.timeline?.audioMastering?.truePeak??-1.5)+'"></div></div><button class="secondary" type="submit">Save mastering settings</button><small id="tl-mastering-profile-help" class="muted">Applied by cloud rendering only. Web / Podcast targets -16 LUFS; EBU R128 targets -23 LUFS and enforces a maximum -1 dBTP ceiling. The integrated loudness target is editable only for Custom. LRA and true peak remain editable for every profile. After encoding, the renderer measures actual LUFS, LRA and true peak and reports delivery QC in the cloud render status.</small></form>':'<p class="muted">Switch to a cloud project to configure EBU R128 mastering. Local rendering is unchanged.</p>')+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-detect-scenes"><div class="eyebrow" style="margin-top:18px">AI-ASSISTED SCENE DETECTION</div><label>Video clip to analyze</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><small>Runs FFmpeg scene-change detection on the selected source, then adds review markers at detected cuts. It never splits, trims or deletes footage automatically.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+'>⌁ Detect scene changes and add markers</button></form>'+
+ '<form id="tl-paper-edit" style="margin-top:18px"><div class="eyebrow">TRANSCRIPT PAPER EDIT</div><label>Source video clip</label><select name="clipId" required>'+(state.timeline?.tracks.filter(track=>track.kind==="video").flatMap(track=>track.clips.filter(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))).map(clip=>'<option value="'+esc(clip.id)+'">'+esc(clip.name)+'</option>')).join("")||"")+'</select><label>WebVTT transcript</label><textarea name="transcript" rows="7" required maxlength="2097152" placeholder="WEBVTT&#10;&#10;00:00:00.000 --> 00:00:03.000&#10;Keep this moment in the edit."></textarea><small>Keep only the dialogue cues you want. Build an editable video track at the end of the current sequence; source footage stays untouched. Constant-speed clips only.</small><button class="secondary wide" type="submit" '+(state.timeline?.tracks.some(track=>track.kind==="video"&&track.clips.some(clip=>state.assets.some(asset=>asset.id===clip.assetId&&asset.mediaType.startsWith("video/"))))?"":"disabled")+' >＋ Build paper edit from transcript</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
@@ -1114,6 +1116,25 @@ document.addEventListener("submit",event=>{
    }catch(error){state.message=error instanceof Error?error.message:"Scene analysis could not be queued.";}
    paint();
   })();
+  return;
+ }
+ if(form.id==="tl-paper-edit"){
+  event.preventDefault();
+  const data=new FormData(form),clipId=String(data.get("clipId")||""),transcript=String(data.get("transcript")||"");
+  const sourceTrack=state.timeline.tracks.find(track=>track.kind==="video"&&track.clips.some(clip=>clip.id===clipId));
+  const sourceClip=sourceTrack?.clips.find(clip=>clip.id===clipId);
+  const asset=sourceClip?state.assets.find(item=>item.id===sourceClip.assetId):null;
+  if(!sourceTrack||!sourceClip||!asset||!asset.mediaType.startsWith("video/")){state.message="Choose an accessible source video clip.";paint();return;}
+  try{
+   const cues=parseTranscriptWebVtt(transcript);
+   const next=createTranscriptPaperEditTrack(state.timeline,{
+    sourceTrackId:sourceTrack.id,sourceClipId:sourceClip.id,newTrackId:crypto.randomUUID(),
+    clipIdPrefix:crypto.randomUUID(),startFrame:Math.ceil(maxEnd()),cues
+   });
+   recordUndo();state.timeline=next;commitUndo("Build transcript paper edit");
+   state.message="Paper Edit created with "+cues.length+" editable video clips on a new track. The original source clip is unchanged.";
+   void persist().then(paint).catch(error=>{state.message=error instanceof Error?error.message:"Paper Edit save failed.";paint();});
+  }catch(error){state.message=error instanceof Error?error.message:"Paper Edit could not be built.";paint();}
   return;
  }
  if(form.id==="tl-insert-workflow-caption"){
