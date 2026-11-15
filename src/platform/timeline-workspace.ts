@@ -1684,8 +1684,10 @@ document.addEventListener("click",event=>{
     });
     recordUndo();clip.audioAutomation=next;commitUndo("Generate dialogue-aware music ducking");
     state.message="Generated "+next.filter(point=>point.gainDb!==undefined).length+" editable ducking gain keyframes. Saving…";paint();
-    await persist();
-    state.message="Music ducking saved. Adjust individual gain keyframes or undo the complete operation.";
+    void persist().then(()=>{state.message="Music ducking saved. Adjust individual gain keyframes or undo the complete operation.";paint();}).catch(error=>{
+     state.timeline=previous;state.timelineHistory=previousHistory;cancelPendingTimelineEdit();
+     state.message=error instanceof Error?error.message:"Audio ducking could not be saved.";paint();
+    });
    }catch(error){
     state.timeline=previous;state.timelineHistory=previousHistory;cancelPendingTimelineEdit();
     state.message=error instanceof Error?error.message:"Audio ducking could not be generated.";
