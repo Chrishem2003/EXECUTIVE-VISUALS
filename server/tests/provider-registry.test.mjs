@@ -191,7 +191,7 @@ test("upscale model readiness is reported independently and never inferred from 
 test("Luma Ray 3.2 is exposed only after credentials, contract pricing, schema and every remote gate are ready",()=>{
  const env={
   LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
-  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
   LUMA_AGENTS_API_KEY:"never-return-this",LUMA_USD_PER_CREDIT:"0.003",
   LUMA_PROVIDER_FILES_SCHEMA_READY:"true",SUPABASE_URL:"https://project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY:"server-only",CLOUD_VIDEO_OUTPUT_HOSTS:"media.example.com"
@@ -226,6 +226,7 @@ test("Luma Ray 3.2 readiness requires the actual worker gate, private schema, pr
  assert.deepEqual(luma.modelCapabilities.durationsSeconds,[5,10]);
  assert.deepEqual(luma.modelCapabilities.operations,["generate","edit","reframe","extend"]);
  assert.equal(JSON.stringify(luma).includes("never-return-this"),false);
+ assert.equal(getProviderCatalog({...env,CLOUD_WORKER_ENABLED:"false"}).providers.find(item=>item.id==="video-luma").status,"remote_opt_in_required");
  assert.equal(getProviderCatalog({...env,CLOUD_VIDEO_WORKER_ENABLED:"false"}).providers.find(item=>item.id==="video-luma").status,"remote_opt_in_required");
  assert.equal(getProviderCatalog({...env,LUMA_PROVIDER_FILES_SCHEMA_READY:"false"}).providers.find(item=>item.id==="video-luma").status,"needs_configuration");
  assert.equal(getProviderCatalog({...env,VIDEO_GATEWAY_ALLOW_REMOTE:"false"}).providers.find(item=>item.id==="video-luma").status,"remote_opt_in_required");
