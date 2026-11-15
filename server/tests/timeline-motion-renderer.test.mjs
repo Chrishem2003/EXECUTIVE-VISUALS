@@ -49,6 +49,16 @@ test("FFmpeg compiler emits supported easing expressions for motion curves",()=>
  assert.match(buildTimelineMotionExpression(step,"x",0,1),/10/);
 });
 
+
+test("FFmpeg motion expressions support loop and ping-pong playback modes",()=>{
+ const keys=[{timeSeconds:0,x:0},{timeSeconds:1,x:100}];
+ const loop=buildTimelineMotionExpression(keys,"x",0,2,"t","loop"),pingPong=buildTimelineMotionExpression(keys,"x",0,2,"t","ping-pong");
+ assert.match(loop,/mod\(/);
+ assert.match(pingPong,/mod\(/);
+ assert.match(pingPong,/abs\(/);
+ assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"loop"),25);
+ assert.equal(evaluateTimelineMotion(keys,1.25,"x",0,2,"ping-pong"),75);
+});
 test("renderer interpolates from the clip's base transform before the first keyframe",()=>{
  const keys=[{timeSeconds:1,x:100},{timeSeconds:2,x:200}];
  const expression=buildTimelineMotionExpression(keys,"x",20,2);
