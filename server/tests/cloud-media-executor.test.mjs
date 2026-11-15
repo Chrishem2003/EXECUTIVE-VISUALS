@@ -47,7 +47,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   await writeFile(source, "fixture");
   const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360}],"format":{"duration":"1.25"}}'`);
   process.env.FFPROBE_PATH = ffprobe;
-  const ffmpeg = await executable(directory, "ffmpeg", String.raw`if [ "$1" = "-version" ]; then exit 0; fi\nprintf "%s\\n" "[Parsed_showinfo] n: 1 pts_time: 0.500" "[Parsed_showinfo] n: 2 pts_time: 1.000" "[freezedetect] freeze_start: 0.500" "[freezedetect] freeze_end: 1.000 | freeze_duration: 0.500" >&2`);
+  const ffmpeg = await executable(directory, "ffmpeg", String.raw`if [ "$1" = "-version" ]; then exit 0; fi\nprintf "%s\n" "[Parsed_showinfo] n: 1 pts_time: 0.500" "[Parsed_showinfo] n: 2 pts_time: 1.000" "[freezedetect] freeze_start: 0.500" "[freezedetect] freeze_end: 1.000 | freeze_duration: 0.500" >&2`);
   process.env.FFMPEG_PATH = ffmpeg;
   let materializedArgs, cleaned = false;
   try {
