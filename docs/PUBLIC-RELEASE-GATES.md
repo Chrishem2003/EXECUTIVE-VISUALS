@@ -2,13 +2,15 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Last reviewed:** 15 November 2026.  
-**Current main:** `d55c6e3b854a84fea8b793f41f6635746a161f3e` (PR #602: Google Auth runtime dependency and lockfile).  
-**Current production deployment:** `d55c6e3b854a84fea8b793f41f6635746a161f3e` (live on Render; GCS feature flags remain off).
+**Current main:** `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f` (PR #604: canonical R2 asset bucket contract guard).  
+**Current production deployment:** `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f` (Render deployment `dep-dbsld3mq1p3s73euq2o0` is live; R2/GCS feature flags remain off).
 
 ## Mainline checkpoint — 15 November 2026
 
-- PR #602 is merged as commit `d55c6e3b854a84fea8b793f41f6635746a161f3e`. It declares `google-auth-library@11.3.3` in `package.json` and the lockfile. The merged mainline Quality, Release Integration, Billing self-service, Google Drive recovery, Financial intelligence and Remediation workflows all passed.
-- Render deployment `dep-dbsl5cs9v7es73c1rpmg` is live on that exact commit. This confirms the runtime dependency is present in the deployed build; it does not activate GCS or certify durable customer storage.
+- PR #602 remains merged in history and supplies `google-auth-library@11.3.3` for the fail-closed GCS Workload Identity Federation bootstrap.
+- PR #604 is merged as commit `d4c4e1d75d3b8653ef90c58c1e09cc394bfff53f`. It rejects custom R2 bucket names until asset metadata, publication and cleanup support configurable buckets; tests cover canonical, empty and custom bucket values. It does not provision or activate R2.
+- Exact-main Quality checks passed (24/24 jobs); Release Integration, Google Drive recovery, asset-publication PostgreSQL and cloud-video PostgreSQL checks passed. Render deployment `dep-dbsld3mq1p3s73euq2o0` is live on the current main commit. This does not certify durable customer storage.
+- Current main contains the generic Runway Model Router quote and approval path, including immutable non-billable quote records and atomic owner-approved budget reservation/job enqueue. Historical PR #67 was closed as superseded because its separate approval ledger duplicates this newer workflow and its branch is substantially diverged.
 - The Google Omni worker composition, owner/project-scoped interaction repository, private output ingestion, worker dependency checks and dedicated tests are already present on current main. The old draft PR #72 is based on a heavily diverged branch and must not be merged as a substitute for the current composition.
 - The remaining production blockers are unchanged: isolated Executive Visuals identity/database, durable private media storage, live storage acceptance, independently operated durable workers, provider credentials and billing controls, subscription sandbox acceptance, and backup/restore evidence.
 - The application entry bundle remains oversized (the last recorded build was 784.39 kB JavaScript). Treat code splitting as a separate performance milestone, not a release gate substitute.
