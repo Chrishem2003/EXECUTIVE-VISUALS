@@ -268,7 +268,7 @@ test("Luma file deletion accepts the documented empty 204 response and upload ca
 test("Luma Ray 3.2 reframe supports validated normalized source crop positioning and 360p drafts", async () => {
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
   const payload = await adapter.prepareInput({
-    operation: "reframe", prompt: "Recompose for vertical social video",
+    operation: "reframe", prompt: "Recompose for vertical social video", durationSeconds: 3,
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
     aspectRatio: "9:16", resolution: "360p",
     sourcePosition: { x_norm: 0.1, y_norm: -0.2, w_norm: 0.8, h_norm: 1.2 }
@@ -282,6 +282,11 @@ test("Luma Ray 3.2 reframe supports validated normalized source crop positioning
     sourcePosition: { x_norm: 0.1, y_norm: -0.2, w_norm: 0.8, h_norm: 1.2 }
   });
   assert.equal(draft540.video.resolution, "540p");
+  await assert.rejects(adapter.prepareInput({
+    operation: "reframe", prompt: "Source exceeds the reframe limit", durationSeconds: 11,
+    sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
+    aspectRatio: "9:16", resolution: "720p"
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
   await assert.rejects(adapter.prepareInput({
     operation: "reframe", prompt: "Invalid crop",
     sourceVideo: { generation_id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e" },
