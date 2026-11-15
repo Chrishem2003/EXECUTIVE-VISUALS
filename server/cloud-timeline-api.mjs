@@ -301,7 +301,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       }
      }
      const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
-     const estimate=await workflowRouterAdapter.preflight(prepared);
+     const estimate=await quoteAdapter.preflight(prepared);
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
         !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
         !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
@@ -328,7 +328,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       routedProvider:estimate.provider,routedModel:estimate.model,
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
       currency:estimate.currency,configId:estimate.configId,
-      pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),billable:false,
+      pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:cloudVideoWorkerLaunchConfigured(env),
       expiresAt
      }});
@@ -378,7 +378,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
       }
      }
-     const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
+     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId};
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
