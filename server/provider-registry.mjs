@@ -28,6 +28,34 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
  video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
  video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
+ const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
+ const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+ const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";
+ const luma=gatewayState({
+  enabled:env.LUMA_VIDEO_ENABLED==="true",
+  configured:Boolean(env.LUMA_AGENTS_API_KEY&&lumaRateValid&&lumaSchemaReady),
+  url:"https://agents.lumalabs.ai",
+  allowRemote:env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true",
+  model:"ray-3.2",provider:"luma",id:"video-luma",
+  capabilities:["video.generate","video.image_to_video","video.video_to_video","video.reframe","video.extend"],
+  reasonIfMissing:"Set LUMA_AGENTS_API_KEY and LUMA_USD_PER_CREDIT, apply the Luma provider-file migration and set LUMA_PROVIDER_FILES_SCHEMA_READY=true."
+ });
+ if(!lumaSchemaReady&&env.LUMA_VIDEO_ENABLED==="true"){
+  luma.status="needs_configuration";luma.configured=false;luma.reason="Apply the Luma private provider-file migration to the target database before enabling Luma source-media workflows.";
+ }
+ luma.modelCapabilities={
+  minDurationSeconds:5,maxDurationSeconds:10,
+  aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
+  resolutions:["540p","720p","1080p"],referenceImages:true,maxReferenceImages:1,
+  audioModes:["none"],operations:["video","video_edit","video_extend","video_reframe"]
+ };
+ luma.availableModels=[{
+  id:"ray-3.2",label:"Luma Ray 3.2",readiness:luma.status==="ready"?"ready":luma.status,
+  available:luma.status==="ready",executionVerified:luma.status==="ready",
+  minDurationSeconds:5,maxDurationSeconds:10,
+  aspectRatios:[...luma.modelCapabilities.aspectRatios],resolutions:[...luma.modelCapabilities.resolutions],
+  referenceImages:true,maxReferenceImages:1,audioModes:["none"],reason:luma.reason
+ }];
  const voice=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&env.VOICE_GATEWAY_MODEL),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_GATEWAY_MODEL,provider:"voice",capabilities:["voice.generate"]});
  const transcription=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true"&&env.VOICE_TRANSCRIPTION_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&(env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL)),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL,provider:"transcription",capabilities:["voice.transcribe"]});
  const localMedia={id:"local-media",provider:"local",enabled:Boolean(media.ffmpeg&&media.ffprobe),configured:Boolean(media.ffmpeg&&media.ffprobe),remote:false,model:"FFmpeg / FFprobe",status:media.ffmpeg&&media.ffprobe?"ready":"unavailable",reason:media.ffmpeg&&media.ffprobe?"Local media tools are available.":"Install FFmpeg and FFprobe on the worker host.",capabilities:["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]};
@@ -47,7 +75,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const aiUpscale={id:"ai-upscale",provider:"local",enabled:Boolean(ai.executionEnabled),configured:Boolean(ai.available),remote:false,model:selectedModel,executionVerified,qualityVerified,availableModels,status:!ai.available?"unavailable":!ai.executionEnabled?"disabled":!executionVerified?"unverified":qualityVerified?"ready":"unverified",reason:!ai.available?"Configure the engine executable and allowlisted model files.":!ai.executionEnabled?"AI upscaling is not enabled.":!executionVerified?"Run the selected model-specific execution self-test on this worker.":qualityVerified?"Independent model-specific fixture quality evidence is recorded.":"Execution checks passed; model-specific neural quality remains unverified.",capabilities:ai.available&&ai.executionEnabled&&executionVerified&&qualityVerified?["media.ai-upscale"]:[]};
  const pricingCatalog=parseVideoPricingCatalog(env.VIDEO_MODEL_PRICING_JSON||"");
  video.pricing={configured:pricingCatalog.configured,models:pricingCatalog.records.map(record=>({provider:record.provider,model:record.model,currency:record.currency,sourceUrl:record.sourceUrl,observedAt:record.observedAt,expiresAt:record.expiresAt})),rejectedCount:pricingCatalog.rejectedCount};
- const providers=[text,image,video,voice,transcription,localMedia,aiUpscale];
+ const providers=[text,image,video,luma,voice,transcription,localMedia,aiUpscale];
  const counts=providers.reduce((out,item)=>{out[item.status]=(out[item.status]||0)+1;return out;},{});
  return {version:1,providers,summary:{total:providers.length,ready:providers.filter(x=>x.status==="ready").length,disabled:counts.disabled||0,unverified:counts.unverified||0,needsConfiguration:counts.needs_configuration||0,remoteOptInRequired:counts.remote_opt_in_required||0,unavailable:counts.unavailable||0},policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:pricingCatalog.configured,requestsSubmitted:false}};
 }
