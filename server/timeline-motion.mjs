@@ -37,7 +37,7 @@ export function buildTimelineMotionExpression(points,property,fallback,durationS
 export function buildTimelineMotionFilters(metadata={},durationSeconds){
  const points=normalizeTimelineMotion(metadata.motionKeyframes,durationSeconds);
  const base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||16),height:Math.max(16,Number(metadata.height)||16),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
- if(!points.length&&base.rotation===0)return null;
+ if(!points.length&&base.rotation===0&&base.x===0&&base.y===0&&base.opacity===1&&metadata.width===undefined&&metadata.height===undefined)return null;
  const animated=Object.fromEntries(Object.keys(LIMITS).map(property=>[property,points.some(point=>point[property]!==undefined)]));
  const expression=(property,variable="t")=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,variable);
  const scale=animated.width||animated.height?"scale=w='"+expression("width")+"':h='"+expression("height")+"':eval=frame": "scale="+Math.round(base.width)+":"+Math.round(base.height);
