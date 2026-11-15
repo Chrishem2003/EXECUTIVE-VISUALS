@@ -25,7 +25,8 @@ test("Luma workflow quote validates private first-frame input and returns a non-
  assert.equal(quote.currency,"USD");
  assert.equal(quote.billable,false);
  assert.equal(quote.configId,"luma-ray32");
- assert.match(quote.pricingSource,/lumalabs\.ai/);
+ assert.equal(quote.pricingSource,"luma_ray32_published_credits_contract_rate");
+ assert.match(quote.pricingUrl,/lumalabs\.ai/);
 });
 
 test("Luma workflow quote rejects missing rates and invalid prepared requests",async()=>{
