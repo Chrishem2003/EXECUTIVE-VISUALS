@@ -127,3 +127,209 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
 });
+
+
+test("approved cloud transformation submits to the durable Runway queue with server-probed duration and budget reservation", async () => {
+ const planId="823e4567-e89b-42d3-a456-426614174000";
+ const approvalId="923e4567-e89b-42d3-a456-426614174000";
+ const videoJobId="a23e4567-e89b-42d3-a456-426614174000";
+ const row={
+  id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",
+  status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",
+  estimated_cost:{approvalId,estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},
+  input:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace only the car with a red electric SUV while preserving camera movement.",durationSeconds:5,preservation:["camera_motion"]}
+ };
+ const calls=[];
+ const fetchImpl=async(url,options)=>{
+  calls.push({url,options});
+  if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:videoJobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174000"}]);}};
+  if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+  if(url.includes("/jobs?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"submitted",output:{videoJobId,videoJobStatus:"queued"}}]);}};
+  return{ok:true,status:201,async text(){return"";}};
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
+   return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
+  }}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner,body:{}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.id,videoJobId);
+ const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
+ const args=JSON.parse(rpc.options.body);
+ assert.equal(args.p_owner_id,owner);
+ assert.equal(args.p_project_id,project);
+ assert.equal(args.p_model,"aleph2");
+ assert.equal(args.p_provider,"runway");
+ assert.equal(args.p_budget_approval_id,approvalId);
+ assert.equal(args.p_reserved_amount,5);
+ assert.equal(args.p_input.durationSeconds,11);
+ assert.equal(args.p_input.operation,"video-to-video");
+ assert.equal(args.p_input.sourceVideoAssetId,row.input.sourceAssetId);
+ assert.equal(args.p_input.transformationOperation,"vehicle_replace");
+ assert.match(args.p_request_hash,/^[a-f0-9]{64}$/);
+ assert.ok(calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
+});
+
+test("video-to-audio transformation requires approval and queues the Mirelo model with verified source duration and credits", async () => {
+ const planId="b23e4567-e89b-42d3-a456-426614174001";
+ const sourceAssetId="b23e4567-e89b-42d3-a456-426614174002";
+ const jobId="b23e4567-e89b-42d3-a456-426614174003";
+ let plan=null;
+ const calls=[];
+ const metadata={ownerId:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,options});
+  if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:jobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174003"}]);}};
+  if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify(plan?[plan]:[]);}};
+  if(url.includes("/jobs?")&&options.method==="POST"){
+   const body=JSON.parse(options.body);plan={...body,created_at:"2026-11-07T09:00:00.000Z",updated_at:"2026-11-07T09:00:00.000Z"};
+   return{ok:true,status:201,async text(){return JSON.stringify([plan]);}};
+  }
+  if(url.includes("/jobs?")&&options.method==="PATCH"){
+   plan={...plan,...JSON.parse(options.body)};
+   return{ok:true,status:200,async text(){return JSON.stringify([plan]);}};
+  }
+  return{ok:true,status:201,async text(){return"[]";}};
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
+  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,ownerId:owner,projectId:project,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
+  authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:sourceAssetId,operation:"video-to-audio"});
+   return metadata;
+  }}
+ });
+ const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,idempotencyKey:"sound-design-plan-1",body:{
+  projectId:project,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
+  durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
+ }});
+ assert.equal(draft.status,201);
+ const createdPlanId=draft.body.plan.id;
+ const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",ownerId:owner,body:{approvedBudgetMicros:1000000,currency:"USD"}});
+ assert.equal(approved.status,200);
+ assert.equal(approved.body.plan.approval.adapterId,"runway:mirelo_sfx_2_0");
+ assert.equal(approved.body.plan.approval.capability,"video-to-audio");
+ const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",ownerId:owner,body:{}});
+ assert.equal(submitted.status,202);
+ const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
+ const queued=JSON.parse(rpc.options.body);
+ assert.equal(queued.p_provider,"runway");
+ assert.equal(queued.p_model,"mirelo_sfx_2_0");
+ assert.equal(queued.p_input.operation,"video-to-audio");
+ assert.equal(queued.p_input.durationSeconds,13);
+ assert.equal(queued.p_input.audioFormat,"wav");
+ assert.equal(queued.p_input.numVariants,2);
+ assert.equal(queued.p_input.preserveSpeech,true);
+ assert.equal(queued.p_reserved_amount,1);
+});
+
+test("cloud transformation submission refuses unapproved or non-Aleph adapters before queueing", async () => {
+ const planId="823e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",approvedBudgetMicros:5000000,currency:"USD",adapterId:"other:provider",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",prompt:"Edit this clip",operation:"vehicle_replace"}};
+ let queued=false;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>({ok:true,status:200,async text(){return url.includes("/jobs?")&&options.method==="GET"?JSON.stringify([row]):"[]";}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(){throw new Error("must not resolve source");}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
+ assert.equal(queued,false);
+});
+
+
+test("cloud transformation approval derives its estimate from probed source media, not client claims", async () => {
+ const planId="d23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",approved_at:null,input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle"}};
+ const calls=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.includes("/jobs?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"awaiting_approval",approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:JSON.parse(options.body).estimated_cost}]);}};
+   return{ok:true,status:201,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
+   return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
+  }}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/approve",ownerId:owner,body:{estimatedCostMicros:1,approvedBudgetMicros:5000000,currency:"USD",adapterId:"attacker:model",capability:"unverified"}});
+ assert.equal(result.status,200);
+ const patch=calls.find(call=>call.options.method==="PATCH");
+ const approval=JSON.parse(patch.options.body).estimated_cost;
+ assert.ok(approval.estimatedCostMicros>1);
+ assert.equal(approval.approvedBudgetMicros,5000000);
+ assert.equal(approval.adapterId,"runway:aleph2");
+ assert.equal(approval.capability,"video-to-video");
+ assert.equal(approval.sourceMetadata.durationSeconds,10.2);
+});
+
+test("cloud transformation approval rejects a budget below the server-derived provider estimate", async () => {
+ const planId="d23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",approved_at:null,input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle"}};
+ let patched=false;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.includes("/jobs?")&&options.method==="PATCH"){patched=true;return{ok:true,status:200,async text(){return"[]";}};}
+   return{ok:true,status:201,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/approve",ownerId:owner,body:{approvedBudgetMicros:1000,currency:"USD"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
+ assert.equal(patched,false);
+});
+
+
+test("cloud transformation submit remains blocked when any release gate is unverified", async () => {
+ const planId="e23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",prompt:"Replace vehicle",operation:"vehicle_replace"}};
+ let queueCalls=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.endsWith("/rpc/enqueue_video_generation_job"))queueCalls++;
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
+ assert.equal(result.body.error.missing.length,8);
+ assert.equal(queueCalls,0);
+});
+
+
+test("cloud transformation mapper does not turn submitted jobs back into approved drafts", async () => {
+ const row={id:"f23e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"submitted",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle",durationSeconds:11,referenceAssetIds:[],preservation:[]}};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return JSON.stringify([row]);}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+ });
+ const result=await api.handle({method:"GET",path:"/api/cloud/transformations",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.plans[0].status,"submitted");
+ assert.equal(result.body.plans[0].approval.adapterId,"runway:aleph2");
+});
