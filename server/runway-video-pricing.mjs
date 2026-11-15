@@ -22,6 +22,46 @@ function audio(value) {
 }
 
 /**
+ * Mirelo SFX 2.0 video-to-audio pricing: 2 Runway credits per second per
+ * variant, rounded up. The endpoint bills generated audio, not video output.
+ * Pricing source: https://dev.runway.com/endpoints/sound_effect?modelId=mirelo_sfx_2_0
+ */
+export function estimateRunwayVideoAudioCredits({
+  durationSeconds, numVariants = 1, format = "mp3", pricingDate
+} = {}) {
+  const duration = finiteDuration(durationSeconds, "durationSeconds", { max: 600 });
+  if (!Number.isSafeInteger(numVariants) || numVariants < 1 || numVariants > 4) {
+    throw fail("numVariants must be an integer from 1 to 4.", "RUNWAY_PRICE_INVALID_INPUT");
+  }
+  if (!["mp3", "wav", "flac"].includes(format)) {
+    throw fail("Audio format must be mp3, wav or flac.", "RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  }
+  const dateShape = typeof pricingDate === "string" && /^20[0-9]{2}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(pricingDate);
+  const parsedDate = dateShape ? new Date(pricingDate + "T00:00:00Z") : null;
+  if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== pricingDate) {
+    throw fail("pricingDate must be a valid explicit YYYY-MM-DD value.", "RUNWAY_PRICE_INPUT_REQUIRED");
+  }
+  const billableSeconds = Math.ceil(duration);
+  const credits = billableSeconds * 2 * numVariants;
+  return Object.freeze({
+    model: "mirelo_sfx_2_0",
+    durationSeconds: duration,
+    billableSeconds,
+    numVariants,
+    format,
+    estimatedCredits: credits,
+    currency: "USD",
+    estimatedUsd: credits * 0.01,
+    formula: billableSeconds + "s × 2 credits/s × " + numVariants + " variant(s)",
+    pricingSource: "https://dev.runway.com/endpoints/sound_effect?modelId=mirelo_sfx_2_0",
+    pricingDate,
+    evidenceType: "provider_published_list_price",
+    billable: false,
+    settlementEligible: false
+  });
+}
+
+/**
  * Calculate a conservative, versioned Runway Dev credit estimate from the
  * published pricing table. This is not a quote, invoice or settlement receipt.
  * pricingDate is explicit so jobs retain the exact pricing snapshot used.

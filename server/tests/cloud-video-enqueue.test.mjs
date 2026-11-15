@@ -140,7 +140,7 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.59 })), error =>
     error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 0.6
   );
-  await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /MP4 output only/);
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /supports MP4 outputs/);
   await assert.rejects(() => client.enqueue(args({ input: { ...input, durationSeconds: 11 } })), /pricing bounds/);
   await assert.rejects(() => client.enqueue(args({ currency: "EUR" })), /must match the verified provider price/);
   await assert.rejects(() => client.enqueue(args({
@@ -282,4 +282,170 @@ test("Google Omni enqueue normalizes provider-default resolution to the verified
   await client.enqueue(googleArgs({input}));
   assert.equal(captured.p_reserved_amount,2.586464);
   assert.equal(captured.p_input.resolution,undefined);
+});
+
+
+test("Aleph2 enqueue requires owner-scoped probed source metadata and reserves from the verified duration", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "823e4567-e89b-42d3-a456-426614174000";
+  const input = {
+    projectId, provider: "runway", model: "aleph2", requestHash,
+    operation: "video-to-video", sourceVideoAssetId,
+    durationSeconds: 12, prompt: "Preserve the subject; replace the background.",
+    outputFormat: "mp4"
+  };
+  const noResolver = createCloudVideoEnqueue({
+    ...base, fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(() => noResolver.enqueue(args({
+    model: "aleph2", input, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_UNAVAILABLE");
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId, operation: "video-to-video" });
+      return {
+        ownerId, projectId, assetId: sourceVideoAssetId,
+        mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
+      };
+    },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "aleph2", input, reservedAmount: 4
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+});
+
+test("Magnific upscale budget uses verified source frames, not caller-supplied lower values", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "923e4567-e89b-42d3-a456-426614174000";
+  const metadata = {
+    ownerId, projectId, assetId: sourceVideoAssetId,
+    mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => metadata,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const input = {
+    projectId, provider: "runway", model: "magnific_video_upscaler_creative",
+    requestHash, operation: "video-upscale", sourceVideoAssetId,
+    durationSeconds: 12, outputFrames: 336, resolution: "2k", outputFormat: "mp4"
+  };
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative", input, reservedAmount: 3.0
+  })), error => error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 3.03);
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative",
+    input: { ...input, outputFrames: 1 }, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative",
+    input: { ...input, durationSeconds: 11 }, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+  assert.equal(calls, 0);
+});
+
+
+test("Ruby HDR enqueue requires verified SDR dimensions and reserves the published per-second cost", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "a23e4567-e89b-42d3-a456-426614174000";
+  const input = {
+    projectId, provider: "runway", model: "ruby", requestHash,
+    operation: "video-to-hdr", sourceVideoAssetId,
+    durationSeconds: 15, outputFormat: "hdr10"
+  };
+  const sourceMetadata = {
+    ownerId, projectId, assetId: sourceVideoAssetId,
+    mediaType: "video/mp4", durationSeconds: 14.2, frameCount: 426,
+    sourceDynamicRange: "sdr", sourceWidth: 1920, sourceHeight: 1080
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId, operation: "video-to-hdr" });
+      return sourceMetadata;
+    },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "ruby", input, reservedAmount: 3.5
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+  const nonSdr = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => ({ ...sourceMetadata, sourceDynamicRange: "hdr" }),
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(() => nonSdr.enqueue(args({
+    model: "ruby", input, reservedAmount: 3.5
+  })), error => error.code === "VIDEO_SOURCE_METADATA_INVALID");
+  assert.equal(calls, 1);
+});
+
+
+test("Mirelo video-to-audio enqueue binds source metadata and reserves per-variant audio cost", async () => {
+  const calls = [];
+  const source = {
+    ownerId, projectId, assetId: "323e4567-e89b-42d3-a456-426614174001",
+    mediaType: "video/mp4", durationSeconds: 12.2, frameCount: 366,
+    sourceWidth: 1920, sourceHeight: 1080, sourceDynamicRange: "sdr"
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async args => {
+      assert.equal(args.ownerId, ownerId);
+      assert.equal(args.projectId, projectId);
+      assert.equal(args.assetId, source.assetId);
+      assert.equal(args.operation, "video-to-audio");
+      return source;
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), body: JSON.parse(options.body) });
+      return response([resultRow]);
+    }
+  });
+  const audioInput = {
+    ...input, model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    sourceVideoAssetId: source.assetId, durationSeconds: 13,
+    prompt: "Rain and distant traffic", numVariants: 2, audioFormat: "wav",
+    preserveSpeech: true
+  };
+  const estimate = estimateVideoGenerationCost({
+    provider: "runway", model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    durationSeconds: 13, numVariants: 2, audioFormat: "wav"
+  });
+  assert.equal(estimate.amount, 0.52);
+  const result = await client.enqueue(args({
+    model: "mirelo_sfx_2_0", input: audioInput,
+    reservedAmount: estimate.amount
+  }));
+  assert.equal(result.jobId, resultRow.job_id);
+  assert.equal(calls[0].body.p_model, "mirelo_sfx_2_0");
+  assert.equal(calls[0].body.p_input.durationSeconds, 13);
+  assert.equal(calls[0].body.p_reserved_amount, 0.52);
+});
+
+test("Mirelo enqueue rejects a duration that differs from the probed source video", async () => {
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => ({
+      ownerId, projectId, assetId: "323e4567-e89b-42d3-a456-426614174001",
+      mediaType: "video/mp4", durationSeconds: 12.2, frameCount: 366,
+      sourceWidth: 1920, sourceHeight: 1080, sourceDynamicRange: "sdr"
+    }),
+    fetchImpl: async () => { throw new Error("must not enqueue"); }
+  });
+  await assert.rejects(() => client.enqueue(args({
+    model: "mirelo_sfx_2_0",
+    input: {
+      ...input, model: "mirelo_sfx_2_0", operation: "video-to-audio",
+      sourceVideoAssetId: "323e4567-e89b-42d3-a456-426614174001",
+      durationSeconds: 12, numVariants: 1, audioFormat: "mp3"
+    }
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
 });
