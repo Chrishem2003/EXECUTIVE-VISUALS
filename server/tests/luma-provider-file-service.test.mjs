@@ -120,3 +120,21 @@ test("project collaborators can prepare an asset owned by another project member
  assert.equal(result.fileId,fileId);
  assert.equal(f.state.file.ownerId,ownerId);
 });
+
+test("private source downloads reject signed URLs outside the configured storage origin",async()=>{
+ const f=fixture();
+ f.assets.createSignedUrl=async()=>({asset:{id:assetId,ownerId,projectId},url:"https://attacker.example/storage/v1/object/sign/private.mp4?token=x"});
+ await assert.rejects(f.service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="LUMA_FILE_SIGNED_URL_INVALID");
+ assert.equal(f.calls.create,0);
+});
+
+test("private source downloads require matching content type and bounded streaming body",async()=>{
+ const f=fixture();
+ const service=createLumaProviderFileService({
+  assets:f.assets,adapter:f.adapter,repository:f.repository,supabaseUrl:"https://storage.example",
+  fetchImpl:async()=>({ok:true,status:200,headers:{get:name=>name==="content-length"?"4":"image/png"},body:{getReader(){return{async read(){return{done:true};},async cancel(){},releaseLock(){}};}}}),
+  now:()=>Date.parse("2026-11-15T12:00:00.000Z")
+ });
+ await assert.rejects(service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="LUMA_FILE_ASSET_CHECKSUM_MISMATCH");
+ assert.equal(f.calls.create,0);
+});
