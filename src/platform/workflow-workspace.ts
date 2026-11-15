@@ -326,7 +326,8 @@ document.addEventListener("submit",event=>{
  if(provider==="luma")config.operation=operation;else delete config.operation;
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
- const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);\n const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
+ const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
+ const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
  if(operation==="generate"){
   if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
   if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId||assetText||indexText))throw new Error("Private frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
