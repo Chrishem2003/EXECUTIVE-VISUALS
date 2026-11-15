@@ -51,7 +51,8 @@ test("builds music ducking automation around dialogue intervals and preserves pa
  assert.deepEqual(result.map(point=>point.timeSeconds),[0,1,1.2,2,3.6,4]);
  assert.equal(result[0].pan,-0.2);
  assert.equal(result.find(point=>point.timeSeconds===1.2)?.gainDb,-15);
- assert.equal(result.find(point=>point.timeSeconds===3.6)?.gainDb,-15);\n assert.equal(result.find(point=>point.timeSeconds===4)?.gainDb,-3);
+ assert.equal(result.find(point=>point.timeSeconds===3.6)?.gainDb,-15);
+ assert.equal(result.find(point=>point.timeSeconds===4)?.gainDb,-3);
 });
 test("music already under dialogue begins ducked immediately and stays ducked to clip end",()=>{
  const result=createAudioDuckingAutomation([],5,2,[{startSeconds:0,endSeconds:9}],0);
