@@ -210,6 +210,8 @@ test("Luma Files API creates presigned uploads, transfers bytes without bearer c
   assert.equal(receipt.upload.method, "PUT");
   const uploaded = await adapter.uploadFileBytes({ upload: receipt.upload, bytes: new Uint8Array([1, 2, 3, 4]), mimeType: "video/mp4" });
   assert.equal(uploaded.uploadedBytes, 4);
+  await assert.rejects(adapter.uploadFileBytes({ upload: receipt.upload, bytes: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" }), error => error.code === "LUMA_FILE_INPUT_INVALID");
+  await assert.rejects(adapter.uploadFileBytes({ upload: receipt.upload, bytes: new Uint8Array([1, 2, 3, 4]), mimeType: "image/png" }), error => error.code === "LUMA_FILE_INPUT_INVALID");
   assert.equal(calls[1].init.method, "PUT");
   assert.equal(calls[1].init.headers.authorization, undefined);
   assert.equal(calls[1].init.headers["x-amz-meta-test"], "ok");
