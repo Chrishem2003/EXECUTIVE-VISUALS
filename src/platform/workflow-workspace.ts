@@ -1,6 +1,6 @@
 import { apiRequest } from "../core/api";
 import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type MediaPortType, type WorkflowEdge, type WorkflowGraph, type WorkflowNode, type WorkflowNodeKind, type WorkflowPort } from "../core/workflow";
-import { createTranscriptionCaptionWorkflow } from "../core/workflow-templates";
+import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null;output?:{videoQuote?:{quoteId:string;requestId:string;requestHash:string;routedModel:string;estimatedAmount:number;currency:string;expiresAt:string;paidExecutionEnabled:boolean;cloudNode:WorkflowNode;cloudValues:Record<string,unknown>};cloudJobId?:string;status?:string;quoteId?:string;approvedMaxAmount?:number;actualAmount?:number;currency?:string;assetId?:string;asset?:string;video?:string;assetIds?:string[];provider?:string;model?:string;mimeType?:string;cloudAssetIds?:string[];durationSeconds?:number;transcript?:string;segments?:Array<{start:number;end:number;text:string}>;language?:string;duration?:number;subtitleAssetId?:string;cueCount?:number;sha256?:string}|null};
@@ -70,7 +70,11 @@ function renderCanvas(){
 }
 function renderUploadAssetField(selected:WorkflowNode){
  if(selected.kind!=="upload"||!state.graph?.nodes.some(item=>item.kind==="voice.transcribe"))return "";
- return '<label>Private audio asset ID</label><input name="sourceAssetId" value="'+esc(selected.config.assetId||"")+'" maxlength="128" placeholder="Paste an existing private audio asset ID" required><p>Use an audio asset you own. The server rechecks ownership and verifies its checksum before transcription.</p>';
+ const isVideoSource=state.graph.nodes.some(item=>item.kind==="video.extract-audio");
+ const label=isVideoSource?"Private source video asset ID":"Private audio asset ID";
+ const placeholder=isVideoSource?"Paste an existing private video asset ID":"Paste an existing private audio asset ID";
+ const guidance=isVideoSource?"The workflow extracts audio locally before transcription. The server rechecks video ownership and media type.":"Use an audio asset you own. The server rechecks ownership and verifies its checksum before transcription.";
+ return '<label>'+label+'</label><input name="sourceAssetId" value="'+esc(selected.config.assetId||"")+'" maxlength="128" placeholder="'+placeholder+'" required><p>'+guidance+'</p>';
 }
 function renderVideoCostEstimate(){
  const quote=state.costEstimate;
@@ -82,7 +86,7 @@ function renderVideoCostEstimate(){
 export function renderWorkflowWorkspace(){
  const nodes=state.graph?.nodes||[];
  const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
- return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="template-transcription">Audio → captions template</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="run">Run workflow</button><button class="primary" data-wf-action="save">Save version</button></div>'+
+ return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="template-transcription">Audio → captions template</button><button class="secondary" data-wf-action="template-localization">Video → localized captions</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="run">Run workflow</button><button class="primary" data-wf-action="save">Save version</button></div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
@@ -168,6 +172,15 @@ async function action(actionName:string,actionElement?:HTMLElement){
   state.selectedNode="source-audio";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
   await persist();
   state.message="Template saved. Select the source-audio node, enter the private audio asset ID, configure the server-side speech gateway, then run and approve the transcription step.";
+  paint();return;
+ }
+ if(actionName==="template-localization"){
+  if(!state.graph)return;
+  if(state.graph.nodes.length&&!window.confirm("Replace the current workflow graph with the review-first Video → Localized Captions template? Save or duplicate your current workflow first if you need to keep it."))return;
+  state.graph=createVideoCaptionLocalizationWorkflow({id:state.graph.id,projectId:state.graph.projectId||""});
+  state.selectedNode="source-video";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
+  await persist();
+  state.message="Template saved. Select the source-video node and enter a private video asset ID. Configure the speech and translation gateways, review each approval step, and set the target language before running. The workflow creates a separate WebVTT caption asset; it does not alter the source video.";
   paint();return;
  }
  if(actionName==="refresh-run"){await loadRun();paint();return;}
