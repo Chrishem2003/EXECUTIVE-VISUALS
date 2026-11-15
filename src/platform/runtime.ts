@@ -464,7 +464,7 @@ export function renderVideoModelNote(){
  const luma=state.providers.find(item=>item.provider==="luma");
  if(luma){
   const note=luma.status==="ready"
-   ?"Luma Ray 3.2 is ready for approved text-to-video and first-frame image-to-video. Supported quoted tiers: 360p draft, 540p, 720p and 1080p; 5- or 10-second clips. Private references are uploaded through the owner/project-scoped Luma Files service."
+   ?"Luma Ray 3.2 is ready for approved text-to-video and first-frame image-to-video in Video Studio. Workflow Canvas also supports up to 64 indexed private keyframe images. Supported quoted tiers: 360p draft, 540p, 720p and 1080p; 5- or 10-second clips. Private references are uploaded through the owner/project-scoped Luma Files service."
    :"Luma Ray 3.2 is not selectable: "+String(luma.reason||"Provider readiness is incomplete.");
   return esc(note)+" No provider request is submitted until the exact quote is approved.";
  }
