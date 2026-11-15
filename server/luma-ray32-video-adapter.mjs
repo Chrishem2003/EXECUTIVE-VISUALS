@@ -30,17 +30,23 @@ function validateInput(input) {
       throw fail(field + " must be a boolean when supplied.", "LUMA_VIDEO_INPUT_INVALID");
     }
   }
+  const operation = input.operation ?? "generate";
+  if (!["generate", "edit", "reframe", "extend"].includes(operation)) {
+    throw fail("Luma operation must be generate, edit, reframe or extend.", "LUMA_VIDEO_INPUT_INVALID");
+  }
   const durationSeconds = input.durationSeconds ?? 5;
-  if (![5, 10].includes(durationSeconds)) throw fail("Ray 3.2 duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
+  if (operation === "reframe") {
+    if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 2 || durationSeconds > 10) {
+      throw fail("Ray 3.2 reframe source duration must be a whole number from 2 to 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
+    }
+  } else if (![5, 10].includes(durationSeconds)) {
+    throw fail("Ray 3.2 generation/edit duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
+  }
   const resolution = input.resolution ?? "720p";
   if (!allowedResolutions.has(resolution)) throw fail("Ray 3.2 resolution must be 360p, 540p, 720p or 1080p.", "LUMA_VIDEO_INPUT_INVALID");
   const aspectRatio = input.aspectRatio ?? input.aspect_ratio;
   if (aspectRatio !== undefined && !allowedRatios.has(aspectRatio)) throw fail("Ray 3.2 aspect ratio is unsupported.", "LUMA_VIDEO_INPUT_INVALID");
 
-  const operation = input.operation ?? "generate";
-  if (!["generate", "edit", "reframe", "extend"].includes(operation)) {
-    throw fail("Luma operation must be generate, edit, reframe or extend.", "LUMA_VIDEO_INPUT_INVALID");
-  }
   if (operation !== "generate") {
     if (input.hdr === true || input.exrExport === true || input.loop === true || input.keyframes !== undefined ||
         input.keyframeIndexes !== undefined || input.startFrame !== undefined || input.endFrame !== undefined) {
