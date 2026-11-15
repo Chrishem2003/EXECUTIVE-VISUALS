@@ -148,7 +148,7 @@ test("Luma preflight refuses to proceed when its provider or worker readiness ga
 });
 
 test("Luma Ray 3.2 preflight uses the configured account rate and supports 360p draft without submitting",()=>{
- const result=preflightVideoProduction({shots:[lumaShot],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.004",now});
+ const result=preflightVideoProduction({shots:[{...lumaShot,resolution:"360p"}],providerCatalog:lumaCatalog,lumaUsdPerCredit:"0.004",now});
  assert.equal(result.status,"ready_for_approval");
  assert.equal(result.pricing.quote.amount,0.08);
  assert.equal(result.pricing.quote.shots[0].pricing.credits,20);
