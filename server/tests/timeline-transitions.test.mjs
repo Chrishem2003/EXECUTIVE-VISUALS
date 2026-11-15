@@ -31,3 +31,35 @@ test("ignores invalid or non-positive fade metadata", () => {
 test("rejects unsupported media kinds", () => {
   assert.throws(() => buildClipFadeFilters({}, 2, "caption"), /Unsupported clip fade media kind/);
 });
+
+
+import { buildVideoSequenceGraph } from "../timeline-transitions.mjs";
+
+test("builds a frame-accurate video crossfade with cumulative xfade offset", () => {
+  const result = buildVideoSequenceGraph([
+    { label: "v0", duration: 5, transitionToNext: { type: "crossfade", fadeFrames: 24 } },
+    { label: "v1", duration: 4 }
+  ], 24);
+  assert.equal(result.label, "vseq1");
+  assert.equal(result.duration, 8);
+  assert.equal(result.filter, "[v0][v1]xfade=transition=fade:duration=1.000000:offset=4.000000[vseq1]");
+});
+
+test("chains hard cuts, gaps and crossfades without losing cumulative duration", () => {
+  const result = buildVideoSequenceGraph([
+    { label: "v0", duration: 5, transitionToNext: { type: "crossfade", fadeFrames: 12 } },
+    { label: "v1", duration: 4, transitionToNext: undefined },
+    { label: "v2", duration: 3 }
+  ], 24);
+  assert.equal(result.duration, 11.5);
+  assert.match(result.filter, /xfade=transition=fade:duration=0.500000:offset=4.500000/);
+  assert.match(result.filter, /concat=n=2:v=1:a=0/);
+});
+
+test("rejects invalid crossfade frame lengths and unsafe labels", () => {
+  assert.throws(() => buildVideoSequenceGraph([
+    { label: "v0", duration: 1, transitionToNext: { type: "crossfade", fadeFrames: 48 } },
+    { label: "v1", duration: 1 }
+  ], 24), /fit both adjacent clips/);
+  assert.throws(() => buildVideoSequenceGraph([{ label: "[bad]", duration: 1 }], 24), /safe labels/);
+});
