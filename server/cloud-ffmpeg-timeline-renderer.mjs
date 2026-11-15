@@ -3,7 +3,7 @@ import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
-import { buildClipFadeFilters } from "./timeline-transitions.mjs";
+import { buildClipFadeFilters, buildVideoSequenceGraph } from "./timeline-transitions.mjs";
 import { buildTimelineMotionFilters } from "./timeline-motion.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
@@ -229,9 +229,16 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const clip=clips[index],transition=clip.transitionToNext;
   if(transition===undefined)continue;
   const fadeFrames=Number(transition?.fadeFrames),durationFrames=Math.round(seconds(clip.duration)*fps),next=clips[index+1];
-  if(transition?.type!=="dip-to-black"||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>durationFrames)fail("Video dip-to-black transitions require a positive integer fade length no longer than the outgoing clip.","INVALID_TIMELINE_TRANSITION");
-  if(!next||Math.abs(seconds(next.timelineStart)-(seconds(clip.timelineStart)+seconds(clip.duration)))>0.5/fps)fail("A dip-to-black transition requires the next enabled video clip to begin immediately after this clip.","INVALID_TIMELINE_TRANSITION");
-  if(fadeFrames>Math.round(seconds(next.duration)*fps))fail("The transition fade cannot be longer than the incoming clip.","INVALID_TIMELINE_TRANSITION");
+  if(!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>durationFrames)fail("Video transitions require a positive integer fade length no longer than the outgoing clip.","INVALID_TIMELINE_TRANSITION");
+  if(!next)fail("A video transition requires the next enabled video clip on the same track.","INVALID_TIMELINE_TRANSITION");
+  const nextDurationFrames=Math.round(seconds(next.duration)*fps),fadeDuration=fadeFrames/fps;
+  if(fadeFrames>nextDurationFrames)fail("The transition fade cannot be longer than the incoming clip.","INVALID_TIMELINE_TRANSITION");
+  if(transition?.type==="dip-to-black"){
+   if(Math.abs(seconds(next.timelineStart)-(seconds(clip.timelineStart)+seconds(clip.duration)))>0.5/fps)fail("A dip-to-black transition requires the next enabled video clip to begin immediately after this clip.","INVALID_TIMELINE_TRANSITION");
+  }else if(transition?.type==="crossfade"){
+   const expectedNextStart=seconds(clip.timelineStart)+seconds(clip.duration)-fadeDuration;
+   if(Math.abs(seconds(next.timelineStart)-expectedNextStart)>0.5/fps)fail("A video crossfade requires the next clip to overlap the outgoing clip by exactly its configured fade duration.","INVALID_TIMELINE_TRANSITION");
+  }else fail("Select a supported video transition.","INVALID_TIMELINE_TRANSITION");
  }
  if(timeline.audioMastering?.enabled===true&&!audioClips.length)fail("Audio mastering requires at least one enabled audio clip.","AUDIO_MASTERING_REQUIRES_AUDIO");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
@@ -264,10 +271,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
    if(duration<=0)continue;
    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForClip(clip,duration),speedExpression=buildVariableSpeedSetptsExpression(clip,duration);
-   if(start+0.000001<cursor)fail("Primary video track contains overlapping clips.","TIMELINE_OVERLAP");
+   if(start+0.000001<cursor){
+    const previous=clips[clipPosition-1],transition=previous?.transitionToNext;
+    if(transition?.type!=="crossfade")fail("Primary video track contains overlapping clips without a configured crossfade.","TIMELINE_OVERLAP");
+    const expectedStart=cursor-Number(transition.fadeFrames)/fps;
+    if(Math.abs(start-expectedStart)>0.5/fps)fail("Video clip overlap must exactly match the configured crossfade duration.","INVALID_TIMELINE_TRANSITION");
+   }
    if(start>cursor+0.000001){
     const gap=start-cursor;args.push("-f","lavfi","-t",gap.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
-    const label="v"+segmentIndex++;segments.push({label,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});inputIndex++;
+    const label="v"+segmentIndex++;segments.push({label,duration:gap,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1,settb=AVTB[${label}]`});inputIndex++;
    }
    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
    if(mediaType.startsWith("image/")){if(speed!==1||clip.speedCurve!==undefined)fail("Still-image clips do not support speed changes.","UNSUPPORTED_IMAGE_TIME_REMAP");args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);}
@@ -288,14 +300,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     const sourceFilters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,...motion.filters,"fps="+fpsNum+"/"+fpsDen,...effect.postScale,"setsar=1"];
     const sourceGraph="["+sourceInputIndex+":v]"+sourceFilters.join(",")+"["+transformLabel+"]";
     const compositeGraph="["+blackInputIndex+":v]["+transformLabel+"]"+motion.overlay+"["+compositeLabel+"]";
-    const finishGraph=fadeFilters.length?"["+compositeLabel+"]"+fadeFilters.join(",")+"["+label+"]":"["+compositeLabel+"]null["+label+"]";
-    segments.push({label,filter:sourceGraph+";"+compositeGraph+";"+finishGraph,effectsEnabled:effect.enabled});
+    const finishGraph="["+compositeLabel+"]"+(fadeFilters.length?fadeFilters.join(",")+",":"")+"settb=AVTB["+label+"]";
+    segments.push({label,duration,transitionToNext:clip.transitionToNext,filter:sourceGraph+";"+compositeGraph+";"+finishGraph,effectsEnabled:effect.enabled});
    }else{
     const filters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...(retimeFilter?[retimeFilter]:[]),...(usesOpticalFlow(clip)?["minterpolate=fps="+fpsNum+"/"+fpsDen+":mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"]:[]),...effect.preScale,"scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2","fps="+fpsNum+"/"+fpsDen,"format=yuv420p",...effect.postScale,"setsar=1",...fadeFilters];
-    segments.push({label,filter:`[${sourceInputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
+    filters.push("settb=AVTB");
+    segments.push({label,duration,transitionToNext:clip.transitionToNext,filter:`[${sourceInputIndex}:v]${filters.join(",")}[${label}]`,effectsEnabled:effect.enabled});
     inputIndex++;
    }
-   cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
+   cursor=Math.max(cursor,start+duration);onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
   let audioIndex=0;
@@ -327,9 +340,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",asset.path);
    overlayInputs.push({inputIndex,clip});inputIndex++;
   }
-  const concat=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
-  const videoGraph=segments.map(item=>item.filter).join(";")+";"+concat;
-  let currentVideo="[vbase]";
+  const sequence=buildVideoSequenceGraph(segments,fps);
+  const videoGraph=segments.map(item=>item.filter).join(";")+(sequence.filter?";"+sequence.filter:"");
+  let currentVideo="["+sequence.label+"]";
   for(const [index,item] of overlayInputs.entries()){
    const clip=item.clip,start=seconds(clip.timelineStart);
    if(start>=cursor)continue;
