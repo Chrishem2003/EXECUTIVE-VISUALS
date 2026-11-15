@@ -70,6 +70,11 @@ declare
     if coalesce(p_input ->> 'audioMode','none') <> 'none' then
       raise exception 'VIDEO_PRICE_UNSUPPORTED_AUDIO_MODE';
     end if;
+    if (p_input ? 'sourceVideoAssetId' or p_input ? 'startFrameAssetId'
+        or p_input ? 'endFrameAssetId' or p_input ? 'keyframeAssetIds')
+       and coalesce(p_input ->> 'rightsConfirmed','false') <> 'true' then
+      raise exception 'MEDIA_RIGHTS_REQUIRED';
+    end if;
     if coalesce(p_input ->> 'resolution','') not in ('360p','540p','720p','1080p') then
       raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
     end if;
