@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyCaptionPreset, CAPTION_PRESETS, getCaptionPreset } from "../src/core/caption-presets.ts";
+import { applyCaptionPreset, applyCaptionPresetToClips, CAPTION_PRESETS, getCaptionPreset } from "../src/core/caption-presets.ts";
 import { captionStyle } from "../server/media.mjs";
 assert.equal(CAPTION_PRESETS.length,5);
 assert.equal(new Set(CAPTION_PRESETS.map(item=>item.id)).size,CAPTION_PRESETS.length);
