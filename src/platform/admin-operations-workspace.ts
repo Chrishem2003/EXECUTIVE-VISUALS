@@ -140,7 +140,5 @@ export function initAdminOperationsWorkspace(){
   state.userQuery=input instanceof HTMLInputElement?input.value.trim().slice(0,120):"";
   void loadAdminOperationsWorkspace();
  });
- void apiRequest<{capabilities:{admin:boolean}}>("/api/me").then(result=>{
-  state.error=isAdminOperationsAllowed()?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
- });
+ state.error=isAdminOperationsAllowed()?"Administrator access verified.":"This account is not on the platform administrator allowlist.";
 }
