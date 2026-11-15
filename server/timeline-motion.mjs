@@ -37,7 +37,7 @@ export function buildTimelineMotionExpression(points,property,fallback,durationS
 export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWidth=1920,canvasHeight=1080){
  const width=Math.max(256,Math.min(7680,Math.floor(Number(canvasWidth)||1920))),height=Math.max(144,Math.min(4320,Math.floor(Number(canvasHeight)||1080)));
  const points=normalizeTimelineMotion(metadata.motionKeyframes,durationSeconds);
- const base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||width),height:Math.max(16,Number(metadata.height)||height),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
+ const base={x:Math.max(-16384,Math.min(16384,Number(metadata.x)||0)),y:Math.max(-16384,Math.min(16384,Number(metadata.y)||0)),width:Math.max(16,Math.min(16384,Number(metadata.width)||width)),height:Math.max(16,Math.min(16384,Number(metadata.height)||height)),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
  if(!points.length&&base.x===0&&base.y===0&&base.width===width&&base.height===height&&base.opacity===1&&base.rotation===0&&metadata.x===undefined&&metadata.y===undefined&&metadata.width===undefined&&metadata.height===undefined&&metadata.opacity===undefined&&metadata.rotation===undefined)return null;
  const animated=Object.fromEntries(Object.keys(LIMITS).map(property=>[property,points.some(point=>point[property]!==undefined)]));
  const expression=(property)=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,"T");
