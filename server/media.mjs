@@ -408,7 +408,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
     const file=join(mediaRoot,asset.storage_path);
     args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
-    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters(metadata,duration);
+    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration);
     if(motion){
       const scale=motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease");
       videoEffects.push(`[${inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
