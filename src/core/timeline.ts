@@ -157,13 +157,13 @@ export function createGeneratedVideoClip(input:{id:string;assetId:string;name:st
  * Asset ownership and media-type checks remain authoritative on server save.
  */
 export function insertWorkflowCaptionAsset(timeline:EditorialTimeline,input:{
- id:string;trackId:string;assetId:string;name:string;mediaType:string;
+ id:string;assetId:string;name:string;mediaType:string;
  durationSeconds:number;startSeconds?:number;newTrackId:string;
 }):EditorialTimeline{
- const {id,trackId,assetId,name,mediaType,durationSeconds,newTrackId}=input;
- if(!String(id||"").trim()||!String(assetId||"").trim()||!String(name||"").trim())
+ const {id,assetId,name:assetName,mediaType,durationSeconds,newTrackId}=input;
+ if(!String(id||"").trim()||!String(assetId||"").trim()||!String(assetName||"").trim())
   throw new Error("Caption insertion requires a clip ID, asset ID and filename.");
- if(mediaType!=="text/vtt"||!name.toLowerCase().endsWith(".vtt"))
+ if(mediaType!=="text/vtt"||!assetName.toLowerCase().endsWith(".vtt"))
   throw new Error("Workflow caption insertion accepts only WebVTT sidecar assets.");
  if(!Number.isFinite(durationSeconds)||durationSeconds<=0||durationSeconds>7*24*3600)
   throw new Error("Caption duration must be greater than zero and no longer than seven days.");
@@ -180,12 +180,12 @@ export function insertWorkflowCaptionAsset(timeline:EditorialTimeline,input:{
  if(!targetTrackId){
   if(!String(newTrackId||"").trim())throw new Error("A new caption track ID is required.");
   const usedNames=new Set(timeline.tracks.map(track=>track.name));
-  let name="Captions",suffix=2;while(usedNames.has(name)){name="Captions "+suffix++;if(suffix>1000)throw new Error("Unable to allocate a unique caption track name.");}
+  let trackName="Captions",suffix=2;while(usedNames.has(trackName)){trackName="Captions "+suffix++;if(suffix>1000)throw new Error("Unable to allocate a unique caption track name.");}
   targetTrackId=newTrackId;
-  next=addTrack(timeline,{id:targetTrackId,name,kind:"caption",enabled:true,locked:false,clips:[]});
+  next=addTrack(timeline,{id:targetTrackId,name:trackName,kind:"caption",enabled:true,locked:false,clips:[]});
  }
  const clip:TimelineClip={
-  id,assetId,name,
+  id,assetId,name:assetName,
   sourceRange:{start:rational(0,fps),duration:rational(durationFrames,fps)},
   timelineStart:rational(startFrame,fps),
   duration:rational(durationFrames,fps),
