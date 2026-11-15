@@ -33,7 +33,7 @@ This document describes the current server-side contract and the boundaries betw
 
 ## Current UI and remaining work
 
-- Current direct Video Studio: text-to-video and one first-frame image-to-video for Luma. Workflow Canvas supports multi-keyframe generation, source-video edit/reframe, and generated-video-to-timeline handoff. The cloud timeline clip inspector also links eligible 5/10-second source assets into Luma Edit.
+- Current direct Video Studio: text-to-video and one first-frame image-to-video for Luma. Workflow Canvas supports multi-keyframe generation, source-video edit/reframe, and generated-video-to-timeline handoff. The cloud timeline clip inspector links eligible 5/10-second source assets into Luma Edit and 2–10-second source assets into Luma Reframe; both open the same project's Workflow Canvas with rights confirmation left unchecked.
 - Server-side workflow contract and quote support: up to 64 indexed private keyframes (per the Luma Agents API schema).
 - Workflow-to-timeline handoff is already implemented: completed private cloud video assets can be added to the selected project's cloud timeline. Remaining UI polish: direct Video Studio Reframe action, visual keyframe drag-to-order/timing controls; Workflow Canvas now has project-scoped private source-video and multi-select project image pickers with explicit output-frame indexes.
 - Still gated: Luma source-video Reframe in the direct Video Studio/timeline inspector, visual keyframe drag-to-order/timing controls, source edits outside the published 5/10-second quote tiers, and video extension in all workflow surfaces.
