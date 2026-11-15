@@ -52,4 +52,6 @@ test("visual keyframe dragging preserves clip boundaries, order and speed limits
  assert.equal(moveSpeedKeyframe(curve,1,1,9,2)[1].speed,4,"speed is clamped to 4x");
  assert.throws(()=>moveSpeedKeyframe(curve,4,1,1,2),/valid speed keyframe/);
  assert.throws(()=>moveSpeedKeyframe(curve,1,Number.NaN,1,2),/finite/);
+ const dense=[{timeSeconds:0,speed:1},{timeSeconds:0.0005,speed:1.5},{timeSeconds:0.001,speed:2}];
+ assert.equal(moveSpeedKeyframe(dense,1,0.0008,2,1)[1].timeSeconds,0.0005,"dense valid curves remain stable when a minimum gap cannot be created");
 });
