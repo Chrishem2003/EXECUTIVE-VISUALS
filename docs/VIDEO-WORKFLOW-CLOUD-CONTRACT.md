@@ -9,8 +9,8 @@ This document describes the current server-side contract and the boundaries betw
 - The request is normalized, bound to a project and request ID, hashed, and deeply frozen before quote or approval handling.
 - Duplicate asset IDs, conflicting media roles, unsupported duration/resolution/ratio combinations, missing rights confirmation, and unsupported operations fail closed.
 - Luma Ray 3.2 text-to-video and single start-frame image-to-video are exposed in the current direct Video Studio composer.
-- The Luma server contract also supports up to 64 indexed private keyframe images for a 5- or 10-second generation. Each keyframe is an owner/project-scoped application asset; indexes must be unique, strictly increasing output-frame positions and within the selected duration. The exact keyframe list, indexes and rights confirmation are included in the immutable request hash.
-- The Workflow Canvas node inspector exposes private keyframe asset IDs and matching frame-index controls; the workflow bridge transfers each private frame into the linked cloud project before quote creation. The direct Video Studio composer still does not expose a visual multi-keyframe editor.
+- The Luma server contract also supports paired private first/last image anchors for 5-second generation, or up to 64 indexed private keyframe images for 5- or 10-second generation. These modes are mutually exclusive; 10-second clips require multi-keyframe mode. Each anchor is an owner/project-scoped application asset; indexes must be unique, strictly increasing output-frame positions and within the selected duration. The exact frame list, indexes and rights confirmation are included in the immutable request hash.
+- The Workflow Canvas node inspector exposes private first/last frame asset IDs and indexed keyframe asset IDs; the workflow bridge transfers each private frame into the linked cloud project before quote creation. The direct Video Studio composer still does not expose a visual multi-keyframe editor.
 - Luma source-video edit, reframe and extend remain disabled in the workflow quote/approval composer until their source metadata, operation-specific quote, approval and UI paths are fully connected.
 
 ## Private source resolution
@@ -34,7 +34,7 @@ This document describes the current server-side contract and the boundaries betw
 
 - Current direct Video Studio: text-to-video and one first-frame image-to-video for Luma.
 - Server-side workflow contract and quote support: up to 64 indexed private keyframes.
-- Remaining UI polish: a visual keyframe upload/order/timing editor in the direct Video Studio composer; the Workflow Canvas already accepts saved project asset IDs and frame indexes.
+- Remaining UI polish: a visual keyframe upload/order/timing editor in the direct Video Studio composer; the Workflow Canvas already accepts saved project first/last frame IDs, keyframe asset IDs and output-frame indexes.
 - Still gated: Luma video edit, reframe and extend workflows in the direct composer.
 - Required before calling the complete studio flow production-ready: exact-head CI, PostgreSQL migration integration, staging-only end-to-end verification, private output ingestion acceptance, durable storage/worker readiness, and a successful delivery-gate run.
 
