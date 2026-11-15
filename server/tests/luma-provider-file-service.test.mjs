@@ -87,7 +87,7 @@ test("private source checksum is verified before provider upload",async()=>{
 
 test("generation input resolver replaces internal asset IDs with owner-scoped Luma file IDs",async()=>{
  const f=fixture();
- const resolved=await f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",startFrameAssetId:assetId},{job:{owner_id:ownerId,project_id:projectId}});
+ const resolved=await f.service.resolveInput({provider:"luma",model:"ray-3.2",prompt:"animate",startFrameAssetId:assetId,rightsConfirmed:true},{job:{owner_id:ownerId,project_id:projectId}});
  assert.deepEqual(resolved.startFrame,{file_id:fileId});
  assert.equal(resolved.startFrameAssetId,assetId);
 });
