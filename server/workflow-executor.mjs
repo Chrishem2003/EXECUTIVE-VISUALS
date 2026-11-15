@@ -197,7 +197,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"voice.transcribe"});
     const result=await transcribeVoice({buffer,mimeType:source.media_type,filename:source.original_name,language:String(config.language||"")});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"voice.transcribe",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
-    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.language=result.language;output.model=result.model;
+    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.words=result.words||[];output.wordCount=(result.words||[]).length;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.language=result.language;output.model=result.model;
    }else if(node.kind==="voice.translate"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before caption translation."),{code:"APPROVAL_REQUIRED"});
     const segments=values.segments??config.segments;
@@ -216,7 +216,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const translated=applyTranslatedSegments(segments,payload);
     output=nodeOutput(node,translated);output.segments=translated;output.language=targetLanguage;output.sourceLanguage=sourceLanguage;output.usage=result.usage;output.model=result.model;
    }else if(node.kind==="voice.caption"){
-    const segments=values.segments??config.segments;
+    const words=Array.isArray(values.words)&&values.words.length>0&&values.words.length<=5000?values.words:null;
+    const segments=words||values.segments||config.segments;
     const sourceAssetId=String(values.sourceAudio??values.sourceAssetId??config.sourceAssetId??"");
     const source=sourceAssetId?getAccessibleAsset(db,job.owner_id,sourceAssetId,false):null;
     if(sourceAssetId&&(!source||!String(source.media_type||"").startsWith("audio/")))throw Object.assign(new Error("Caption source audio is missing or inaccessible."),{code:"SOURCE_AUDIO_NOT_FOUND"});
