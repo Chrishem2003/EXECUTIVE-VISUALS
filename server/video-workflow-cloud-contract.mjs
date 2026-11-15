@@ -109,11 +109,11 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
  if(referenceAssetIds.length)throw fail("Luma Ray 3.2 workflow quotes accept explicit start/end frame or keyframe assets, not a generic reference list.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId))
   throw fail("Luma source-video editing is not exposed in this workflow composer yet. Use text-to-video or image-to-video.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
- if(startFrameAssetId&&endFrameAssetId)throw fail("Luma start/end frames cannot be combined in this workflow composer yet.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
-
  if(!prompt)throw fail("Luma Ray 3.2 requires a non-empty prompt.","PROMPT_REQUIRED");
  if(![5,10].includes(Number(config.durationSeconds??config.duration??5)))throw fail("Luma Ray 3.2 generation duration must be 5 or 10 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const durationSeconds=Number(config.durationSeconds??config.duration??5);
+ if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))
+  throw fail("Luma 10-second generation requires multi-keyframe mode instead of single start/end frame inputs.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const aspectRatio=String(config.aspectRatio??"16:9");
  if(!["16:9","9:16","1:1","4:3","3:4","21:9"].includes(aspectRatio))throw fail("Luma Ray 3.2 aspect ratio is unsupported.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const resolution=String(config.resolution??"720p");
