@@ -131,7 +131,7 @@ test("Luma source-video operations fail closed before upload without valid opera
   provider:"luma",model:"ray-3.2",operation:"edit",durationSeconds:5,resolution:"720p"
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  await assert.rejects(f.service.resolveInput({
-  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"1080p",sourceVideoAssetId:assetId
+  provider:"luma",model:"ray-3.2",operation:"reframe",durationSeconds:10,resolution:"1080p",sourceVideoAssetId:assetId,rightsConfirmed:true
  },{job:{owner_id:ownerId,project_id:projectId}}),error=>error.code==="LUMA_FILE_INPUT_INVALID");
  assert.equal(f.calls.create,0);
 });
