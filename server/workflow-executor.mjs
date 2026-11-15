@@ -217,7 +217,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     output=nodeOutput(node,translated);output.segments=translated;output.language=targetLanguage;output.sourceLanguage=sourceLanguage;output.usage=result.usage;output.model=result.model;
    }else if(node.kind==="voice.caption"){
     const words=Array.isArray(values.words)&&values.words.length>0&&values.words.length<=5000?values.words:null;
-    const segments=words||values.segments||config.segments;
+    const segments=words?words.map(word=>({start:word.start,end:word.end,text:word.word??word.text??""})):values.segments||config.segments;
     const sourceAssetId=String(values.sourceAudio??values.sourceAssetId??config.sourceAssetId??"");
     const source=sourceAssetId?getAccessibleAsset(db,job.owner_id,sourceAssetId,false):null;
     if(sourceAssetId&&(!source||!String(source.media_type||"").startsWith("audio/")))throw Object.assign(new Error("Caption source audio is missing or inaccessible."),{code:"SOURCE_AUDIO_NOT_FOUND"});
