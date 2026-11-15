@@ -15,7 +15,7 @@ Paper Edit turns a timestamped WebVTT transcript into an editable video track. I
 7. Choose **Build paper edit from transcript**. Only checked cues are assembled, in source-time order.
 8. Review the new **Paper Edit** video track at the end of the sequence. Each cue is a separate, editable clip referencing the original video asset.
 
-A timestamped WebVTT transcript can be produced by the existing review-first transcription and Video → Localized Captions workflows. The Paper Edit action itself does not call a speech provider or incur AI usage.
+A timestamped WebVTT transcript can be produced by the existing review-first transcription and Video → Localized Captions workflows. When the configured transcription gateway returns word timestamps, the workflow can export a word-level WebVTT sidecar; import that sidecar here to select individual spoken words and build a finer-grained paper edit. If the provider returns only segment timestamps, the workflow retains the segment-level transcript and caption path. The Paper Edit action itself does not call a speech provider or incur AI usage.
 
 ## Timecode and media rules
 
@@ -36,6 +36,6 @@ A timestamped WebVTT transcript can be produced by the existing review-first tra
 
 ## Known limitations
 
-- Selection is per complete WebVTT cue; arbitrary word- or partial-sentence ranges are not supported yet. Search and speaker filters only hide or show cue rows; they do not alter the selected set. Pause analysis and text flags are informational and do not modify cue selection. Selecting a text flag navigates to and selects the complete cue for human review.
+- Selection is per complete WebVTT cue. Word-level WebVTT cues support word-level selection; arbitrary sub-word ranges are not supported. Search and speaker filters only hide or show cue rows; they do not alter the selected set. Pause analysis and text flags are informational and do not modify cue selection. Selecting a text flag navigates to and selects the complete cue for human review.
 - It creates a rough-cut track and reports long gaps between transcript cues. Those inter-cue gaps are naturally omitted when selected dialogue clips are assembled contiguously; this is not waveform-based silence detection and does not remove silence inside a cue. Text review flags common filler tokens and adjacent repeated words, but it does not infer word-level timing, remove individual words from audio, perform speaker diarization, or choose the strongest story moments. Editors must inspect the complete cue and decide whether to keep or omit it. Speaker filtering uses existing WebVTT voice tags (`<v Speaker Name>`) and does not infer speakers when labels are absent.
 - Variable-speed clips and transcript formats other than WebVTT are not supported yet.
