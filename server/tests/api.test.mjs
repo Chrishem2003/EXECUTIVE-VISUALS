@@ -836,3 +836,74 @@ test("project evidence ledger is asset-bound, reviewer-gated, append-only and ex
   assert.equal(loaded.status,200);
   assert.equal((await loaded.json()).snapshot.graphHash,saved.graphHash);
 });
+
+test("batch video finishing API authenticates, scopes sources, queues FFmpeg jobs and replays idempotently",async()=>{
+  const owner=await register("media-batch-owner@example.test");
+  const viewer=await register("media-batch-viewer@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Batch finishing project"})},owner);
+  assert.equal(projectResponse.status,201);
+  const project=(await projectResponse.json()).project;
+  const membership=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"media-batch-viewer@example.test",role:"viewer"})},owner);
+  assert.equal(membership.status,201);
+
+  const videoBytes=Buffer.from([0,0,0,24,102,116,121,112,105,115,111,109,0,0,2,0,105,115,111,109,105,115,111,50,0,0,0,8]);
+  async function uploadVideo(projectId,name){
+    const response=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":encodeURIComponent(name),"x-project-id":projectId},body:videoBytes},owner);
+    assert.equal(response.status,201,await response.clone().text());
+    return (await response.json()).asset;
+  }
+  const first=await uploadVideo(project.id,"first.mp4");
+  const second=await uploadVideo(project.id,"second.mp4");
+  const payload={projectId:project.id,jobType:"media.color",options:{brightness:0.1,contrast:1.1,saturation:0.9},items:[{sourceAssetId:first.id},{sourceAssetId:second.id}]};
+  const anonymous=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-api-001"},body:JSON.stringify(payload)});
+  assert.equal(anonymous.status,401);
+
+  const queued=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-api-001"},body:JSON.stringify(payload)},owner);
+  assert.equal(queued.status,202,await queued.clone().text());
+  const result=await queued.json();
+  assert.equal(result.status,"queued");
+  assert.equal(result.total,2);
+  assert.equal(result.jobs.length,2);
+  assert.ok(result.jobs.every(job=>job.status==="queued"&&job.jobType==="media.color"));
+  assert.deepEqual(result.jobs.map(job=>job.input.batchIndex),[0,1]);
+  assert.ok(result.jobs.every(job=>job.input.batchId===result.batchId&&job.input.batchTotal===2));
+
+  const replay=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-api-001"},body:JSON.stringify(payload)},owner);
+  assert.equal(replay.status,200);
+  const replayBody=await replay.json();
+  assert.equal(replayBody.idempotentReplay,true);
+  assert.equal(replayBody.batchId,result.batchId);
+  assert.deepEqual(replayBody.jobs.map(job=>job.id),result.jobs.map(job=>job.id));
+
+  const changed=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-api-001"},body:JSON.stringify({...payload,options:{...payload.options,brightness:0.3}})},owner);
+  assert.equal(changed.status,409);
+  assert.equal((await changed.json()).error.code,"IDEMPOTENCY_CONFLICT");
+
+  const viewerAttempt=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-viewer-001"},body:JSON.stringify(payload)},viewer);
+  assert.equal(viewerAttempt.status,404);
+  assert.equal((await viewerAttempt.json()).error.code,"SOURCE_ASSET_NOT_FOUND");
+
+  const invalidOptions=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-invalid-001"},body:JSON.stringify({...payload,options:{contrast:4}})},owner);
+  assert.equal(invalidOptions.status,400);
+  assert.equal((await invalidOptions.json()).error.code,"INVALID_MEDIA_OPTIONS");
+
+  const unsupported=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-unsupported-001"},body:JSON.stringify({...payload,jobType:"media.ai-upscale"})},owner);
+  assert.equal(unsupported.status,400);
+  assert.equal((await unsupported.json()).error.code,"MEDIA_BATCH_OPERATION_UNSUPPORTED");
+
+  const otherProjectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Separate source project"})},owner);
+  assert.equal(otherProjectResponse.status,201);
+  const otherProject=(await otherProjectResponse.json()).project;
+  const foreign=await uploadVideo(otherProject.id,"foreign.mp4");
+  const mixed=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-mixed-001"},body:JSON.stringify({...payload,items:[{sourceAssetId:first.id},{sourceAssetId:foreign.id}]})},owner);
+  assert.equal(mixed.status,400);
+  assert.equal((await mixed.json()).error.code,"PROJECT_MISMATCH");
+
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    const rows=db.prepare("SELECT * FROM jobs WHERE id IN (?,?) ORDER BY created_at ASC").all(result.jobs[0].id,result.jobs[1].id);
+    assert.equal(rows.length,2);
+    assert.ok(rows.every(row=>row.job_type==="media.color"&&row.status==="queued"));
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='media.batch_queued' AND subject_id=?").get(result.batchId).count,1);
+  }finally{db.close();}
+});
