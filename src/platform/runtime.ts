@@ -4,6 +4,7 @@ import { describePersistenceReadiness } from "./persistence-readiness";
 import { describeRuntimeCapabilities, resolveLocalAssetUploadReadiness } from "./runtime-capabilities";
 import { buildCreativeGraph, compareCreativeGraphSnapshot } from "../core/creative-graph";
 import { hasCloudJobFinished } from "./cloud-job-polling";
+import { validateCloudUploadFiles, runCloudUploadQueue, type CloudUploadItem } from "./cloud-upload-queue";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;settings?:Record<string,any>;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -12,6 +13,8 @@ type RuntimeCloudProject={id:string;name:string;revision?:number};
 type RuntimeCloudAsset=RuntimeAsset&{downloadUrl?:string|null};
 type CloudRuntimeJob={id:string;owner_id:string;project_id:string|null;job_type:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;attempt_count?:number;cancel_requested_at?:string|null;created_at:string;updated_at:string;completed_at?:string|null};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
+type RuntimeCloudUploadItem=CloudUploadItem<File>;
+type RuntimeCloudUploadRejection={id:string;name:string;reason:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type C2paVerification={status:"trusted"|"valid_untrusted"|"invalid"|"not_present"|"validation_unavailable";present:boolean;valid:boolean;trusted:boolean;assetSha256:string;validationState:string|null;findings:string[];manifest:null|{title:string|null;format:string|null;claimGenerator:string|null;ingredientCount:number;ingredients:Array<{title:string|null;format:string|null;relationship:string|null;hasManifestData:boolean}>};validationStatuses:Array<{code:string;success:boolean|null;explanation:string|null}>};
 type C2paInspectionState={loading:boolean;verification?:C2paVerification;notice?:string;error?:string};
@@ -24,8 +27,10 @@ let cloudJobPollingTimer:ReturnType<typeof setInterval>|null=null;
 let cloudJobPollingBusy=false;
 let localJobPollingTimer:ReturnType<typeof setInterval>|null=null;
 let localJobPollingBusy=false;
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];cloudProjects:RuntimeCloudProject[];cloudProjectId:string;authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";databaseMode:"unknown"|"sqlite"|"postgres";storageMode:"unknown"|"local-disk"|"object-storage";persistentVolumeRequired:boolean;localAssetUploadsAllowed:boolean;localAssetUploadBlockReason:string;authSessionReady:boolean;authSessionEncrypted:boolean;billingEnabled:boolean;billingProviderConfigured:boolean;billingWebhookConfigured:boolean;billingProviderMode:"unknown"|"sandbox"|"live";cloudVideoWorker:{enabled:boolean;remoteExecutionGates:boolean;modelRouterEnabled:boolean;modelRouterRemoteEnabled:boolean;modelRouterConfigPresent:boolean;providerCredentialConfigured:boolean;outputHostAllowlistConfigured:boolean;supabaseCredentialsConfigured:boolean;directRunwayModelsRequested:boolean;runtimeMode:"separate-process"|"embedded"|"unknown"};user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>;evidenceAssetId:string;evidenceRecords:Array<Record<string,any>>;evidenceLoading:boolean;evidenceError:string;projectEvidenceRecords:Array<any>;creativeGraphWorkspace:Record<string,any>|null;creativeGraphTimelines:Array<any>;creativeGraph:ReturnType<typeof buildCreativeGraph>|null;creativeGraphSnapshot:Record<string,any>|null}={
- status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],cloudProjects:[],cloudProjectId:"",authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",databaseMode:"unknown",storageMode:"unknown",persistentVolumeRequired:false,localAssetUploadsAllowed:false,localAssetUploadBlockReason:"Checking server storage readiness before enabling local uploads.",authSessionReady:false,authSessionEncrypted:false,billingEnabled:false,billingProviderConfigured:false,billingWebhookConfigured:false,billingProviderMode:"unknown",cloudVideoWorker:{enabled:false,remoteExecutionGates:false,modelRouterEnabled:false,modelRouterRemoteEnabled:false,modelRouterConfigPresent:false,providerCredentialConfigured:false,outputHostAllowlistConfigured:false,supabaseCredentialsConfigured:false,directRunwayModelsRequested:false,runtimeMode:"unknown"},user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{},evidenceAssetId:"",evidenceRecords:[],evidenceLoading:false,evidenceError:"",projectEvidenceRecords:[],creativeGraphWorkspace:null,creativeGraphTimelines:[],creativeGraph:null,creativeGraphSnapshot:null
+let cloudUploadAbortController:AbortController|null=null;
+let cloudUploadBusy=false;
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";cloudMediaReady:boolean;cloudMediaJobsEnabled:boolean;cloudMediaJobs:CloudRuntimeJob[];cloudAssets:RuntimeCloudAsset[];cloudUploadItems:RuntimeCloudUploadItem[];cloudUploadRejected:RuntimeCloudUploadRejection[];cloudProjects:RuntimeCloudProject[];cloudProjectId:string;authView:"login"|"recover"|"reset";recoveryToken:string;dataDirectoryPersistence:"unknown"|"ephemeral"|"unverified"|"operator-confirmed-volume";databaseMode:"unknown"|"sqlite"|"postgres";storageMode:"unknown"|"local-disk"|"object-storage";persistentVolumeRequired:boolean;localAssetUploadsAllowed:boolean;localAssetUploadBlockReason:string;authSessionReady:boolean;authSessionEncrypted:boolean;billingEnabled:boolean;billingProviderConfigured:boolean;billingWebhookConfigured:boolean;billingProviderMode:"unknown"|"sandbox"|"live";cloudVideoWorker:{enabled:boolean;remoteExecutionGates:boolean;modelRouterEnabled:boolean;modelRouterRemoteEnabled:boolean;modelRouterConfigPresent:boolean;providerCredentialConfigured:boolean;outputHostAllowlistConfigured:boolean;supabaseCredentialsConfigured:boolean;directRunwayModelsRequested:boolean;runtimeMode:"separate-process"|"embedded"|"unknown"};user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;c2paInspections:Record<string,C2paInspectionState>;evidenceAssetId:string;evidenceRecords:Array<Record<string,any>>;evidenceLoading:boolean;evidenceError:string;projectEvidenceRecords:Array<any>;creativeGraphWorkspace:Record<string,any>|null;creativeGraphTimelines:Array<any>;creativeGraph:ReturnType<typeof buildCreativeGraph>|null;creativeGraphSnapshot:Record<string,any>|null}={
+ status:"checking",authMode:"local",cloudMediaReady:false,cloudMediaJobsEnabled:false,cloudMediaJobs:[],cloudAssets:[],cloudUploadItems:[],cloudUploadRejected:[],cloudProjects:[],cloudProjectId:"",authView:"login",recoveryToken:"",dataDirectoryPersistence:"unknown",databaseMode:"unknown",storageMode:"unknown",persistentVolumeRequired:false,localAssetUploadsAllowed:false,localAssetUploadBlockReason:"Checking server storage readiness before enabling local uploads.",authSessionReady:false,authSessionEncrypted:false,billingEnabled:false,billingProviderConfigured:false,billingWebhookConfigured:false,billingProviderMode:"unknown",cloudVideoWorker:{enabled:false,remoteExecutionGates:false,modelRouterEnabled:false,modelRouterRemoteEnabled:false,modelRouterConfigPresent:false,providerCredentialConfigured:false,outputHostAllowlistConfigured:false,supabaseCredentialsConfigured:false,directRunwayModelsRequested:false,runtimeMode:"unknown"},user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,c2paInspections:{},evidenceAssetId:"",evidenceRecords:[],evidenceLoading:false,evidenceError:"",projectEvidenceRecords:[],creativeGraphWorkspace:null,creativeGraphTimelines:[],creativeGraph:null,creativeGraphSnapshot:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -265,12 +270,51 @@ async function refreshCloudMediaJobs(){
 function startCloudJobPolling(){
  if(!cloudJobPollingTimer)cloudJobPollingTimer=setInterval(()=>{void refreshCloudMediaJobs();},5000);
 }
+function renderCloudUploadQueue(){
+ if(!state.cloudUploadItems.length&&!state.cloudUploadRejected.length)return "";
+ const counts=state.cloudUploadItems.reduce((result,item)=>{result[item.status]=(result[item.status]||0)+1;return result;},{queued:0,uploading:0,succeeded:0,failed:0,cancelled:0} as Record<string,number>);
+ const rows=state.cloudUploadItems.map(item=>{
+  const status=item.status.toUpperCase();
+  return '<div class="runtime-job"><div class="runtime-job-main"><b>'+esc(item.file.name)+'</b><small>'+Math.max(1,Math.ceil(item.file.size/1024))+' KB · '+esc(status)+'</small>'+(item.error?'<small class="muted">'+esc(item.error)+'</small>':'')+'</div></div>';
+ }).join("");
+ const rejected=state.cloudUploadRejected.map(item=>'<div class="runtime-job"><div class="runtime-job-main"><b>'+esc(item.name)+'</b><small class="muted">NOT QUEUED · '+esc(item.reason)+'</small></div></div>').join("");
+ const summary=counts.succeeded+' uploaded · '+counts.uploading+' uploading · '+counts.queued+' queued · '+counts.failed+' failed · '+counts.cancelled+' cancelled';
+ const controls=(cloudUploadBusy?'<button type="button" class="secondary" data-ev-cloud-upload-cancel>Cancel remaining uploads</button>':counts.failed?'<button type="button" class="secondary" data-ev-cloud-upload-retry>Retry failed uploads</button>':"");
+ return '<section class="panel" id="ev-cloud-upload-queue"><div class="runtime-section-heading"><div><div class="eyebrow">UPLOAD ACTIVITY</div><h3>Private upload queue</h3></div><span>'+state.cloudUploadItems.length+' accepted</span></div><p>'+esc(summary)+'</p>'+controls+rows+rejected+'</section>';
+}
+function updateCloudUploadQueueView(){
+ const container=document.querySelector<HTMLElement>("#ev-cloud-upload-queue");
+ if(container){const wrapper=document.createElement("div");wrapper.innerHTML=renderCloudUploadQueue();container.replaceWith(wrapper.firstElementChild||document.createElement("div"));}
+}
+async function startCloudUploadBatch(items:RuntimeCloudUploadItem[],projectId:string){
+ if(cloudUploadBusy||!items.length)return;
+ cloudUploadBusy=true;
+ const controller=new AbortController();cloudUploadAbortController=controller;
+ updateCloudUploadQueueView();
+ const results=await runCloudUploadQueue(items,async(file,signal)=>{
+  await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type,"x-file-name":encodeURIComponent(file.name),"x-project-id":projectId},body:file,signal});
+ },{signal:controller.signal,concurrency:3,onUpdate(updated){
+  const index=state.cloudUploadItems.findIndex(item=>item.id===updated.id);
+  if(index>=0)state.cloudUploadItems[index]=updated;
+  updateCloudUploadQueueView();
+ }});
+ for(const result of results){
+  const index=state.cloudUploadItems.findIndex(item=>item.id===result.id);
+  if(index>=0)state.cloudUploadItems[index]=result;
+ }
+ cloudUploadBusy=false;cloudUploadAbortController=null;
+ const succeeded=results.filter(item=>item.status==="succeeded").length;
+ const failed=results.filter(item=>item.status==="failed").length;
+ state.message=succeeded+" private file(s) uploaded successfully."+(failed?" "+failed+" failed; retry is available.":"")+(results.some(item=>item.status==="cancelled")?" Remaining uploads were cancelled.":"");
+ if(succeeded)await refresh();
+ paint();
+}
 function renderCloudAssetLibrary(){
  if(!state.cloudMediaReady)return '<section class="panel"><div class="eyebrow">PRIVATE CLOUD STORAGE</div><h3>Cloud originals · not connected</h3><p>Local media storage remains available. Cloud uploads and signed downloads stay disabled until this environment passes the authenticated isolated-database and private-bucket readiness checks.</p></section>';
  const projectOptions=state.cloudProjects.map(project=>'<option value="'+esc(project.id)+'" '+(project.id===state.cloudProjectId?'selected':'')+'>'+esc(project.name)+'</option>').join("");
  const projectPicker=state.cloudProjects.length?'<label>Cloud project<select id="ev-cloud-project-select"><option value="">Select a cloud project</option>'+projectOptions+'</select></label>':'<div class="notice">Create a cloud project in the Cloud Projects workspace before uploading media. Unassigned cloud uploads are disabled so assets cannot become detached from the editor project.</div>';
  const upload=state.cloudProjectId?'<label class="upload primary">＋ Upload to selected cloud project<input id="ev-cloud-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>':'<button class="secondary" disabled>＋ Upload unavailable · select a cloud project</button>';
- return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><div><span id="cloud-media-job-count">'+state.cloudMediaJobs.length+' recent jobs</span> <button type="button" class="secondary" data-ev-cloud-jobs-refresh '+(state.cloudMediaJobsEnabled?'':'disabled')+'>↻ Refresh queue</button></div></div><small id="cloud-media-job-refresh-status">Auto-refreshes every 5 seconds while this library is open.</small><div id="cloud-media-jobs-list">'+renderCloudMediaJobs()+'</div></section>';
+ return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE PROJECT MEDIA</div><h3>Cloud project originals</h3></div><span>'+state.cloudAssets.length+' cloud assets</span></div><p>Uploads are stored against the selected cloud project, so the same assets are available in its cloud timeline editor. Local project IDs and local disk assets remain separate.</p>'+projectPicker+upload+'<small>Up to 50 files per batch · three concurrent uploads · 250 MiB maximum per file · server-side signature validation · project-role authorization · short-lived signed downloads</small>'+renderCloudUploadQueue()+renderCloudAssets()+'</section><section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">CLOUD WORKER QUEUE</div><h3>Private cloud processing</h3></div><div><span id="cloud-media-job-count">'+state.cloudMediaJobs.length+' recent jobs</span> <button type="button" class="secondary" data-ev-cloud-jobs-refresh '+(state.cloudMediaJobsEnabled?'':'disabled')+'>↻ Refresh queue</button></div></div><small id="cloud-media-job-refresh-status">Auto-refreshes every 5 seconds while this library is open.</small><div id="cloud-media-jobs-list">'+renderCloudMediaJobs()+'</div></section>';
 }
 async function refreshLocalJobs(){
  if(localJobPollingBusy||!state.user||state.status!=="online")return;
@@ -565,17 +609,17 @@ document.addEventListener("change",event=>{
  if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-cloud-project-select"){state.cloudProjectId=target.value;void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-cloud-upload"&&target.files){
-  const files=Array.from(target.files);
-  const cloudProjectId=state.cloudProjectId;
-  if(!cloudProjectId){alert("Select a cloud project before uploading private media.");target.value="";return;}
-  void (async()=>{
-   for(const file of files){
-    try{
-     await apiRequest("/api/cloud/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":cloudProjectId},body:file});
-    }catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Private cloud upload failed."));}
-   }
-   await refresh();paint();
-  })();
+  const files=Array.from(target.files),cloudProjectId=state.cloudProjectId;
+  target.value="";
+  if(cloudUploadBusy){state.message="Wait for the current private upload batch to finish or cancel it before starting another.";paint();return;}
+  if(!cloudProjectId){state.message="Select a cloud project before uploading private media.";paint();return;}
+  const checked=validateCloudUploadFiles(files);
+  state.cloudUploadRejected=checked.rejected.map(item=>({id:crypto.randomUUID(),name:item.file.name,reason:item.reason}));
+  const items:RuntimeCloudUploadItem[]=checked.accepted.map(file=>({id:crypto.randomUUID(),file,status:"queued"}));
+  state.cloudUploadItems=items;
+  if(!items.length){state.message=checked.rejected.length+" file(s) were not queued. Review the upload preflight results.";paint();return;}
+  void startCloudUploadBatch(items,cloudProjectId);
+  paint();
  }
  if(target.id==="ev-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{const uploaded=await apiRequest<{asset?:{id?:string}}>("/api/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"asset_uploaded",eventKey:"asset-upload:"+String(uploaded.asset?.id||crypto.randomUUID())})}).catch(()=>{});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Upload failed"));}}await refresh();paint();})();}
 });
@@ -583,6 +627,16 @@ document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
  const authView=target.closest<HTMLElement>("[data-auth-view]");if(authView){state.authView=authView.dataset.authView==="recover"?"recover":"login";state.message="";paint();return;}
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
+ const cloudUploadCancel=target.closest<HTMLElement>("[data-ev-cloud-upload-cancel]");
+ if(cloudUploadCancel){cloudUploadAbortController?.abort();state.message="Cancelling active upload and marking pending files as cancelled.";updateCloudUploadQueueView();return;}
+ const cloudUploadRetry=target.closest<HTMLElement>("[data-ev-cloud-upload-retry]");
+ if(cloudUploadRetry){
+  if(cloudUploadBusy)return;
+  const failed=state.cloudUploadItems.filter(item=>item.status==="failed").map(item=>({...item,status:"queued" as const,error:undefined}));
+  for(const item of failed){const index=state.cloudUploadItems.findIndex(current=>current.id===item.id);if(index>=0)state.cloudUploadItems[index]=item;}
+  if(failed.length)void startCloudUploadBatch(failed,state.cloudProjectId);
+  return;
+ }
  const cloudJobsRefresh=target.closest<HTMLElement>("[data-ev-cloud-jobs-refresh]");
  if(cloudJobsRefresh){void refreshCloudMediaJobs();return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
