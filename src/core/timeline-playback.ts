@@ -73,8 +73,10 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
       let opacity=1,transitionGain=1;
       if(track.kind==="video"){
         const index=enabledVideoClips.findIndex(item=>item.id===clip.id),previous=enabledVideoClips[index-1];
-        const fadeIn=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
-        const fadeOut=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const incomingTransition=previous?.transitionToNext;
+        const outgoingTransition=clip.transitionToNext;
+        const fadeIn=incomingTransition&&(incomingTransition.type==="dip-to-black"||incomingTransition.type==="crossfade")?incomingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeOut=outgoingTransition&&(outgoingTransition.type==="dip-to-black"||outgoingTransition.type==="crossfade")?outgoingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
         if(fadeIn>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(safeTime-start)/fadeIn)));
         if(fadeOut>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(end-safeTime)/fadeOut)));
       }
