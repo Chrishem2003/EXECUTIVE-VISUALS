@@ -43,3 +43,23 @@ test("timeline validates and exports audio pan and automation with the clip",()=
  const invalid={...result,tracks:result.tracks.map(track=>track.id==="a"?{...track,clips:[{...clip,audioAutomation:[{timeSeconds:5,gainDb:-3}]}]}:track)};
  assert.equal(validateTimeline(invalid).issues.some(issue=>issue.code==="invalid_audio_automation"),true);
 });
+
+
+test("builds music ducking automation around dialogue intervals and preserves pan points",()=>{
+ const result=createAudioDuckingAutomation([{timeSeconds:0,pan:-0.2},{timeSeconds:2,pan:0.3}],0,8,
+  [{startSeconds:1,endSeconds:3},{startSeconds:3.1,endSeconds:4}],-3,{attenuationDb:12,attackSeconds:0.2,releaseSeconds:0.4,mergeGapSeconds:0.2});
+ assert.deepEqual(result.map(point=>point.timeSeconds),[0,1,1.2,2,3.6,4]);
+ assert.equal(result[0].pan,-0.2);
+ assert.equal(result.find(point=>point.timeSeconds===1.2)?.gainDb,-15);
+ assert.equal(result.find(point=>point.timeSeconds===3.6)?.gainDb,-15);
+ assert.equal(result.find(point=>point.timeSeconds===4)?.gainDb,-3);
+});
+test("music already under dialogue begins ducked immediately and stays ducked to clip end",()=>{
+ const result=createAudioDuckingAutomation([],5,2,[{startSeconds:0,endSeconds:9}],0);
+ assert.deepEqual(result,[{timeSeconds:0,gainDb:-12,interpolation:"linear"}]);
+});
+test("ducking ignores non-overlapping dialogue and rejects invalid settings",()=>{
+ assert.throws(()=>createAudioDuckingAutomation([],0,4,[{startSeconds:5,endSeconds:6}]),/does not overlap/);
+ assert.throws(()=>createAudioDuckingAutomation([],0,4,[{startSeconds:1,endSeconds:2}],0,{attenuationDb:40}),/outside/);
+ assert.throws(()=>createAudioDuckingAutomation([],0,4,[{startSeconds:2,endSeconds:1}]),/increasing/);
+});
