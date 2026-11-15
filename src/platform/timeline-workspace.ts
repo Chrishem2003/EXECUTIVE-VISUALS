@@ -930,7 +930,6 @@ async function runAction(action:HTMLElement){
      const jobMetadata=result.job.output?.metadata;
      const storedProbe=asset?.metadata?.probe as {signalAnalysis?:{sceneChanges?:number[];unavailable?:{check?:string;reason?:string}[]}}|undefined;
      const analysis=jobMetadata?.signalAnalysis||storedProbe?.signalAnalysis;
-     const cuts=Array.isArray(analysis?.sceneChanges)?analysis.sceneChanges:[];
      if(!clip||!asset){state.message="Scene analysis completed, but the source clip is no longer on this timeline. No markers were inserted.";state.mediaJobId="";state.mediaJobType="";paint();return;}
      if(!Array.isArray(analysis?.sceneChanges)){
       const unavailable=analysis?.unavailable?.map(item=>item.check||item.reason).filter(Boolean).join(", ");
