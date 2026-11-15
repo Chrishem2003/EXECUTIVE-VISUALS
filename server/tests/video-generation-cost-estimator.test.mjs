@@ -52,10 +52,10 @@ test("shared preflight rejects unknown providers, models and unsupported Luma co
     () => estimateVideoGenerationCost({ provider: "luma", model: "other", resolution: "720p", durationSeconds: 5 }),
     error => error.code === "VIDEO_PRICE_UNVERIFIED"
   );
-  assert.throws(
-    () => estimateVideoGenerationCost({ provider: "luma", model: "ray-3.2", resolution: "360p", durationSeconds: 5 }),
-    error => error.code === "LUMA_PRICE_UNSUPPORTED_RESOLUTION"
-  );
+  const draft = estimateVideoGenerationCost({ provider: "luma", model: "ray-3.2", resolution: "360p", durationSeconds: 5 });
+  assert.equal(draft.amount, 0.06);
+  assert.equal(draft.credits, 20);
+  assert.equal(draft.resolution, "360p");
   assert.throws(
     () => estimateVideoGenerationCost({ provider: "luma", model: "ray-3.2", resolution: "720p", durationSeconds: 10, hdr: true }),
     error => error.code === "LUMA_PRICE_UNSUPPORTED_OPTION"

@@ -4,17 +4,17 @@ const DEFAULT_LIST_USD_PER_CREDIT = 0.003;
 const fail = (message, code = "LUMA_PRICE_INVALID_INPUT") => Object.assign(new Error(message), { code });
 const TABLES = Object.freeze({
   video: Object.freeze({
-    sdr: Object.freeze({ "540p": Object.freeze({5:0.15,10:0.45}), "720p": Object.freeze({5:0.30,10:0.90}), "1080p": Object.freeze({5:1.20,10:3.60}) }),
+    sdr: Object.freeze({ "360p": Object.freeze({5:0.06,10:0.18}), "540p": Object.freeze({5:0.15,10:0.45}), "720p": Object.freeze({5:0.30,10:0.90}), "1080p": Object.freeze({5:1.20,10:3.60}) }),
     hdr: Object.freeze({ "720p": Object.freeze({5:0.60}), "1080p": Object.freeze({5:2.40}) }),
     hdrExr: Object.freeze({ "720p": Object.freeze({5:0.90}), "1080p": Object.freeze({5:3.60}) })
   }),
   video_edit: Object.freeze({
-    sdr: Object.freeze({ "540p": Object.freeze({5:0.72,10:1.44}), "720p": Object.freeze({5:1.08,10:2.16}), "1080p": Object.freeze({5:2.16,10:4.32}) }),
-    hdr: Object.freeze({ "540p": Object.freeze({5:1.44,10:2.88}), "720p": Object.freeze({5:2.16,10:4.32}), "1080p": Object.freeze({5:4.32,10:8.64}) }),
-    hdrExr: Object.freeze({ "540p": Object.freeze({5:2.16,10:4.32}), "720p": Object.freeze({5:3.24,10:6.48}), "1080p": Object.freeze({5:6.48,10:12.96}) })
+    sdr: Object.freeze({ "360p": Object.freeze({5:0.54,10:1.08}), "540p": Object.freeze({5:0.72,10:1.44}), "720p": Object.freeze({5:1.08,10:2.16}), "1080p": Object.freeze({5:2.16,10:4.32}) }),
+    hdr: Object.freeze({ "360p": Object.freeze({5:1.08,10:2.16}), "540p": Object.freeze({5:1.44,10:2.88}), "720p": Object.freeze({5:2.16,10:4.32}), "1080p": Object.freeze({5:4.32,10:8.64}) }),
+    hdrExr: Object.freeze({ "360p": Object.freeze({5:1.62,10:3.24}), "540p": Object.freeze({5:2.16,10:4.32}), "720p": Object.freeze({5:3.24,10:6.48}), "1080p": Object.freeze({5:6.48,10:12.96}) })
   }),
-  video_extend: Object.freeze({ "540p":0.15, "720p":0.30, "1080p":1.20 }),
-  video_reframe: Object.freeze({ "540p":0.06, "720p":0.12, "1080p":0.36 })
+  video_extend: Object.freeze({ "360p":0.06, "540p":0.15, "720p":0.30, "1080p":1.20 }),
+  video_reframe: Object.freeze({ "360p":0.03, "540p":0.06, "720p":0.12, "1080p":0.36 })
 });
 
 function validDate(value) {
@@ -26,7 +26,7 @@ function validDate(value) {
 /** Published Luma Agents Ray 3.2 price estimate; never invoice or settlement evidence. */
 export function estimateLumaRay32Cost({ operation = "video", resolution, durationSeconds, hdr = false, exrExport = false, pricingDate } = {}) {
   if (!["video", "video_edit", "video_extend", "video_reframe"].includes(operation)) throw fail("Unsupported Ray 3.2 operation.");
-  if (!["540p", "720p", "1080p"].includes(resolution)) throw fail("Resolution must be 540p, 720p or 1080p; the 360p draft tier is not enabled in the model capability contract.", "LUMA_PRICE_UNSUPPORTED_RESOLUTION");
+  if (!["360p", "540p", "720p", "1080p"].includes(resolution)) throw fail("Resolution must be 360p, 540p, 720p or 1080p.", "LUMA_PRICE_UNSUPPORTED_RESOLUTION");
   if (typeof hdr !== "boolean" || typeof exrExport !== "boolean") throw fail("hdr and exrExport must be booleans.");
   if (exrExport && !hdr) throw fail("EXR export requires HDR.", "LUMA_PRICE_UNSUPPORTED_OPTION");
   if (!validDate(pricingDate)) throw fail("pricingDate must be a valid explicit YYYY-MM-DD value.", "LUMA_PRICE_DATE_REQUIRED");

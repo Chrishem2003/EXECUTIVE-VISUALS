@@ -21,7 +21,7 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
 }
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
-test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202);const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
+test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202,JSON.stringify(result.body));const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
 test("billable cloud render reserves a server-calculated amount before the job is queued",async()=>{
  const timelineDocument={tracks:[{id:"v1",kind:"video",clips:[
   {id:"c1",timelineStart:{value:0,rate:1},duration:{value:12,rate:1},assetId:"asset-1"}
@@ -60,7 +60,7 @@ test("billable cloud render does not reserve credits for empty timelines",async(
 });
 
 test("cloud render submission requires project editor authorization",async()=>{const f=setup({canWrite:false});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{}});assert.equal(result.status,404);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST"),false);});
-test("cloud render idempotency replays only the exact same timeline revision",async()=>{const existing=[{id:"623e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}}];const f=setup({existing});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,idempotencyKey:"render-1"});assert.equal(result.status,200);assert.equal(result.body.idempotentReplay,true);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].endsWith("/jobs")),false);});
+test("cloud render idempotency replays only the exact same timeline revision",async()=>{const existing=[{id:"623e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}}];const f=setup({existing});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,idempotencyKey:"render-1"});assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.idempotentReplay,true);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].endsWith("/jobs")),false);});
 test("cloud timeline API rejects unverified or malformed owner IDs and ignores unrelated routes",async()=>{const f=setup();assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:"not-uuid"})).status,401);assert.equal(await f.api.handle({method:"GET",path:"/api/not-cloud",ownerId:owner}),null);});
 
 test("cloud render history lists only timeline renders for an authorized project",async()=>{
@@ -668,4 +668,127 @@ test("cloud transformation cancellation refuses active work and unauthorized edi
  const forbidden=await denied.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/cancel",ownerId:owner});
  assert.equal(forbidden.status,403);
  assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[2].method==="PATCH"),false);
+});
+
+const lumaFrame="b23e4567-e89b-42d3-a456-426614174000";
+const lumaQuote="c23e4567-e89b-42d3-a456-426614174000";
+const lumaWorkerEnv={
+ CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+ VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+ LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",
+ LUMA_PROVIDER_FILES_SCHEMA_READY:"true",LUMA_AGENTS_API_KEY:"server-test-key",
+ LUMA_USD_PER_CREDIT:"0.003",SUPABASE_URL:"https://example.supabase.co",
+ SUPABASE_SERVICE_ROLE_KEY:"server-service-key",CLOUD_VIDEO_OUTPUT_HOSTS:"media.example.com"
+};
+
+test("Luma Ray 3.2 workflow quote validates private frame assets and records account-priced non-billable quote",async()=>{
+ const writes=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   const route=url.split("/rest/v1/")[1]||"";
+   if(route==="rpc/record_video_workflow_quote"){
+    writes.push(JSON.parse(options.body));
+    return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){return{id:assetId,projectId:project,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"luma-ui-quote-001",
+  node:{id:"luma-video",kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"9:16",referenceAssetId:lumaFrame,rightsConfirmed:true}},
+  values:{prompt:"Animate a cinematic city skyline"}
+ }});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.provider,"luma");
+ assert.equal(result.body.quote.model,"ray-3.2");
+ assert.equal(result.body.quote.operation,"generate");
+ assert.equal(result.body.quote.estimatedCredits,100);
+ assert.equal(result.body.quote.estimatedAmount,0.3);
+ assert.equal(result.body.quote.pricingSource,"luma_ray32_published_credits_contract_rate");
+ assert.match(result.body.quote.pricingUrl,/lumalabs\.ai/);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.paidExecutionEnabled,true);
+ assert.equal(writes.length,1);
+ assert.equal(writes[0].p_config_id,"luma-ray32");
+ assert.equal(writes[0].p_pricing_source,"luma_ray32_published_credits_contract_rate");
+ assert.equal(writes[0].p_operation,"generate");
+});
+
+test("Luma multi-keyframe quotes revalidate every private anchor in the exact project",async()=>{
+ const checked=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){checked.push(assetId);return{id:assetId,projectId:project,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },
+  authorize:async()=>true
+ });
+ const frameA="b23e4567-e89b-42d3-a456-426614174001";
+ const frameB="b23e4567-e89b-42d3-a456-426614174002";
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"luma-keyframe-quote-001",
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9",keyframeAssetIds:[frameA,frameB],keyframeIndexes:[0,120],rightsConfirmed:true}},
+  values:{prompt:"A continuous cinematic camera move"}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.deepEqual(checked,[frameA,frameB]);
+ assert.equal(result.body.quote.estimatedCredits,100);
+ assert.equal(result.body.quote.billable,false);
+});
+test("Luma quote stays blocked until schema and private frame scope are ready",async()=>{
+ let writes=0;
+ const makeApi=(env,assetProject=project)=>createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{
+   timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},
+   assets:{async get({assetId}){return{id:assetId,projectId:assetProject,ownerId:owner,mediaType:"image/png",size:4,sha256:"a".repeat(64)};}}
+  },authorize:async()=>true
+ });
+ const body={projectId:project,requestId:"luma-ui-quote-002",node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",referenceAssetId:lumaFrame,rightsConfirmed:true}},values:{prompt:"A cinematic scene"}};
+ const schemaBlocked=await makeApi({...lumaWorkerEnv,LUMA_PROVIDER_FILES_SCHEMA_READY:"false"}).handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body});
+ assert.equal(schemaBlocked.status,503);
+ const wrongProject=await makeApi(lumaWorkerEnv,"d23e4567-e89b-42d3-a456-426614174000").handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body});
+ assert.equal(wrongProject.status,422,JSON.stringify(wrongProject.body));
+ assert.equal(writes,0);
+});
+
+test("Luma approval uses the same governed quote adapter and stable config ID",async()=>{
+ let approvalArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{job_id:"e23e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,budget_reservation_id:"f23e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"}]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},projects:{async get(){return{id:project,ownerId:owner};}},assets:{async get(){return null;}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:lumaQuote,requestId:"luma-ui-approval-001",
+  node:{kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:5,resolution:"720p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:0.5,approvalNote:"Approve this exact Luma generation."
+ }});
+ assert.equal(result.status,202);
+ assert.equal(approvalArgs.p_config_id,"luma-ray32");
+ assert.equal(approvalArgs.p_input.provider,"luma");
+ assert.equal(approvalArgs.p_input.model,"ray-3.2");
+ assert.equal(approvalArgs.p_input.operation,"generate");
 });
