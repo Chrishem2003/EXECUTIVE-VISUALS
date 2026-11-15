@@ -29,7 +29,7 @@ test("parses WebVTT cues with optional identifiers and millisecond timestamps",(
 });
 
 test("preserves WebVTT voice speaker labels while stripping voice markup from dialogue",()=>{
- const cues=parseTranscriptWebVtt("WEBVTT\\n\\n00:00:00.000 --> 00:00:02.000\\n<v Alex Morgan>Hello there.</v>\\n\\n00:00:02.000 --> 00:00:04.000\\n<v Jamie>Welcome back.</v>\\n\\n00:00:04.000 --> 00:00:05.000\\nNo speaker label.\\n");
+ const cues=parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alex Morgan>Hello there.</v>\n\n00:00:02.000 --> 00:00:04.000\n<v Jamie>Welcome back.</v>\n\n00:00:04.000 --> 00:00:05.000\nNo speaker label.\n");
  assert.deepEqual(cues.map(cue=>({speaker:cue.speaker,text:cue.text})),[
   {speaker:"Alex Morgan",text:"Hello there."},
   {speaker:"Jamie",text:"Welcome back."},
