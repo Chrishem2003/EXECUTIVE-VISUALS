@@ -329,7 +329,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     videoEffects.push(`[${item.inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
     videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    }else{
-    videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+    const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
+    videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
     videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    }
    currentVideo=`[${videoLabel}]`;
