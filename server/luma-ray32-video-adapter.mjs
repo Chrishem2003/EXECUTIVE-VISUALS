@@ -182,11 +182,12 @@ export function createLumaRay32Adapter({
   if (!Number.isInteger(billingSettlementMaxWaitMs) || billingSettlementMaxWaitMs < 60000 || billingSettlementMaxWaitMs > 60 * 60 * 1000 || typeof now !== "function") throw fail("Luma billing-settlement wait configuration is invalid.");
 
   async function request(path, init = {}) {
+    const { allowEmptyResponse = false, ...requestInit } = init;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetchImpl(new URL((base.pathname.endsWith("/") ? base.pathname.slice(0, -1) : base.pathname) + path, base.origin).toString(), {
-        ...init,
+        ...requestInit,
         headers: {
           authorization: "Bearer " + apiKey,
           accept: "application/json",
@@ -202,7 +203,10 @@ export function createLumaRay32Adapter({
         error.retryable = response.status === 429 || response.status >= 500;
         throw error;
       }
-      if (!plain(body)) throw fail("Luma API returned an invalid response object.", "LUMA_VIDEO_RESPONSE_INVALID");
+      if (!plain(body)) {
+        if (allowEmptyResponse && response.ok && body === null) return {};
+        throw fail("Luma API returned an invalid response object.", "LUMA_VIDEO_RESPONSE_INVALID");
+      }
       return body;
     } catch (error) {
       if (error?.name === "AbortError") throw fail("Luma API request timed out.", "LUMA_VIDEO_TIMEOUT");
@@ -213,6 +217,8 @@ export function createLumaRay32Adapter({
   const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"]);
   const MAX_FILE_BYTES = 250 * 1024 * 1024;
+
+  const issuedUploadReceipts = new WeakSet();
 
   function validateUploadReceipt(body, expected) {
     const file = body?.file || body;
@@ -241,8 +247,9 @@ export function createLumaRay32Adapter({
         throw fail("Luma returned unsafe presigned upload headers.", "LUMA_FILE_RESPONSE_INVALID");
       }
     }
-    return Object.freeze({ fileId, state: file.state, mimeType: expected.mimeType, sizeBytes: expected.sizeBytes,
-      upload: Object.freeze({ url: url.toString(), method: "PUT", headers: Object.freeze({ ...headers }), expiresAt: upload.expires_at }) });
+    const uploadReceipt = Object.freeze({ url: url.toString(), method: "PUT", headers: Object.freeze({ ...headers }), expiresAt: upload.expires_at });
+    issuedUploadReceipts.add(uploadReceipt);
+    return Object.freeze({ fileId, state: file.state, mimeType: expected.mimeType, sizeBytes: expected.sizeBytes, upload: uploadReceipt });
   }
 
   return Object.freeze({
@@ -253,7 +260,7 @@ export function createLumaRay32Adapter({
       const normalizedMime = typeof mimeType === "string" ? mimeType.toLowerCase().trim() : "";
       if (!FILE_MIME_TYPES.has(normalizedMime) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > MAX_FILE_BYTES ||
           !["input", "reference"].includes(purpose) ||
-          (filename !== undefined && (typeof filename !== "string" || !filename.trim() || filename.length > 255 || /[\\r\\n]/.test(filename))) ||
+          (filename !== undefined && (typeof filename !== "string" || !filename.trim() || filename.length > 255 || /[\r\n]/.test(filename))) ||
           (userId !== undefined && (typeof userId !== "string" || !userId.trim() || userId.length > 256))) {
         throw fail("Luma file upload requires a supported media type, bounded size and valid metadata.", "LUMA_FILE_INPUT_INVALID");
       }
@@ -265,7 +272,7 @@ export function createLumaRay32Adapter({
       return validateUploadReceipt(body, { mimeType: normalizedMime, sizeBytes });
     },
     async uploadFileBytes({ upload, bytes, mimeType } = {}) {
-      if (!plain(upload) || upload.method !== "PUT" || typeof upload.url !== "string" ||
+      if (!plain(upload) || !issuedUploadReceipts.has(upload) || upload.method !== "PUT" || typeof upload.url !== "string" ||
           !(bytes instanceof Uint8Array) || bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES ||
           typeof mimeType !== "string" || !FILE_MIME_TYPES.has(mimeType.toLowerCase())) {
         throw fail("Luma file upload requires a valid upload receipt and bounded media bytes.", "LUMA_FILE_INPUT_INVALID");
@@ -310,8 +317,8 @@ export function createLumaRay32Adapter({
     },
     async deleteFile(fileId) {
       if (typeof fileId !== "string" || !FILE_ID.test(fileId)) throw fail("Luma file ID is invalid.", "LUMA_FILE_ID_INVALID");
-      const body = await request("/files/" + encodeURIComponent(fileId), { method: "DELETE" });
-      return { fileId, deleted: body.deleted === true || body.state === "deleted" };
+      await request("/files/" + encodeURIComponent(fileId), { method: "DELETE", allowEmptyResponse: true });
+      return { fileId, deleted: true };
     },
     async prepareInput(input) { return validateInput(input); },
     async submit(payload) {
