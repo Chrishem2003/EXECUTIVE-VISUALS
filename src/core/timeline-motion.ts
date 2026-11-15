@@ -43,6 +43,6 @@ export function evaluateMotionProperty(points:readonly MotionKeyframe[]|undefine
 }
 export function evaluateMotionKeyframes(points:readonly MotionKeyframe[]|undefined,timeSeconds:number,base:{x:number;y:number;width:number;height:number;opacity:number;rotation:number},durationSeconds:number,playbackMode:MotionPlaybackMode="none"){
  const keys=normalizeMotionKeyframes(points,durationSeconds),first=keys[0]?.timeSeconds??0,last=keys[keys.length-1]?.timeSeconds??0,span=last-first;let time=timeSeconds;
- if(span>0&&Number.isFinite(time)&&time>=first){const elapsed=time-first;if(playbackMode==="loop")time=first+((elapsed%span)+span)%span;else if(playbackMode==="ping-pong"){const cycle=((elapsed%(span*2))+span*2)%(span*2);time=first+(cycle<=span?cycle:span*2-cycle);}}
+ if(span>0&&first===0&&Number.isFinite(time)&&time>=first){const elapsed=time-first;if(playbackMode==="loop")time=first+((elapsed%span)+span)%span;else if(playbackMode==="ping-pong"){const cycle=((elapsed%(span*2))+span*2)%(span*2);time=first+(cycle<=span?cycle:span*2-cycle);}}
  return {x:evaluateMotionProperty(points,time,"x",base.x,durationSeconds),y:evaluateMotionProperty(points,time,"y",base.y,durationSeconds),width:evaluateMotionProperty(points,time,"width",base.width,durationSeconds),height:evaluateMotionProperty(points,time,"height",base.height,durationSeconds),opacity:evaluateMotionProperty(points,time,"opacity",base.opacity,durationSeconds),rotation:evaluateMotionProperty(points,time,"rotation",base.rotation,durationSeconds)};
 }
