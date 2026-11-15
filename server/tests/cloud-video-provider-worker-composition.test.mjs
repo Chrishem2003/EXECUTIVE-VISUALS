@@ -136,6 +136,8 @@ test("refuses Runway worker registration without authoritative task-level cost r
       FAL_KEY: "queue-test-key",
       FAL_BILLING_KEY: "billing-test-key",
       RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_VIDEO_ENABLED: "true",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true",
       RUNWAY_API_KEY: "runway-test-key"
     },
     prepareRunwayInput: async () => ({})
@@ -152,6 +154,8 @@ test("Aleph2 worker registration composes the built-in owner-scoped private sour
       FAL_KEY: "queue-test-key",
       FAL_BILLING_KEY: "billing-test-key",
       RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_VIDEO_ENABLED: "true",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true",
       RUNWAY_API_KEY: "runway-test-key"
     },
     resolveRunwayActualCost: async () => ({
@@ -182,6 +186,8 @@ test("source-edit model registration composes server-side source metadata probin
       FAL_KEY: "queue-test-key",
       FAL_BILLING_KEY: "billing-test-key",
       RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_VIDEO_ENABLED: "true",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true",
       RUNWAY_API_KEY: "runway-test-key"
     },
     resolveRunwayActualCost: async () => ({
