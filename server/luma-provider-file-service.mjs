@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES=new Set(["image/jpeg","image/png","image/webp","image/gif","video/mp4","video/webm","video/quicktime"]);
 const MAX_BYTES=250*1024*1024;
+const MAX_VIDEO_BYTES=200*1024*1024;
 const fail=(message,code,status=400)=>Object.assign(new Error(message),{code,status});
 const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 
@@ -43,7 +44,9 @@ export function createLumaProviderFileService({
   if(!UUID.test(ownerId||"")||!UUID.test(assetId||"")||(projectId!==null&&projectId!==undefined&&!UUID.test(projectId)))throw fail("Authenticated owner, project and asset identifiers are required.","LUMA_FILE_SCOPE_INVALID",400);
   const asset=await assets.get({ownerId,assetId});
   if(!asset||asset.id!==assetId||(asset.projectId||null)!==(projectId||null)||(!projectId&&asset.ownerId!==ownerId))throw fail("Private asset is not available in the requested owner/project scope.","LUMA_FILE_ASSET_NOT_FOUND",404);
-  if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>maxBytes||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
+  if(!TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||!/^[a-f0-9]{64}$/i.test(asset.sha256||""))throw fail("Private asset type, size or checksum is not supported by Luma Files API.","LUMA_FILE_ASSET_UNSUPPORTED",415);
+  const assetLimit=asset.mediaType.startsWith("video/")?Math.min(maxBytes,MAX_VIDEO_BYTES):maxBytes;
+  if(asset.size>assetLimit)throw fail(asset.mediaType.startsWith("video/")?"Luma source video exceeds the 200 MB provider limit.":"Luma source asset exceeds the configured upload limit.","LUMA_FILE_SIZE_INVALID",413);
   const signed=await assets.createSignedUrl({ownerId,assetId,expiresIn:300});
   if(!signed||signed.asset?.id!==assetId||signed.asset.ownerId!==asset.ownerId||(signed.asset.projectId||null)!==(asset.projectId||null)||typeof signed.url!=="string")throw fail("Private asset gateway did not return a matching owner/project-scoped signed download.","LUMA_FILE_SIGNED_URL_INVALID",502);
   let url;try{url=new URL(signed.url);}catch{throw fail("Private asset gateway returned an invalid signed URL.","LUMA_FILE_SIGNED_URL_INVALID",502);}
