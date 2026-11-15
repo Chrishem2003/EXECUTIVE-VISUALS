@@ -48,7 +48,7 @@ test("timeline validates and exports audio pan and automation with the clip",()=
 test("builds music ducking automation around dialogue intervals and preserves pan points",()=>{
  const result=createAudioDuckingAutomation([{timeSeconds:0,pan:-0.2},{timeSeconds:2,pan:0.3}],0,8,
   [{startSeconds:1,endSeconds:3},{startSeconds:3.1,endSeconds:4}],-3,{attenuationDb:12,attackSeconds:0.2,releaseSeconds:0.4,mergeGapSeconds:0.2});
- assert.deepEqual(result.map(point=>point.timeSeconds),[0,1,1.2,3.6,4]);
+ assert.deepEqual(result.map(point=>point.timeSeconds),[0,1,1.2,2,3.6,4]);
  assert.equal(result[0].pan,-0.2);
  assert.equal(result.find(point=>point.timeSeconds===1.2)?.gainDb,-15);
  assert.equal(result.find(point=>point.timeSeconds===3.6)?.gainDb,-3);
