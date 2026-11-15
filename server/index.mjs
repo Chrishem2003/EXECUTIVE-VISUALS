@@ -1833,14 +1833,15 @@ export function createAppServer() {
           const idempotencyKey=String(req.headers["idempotency-key"]||"");
           if(!idempotencyKey||idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Job retries require an idempotency key no longer than 180 characters.");return;}
           const originalInput=parseJson(job.input_json,{});
-          const retrySequence=(Number.isSafeInteger(originalInput.retrySequence)?originalInput.retrySequence:0)+1;
-          if(retrySequence>5){fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
           const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
           if(existing){
             const existingInput=parseJson(existing.input_json,{});
-            if(existing.job_type!==job.job_type||existing.project_id!==job.project_id||existingInput.retryOfJobId!==job.id||existingInput.retrySequence!==retrySequence){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job retry.");return;}
+            if(existing.job_type!==job.job_type||existing.project_id!==job.project_id||existingInput.retryOfJobId!==job.id||!Number.isSafeInteger(existingInput.retrySequence)||existingInput.retrySequence<1){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job retry.");return;}
             send(res,200,{job:recordJob(existing),retryOfJobId:job.id,idempotentReplay:true},cors);return;
           }
+          const retryCount=db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").get(user.id,job.id).count;
+          const retrySequence=Number(retryCount)+1;
+          if(retrySequence>5){fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
           if(job.job_type==="timeline.render"){
             const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(originalInput.timelineId||""));
             if(!timeline||timeline.project_id!==job.project_id||(timeline.project_id?!canWriteProject(db,user.id,timeline.project_id):timeline.owner_id!==user.id)){fail(res,404,"TIMELINE_NOT_FOUND","The original timeline is no longer accessible for retry.");return;}
