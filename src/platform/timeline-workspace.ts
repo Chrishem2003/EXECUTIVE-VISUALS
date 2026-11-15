@@ -1572,7 +1572,7 @@ document.addEventListener("click",event=>{
   const form=document.querySelector<HTMLFormElement>("#tl-clip-inspector"),track=state.timeline.tracks.find(item=>item.id===form?.dataset.track),clip=track?.clips.find(item=>item.id===form?.dataset.clip),index=Number(motionSelect.dataset.tlMotionSelect),keys=clip?.metadata?.motionKeyframes as MotionKeyframe[]|undefined,point=keys?.[index];
   if((track?.kind==="overlay"||track?.kind==="video")&&clip&&point&&form){
    for(const [name,value] of Object.entries({x:point.x,y:point.y,width:point.width,height:point.height,opacity:point.opacity,rotation:point.rotation}))if(value!==undefined){const field=form.elements.namedItem(name) as HTMLInputElement|null;if(field)field.value=String(value);}
-   const easing=form.elements.namedItem("motionInterpolation") as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";
+   const easing=(form.elements.namedItem("motionInterpolation")||form.elements.namedItem("transformInterpolation")) as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";
    state.playheadFrame=clampTimelineFrame((clip.timelineStart.value/clip.timelineStart.rate+point.timeSeconds)*fps(),state.timeline);syncPreviewAtFrame(state.playheadFrame);state.message="Selected transform keyframe "+(index+1)+". Adjust its values and save at this playhead time.";
   }
   return;
