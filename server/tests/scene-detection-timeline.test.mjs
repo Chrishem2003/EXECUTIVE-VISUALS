@@ -16,6 +16,10 @@ test("deduplicates detected cuts and existing timeline markers within one frame"
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,sceneChanges:[3,3.01,4,5],existingMarkerFrames:[72]}),[96,120]);
 });
 
+test("maps source cuts through a constant playback speed",()=>{
+ assert.deepEqual(mapSceneChangesToTimelineFrames({...base,playbackSpeed:2,sceneChanges:[3,5]}),[60,84]);
+});
+
 test("rejects malformed timing and non-array detector output without creating markers",()=>{
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,sceneChanges:null}),[]);
  assert.deepEqual(mapSceneChangesToTimelineFrames({...base,timelineFps:0,sceneChanges:[3]}),[]);
