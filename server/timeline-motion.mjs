@@ -13,21 +13,23 @@ export function normalizeTimelineMotion(points,durationSeconds){
  for(let i=1;i<sorted.length;i++)if(sorted[i].timeSeconds===sorted[i-1].timeSeconds)throw Object.assign(new Error("Motion keyframe times must be unique."),{code:"INVALID_MOTION_KEYFRAMES"});
  return sorted;
 }
-export function evaluateTimelineMotion(points,timeSeconds,property,fallback,durationSeconds){
- const keys=normalizeTimelineMotion(points,durationSeconds).filter(point=>point[property]!==undefined),time=Math.max(0,Math.min(durationSeconds,Number.isFinite(timeSeconds)?timeSeconds:0));
+export function evaluateTimelineMotion(points,timeSeconds,property,fallback,durationSeconds,playbackMode="none"){
+ const all=normalizeTimelineMotion(points,durationSeconds),keys=all.filter(point=>point[property]!==undefined),first=all[0]?.timeSeconds??0,last=all[all.length-1]?.timeSeconds??0,span=last-first;let mapped=Number.isFinite(timeSeconds)?timeSeconds:0;if(span>0&&mapped>=first){const elapsed=mapped-first;if(playbackMode==="loop")mapped=first+((elapsed%span)+span)%span;else if(playbackMode==="ping-pong"){const cycle=((elapsed%(span*2))+span*2)%(span*2);mapped=first+(cycle<=span?cycle:span*2-cycle);}}const time=Math.max(0,Math.min(durationSeconds,mapped));
  if(!keys.length)return fallback;let previousTime=0,previousValue=fallback;
  for(const point of keys){const value=point[property];if(time<point.timeSeconds){if(point.interpolation==="step"||point.timeSeconds<=previousTime)return previousValue;const raw=(time-previousTime)/(point.timeSeconds-previousTime),t=Math.max(0,Math.min(1,raw)),ratio=point.interpolation==="ease-in"?t*t*t:point.interpolation==="ease-out"?1-Math.pow(1-t,3):point.interpolation==="ease-in-out"?t*t*(3-2*t):t;return previousValue+(value-previousValue)*ratio;}previousTime=point.timeSeconds;previousValue=value;}
  return previousValue;
 }
 function number(value){return Number(value.toFixed(6)).toString();}
-export function buildTimelineMotionExpression(points,property,fallback,durationSeconds,timeVariable="t"){
+export function buildTimelineMotionExpression(points,property,fallback,durationSeconds,timeVariable="t",playbackMode="none"){
  const keys=normalizeTimelineMotion(points,durationSeconds).filter(point=>point[property]!==undefined);
  if(!keys.length)return number(fallback);
- const ratio=(mode,raw,time)=>{const u="clip("+raw+"\\,0\\,1)";if(mode==="step")return "gte("+timeVariable+"\\,"+number(time)+")";if(mode==="ease-in")return "("+u+")*("+u+")*("+u+")";if(mode==="ease-out")return "1-(1-("+u+"))*(1-("+u+"))*(1-("+u+"))";if(mode==="ease-in-out")return "("+u+")*("+u+")*(3-2*("+u+"))";return u;};
- const first=keys[0];
+ const first=keys[0],last=keys[keys.length-1],span=last.timeSeconds-first.timeSeconds;let clock=timeVariable;
+ if(span>0&&playbackMode==="loop")clock=number(first.timeSeconds)+"+mod("+timeVariable+"-"+number(first.timeSeconds)+"\\,"+number(span)+")";
+ else if(span>0&&playbackMode==="ping-pong")clock=number(first.timeSeconds)+"+("+number(span)+"-abs(mod("+timeVariable+"-"+number(first.timeSeconds)+"\\,"+number(span*2)+")-"+number(span)+"))";
+ const ratio=(mode,raw,time)=>{const u="clip("+raw+"\\,0\\,1)";if(mode==="step")return "gte("+clock+"\\,"+number(time)+")";if(mode==="ease-in")return "("+u+")*("+u+")*("+u+")";if(mode==="ease-out")return "1-(1-("+u+"))*(1-("+u+"))*(1-("+u+"))";if(mode==="ease-in-out")return "("+u+")*("+u+")*(3-2*("+u+"))";return u;};
  let expression=number(first[property]);
- if(first.timeSeconds>0){const raw=timeVariable+"/"+number(first.timeSeconds);expression=number(fallback)+"+("+number(first[property]-fallback)+")*("+ratio(first.interpolation,raw,first.timeSeconds)+")";}
- for(let i=1;i<keys.length;i++){const left=keys[i-1],right=keys[i],raw="("+timeVariable+"-"+number(left.timeSeconds)+")/"+number(right.timeSeconds-left.timeSeconds);expression+="+("+number(right[property]-left[property])+")*("+ratio(right.interpolation,raw,right.timeSeconds)+")";}
+ if(first.timeSeconds>0){const raw=clock+"/"+number(first.timeSeconds);expression=number(fallback)+"+("+number(first[property]-fallback)+")*("+ratio(first.interpolation,raw,first.timeSeconds)+")";}
+ for(let i=1;i<keys.length;i++){const left=keys[i-1],right=keys[i],raw="("+clock+"-"+number(left.timeSeconds)+")/"+number(right.timeSeconds-left.timeSeconds);expression+="+("+number(right[property]-left[property])+")*("+ratio(right.interpolation,raw,right.timeSeconds)+")";}
  return expression;
 }
 export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWidth=1920,canvasHeight=1080){
@@ -36,7 +38,7 @@ export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWid
  const base={x:Math.max(-16384,Math.min(16384,Number(metadata.x)||0)),y:Math.max(-16384,Math.min(16384,Number(metadata.y)||0)),width:Math.max(16,Math.min(16384,Number(metadata.width)||width)),height:Math.max(16,Math.min(16384,Number(metadata.height)||height)),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
  if(!points.length&&base.x===0&&base.y===0&&base.width===width&&base.height===height&&base.opacity===1&&base.rotation===0&&metadata.x===undefined&&metadata.y===undefined&&metadata.width===undefined&&metadata.height===undefined&&metadata.opacity===undefined&&metadata.rotation===undefined)return null;
  const animated=Object.fromEntries(Object.keys(LIMITS).map(property=>[property,points.some(point=>point[property]!==undefined)]));
- const expression=(property,variable="t")=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,variable);
+ const expression=(property,variable="t")=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,variable,metadata.motionPlaybackMode==="loop"||metadata.motionPlaybackMode==="ping-pong"?metadata.motionPlaybackMode:"none");
  const widthExpression=animated.width?expression("width"):""+number(base.width),heightExpression=animated.height?expression("height"):""+number(base.height),x=animated.x?expression("x"):""+number(base.x),y=animated.y?expression("y"):""+number(base.y);
  const opacity=animated.opacity?expression("opacity","T"):""+number(base.opacity),rotated=animated.rotation||base.rotation!==0;
  const maxWidth=Math.max(base.width,...points.map(point=>point.width??base.width)),maxHeight=Math.max(base.height,...points.map(point=>point.height??base.height));
