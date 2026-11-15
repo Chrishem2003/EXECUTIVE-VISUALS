@@ -26,7 +26,7 @@ These foundations do not imply that every advanced effect or AI feature below is
 
 1. **Caption style presets**
    - Original presets for clean, social-bold, cinematic and minimal looks.
-   - Apply a preset to one caption clip or an entire caption track.
+   - Apply a preset to one caption clip or an entire caption track — implemented in PR #606 with one-step undo and revision-safe persistence. Safe-area preview remains outstanding.
    - Preserve per-project brand styles and allow custom overrides.
    - Add a safe-area preview for common vertical, square and landscape compositions.
 2. **Caption timing and accessibility**
