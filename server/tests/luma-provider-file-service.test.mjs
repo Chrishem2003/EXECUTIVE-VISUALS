@@ -16,7 +16,7 @@ function fixture({attemptState="PREPARED",remoteState="ready",owner=ownerId,chec
  const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:owner,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
  const assets={
   async get({ownerId:requested,assetId:requestedAsset}){return requested===owner&&requestedAsset===assetId?{...asset,sha256:checksum}:null;},
-  async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset},url:"https://storage.example/signed-private-object"};}
+  async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:requested,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
  };
  const repository={
   async getFileByAsset(){return state.file;},
@@ -34,8 +34,8 @@ function fixture({attemptState="PREPARED",remoteState="ready",owner=ownerId,chec
   async getFile(){calls.get++;return{fileId,state:remoteState,mimeType:"video/mp4",sizeBytes:4,failureReason:null};},
   async deleteFile(){calls.delete++;return{fileId,deleted:true};}
  };
- const fetchImpl=async()=>({ok:true,status:200,headers:{get:()=>String(bytes.byteLength)},async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);}});
- const service=createLumaProviderFileService({assets,adapter,repository,fetchImpl,now:()=>Date.parse("2026-11-15T12:00:00.000Z")});
+ const fetchImpl=async()=>({ok:true,status:200,headers:{get:name=>name==="content-length"?String(bytes.byteLength):"video/mp4"},body:{getReader(){let sent=false;return{async read(){if(sent)return{done:true};sent=true;return{done:false,value:bytes};},async cancel(){},releaseLock(){}};}}});
+ const service=createLumaProviderFileService({assets,adapter,repository,fetchImpl,supabaseUrl:"https://storage.example",now:()=>Date.parse("2026-11-15T12:00:00.000Z")});
  return{service,calls,state,adapter,repository,assets};
 }
 
