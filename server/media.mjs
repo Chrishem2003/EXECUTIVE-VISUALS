@@ -355,12 +355,12 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const retimeFilters=speedExpression?["setpts=\'"+speedExpression+"/TB\'"]:speed===1?[]:["setpts=(PTS-STARTPTS)/"+speed.toFixed(6)];
     const sourceInputIndex=inputIndex,baseFilters=["trim=duration="+sourceDuration.toFixed(6),"setpts=PTS-STARTPTS",...retimeFilters,...effect.preScale];
     if(hasMotion){
-      const motion=buildTimelineMotionFilters({x:0,y:0,width,height,opacity:1,rotation:0,...metadata},duration);
+      const motion=buildTimelineMotionFilters({x:0,y:0,width,height,opacity:1,rotation:0,...metadata},duration,width,height);
       if(!motion)throw Object.assign(new Error("Video transform settings could not be compiled."),{code:"INVALID_MOTION_KEYFRAMES"});
-      const blackInputIndex=sourceInputIndex+1,transformLabel=label+"-transform",scale=motion.filters[0].startsWith("scale=")?motion.filters[0].replace(/^(scale=.*)$/,"$1:force_original_aspect_ratio=decrease"):motion.filters[0];
+      const blackInputIndex=sourceInputIndex+1,transformLabel=label+"-transform";
       args.push("-f","lavfi","-t",duration.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
       inputIndex+=2;
-      const sourceFilter="["+sourceInputIndex+":v]"+[...baseFilters,scale,...motion.filters.slice(1),"fps="+fpsNum+"/"+fpsDen,...effect.postScale,"setsar=1"].join(",")+"["+transformLabel+"]";
+      const sourceFilter="["+sourceInputIndex+":v]"+[...baseFilters,...motion.filters,"fps="+fpsNum+"/"+fpsDen,...effect.postScale,"setsar=1"].join(",")+"["+transformLabel+"]";
       const compositeFilter="["+blackInputIndex+":v]["+transformLabel+"]"+motion.overlay+"["+label+"]";
       segments.push({label,filter:sourceFilter+";"+compositeFilter,effectsEnabled:effect.enabled});
     }else{
@@ -408,10 +408,9 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
     const file=join(mediaRoot,asset.storage_path);
     args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
-    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration);
+    const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
     if(motion){
-      const scale=motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease");
-      videoEffects.push(`[${inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
+      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
       videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
     }else{
       const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
