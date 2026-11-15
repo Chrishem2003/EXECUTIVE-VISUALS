@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {addClip,addTrack,createGeneratedVideoClip,createTimeline} from "../../src/core/timeline.ts";
-import {createTranscriptPaperEditTrack,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
+import {analyzeTranscriptPauses,createTranscriptPaperEditTrack,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
 
 const vtt=`WEBVTT
 
@@ -35,6 +35,27 @@ test("preserves WebVTT voice speaker labels while stripping voice markup from di
   {speaker:"Jamie",text:"Welcome back."},
   {speaker:undefined,text:"No speaker label."}
  ]);
+});
+
+test("detects only gaps at or above the requested pause threshold",()=>{
+ const cues=parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nFirst thought.\n\n00:00:01.500 --> 00:00:02.000\nQuick follow-up.\n\n00:00:04.000 --> 00:00:05.000\nNext topic.\n");
+ assert.deepEqual(analyzeTranscriptPauses(cues,0.75),[
+  {start:2,end:4,duration:2,afterCueIndex:1,beforeCueIndex:2}
+ ]);
+ assert.deepEqual(analyzeTranscriptPauses(cues,0.1).map(pause=>pause.duration),[0.5,2]);
+});
+
+test("pause analysis validates threshold and safely ignores overlapping cues",()=>{
+ const cues=[
+  {index:0,start:0,end:2,text:"First"},
+  {index:1,start:1.5,end:3,text:"Overlap"},
+  {index:2,start:4,end:5,text:"Last"}
+ ];
+ assert.deepEqual(analyzeTranscriptPauses(cues,0.75),[
+  {start:3,end:4,duration:1,afterCueIndex:1,beforeCueIndex:2}
+ ]);
+ assert.throws(()=>analyzeTranscriptPauses(cues,0),/between 0.1 and 30/);
+ assert.throws(()=>analyzeTranscriptPauses(cues,31),/between 0.1 and 30/);
 });
 
 test("rejects malformed, empty and oversized transcript inputs",()=>{

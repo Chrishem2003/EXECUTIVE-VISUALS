@@ -11,7 +11,7 @@ Paper Edit turns a timestamped WebVTT transcript into an editable video track. I
 3. Open **Transcript Paper Edit** in the clip tools panel.
 4. Select the source video clip.
 5. Import a timestamped `.vtt` file, or paste its contents into the transcript field. The editor validates the file before placing its contents in the transcript field.
-6. Review the parsed cue list. Search words or phrases and filter by WebVTT speaker labels to narrow visible moments without changing selection. Each cue is independently selectable; use **Select all cues** or **Clear selection** to change the selection quickly.
+6. Review the parsed cue list. Search words or phrases and filter by WebVTT speaker labels to narrow visible moments without changing selection. The editor identifies gaps between transcript cues and shows their source time ranges before assembly. Set the pause threshold from 0.1 to 30 seconds to control which gaps are reported (default 0.75 seconds). Each cue is independently selectable; use **Select all cues** or **Clear selection** to change the selection quickly.
 7. Choose **Build paper edit from transcript**. Only checked cues are assembled, in source-time order.
 8. Review the new **Paper Edit** video track at the end of the sequence. Each cue is a separate, editable clip referencing the original video asset.
 
@@ -36,6 +36,6 @@ A timestamped WebVTT transcript can be produced by the existing review-first tra
 
 ## Known limitations
 
-- Selection is per complete WebVTT cue; arbitrary word- or partial-sentence ranges are not supported yet. Search and speaker filters only hide or show cue rows; they do not alter the selected set.
-- It creates a rough-cut track only. It does not automatically remove silence, detect filler words, perform speaker diarization, or choose the strongest story moments. Speaker filtering uses existing WebVTT voice tags (`<v Speaker Name>`) and does not infer speakers when labels are absent.
+- Selection is per complete WebVTT cue; arbitrary word- or partial-sentence ranges are not supported yet. Search and speaker filters only hide or show cue rows; they do not alter the selected set. Pause analysis is informational and does not modify cue selection.
+- It creates a rough-cut track and reports long gaps between transcript cues. Those inter-cue gaps are naturally omitted when selected dialogue clips are assembled contiguously; this is not waveform-based silence detection and does not remove silence inside a cue. It does not detect filler words, perform speaker diarization, or choose the strongest story moments. Speaker filtering uses existing WebVTT voice tags (`<v Speaker Name>`) and does not infer speakers when labels are absent.
 - Variable-speed clips and transcript formats other than WebVTT are not supported yet.
