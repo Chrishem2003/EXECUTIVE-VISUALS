@@ -879,6 +879,30 @@ test("batch video finishing API authenticates, scopes sources, queues FFmpeg job
   assert.equal(changed.status,409);
   assert.equal((await changed.json()).error.code,"IDEMPOTENCY_CONFLICT");
 
+  const failDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    const stamp=new Date().toISOString();
+    failDb.prepare("UPDATE jobs SET status='failed',error_json=?,updated_at=?,completed_at=? WHERE id=?")
+      .run(json({code:"TEST_FAILURE",message:"Simulated transient worker failure."}),stamp,stamp,result.jobs[0].id);
+  }finally{failDb.close();}
+  const retryHeaders={"content-type":"application/json","idempotency-key":"media-batch-retry-001"};
+  const retry=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:retryHeaders},owner);
+  assert.equal(retry.status,202,await retry.clone().text());
+  const retryBody=await retry.json();
+  assert.equal(retryBody.job.status,"queued");
+  assert.equal(retryBody.retryOfJobId,result.jobs[0].id);
+  assert.equal(retryBody.job.input.retryOfJobId,result.jobs[0].id);
+  assert.equal(retryBody.job.input.retrySequence,1);
+  const retryReplay=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:retryHeaders},owner);
+  assert.equal(retryReplay.status,200);
+  assert.equal((await retryReplay.json()).idempotentReplay,true);
+  const activeRetry=await request("/api/jobs/"+result.jobs[1].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-active-001"}},owner);
+  assert.equal(activeRetry.status,409);
+  assert.equal((await activeRetry.json()).error.code,"JOB_NOT_RETRYABLE");
+  const viewerRetry=await request("/api/jobs/"+result.jobs[0].id+"/retry",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-retry-viewer-001"}},viewer);
+  assert.equal(viewerRetry.status,404);
+  assert.equal((await viewerRetry.json()).error.code,"JOB_NOT_FOUND");
+
   const viewerAttempt=await request("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"media-batch-viewer-001"},body:JSON.stringify(payload)},viewer);
   assert.equal(viewerAttempt.status,404);
   assert.equal((await viewerAttempt.json()).error.code,"SOURCE_ASSET_NOT_FOUND");
@@ -901,9 +925,12 @@ test("batch video finishing API authenticates, scopes sources, queues FFmpeg job
 
   const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
   try{
-    const rows=db.prepare("SELECT * FROM jobs WHERE id IN (?,?) ORDER BY created_at ASC").all(result.jobs[0].id,result.jobs[1].id);
-    assert.equal(rows.length,2);
-    assert.ok(rows.every(row=>row.job_type==="media.color"&&row.status==="queued"));
+    const rows=db.prepare("SELECT * FROM jobs WHERE id IN (?,?,?) ORDER BY created_at ASC").all(result.jobs[0].id,result.jobs[1].id,retryBody.job.id);
+    assert.equal(rows.length,3);
+    assert.equal(rows.find(row=>row.id===result.jobs[0].id).status,"failed");
+    assert.equal(rows.find(row=>row.id===result.jobs[1].id).status,"queued");
+    assert.equal(rows.find(row=>row.id===retryBody.job.id).status,"queued");
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='media.batch_queued' AND subject_id=?").get(result.batchId).count,1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='job.retry_queued' AND subject_id=?").get(retryBody.job.id).count,1);
   }finally{db.close();}
 });
