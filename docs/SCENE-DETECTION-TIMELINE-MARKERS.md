@@ -15,7 +15,7 @@
 - No automatic split, trim, delete, derivative publication or AI-provider call occurs.
 - Original source assets are read-only during analysis.
 - Only cuts within the selected clip's source range and timeline duration are mapped.
-- If FFmpeg is unavailable, the probe reports scene analysis as unavailable rather than returning a false clean result.
+- If FFmpeg is unavailable or an optional detector/filter fails, the probe reports scene analysis as unavailable rather than returning a false clean result; cancellation still propagates.
 - Cloud mode requires the existing cloud media worker to be enabled; no worker or storage configuration is changed by this feature.
 
 ## Verification
