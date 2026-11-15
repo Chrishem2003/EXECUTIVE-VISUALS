@@ -27,3 +27,12 @@ export function applyCaptionPreset(id:string,current:Record<string,unknown>={}):
  const {id:presetId,label:_label,description:_description,...style}=preset;
  return {...current,...style,presetId};
 }
+
+/**
+ * Apply one caption style to every clip in a caption track.
+ * Clip identity, timing, source references and unrelated metadata are preserved.
+ */
+export function applyCaptionPresetToClips<T extends {metadata?:Record<string,unknown>}>(clips:readonly T[],id:string):T[]{
+ const style=applyCaptionPreset(id);
+ return clips.map(clip=>({...clip,metadata:{...(clip.metadata||{}),...style}}));
+}
