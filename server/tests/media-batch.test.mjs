@@ -53,6 +53,7 @@ test("rejects unsupported operations, unknown options and out-of-range FFmpeg va
 test("enforces project write permission and rejects mixed-project or non-video sources",()=>{
  const denied=fixture({canWrite:false});
  assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.color",items,...denied}),error=>error.code==="PROJECT_NOT_FOUND");
+ assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,jobType:"media.color",items,...denied}),error=>error.code==="PROJECT_NOT_FOUND");
  const otherProject="523e4567-e89b-42d3-a456-426614174000";
  const mixed=fixture({assets:{[videoB]:{id:videoB,project_id:otherProject,media_type:"video/mp4"}}});
  assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.color",items,...mixed}),error=>error.code==="PROJECT_MISMATCH");
