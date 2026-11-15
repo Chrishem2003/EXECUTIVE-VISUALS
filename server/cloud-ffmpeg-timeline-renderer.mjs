@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { buildTimelineClipEffects } from "./timeline-clip-effects.mjs";
 import { buildClipFadeFilters } from "./timeline-transitions.mjs";
+import { buildTimelineMotionFilters } from "./timeline-motion.mjs";
 import { normalizeClipSpeed, sourceDurationForTimeline, buildAtempoFilter } from "./time-remap.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
@@ -322,9 +323,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const asset=getAsset(clip.assetId),metadata=clip.metadata||{};
    const ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
-   const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index;
-   videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index,motion=buildTimelineMotionFilters(metadata,duration);
+   if(motion){
+    const scale=motion.filters[0].startsWith("scale=")?motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease") :motion.filters[0];
+    videoEffects.push(`[${item.inputIndex}:v]${[scale,...motion.filters.slice(1)].join(",")}[${imageLabel}]`);
+    videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   }else{
+    videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   }
    currentVideo=`[${videoLabel}]`;
   }
   for(const clip of captionClips){
