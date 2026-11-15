@@ -356,14 +356,33 @@ document.addEventListener("submit",event=>{
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
  if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
- if(target.name==="videoProvider"){
+ if(target.name==="videoProvider"||target.name==="videoOperation"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
+  const operationSelect=form?.querySelector<HTMLSelectElement>('[name="videoOperation"]');
   const model=form?.querySelector<HTMLSelectElement>('[name="videoModel"]');
   const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
   const duration=form?.querySelector<HTMLInputElement>('[name="videoDuration"]');
-  if(model)model.value=target.value==="luma"?"ray-3.2":"model-router";
-  if(resolution){const values=target.value==="luma"?["360p","540p","720p","1080p"]:["provider_default","480p","720p","1080p"];resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===(target.value==="luma"?"720p":"provider_default")?"selected":"")+'>'+value+'</option>').join("");}
-  if(duration){duration.min=target.value==="luma"?"5":"2";duration.max=target.value==="luma"?"10":"30";duration.step=target.value==="luma"?"5":"1";if(target.value==="luma"&&!["5","10"].includes(duration.value))duration.value="5";}
+  if(target.name==="videoProvider"){
+   if(model)model.value=provider==="luma"?"ray-3.2":"model-router";
+   if(operationSelect)operationSelect.value="generate";
+  }
+  const operation=provider==="luma"?(operationSelect?.value||"generate"):"generate";
+  const luma=provider==="luma";
+  const values=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
+  if(resolution){
+   const previous=resolution.value;
+   const fallback=luma?"720p":"provider_default";
+   const selected=values.includes(previous)&&!(operation==="reframe"&&previous==="1080p")?previous:fallback;
+   resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===selected?"selected":"")+'>'+value+'</option>').join("");
+  }
+  if(duration){
+   const min=luma&&operation!=="reframe"?"5":"2",max=luma&&operation!=="reframe"?"10":"30",step=luma&&operation!=="reframe"?"5":"1";
+   duration.min=min;duration.max=max;duration.step=step;
+   if(luma&&operation!=="reframe"&&!["5","10"].includes(duration.value))duration.value="5";
+   else if(Number(duration.value)<Number(min))duration.value=min;
+   else if(Number(duration.value)>Number(max))duration.value=max;
+  }
  }
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
