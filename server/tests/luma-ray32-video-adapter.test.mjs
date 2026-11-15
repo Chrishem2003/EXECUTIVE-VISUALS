@@ -234,3 +234,30 @@ test("Luma Files API rejects unsafe upload origins, metadata and file identifier
   await assert.rejects(adapter.createFileUpload({ mimeType: "application/pdf", sizeBytes: 4 }), error => error.code === "LUMA_FILE_INPUT_INVALID");
   await assert.rejects(adapter.getFile("../private"), error => error.code === "LUMA_FILE_ID_INVALID");
 });
+
+
+test("Luma file deletion accepts the documented empty 204 response and upload cannot use forged receipts", async () => {
+  const fileId = "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e";
+  const calls = [];
+  const adapter = createLumaRay32Adapter({
+    apiKey: "server-secret",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/files") && init.method === "POST") return response({
+        id: fileId, file: { id: fileId, mime_type: "image/png", size_bytes: 2, state: "pending" },
+        upload: { method: "PUT", url: "https://bucket.s3.amazonaws.com/object?signature=temporary",
+          expires_at: "2026-11-16T12:00:00.000Z", headers: {} }
+      }, 201);
+      if (init.method === "DELETE") return { ok: true, status: 204, async text() { return ""; } };
+      return { ok: true, status: 200, async text() { return ""; } };
+    },
+    now: () => Date.parse("2026-11-15T12:00:00.000Z")
+  });
+  const receipt = await adapter.createFileUpload({ mimeType: "image/png", sizeBytes: 2 });
+  await assert.rejects(adapter.uploadFileBytes({
+    upload: { ...receipt.upload }, bytes: new Uint8Array([1, 2]), mimeType: "image/png"
+  }), error => error.code === "LUMA_FILE_INPUT_INVALID");
+  assert.deepEqual(await adapter.deleteFile(fileId), { fileId, deleted: true });
+  assert.equal(calls.at(-1).url, "https://agents.lumalabs.ai/v1/files/" + fileId);
+  assert.equal(calls.at(-1).init.method, "DELETE");
+});
