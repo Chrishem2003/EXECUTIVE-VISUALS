@@ -1572,7 +1572,7 @@ document.addEventListener("click",event=>{
   const form=document.querySelector<HTMLFormElement>("#tl-clip-inspector"),track=state.timeline.tracks.find(item=>item.id===form?.dataset.track),clip=track?.clips.find(item=>item.id===form?.dataset.clip),index=Number(motionSelect.dataset.tlMotionSelect),keys=clip?.metadata?.motionKeyframes as MotionKeyframe[]|undefined,point=keys?.[index];
   if((track?.kind==="overlay"||track?.kind==="video")&&clip&&point&&form){
    for(const [name,value] of Object.entries({x:point.x,y:point.y,width:point.width,height:point.height,opacity:point.opacity,rotation:point.rotation}))if(value!==undefined){const field=form.elements.namedItem(name) as HTMLInputElement|null;if(field)field.value=String(value);}
-   const easing=(form.elements.namedItem("motionInterpolation")||form.elements.namedItem("transformInterpolation")) as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";
+   const easing=form.elements.namedItem(track.kind==="video"?"transformInterpolation":"motionInterpolation") as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";
    state.playheadFrame=clampTimelineFrame((clip.timelineStart.value/clip.timelineStart.rate+point.timeSeconds)*fps(),state.timeline);syncPreviewAtFrame(state.playheadFrame);state.message="Selected transform keyframe "+(index+1)+". Adjust its values and save at this playhead time.";
   }
   return;
@@ -1592,7 +1592,7 @@ document.addEventListener("click",event=>{
   if((track?.kind==="overlay"||track?.kind==="video")&&clip&&form){
    const localTime=state.playheadFrame/fps()-clip.timelineStart.value/clip.timelineStart.rate,duration=clip.duration.value/clip.duration.rate;
    if(localTime<0||localTime>duration){alert("Move the playhead inside the selected overlay clip before adding a transform keyframe.");return;}
-   const values=new FormData(form),point:MotionKeyframe={timeSeconds:Number(localTime.toFixed(4)),x:Number(values.get("x"))||0,y:Number(values.get("y"))||0,width:Math.max(16,Number(values.get("width"))||16),height:Math.max(16,Number(values.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(values.get("opacity")??1))),rotation:Number(values.get("rotation"))||0,interpolation:(String(values.get("motionInterpolation")||"linear") as MotionKeyframe["interpolation"])};
+   const values=new FormData(form),point:MotionKeyframe={timeSeconds:Number(localTime.toFixed(4)),x:Number(values.get("x"))||0,y:Number(values.get("y"))||0,width:Math.max(16,Number(values.get("width"))||(track.kind==="video"?state.timeline.width:16)),height:Math.max(16,Number(values.get("height"))||(track.kind==="video"?state.timeline.height:16)),opacity:Math.max(0,Math.min(1,Number(values.get("opacity")??1))),rotation:Number(values.get("rotation"))||0,interpolation:(String(track.kind==="video"?(values.get("transformInterpolation")||"linear"):(values.get("motionInterpolation")||"linear")) as MotionKeyframe["interpolation"])};
    try{
     const previous=normalizeMotionKeyframes((clip.metadata?.motionKeyframes as MotionKeyframe[]|undefined),duration),existing=previous.findIndex(item=>Math.abs(item.timeSeconds-point.timeSeconds)<0.0005);
     if(existing>=0)previous[existing]=point;else previous.push(point);
