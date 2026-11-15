@@ -23,11 +23,11 @@ export function createTranscriptionCaptionWorkflow({id,projectId=""}:{id:string;
   node("transcribe-audio","voice.transcribe","Transcribe audio",[
    port("audio","audio",true),port("approval","any")
   ],[
-   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),
+   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("words","structured-data"),
    port("sourceAudio","audio"),port("language","text")
   ],{x:680,y:170}),
   node("create-captions","voice.caption","Create timed captions",[
-   port("segments","structured-data",true),port("sourceAudio","audio"),port("language","text")
+   port("segments","structured-data",true),port("words","structured-data"),port("sourceAudio","audio"),port("language","text")
   ],[port("subtitle","subtitle-file"),port("asset","asset")],{x:1010,y:170})
  ];
  const edges:WorkflowEdge[]=[
@@ -35,6 +35,7 @@ export function createTranscriptionCaptionWorkflow({id,projectId=""}:{id:string;
   {id:"source-to-transcription",sourceNodeId:"source-audio",sourcePortId:"audio",targetNodeId:"transcribe-audio",targetPortId:"audio"},
   {id:"review-to-transcription",sourceNodeId:"human-review",sourcePortId:"approved",targetNodeId:"transcribe-audio",targetPortId:"approval"},
   {id:"transcription-to-captions",sourceNodeId:"transcribe-audio",sourcePortId:"segments",targetNodeId:"create-captions",targetPortId:"segments"},
+  {id:"transcription-words-to-captions",sourceNodeId:"transcribe-audio",sourcePortId:"words",targetNodeId:"create-captions",targetPortId:"words"},
   {id:"source-to-captions",sourceNodeId:"transcribe-audio",sourcePortId:"sourceAudio",targetNodeId:"create-captions",targetPortId:"sourceAudio"},
   {id:"language-to-captions",sourceNodeId:"transcribe-audio",sourcePortId:"language",targetNodeId:"create-captions",targetPortId:"language"}
  ];
@@ -63,7 +64,7 @@ export function createVideoCaptionLocalizationWorkflow({id,projectId=""}:{id:str
   node("transcribe-audio","voice.transcribe","Transcribe source audio",[
    port("audio","audio",true),port("approval","any")
   ],[
-   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),
+   port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("words","structured-data"),
    port("sourceAudio","audio"),port("language","text")
   ],{x:40,y:360}),
   node("review-transcript","approval","Review transcript and approve translation",[

@@ -78,6 +78,7 @@ export async function transcribeVoice({buffer,mimeType,filename="source-audio",l
  form.append("file",new Blob([buffer],{type:mimeType}),safeFilename);
  form.append("model",model);
  form.append("response_format","verbose_json");
+ form.append("timestamp_granularities[]","word");
  if(typeof language==="string"&&/^[a-zA-Z-]{2,12}$/.test(language))form.append("language",language);
  const headers={};const key=String(process.env.VOICE_GATEWAY_API_KEY||"").trim();if(key)headers.authorization="Bearer "+key;
  try{
@@ -92,7 +93,8 @@ export async function transcribeVoice({buffer,mimeType,filename="source-audio",l
   let payload;try{payload=JSON.parse(raw)}catch{throw fail("Transcription gateway returned invalid JSON.","VOICE_TRANSCRIPTION_INVALID_RESPONSE")}
   const text=String(payload.text||"").trim();
   if(!text||text.length>1000000)throw fail("Transcription gateway returned an empty or oversized transcript.","VOICE_TRANSCRIPTION_INVALID_RESPONSE");
-  const segments=Array.isArray(payload.segments)?payload.segments.slice(0,20000).map(segment=>({start:Number(segment.start)||0,end:Number(segment.end)||0,text:String(segment.text||"").slice(0,4000)})).filter(segment=>segment.end>=segment.start):[];
-  return {text,language:String(payload.language||language||"").slice(0,32),duration:Number.isFinite(Number(payload.duration))?Number(payload.duration):null,segments,model,usage:null};
+  const segments=Array.isArray(payload.segments)?payload.segments.slice(0,20000).map(segment=>({start:Number(segment.start)||0,end:Number(segment.end)||0,text:String(segment.text||"").slice(0,4000)})).filter(segment=>Number.isFinite(segment.start)&&Number.isFinite(segment.end)&&segment.start>=0&&segment.end>segment.start&&segment.text.trim()):[];
+  const words=Array.isArray(payload.words)?payload.words.slice(0,20000).map(word=>({start:Number(word.start),end:Number(word.end),word:String(word.word??word.text??"").trim().slice(0,200)})).filter(word=>Number.isFinite(word.start)&&Number.isFinite(word.end)&&word.start>=0&&word.end>word.start&&word.word):[];
+  return {text,language:String(payload.language||language||"").slice(0,32),duration:Number.isFinite(Number(payload.duration))?Number(payload.duration):null,segments,words,model,usage:null};
  }finally{clearTimeout(timer)}
 }

@@ -11,7 +11,8 @@ test("transcription and caption template is a valid connected graph with a human
  assert.equal(graph.projectId,"project-1");
  assert.equal(graph.name,"Audio transcription and captions");
  assert.equal(graph.nodes.length,4);
- assert.equal(graph.edges.length,6);
+ assert.equal(graph.edges.length,7);
+ assert.ok(graph.edges.some(edge=>edge.sourcePortId==="words"&&edge.targetPortId==="words"));
  const source=graph.nodes.find(node=>node.id==="source-audio");
  assert.equal(source.config.assetId,"");
  assert.ok(source.outputs.some(port=>port.id==="audio"&&port.type==="audio"));
@@ -47,6 +48,7 @@ test("video caption localization is a valid review-first graph with private sour
  assert.equal(translation.config.targetLanguage,"");
  assert.ok(graph.edges.some(edge=>edge.sourceNodeId==="create-captions"&&edge.targetNodeId==="export-captions"));
  assert.ok(transcription.inputs.some(port=>port.id==="approval"));
+ assert.ok(transcription.outputs.some(port=>port.id==="words"&&port.type==="structured-data"));
 });
 
 test("video caption localization requires an explicit workflow ID",()=>{

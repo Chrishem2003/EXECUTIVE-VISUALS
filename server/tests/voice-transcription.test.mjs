@@ -22,11 +22,13 @@ test("approved transcription workflow verifies source audio and persists timesta
   let body=Buffer.alloc(0);for await(const chunk of req)body=Buffer.concat([body,chunk]);
   const form=body.toString("latin1");
   assert.match(form,/name="model"/);
+  assert.match(form,/name="timestamp_granularities\[\]"/);
+  assert.match(form,/word/);
   assert.match(form,/transcription-test-model/);
   assert.match(form,/name="file"; filename="source\.mp3"/);
   assert.ok(body.includes(audio));
   res.writeHead(200,{"content-type":"application/json"});
-  res.end(JSON.stringify({text:"A clear transcript for the production timeline.",language:"en",duration:2.4,segments:[{start:0,end:2.4,text:"A clear transcript for the production timeline."}]}));
+  res.end(JSON.stringify({text:"A clear transcript for the production timeline.",language:"en",duration:2.4,segments:[{start:0,end:2.4,text:"A clear transcript for the production timeline."}],words:[{start:0,end:0.3,word:"A"},{start:0.31,end:0.72,word:"clear"},{start:0.73,end:1.4,word:"transcript"}]}));
  });
  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
  const root=await mkdtemp(join(tmpdir(),"ev-transcription-")),mediaRoot=join(root,"media");
@@ -49,13 +51,14 @@ test("approved transcription workflow verifies source audio and persists timesta
   const graph={id:"transcription",projectId:"",revision:1,nodes:[
    {id:"source",kind:"upload",label:"Source audio",inputs:[],outputs:[{id:"audio",type:"audio"}],config:{assetId:"audio-asset"}},
    {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"audio",type:"audio"}],outputs:[{id:"approved",type:"any"}],config:{}},
-   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"},{id:"segments",type:"structured-data"},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],config:{}},
-   {id:"captions",kind:"voice.caption",label:"Create captions",inputs:[{id:"segments",type:"structured-data",required:true},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],outputs:[{id:"subtitle",type:"subtitle-file"},{id:"asset",type:"asset"}],config:{}}
+   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"},{id:"segments",type:"structured-data"},{id:"words",type:"structured-data"},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],config:{}},
+   {id:"captions",kind:"voice.caption",label:"Create captions",inputs:[{id:"segments",type:"structured-data"},{id:"words",type:"structured-data"},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],outputs:[{id:"subtitle",type:"subtitle-file"},{id:"asset",type:"asset"}],config:{}}
   ],edges:[
    {id:"source-approval",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"approval",targetPortId:"audio"},
    {id:"source-transcribe",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"transcribe",targetPortId:"audio"},
    {id:"approval-transcribe",sourceNodeId:"approval",sourcePortId:"approved",targetNodeId:"transcribe",targetPortId:"approval"},
    {id:"transcribe-captions",sourceNodeId:"transcribe",sourcePortId:"segments",targetNodeId:"captions",targetPortId:"segments"},
+   {id:"transcribe-words-captions",sourceNodeId:"transcribe",sourcePortId:"words",targetNodeId:"captions",targetPortId:"words"},
    {id:"transcribe-source-captions",sourceNodeId:"transcribe",sourcePortId:"sourceAudio",targetNodeId:"captions",targetPortId:"sourceAudio"},
    {id:"transcribe-language-captions",sourceNodeId:"transcribe",sourcePortId:"language",targetNodeId:"captions",targetPortId:"language"}
   ]};
@@ -82,12 +85,18 @@ test("approved transcription workflow verifies source audio and persists timesta
   const captionOutput=JSON.parse(captionRow.output_json);
   const captionAsset=db.prepare("SELECT * FROM assets WHERE id=?").get(captionOutput.subtitleAssetId);
   assert.equal(captionAsset.media_type,"text/vtt");
-  assert.equal(captionOutput.cueCount,1);
+  assert.equal(captionOutput.cueCount,3);
+  assert.equal(captionOutput.wordLevel,true);
+  const transcriptRow=db.prepare("SELECT output_json FROM workflow_node_runs WHERE run_id=? AND node_id=?").get("run-1","transcribe");
+  assert.deepEqual(JSON.parse(transcriptRow.output_json).words.map(word=>word.word),["A","clear","transcript"]);
   assert.equal(JSON.parse(captionAsset.metadata_json).language,"en");
   const captionText=await readFile(join(mediaRoot,captionAsset.storage_path),"utf8");
   assert.match(captionText,/WEBVTT/);
-  assert.match(captionText,/00:00:00.000 --> 00:00:02.400/);
-  assert.match(captionText,/A clear transcript for the production timeline\./);
+  assert.match(captionText,/00:00:00.000 --> 00:00:00.300/);
+  assert.match(captionText,/00:00:00.310 --> 00:00:00.720/);
+  assert.match(captionText,/^A$/m);
+  assert.match(captionText,/^clear$/m);
+  assert.match(captionText,/^transcript$/m);
  }finally{
   restore();db.close();await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});
  }
