@@ -32,3 +32,13 @@ test("timeline rejects transform animation on non-overlay tracks and accepts val
  timeline.tracks[0].clips[0].metadata={motionKeyframes:[{timeSeconds:0,x:0},{timeSeconds:3,x:200}]};
  assert.equal(validateTimeline(timeline).issues[0].code,"invalid_motion_keyframes");
 });
+
+test("ease-in, ease-out and ease-in-out transform interpolation are deterministic",()=>{
+ const easeIn=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"ease-in"}];
+ const easeOut=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"ease-out"}];
+ const easeBoth=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"ease-in-out"}];
+ assert.equal(evaluateMotionProperty(easeIn,0.5,"x",0,1),12.5);
+ assert.equal(evaluateMotionProperty(easeOut,0.5,"x",0,1),87.5);
+ assert.equal(evaluateMotionProperty(easeBoth,0.25,"x",0,1),6.25);
+ assert.equal(evaluateMotionProperty(easeBoth,0.75,"x",0,1),93.75);
+});
