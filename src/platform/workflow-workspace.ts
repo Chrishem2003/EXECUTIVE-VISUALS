@@ -3,10 +3,11 @@ import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type Medi
 import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
+type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null;output?:{videoQuote?:{quoteId:string;requestId:string;requestHash:string;routedModel:string;estimatedAmount:number;currency:string;expiresAt:string;paidExecutionEnabled:boolean;cloudNode:WorkflowNode;cloudValues:Record<string,unknown>};cloudJobId?:string;status?:string;quoteId?:string;approvedMaxAmount?:number;actualAmount?:number;currency?:string;assetId?:string;asset?:string;video?:string;assetIds?:string[];provider?:string;model?:string;mimeType?:string;cloudAssetIds?:string[];durationSeconds?:number;transcript?:string;segments?:Array<{start:number;end:number;text:string}>;language?:string;duration?:number;subtitleAssetId?:string;cueCount?:number;sha256?:string}|null};
 type VideoCostEstimate={available:boolean;estimated:boolean;reason?:string;provider?:string;model?:string;currency?:string;amount?:number;billableSeconds?:number;breakdown?:{video:number;audio:number;references:number;minimumApplied:number};pricing?:{sourceUrl:string;observedAt:string;expiresAt:string};disclaimer?:string};
-const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null}={
- graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null;assets:WorkflowAsset[]}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null,assets:[]
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
@@ -85,11 +86,14 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
+ const videoAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("video/"));
+ const selectedSource=String(config.sourceVideoAssetId||"");
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
  '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation!=="reframe"?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma&&operation!=="reframe"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- '<label>Private source-video asset ID · Edit/Reframe<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(config.sourceVideoAssetId||"")+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
+ '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!luma||operation==="generate"?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop X<input name="sourcePositionX" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.x_norm??0)+'"></label><label>Reframe crop Y<input name="sourcePositionY" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.y_norm??0)+'"></label></div>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
@@ -132,6 +136,11 @@ async function refresh(){
   state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;
  }
  state.selectedNode=state.graph?.nodes[0]?.id||"";state.costEstimate=null;
+ state.assets=[];
+ if(state.graph?.projectId){
+  try{const assetResponse=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId));state.assets=assetResponse.assets.filter(asset=>asset.projectId===state.graph?.projectId);}
+  catch{state.assets=[];}
+ }
  const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
  state.latestRunId=runs.runs[0]?.id||"";
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
@@ -312,7 +321,7 @@ document.addEventListener("submit",event=>{
  config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
  if(provider==="luma")config.operation=operation;else delete config.operation;
- const sourceVideoAssetId=String(data.get("sourceVideoAssetId")||"").trim();
+ const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
  const assetText=String(data.get("keyframeAssetIds")||"").trim(),indexText=String(data.get("keyframeIndexes")||"").trim();
  if(operation==="generate"){
@@ -355,7 +364,7 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
- if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
+ if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
  if(target.name==="videoProvider"||target.name==="videoOperation"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
   const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
