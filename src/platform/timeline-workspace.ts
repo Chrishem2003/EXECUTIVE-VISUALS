@@ -1560,6 +1560,25 @@ document.addEventListener("click",event=>{
   }
   return;
  }
+ const motionSelect=target.closest<HTMLElement>("[data-tl-motion-select]");
+ if(motionSelect&&state.timeline){
+  const form=document.querySelector<HTMLFormElement>("#tl-clip-inspector"),track=state.timeline.tracks.find(item=>item.id===form?.dataset.track),clip=track?.clips.find(item=>item.id===form?.dataset.clip),index=Number(motionSelect.dataset.tlMotionSelect),keys=clip?.metadata?.motionKeyframes as MotionKeyframe[]|undefined,point=keys?.[index];
+  if(track?.kind==="overlay"&&clip&&point&&form){
+   for(const [name,value] of Object.entries({x:point.x,y:point.y,width:point.width,height:point.height,opacity:point.opacity,rotation:point.rotation}))if(value!==undefined){const field=form.elements.namedItem(name) as HTMLInputElement|null;if(field)field.value=String(value);}
+   const easing=form.elements.namedItem("motionInterpolation") as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";
+   state.playheadFrame=clampTimelineFrame((clip.timelineStart.value/clip.timelineStart.rate+point.timeSeconds)*fps(),state.timeline);syncPreviewAtFrame(state.playheadFrame);state.message="Selected transform keyframe "+(index+1)+". Adjust its values and save at this playhead time.";
+  }
+  return;
+ }
+ const motionRemove=target.closest<HTMLElement>("[data-tl-motion-remove]");
+ if(motionRemove&&state.timeline){
+  const form=document.querySelector<HTMLFormElement>("#tl-clip-inspector"),track=state.timeline.tracks.find(item=>item.id===form?.dataset.track),clip=track?.clips.find(item=>item.id===form?.dataset.clip),index=Number(motionRemove.dataset.tlMotionRemove);
+  if(track?.kind==="overlay"&&clip&&Number.isSafeInteger(index)){
+   const duration=clip.duration.value/clip.duration.rate,keys=normalizeMotionKeyframes(clip.metadata?.motionKeyframes as MotionKeyframe[]|undefined,duration);
+   if(index>=0&&index<keys.length){recordUndo();clip.metadata={...clip.metadata,motionKeyframes:keys.filter((_,keyIndex)=>keyIndex!==index)};commitUndo("Remove transform keyframe");state.message="Saving transform keyframe removal…";void persist().then(()=>{state.message="Transform keyframe removed.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not remove transform keyframe.";paint();});}
+  }
+  return;
+ }
  const motionKeyframe=target.closest<HTMLElement>("[data-tl-motion-keyframe]");
  if(motionKeyframe&&state.timeline){
   const track=state.timeline.tracks.find(item=>item.id===motionKeyframe.dataset.track),clip=track?.clips.find(item=>item.id===motionKeyframe.dataset.clip),form=document.querySelector<HTMLFormElement>("#tl-clip-inspector");
