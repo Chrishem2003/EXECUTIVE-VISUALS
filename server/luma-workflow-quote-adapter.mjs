@@ -25,6 +25,16 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    if(typeof input.endFrameAssetId!=="string")throw fail("Luma last-frame asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
    prepared.endFrame={file_id:input.endFrameAssetId};
   }
+  if(input.keyframeAssetIds!==undefined){
+   if(!Array.isArray(input.keyframeAssetIds)||input.keyframeAssetIds.length<1||input.keyframeAssetIds.length>64||
+      !Array.isArray(input.keyframeIndexes)||input.keyframeIndexes.length!==input.keyframeAssetIds.length)
+    throw fail("Luma keyframe assets and indexes must contain 1–64 matching entries.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
+   prepared.keyframes=input.keyframeAssetIds.map(assetId=>{
+    if(typeof assetId!=="string"||!assetId.trim())throw fail("Luma keyframe asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
+    return {file_id:assetId};
+   });
+   prepared.keyframeIndexes=[...input.keyframeIndexes];
+  }
   return client.prepareInput(prepared);
  }
  async function preflight(prepared){
