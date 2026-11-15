@@ -36,7 +36,7 @@ test("workflow WebVTT caption asset inserts into an available caption lane at th
  const base=createTimeline("project-1","timeline-1","Caption edit",{numerator:24,denominator:1});
  const withVideo=addTrack(base,{id:"video",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
  const withCaptions=addTrack(withVideo,{id:"captions",name:"Captions",kind:"caption",enabled:true,locked:false,clips:[]});
- const next=insertWorkflowCaptionAsset(withCaptions,{id:"caption-clip",trackId:"captions",assetId:"vtt-asset",name:"captions-en.vtt",mediaType:"text/vtt",durationSeconds:12.1,startSeconds:4,newTrackId:"unused"});
+ const next=insertWorkflowCaptionAsset(withCaptions,{id:"caption-clip",assetId:"vtt-asset",name:"captions-en.vtt",mediaType:"text/vtt",durationSeconds:12.1,startSeconds:4,newTrackId:"unused"});
  const track=next.tracks.find(item=>item.id==="captions");
  assert.equal(track.clips.length,1);
  assert.equal(track.clips[0].timelineStart.value,96);
@@ -48,10 +48,11 @@ test("workflow WebVTT caption asset inserts into an available caption lane at th
 
 test("workflow WebVTT caption insertion creates a separate lane when existing caption lanes are locked or overlap",()=>{
  const base=createTimeline("project-1","timeline-1","Caption edit",{numerator:30,denominator:1});
- const withTrack=addTrack(base,{id:"locked-captions",name:"Captions",kind:"caption",enabled:true,locked:true,clips:[]});
+ const withVideo=addTrack(base,{id:"video",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
+ const withTrack=addTrack(withVideo,{id:"locked-captions",name:"Captions",kind:"caption",enabled:true,locked:true,clips:[]});
  const occupied=addTrack(withTrack,{id:"occupied",name:"Captions 2",kind:"caption",enabled:true,locked:false,clips:[]});
  const first=addClip(occupied,"occupied",{id:"existing",assetId:"existing-vtt",name:"existing.vtt",sourceRange:{start:{value:0,rate:30},duration:{value:300,rate:30}},timelineStart:{value:0,rate:30},duration:{value:300,rate:30},enabled:true});
- const next=insertWorkflowCaptionAsset(first,{id:"new-caption",trackId:"",assetId:"new-vtt",name:"new.vtt",mediaType:"text/vtt",durationSeconds:10,startSeconds:0,newTrackId:"new-track"});
+ const next=insertWorkflowCaptionAsset(first,{id:"new-caption",assetId:"new-vtt",name:"new.vtt",mediaType:"text/vtt",durationSeconds:10,startSeconds:0,newTrackId:"new-track"});
  assert.equal(next.tracks.length,4);
  assert.equal(next.tracks[3].name,"Captions 3");
  assert.equal(next.tracks[3].clips[0].assetId,"new-vtt");
