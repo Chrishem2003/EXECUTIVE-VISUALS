@@ -103,7 +103,7 @@
     "verify:batch:03": "npm run verify:runway-durable-tasks && npm run verify:cloud-video-generation && npm run verify:deployment && npm run verify:cloud && npm run verify:queue && npm run verify:cloud-queue && npm run verify:cloud-job-polling && npm run verify:cloud-render-selection && npm run verify:cloud-render-polling && npm run verify:cloud-upload-queue",
     "verify:batch:04": "npm run verify:cloud-video-workers && npm run verify:media-operations && npm run verify:recipes && npm run verify:transformations && npm run verify:video-pipeline && npm run verify:media-quality && npm run verify:media-signals && npm run verify:creative-intent && npm run verify:creative-director && npm run verify:media-batch",
     "verify:batch:05": "npm run verify:storyboard-compiler && npm run verify:storyboard-timeline && npm run verify:model-storyboard-generation && npm run verify:creative-traceability && npm run verify:creative-decision-ledger && npm run verify:production-readiness && npm run verify:source-media-evidence && npm run verify:rights-evidence && npm run verify:audio-evidence",
-    "verify:batch:06": "npm run verify:admin-capability && npm run verify:brand-kit-presets && npm run verify:audio-waveform-preview && npm run verify:caption-safe-area && npm run verify:caption-validation && npm run verify:caption-presets && npm run verify:caption-evidence && npm run verify:delivery-evidence && npm run verify:provenance && npm run verify:capabilities && npm run verify:workflow && npm run verify:workflow-run",
+    "verify:batch:06": "npm run verify:admin-capability && npm run verify:brand-kit-presets && npm run verify:audio-waveform-preview && npm run verify:caption-safe-area && npm run verify:caption-validation && npm run verify:caption-presets && npm run verify:caption-evidence && npm run verify:delivery-evidence && npm run verify:provenance && npm run verify:capabilities && npm run verify:workflow && npm run verify:workflow-run && npm run verify:workflow-templates",
     "verify:batch:07": "npm run verify:ai-workflow && npm run verify:video-workflow-cloud-contract && npm run verify:workflow-executor && npm run verify:timeline && npm run verify:timeline-templates && npm run verify:timeline-variants && npm run verify:series && npm run verify:shot-readiness && npm run verify:shot-continuity",
     "verify:batch:08": "npm run verify:ai-upscale && npm run verify:video-ai-upscale-worker-self-test && npm run verify:flashvsr && npm run verify:upscale-review-package && npm run verify:upscale-benchmark && npm run verify:upscale-quality && npm run verify:upscale-lpips && npm run verify:render && npm run verify:real-render",
     "verify:server:shard:01": "node scripts/run-server-test-shard.mjs 1 8",
@@ -126,7 +126,8 @@
     "verify:admin-capability": "node --experimental-strip-types --test server/tests/admin-operations-capability.test.mjs",
     "verify:brand-kit-presets": "node --test server/tests/workspace-documents.test.mjs",
     "verify:media-batch": "node --test server/tests/media-batch.test.mjs",
-    "verify:cloud-upload-queue": "node --experimental-strip-types --test server/tests/cloud-upload-queue.test.mjs"
+    "verify:cloud-upload-queue": "node --experimental-strip-types --test server/tests/cloud-upload-queue.test.mjs",
+    "verify:workflow-templates": "node --experimental-strip-types --test server/tests/workflow-templates.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
