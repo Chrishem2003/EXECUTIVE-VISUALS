@@ -96,6 +96,7 @@ const EXTENSIONS = {
   "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.video-ai-upscale","timeline.render"]);
+const RETRYABLE_MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
@@ -1823,9 +1824,53 @@ export function createAppServer() {
         addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
-      const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);
+      const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events|retry))?$/i);
       if(jobMatch){
-        const job=accessibleJob(user.id,jobMatch[1],jobMatch[2]==="cancel");if(!job){fail(res,404,"JOB_NOT_FOUND","Job not found.");return;}
+        const job=accessibleJob(user.id,jobMatch[1],jobMatch[2]==="cancel"||jobMatch[2]==="retry");if(!job){fail(res,404,"JOB_NOT_FOUND","Job not found.");return;}
+        if(jobMatch[2]==="retry"&&req.method==="POST"){
+          if(job.status!=="failed"){fail(res,409,"JOB_NOT_RETRYABLE","Only failed jobs can be retried. Cancelled or active jobs must be handled separately.");return;}
+          if(!RETRYABLE_MEDIA_JOBS.has(job.job_type)){fail(res,409,"JOB_RETRY_UNSUPPORTED","This job type requires a fresh approval or a dedicated recovery workflow and cannot be retried here.");return;}
+          const idempotencyKey=String(req.headers["idempotency-key"]||"");
+          if(!idempotencyKey||idempotencyKey.length>180){fail(res,400,"INVALID_IDEMPOTENCY_KEY","Job retries require an idempotency key no longer than 180 characters.");return;}
+          const originalInput=parseJson(job.input_json,{});
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
+            if(existing){
+              const existingInput=parseJson(existing.input_json,{});
+              if(existing.job_type!==job.job_type||existing.project_id!==job.project_id||existingInput.retryOfJobId!==job.id||!Number.isSafeInteger(existingInput.retrySequence)||existingInput.retrySequence<1){
+                db.exec("ROLLBACK");fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job retry.");return;
+              }
+              db.exec("COMMIT");
+              send(res,200,{job:recordJob(existing),retryOfJobId:job.id,idempotentReplay:true},cors);return;
+            }
+            const priorRetries=db.prepare("SELECT status FROM jobs WHERE owner_id=? AND json_extract(input_json,'$.retryOfJobId')=?").all(user.id,job.id);
+            if(priorRetries.some(item=>["queued","running","succeeded"].includes(item.status))){
+              db.exec("ROLLBACK");fail(res,409,"JOB_RETRY_ALREADY_ACTIVE","A retry for this job is already queued, running or completed.");return;
+            }
+            const retrySequence=priorRetries.length+1;
+            if(retrySequence>5){db.exec("ROLLBACK");fail(res,409,"JOB_RETRY_LIMIT","This job has reached the five-retry safety limit.");return;}
+            if(job.job_type==="timeline.render"){
+              const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(originalInput.timelineId||""));
+              if(!timeline||timeline.project_id!==job.project_id||(timeline.project_id?!canWriteProject(db,user.id,timeline.project_id):timeline.owner_id!==user.id)){
+                db.exec("ROLLBACK");fail(res,404,"TIMELINE_NOT_FOUND","The original timeline is no longer accessible for retry.");return;
+              }
+            }else{
+              const source=getAccessibleAsset(db,user.id,String(originalInput.sourceAssetId||""),true);
+              if(!source){db.exec("ROLLBACK");fail(res,404,"SOURCE_ASSET_NOT_FOUND","The original source asset is no longer accessible for retry.");return;}
+            }
+            const id=randomUUID(),retryInput={...originalInput,retryOfJobId:job.id,retrySequence};
+            db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
+              .run(id,user.id,job.project_id,job.job_type,json(retryInput),idempotencyKey);
+            addJobEvent(db,id,user.id,"job.retry_queued",{retryOfJobId:job.id,retrySequence,jobType:job.job_type});
+            audit(db,user.id,"job.retry_queued","job",id,{retryOfJobId:job.id,retrySequence,jobType:job.job_type},job.project_id);
+            db.exec("COMMIT");
+            send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id)),retryOfJobId:job.id,idempotentReplay:false},cors);return;
+          }catch(error){
+            try{db.exec("ROLLBACK");}catch{}
+            throw error;
+          }
+        }
         if(jobMatch[2]==="cancel"&&req.method==="POST"){
           if(["succeeded","failed","cancelled"].includes(job.status)){fail(res,409,"JOB_TERMINAL","This job has already finished.");return;}
           db.prepare("UPDATE jobs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),job.id);
