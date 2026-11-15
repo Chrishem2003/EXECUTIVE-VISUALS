@@ -122,13 +122,16 @@ function createLumaWorkflowRequest({values,config,projectId,requestId}){
   throw fail("Explicit rights clearance is required for Luma source frames.","MEDIA_RIGHTS_REQUIRED");
  const allAssetIds=[startFrameAssetId,endFrameAssetId,...keyframeAssetIds].filter(Boolean);
  if(new Set(allAssetIds).size!==allAssetIds.length)throw fail("A Luma source frame cannot be assigned to more than one frame role.","VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT");
- const normalized=normalizeVideoGenerationRequest({
+ const normalized={...normalizeVideoGenerationRequest({
   requestId,projectId:projectId.trim(),provider:"luma",model:"ray-3.2",
   prompt,operation:"generate",durationSeconds,aspectRatio,resolution,audioMode:"none",
-  rightsConfirmed:config.rightsConfirmed===true,
   ...(startFrameAssetId?{startFrameAssetId}:{}),
   ...(endFrameAssetId?{endFrameAssetId}:{})
- });
+ }),rightsConfirmed:config.rightsConfirmed===true};
+ if(keyframeAssetIds.length){
+  normalized.keyframeAssetIds=keyframeAssetIds;
+  normalized.keyframeIndexes=[...keyframeIndexes];
+ }
  const operation="generate";
  const requestHash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
  const input=deepFreeze({...normalized,requestHash});
