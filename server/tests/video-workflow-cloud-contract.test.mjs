@@ -335,7 +335,7 @@ test("Luma five-second workflow supports private first and last frame anchors",(
  assert.equal(request.input.rightsConfirmed,true);
 });
 test("Luma workflow rejects more than sixty-four indexed keyframes",()=>{
- const node={kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:10,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,keyframeAssetIds:Array.from({length:65},(_,i)=>"frame-"+i),keyframeIndexes:Array.from({length:17},(_,i)=>i)}};
+ const node={kind:"video.generate",config:{provider:"luma",model:"ray-3.2",durationSeconds:10,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true,keyframeAssetIds:Array.from({length:65},(_,i)=>"frame-"+i),keyframeIndexes:Array.from({length:65},(_,i)=>i)}};
  assert.throws(()=>createVideoWorkflowCloudRequest({node,projectId:"project-1",requestId:"luma-keyframes-overflow",values:{prompt:"A continuous cinematic camera move"}}),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
 
