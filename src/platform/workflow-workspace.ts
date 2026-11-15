@@ -306,7 +306,7 @@ document.addEventListener("submit",event=>{
  const operation=provider==="luma"?String(data.get("videoOperation")||"generate"):"generate";
  if(!["generate","edit","reframe"].includes(operation))throw new Error("Choose a supported Luma operation.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- if(provider==="luma"&&operation!=="reframe"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<(provider==="luma"?2:2)||durationSeconds>(provider==="luma"?10:30)))throw new Error(operation==="reframe"?"Reframe source duration must be 2–30 whole seconds.":"Generation/edit duration must be 5 or 10 seconds.");
+ if(provider==="luma"&&operation!=="reframe"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<(provider==="luma"?2:2)||durationSeconds>(provider==="luma"?10:30)))throw new Error(operation==="reframe"?"Reframe source duration must be 2–10 whole seconds.":"Generation/edit duration must be 5 or 10 seconds.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
  config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
