@@ -48,7 +48,7 @@ test("visual keyframe dragging preserves clip boundaries, order and speed limits
  assert.equal(curve[1].timeSeconds,1,"the source curve is not mutated");
  assert.equal(moveSpeedKeyframe(curve,0,0.7,9,2)[0].timeSeconds,0,"first keyframe remains at clip start");
  assert.equal(moveSpeedKeyframe(curve,2,1.1,-1,2)[2].timeSeconds,2,"last keyframe remains at clip end");
- assert.equal(moveSpeedKeyframe(curve,1,1.9,0.1,2)[1].timeSeconds,1.999,"interior keyframe cannot cross its next neighbor");
+ assert.equal(moveSpeedKeyframe(curve,1,2.1,0.1,2)[1].timeSeconds,1.999,"interior keyframe cannot cross its next neighbor");
  assert.equal(moveSpeedKeyframe(curve,1,1,9,2)[1].speed,4,"speed is clamped to 4x");
  assert.throws(()=>moveSpeedKeyframe(curve,4,1,1,2),/valid speed keyframe/);
  assert.throws(()=>moveSpeedKeyframe(curve,1,Number.NaN,1,2),/finite/);
