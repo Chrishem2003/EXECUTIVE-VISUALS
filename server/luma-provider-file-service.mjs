@@ -94,7 +94,7 @@ export function createLumaProviderFileService({
    await repository.upsertFile({...identity,providerFileId:file.fileId,state:file.state.toUpperCase(),providerExpiresAt:null,failureCode:file.failureReason||"LUMA_FILE_"+file.state.toUpperCase()});
    throw fail("Luma rejected or deleted the uploaded source file.","LUMA_FILE_INGEST_FAILED",422);
   }
-  throw Object.assign(fail("Luma is still ingesting the uploaded source file.","LUMA_FILE_INGEST_PENDING",409),{retryable:true,retryAfterSeconds:10});
+  throw Object.assign(fail("Luma is still ingesting the uploaded source file.","VIDEO_PROVIDER_POLL_DEFERRED",409),{retryable:true,retryAfterSeconds:10});
  }
 
  async function prepareAsset({ownerId,projectId=null,assetId,purpose="input"}={}){
@@ -135,7 +135,7 @@ export function createLumaProviderFileService({
    const afterUpload=await repository.updateAttempt({id:attempt.id,fromStates:["PROVIDER_CREATED"],state:"PROVIDER_CREATED",patch:{upload_completed_at:new Date(now()).toISOString(),last_error_code:null}});
    return inspectProviderFile(identity,afterUpload);
   }catch(error){
-   if(error?.code==="LUMA_FILE_INGEST_PENDING")throw error;
+   if(error?.code==="VIDEO_PROVIDER_POLL_DEFERRED")throw error;
    const fromStates=receipt?["UPLOADING","PROVIDER_CREATED"]:["UPLOADING"];
    const outcomeUnknown=error?.code==="LUMA_FILE_UPLOAD_OUTCOME_UNKNOWN"||
     (!receipt&&(error?.code==="LUMA_VIDEO_TIMEOUT"||error?.name==="TypeError"));
