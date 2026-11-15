@@ -13,7 +13,7 @@ const asset={id:assetId,ownerId,projectId,name:"source.mp4",mediaType:"video/mp4
 
 function fixture({attemptState="PREPARED",remoteState="ready",assetOwner=ownerId,authorized=true,checksum=sha256}={}){
  const calls={create:0,upload:0,complete:0,get:0,delete:0};
- const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:owner,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
+ const state={attempt:{id:"523e4567-e89b-42d3-a456-426614174000",attempt_key:"a".repeat(64),asset_id:assetId,owner_id:ownerId,project_id:projectId,purpose:"input",mime_type:"video/mp4",byte_size:4,sha256,state:attemptState,provider_file_id:attemptState==="PREPARED"?null:fileId,upload_expires_at:"2026-11-16T12:00:00.000Z",upload_completed_at:null,last_error_code:null},file:null};
  const assets={
   async get({ownerId:requested,assetId:requestedAsset}){return authorized&&requested===ownerId&&requestedAsset===assetId?{...asset,ownerId:assetOwner,sha256:checksum}:null;},
   async createSignedUrl({ownerId:requested,assetId:requestedAsset}){return{asset:{id:requestedAsset,ownerId:assetOwner,projectId},url:"https://storage.example/storage/v1/object/sign/private/source.mp4?token=opaque"};}
