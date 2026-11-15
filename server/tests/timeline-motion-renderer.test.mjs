@@ -23,8 +23,11 @@ test("renderer emits animated scale, alpha, rotation and position filters",()=>{
  assert.match(result.overlay,/eval=frame/);
  assert.deepEqual(result.animated,{x:true,y:true,width:true,height:true,opacity:true,rotation:true});
 });
-test("static metadata remains unchanged when no motion keyframes are present",()=>{
- assert.equal(buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2),null);
+test("static transform metadata compiles without requiring animation keyframes",()=>{
+ const positioned=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2);
+ assert.ok(positioned.filters.some(filter=>filter==="scale=100:80"));
+ assert.ok(positioned.filters.some(filter=>filter==="colorchannelmixer=aa=0.5"));
+ assert.match(positioned.overlay,/20/);
  const rotated=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5,rotation:25},2);
  assert.ok(rotated.filters.some(filter=>filter.startsWith("pad=")));
  assert.ok(rotated.filters.some(filter=>filter.includes("ow=iw:oh=ih")));
@@ -70,5 +73,19 @@ test("animated overlay transform filter graph renders successfully with FFmpeg",
   const result=spawnSync(binary,["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=2","-f","lavfi","-i","color=c=red@0.5:s=80x60:r=24:d=2","-filter_complex",graph,"-map","[out]","-t","2","-c:v","libx264","-pix_fmt","yuv420p","-y",output],{encoding:"utf8",timeout:60000});
   assert.equal(result.status,0,result.stderr||"FFmpeg failed to render animated transform graph");
   assert.ok((await stat(output)).size>0,"FFmpeg must produce a non-empty video");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test("primary video transform graph composites onto the sequence canvas and renders",async t=>{
+ const binary=process.env.FFMPEG_PATH||"ffmpeg",version=spawnSync(binary,["-version"],{stdio:"ignore"});
+ if(version.status!==0){t.skip("FFmpeg is unavailable in this test environment");return;}
+ const duration=2,metadata={x:0,y:0,width:160,height:90,opacity:1,rotation:0,motionKeyframes:[{timeSeconds:0,x:0,y:0,width:160,height:90,rotation:0},{timeSeconds:2,x:80,y:40,width:120,height:68,rotation:25,interpolation:"ease-in-out"}]},motion=buildTimelineMotionFilters(metadata,duration);
+ const scale=motion.filters[0].replace(/^(scale=.*)$/, "$1:force_original_aspect_ratio=decrease");
+ const graph="[1:v]"+[scale,...motion.filters.slice(1)].join(",")+"[transformed];[0:v][transformed]"+motion.overlay+"[out]";
+ const dir=await mkdtemp(join(tmpdir(),"ev-primary-motion-")),output=join(dir,"primary-motion.mp4");
+ try{
+  const result=spawnSync(binary,["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=black:s=320x240:r=24:d=2","-f","lavfi","-i","testsrc2=s=160x90:r=24:d=2","-filter_complex",graph,"-map","[out]","-t","2","-c:v","libx264","-pix_fmt","yuv420p","-y",output],{encoding:"utf8",timeout:60000});
+  assert.equal(result.status,0,result.stderr||"FFmpeg failed to render primary-video transforms");
+  assert.ok((await stat(output)).size>0,"FFmpeg must produce a non-empty primary-video master");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
