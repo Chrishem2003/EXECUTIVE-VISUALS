@@ -438,7 +438,7 @@ window.addEventListener("ev:timeline-luma-edit-requested",event=>{
  state.selectedNode=node.id;state.costEstimate=null;state.plan="";
  state.graph={...state.graph,revision:state.graph.revision+1};
  state.message="Selected timeline source connected to Luma Ray 3.2. Review the prompt, confirm source rights, estimate cost and obtain approval before execution.";
- void persist().then(paint).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
+ void persist().then(()=>{paint();window.dispatchEvent(new Event("ev:workflow-luma-edit-ready"));}).catch(error=>{state.message=error instanceof Error?error.message:"The Luma edit workflow could not be saved.";paint();});
 });
 window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
 window.addEventListener("ev:jobs-updated",()=>{if(!state.latestRunId)return;void loadRun().then(paint).catch(error=>{state.message=error instanceof Error?"Workflow status could not be refreshed: "+error.message:"Workflow status could not be refreshed. The last known run state is still shown.";paint();});});
