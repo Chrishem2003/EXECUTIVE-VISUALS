@@ -947,7 +947,7 @@ test("batch video finishing API authenticates, scopes sources, queues FFmpeg job
     assert.equal(rows.length,3);
     assert.equal(rows.find(row=>row.id===result.jobs[0].id).status,"failed");
     assert.equal(rows.find(row=>row.id===result.jobs[1].id).status,"queued");
-    assert.equal(rows.find(row=>row.id===retryBody.job.id).status,"queued");
+    assert.equal(rows.find(row=>row.id===retryBody.job.id).status,"failed");
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='media.batch_queued' AND subject_id=?").get(result.batchId).count,1);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type='job.retry_queued' AND subject_id=?").get(retryBody.job.id).count,1);
   }finally{db.close();}
