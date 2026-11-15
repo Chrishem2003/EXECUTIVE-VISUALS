@@ -71,7 +71,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
   else pass("source_video","Source-video requirements are satisfied for the selected operation.");
   if(!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>300)fail("duration","Duration must be a whole number between 1 and 300 seconds.");
   else if(video.provider==="luma"&&operation==="reframe"&&(shot.durationSeconds<1||shot.durationSeconds>300))fail("duration","Reframe source duration must be 1–300 seconds.");
-  else if(video.provider==="luma"&&caps&&!caps.durationsSeconds.includes(shot.durationSeconds))fail("duration","Ray 3.2 generation, editing and extension support only 5- or 10-second outputs.");
+  else if(video.provider==="luma"&&operation!=="reframe"&&caps&&!caps.durationsSeconds.includes(shot.durationSeconds))fail("duration","Ray 3.2 generation, editing and extension support only 5- or 10-second outputs.");
   else if(video.provider!=="luma"&&shot.durationSeconds>30)fail("duration","Shot duration exceeds the selected model's 30-second preflight limit.");
   else if(video.provider!=="luma"&&caps&&(!Number.isFinite(caps.minDurationSeconds)||!Number.isFinite(caps.maxDurationSeconds)||shot.durationSeconds<caps.minDurationSeconds||shot.durationSeconds>caps.maxDurationSeconds))fail("duration","Duration is outside the selected model's documented range.");
   else pass("duration","Duration is within the model's supported range.");
