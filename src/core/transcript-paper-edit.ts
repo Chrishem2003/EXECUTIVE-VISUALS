@@ -39,6 +39,21 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
  return cues.sort((a,b)=>a.start-b.start||a.index-b.index);
 }
 
+export interface TranscriptPause { start:number; end:number; duration:number; afterCueIndex:number; beforeCueIndex:number }
+export function analyzeTranscriptPauses(cues:TranscriptCue[],minimumDuration=0.75):TranscriptPause[]{
+ if(!Number.isFinite(minimumDuration)||minimumDuration<0.1||minimumDuration>30)throw new Error("Pause threshold must be between 0.1 and 30 seconds.");
+ const ordered=[...cues].sort((a,b)=>a.start-b.start||a.index-b.index);
+ const pauses:TranscriptPause[]=[];
+ for(let i=1;i<ordered.length;i++){
+  const previous=ordered[i-1],next=ordered[i];
+  const duration=next.start-previous.end;
+  if(Number.isFinite(duration)&&duration>=minimumDuration){
+   pauses.push({start:previous.end,end:next.start,duration,afterCueIndex:previous.index,beforeCueIndex:next.index});
+  }
+ }
+ return pauses;
+}
+
 export function createTranscriptPaperEditTrack(timeline:EditorialTimeline,input:{
  sourceTrackId:string;sourceClipId:string;newTrackId:string;clipIdPrefix:string;
  startFrame:number;selectedCueIndices?:number[];cues:TranscriptCue[];
