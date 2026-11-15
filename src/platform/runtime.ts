@@ -448,7 +448,7 @@ export function renderVideoResolutionOptions(){
  const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
   .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
    (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
- if(selected?.provider.provider==="luma")return '<option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
+ if(selected?.provider.provider==="luma")return '<option value="360p">360p · Draft</option><option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
  if(selected?.provider.provider==="google")return '<option value="720p" selected>720p · Gemini Omni</option>';
  return '<option value="provider_default" selected>Provider default</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>';
 }
