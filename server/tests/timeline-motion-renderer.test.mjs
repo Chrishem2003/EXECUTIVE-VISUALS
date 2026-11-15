@@ -99,3 +99,18 @@ test("primary video transform graph composites onto the sequence canvas and rend
   assert.ok((await stat(output)).size>0,"FFmpeg must produce a non-empty primary-video master");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test("FFmpeg motion compiler emits sampled cubic Bezier curves and server evaluation matches preview",()=>{
+ const bezier={x1:0.25,y1:0.1,x2:0.25,y2:1};
+ const keys=[{timeSeconds:0,x:0},{timeSeconds:1,x:100,interpolation:"bezier",bezier}];
+ const expression=buildTimelineMotionExpression(keys,"x",0,1);
+ assert.match(expression,/if\(lte\(/);
+ assert.match(expression,/0\.25/);
+ assert.ok(Math.abs(evaluateTimelineMotion(keys,0.5,"x",0,1)-80.2403)<0.01);
+ const filters=buildTimelineMotionFilters({x:0,y:0,width:100,height:80,motionKeyframes:keys},1,320,240);
+ assert.ok(filters.filters.some(filter=>filter.includes("scale=w=")));
+});
+test("server motion renderer rejects malformed cubic Bezier handles",()=>{
+ assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1,interpolation:"bezier",bezier:{x1:0.9,y1:0,x2:0.1,y2:1}}],1),/Bezier handles/);
+ assert.throws(()=>buildTimelineMotionFilters({motionKeyframes:[{timeSeconds:0,x:1,interpolation:"bezier",bezier:{x1:0.2,y1:4,x2:0.8,y2:1}}]},1),/Bezier handles/);
+});
