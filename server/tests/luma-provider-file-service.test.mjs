@@ -51,7 +51,7 @@ test("Luma source asset upload persists owner-scoped mapping only after provider
 
 test("pending Luma ingestion stays recoverable and does not mark upload failed",async()=>{
  const f=fixture({remoteState:"pending"});
- await assert.rejects(f.service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="LUMA_FILE_INGEST_PENDING"&&error.retryable===true);
+ await assert.rejects(f.service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="VIDEO_PROVIDER_POLL_DEFERRED"&&error.retryable===true);
  assert.equal(f.state.attempt.state,"PROVIDER_CREATED");
  assert.equal(f.state.attempt.upload_completed_at!==null,true);
  assert.equal(f.state.file,null);
