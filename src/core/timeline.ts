@@ -70,8 +70,8 @@ export function moveSpeedKeyframe(curve:SpeedKeyframe[],index:number,timeSeconds
  if(!Array.isArray(curve)||curve.length<2||curve.length>64||!Number.isSafeInteger(index)||index<0||index>=curve.length)throw new Error("Select a valid speed keyframe.");
  if(!Number.isFinite(durationSeconds)||durationSeconds<=0||!Number.isFinite(timeSeconds)||!Number.isFinite(speed))throw new Error("Speed keyframe position and duration must be finite.");
  const next=curve.map(point=>({...point})),minimumGap=0.001;
- const time=index===0?0:index===next.length-1?durationSeconds:Math.max(next[index-1].timeSeconds+minimumGap,Math.min(next[index+1].timeSeconds-minimumGap,timeSeconds));
- if(index>0&&index<next.length-1&&next[index+1].timeSeconds-next[index-1].timeSeconds<minimumGap*2)throw new Error("There is not enough space to move this keyframe.");
+ const minimumTime=index===0?0:next[index-1].timeSeconds+minimumGap,maximumTime=index===next.length-1?durationSeconds:next[index+1].timeSeconds-minimumGap;
+ const time=index===0?0:index===next.length-1?durationSeconds:maximumTime<minimumTime?next[index].timeSeconds:Math.max(minimumTime,Math.min(maximumTime,timeSeconds));
  next[index]={timeSeconds:Number(time.toFixed(4)),speed:Number(Math.max(0.25,Math.min(4,speed)).toFixed(2))};
  return next;
 }
