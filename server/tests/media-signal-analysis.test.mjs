@@ -27,7 +27,7 @@ test("closes trailing silence against the known media duration",()=>{
 
 test("parses audio clipping, peak, RMS and integrated loudness",()=>{
  const metrics=parseAudioMetrics("Peak level dB: -0.4\nRMS level dB: -18.2\nNumber of samples clipped: 12\n I: -16.7 LUFS");
- assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,rmsDbfs:-18.2,integratedLufs:-16.7});
+ assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,rmsDbfs:-18.2,integratedLufs:-16.7,truePeakDbfs:null});
 });
 test("flags clipped samples and near-full-scale peaks without imposing a loudness target",()=>{
  const findings=buildAudioMetricFindings({clippedSamples:4,peakDbfs:-0.5,rmsDbfs:-18,integratedLufs:-16});
@@ -106,4 +106,25 @@ test("flags alternating chroma-vector reversals but excludes scene-cut neighborh
  const findings=buildTemporalColorFindings({samples});
  assert.ok(findings.some(item=>item.code==="ALTERNATING_CHROMA_INSTABILITY"));
  assert.equal(buildTemporalColorFindings({samples,sceneChanges:[0.25]}).length,0);
+});
+
+
+test("parses FFmpeg ebur128 TPK channel measurements and keeps them separate from SPK",()=>{
+ const stderr="[Parsed_ebur128] t: 0.100 TARGET:-23 LUFS M:-20.0 S:-20.0 I:-20.0 LUFS LRA:0.0 LU SPK: -0.8 -0.7 dBFS FTPK: -0.5 -0.6 dBFS TPK: -0.4 -0.3 dBFS\n[Parsed_ebur128] t: 0.200 TARGET:-23 LUFS M:-20.0 S:-20.0 I:-20.0 LUFS LRA:0.0 LU SPK: -0.8 -0.7 dBFS FTPK: -0.2 -0.3 dBFS TPK: -0.2 -0.3 dBFS";
+ const metrics=parseAudioMetrics(stderr);
+ assert.equal(metrics.truePeakDbfs,-0.2);
+ assert.equal(metrics.peakDbfs,null);
+ assert.equal(parseAudioMetrics("Peak level dB: -2.0\nSPK: -0.1 -0.2 dBFS").truePeakDbfs,null);
+});
+
+test("retains compatibility with legacy true-peak summary output",()=>{
+ const metrics=parseAudioMetrics("Sample peak:\n Peak: -0.8 dBFS\n\n True peak:\n Peak: -0.4 dBFS\n");
+ assert.equal(metrics.truePeakDbfs,-0.4);
+});
+
+test("flags measured true peak near full scale without imposing a delivery target",()=>{
+ const findings=buildAudioMetricFindings({truePeakDbfs:-0.5});
+ assert.equal(findings.length,1);
+ assert.equal(findings[0].code,"AUDIO_TRUE_PEAK_NEAR_CEILING");
+ assert.equal(buildAudioMetricFindings({truePeakDbfs:-1.2}).length,0);
 });
