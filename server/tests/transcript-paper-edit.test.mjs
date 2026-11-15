@@ -38,7 +38,7 @@ test("preserves WebVTT voice speaker labels while stripping voice markup from di
 });
 
 test("detects only gaps at or above the requested pause threshold",()=>{
- const cues=parseTranscriptWebVtt("WEBVTT\\n\\n00:00:00.000 --> 00:00:01.000\\nFirst thought.\\n\\n00:00:01.500 --> 00:00:02.000\\nQuick follow-up.\\n\\n00:00:04.000 --> 00:00:05.000\\nNext topic.\\n");
+ const cues=parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nFirst thought.\n\n00:00:01.500 --> 00:00:02.000\nQuick follow-up.\n\n00:00:04.000 --> 00:00:05.000\nNext topic.\n");
  assert.deepEqual(analyzeTranscriptPauses(cues,0.75),[
   {start:2,end:4,duration:2,afterCueIndex:1,beforeCueIndex:2}
  ]);
