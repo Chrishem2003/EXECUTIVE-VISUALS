@@ -126,7 +126,7 @@ function speedCurveEditor(clip:TimelineTrack["clips"][number],enabled=true){
  const y=(value:number)=>68-(Math.max(0.25,Math.min(4,value))-0.25)/3.75*60;
  const path=points.map(point=>x(point.timeSeconds).toFixed(1)+","+y(point.speed).toFixed(1)).join(" ");
  const rows=curve.map((point,index)=>'<div class="speed-curve-point"><span class="speed-curve-index">'+(index+1)+'</span><label>Time (s)<input name="speedPointTime" type="number" min="0" max="'+duration.toFixed(4)+'" step="0.001" value="'+point.timeSeconds.toFixed(4)+'"></label><label>Speed (×)<input name="speedPointSpeed" type="number" min="0.25" max="4" step="0.05" value="'+point.speed.toFixed(2)+'"></label><button type="button" class="secondary" data-tl-speed-remove="'+index+'" '+(curve.length<=2?'disabled':'')+' aria-label="Remove speed keyframe '+(index+1)+'">Remove</button></div>').join("");
- return '<fieldset class="speed-curve-fieldset" '+(enabled?'':'disabled')+'><div class="speed-curve-editor"><div class="speed-curve-heading"><b>Speed curve</b><span>'+(curve.length?curve.length+' keyframes':'Constant '+speed.toFixed(2)+'×')+'</span></div><svg class="speed-curve-graph" viewBox="0 0 300 82" role="img" aria-label="Playback speed curve from 0.25 to 4 times speed"><path d="M12 8V68H288" fill="none" stroke="currentColor" opacity=".25"/><path d="M12 8H288M12 38H288" fill="none" stroke="currentColor" opacity=".12" stroke-dasharray="3 4"/><polyline points="'+path+'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+points.map(point=>'<circle cx="'+x(point.timeSeconds).toFixed(1)+'" cy="'+y(point.speed).toFixed(1)+'" r="3.5" fill="currentColor"/>').join("")+'<text x="14" y="79" font-size="8" fill="currentColor" opacity=".7">0s</text><text x="286" y="79" text-anchor="end" font-size="8" fill="currentColor" opacity=".7">'+duration.toFixed(2)+'s</text></svg><div class="speed-curve-scale"><span>4×</span><span>0.25×</span></div>'+(curve.length?'<div class="speed-curve-points">'+rows+'</div>':'<p class="muted">Add a keyframe to create a variable-speed ramp. The first and last points define the ramp boundaries.</p>')+'<button type="button" class="secondary" data-tl-speed-add data-clip="'+esc(clip.id)+'">Add keyframe at playhead</button><small class="muted">Keyframes use clip-local seconds. Speeds are limited to 0.25×–4×. Save clip properties to commit manual edits.</small></div></fieldset>';
+ return '<fieldset class="speed-curve-fieldset" '+(enabled?'':'disabled')+'><div class="speed-curve-editor"><div class="speed-curve-heading"><b>Speed curve</b><span>'+(curve.length?curve.length+' keyframes':'Constant '+speed.toFixed(2)+'×')+'</span></div><svg class="speed-curve-graph" data-speed-curve-graph viewBox="0 0 300 82" preserveAspectRatio="none" role="group" aria-label="Draggable speed keyframes. Drag vertically to change speed and horizontally to change clip-local time."><path d="M12 8V68H288" fill="none" stroke="currentColor" opacity=".25"/><path d="M12 8H288M12 38H288" fill="none" stroke="currentColor" opacity=".12" stroke-dasharray="3 4"/><polyline data-speed-curve-line points="'+path+'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+points.map((point,index)=>'<circle data-speed-curve-point="'+index+'" cx="'+x(point.timeSeconds).toFixed(1)+'" cy="'+y(point.speed).toFixed(1)+'" r="5" fill="currentColor" stroke="var(--panel)" stroke-width="2" tabindex="0" role="slider" aria-label="Speed keyframe '+(index+1)+'" aria-valuemin="0.25" aria-valuemax="4" aria-valuenow="'+point.speed.toFixed(2)+'"/>').join("")+'<text x="14" y="79" font-size="8" fill="currentColor" opacity=".7">0s</text><text x="286" y="79" text-anchor="end" font-size="8" fill="currentColor" opacity=".7">'+duration.toFixed(2)+'s</text></svg><div class="speed-curve-scale"><span>4×</span><span>0.25×</span></div>'+(curve.length?'<div class="speed-curve-points">'+rows+'</div>':'<p class="muted">Add a keyframe to create a variable-speed ramp. The first and last points define the ramp boundaries.</p>')+'<button type="button" class="secondary" data-tl-speed-add data-clip="'+esc(clip.id)+'">Add keyframe at playhead</button><small class="muted">Keyframes use clip-local seconds. Speeds are limited to 0.25×–4×. Save clip properties to commit manual edits.</small></div></fieldset>';
 }
 function applySpeedCurveEdit(track:TimelineTrack,clip:TimelineTrack["clips"][number],curve:SpeedKeyframe[]){
  if(!state.timeline)return;
@@ -1453,6 +1453,32 @@ document.addEventListener("input",event=>{
   const output=document.querySelector<HTMLElement>("#tl-preview-time");if(output)output.textContent=formatPlaybackTime(state.playheadFrame);
  }
 });
+type SpeedCurveDrag={pointerId:number;svg:SVGSVGElement;trackId:string;clipId:string;index:number;duration:number;curve:SpeedKeyframe[];changed:boolean};
+let speedCurveDrag:SpeedCurveDrag|null=null;
+document.addEventListener("pointerdown",event=>{
+ const target=event.target as Element|null,handle=target?.closest<SVGCircleElement>("[data-speed-curve-point]"),svg=handle?.closest<SVGSVGElement>("[data-speed-curve-graph]"),form=svg?.closest<HTMLFormElement>("#tl-clip-inspector");
+ if(!handle||!svg||!form||!state.timeline)return;
+ const track=state.timeline.tracks.find(item=>item.id===form.dataset.track),clip=track?.clips.find(item=>item.id===form.dataset.clip),index=Number(handle.dataset.speedCurvePoint);
+ if(track?.kind!=="video"||!clip||!Number.isSafeInteger(index))return;
+ const duration=clip.duration.value/clip.duration.rate,fallback=Number(clip.speed??1),curve=clip.speedCurve?.map(point=>({...point}))||[{timeSeconds:0,speed:fallback},{timeSeconds:duration,speed:fallback}];
+ if(index<0||index>=curve.length)return;
+ speedCurveDrag={pointerId:event.pointerId,svg,trackId:track.id,clipId:clip.id,index,duration,curve,changed:false};svg.setPointerCapture(event.pointerId);event.preventDefault();
+});
+window.addEventListener("pointermove",event=>{
+ const drag=speedCurveDrag;if(!drag||event.pointerId!==drag.pointerId)return;const rect=drag.svg.getBoundingClientRect();if(!rect.width||!rect.height)return;
+ const px=Math.max(12,Math.min(288,12+(event.clientX-rect.left)/rect.width*276)),py=Math.max(8,Math.min(68,8+(event.clientY-rect.top)/rect.height*60)),previous=drag.curve[drag.index];if(!previous)return;
+ const minGap=0.001,time=drag.index===0?0:drag.index===drag.curve.length-1?drag.duration:Math.max(drag.curve[drag.index-1].timeSeconds+minGap,Math.min(drag.curve[drag.index+1].timeSeconds-minGap,(px-12)/276*drag.duration)),speed=Math.max(0.25,Math.min(4,0.25+(68-py)/60*3.75));
+ drag.curve[drag.index]={timeSeconds:Number(time.toFixed(4)),speed:Number(speed.toFixed(2))};drag.changed=drag.changed||Math.abs(previous.timeSeconds-time)>0.00005||Math.abs(previous.speed-speed)>0.005;
+ const x=(value:number)=>12+Math.max(0,Math.min(1,value/Math.max(drag.duration,0.000001)))*276,y=(value:number)=>68-(Math.max(0.25,Math.min(4,value))-0.25)/3.75*60,line=drag.svg.querySelector<SVGPolylineElement>("[data-speed-curve-line]");
+ if(line)line.setAttribute("points",drag.curve.map(point=>x(point.timeSeconds).toFixed(1)+","+y(point.speed).toFixed(1)).join(" "));
+ drag.curve.forEach((point,index)=>{const circle=drag.svg.querySelector<SVGCircleElement>('[data-speed-curve-point="'+index+'"]');if(circle){circle.setAttribute("cx",x(point.timeSeconds).toFixed(1));circle.setAttribute("cy",y(point.speed).toFixed(1));circle.setAttribute("aria-valuenow",point.speed.toFixed(2));}});event.preventDefault();
+});
+const finishSpeedCurveDrag=(event:PointerEvent,commit:boolean)=>{
+ const drag=speedCurveDrag;if(!drag||event.pointerId!==drag.pointerId)return;speedCurveDrag=null;
+ if(commit&&drag.changed&&state.timeline){const track=state.timeline.tracks.find(item=>item.id===drag.trackId),clip=track?.clips.find(item=>item.id===drag.clipId);if(track&&clip)applySpeedCurveEdit(track,clip,drag.curve);}else if(!commit)paint();
+};
+window.addEventListener("pointerup",event=>finishSpeedCurveDrag(event,true));
+window.addEventListener("pointercancel",event=>finishSpeedCurveDrag(event,false));
 document.addEventListener("click",event=>{
  const flaggedCue=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-paper-flag-cue]");
  if(flaggedCue){
