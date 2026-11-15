@@ -41,11 +41,15 @@ test("production defaults to governed cloud execution and fails closed without t
   }), "cloud");
 });
 
-test("cloud mode accepts only the explicitly implemented Runway Model Router adapter", () => {
-  const supported = { kind: "video.generate", config: { provider: "runway", model: "model-router" } };
-  assert.equal(assertVideoWorkflowNodeSupport(supported, "cloud"), true);
+test("cloud mode accepts only explicitly governed Runway Model Router and Luma Ray 3.2 adapters", () => {
+  const supported = [
+    { kind: "video.generate", config: { provider: "runway", model: "model-router" } },
+    { kind: "video.generate", config: { provider: "luma", model: "ray-3.2" } }
+  ];
+  for (const node of supported) assert.equal(assertVideoWorkflowNodeSupport(node, "cloud"), true);
   for (const node of [
     { kind: "video.generate", config: { provider: "fal", model: "fal-ai/video" } },
+    { kind: "video.generate", config: { provider: "luma", model: "ray-3.2-fast" } },
     { kind: "video.generate", config: { provider: "runway", model: "gen4_turbo" } },
     { kind: "image.generate", config: { provider: "runway", model: "model-router" } }
   ]) {
