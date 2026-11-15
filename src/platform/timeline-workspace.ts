@@ -1303,7 +1303,7 @@ document.addEventListener("change",async event=>{
   if(form){
    const boxes=Array.from(form.querySelectorAll<HTMLInputElement>("[data-tl-paper-cue]"));
    const status=form.querySelector<HTMLElement>("#tl-paper-edit-selection-status");
-   if(status)status.textContent=boxes.length+" cues · "+boxes.filter(box=>box.checked).length+" selected";
+   filterPaperEditCueSelection();
   }
   return;
  }
