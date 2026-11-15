@@ -47,7 +47,7 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    throw fail("Luma quote input did not normalize to a supported Ray 3.2 video operation.","VIDEO_WORKFLOW_QUOTE_INVALID");
   const operation=prepared.type;
   const duration=operation==="video_reframe"
-   ? Number(sourceMetadata?.durationSeconds)
+   ? Math.ceil(Number(sourceMetadata?.durationSeconds))
    : operation==="video_edit"
     ? Number(prepared.workflowDurationSeconds)
     : Number(String(prepared.video.duration||"").replace(/s$/,""));
