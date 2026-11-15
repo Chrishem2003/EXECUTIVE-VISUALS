@@ -212,6 +212,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115160000_luma_provider_files_and_recovery.sql
       - name: Verify Luma private file scope, permissions and recovery states
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/luma-provider-files-postgres-integration.sql
+      - name: Apply Gemini Omni workflow quote and approval constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115100000_google_omni_workflow_quote_approval.sql
       - name: Apply Luma Ray 3.2 workflow quote and enqueue constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115180000_luma_workflow_quote_and_enqueue.sql
       - name: Verify Luma quote, owner approval and enqueue RPC gates
