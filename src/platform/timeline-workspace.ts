@@ -1485,6 +1485,7 @@ function fallbackToOriginalPreview(media:HTMLMediaElement){
 }
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
+ if(target.name?.startsWith("bezier")){const form=target.closest<HTMLFormElement>("#tl-clip-inspector"),svg=form?.querySelector<SVGSVGElement>(".motion-bezier-graph");if(form&&svg){const read=(name:string,fallback:number)=>Number((form.elements.namedItem(name) as HTMLInputElement|null)?.value??fallback);updateMotionBezierGraph(svg,{x1:read("bezierX1",0.25),y1:read("bezierY1",0.1),x2:read("bezierX2",0.25),y2:read("bezierY2",1)});}}
  if(target.id==="tl-preview-seek"&&state.timeline&&state.previewLoaded){
   stopTimelinePlayback();syncPreviewAtFrame(Number(target.value));
   const output=document.querySelector<HTMLElement>("#tl-preview-time");if(output)output.textContent=formatPlaybackTime(state.playheadFrame);
@@ -1643,6 +1644,7 @@ document.addEventListener("click",event=>{
   if((track?.kind==="overlay"||track?.kind==="video")&&clip&&point&&form){
    for(const [name,value] of Object.entries({x:point.x,y:point.y,width:point.width,height:point.height,opacity:point.opacity,rotation:point.rotation}))if(value!==undefined){const field=form.elements.namedItem(name) as HTMLInputElement|null;if(field)field.value=String(value);}
    const easing=form.elements.namedItem(track.kind==="video"?"transformInterpolation":"motionInterpolation") as HTMLSelectElement|null;if(easing)easing.value=point.interpolation||"linear";for(const [name,value] of Object.entries({bezierX1:point.bezier?.x1??0.25,bezierY1:point.bezier?.y1??0.1,bezierX2:point.bezier?.x2??0.25,bezierY2:point.bezier?.y2??1})){const field=form.elements.namedItem(name) as HTMLInputElement|null;if(field)field.value=String(value);}
+   const bezierSvg=form.querySelector<SVGSVGElement>(".motion-bezier-graph");if(bezierSvg)updateMotionBezierGraph(bezierSvg,{x1:point.bezier?.x1??0.25,y1:point.bezier?.y1??0.1,x2:point.bezier?.x2??0.25,y2:point.bezier?.y2??1});
    state.playheadFrame=clampTimelineFrame((clip.timelineStart.value/clip.timelineStart.rate+point.timeSeconds)*fps(),state.timeline);syncPreviewAtFrame(state.playheadFrame);state.message="Selected transform keyframe "+(index+1)+". Adjust its values and save at this playhead time.";
   }
   return;
