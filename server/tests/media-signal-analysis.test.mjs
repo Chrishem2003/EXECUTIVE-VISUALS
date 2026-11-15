@@ -107,3 +107,18 @@ test("flags alternating chroma-vector reversals but excludes scene-cut neighborh
  assert.ok(findings.some(item=>item.code==="ALTERNATING_CHROMA_INSTABILITY"));
  assert.equal(buildTemporalColorFindings({samples,sceneChanges:[0.25]}).length,0);
 });
+
+
+test("parses the ebur128 true-peak summary separately from sample peak",()=>{
+ const metrics=parseAudioMetrics("Sample peak:\n Peak: -0.8 dBFS\n\n True peak:\n Peak: -0.4 dBFS\n");
+ assert.equal(metrics.peakDbfs,null);
+ assert.equal(metrics.truePeakDbfs,-0.4);
+ assert.equal(parseAudioMetrics("Peak level dB: -2.0").truePeakDbfs,null);
+});
+
+test("flags measured true peak near full scale without imposing a delivery target",()=>{
+ const findings=buildAudioMetricFindings({truePeakDbfs:-0.5});
+ assert.equal(findings.length,1);
+ assert.equal(findings[0].code,"AUDIO_TRUE_PEAK_NEAR_CEILING");
+ assert.equal(buildAudioMetricFindings({truePeakDbfs:-1.2}).length,0);
+});
