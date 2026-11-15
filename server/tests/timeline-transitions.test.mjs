@@ -48,10 +48,10 @@ test("builds a frame-accurate video crossfade with cumulative xfade offset", () 
 test("chains hard cuts, gaps and crossfades without losing cumulative duration", () => {
   const result = buildVideoSequenceGraph([
     { label: "v0", duration: 5, transitionToNext: { type: "crossfade", fadeFrames: 12 } },
-    { label: "gap0", duration: 2 },
-    { label: "v1", duration: 4 }
+    { label: "v1", duration: 4, transitionToNext: undefined },
+    { label: "v2", duration: 3 }
   ], 24);
-  assert.equal(result.duration, 10.5);
+  assert.equal(result.duration, 11.5);
   assert.match(result.filter, /xfade=transition=fade:duration=0.500000:offset=4.500000/);
   assert.match(result.filter, /concat=n=2:v=1:a=0/);
 });
