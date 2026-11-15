@@ -146,9 +146,9 @@ function validateInput(input) {
   }
   if (hasKeyframes) {
     if (hasStart || hasEnd || input.loop === true) throw fail("Ray 3.2 keyframes are mutually exclusive with start/end frames and looping.", "LUMA_VIDEO_INPUT_INVALID");
-    if (!Array.isArray(input.keyframes) || input.keyframes.length < 1 || input.keyframes.length > 64 ||
+    if (!Array.isArray(input.keyframes) || input.keyframes.length < 1 || input.keyframes.length > 16 ||
         !Array.isArray(input.keyframeIndexes) || input.keyframeIndexes.length !== input.keyframes.length) {
-      throw fail("Ray 3.2 keyframes require 1–64 images and an equal number of frame indexes.", "LUMA_VIDEO_INPUT_INVALID");
+      throw fail("Ray 3.2 keyframes require 1–16 images and an equal number of frame indexes.", "LUMA_VIDEO_INPUT_INVALID");
     }
     const maxFrame = durationSeconds * 24;
     const indexes = new Set();
