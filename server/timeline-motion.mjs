@@ -34,19 +34,21 @@ export function buildTimelineMotionExpression(points,property,fallback,durationS
  else expression="if(lt("+timeVariable+"\\,0)\\,"+number(first[property])+"\\,"+expression+")";
  return expression;
 }
-export function buildTimelineMotionFilters(metadata={},durationSeconds){
+export function buildTimelineMotionFilters(metadata={},durationSeconds,canvasWidth=1920,canvasHeight=1080){
+ const width=Math.max(256,Math.min(7680,Math.floor(Number(canvasWidth)||1920))),height=Math.max(144,Math.min(4320,Math.floor(Number(canvasHeight)||1080)));
  const points=normalizeTimelineMotion(metadata.motionKeyframes,durationSeconds);
- const base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||16),height:Math.max(16,Number(metadata.height)||16),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
- if(!points.length&&base.rotation===0&&base.x===0&&base.y===0&&base.opacity===1&&metadata.width===undefined&&metadata.height===undefined)return null;
+ const base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||width),height:Math.max(16,Number(metadata.height)||height),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Math.max(-3600,Math.min(3600,Number(metadata.rotation)||0))};
+ if(!points.length&&base.x===0&&base.y===0&&base.width===width&&base.height===height&&base.opacity===1&&base.rotation===0&&metadata.x===undefined&&metadata.y===undefined&&metadata.width===undefined&&metadata.height===undefined&&metadata.opacity===undefined&&metadata.rotation===undefined)return null;
  const animated=Object.fromEntries(Object.keys(LIMITS).map(property=>[property,points.some(point=>point[property]!==undefined)]));
- const expression=(property,variable="t")=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,variable);
- const scale=animated.width||animated.height?"scale=w='"+expression("width")+"':h='"+expression("height")+"':eval=frame": "scale="+Math.round(base.width)+":"+Math.round(base.height);
- const rotated=animated.rotation||base.rotation!==0;
- const maxWidth=Math.max(base.width,...points.map(point=>point.width??base.width)),maxHeight=Math.max(base.height,...points.map(point=>point.height??base.height));
- const rotationCanvas=rotated?Math.ceil(Math.hypot(maxWidth,maxHeight)):0;
- const rotate=rotated?"rotate=angle='("+expression("rotation")+")*PI/180':ow=iw:oh=ih:c=none":null;
- const alpha=animated.opacity?"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*("+expression("opacity","T")+")'": "colorchannelmixer=aa="+number(base.opacity);
- const widthExpression=animated.width?expression("width"):""+number(base.width),heightExpression=animated.height?expression("height"):""+number(base.height),x=animated.x?expression("x"):""+number(base.x),y=animated.y?expression("y"):""+number(base.y),overlayX=rotated?"("+x+")+(("+widthExpression+")-"+rotationCanvas+")/2":x,overlayY=rotated?"("+y+")+(("+heightExpression+")-"+rotationCanvas+")/2":y;
- const finalFilters=rotated?[scale,"format=rgba","pad="+rotationCanvas+":"+rotationCanvas+":(ow-iw)/2:(oh-ih)/2:color=black@0",rotate,alpha]:[scale,"format=rgba",alpha];
- return {filters:finalFilters,overlay:"overlay=x='"+overlayX+"':y='"+overlayY+"':eval=frame:eof_action=pass",animated};
+ const expression=(property)=>buildTimelineMotionExpression(points,property,base[property],durationSeconds,"T");
+ const x=expression("x"),y=expression("y"),w=expression("width"),h=expression("height"),opacity=expression("opacity"),angle="("+expression("rotation")+")*PI/180";
+ const dx="(X-(("+x+")+("+w+")/2))",dy="(Y-(("+y+")+("+h+")/2))";
+ const localX="(("+dx+")*cos("+angle+")+("+dy+")*sin("+angle+"))",localY="(-("+dx+")*sin("+angle+")+("+dy+")*cos("+angle+"))";
+ const sourceX="((("+localX+")/("+w+")+0.5)*"+width+")",sourceY="((("+localY+")/("+h+")+0.5)*"+height+")";
+ const inside="lt(abs("+localX+")\\,("+w+")/2)*lt(abs("+localY+")\\,("+h+")/2)";
+ const sample=channel=>"if("+inside+"\\,"+channel+"("+sourceX+"\\,"+sourceY+")\\,0)";
+ const alpha="if("+inside+"\\,alpha("+sourceX+"\\,"+sourceY+")*("+opacity+")\\,0)";
+ const graph="geq=r='"+sample("r")+"':g='"+sample("g")+"':b='"+sample("b")+"':a='"+alpha+"'";
+ const filters=["scale="+width+":"+height+":force_original_aspect_ratio=decrease","pad="+width+":"+height+":(ow-iw)/2:(oh-ih)/2:color=black@0","format=rgba",graph];
+ return {filters,overlay:"overlay=0:0:eof_action=pass",animated};
 }
