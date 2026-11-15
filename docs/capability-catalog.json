@@ -470,6 +470,11 @@
       "Iteratively edit video through a stateful session"
     ],
     [
+      "video.audio-from-video",
+      "audio",
+      "Generate synchronized sound effects from a source video"
+    ],
+    [
       "video.native-audio",
       "video",
       "Generate synchronized video with native audio"
@@ -575,11 +580,6 @@
       "Compare two workflow revisions"
     ],
     [
-      "workflow.batch-execution",
-      "workflow",
-      "Execute a workflow against a batch of inputs"
-    ],
-    [
       "video.transform-vehicle",
       "video",
       "Transform or replace a vehicle in existing footage"
@@ -608,6 +608,11 @@
       "video.finish-pipeline",
       "video",
       "Run a checkpointed video transformation and finishing pipeline"
+    ],
+    [
+      "workflow.batch-execution",
+      "workflow",
+      "Execute a workflow against a batch of inputs"
     ]
   ],
   "requiredCapabilityFields": [
@@ -657,6 +662,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 116,
+  "capabilityCount": 117,
   "domainCount": 23
 }
