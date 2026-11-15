@@ -17,22 +17,22 @@ test("motion evaluator matches the editor's linear transform interpolation",()=>
 });
 test("renderer emits animated scale, alpha, rotation and position filters",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:1,rotation:0,motionKeyframes:keys},2);
- assert.ok(result.filters.some(filter=>filter.startsWith("scale=")&&filter.includes("force_original_aspect_ratio=decrease")));
- assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")&&filter.includes("cos(")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("scale=w=")&&filter.includes("eval=frame")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
- assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
+ assert.match(result.overlay,/eval=frame/);
  assert.deepEqual(result.animated,{x:true,y:true,width:true,height:true,opacity:true,rotation:true});
 });
 test("static transform metadata compiles without requiring animation keyframes",()=>{
  const positioned=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2);
- assert.ok(positioned.filters.some(filter=>filter==="scale=1920:1080:force_original_aspect_ratio=decrease"));
- assert.ok(positioned.filters.some(filter=>filter.startsWith("geq=r=")&&filter.includes("0.5")));
- assert.equal(positioned.overlay,"overlay=0:0:eof_action=pass");
+ assert.ok(positioned.filters.some(filter=>filter==="scale=100:80:force_original_aspect_ratio=decrease"));
+ assert.ok(positioned.filters.some(filter=>filter==="colorchannelmixer=aa=0.5"));
+ assert.match(positioned.overlay,/overlay=x=/);
  const rotated=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5,rotation:25},2);
- assert.ok(rotated.filters.some(filter=>filter.startsWith("pad=1920:1080")));
- assert.ok(rotated.filters.some(filter=>filter.startsWith("geq=r=")));
- assert.ok(rotated.filters.some(filter=>filter.includes("cos(")));
- assert.equal(rotated.overlay,"overlay=0:0:eof_action=pass");
+ assert.ok(rotated.filters.some(filter=>filter.startsWith("rotate=angle=")&&filter.includes("ow=129:oh=129")));
+ assert.ok(rotated.filters.some(filter=>filter==="colorchannelmixer=aa=0.5"));
+ assert.ok(rotated.overlay.includes("20"));
+ assert.match(rotated.overlay,/overlay=x=/);
 });
 test("renderer rejects invalid or unsafe keyframe values",()=>{
  assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1},{timeSeconds:0,x:2}],2),/unique/);
@@ -55,11 +55,11 @@ test("renderer interpolates from the clip's base transform before the first keyf
  assert.match(expression,/20\+\(80\)/);
  assert.equal(evaluateTimelineMotion(keys,0.5,"x",20,2),60);
 });
-test("rotated overlays preserve their center on a fixed sequence canvas",()=>{
+test("rotated overlays preserve their center with fixed rotation output dimensions",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
- assert.ok(result.filters.some(filter=>filter.startsWith("pad=320:240")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
- assert.ok(result.filters.some(filter=>filter.includes("cos(")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("rotate=angle=")));
  assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
 });
 
