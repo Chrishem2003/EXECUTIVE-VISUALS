@@ -20,19 +20,19 @@ test("renderer emits animated scale, alpha, rotation and position filters",()=>{
  assert.ok(result.filters.some(filter=>filter.startsWith("scale=")&&filter.includes("force_original_aspect_ratio=decrease")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")&&filter.includes("cos(")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
- assert.match(result.overlay,/eval=frame/);
+ assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
  assert.deepEqual(result.animated,{x:true,y:true,width:true,height:true,opacity:true,rotation:true});
 });
 test("static transform metadata compiles without requiring animation keyframes",()=>{
  const positioned=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5},2);
  assert.ok(positioned.filters.some(filter=>filter==="scale=1920:1080:force_original_aspect_ratio=decrease"));
- assert.ok(positioned.filters.some(filter=>filter==="colorchannelmixer=aa=0.5"));
+ assert.ok(positioned.filters.some(filter=>filter.startsWith("geq=r=")&&filter.includes("0.5")));
  assert.equal(positioned.overlay,"overlay=0:0:eof_action=pass");
  const rotated=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,opacity:0.5,rotation:25},2);
  assert.ok(rotated.filters.some(filter=>filter.startsWith("pad=1920:1080")));
  assert.ok(rotated.filters.some(filter=>filter.startsWith("geq=r=")));
  assert.ok(rotated.filters.some(filter=>filter.includes("cos(")));
- assert.match(rotated.overlay,/overlay_w/);
+ assert.equal(rotated.overlay,"overlay=0:0:eof_action=pass");
 });
 test("renderer rejects invalid or unsafe keyframe values",()=>{
  assert.throws(()=>normalizeTimelineMotion([{timeSeconds:0,x:1},{timeSeconds:0,x:2}],2),/unique/);
@@ -57,17 +57,16 @@ test("renderer interpolates from the clip's base transform before the first keyf
 });
 test("rotated overlays keep their visual center anchored while using a safe diagonal canvas",()=>{
  const result=buildTimelineMotionFilters({x:20,y:30,width:100,height:80,rotation:0,motionKeyframes:[{timeSeconds:0,rotation:0},{timeSeconds:2,rotation:90}]},2);
- assert.ok(result.filters.some(filter=>filter.startsWith("pad=1920:1080")));
+ assert.ok(result.filters.some(filter=>filter.startsWith("pad=320:240")));
  assert.ok(result.filters.some(filter=>filter.startsWith("geq=r=")));
  assert.ok(result.filters.some(filter=>filter.includes("cos(")));
- assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
  assert.equal(result.overlay,"overlay=0:0:eof_action=pass");
 });
 
 test("animated overlay transform filter graph renders successfully with FFmpeg",async t=>{
  const binary=process.env.FFMPEG_PATH||"ffmpeg",version=spawnSync(binary,["-version"],{stdio:"ignore"});
  if(version.status!==0){t.skip("FFmpeg is unavailable in this test environment");return;}
- const duration=2,metadata={x:20,y:30,width:80,height:60,opacity:0,rotation:0,motionKeyframes:[{timeSeconds:0,x:20,y:30,width:80,height:60,opacity:0,rotation:0},{timeSeconds:2,x:80,y:50,width:120,height:90,opacity:1,rotation:90,interpolation:"ease-in-out"}]},motion=buildTimelineMotionFilters(metadata,duration);
+ const duration=2,metadata={x:20,y:30,width:80,height:60,opacity:0,rotation:0,motionKeyframes:[{timeSeconds:0,x:20,y:30,width:80,height:60,opacity:0,rotation:0},{timeSeconds:2,x:80,y:50,width:120,height:90,opacity:1,rotation:90,interpolation:"ease-in-out"}]},motion=buildTimelineMotionFilters(metadata,duration,320,240);
  const graph="[1:v]"+motion.filters.join(",")+"[over];[0:v][over]"+motion.overlay+":enable='between(t,0,2)'[out]";
  const dir=await mkdtemp(join(tmpdir(),"ev-motion-render-")),output=join(dir,"motion.mp4");
  try{
