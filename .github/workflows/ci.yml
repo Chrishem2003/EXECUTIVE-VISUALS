@@ -208,6 +208,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
       - name: Verify durable upload-attempt and recovery lease controls
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
+      - name: Apply durable Luma provider-file mappings and upload recovery
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115160000_luma_provider_files_and_recovery.sql
+      - name: Verify Luma private file scope, permissions and recovery states
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/luma-provider-files-postgres-integration.sql
       - name: Apply subscription AI-generation entitlement gate
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_video_generation_entitlement_gate.sql
       - name: Apply frame-accurate review and annotation foundation
