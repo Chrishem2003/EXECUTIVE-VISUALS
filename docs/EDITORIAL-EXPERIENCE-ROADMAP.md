@@ -26,9 +26,9 @@ These foundations do not imply that every advanced effect or AI feature below is
 
 1. **Caption style presets**
    - Original presets for clean, social-bold, cinematic and minimal looks.
-   - Apply a preset to one caption clip or an entire caption track — implemented in PR #606 with one-step undo and revision-safe persistence. Safe-area preview remains outstanding.
+   - Apply a preset to one caption clip or an entire caption track — implemented in PR #606 with one-step undo and revision-safe persistence. Preview-only title-safe and subtitle-placement guides are implemented in the sequence monitor, with explicit labeling that they are visual aids rather than broadcast-compliance certification.
    - Preserve per-project brand styles and allow custom overrides.
-   - Add a safe-area preview for common vertical, square and landscape compositions.
+   - Extend safe-area presets only when validated against documented platform specifications; retain the current preview-only guide as a non-certifying visual aid.
 2. **Caption timing and accessibility**
    - Word-level highlighting only when reliable word timestamps exist.
    - Speaker labels, language-track switching and sidecar subtitle export.
