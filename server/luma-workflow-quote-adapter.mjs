@@ -21,6 +21,10 @@ export function createLumaWorkflowQuoteAdapter({client,usdPerCredit,now=()=>new 
    if(typeof input.startFrameAssetId!=="string")throw fail("Luma first-frame asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
    prepared.startFrame={file_id:input.startFrameAssetId};
   }
+  if(input.endFrameAssetId){
+   if(typeof input.endFrameAssetId!=="string")throw fail("Luma last-frame asset ID is invalid.","VIDEO_WORKFLOW_CLOUD_ASSET_INVALID");
+   prepared.endFrame={file_id:input.endFrameAssetId};
+  }
   return client.prepareInput(prepared);
  }
  async function preflight(prepared){
