@@ -20,6 +20,28 @@ function resolver(fetchImpl, model = "veo3.1") {
   });
 }
 
+test("billing readiness verifies linked Enterprise workspace access before generation", async () => {
+  let requested;
+  const resolve = createRunwayTaskActualCostResolver({
+    apiKey: "server-test-key", enabled: true, now: () => current,
+    fetchImpl: async url => {
+      requested = new URL(url);
+      return response({ data: [], hasMore: false, nextCursor: null });
+    }
+  });
+  assert.equal(await resolve.assertAvailable(), true);
+  assert.equal(requested.pathname, "/v1/organization/webapp/usage");
+  assert.equal(requested.searchParams.get("limit"), "1");
+});
+
+test("billing readiness blocks Veo generation if Enterprise workspace usage is not authorized", async () => {
+  const resolve = createRunwayTaskActualCostResolver({
+    apiKey: "server-test-key", enabled: true, now: () => current,
+    fetchImpl: async () => response({ error: "enterprise required" }, 403)
+  });
+  await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+});
+
 test("settles Veo task cost from the exact Enterprise per-generation usage row", async () => {
   let url;
   const resolve = resolver(async value => {
