@@ -3,7 +3,7 @@ const API_VERSION="2024-11-06";
 const MAX_OUTPUT_BYTES=250*1024*1024;
 const MODEL_PROFILES=Object.freeze({
   "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","4:3","3:4","3:2","2:3","21:9"],resolutions:["provider_default","480p","720p","1080p"],defaultResolution:"480p"}),
+  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p","1080p","4k"],defaultResolution:"480p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
   "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
   "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
@@ -14,14 +14,12 @@ const ratioFor=(model,ratio,resolution)=>{
   const maps={
     "gen4.5":{"16:9":"1280:720","9:16":"720:1280"},
     "seedance2_5":{
-      "16:9":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
-      "9:16":resolution==="1080p"?"1080:1920":resolution==="720p"?"720:1280":"480:854",
-      "1:1":resolution==="1080p"?"1080:1080":resolution==="720p"?"720:720":"480:480",
-      "4:3":resolution==="1080p"?"1440:1080":resolution==="720p"?"960:720":"640:480",
-      "3:4":resolution==="1080p"?"1080:1440":resolution==="720p"?"720:960":"480:640",
-      "3:2":resolution==="1080p"?"1620:1080":resolution==="720p"?"1080:720":"720:480",
-      "2:3":resolution==="1080p"?"1080:1620":resolution==="720p"?"720:1080":"480:720",
-      "21:9":resolution==="1080p"?"2520:1080":resolution==="720p"?"1680:720":"1120:480"
+      "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
+      "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="720p"?"720:1280":"480:854",
+      "1:1":resolution==="4k"?"3840:3840":resolution==="1080p"?"1440:1440":resolution==="720p"?"960:960":"640:640",
+      "4:3":resolution==="4k"?"3840:2880":resolution==="1080p"?"1664:1248":resolution==="720p"?"1112:834":"752:560",
+      "3:4":resolution==="4k"?"2880:3840":resolution==="1080p"?"1248:1664":resolution==="720p"?"834:1112":"560:752",
+      "21:9":resolution==="4k"?"3840:1646":resolution==="1080p"?"2206:946":resolution==="720p"?"1470:630":"992:432"
     },
     "kling_4":{
       "16:9":resolution==="1080p"?"1920:1080":"1280:720",
@@ -57,7 +55,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
-  const maxPrompt=id==="seedance2_5"?15000:1000;
+  const maxPrompt=id==="seedance2_5"?15000:id==="kling_4"?26000:1000;
   if(!text||text.length>maxPrompt)throw fail("Runway text-to-video prompt exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
@@ -66,7 +64,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
   if(!ratio)throw fail("No verified output ratio mapping exists for this model and aspect ratio.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const payload={model:id,promptText:text,ratio,duration:durationSeconds};
-  if(id==="seedance2_5"&&effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
+
   return Object.freeze(payload);
 }
 export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
@@ -85,7 +83,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
   if(!ratio)throw fail("No verified Seedance image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
-  if(effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
+
  }else if(id==="gen4.5"){
   const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
