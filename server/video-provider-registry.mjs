@@ -159,7 +159,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: true,
           videoEdit: true, videoExtend: true, videoReframe: false,
-          nativeAudio: true, negativePrompt: false, seed: true,
+          nativeAudio: true, negativePrompt: false, seed: false,
           startFrame: true, endFrame: false, motionReference: false,
           referenceImages: false, referenceVideos: false, referenceAudio: false,
           audioModes: ["generated", "none"],
@@ -169,17 +169,13 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         },
         constraints: {
           maxPromptCharacters: 15000, durationAuto: true, durationAutoBilledSeconds: 30,
-          minimumCredits: 80, maxReferenceImages: 30, maxReferenceVideos: 10,
-          maxReferenceAudio: 10, maxVideoToVideoReferenceVideos: 9,
-          referenceImagesAndAudioCharged: false,
-          inputVideoCreditsPerSecondByResolution: { "480p": 10, "720p": 15, "1080p": 34 },
-          outputCreditsPerSecondByResolution: { "480p": 20, "720p": 30, "1080p": 68 },
-          draftPreviewCreditsPerSecond: 20, draftEnhancedCreditsPerSecond: 68,
-          draftEnhancementEndpoint: "text_to_video",
+          minimumCredits: 80,
+          inputVideoCreditsPerSecondByResolution: { "480p": 10, "720p": 15, "1080p": 34, "4k": 57 },
+          outputCreditsPerSecondByResolution: { "480p": 20, "720p": 30, "1080p": 68, "4k": 110 },
           videoEditRequiresAutoDuration: true,
-          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
           asynchronousTaskPolling: true, outputUrlTemporary: true,
-          source: "https://dev.runwayml.com/learn/seedance-2-5-api"
+          source: "https://docs.dev.runwayml.com/assets/inputs/"
         }
       },
       {
@@ -659,9 +655,9 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           billingRounding: "ceil_list_credits_then_discount_then_ceil",
           promotionalDiscountPercent: 20,
           pricingPromotionEndDate: "2026-11-30",
-          pricingSnapshotDate: "2026-11-04",
+          pricingSnapshotDate: "2026-11-16",
           creditUsdValue: 0.01,
-          source: "https://dev.runwayml.com/learn/kling-4-0-api"
+          source: "https://docs.dev.runwayml.com/assets/inputs/"
         }
       },
       {
