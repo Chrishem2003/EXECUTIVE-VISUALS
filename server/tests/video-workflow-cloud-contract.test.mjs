@@ -421,3 +421,45 @@ test("Luma source edit and reframe produce immutable operation-specific workflow
  assert.equal(reframe.input.aspectRatio,"9:16");
  assert.equal(reframe.input.sourcePosition.w_norm,0.8);
 });
+
+test("builds a deterministic direct Seedance 2.5 4K text-to-video request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"generate",durationSeconds:8,aspectRatio:"16:9",resolution:"4k",audio:true}},
+  projectId:"project-1",requestId:"runway-seedance-4k",values:{prompt:"A connected cinematic sequence"}
+ });
+ assert.equal(request.model,"seedance2_5");assert.equal(request.operation,"text-to-video");
+ assert.equal(request.input.resolution,"4k");assert.equal(request.input.audio,true);
+ assert.equal(request.input.durationSeconds,8);assert.match(request.requestHash,/^[a-f0-9]{64}$/);
+});
+test("maps a private first frame into the direct Kling 4 image-to-video contract",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",startFrameAssetId:"private-first-frame"}},
+  projectId:"project-1",requestId:"runway-kling4-image",values:{prompt:"Animate this approved first frame"}
+ });
+ assert.equal(request.operation,"image-to-video");assert.equal(request.input.startFrameAssetId,"private-first-frame");
+ assert.equal(request.input.resolution,"1080p");assert.equal(request.input.audio,undefined);
+});
+test("maps Seedance 2.5 private video extension to auto duration",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"extend",duration:"auto",sourceVideoAssetId:"private-source"}},
+  projectId:"project-1",requestId:"runway-seedance-extend",values:{prompt:"Continue the same scene"}
+ });
+ assert.equal(request.operation,"video-to-video");assert.equal(request.input.mode,"extend");
+ assert.equal(request.input.duration,"auto");assert.equal(request.input.durationSeconds,30);
+ assert.equal(request.input.sourceVideoAssetId,"private-source");
+});
+test("builds Kling 3.0 multi-shot workflow requests with provider segment settings",()=>{
+ const multiPrompt=[{prompt:"A wide establishing shot",duration:5},{prompt:"A close-up of the main character",duration:5}];
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",durationSeconds:10,aspectRatio:"16:9",multiPrompt,shotType:"customize",audio:false}},
+  projectId:"project-1",requestId:"runway-kling3-multishot",values:{prompt:"A connected two-shot sequence"}
+ });
+ assert.equal(request.input.audio,false);assert.deepEqual(request.input.multiPrompt,multiPrompt);
+ assert.equal(request.input.shotType,"customize");assert.equal(request.operation,"text-to-video");
+});
+test("rejects Kling 3.0 video-to-video because no adapter profile is enabled",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",operation:"video-to-video",sourceVideoAssetId:"private-source"}},
+  projectId:"project-1",requestId:"runway-kling3-v2v",values:{prompt:"Edit the clip"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
