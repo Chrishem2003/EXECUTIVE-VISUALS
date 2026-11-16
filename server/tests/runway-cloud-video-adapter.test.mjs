@@ -471,3 +471,39 @@ test("Kling 4 video-to-video rejects source metadata outside the provider contra
   );
   assert.equal(generationCalls, 0);
 });
+
+
+test("Kling 4 video-to-video submits a private source after validating source metadata", async () => {
+  let body;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "kling_4",
+    prepareInput: async () => ({
+      sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+      sourceMetadata: { durationSeconds: 10, width: 1920, height: 1080, frameRate: 30 }
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/kling-source",
+        fields: { key: "kling-source" }, runwayUri: "runway://ephemeral/kling-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/kling-source") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) {
+        body = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "kling_4", operation: "video-to-video",
+    sourceVideoAssetId: "source-video", prompt: "Replace the background with a studio"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/kling-source");
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  assert.deepEqual(body, {
+    model: "kling_4", videoUri: "runway://ephemeral/kling-source",
+    promptText: "Replace the background with a studio"
+  });
+});
