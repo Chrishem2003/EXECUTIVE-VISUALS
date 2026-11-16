@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {addClip,addTrack,createGeneratedVideoClip,createTimeline} from "../../src/core/timeline.ts";
-import {analyzeTranscriptPauses,analyzeTranscriptText,createTranscriptPaperEditTrack,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
+import {analyzeTranscriptPauses,analyzeTranscriptText,createTranscriptPaperEditTrack,parseTranscriptInput,parseTranscriptSrt,parseTranscriptWebVtt} from "../../src/core/transcript-paper-edit.ts";
 
 const vtt=`WEBVTT
 
@@ -35,6 +35,23 @@ test("preserves WebVTT voice speaker labels while stripping voice markup from di
   {speaker:"Jamie",text:"Welcome back."},
   {speaker:undefined,text:"No speaker label."}
  ]);
+});
+
+test("parses SubRip SRT cue numbers, comma timestamps, markup and multiline dialogue",()=>{
+ const srt="1\\n00:00:00,000 --> 00:00:02,500\\n<i>First line</i>\\nSecond line.\\n\\n2\\n00:00:04,000 --> 00:00:06,000\\nA second thought.\\n";
+ const cues=parseTranscriptSrt(srt);
+ assert.deepEqual(cues,[
+  {index:0,start:0,end:2.5,text:"First line Second line."},
+  {index:1,start:4,end:6,text:"A second thought."}
+ ]);
+ assert.deepEqual(parseTranscriptInput(srt),cues);
+ assert.deepEqual(parseTranscriptInput(vtt),parseTranscriptWebVtt(vtt));
+});
+
+test("rejects malformed and oversized SRT inputs",()=>{
+ assert.throws(()=>parseTranscriptSrt("not an SRT file"),/missing its timing line/);
+ assert.throws(()=>parseTranscriptSrt("1\\n00:00:03,000 --> 00:00:01,000\\nInvalid order"),/invalid timing/);
+ assert.throws(()=>parseTranscriptSrt("1\\n00:00:00,000 --> 00:00:01,000\\n"+ "x".repeat(2*1024*1024)),/2 MiB/);
 });
 
 test("flags clear filler words and adjacent repeated words for human review",()=>{
