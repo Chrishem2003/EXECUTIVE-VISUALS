@@ -88,15 +88,15 @@ export function createRunwayTaskActualCostResolver({
       if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw fail("Runway workspace usage response exceeded 2 MiB.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
       let page;
       try { page = JSON.parse(raw); } catch { throw fail("Runway workspace usage returned invalid JSON.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID"); }
-      if (!page || typeof page !== "object" || !Array.isArray(page.data) ||
+      if (!page || typeof page !== "object" || !Array.isArray(page.data) || page.data.length > 100 ||
           typeof page.hasMore !== "boolean" || (page.nextCursor !== null && typeof page.nextCursor !== "string")) {
         throw fail("Runway workspace usage page is malformed.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
       }
       for (const row of page.data) {
         if (row?.taskId !== providerTaskId) continue;
         const timestamp = validTimestamp(row.timestamp);
-        if (!timestamp || timestamp < submittedAt || timestamp.getTime() > current.getTime() + 5 * 60000 ||
-            typeof row.transactionId !== "string" || !row.transactionId.trim() ||
+        if (!timestamp || timestamp.getTime() < submittedAt.getTime() - 5 * 60000 || timestamp.getTime() > current.getTime() + 5 * 60000 ||
+            typeof row.transactionId !== "string" || !row.transactionId.trim() || row.transactionId.length > 256 ||
             row.unit !== "credits" || !["charge", "refund"].includes(row.type) ||
             !Number.isSafeInteger(row.credits) || row.credits < 0 ||
             typeof row.tool !== "string" || row.tool.trim().toLowerCase() !== expectedTool) {
