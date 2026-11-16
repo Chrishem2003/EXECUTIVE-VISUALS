@@ -237,7 +237,7 @@ export function createRunwayRouterDryRunClient({
       if (maxEstimatedCredits !== undefined && decision.estimatedCredits > maxEstimatedCredits) {
         throw fail("Runway router estimate exceeds the approved credit ceiling; no generation was created.", "RUNWAY_ROUTER_BUDGET_EXCEEDED");
       }
-      return Object.freeze({ ...decision, budgetCheck: maxEstimatedCredits === undefined ? "not_checked" : "within_limit" });
+      return Object.freeze({ ...decision, budgetCheck: maxEstimatedCredits === undefined ? "not_checked" : "within_limit", maxEstimatedCredits: maxEstimatedCredits ?? null });
     } finally { clearTimeout(timer); }
   }
   return Object.freeze({ provider: "runway", mode: "dry_run_only", preflight });

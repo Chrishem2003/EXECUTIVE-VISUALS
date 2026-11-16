@@ -361,3 +361,18 @@ The preflight accepts an optional caller-supplied `maxEstimatedCredits` ceiling.
 The client now classifies Runway's documented `no_eligible_model` and inaccessible-router (404) responses as stable application errors without exposing provider response details.
 
 Offline tests cover canonical fingerprint stability, changed-input detection, exact/over-budget behavior, invalid ceilings, and eligibility/configuration errors. The request remains hardcoded to `dryRun: true`; no paid request, provider task, budget reservation, or production write is possible through this module.
+
+
+### Durable Runway approval ledger — 2026-11-05
+
+Added `server/runway-router-approval-ledger.mjs` and an SQLite-backed approval table. The ledger accepts only a successful dry-run decision marked `dryRun=true`, `taskCreated=false`, `billed=false`, and `budgetCheck=within_limit`, with a valid SHA-256 request fingerprint and an explicit integer credit ceiling.
+
+Approval is bound to owner, project, config ID, selected provider/model, estimated credits, maximum credits, and the exact input fingerprint. A separate injected reviewer authorization check controls who may approve; a separate executor authorization check controls who may consume an approval. Pending approvals expire after 15 minutes by default and may be revoked. Expiry, approval, revocation and consumption use conditional state transitions inside SQLite immediate transactions. Consumption is single-use and cannot be replayed.
+
+The record intentionally stores no prompt, media URL, signed URL, provider credential, or arbitrary caller metadata. It stores only routing metadata and the request fingerprint. The ledger does not create a provider task, submit a paid request, reserve funds, or enable a worker. It is a durable approval primitive that must be explicitly composed with the existing job/budget reservation path before live execution.
+
+Offline tests cover dry-run-only admission, budget ceiling, project/reviewer/executor authorization, fingerprint mismatch, expiry persistence, revocation, one-time consumption and project scoping. Added to `verify:video-routing`.
+
+Research cross-check: Runway's current Model Router guide documents dry-run on the same modality endpoint with `dryRun: true`, returns the routing decision and estimated cost without creating/storing an asset or charging generation credits, and recommends keeping dry-run/live input identical except for the dry-run flag: https://docs.dev.runwayml.com/model-routers/generating/
+
+No provider calls, paid generations, database migrations on shared environments, production registration, or deployment were performed. The table is created by the module's explicit schema initializer when integrated into an application database; this branch does not invoke that initializer against a live database.
