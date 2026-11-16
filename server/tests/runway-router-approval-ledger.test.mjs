@@ -93,13 +93,13 @@ test("expired approvals cannot be approved or consumed", async () => {
     const pending=create(f);
     f.setNow("2026-11-05T06:16:00.000Z");
     assert.throws(()=>f.ledger.approve({approvalId:pending.id,ownerId,projectId,actorId:reviewerId,inputHash:hash}),e=>e.code==="RUNWAY_APPROVAL_EXPIRED");
-    assert.equal(f.ledger.get(pending.id).state,"expired");
+    assert.equal(f.ledger.get({approvalId:pending.id,ownerId,projectId,actorId:ownerId}).state,"expired");
     f.setNow("2026-11-05T06:00:00.000Z");
     const approved=create(f);
     f.ledger.approve({approvalId:approved.id,ownerId,projectId,actorId:reviewerId,inputHash:hash});
     f.setNow("2026-11-05T06:16:00.000Z");
     assert.throws(()=>f.ledger.consume({approvalId:approved.id,ownerId,projectId,actorId:workerId,inputHash:hash}),e=>e.code==="RUNWAY_APPROVAL_EXPIRED");
-    assert.equal(f.ledger.get(approved.id).state,"expired");
+    assert.equal(f.ledger.get({approvalId:approved.id,ownerId,projectId,actorId:ownerId}).state,"expired");
   } finally {f.db.close();await rm(f.root,{recursive:true,force:true});}
 });
 
@@ -120,7 +120,10 @@ test("approval records are scoped to their owner and project and history is boun
   try {
     const row=create(f);
     assert.throws(()=>f.ledger.approve({approvalId:row.id,ownerId:reviewerId,projectId,actorId:reviewerId,inputHash:hash}),e=>e.code==="RUNWAY_APPROVAL_NOT_FOUND");
-    assert.equal(f.ledger.listForProject({ownerId,projectId,limit:10}).length,1);
-    assert.throws(()=>f.ledger.listForProject({ownerId,projectId,limit:201}));
+    assert.equal(f.ledger.listForProject({ownerId,projectId,actorId:ownerId,limit:10}).length,1);
+    assert.throws(()=>f.ledger.listForProject({ownerId,projectId,actorId:reviewerId,limit:10}),e=>e.code==="RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
+    assert.throws(()=>f.ledger.listForProject({ownerId,projectId,actorId:ownerId,limit:201}));
+    assert.throws(()=>f.ledger.get({approvalId:row.id,ownerId,projectId,actorId:reviewerId}),e=>e.code==="RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
+    assert.throws(()=>f.ledger.get({approvalId:row.id,ownerId:reviewerId,projectId,actorId:reviewerId}),e=>e.code==="RUNWAY_APPROVAL_NOT_FOUND");
   } finally {f.db.close();await rm(f.root,{recursive:true,force:true});}
 });
