@@ -621,7 +621,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const replacementHash=createHash("sha256");
     await pipeline(createReadStream(replacementPath),new Transform({transform(chunk,enc,cb){replacementHash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
     if(replacementHash.digest("hex")!==replacementAudioAsset.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
-    ext="mp4";mime="video/mp4";outputName=source.original_name.replace(/\\.[^.]+$/,"")+"-localized.mp4";
+    ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-localized.mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input:{...input,replacementAudioPath:replacementPath},sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else if(job.job_type==="media.audio-clean"){
     if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
