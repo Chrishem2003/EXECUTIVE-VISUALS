@@ -36,6 +36,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  const startFrameAssetId=firstString(values.startFrameAssetId,values["start-frame"],values.image,values.referenceImage,values.reference,config.startFrameAssetId,config.referenceAssetId);
  if(sourceVideoAssetId&&startFrameAssetId)throw fail("Runway direct source-video edits and first-frame generation must be separate operations.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  const operation=sourceVideoAssetId?"video-to-video":startFrameAssetId?"image-to-video":"text-to-video";
+ if((sourceVideoAssetId||startFrameAssetId)&&config.rightsConfirmed!==true)throw fail("Confirm rights to use direct Runway source media before quoting or approving generation.","MEDIA_RIGHTS_REQUIRED");
  const requestedOperation=firstString(config.operation);
  if(requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  if(requestedOperation==="generate"&&operation==="video-to-video")throw fail("Choose the explicit video-to-video operation when a source video is connected.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
