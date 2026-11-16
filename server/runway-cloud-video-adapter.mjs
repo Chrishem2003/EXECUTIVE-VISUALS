@@ -42,7 +42,7 @@ export function createRunwayCloudVideoAdapter({
 } = {}) {
   const selectedModel = String(model || "").trim();
   if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
-    throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing, Magnific upscaling and Ruby HDR profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+    throw fail("This Runway cloud adapter supports only its exact verified generation and source-operation model profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
   if (typeof fetchImpl !== "function") throw new Error("Runway cloud adapter requires fetch.");
