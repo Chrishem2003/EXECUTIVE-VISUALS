@@ -112,7 +112,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- (draftEnhancement?'<div class="wf-video-provider-grid"><label>Completed draft job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID of the succeeded draft"></label><label>Original Runway draft task ID<input name="draftTaskId" value="'+esc(config.draftTaskId||"")+'" maxlength="160" placeholder="Provider task ID from the draft job"></label></div><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. The provider reuses the original prompt, references, duration, seed and audio.</p>':'')+
+ (draftEnhancement?'<label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p>':'')+
  '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!sourceVideoEnabled?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!sourceVideoEnabled?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
@@ -352,8 +352,8 @@ document.addEventListener("submit",event=>{
  if(luma||directRunway)config.operation=operation;else delete config.operation;
  if(operation==="draft-enhancement"){
   config.sourceDraftJobId=String(data.get("sourceDraftJobId")||"").trim();
-  config.draftTaskId=String(data.get("draftTaskId")||"").trim();
-  if(!config.sourceDraftJobId||!config.draftTaskId)throw new Error("Enter the completed draft job ID and its original Runway task ID.");
+  delete config.draftTaskId;
+  if(!config.sourceDraftJobId)throw new Error("Enter the completed draft cloud job ID.");
   delete config.draft;delete config.draftTargetResolution;delete config.sourceVideoAssetId;delete config.startFrameAssetId;
  }else{delete config.sourceDraftJobId;delete config.draftTaskId;}
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
