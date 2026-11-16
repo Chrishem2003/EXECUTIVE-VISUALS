@@ -1535,7 +1535,7 @@ document.addEventListener("change",e=>{const target=e.target as HTMLInputElement
   const aspect=form?.elements.namedItem("aspectRatio") as HTMLSelectElement|null;
   if(aspect)aspect.disabled=mode.value!=="reference";
  }else if(mode){mode.disabled=true;if(duration)duration.disabled=false;if(resolution)resolution.disabled=false;const aspect=form?.elements.namedItem("aspectRatio") as HTMLSelectElement|null;if(aspect)aspect.disabled=false;}
- if(runwayEdit&&op==="video-to-video"){if(resolution)resolution.disabled=true;const aspect=form?.elements.namedItem("aspectRatio") as HTMLSelectElement|null;if(aspect)aspect.disabled=true;}
+ if(provider==="runway"&&id==="kling_4"&&op==="video-to-video"){if(resolution)resolution.disabled=true;const aspect=form?.elements.namedItem("aspectRatio") as HTMLSelectElement|null;if(aspect)aspect.disabled=true;}
  if(duration&&luma&&op==="reframe"){duration.innerHTML=Array.from({length:9},(_,index)=>index+2).map(value=>'<option value="'+value+'">'+value+' seconds</option>').join("");if(!duration.value)duration.value="5";}
  else if(duration&&luma&&op==="edit"){duration.innerHTML='<option value="5">5 seconds</option><option value="10">10 seconds</option>';if(!["5","10"].includes(duration.value))duration.value="5";}
  if(resolution&&luma){const selectedResolution=resolution.value;resolution.innerHTML=op==="reframe"?'<option value="360p">360p · Draft</option><option value="540p">540p</option><option value="720p">720p</option>':'<option value="360p">360p · Draft</option><option value="540p">540p</option><option value="720p">720p</option><option value="1080p">1080p</option>';resolution.value=Array.from(resolution.options).some(option=>option.value===selectedResolution)?selectedResolution:"720p";}
