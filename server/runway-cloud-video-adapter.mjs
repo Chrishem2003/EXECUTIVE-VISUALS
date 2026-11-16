@@ -258,6 +258,12 @@ export function createRunwayCloudVideoAdapter({
       if (!input || input.provider !== "runway" || input.model !== selectedModel) {
         throw fail("Runway job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
       }
+      if (input.draft !== undefined && typeof input.draft !== "boolean") {
+        throw fail("Draft mode must be an explicit boolean when supplied.", "RUNWAY_INPUT_INVALID");
+      }
+      if (input.draft === true && selectedModel !== "seedance2_5") {
+        throw fail("Draft previews are supported only by Seedance 2.5.", "RUNWAY_INPUT_INVALID");
+      }
       if (input.operation === "video-to-hdr") {
         if (selectedModel !== "ruby" || !isRunwayUri(input.videoUri)) {
           throw fail("Ruby HDR requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
@@ -317,14 +323,17 @@ export function createRunwayCloudVideoAdapter({
             ...(keyframes.length ? { keyframes } : {}), outputFormat: "mp4" };
         } else if (selectedModel === "seedance2_5") {
           const mode = input.mode || "reference";
+          if (input.draft === true && mode !== "reference") throw fail("Seedance draft previews are supported only in reference mode, not extend or edit mode.", "RUNWAY_INPUT_INVALID");
+          if (input.draft === true && input.resolution !== undefined && input.resolution !== "480p") throw fail("Seedance draft previews are fixed at 480p.", "RUNWAY_INPUT_INVALID");
           body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode,
+            ...(input.draft === true ? { draft: true } : {}),
             ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
           if (mode === "reference") {
             const referencePayload = buildRunwayVideoPayload({
               model: selectedModel, prompt: String(input.prompt || "").trim(),
               durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
               aspectRatio: input.aspectRatio || "16:9",
-              resolution: input.resolution || "provider_default"
+              resolution: input.resolution || "provider_default", draft: input.draft === true
             });
             body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio };
           } else if (mode === "extend") {
@@ -375,7 +384,7 @@ export function createRunwayCloudVideoAdapter({
             promptImage: "data:image/png;base64,AA==",
             durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
             aspectRatio: input.aspectRatio || "16:9",
-            resolution: input.resolution || "provider_default",
+            resolution: input.resolution || "provider_default", draft: input.draft === true,
             multiPrompt: input.multiPrompt,
             shotType: input.shotType || "customize"
           }),
@@ -387,7 +396,7 @@ export function createRunwayCloudVideoAdapter({
           prompt: input.prompt.trim(),
           durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
           aspectRatio: input.aspectRatio || "16:9",
-          resolution: input.resolution || "provider_default",
+          resolution: input.resolution || "provider_default", draft: input.draft === true,
           multiPrompt: input.multiPrompt,
           shotType: input.shotType || "customize"
         });
