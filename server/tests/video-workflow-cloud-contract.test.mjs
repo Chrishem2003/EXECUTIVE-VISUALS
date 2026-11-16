@@ -481,3 +481,14 @@ test("rejects draft mode for non-Seedance workflow models",()=>{
   projectId:"project-1",requestId:"invalid-draft-model",values:{prompt:"A cinematic product reveal"}
  }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
+
+
+test("builds a governed Kling 4.0 Flash cloud video-to-video request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"private-source",durationSeconds:8,resolution:"720p",aspectRatio:"16:9"}},
+  projectId:"project-1",requestId:"kling-flash-workflow",values:{prompt:"Continue the scene with a slow camera move"}
+ });
+ assert.equal(request.provider,"runway");assert.equal(request.model,"kling_4_flash");
+ assert.equal(request.operation,"video-to-video");assert.equal(request.input.durationSeconds,8);
+ assert.equal(request.input.resolution,"720p");assert.equal(request.input.sourceVideoAssetId,"private-source");
+});
