@@ -155,6 +155,7 @@ test("Seedance draft enqueue rejects unpriced or unsupported preview configurati
   const seedance = { ...input, provider: "runway", model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview", durationSeconds: 8, outputFormat: "mp4" };
   await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "720p" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
   await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "480p", draftTargetResolution: "4k" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
   await assert.rejects(() => client.enqueue(args({ input: { ...input, draft: "true" } })), error => error.code === "VIDEO_DRAFT_FLAG_INVALID");
   await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "480p", operation: "video-to-video", mode: "edit" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
   assert.equal(calls, 0);
