@@ -44,7 +44,7 @@ test("cloud worker performs two-pass EBU R128 mastering and publishes loudness e
  const source=join(directory,"source.wav");await writeFile(source,"source-audio");
  const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
 case "$*" in
- *print_format=json*) printf '%s\\n' '{"input_i":"-20.0","input_tp":"-3.0","input_lra":"4.0","input_thresh":"-30.0","target_offset":"0.0"}' >&2; exit 0 ;;
+ *print_format=json*) printf '%s' '{"input_i":"-20.0","input_tp":"-3.0","input_lra":"4.0","input_thresh":"-30.0","target_offset":"0.0"}' >&2; exit 0 ;;
  *) for last do :; done; printf 'mastered-audio' > "$last"; exit 0 ;;
 esac`);
  const ffprobe=await executable(directory,"ffprobe",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
