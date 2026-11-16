@@ -112,7 +112,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const selectedSource=String(config.sourceVideoAssetId||"");
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
  '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
- (supportsVideoMode?'<label>Source-video mode<select name="videoMode" '+(operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>':'')+
+ '<label>Source-video mode<select name="videoMode" '+(!supportsVideoMode||operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  (draftEnhancement?'<label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p>':'')+
@@ -454,6 +454,9 @@ document.addEventListener("change",event=>{
   const modelValue=model?.value||"model-router";
   const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(modelValue);
   const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
+  const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(modelValue);
+  const videoMode=form?.querySelector<HTMLSelectElement>('[name="videoMode"]');
+  if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
   const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
    directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
   if(operationSelect){
@@ -462,6 +465,7 @@ document.addEventListener("change",event=>{
    operationSelect.disabled=!(luma||directRunway);
   }
   const activeOperation=operationValues.some(([id])=>id===operation)?operation:"generate";
+  if(videoMode)videoMode.disabled=!supportsVideoMode||activeOperation!=="video-to-video";
   const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
   const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate";
   if(!sourceVideoEnabled){
