@@ -3,6 +3,7 @@ const API_VERSION="2024-11-06";
 const MAX_OUTPUT_BYTES=250*1024*1024;
 const MODEL_PROFILES=Object.freeze({
   "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
+  "gemini_omni_flash_1.2":Object.freeze({label:"Gemini Omni Flash 1.2",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16"],resolutions:["provider_default","360p","720p","1080p","4k"],defaultResolution:"720p"}),
   "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p","1080p","4k"],defaultResolution:"720p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
   "kling_4_flash":Object.freeze({label:"Kling 4.0 Flash",minDurationSeconds:3,maxDurationSeconds:20,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p"],defaultResolution:"720p"}),
@@ -15,6 +16,10 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ratioFor=(model,ratio,resolution)=>{
   const maps={
     "gen4.5":{"16:9":"1280:720","9:16":"720:1280"},
+    "gemini_omni_flash_1.2":{
+      "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="360p"?"640:360":"1280:720",
+      "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="360p"?"360:640":"720:1280"
+    },
     "seedance2_5":{
       "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
       "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="720p"?"720:1280":"480:854",
@@ -40,7 +45,7 @@ export function listRunwayVideoModels(){
   return Object.entries(MODEL_PROFILES).map(([id,profile])=>({
     id,label:profile.label,minDurationSeconds:profile.minDurationSeconds,
     maxDurationSeconds:profile.maxDurationSeconds,aspectRatios:[...profile.aspectRatios],
-    resolutions:[...profile.resolutions],execution:"async",inputModes:id==="kling_4_flash"?["text-to-video","image-to-video","video-to-video"]:["text-to-video","image-to-video"],
+    resolutions:[...profile.resolutions],execution:"async",inputModes:["kling_4_flash","gemini_omni_flash_1.2"].includes(id)?["text-to-video","image-to-video","video-to-video"]:["text-to-video","image-to-video"],
     readiness:"adapter-supported; credentials and remote opt-in required"
   }));
 }
@@ -75,7 +80,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const kling3=id.startsWith("kling3.0_");
-  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
+  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
   if((!text&&!segments)||text.length>maxPrompt)throw fail("Runway text-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
@@ -97,7 +102,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const kling3=id.startsWith("kling3.0_");
- const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
+ const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
  if((!text&&!segments)||text.length>maxPrompt)throw fail("Runway image-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
  if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
