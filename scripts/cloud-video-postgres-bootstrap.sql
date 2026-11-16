@@ -75,6 +75,21 @@ create table executive_visuals.jobs (
   completed_at timestamptz,
   unique(owner_id,idempotency_key)
 );
+create table executive_visuals.credit_ledger (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete restrict,
+  entry_type text not null check (entry_type in ('purchase_grant','reservation','settlement','refund_reversal','manual_adjustment','expiration')),
+  credit_delta bigint not null check (credit_delta <> 0),
+  idempotency_key text not null,
+  job_id uuid,
+  reason text not null check (char_length(reason) between 3 and 500),
+  metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata)='object'),
+  created_at timestamptz not null default now(),
+  unique(owner_id,idempotency_key)
+);
+alter table executive_visuals.credit_ledger enable row level security;
+revoke all on executive_visuals.credit_ledger from public,anon,authenticated;
+grant select,insert on executive_visuals.credit_ledger to service_role;
 create table executive_visuals.assets (
   id uuid primary key,
   owner_id uuid not null references auth.users(id),
