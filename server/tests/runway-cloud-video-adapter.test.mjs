@@ -306,7 +306,9 @@ test("Veo 3.1 submits text-to-video with strict frame, audio and cost preflight 
     durationSeconds: 4, aspectRatio: "16:9", resolution: "720p",
     audio: true, negativePrompt: "text overlays", seed: 42
   });
-  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  assert.equal(submitted.taskId, id);
+  assert.equal(submitted.status, "queued");
+  assert.ok(Number.isFinite(Date.parse(submitted.metadata.submittedAt)));
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "veo3.1", promptText: "A lighthouse at dusk", ratio: "1280:720",
