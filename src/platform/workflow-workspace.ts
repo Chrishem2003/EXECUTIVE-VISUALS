@@ -25,6 +25,8 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  captions:{kind:"voice.caption",label:"Create Timed Captions",inputs:[port("segments","structured-data"),port("words","structured-data"),port("sourceAudio","audio"),port("language","text")],outputs:[port("subtitle","subtitle-file"),port("asset","asset")]},
  frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("media","media",true)],outputs:[port("image","image")]},
  audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
+ audioClean:{kind:"media.audio-clean",label:"Audio Cleanup",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
+ audioMaster:{kind:"media.audio-master",label:"Audio Mastering · EBU R128",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
  transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
  timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
  upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
@@ -38,7 +40,7 @@ function nodePosition(index:number){return {x:30+(index%3)*300,y:30+Math.floor(i
 function addNode(definition:keyof typeof palette){
  if(!state.graph)return;
  const spec=palette[definition],id=crypto.randomUUID();
- const defaultConfig=definition==="video"?{provider:"runway",model:"model-router",durationSeconds:5,aspectRatio:"16:9"}:{};
+ const defaultConfig=definition==="video"?{provider:"runway",model:"model-router",durationSeconds:5,aspectRatio:"16:9"}:definition==="audioClean"?{noiseFloor:-25,targetLufs:-16}:definition==="audioMaster"?{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}:{};
  const node:WorkflowNode={id,kind:spec.kind,label:spec.label,inputs:spec.inputs.map(x=>({...x})),outputs:spec.outputs.map(x=>({...x})),config:defaultConfig,position:nodePosition(state.graph.nodes.length)};
  state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,node]};
  state.selectedNode=id;state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});
