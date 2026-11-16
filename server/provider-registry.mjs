@@ -22,12 +22,19 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  if(!imageFal&&!imageGemini&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation.";}
  image.availableModels=imageGemini?listGeminiImageModels():[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
+ const runwayAllowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
+ const runwayPrimaryModel=String(env.RUNWAY_VIDEO_MODEL||runwayAllowlist[0]||"").trim();
  const video=videoProvider==="runway"
-  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&env.RUNWAY_VIDEO_MODEL),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL on the server."})
+  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&runwayAllowlist.length),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:runwayPrimaryModel,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."})
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
- video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
- video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
+ video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(runwayPrimaryModel):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
+ video.availableModels=videoProvider==="runway"?listRunwayVideoModels().map(model=>{
+  const allowlisted=runwayAllowlist.includes(model.id);
+  const ready=video.status==="ready"&&allowlisted;
+  return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":"not_configured",
+   reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
+ }):[];
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";
