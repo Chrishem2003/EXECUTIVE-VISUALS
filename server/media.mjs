@@ -715,6 +715,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
+  if(job.job_type==="media.audio-master"){
+    const mastered=Array.isArray(outputMetadata.streams)?outputMetadata.streams.find(stream=>stream.codec_type==="audio"):null;
+    if(!mastered||mastered.codec_name!=="pcm_s24le"||Number(mastered.sample_rate)!==48000){await unlink(outputPath).catch(()=>{});throw Object.assign(new Error("Audio master must be verified as 48 kHz 24-bit PCM before publication."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});}
+  }
   if(job.job_type==="media.audio_replace"){
     const streams=Array.isArray(outputMetadata.streams)?outputMetadata.streams:[];
     if(!streams.some(stream=>stream.codec_type==="video")||!streams.some(stream=>stream.codec_type==="audio")){await unlink(outputPath).catch(()=>{});throw Object.assign(new Error("Localized video output must contain both the preserved picture stream and the replacement audio stream."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});}
