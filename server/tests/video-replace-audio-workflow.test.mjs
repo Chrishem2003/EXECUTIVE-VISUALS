@@ -6,14 +6,14 @@ import { validateWorkflowGraph } from "../workflow-validation.mjs";
 
 const graph = {
   nodes: [
-    { id: "video-source", kind: "upload", inputs: [], outputs: [{ id: "video", type: "video" }], config: {} },
+    { id: "video-source", kind: "upload", inputs: [], outputs: [{ id: "media", type: "media" }], config: {} },
     { id: "audio-source", kind: "upload", inputs: [], outputs: [{ id: "audio", type: "audio" }], config: {} },
     { id: "rights-approval", kind: "approval", inputs: [{ id: "input", type: "any", required: true }], outputs: [{ id: "approved", type: "structured-data" }], config: {} },
     {
       id: "replace-soundtrack",
       kind: "video.replace-audio",
       inputs: [
-        { id: "video", type: "video", required: true },
+        { id: "media", type: "media", required: true },
         { id: "audio", type: "audio", required: true },
         { id: "approval", type: "any", required: true }
       ],
@@ -22,8 +22,8 @@ const graph = {
     }
   ],
   edges: [
-    { id: "video-to-approval", sourceNodeId: "video-source", sourcePortId: "video", targetNodeId: "rights-approval", targetPortId: "input" },
-    { id: "video-to-replace", sourceNodeId: "video-source", sourcePortId: "video", targetNodeId: "replace-soundtrack", targetPortId: "video" },
+    { id: "video-to-approval", sourceNodeId: "video-source", sourcePortId: "media", targetNodeId: "rights-approval", targetPortId: "input" },
+    { id: "video-to-replace", sourceNodeId: "video-source", sourcePortId: "media", targetNodeId: "replace-soundtrack", targetPortId: "media" },
     { id: "audio-to-replace", sourceNodeId: "audio-source", sourcePortId: "audio", targetNodeId: "replace-soundtrack", targetPortId: "audio" },
     { id: "approval-to-replace", sourceNodeId: "rights-approval", sourcePortId: "approved", targetNodeId: "replace-soundtrack", targetPortId: "approval" }
   ]
