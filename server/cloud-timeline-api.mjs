@@ -18,7 +18,7 @@ import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
+const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -219,6 +219,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      "media.thumbnail":["seconds"],
      "media.audio_extract":[],
      "media.audio-clean":["noiseFloor","targetLufs"],
+     "media.audio-master":["targetLufs","targetLra","truePeakDbtp"],
      "media.denoise":["luma","chroma"],
      "media.color":["brightness","contrast","saturation"],
      "media.resize":["width","height","fit"],
