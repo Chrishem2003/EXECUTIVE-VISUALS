@@ -23,8 +23,9 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
 function cloudVideoWorkerLaunchConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
  const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
- const privateStorageReady=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()!=="r2"||
-  Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY);
+ const storageProvider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
+ const privateStorageReady=storageProvider==="r2"?Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY):
+  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):true;
  const common=env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
   Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&privateStorageReady&&validOutputHosts;
@@ -62,7 +63,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
  if(!Number.isSafeInteger(timelineCreditsPerSecond)||timelineCreditsPerSecond<0||timelineCreditsPerSecond>1000000)throw new Error("Cloud timeline credit rate must be an integer from 0 to 1000000; zero disables credit reservations.");
- const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2:{accountId:env.R2_ACCOUNT_ID,accessKeyId:env.R2_ACCESS_KEY_ID,secretAccessKey:env.R2_SECRET_ACCESS_KEY,bucket:env.R2_BUCKET}});
+ const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl,maxBytes:maxUploadBytes,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2:{accountId:env.R2_ACCOUNT_ID,accessKeyId:env.R2_ACCESS_KEY_ID,secretAccessKey:env.R2_SECRET_ACCESS_KEY,bucket:env.R2_BUCKET},b2:{region:env.B2_REGION,accessKeyId:env.B2_APPLICATION_KEY_ID,secretAccessKey:env.B2_APPLICATION_KEY,bucket:env.B2_BUCKET}});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const reviews=service.projects?.get&&service.assets?.get&&service.timelines?.get
   ? createCloudReviewRepository({url,serviceRoleKey,fetchImpl,authorize:allow,projects:service.projects,assets:service.assets,timelines:service.timelines,timeoutMs})
@@ -85,8 +86,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    : null
  );
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
- const lumaPrivateStorageReady=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase()!=="r2"||
-  Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY);
+ const storageProvider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
+ const lumaPrivateStorageReady=storageProvider==="r2"?Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY):
+  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):true;
  const lumaQuoteReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
   env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
