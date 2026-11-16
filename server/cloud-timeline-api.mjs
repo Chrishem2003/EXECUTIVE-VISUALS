@@ -15,9 +15,26 @@ import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
 import { createLumaWorkflowQuoteAdapter } from "./luma-workflow-quote-adapter.mjs";
 import { createCloudReviewRepository } from "./cloud-reviews.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
+const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
+const directRunwayConfigId=model=>"runway-direct-"+String(model).replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+function directRunwayEnabled(env,model){
+ const allowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
+ return DIRECT_RUNWAY_WORKFLOW_MODELS.has(model)&&env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+  env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+  Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&allowlist.includes(model);
+}
+async function validateDirectRunwayFrameAsset(assets,ownerId,projectId,assetId){
+ if(!assetId)return true;
+ if(typeof assets?.get!=="function")return false;
+ const asset=await assets.get({ownerId,assetId});
+ return Boolean(asset&&asset.id===assetId&&(asset.projectId||null)===projectId&&
+  ["image/jpeg","image/png","image/webp"].includes(String(asset.mediaType||"").toLowerCase())&&
+  Number.isSafeInteger(asset.size)&&asset.size>0&&asset.size<=250*1024*1024&&/^[a-f0-9]{64}$/i.test(asset.sha256||""));
+}
 const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoWorkerLaunchConfigured(env={}) {
@@ -36,7 +53,9 @@ function cloudVideoWorkerLaunchConfigured(env={}) {
  const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
   env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&privateStorageReady&&
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
- return common&&(runwayReady||lumaReady);
+ const directRunwayReady=env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&
+  String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).some(model=>DIRECT_RUNWAY_WORKFLOW_MODELS.has(model));
+ return common&&(runwayReady||directRunwayReady||lumaReady);
 }
 
 function timelineDurationSeconds(timeline){
@@ -295,10 +314,13 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     try{
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
-     const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:workflowRouterAdapter;
-     if(!quoteAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
+     const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
+     const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
+     if(!quoteAdapter&&!directRunway)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
      if(workflowRequest.provider==="luma"&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
       return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must be verified private image assets in this exact project."}});
+     if(directRunway&&!await validateDirectRunwayFrameAsset(service.assets,ownerId,projectId,workflowRequest.input.startFrameAssetId))
+      return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"Seedance and Kling first frames must be verified private image assets in this exact project."}});
      let sourceMetadata=null;
      if(workflowRequest.input.sourceVideoAssetId){
       if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
@@ -312,8 +334,23 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
       }
      }
-     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId},sourceMetadata});
-     const estimate=await quoteAdapter.preflight(prepared,{sourceMetadata});
+     let estimate;
+     if(directRunway){
+      const input=workflowRequest.input;
+      const priced=estimateVideoGenerationCost({
+       provider:"runway",model:workflowRequest.model,operation:workflowRequest.operation,
+       durationSeconds:input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
+       audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
+       hasStartFrame:Boolean(input.startFrameAssetId),
+       inputType:input.sourceVideoAssetId?"video":input.startFrameAssetId?"image":"text"
+      });
+      estimate={provider:"runway",model:workflowRequest.model,estimatedCredits:priced.credits,
+       estimatedUsd:priced.amount,currency:priced.currency,billable:false,
+       pricingSource:"runway_direct_model_list_price",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/"};
+     }else{
+      const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId},sourceMetadata});
+      estimate=await quoteAdapter.preflight(prepared,{sourceMetadata});
+     }
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
         !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
         !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
@@ -329,7 +366,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
       p_routed_provider:estimate.provider,p_routed_model:estimate.model,
       p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
-      p_currency:estimate.currency,p_config_id:String(estimate.configId||""),
+      p_currency:estimate.currency,p_config_id:String(estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):"")),
       p_pricing_source:String(estimate.pricingSource||"runway_model_router_dry_run"),p_expires_at:expiresAt
      }});
      if(quoteRecord!==quoteId)throw Object.assign(new Error("The non-billable workflow quote could not be durably recorded."),{code:"VIDEO_WORKFLOW_QUOTE_PERSISTENCE_FAILED"});
@@ -339,7 +376,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       model:workflowRequest.model,operation:workflowRequest.operation,
       routedProvider:estimate.provider,routedModel:estimate.model,
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
-      currency:estimate.currency,configId:estimate.configId,
+      currency:estimate.currency,configId:estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):null),
       pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:cloudVideoWorkerLaunchConfigured(env),
       expiresAt
@@ -368,14 +405,17 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     try{
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
      const isLuma=workflowRequest.provider==="luma";
-     const configId=isLuma?"luma-ray32":String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
-     const quoteAdapter=isLuma?lumaWorkflowAdapter:workflowRouterAdapter;
-     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):
+     const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
+     const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+     const quoteAdapter=isLuma?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
+     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):directRunway?directRunwayEnabled(env,workflowRequest.model):
       env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
       env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
       env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
       Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-     if(!quoteAdapter||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"The selected provider's worker, remote-execution, private-file and gateway release gates are not all configured."}});
+     if((!quoteAdapter&&!directRunway)||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"The selected provider's worker, remote-execution, private-file and gateway release gates are not all configured."}});
+     if(directRunway&&!await validateDirectRunwayFrameAsset(service.assets,ownerId,projectId,workflowRequest.input.startFrameAssetId))
+      return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"The first frame must remain a verified private image asset in this exact project."}});
      if(isLuma&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
       return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must remain verified private image assets in this exact project."}});
      if(workflowRequest.input.sourceVideoAssetId){
@@ -390,7 +430,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
       }
      }
-     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
+     const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
