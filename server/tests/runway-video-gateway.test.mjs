@@ -45,7 +45,7 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
 });
 test("Seedance image-to-video draft previews use the 480p portrait ratio",()=>{
  const payload=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"Animate this scene",promptImage:"data:image/png;base64,iVBORw0KGgo=",aspectRatio:"9:16",resolution:"480p",draft:true});
- assert.equal(payload.ratio,"720:1280");
+ assert.equal(payload.ratio,"480:854");
  assert.equal(payload.draft,true);
 });
 test("image-to-video rejects oversized or malformed frame data",()=>{
