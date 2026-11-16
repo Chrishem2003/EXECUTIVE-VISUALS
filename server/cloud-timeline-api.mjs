@@ -35,7 +35,7 @@ async function validateDirectRunwayFrameAsset(assets,ownerId,projectId,assetId){
   ["image/jpeg","image/png","image/webp"].includes(String(asset.mediaType||"").toLowerCase())&&
   Number.isSafeInteger(asset.size)&&asset.size>0&&asset.size<=250*1024*1024&&/^[a-f0-9]{64}$/i.test(asset.sha256||""));
 }
-const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
+const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.audio_replace","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoCommonConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -275,6 +275,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      "media.audio_extract":[],
      "media.audio-clean":["noiseFloor","targetLufs"],
      "media.audio-master":["targetLufs","targetLra","truePeakDbtp"],
+     "media.audio_replace":["replacementAudioAssetId"],
      "media.denoise":["luma","chroma"],
      "media.color":["brightness","contrast","saturation"],
      "media.resize":["width","height","fit"],
@@ -288,6 +289,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const compatible=jobType==="media.probe"?/^(image|video|audio)\//.test(mediaType):
      ["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
      jobType==="media.audio-master"?mediaType.startsWith("audio/"):
+     jobType==="media.audio_replace"?mediaType.startsWith("video/"):
      jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
      jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
      jobType==="media.transcode"?(mediaType.startsWith("video/")||mediaType.startsWith("audio/")):false;
@@ -296,6 +298,19 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!options||typeof options!=="object"||Array.isArray(options))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options must be a JSON object."}});
     const allowedOptions=new Set(optionKeys[jobType]);
     if(Object.keys(options).some(key=>!allowedOptions.has(key)))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options contain unsupported fields for this operation."}});
+    if(jobType==="media.audio_replace"){
+     const replacementAudioAssetId=String(options.replacementAudioAssetId||"");
+     if(!safeId(replacementAudioAssetId)||replacementAudioAssetId===asset.id)return response(400,{error:{code:"REPLACEMENT_AUDIO_REQUIRED",message:"Select a different private audio asset for soundtrack replacement."}});
+     let replacementAudioAsset;
+     try{replacementAudioAsset=await service.assets.get({ownerId,assetId:replacementAudioAssetId});}catch{return response(404,{error:{code:"REPLACEMENT_AUDIO_NOT_FOUND",message:"Private replacement audio asset not found."}});}
+     if(!replacementAudioAsset||replacementAudioAsset.ownerId!==ownerId||
+        (replacementAudioAsset.projectId||null)!==(asset.projectId||null)||
+        !String(replacementAudioAsset.mediaType||"").startsWith("audio/")||
+        !Number.isSafeInteger(replacementAudioAsset.size)||replacementAudioAsset.size<1||replacementAudioAsset.size>250*1024*1024||
+        !/^[a-f0-9]{64}$/i.test(replacementAudioAsset.sha256||"")){
+      return response(422,{error:{code:"REPLACEMENT_AUDIO_INVALID",message:"Replacement audio must be a verified private audio asset in the same project."}});
+     }
+    }
     const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],targetLra:[1,20],truePeakDbtp:[-9,-1],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
     if(jobType==="media.audio-master"&&options.targetLufs!==undefined&&(!Number.isFinite(options.targetLufs)||options.targetLufs< -24||options.targetLufs> -12))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Audio mastering integrated loudness must be between -24 and -12 LUFS."}});
     for(const [key,[minimum,maximum]] of Object.entries(numericRanges)){
