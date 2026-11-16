@@ -11,7 +11,7 @@ test("catalog contains only models with explicit text-to-video profiles",()=>{
 });
 test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"720p"}),{
-  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8,resolution:"720p"
+  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8
  });
 });
 test("Kling 4 maps portrait 1080p dimensions",()=>{
@@ -34,7 +34,7 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
  const seedance=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
  assert.equal(seedance.ratio,"480:854");
  const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
- assert.equal("ratio" in kling,false);
+ assert.equal(kling.ratio,"auto_720p");
 });
 test("image-to-video rejects oversized or malformed frame data",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
@@ -294,4 +294,15 @@ test("Runway cancels declared oversized JSON and media bodies before reading",as
  let mediaCancelled=false;
  await assert.rejects(()=>downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  assert.equal(mediaCancelled,true);
+});
+
+test("Seedance 2.5 4K uses a documented pixel ratio and no unsupported resolution field",()=>{
+ const payload=buildRunwayVideoPayload({model:"seedance2_5",prompt:"A filmic scene",durationSeconds:8,aspectRatio:"16:9",resolution:"4k"});
+ assert.deepEqual(payload,{model:"seedance2_5",promptText:"A filmic scene",ratio:"3840:2160",duration:8});
+ assert.equal("resolution" in payload,false);
+});
+test("Kling 4 accepts its documented 26,000-character prompt limit",()=>{
+ const prompt="x".repeat(26000);
+ assert.equal(buildRunwayVideoPayload({model:"kling_4",prompt,durationSeconds:5}).promptText.length,26000);
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:prompt+"x",durationSeconds:5}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
 });
