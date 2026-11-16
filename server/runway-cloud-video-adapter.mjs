@@ -41,7 +41,7 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
+  if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
     throw fail("This Runway cloud adapter supports only its exact verified generation and source-operation model profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
@@ -240,6 +240,20 @@ export function createRunwayCloudVideoAdapter({
         if (keyframes.length) throw fail("Kling 4 video-to-video does not accept this worker's timestamped keyframe payload.", "RUNWAY_INPUT_INVALID");
         return { ...input, videoUri, sourceMetadata };
       }
+      if (selectedModel === "gemini_omni_flash_1.2") {
+        const mode = input.mode || "reference";
+        if (!["reference", "extend", "edit"].includes(mode)) throw fail("Gemini Omni 1.2 video mode must be reference, extend or edit.", "RUNWAY_INPUT_INVALID");
+        const maxSourceSeconds = mode === "extend" ? 30 : 15;
+        if (metadata.durationSeconds < 3 || metadata.durationSeconds > maxSourceSeconds) {
+          throw fail("Gemini Omni 1.2 source video must be 3–" + maxSourceSeconds + " seconds for the selected mode.", "RUNWAY_INPUT_INVALID");
+        }
+        if (keyframes.length) throw fail("Gemini Omni 1.2 video-to-video does not accept timestamped keyframe uploads in this worker.", "RUNWAY_INPUT_INVALID");
+        if (mode === "edit" && input.duration !== "auto") throw fail("Gemini Omni 1.2 edit mode requires duration='auto'.", "RUNWAY_INPUT_INVALID");
+        if (mode === "extend" && input.duration !== "auto" && (!Number.isInteger(input.duration) || input.duration < 3 || input.duration > 15)) {
+          throw fail("Gemini Omni 1.2 extend duration must be auto or 3–15 seconds.", "RUNWAY_INPUT_INVALID");
+        }
+        return { ...input, videoUri, mode, sourceMetadata };
+      }
       if (selectedModel === "kling_4_flash") {
         const aspect = metadata.width / metadata.height;
         if (metadata.durationSeconds < 3 || metadata.durationSeconds > 21 ||
@@ -319,8 +333,8 @@ export function createRunwayCloudVideoAdapter({
         });
         return { taskId: taskId(submitted.id), status: "queued" };
       }
-      if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4", "kling_4_flash"].includes(selectedModel)) {
-        const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(selectedModel)) {
+        const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
         const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
@@ -367,6 +381,30 @@ export function createRunwayCloudVideoAdapter({
             throw fail("Kling 4.0 Flash video edits require an output duration from 3 to 20 seconds.", "RUNWAY_INPUT_INVALID");
           }
           body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), duration };
+        } else if (selectedModel === "gemini_omni_flash_1.2") {
+          const mode = input.mode || "reference";
+          body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode };
+          if (mode === "reference") {
+            const duration = input.durationSeconds === undefined ? 5 : input.durationSeconds;
+            const resolution = input.resolution || "720p";
+            const ratio = buildRunwayVideoPayload({
+              model: selectedModel, prompt: input.prompt.trim(), durationSeconds: duration,
+              aspectRatio: input.aspectRatio || "16:9", resolution
+            });
+            body.duration = duration;
+            body.ratio = ratio.ratio;
+          } else if (mode === "extend") {
+            const duration = input.duration === undefined ? "auto" : input.duration;
+            if (duration !== "auto" && (!Number.isInteger(duration) || duration < 3 || duration > 15)) {
+              throw fail("Gemini Omni 1.2 extend duration must be auto or 3–15 seconds.", "RUNWAY_INPUT_INVALID");
+            }
+            body.duration = duration;
+          } else if (mode === "edit") {
+            if (input.duration !== "auto") throw fail("Gemini Omni 1.2 edit mode requires duration='auto'.", "RUNWAY_INPUT_INVALID");
+            body.duration = "auto";
+          } else {
+            throw fail("Gemini Omni 1.2 video mode must be reference, extend or edit.", "RUNWAY_INPUT_INVALID");
+          }
         } else {
           body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim() };
         }
@@ -376,7 +414,7 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
-      const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
