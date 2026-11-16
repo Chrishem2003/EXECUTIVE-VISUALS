@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { normalizeVideoGenerationRequest } from "./video-generation-contract.mjs";
+import { buildRunwayVideoPayload, buildRunwayImageToVideoPayload } from "./runway-video-gateway.mjs";
 
 const fail = (message, code = "VIDEO_WORKFLOW_CLOUD_CONTRACT_INVALID") =>
   Object.assign(new Error(message), { code });
@@ -28,6 +29,76 @@ function assetList(value, label, maximum) {
   return ids;
 }
 
+const DIRECT_RUNWAY_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
+function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,model}){
+ const prompt=firstString(values.prompt,values.text,values.input,config.prompt);
+ const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
+ const startFrameAssetId=firstString(values.startFrameAssetId,values["start-frame"],values.image,values.referenceImage,values.reference,config.startFrameAssetId,config.referenceAssetId);
+ if(sourceVideoAssetId&&startFrameAssetId)throw fail("Runway direct source-video edits and first-frame generation must be separate operations.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ const operation=sourceVideoAssetId?"video-to-video":startFrameAssetId?"image-to-video":"text-to-video";
+ const requestedOperation=firstString(config.operation);
+ if(requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ if(model==="gen4.5"&&operation==="video-to-video")throw fail("Gen-4.5 direct worker does not support source-video editing.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(model==="kling3.0_4k"&&operation==="video-to-video")throw fail("Kling 3.0 4K does not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(!prompt)throw fail("Runway direct generation requires a non-empty prompt.","PROMPT_REQUIRED");
+ const promptLimit=model==="seedance2_5"?15000:model==="kling_4"?26000:model.startsWith("kling3.0_")?2500:1000;
+ if(prompt.length>promptLimit)throw fail("Prompt exceeds the selected Runway model limit of "+promptLimit+" characters.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ const mode=String(config.mode||"reference");
+ const durationValue=config.duration;
+ let durationSeconds=Number(config.durationSeconds??5);
+ if(model==="seedance2_5"&&operation==="video-to-video"){
+  if(!["reference","extend","edit"].includes(mode))throw fail("Seedance video mode must be reference, extend or edit.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  if(mode==="edit"){
+   if(durationValue!=="auto")throw fail("Seedance edit mode requires duration='auto'.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+   durationSeconds=30;
+  }else if(mode==="extend"){
+   if(durationValue!=="auto"&&(!Number.isInteger(durationValue)||durationValue<4||durationValue>30))throw fail("Seedance extend duration must be auto or 4–30 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+   durationSeconds=durationValue==="auto"?30:durationValue;
+  }else if(!Number.isInteger(durationSeconds)||durationSeconds<4||durationSeconds>30){
+   throw fail("Seedance reference mode duration must be 4–30 seconds.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  }
+ }else if(model==="kling_4"&&operation==="video-to-video"){
+  durationSeconds=30;
+ }else{
+  const limits=model==="seedance2_5"?[4,30]:model==="kling_4"?[3,30]:model.startsWith("kling3.0_")?[3,15]:[2,10];
+  if(!Number.isInteger(durationSeconds)||durationSeconds<limits[0]||durationSeconds>limits[1])throw fail("Duration is outside the selected Runway model range.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ }
+ const aspectRatio=String(config.aspectRatio||"16:9");
+ const requestedResolution=String(config.resolution||"provider_default");
+ const resolution=model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
+  model==="kling_4"?(requestedResolution==="provider_default"?"720p":requestedResolution):
+  model==="kling3.0_4k"?"4k":"provider_default";
+ const audio=typeof config.audio==="boolean"?config.audio:(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)?true:undefined);
+ const multiPrompt=config.multiPrompt;
+ const shotType=String(config.shotType||"customize");
+ if(multiPrompt!==undefined&&multiPrompt!==null){
+  if(!model.startsWith("kling3.0_"))throw fail("Multi-shot prompts are supported only by Kling 3.0 models.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+  if(operation==="video-to-video")throw fail("Kling 3.0 multi-shot is supported for text and image generation, not video edits.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ }
+ if(model==="seedance2_5"&&operation==="video-to-video"&&mode!=="reference"){
+  // Extend and edit keep the source framing and do not accept a ratio or output resolution.
+ }else if(operation==="image-to-video"){
+  buildRunwayImageToVideoPayload({model,prompt,promptImage:"data:image/png;base64,AA==",durationSeconds,aspectRatio,resolution,multiPrompt,shotType});
+ }else if(!(model==="kling_4"&&operation==="video-to-video")){
+  buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution,multiPrompt,shotType});
+ }
+ const audioMode=model==="kling_4"?"provider_default":audio===false?"none":audio===true?"generated":"provider_default";
+ const normalized=normalizeVideoGenerationRequest({
+  requestId,projectId:projectId.trim(),provider:"runway",model,operation,prompt,
+  durationSeconds,aspectRatio,resolution,audioMode,outputFormat:"mp4",
+  ...(sourceVideoAssetId?{sourceVideoAssetId}:{}),
+  ...(startFrameAssetId?{startFrameAssetId}:{})
+ });
+ const input={
+  ...normalized,provider:"runway",model,operation,
+  ...(audio!==undefined?{audio}:{}),
+  ...(multiPrompt?{multiPrompt,shotType}:{}),
+  ...(model==="seedance2_5"&&operation==="video-to-video"?{mode,...(durationValue!==undefined?{duration:durationValue}:{})}:{})
+ };
+ const requestHash=createHash("sha256").update(JSON.stringify(input)).digest("hex");
+ const frozenInput=deepFreeze({...input,requestHash});
+ return deepFreeze({provider:"runway",model,operation,requestId,projectId:projectId.trim(),requestHash,input:frozenInput});
+}
 function createGoogleOmniWorkflowRequest({node,values,config,projectId,requestId}){
   const prompt=firstString(values.prompt,values.text,values.input,config.prompt);
   const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
@@ -193,6 +264,11 @@ export function createVideoWorkflowCloudRequest({
     if(typeof projectId!=="string"||!projectId.trim()||projectId.length>160)throw fail("A saved project ID is required for Luma cloud video execution.","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED");
     if(typeof requestId!=="string"||!/^[A-Za-z0-9._:-]{1,160}$/.test(requestId))throw fail("A stable workflow request ID is required for idempotent cloud execution.","VIDEO_WORKFLOW_CLOUD_REQUEST_ID_REQUIRED");
     return createLumaWorkflowRequest({values,config,projectId,requestId});
+  }
+  if(provider==="runway"&&DIRECT_RUNWAY_MODELS.has(model)){
+    if(typeof projectId!=="string"||!projectId.trim()||projectId.length>160)throw fail("A saved project ID is required for direct Runway cloud execution.","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED");
+    if(typeof requestId!=="string"||!/^[A-Za-z0-9._:-]{1,160}$/.test(requestId))throw fail("A stable workflow request ID is required for idempotent cloud execution.","VIDEO_WORKFLOW_CLOUD_REQUEST_ID_REQUIRED");
+    return createRunwayDirectWorkflowRequest({values,config,projectId,requestId,model});
   }
   if (provider === "google" && model === "gemini-omni-1.1-flash") {
     if (typeof projectId !== "string" || !projectId.trim() || projectId.length > 160) {
