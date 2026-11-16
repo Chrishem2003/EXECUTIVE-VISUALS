@@ -38,6 +38,29 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.constraints.cancellation, "best_effort");
 });
 
+test("Veo 3.1 tiers are mapped to the implemented Runway worker while remaining disabled", () => {
+  const standard = getVideoProviderModel("runway", "veo3.1");
+  const fast = getVideoProviderModel("runway", "veo3.1_fast");
+  for (const model of [standard, fast]) {
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.executionAdapter, "runway-cloud-worker");
+    assert.equal(model.gateway, "runway");
+    assert.equal(model.capabilities.textToVideo, true);
+    assert.equal(model.capabilities.imageToVideo, true);
+    assert.equal(model.capabilities.startFrame, true);
+    assert.equal(model.capabilities.endFrame, true);
+    assert.equal(model.capabilities.referenceImages, false);
+    assert.deepEqual(model.constraints.supportedDurationsSeconds, [4, 6, 8]);
+    assert.equal(model.constraints.lastFrameRequiresFirstFrame, true);
+    assert.equal(model.constraints.eightSecondsOnlyAt1080p, true);
+    assert.equal(model.constraints.creditUsdValue, 0.01);
+    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-16");
+  }
+  assert.deepEqual(standard.constraints.outputCreditsPerSecond, { audio: 40, noAudio: 20 });
+  assert.deepEqual(fast.constraints.outputCreditsPerSecond, { audio: 15, noAudio: 10 });
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
 test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit rates", () => {
   const full = getVideoProviderModel("runway", "seedance2");
   const fast = getVideoProviderModel("runway", "seedance2_fast");
