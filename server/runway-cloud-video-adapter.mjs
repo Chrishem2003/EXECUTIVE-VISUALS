@@ -148,6 +148,49 @@ export function createRunwayCloudVideoAdapter({
     return id;
   }
 
+  function buildVeoRequest(input) {
+    if (!input || input.provider !== "runway" || input.model !== selectedModel) throw fail("Veo job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
+    if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) throw fail("Veo supports only text-to-video and image-to-video operations.", "RUNWAY_INPUT_INVALID");
+    const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
+    if (prompt.length > 1000) throw fail("Veo prompts are limited to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+    const imageToVideo = input.operation === "image-to-video" || input.promptImage !== undefined;
+    if (!prompt && !imageToVideo) throw fail("Veo text-to-video requires a prompt.", "RUNWAY_INPUT_INVALID");
+    const duration = input.durationSeconds;
+    if (![4, 6, 8].includes(duration)) throw fail("Veo duration must be 4, 6 or 8 seconds.", "RUNWAY_INPUT_INVALID");
+    const aspect = input.aspectRatio || "16:9";
+    if (!["16:9", "9:16"].includes(aspect)) throw fail("Veo supports 16:9 or 9:16 aspect ratios.", "RUNWAY_INPUT_INVALID");
+    const resolution = input.resolution || "720p";
+    if (!["720p", "1080p"].includes(resolution)) throw fail("Veo resolution must be 720p or 1080p.", "RUNWAY_INPUT_INVALID");
+    if (resolution === "1080p" && duration !== 8) throw fail("Veo 1080p output is available only for 8-second clips.", "RUNWAY_INPUT_INVALID");
+    if (input.audio !== undefined && typeof input.audio !== "boolean") throw fail("Veo audio must be a boolean.", "RUNWAY_INPUT_INVALID");
+    if (input.seed !== undefined && (!Number.isSafeInteger(input.seed) || input.seed < 0 || input.seed > 4294967295)) throw fail("Veo seed must be an unsigned 32-bit integer.", "RUNWAY_INPUT_INVALID");
+    if (input.negativePrompt !== undefined && (typeof input.negativePrompt !== "string" || !input.negativePrompt.trim() || input.negativePrompt.length > 1000)) throw fail("Veo negative prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+    let promptImage;
+    if (imageToVideo) {
+      promptImage = input.promptImage;
+      if (typeof promptImage === "string") promptImage = [{ uri: promptImage, position: "first" }];
+      if (!Array.isArray(promptImage) || promptImage.length < 1 || promptImage.length > 2 ||
+          promptImage.some(frame => !frame || !isRunwayUri(frame.uri) || !["first", "last"].includes(frame.position)) ||
+          new Set(promptImage.map(frame => frame.position)).size !== promptImage.length ||
+          !promptImage.some(frame => frame.position === "first")) {
+        throw fail("Veo image-to-video requires one first frame and may include one last frame; last-frame-only requests are invalid.", "RUNWAY_INPUT_INVALID");
+      }
+    }
+    const ratio = resolution === "1080p"
+      ? (aspect === "16:9" ? "1920:1080" : "1080:1920")
+      : (aspect === "16:9" ? "1280:720" : "720:1280");
+    const body = {
+      model: selectedModel,
+      ...(prompt ? { promptText: prompt } : {}),
+      ...(imageToVideo ? { promptImage } : {}),
+      ratio, duration,
+      ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}),
+      ...(input.negativePrompt ? { negativePrompt: input.negativePrompt.trim() } : {}),
+      ...(input.seed !== undefined ? { seed: input.seed } : {})
+    };
+    return Object.freeze({ endpoint: imageToVideo ? "/image_to_video" : "/text_to_video", body, duration, audio: input.audio !== false });
+  }
+
   return Object.freeze({
     provider: "runway",
     model: selectedModel,
@@ -233,9 +276,9 @@ export function createRunwayCloudVideoAdapter({
 
     ...(selectedModel === "veo3.1" || selectedModel === "veo3.1_fast" ? {
       async preflight(input) {
-        const duration = input?.durationSeconds;
-        if (![4, 6, 8].includes(duration)) throw fail("Veo preflight requires an explicit 4, 6 or 8 second duration.", "RUNWAY_INPUT_INVALID");
-        const audio = input.audio !== false;
+        const requestPlan = buildVeoRequest(input);
+        const duration = requestPlan.duration;
+        const audio = requestPlan.audio;
         const creditsPerSecond = selectedModel === "veo3.1"
           ? (audio ? 40 : 20)
           : (audio ? 15 : 10);
@@ -317,46 +360,8 @@ export function createRunwayCloudVideoAdapter({
         return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (selectedModel === "veo3.1" || selectedModel === "veo3.1_fast") {
-        if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) throw fail("Veo supports only text-to-video and image-to-video operations.", "RUNWAY_INPUT_INVALID");
-        const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
-        if (prompt.length > 1000) throw fail("Veo prompts are limited to 1,000 characters.", "RUNWAY_INPUT_INVALID");
-        const imageToVideo = input.operation === "image-to-video" || input.promptImage !== undefined;
-        if (!prompt && !imageToVideo) throw fail("Veo text-to-video requires a prompt.", "RUNWAY_INPUT_INVALID");
-        const duration = input.durationSeconds;
-        if (![4, 6, 8].includes(duration)) throw fail("Veo duration must be 4, 6 or 8 seconds.", "RUNWAY_INPUT_INVALID");
-        const aspect = input.aspectRatio || "16:9";
-        if (!["16:9", "9:16"].includes(aspect)) throw fail("Veo supports 16:9 or 9:16 aspect ratios.", "RUNWAY_INPUT_INVALID");
-        const resolution = input.resolution || "720p";
-        if (!["720p", "1080p"].includes(resolution)) throw fail("Veo resolution must be 720p or 1080p.", "RUNWAY_INPUT_INVALID");
-        if (resolution === "1080p" && duration !== 8) throw fail("Veo 1080p output is available only for 8-second clips.", "RUNWAY_INPUT_INVALID");
-        const ratio = resolution === "1080p"
-          ? (aspect === "16:9" ? "1920:1080" : "1080:1920")
-          : (aspect === "16:9" ? "1280:720" : "720:1280");
-        if (typeof input.audio !== "undefined" && typeof input.audio !== "boolean") throw fail("Veo audio must be a boolean.", "RUNWAY_INPUT_INVALID");
-        if (input.seed !== undefined && (!Number.isSafeInteger(input.seed) || input.seed < 0 || input.seed > 4294967295)) throw fail("Veo seed must be an unsigned 32-bit integer.", "RUNWAY_INPUT_INVALID");
-        if (input.negativePrompt !== undefined && (typeof input.negativePrompt !== "string" || !input.negativePrompt.trim() || input.negativePrompt.length > 1000)) throw fail("Veo negative prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
-        let promptImage;
-        if (imageToVideo) {
-          promptImage = input.promptImage;
-          if (typeof promptImage === "string") promptImage = [{ uri: promptImage, position: "first" }];
-          if (!Array.isArray(promptImage) || promptImage.length < 1 || promptImage.length > 2 ||
-              promptImage.some(frame => !frame || !isRunwayUri(frame.uri) || !["first", "last"].includes(frame.position)) ||
-              new Set(promptImage.map(frame => frame.position)).size !== promptImage.length ||
-              !promptImage.some(frame => frame.position === "first")) {
-            throw fail("Veo image-to-video requires one first frame and may include one last frame; last-frame-only requests are invalid.", "RUNWAY_INPUT_INVALID");
-          }
-        }
-        const body = {
-          model: selectedModel,
-          ...(prompt ? { promptText: prompt } : {}),
-          ...(imageToVideo ? { promptImage } : {}),
-          ratio,
-          duration,
-          ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}),
-          ...(input.negativePrompt ? { negativePrompt: input.negativePrompt.trim() } : {}),
-          ...(input.seed !== undefined ? { seed: input.seed } : {})
-        };
-        const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", { method: "POST", submission: true, body });
+        const requestPlan = buildVeoRequest(input);
+        const submitted = await request(requestPlan.endpoint, { method: "POST", submission: true, body: requestPlan.body });
         return { taskId: taskId(submitted.id), status: "queued" };
       }
 
