@@ -281,3 +281,132 @@ test("prepares an authorized SDR source and submits a durable Ruby HDR task", as
     model: "ruby", videoUri: "runway://ephemeral/hdr-source", outputFormat: "hlg"
   });
 });
+
+
+test("Veo 3.1 submits text-to-video with strict frame, audio and cost preflight controls", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "veo3.1",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id }));
+    }
+  });
+  assert.equal(typeof adapter.preflight, "function");
+  const quote = await adapter.preflight({ durationSeconds: 4, audio: true });
+  assert.deepEqual({
+    billable: quote.billable, provider: quote.provider, model: quote.model,
+    estimatedCredits: quote.estimatedCredits, estimatedUsd: quote.estimatedUsd, currency: quote.currency
+  }, {
+    billable: false, provider: "runway", model: "veo3.1",
+    estimatedCredits: 160, estimatedUsd: 1.6, currency: "USD"
+  });
+  const submitted = await adapter.submit({
+    provider: "runway", model: "veo3.1", prompt: "A lighthouse at dusk",
+    durationSeconds: 4, aspectRatio: "16:9", resolution: "720p",
+    audio: true, negativePrompt: "text overlays", seed: 42
+  });
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "veo3.1", promptText: "A lighthouse at dusk", ratio: "1280:720",
+    duration: 4, audio: true, negativePrompt: "text overlays", seed: 42
+  });
+});
+
+test("Veo 3.1 Fast interpolates authorized first and last frames", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "veo3.1_fast",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id }));
+    }
+  });
+  const input = {
+    provider: "runway", model: "veo3.1_fast", operation: "image-to-video",
+    prompt: "Transition smoothly from sunrise to sunset",
+    promptImage: [
+      { uri: "runway://ephemeral/first-frame", position: "first" },
+      { uri: "runway://ephemeral/last-frame", position: "last" }
+    ],
+    durationSeconds: 8, aspectRatio: "9:16", resolution: "1080p", audio: false
+  };
+  const quote = await adapter.preflight(input);
+  assert.equal(quote.estimatedCredits, 80);
+  assert.equal(quote.estimatedUsd, 0.8);
+  await adapter.submit(input);
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/image_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "veo3.1_fast", promptText: input.prompt,
+    promptImage: input.promptImage, ratio: "1080:1920", duration: 8, audio: false
+  });
+});
+
+test("Veo private first/last frame assets are uploaded before task submission", async () => {
+  const calls = [];
+  let upload = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "veo3.1",
+    prepareInput: async (input, context) => {
+      assert.equal(context.job.owner_id, "owner-1");
+      return {
+        firstFrame: { buffer: Buffer.alloc(512), filename: "first.png", mimeType: "image/png" },
+        lastFrame: { buffer: Buffer.alloc(512), filename: "last.png", mimeType: "image/png" }
+      };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push({ target, options });
+      if (target.endsWith("/uploads")) {
+        upload += 1;
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/signed-" + upload,
+          fields: { key: "frame-" + upload },
+          runwayUri: "runway://ephemeral/frame-" + upload
+        }));
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) return new Response(JSON.stringify({ id }));
+      throw new Error("Unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "veo3.1", operation: "image-to-video",
+    startFrameAssetId: "private-first", endFrameAssetId: "private-last",
+    prompt: "Animate between the two approved frames"
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.promptImage, [
+    { uri: "runway://ephemeral/frame-1", position: "first" },
+    { uri: "runway://ephemeral/frame-2", position: "last" }
+  ]);
+  await adapter.submit({ ...prepared, durationSeconds: 8, aspectRatio: "16:9" });
+  const task = calls.find(call => call.target.endsWith("/image_to_video"));
+  assert.ok(task);
+  assert.equal(calls.filter(call => call.target.endsWith("/uploads")).length, 2);
+});
+
+test("Veo rejects invalid frame pairs, unsupported durations and 1080p short clips before POST", async () => {
+  let calls = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "veo3.1",
+    fetchImpl: async () => { calls += 1; return new Response(JSON.stringify({ id })); }
+  });
+  const frame = { uri: "runway://ephemeral/frame", position: "last" };
+  const common = { provider: "runway", model: "veo3.1", prompt: "A moving scene", durationSeconds: 8 };
+  await assert.rejects(() => adapter.submit({ ...common, promptImage: [frame] }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...common, durationSeconds: 5 }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...common, durationSeconds: 4, resolution: "1080p" }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...common, durationSeconds: 8, seed: 4294967296 }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...common, durationSeconds: 8, aspectRatio: "1:1" }), error => error.code === "RUNWAY_INPUT_INVALID");
+  assert.equal(calls, 0);
+});
+
+test("Veo preflight rates are model-specific and do not alter other Runway adapters", async () => {
+  const standard = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1" });
+  const fast = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1_fast" });
+  const gen = createRunwayCloudVideoAdapter({ ...base, model: "gen4.5" });
+  assert.equal((await standard.preflight({ durationSeconds: 6, audio: false })).estimatedUsd, 1.2);
+  assert.equal((await fast.preflight({ durationSeconds: 6, audio: true })).estimatedUsd, 0.9);
+  assert.equal(typeof gen.preflight, "undefined");
+});
