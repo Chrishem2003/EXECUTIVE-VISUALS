@@ -236,6 +236,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261111230000_durable_video_generation_tasks_batch_71.sql
       - name: Apply task cancellation reconciliation leases
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261112000000_video_generation_task_cancellation_batch_105.sql
+      - name: Apply atomic credit reservation accounting prerequisite
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110170000_credit_reservation_accounting.sql
       - name: Apply atomic cloud-job cancellation settlement
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261114130000_atomic_cloud_job_cancellation_settlement.sql
       - name: Verify owner cancellation wins over late worker completion
