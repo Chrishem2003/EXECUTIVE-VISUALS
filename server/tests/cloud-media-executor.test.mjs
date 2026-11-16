@@ -8,6 +8,80 @@ import { createCloudMediaExecutor, buildCloudMediaOutputPlan, aiUpscaleMediaType
 
 const noC2paPreservation=async()=>({status:"not_present",preserved:false});
 
+test("cloud soundtrack replacement materializes both private assets and publishes a lease-fenced video derivative",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-audio-replace-"));
+ const previousFfmpeg=process.env.FFMPEG_PATH,previousFfprobe=process.env.FFPROBE_PATH;
+ const source=join(directory,"source.mp4"),audio=join(directory,"replacement.mp3"),argsLog=join(directory,"ffmpeg-args.txt");
+ await writeFile(source,"source-video");await writeFile(audio,"replacement-audio");
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+printf '%s\\n' "$@" > "${argsLog}"
+for last do :; done
+printf 'localized-video' > "$last"`);
+ const ffprobe=await executable(directory,"ffprobe",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+case "$*" in
+ *source.mp4*) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264"}],"format":{"duration":"12.5"}}' ;;
+ *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","width":1920,"height":1080},{"codec_type":"audio","codec_name":"aac","sample_rate":"48000"}],"format":{"duration":"12.5"}}' ;;
+esac`);
+ process.env.FFMPEG_PATH=ffmpeg;process.env.FFPROBE_PATH=ffprobe;
+ const cleanup=[],materialized=[],published=[];
+ try{
+  const execute=createCloudMediaExecutor({ffmpeg,ffprobe,tempRoot:directory,c2paPreserver:noC2paPreservation,mediaIO:{
+   async materialize({ownerId,assetId}){
+    assert.equal(ownerId,"leased-owner");materialized.push(assetId);
+    const isVideo=assetId==="video-asset";
+    return{path:isVideo?source:audio,asset:{id:assetId,name:isVideo?"camera.mp4":"dub.mp3",mediaType:isVideo?"video/mp4":"audio/mpeg",sha256:(isVideo?"a":"b").repeat(64)},async cleanup(){cleanup.push(assetId);}};
+   },
+   async publish(args){published.push(args);await args.assertLease();return{id:"localized-derivative",name:args.filename,mediaType:args.mediaType};}
+  }});
+  let leaseChecks=0;
+  const result=await execute({job:{id:"audio-replace-job",owner_id:"leased-owner",project_id:"project-7",lease_owner:"worker-2",lease_token:"11111111-1111-4111-8111-111111111111",job_type:"media.audio_replace",input:{sourceAssetId:"video-asset",replacementAudioAssetId:"audio-asset"}},assertLease:async()=>{leaseChecks++;return true;},onProgress(){}});
+  assert.deepEqual(materialized,["video-asset","audio-asset"]);
+  assert.deepEqual(cleanup,["audio-asset","video-asset"]);
+  assert.equal(published.length,1);
+  assert.equal(published[0].ownerId,"leased-owner");
+  assert.equal(published[0].projectId,"project-7");
+  assert.equal(published[0].filename,"camera-soundtrack-replaced.mp4");
+  assert.equal(published[0].mediaType,"video/mp4");
+  assert.equal(published[0].derivativeOf,"video-asset");
+  assert.equal(published[0].publicationKey,"audio-replace-job:output:v1");
+  assert.equal(published[0].metadata.processing.method,"video-stream-copy-aac-audio-replacement");
+  assert.equal(published[0].metadata.processing.replacementAudioAssetId,"audio-asset");
+  assert.equal(published[0].metadata.processing.replacementAudioSha256,"b".repeat(64));
+  assert.equal(published[0].metadata.processing.outputAudioCodec,"aac");
+  assert.equal(published[0].leaseContext.jobId,"audio-replace-job");
+  assert.equal(published[0].leaseContext.workerId,"worker-2");
+  assert.equal(published[0].leaseContext.leaseToken,"11111111-1111-4111-8111-111111111111");
+  assert.ok(leaseChecks>=1);
+  assert.equal(result.outputAsset.id,"localized-derivative");
+  const ffmpegArgs=await readFile(argsLog,"utf8");
+  assert.match(ffmpegArgs,/-map\\n0:v:0/);
+  assert.match(ffmpegArgs,/-map\\n1:a:0/);
+  assert.match(ffmpegArgs,/-af\\napad/);
+  assert.match(ffmpegArgs,/-c:v\\ncopy/);
+  assert.match(ffmpegArgs,/-c:a\\naac/);
+ }finally{
+  if(previousFfmpeg===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previousFfmpeg;
+  if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
+
+test("cloud soundtrack replacement rejects non-audio replacement assets and cleans both private downloads",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-audio-replace-invalid-"));
+ const source=join(directory,"source.mp4"),wrong=join(directory,"wrong.mp4");
+ await writeFile(source,"source-video");await writeFile(wrong,"not-audio");
+ const cleaned=[];
+ const execute=createCloudMediaExecutor({tempRoot:directory,c2paPreserver:noC2paPreservation,mediaIO:{
+  async materialize({assetId}){const isVideo=assetId==="video";return{path:isVideo?source:wrong,asset:{id:assetId,name:"asset.mp4",mediaType:"video/mp4",sha256:"c".repeat(64)},async cleanup(){cleaned.push(assetId);}};},
+  async publish(){throw new Error("Invalid replacement audio must never publish.");}
+ }});
+ try{
+  await assert.rejects(execute({job:{id:"invalid-audio-job",owner_id:"owner",job_type:"media.audio_replace",input:{sourceAssetId:"video",replacementAudioAssetId:"wrong"}}}),error=>error.code==="UNSUPPORTED_MEDIA_TYPE");
+  assert.deepEqual(cleaned,["wrong","video"]);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
 function pngHeader(width,height){
   const bytes=Buffer.alloc(24);
   Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
