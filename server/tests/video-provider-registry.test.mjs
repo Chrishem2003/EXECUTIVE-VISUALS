@@ -44,7 +44,7 @@ test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit 
   const mini = getVideoProviderModel("runway", "seedance2_mini");
   for (const model of [full, fast, mini]) {
     assert.equal(model.availability, "disabled");
-    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.executionAdapter, model === kling ? "runway-cloud-worker" : "not_implemented");
     assert.equal(model.gateway, "runway");
     assert.equal(model.capabilities.textToVideo, true);
     assert.equal(model.capabilities.imageToVideo, true);
@@ -236,6 +236,11 @@ test("November 2026 Runway model releases are catalogued with verified constrain
     assert.equal(model.gateway, "runway");
     assert.equal(model.constraints.pricingSnapshotDate, "2026-11-07");
   }
+  assert.deepEqual(kling.executionCapabilities, ["textToVideo", "imageToVideo", "videoEdit"]);
+  assert.deepEqual(kling.constraints.adapterSupportedOperations, ["text-to-video", "image-to-video", "video-to-video"]);
+  assert.equal(kling.constraints.adapterReferenceCollections, false);
+  assert.equal(kling.capabilities.referenceImages, false);
+  assert.equal(kling.capabilities.referenceVideos, false);
   assert.equal(kling.capabilities.nativeAudio, true);
   assert.equal(kling.capabilities.maxDurationSeconds, 20);
   assert.deepEqual(kling.capabilities.resolutions, ["720p"]);
