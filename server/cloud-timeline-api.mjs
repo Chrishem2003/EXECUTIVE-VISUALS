@@ -70,7 +70,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   : null;
  const base=new URL(url).origin;
  const sourceResolver=runwaySourceResolver || (service.assets?.get&&service.assets?.createSignedUrl
-  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2AccountId:env.R2_ACCOUNT_ID,r2Bucket:env.R2_BUCKET})
+  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url,storageProvider:env.CLOUD_MEDIA_STORAGE_PROVIDER,r2AccountId:env.R2_ACCOUNT_ID,r2Bucket:env.R2_BUCKET,b2Region:env.B2_REGION,b2Bucket:env.B2_BUCKET})
   : null);
  const routerConfig=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
  const routerKey=String(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET||"");
