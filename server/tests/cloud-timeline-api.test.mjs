@@ -938,6 +938,36 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
  assert.equal(quoteArgs.p_input.durationSeconds,8);
 });
 
+test("Seedance draft enhancement rejects a source job from another project",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ let databaseWrites=0;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:editor,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   databaseWrites++;
+   return{ok:true,status:200,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-cross-project",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  values:{}
+ }});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SEEDANCE_DRAFT_SOURCE_INVALID");
+ assert.equal(databaseWrites,0);
+});
+
 test("direct Runway approval uses the exact worker allowlist and stable model config ID",async()=>{
  let approvalArgs;
  const api=createCloudTimelineApi({
