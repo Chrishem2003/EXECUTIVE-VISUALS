@@ -162,9 +162,11 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   const created=Date.parse(source?.created_at||"");
   const input=source?.input&&typeof source.input==="object"&&!Array.isArray(source.input)?source.input:{};
   const output=source?.output&&typeof source.output==="object"&&!Array.isArray(source.output)?source.output:{};
-  if(!source||!Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
+  if(!source||source.owner_id!==ownerId||source.project_id!==projectId||source.job_type!=="video.generate"||source.status!=="succeeded"||
+     !Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
      input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||
      output.provider!=="runway"||output.model!=="seedance2_5"||output.providerTaskId!==draftTaskId||
+     !Array.isArray(output.assetIds)||output.assetIds.length<1||
      !Number.isInteger(input.durationSeconds)||input.durationSeconds<4||input.durationSeconds>30){
    throw Object.assign(new Error("The source must be a succeeded Seedance 2.5 480p preview from this project, owned by this account and created within the last seven days."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
   }
