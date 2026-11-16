@@ -47,7 +47,7 @@ test("soundtrack replacement maps the original picture and replacement audio wit
     outputPath: "/private/derived/localized.mp4"
   });
   assert.deepEqual(args.slice(args.indexOf("-map"), args.indexOf("-movflags")), [
-    "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest"
+    "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-shortest"
   ]);
   assert.equal(args.at(-1), "/private/derived/localized.mp4");
 });
