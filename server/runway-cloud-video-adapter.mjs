@@ -36,6 +36,7 @@ export function createRunwayCloudVideoAdapter({
   prepareInput,
   ingestOutputs,
   resolveActualCost,
+  assertActualCostReady,
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
@@ -47,6 +48,9 @@ export function createRunwayCloudVideoAdapter({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Runway timeout is invalid.");
   if (typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
     throw fail("Runway cloud adapter requires private output ingestion and an authoritative task-level billing resolver.", "RUNWAY_EXECUTION_GATES_MISSING");
+  }
+  if ((selectedModel === "veo3.1" || selectedModel === "veo3.1_fast") && typeof assertActualCostReady !== "function") {
+    throw fail("Veo execution requires a live Enterprise task-billing readiness check before provider submission.", "RUNWAY_EXECUTION_GATES_MISSING");
   }
 
   const assertEnabled = () => {
@@ -277,6 +281,7 @@ export function createRunwayCloudVideoAdapter({
     ...(selectedModel === "veo3.1" || selectedModel === "veo3.1_fast" ? {
       async preflight(input) {
         const requestPlan = buildVeoRequest(input);
+        await assertActualCostReady();
         const duration = requestPlan.duration;
         const audio = requestPlan.audio;
         const creditsPerSecond = selectedModel === "veo3.1"
