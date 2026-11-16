@@ -418,6 +418,34 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   });
 });
 
+test("Seedance 2.5 reference video-to-video draft is fixed at 480p", async () => {
+  let body;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async (_url, options) => { body = JSON.parse(options.body); return new Response(JSON.stringify({ id }), { status: 200 }); }
+  });
+  await adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "video-to-video",
+    prompt: "Continue the approved scene", videoUri: "runway://ephemeral/source", mode: "reference",
+    durationSeconds: 6, aspectRatio: "16:9", resolution: "480p", draft: true
+  });
+  assert.deepEqual(body, {
+    model: "seedance2_5", videoUri: "runway://ephemeral/source", promptText: "Continue the approved scene",
+    mode: "reference", draft: true, duration: 6, ratio: "854:480"
+  });
+});
+
+test("Seedance 2.5 draft cannot be combined with video extend or edit modes", async () => {
+  let calls = 0;
+  const adapter = createRunwayCloudVideoAdapter({ ...base, model: "seedance2_5", fetchImpl: async () => { calls++; return new Response(JSON.stringify({ id }), { status: 200 }); } });
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "video-to-video",
+    prompt: "Continue the approved scene", videoUri: "runway://ephemeral/source", mode: "extend",
+    duration: "auto", durationSeconds: 6, resolution: "480p", draft: true
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  assert.equal(calls, 0);
+});
+
 test("Kling 4 text-to-video is accepted by the same exact-match durable adapter", async () => {
   let body;
   const adapter = createRunwayCloudVideoAdapter({
