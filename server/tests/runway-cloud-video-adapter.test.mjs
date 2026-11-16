@@ -340,7 +340,7 @@ test("submits Seedance 2.5 draft text-to-video at the fixed 480p preview tier", 
   const submitted = await adapter.submit({
     provider: "runway", model: "seedance2_5", operation: "text-to-video",
     prompt: "A cinematic dawn over a quiet city", durationSeconds: 8,
-    aspectRatio: "16:9", draft: true
+    aspectRatio: "16:9", resolution: "480p", draft: true
   });
   assert.deepEqual(submitted, { taskId: id, status: "queued" });
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
@@ -409,7 +409,7 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   const prepared = await adapter.prepareInput({
     provider: "runway", model: "seedance2_5", operation: "image-to-video",
     prompt: "Animate the approved frame", startFrameAssetId: "approved-frame", durationSeconds: 6,
-    aspectRatio: "16:9", draft: true
+    aspectRatio: "16:9", resolution: "480p", draft: true
   }, { job: { owner_id: "owner-1" } });
   await adapter.submit(prepared);
   assert.deepEqual(body, {
