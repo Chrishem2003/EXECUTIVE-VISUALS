@@ -464,7 +464,8 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
  const lumaOperation=String(config.operation||"generate"),sourceVideoAssetId=String(config.sourceVideoAssetId||"").trim();
  const runwayVideoEdit=requestedProvider==="runway"&&["seedance2_5","kling_4"].includes(requestedModel)&&lumaOperation==="video-to-video";
  if(!lumaRay&&!runwayVideoEdit&&lumaOperation!=="generate")throw new Error("Choose a verified model that supports the selected source-video operation.");
- if((lumaRay&&lumaOperation!=="generate"||runwayVideoEdit)&&!sourceVideoAssetId)throw new Error("Choose a private project source video for this edit operation.");
+ if(lumaRay&&lumaOperation!=="generate"&&!sourceVideoAssetId)throw new Error("Choose a private project source video for this edit operation.");
+ if(runwayVideoEdit&&!sourceVideoAssetId)throw new Error("Choose a private project source video for this edit operation.");
  if(lumaRay&&lumaOperation==="generate"&&sourceVideoAssetId)throw new Error("Source video is only accepted for Luma edit or reframe; clear the source selection to generate new footage.");
  const referenceAssetId=String(config.referenceAssetId||"").trim();
  const generationConfig=image?config:{
