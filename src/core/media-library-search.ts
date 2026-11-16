@@ -4,13 +4,13 @@ type Field={field:MediaSearchHit["field"];text:string;timeSeconds?:number};
 const TEXT_KEYS=new Set(["title","name","description","summary","transcript","transcriptText","text","caption","captions","tags","keywords","speaker","scene","sceneDescription","visualDescription","notes","location","camera","subject","objects","labels","category","filename","originalName"]);
 const norm=(s:string)=>s.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
 function collect(value:unknown,out:Field[],depth=0,key=""){
- if(depth>5||out.length>=1200||value==null)return;
+ if(depth>5||out.length>=5200||value==null)return;
  if(typeof value==="string"){if(TEXT_KEYS.has(key)||/(tag|keyword|object|subject|label)/i.test(key)){const text=value.replace(/\s+/g," ").trim().slice(0,1800);if(text)out.push({field:"metadata",text});}return;}
  if(Array.isArray(value)){for(const item of value.slice(0,100))collect(item,out,depth+1,key);return;}
  if(typeof value!=="object")return;
  for(const [k,v] of Object.entries(value as Record<string,unknown>)){
   if(["segments","words","transcriptSegments","transcriptWords","captions"].includes(k)&&Array.isArray(v)){
-   for(const entry of v.slice(0,1000)){if(out.length>=1200)break;if(!entry||typeof entry!=="object")continue;const row=entry as Record<string,unknown>;const text=String(row.text??row.word??row.transcript??"").replace(/\s+/g," ").trim().slice(0,500);const time=Number(row.start??row.startSeconds);if(text)out.push({field:"transcript",text,...(Number.isFinite(time)&&time>=0?{timeSeconds:time}:{})});}
+   for(const entry of v.slice(0,5000)){if(out.length>=5200)break;if(!entry||typeof entry!=="object")continue;const row=entry as Record<string,unknown>;const text=String(row.text??row.word??row.transcript??"").replace(/\s+/g," ").trim().slice(0,500);const time=Number(row.start??row.startSeconds);if(text)out.push({field:"transcript",text,...(Number.isFinite(time)&&time>=0?{timeSeconds:time}:{})});}
   }else if(TEXT_KEYS.has(k)||/(tag|keyword|object|subject|label)/i.test(k)||["transcript","probe","analysis","signals","metadata"].includes(k))collect(v,out,depth+1,k);
  }
 }
