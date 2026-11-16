@@ -238,7 +238,14 @@ const UPLOAD_TYPES = Object.freeze({
   "video/quicktime": ".mov",
   "image/png": ".png",
   "image/jpeg": ".jpg",
-  "image/webp": ".webp"
+  "image/webp": ".webp",
+  "audio/mpeg": ".mp3",
+  "audio/mp3": ".mp3",
+  "audio/wav": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/flac": ".flac",
+  "audio/mp4": ".m4a",
+  "audio/aac": ".aac"
 });
 
 /**
