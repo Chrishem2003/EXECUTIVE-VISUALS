@@ -257,14 +257,26 @@ export function createCloudVideoEnqueue({
           throw invalid;
         }
       }
+      const sourceDurationSeconds = verifiedSourceMetadata ? Math.ceil(verifiedSourceMetadata.durationSeconds) : undefined;
+      const directSourceResolution = verifiedSourceMetadata
+        ? (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 2160 ? "4k"
+          : Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 1080 ? "1080p"
+          : Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 720 ? "720p" : "480p")
+        : undefined;
+      const directUsesSourceDuration = runwayDirectVideoEditEnabled &&
+        (model === "kling_4" || model === "seedance2_5" && input.mode === "edit");
       const pricingInput = verifiedSourceMetadata ? {
         ...input,
-        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
-        inputVideoSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        ...(directUsesSourceDuration || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled
+          ? { durationSeconds: sourceDurationSeconds } : {}),
+        inputVideoSeconds: sourceDurationSeconds,
         outputFrames: verifiedSourceMetadata.frameCount,
         sourceWidth: verifiedSourceMetadata.sourceWidth,
         sourceHeight: verifiedSourceMetadata.sourceHeight,
-        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange
+        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange,
+        ...(runwayDirectVideoEditEnabled && (model === "kling_4" || input.mode === "edit" || input.mode === "extend")
+          ? { resolution: model === "kling_4" ? (directSourceResolution === "480p" ? "720p" : directSourceResolution === "4k" ? "1080p" : directSourceResolution) : directSourceResolution }
+          : {})
       } : input;
       const estimate = runwayRouterEnabled
         ? { amount: reservedAmount, currency: "USD", source: "approved_budget_ceiling_pending_runway_router_preflight" }
