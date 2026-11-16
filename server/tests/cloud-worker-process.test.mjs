@@ -50,6 +50,18 @@ test("cloud video worker may be configured with Runway Model Router without FAL 
  }),/saved config/);
 });
 
+test("direct Veo models require explicit Runway remote gates and Enterprise per-generation usage",()=>{
+ const base={...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
+  RUNWAY_VIDEO_MODELS:"veo3.1,veo3.1_fast",RUNWAY_API_KEY:"server-only",
+  RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_WORKSPACE_USAGE_ENABLED:"true"};
+ const config=readCloudWorkerConfig(base);
+ assert.equal(config.video,true);
+ assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_WORKSPACE_USAGE_ENABLED:"false"}),/Enterprise per-generation workspace usage/);
+ assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_VIDEO_ALLOW_REMOTE:"false"}),/Enterprise per-generation workspace usage/);
+ assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_VIDEO_MODELS:"gen4.5"}),/other direct Runway profiles/);
+});
+
 test("Luma Ray 3.2 can be the only video provider with an explicit account settlement rate",()=>{
  const config=readCloudWorkerConfig({
   ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
