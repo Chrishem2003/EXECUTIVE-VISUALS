@@ -34,7 +34,7 @@ export function assertVideoWorkflowNodeSupport(node, mode) {
   );
   if (supported) return true;
   const error = new Error(
-    "This video workflow node has no approved cloud adapter. Choose Runway Model Router or Luma Ray 3.2, or use a separately approved execution environment."
+    "This video workflow node has no approved cloud adapter. Choose an explicitly governed Runway direct model, Runway Model Router or Luma Ray 3.2, or use a separately approved execution environment."
   );
   error.code = "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE";
   throw error;
