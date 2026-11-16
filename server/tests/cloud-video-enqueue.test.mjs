@@ -173,7 +173,7 @@ test("Seedance 480p draft uses the preview rate before durable budget reservatio
   });
   const draftInput = {
     ...input, model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview",
-    durationSeconds: 8, outputFormat: "mp4", resolution: "480p", draft: true
+    durationSeconds: 8, outputFormat: "mp4", resolution: "480p", draft: true, draftTargetResolution: "1080p"
   };
   const result = await client.enqueue(args({ model: "seedance2_5", input: draftInput, reservedAmount: 5 }));
   assert.equal(result.jobId, resultRow.job_id);
