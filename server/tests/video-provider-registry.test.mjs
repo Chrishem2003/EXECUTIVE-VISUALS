@@ -87,12 +87,12 @@ test("Kling 4.0 is catalogued as a Runway-routed model but has no executable ada
   const model = getVideoProviderModel("runway", "kling_4");
   assert.equal(model.gateway, "runway");
   assert.equal(model.availability, "disabled");
-  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.executionAdapter, "runway-cloud-worker");
   assert.equal(model.capabilities.videoToVideo, true);
   assert.equal(model.capabilities.nativeAudio, true);
   assert.equal(model.capabilities.maxDurationSeconds, 30);
-  assert.equal(model.constraints.maxReferenceImages, 10);
-  assert.equal(model.constraints.maxReferenceVideos, 5);
+  assert.equal(model.capabilities.referenceImages, false);
+  assert.equal(model.capabilities.endFrame, false);
   assert.equal(model.constraints.pricingPromotionEndDate, "2026-11-30");
   assert.deepEqual(model.constraints.listCreditsPerSecondByResolution, { "720p": 15.7, "1080p": 23.5 });
   assert.deepEqual(model.constraints.inputVideoCreditsPerSecondByResolution, { "720p": 9.4, "1080p": 14.1 });
@@ -156,17 +156,17 @@ test("catalog is immutable and unavailable providers can be filtered", () => {
 test("Seedance 2.5 catalogue captures official 30-second references, draft and edit constraints without enabling execution", () => {
   const model = getVideoProviderModel("runway", "seedance2_5");
   assert.equal(model.availability, "disabled");
-  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.executionAdapter, "runway-cloud-worker");
   assert.equal(model.capabilities.videoEdit, true);
   assert.equal(model.capabilities.videoExtend, true);
   assert.equal(model.capabilities.maxDurationSeconds, 30);
-  assert.deepEqual(model.capabilities.resolutions, ["480p", "720p", "1080p"]);
+  assert.deepEqual(model.capabilities.resolutions, ["480p", "720p", "1080p", "4k"]);
   assert.equal(model.constraints.maxPromptCharacters, 15000);
   assert.equal(model.constraints.durationAutoBilledSeconds, 30);
-  assert.equal(model.constraints.maxReferenceImages, 30);
-  assert.equal(model.constraints.maxReferenceVideos, 10);
-  assert.equal(model.constraints.maxReferenceAudio, 10);
-  assert.deepEqual(model.constraints.outputCreditsPerSecondByResolution, { "480p": 20, "720p": 30, "1080p": 68 });
+  assert.equal(model.capabilities.referenceImages, false);
+  assert.equal(model.capabilities.referenceVideos, false);
+  assert.equal(model.capabilities.referenceAudio, false);
+  assert.deepEqual(model.constraints.outputCreditsPerSecondByResolution, { "480p": 20, "720p": 30, "1080p": 68, "4k": 110 });
   assert.equal(model.constraints.minimumCredits, 80);
   assert.equal(model.constraints.videoEditRequiresAutoDuration, true);
   assert.equal(listSelectableVideoProviderModels().length, 0);
@@ -345,3 +345,18 @@ test("Runway Model Router is catalogued as a disabled synthetic route, not a con
 
 
 
+
+test("Kling 3.0 Standard, Pro and 4K expose only the implemented multi-shot and audio capabilities",()=>{
+ for(const id of ["kling3.0_standard","kling3.0_pro","kling3.0_4k"]){
+  const model=getVideoProviderModel("runway",id);
+  assert.equal(model.availability,"disabled");
+  assert.equal(model.executionAdapter,"runway-cloud-worker");
+  assert.equal(model.capabilities.textToVideo,true);
+  assert.equal(model.capabilities.imageToVideo,true);
+  assert.equal(model.capabilities.videoToVideo,false);
+  assert.equal(model.capabilities.nativeAudio,true);
+  assert.deepEqual(model.capabilities.audioModes,["generated","none"]);
+  assert.equal(model.constraints.multiPromptMaxSegments,6);
+  assert.deepEqual(model.constraints.multiPromptSegmentCharacters,{min:3,max:512});
+ }
+});
