@@ -67,10 +67,13 @@ function validateKlingMultiPrompt(model,multiPrompt,shotType,promptText){
  if(shotType==="intelligence"&&(String(promptText||"").trim().length<2||String(promptText||"").length>2500))throw fail("Kling intelligence shot type requires a 2–2,500 character promptText.","VIDEO_GATEWAY_INVALID_INPUT");
  return Object.freeze(segments.map(item=>Object.freeze(item)));
 }
-export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize"}={}){
+export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize",draft=false}={}){
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
+  if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  if(draft&&!["provider_default","480p"].includes(resolution))throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const kling3=id.startsWith("kling3.0_");
   const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
@@ -79,17 +82,20 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
-  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  const effectiveResolution=draft?"480p":resolution==="provider_default"?profile.defaultResolution:resolution;
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
   if(!ratio)throw fail("No verified output ratio mapping exists for this model and aspect ratio.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
-  const payload={model:id,ratio,...(text?{promptText:text}:{}),...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds})};
+  const payload={model:id,ratio,...(text?{promptText:text}:{}),...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(draft?{draft:true}:{})};
   if(id==="seedance2_5"&&segments)throw fail("Seedance multi-shot requests require the dedicated recipe adapter and are not enabled in this worker.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   return Object.freeze(payload);
 }
-export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize"}={}){
+export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize",draft=false}={}){
  const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
  if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
+ if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(draft&&!["provider_default","480p"].includes(resolution))throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const kling3=id.startsWith("kling3.0_");
  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
@@ -98,9 +104,9 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
- const payload={model:id,...(text?{promptText:text}:{}),promptImage,...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds})};
+ const payload={model:id,...(text?{promptText:text}:{}),promptImage,...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(draft?{draft:true}:{})};
  if(id==="seedance2_5"){
-  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  const effectiveResolution=draft?"480p":resolution==="provider_default"?profile.defaultResolution:resolution;
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
   if(!ratio)throw fail("No verified Seedance image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
