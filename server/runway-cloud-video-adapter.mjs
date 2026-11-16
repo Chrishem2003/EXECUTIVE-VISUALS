@@ -306,7 +306,7 @@ export function createRunwayCloudVideoAdapter({
             ...(keyframes.length ? { keyframes } : {}), outputFormat: "mp4" };
         } else if (selectedModel === "seedance2_5") {
           const mode = input.mode || "reference";
-          body = { model: selectedModel, promptVideo: input.videoUri, promptText: input.prompt.trim(), mode,
+          body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode,
             ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
           if (mode === "reference") {
             const referencePayload = buildRunwayVideoPayload({
@@ -317,7 +317,7 @@ export function createRunwayCloudVideoAdapter({
             });
             body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio };
           } else if (mode === "extend") {
-            const duration = input.durationSeconds === undefined ? "auto" : input.durationSeconds;
+            const duration = input.duration !== undefined ? input.duration : input.durationSeconds === undefined ? "auto" : input.durationSeconds;
             if (duration !== "auto" && (!Number.isInteger(duration) || duration < 4 || duration > 30)) {
               throw fail("Seedance extend duration must be auto or 4–30 seconds.", "RUNWAY_INPUT_INVALID");
             }
