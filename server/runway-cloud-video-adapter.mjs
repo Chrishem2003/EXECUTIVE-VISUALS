@@ -1,3 +1,5 @@
+import { buildRunwayVideoPayload, buildRunwayImageToVideoPayload } from "./runway-video-gateway.mjs";
+
 const API_ORIGIN = "https://api.dev.runwayml.com";
 const API_VERSION = "2024-11-06";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -39,7 +41,7 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
+  if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
     throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing, Magnific upscaling and Ruby HDR profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
@@ -175,7 +177,7 @@ export function createRunwayCloudVideoAdapter({
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
       }
       if (isImageToVideo) {
-        if (selectedModel !== "gen4.5") throw fail("First-frame generation currently requires the verified Gen-4.5 profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
         let promptImageUri = prepared.promptImageUri;
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -288,28 +290,41 @@ export function createRunwayCloudVideoAdapter({
       if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
         throw fail("Runway Gen-4.5 requires a prompt of 1 to 1,000 characters.", "VIDEO_JOB_INPUT_MISMATCH");
       }
-      const ratio = RATIOS[input.aspectRatio || "16:9"];
-      if (!ratio) throw fail("Runway aspect ratio is not supported by the Gen-4.5 text-to-video contract.", "RUNWAY_INPUT_INVALID");
-      const duration = input.durationSeconds === undefined ? 5 : input.durationSeconds;
-      if (![5, 10].includes(duration)) throw fail("Runway Gen-4.5 duration must be 5 or 10 seconds.", "RUNWAY_INPUT_INVALID");
       if (input.referenceAssetIds?.length || input.referenceImageDataUrl) {
-        throw fail("Runway text-to-video does not accept unresolved reference media.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        throw fail("Reference collections require the dedicated Runway Model Router adapter.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       const imageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
-      if (imageToVideo && !isRunwayUri(input.promptImageUri)) {
-        throw fail("Gen-4.5 image-to-video requires a prepared Runway first-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+      let payload;
+      if (imageToVideo) {
+        if (!isRunwayUri(input.promptImageUri)) {
+          throw fail("Image-to-video requires a prepared Runway first-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        }
+        // Reuse the direct gateway's model-specific validation and ratio mapping;
+        // replace its validated placeholder with the private ephemeral upload URI.
+        payload = {
+          ...buildRunwayImageToVideoPayload({
+            model: selectedModel,
+            prompt: input.prompt.trim(),
+            promptImage: "data:image/png;base64,AA==",
+            durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
+            aspectRatio: input.aspectRatio || "16:9",
+            resolution: input.resolution || "provider_default"
+          }),
+          promptImage: input.promptImageUri
+        };
+      } else {
+        payload = buildRunwayVideoPayload({
+          model: selectedModel,
+          prompt: input.prompt.trim(),
+          durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
+          aspectRatio: input.aspectRatio || "16:9",
+          resolution: input.resolution || "provider_default"
+        });
       }
       const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", {
         method: "POST",
         submission: true,
-        body: {
-          model: selectedModel,
-          promptText: input.prompt.trim(),
-          ...(imageToVideo ? { promptImage: input.promptImageUri } : {}),
-          ratio,
-          duration,
-          ...(typeof input.audio === "boolean" ? { audio: input.audio } : {})
-        }
+        body: payload
       });
       return { taskId: taskId(submitted.id), status: "queued" };
     },
