@@ -961,7 +961,7 @@ test("Seedance video-to-video draft enhancement quote includes the verified inpu
   input:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"reference",sourceVideoAssetId,draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
   output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
  };
- const sourceResolver={async resolveMetadata(args){metadataCalls++;return{...args,ownerId,projectId,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}};
+ const sourceResolver={async resolveMetadata(args){metadataCalls++;return{...args,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}};
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",runwaySourceResolver:sourceResolver,
   fetchImpl:async(url,options)=>{
@@ -1029,7 +1029,7 @@ test("Seedance draft enhancement approval revalidates the source and atomically 
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  runwaySourceResolver:{async resolveMetadata(args){return{...args,ownerId,projectId,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}},
+  runwaySourceResolver:{async resolveMetadata(args){return{...args,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}},
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
    if(String(url).endsWith("/rpc/approve_and_enqueue_video_workflow")){
