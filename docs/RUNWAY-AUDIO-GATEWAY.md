@@ -29,12 +29,22 @@ The provider may reject recordings outside its documented duration or media cons
 
 ## Workflow construction
 
+### Existing audio asset
+
 1. Upload an audio asset into the private project.
 2. Open Voice & Localization.
 3. Choose voice isolation or dubbing and select the source audio.
 4. Save the workflow and review the exact source/operation at the approval checkpoint.
 5. After the administrator has explicitly enabled the gateway, approve the node to submit the provider task.
 6. The completed audio derivative is saved to the same project with model, provider request and checksum provenance.
+
+### Video dialogue dubbing
+
+1. Select a private source video in Voice & Localization.
+2. Confirm source-media rights and choose the target language.
+3. Keep generic voice selected unless speaker permission for voice cloning is available and explicitly confirmed.
+4. The workflow waits for approval, extracts the source video's audio locally, then submits the audio to the dubbing adapter.
+5. The dubbed audio is saved as a private derivative for placement on the existing timeline. The source video is not overwritten. Automatic replacement/remux of the video's original audio track is a separate finishing step and is not claimed as complete by this adapter.
 
 ## Tests
 
