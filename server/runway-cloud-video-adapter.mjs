@@ -264,6 +264,9 @@ export function createRunwayCloudVideoAdapter({
       if (input.draft === true && selectedModel !== "seedance2_5") {
         throw fail("Draft previews are supported only by Seedance 2.5.", "RUNWAY_INPUT_INVALID");
       }
+      if (input.draft === true && input.resolution !== "480p") {
+        throw fail("Seedance draft requests must explicitly reserve and select the 480p preview tier.", "RUNWAY_INPUT_INVALID");
+      }
       if (input.operation === "video-to-hdr") {
         if (selectedModel !== "ruby" || !isRunwayUri(input.videoUri)) {
           throw fail("Ruby HDR requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
@@ -324,7 +327,7 @@ export function createRunwayCloudVideoAdapter({
         } else if (selectedModel === "seedance2_5") {
           const mode = input.mode || "reference";
           if (input.draft === true && mode !== "reference") throw fail("Seedance draft previews are supported only in reference mode, not extend or edit mode.", "RUNWAY_INPUT_INVALID");
-          if (input.draft === true && input.resolution !== undefined && input.resolution !== "480p") throw fail("Seedance draft previews are fixed at 480p.", "RUNWAY_INPUT_INVALID");
+          if (input.draft === true && input.resolution !== "480p") throw fail("Seedance draft previews are fixed at 480p.", "RUNWAY_INPUT_INVALID");
           body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode,
             ...(input.draft === true ? { draft: true } : {}),
             ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
