@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
-import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
+import { buildMediaOperationArgs, executableAvailable, buildAudioMasterAnalysisArgs, parseAudioMasterMeasurement, buildAudioMasterRenderArgs } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { parseSceneChangeTimes, parseFreezeEvents } from "./media-signal-analysis.mjs";
@@ -23,7 +23,7 @@ const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
 const SUPPORTED = new Set([
-  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
+  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.audio-master",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
   "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
 ]);
@@ -334,7 +334,16 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
         sourceDurationSeconds = parsedSourceDuration;
       }
-      const plan = buildCloudMediaOutputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
+      let audioMastering=null;
+      let plan;
+      if(job.job_type==="media.audio-master"){
+        if(!String(materialized.asset.mediaType||"").startsWith("audio/"))throw Object.assign(new Error("Audio mastering requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+        onProgress(15);
+        const analysis=await runProcess(ffmpeg,buildAudioMasterAnalysisArgs({sourcePath,input}),{signal,timeoutMs:Math.min(timeoutMs,5*60*1000),onProgress});
+        audioMastering=parseAudioMasterMeasurement(analysis.stderr);
+        audioMastering.targets={integratedLufs:Number(input.targetLufs??-16),loudnessRangeLu:Number(input.targetLra??11),truePeakDbtp:Number(input.truePeakDbtp??-1.5)};
+        plan={args:buildAudioMasterRenderArgs({sourcePath,outputPath,input,measurement:audioMastering}),name:String(materialized.asset.name||"audio").replace(/\\.[^.]+$/,"").slice(0,140)+"-mastered.wav",mediaType:"audio/wav"};
+      }else plan=buildCloudMediaOutputPlan(job.job_type,input,materialized.asset,sourcePath,outputPath);
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
@@ -418,7 +427,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         mediaType: plan.mediaType,
         path: outputPath,
         derivativeOf: sourceId,
-        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}), c2paPreservation },
+        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}), ...(audioMastering?{audioMastering:{standard:"EBU R128",method:"two-pass loudnorm",measurement:audioMastering,output:{codec:"pcm_s24le",sampleRateHz:48000}}}:{}), c2paPreservation },
         publicationKey: job.id + ":output:v1"
       });
       onProgress(100);
