@@ -7,10 +7,13 @@ const project="423e4567-e89b-42d3-a456-426614174000";
 const runId="523e4567-e89b-42d3-a456-426614174000";
 const nodeId="video-node";
 const cloudJobId="623e4567-e89b-42d3-a456-426614174000";
+const quoteId="723e4567-e89b-42d3-a456-426614174000";
+const requestId="workflow-test-request";
+const requestHash="a".repeat(64);
 
-function fixture(cloudStatus="succeeded",originalJobStatus="blocked"){
+function fixture(cloudStatus="succeeded",originalJobStatus="blocked",cloudJobOverrides={}){
  const run={id:runId,owner_id:owner,project_id:project,status:"blocked",job_id:"old-local-job"};
- const node={status:"blocked",output_json:JSON.stringify({cloudJobId}),error_json:JSON.stringify({code:"CLOUD_VIDEO_JOB_PENDING"})};
+ const node={status:"blocked",output_json:JSON.stringify({cloudJobId,quoteId,requestId,requestHash,approvedMaxAmount:2}),error_json:JSON.stringify({code:"CLOUD_VIDEO_JOB_PENDING"})};
  const parkedJob={status:originalJobStatus};
  const jobs=[],events=[],audits=[];
  const db={
@@ -34,7 +37,7 @@ function fixture(cloudStatus="succeeded",originalJobStatus="blocked"){
    throw new Error("Unexpected SQL: "+sql);
   }
  };
- const cloudTimelineApi={async handle(input){assert.equal(input.ownerId,owner);assert.equal(input.path,"/api/cloud/jobs/"+cloudJobId);return{status:200,body:{job:{id:cloudJobId,status:cloudStatus,error:{message:"Provider rejected the request."}}}};}};
+ const cloudTimelineApi={async handle(input){assert.equal(input.ownerId,owner);assert.equal(input.path,"/api/cloud/jobs/"+cloudJobId);return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:project,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash},status:cloudStatus,error:{message:"Provider rejected the request."},...cloudJobOverrides}}};}};
  return{db,run,node,parkedJob,jobs,events,audits,cloudTimelineApi};
 }
 
@@ -86,6 +89,29 @@ test("cloud job requiring input keeps the workflow blocked but closes its parked
  assert.equal(f.events.length,1);
  assert.equal(f.events[0][2],"job.needs_input");
  assert.equal(f.jobs.length,0);
+});
+
+
+test("does not resume or terminalize a cloud job whose owner, project, type or approved request receipt differs",async()=>{
+ const cases=[
+  {owner_id:"923e4567-e89b-42d3-a456-426614174000"},
+  {project_id:"923e4567-e89b-42d3-a456-426614174000"},
+  {job_type:"timeline.render"},
+  {input:{workflowQuoteId:"923e4567-e89b-42d3-a456-426614174000",workflowRequestId:requestId,requestHash}},
+  {input:{workflowQuoteId:quoteId,workflowRequestId:"workflow-other-request",requestHash}},
+  {input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash:"b".repeat(64)}}
+ ];
+ for(const override of cases){
+  const f=fixture("succeeded","blocked",override),errors=[];
+  const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi,onError:error=>errors.push(error)});
+  assert.deepEqual(result,{scanned:1,resumed:0,terminal:0});
+  assert.equal(f.run.status,"blocked");
+  assert.equal(f.node.status,"blocked");
+  assert.equal(f.parkedJob.status,"blocked");
+  assert.equal(f.jobs.length,0);
+  assert.equal(errors.length,1);
+  assert.equal(errors[0].code,"WORKFLOW_CLOUD_JOB_RECEIPT_MISMATCH");
+ }
 });
 
 test("running cloud job leaves the workflow parked without creating local jobs",async()=>{
