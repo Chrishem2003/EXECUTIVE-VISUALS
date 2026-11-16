@@ -231,22 +231,23 @@ export function createRunwayCloudVideoAdapter({
       return { ...input, videoUri, keyframes };
     },
 
-    async preflight(input) {
-      if (selectedModel !== "veo3.1" && selectedModel !== "veo3.1_fast") return null;
-      const duration = input?.durationSeconds;
-      if (![4, 6, 8].includes(duration)) throw fail("Veo preflight requires an explicit 4, 6 or 8 second duration.", "RUNWAY_INPUT_INVALID");
-      const audio = input.audio !== false;
-      const creditsPerSecond = selectedModel === "veo3.1"
-        ? (audio ? 40 : 20)
-        : (audio ? 15 : 10);
-      const estimatedCredits = duration * creditsPerSecond;
-      return Object.freeze({
-        billable: false, provider: "runway", model: selectedModel,
-        estimatedCredits, estimatedUsd: Number((estimatedCredits * 0.01).toFixed(2)), currency: "USD",
-        pricingSource: "https://dev.runwayml.com/learn/veo-3-1-api",
-        audio, durationSeconds: duration
-      });
-    },
+    ...(selectedModel === "veo3.1" || selectedModel === "veo3.1_fast" ? {
+      async preflight(input) {
+        const duration = input?.durationSeconds;
+        if (![4, 6, 8].includes(duration)) throw fail("Veo preflight requires an explicit 4, 6 or 8 second duration.", "RUNWAY_INPUT_INVALID");
+        const audio = input.audio !== false;
+        const creditsPerSecond = selectedModel === "veo3.1"
+          ? (audio ? 40 : 20)
+          : (audio ? 15 : 10);
+        const estimatedCredits = duration * creditsPerSecond;
+        return Object.freeze({
+          billable: false, provider: "runway", model: selectedModel,
+          estimatedCredits, estimatedUsd: Number((estimatedCredits * 0.01).toFixed(2)), currency: "USD",
+          pricingSource: "https://dev.runwayml.com/learn/veo-3-1-api",
+          audio, durationSeconds: duration
+        });
+      }
+    } : {}),
 
     async submit(input) {
       assertEnabled();
