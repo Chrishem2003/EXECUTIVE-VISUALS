@@ -24,6 +24,14 @@ declare
     if coalesce(p_input ->> 'operation','') not in ('text-to-video','image-to-video','video-to-video') then
       raise exception 'VIDEO_PRICE_OPERATION_INVALID';
     end if;
+    if p_input ? 'draft' and jsonb_typeof(p_input -> 'draft') <> 'boolean' then
+      raise exception 'VIDEO_DRAFT_FLAG_INVALID';
+    end if;
+    if p_input ->> 'draft' = 'true' and
+       (p_model <> 'seedance2_5' or p_input ->> 'resolution' <> '480p' or
+        (p_input ->> 'operation' = 'video-to-video' and coalesce(p_input ->> 'mode','reference') <> 'reference')) then
+      raise exception 'VIDEO_DRAFT_CONFIGURATION_INVALID';
+    end if;
     if coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]{1,2}$' then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
