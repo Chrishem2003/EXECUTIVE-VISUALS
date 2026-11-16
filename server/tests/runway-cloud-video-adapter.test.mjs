@@ -400,3 +400,65 @@ test("passes explicit native-audio control only to Runway models that document a
   });
   assert.equal(body.audio, false);
 });
+
+
+test("Seedance 2.5 reference video-to-video validates and uploads a private source", async () => {
+  let submitted;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async input => {
+      assert.equal(input.sourceVideoAssetId, "source-video");
+      return {
+        sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+        sourceMetadata: { durationSeconds: 8, width: 1920, height: 1080, frameRate: 30 }
+      };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/seedance-source",
+        fields: { key: "seedance-source" }, runwayUri: "runway://ephemeral/seedance-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/seedance-source") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) {
+        submitted = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "seedance2_5", operation: "video-to-video",
+    sourceVideoAssetId: "source-video", prompt: "Continue the same cinematic scene",
+    mode: "reference", durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/seedance-source");
+  assert.equal(prepared.sourceMetadata.width, 1920);
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  assert.deepEqual(submitted, {
+    model: "seedance2_5", videoUri: "runway://ephemeral/seedance-source",
+    promptText: "Continue the same cinematic scene", mode: "reference",
+    duration: 8, ratio: "1280:720", resolution: "720p"
+  });
+});
+
+test("Kling 4 video-to-video rejects source metadata outside the provider contract before submission", async () => {
+  let providerCalls = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "kling_4",
+    prepareInput: async () => ({
+      sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+      sourceMetadata: { durationSeconds: 8, width: 640, height: 360, frameRate: 30 }
+    }),
+    fetchImpl: async () => { providerCalls += 1; return new Response(JSON.stringify({ id }), { status: 200 }); }
+  });
+  await assert.rejects(
+    () => adapter.prepareInput({
+      provider: "runway", model: "kling_4", operation: "video-to-video",
+      sourceVideoAssetId: "source-video", prompt: "Edit this clip"
+    }, { job: { owner_id: "owner-1" } }),
+    error => error.code === "RUNWAY_INPUT_INVALID"
+  );
+  assert.equal(providerCalls, 0);
+});
