@@ -342,7 +342,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const analysis=await runProcess(ffmpeg,buildAudioMasterAnalysisArgs({sourcePath,input}),{signal,timeoutMs:Math.min(timeoutMs,5*60*1000),onProgress});
         audioMastering=parseAudioMasterMeasurement(analysis.stderr);
         audioMastering.targets={integratedLufs:Number(input.targetLufs??-16),loudnessRangeLu:Number(input.targetLra??11),truePeakDbtp:Number(input.truePeakDbtp??-1.5)};
-        plan={args:buildAudioMasterRenderArgs({sourcePath,outputPath,input,measurement:audioMastering}),name:String(materialized.asset.name||"audio").replace(/\\.[^.]+$/,"").slice(0,140)+"-mastered.wav",mediaType:"audio/wav"};
+        const audioSourceName=String(materialized.asset.name||"audio");
+        plan={args:buildAudioMasterRenderArgs({sourcePath,outputPath,input,measurement:audioMastering}),name:(audioSourceName.includes(".")?audioSourceName.slice(0,audioSourceName.lastIndexOf(".")):audioSourceName).slice(0,140)+"-mastered.wav",mediaType:"audio/wav"};
       }else plan=buildCloudMediaOutputPlan(job.job_type,input,materialized.asset,sourcePath,outputPath);
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
