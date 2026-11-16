@@ -184,6 +184,27 @@ test("Seedance 480p draft uses the preview rate before durable budget reservatio
   assert.equal(calls[0].body.p_input.draft, true);
 });
 
+test("Seedance draft enhancement reserves the separately priced 1080p rate",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",
+   VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"test-only-not-used",RUNWAY_VIDEO_MODELS:"seedance2_5"},
+  fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}
+ });
+ const enhancement={
+  ...input,model:"seedance2_5",operation:"text-to-video",prompt:"Enhance approved preview",
+  durationSeconds:8,outputFormat:"mp4",resolution:"1080p",audio:true,draftEnhancement:true,
+  draftTaskId:"223e4567-e89b-42d3-a456-426614174000",sourceDraftJobId:"323e4567-e89b-42d3-a456-426614174000"
+ };
+ const result=await client.enqueue(args({model:"seedance2_5",input:enhancement,reservedAmount:5.5}));
+ assert.equal(result.jobId,resultRow.job_id);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].body.p_input.resolution,"1080p");
+ assert.equal(calls[0].body.p_input.draftTaskId,enhancement.draftTaskId);
+ assert.equal(calls[0].body.p_input.draftEnhancement,true);
+});
+
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
