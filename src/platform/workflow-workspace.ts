@@ -122,7 +122,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Choose keyframe images from this project · asset-library order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · match selected asset-library order<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<label class="wf-rights-confirm"><input type="checkbox" name="videoDraft" '+(config.draft===true?'checked':'')+(draftEnabled?'':' disabled')+'> Seedance 2.5 draft preview · fixed 480p quote, save intended master resolution for follow-on enhancement</label>'+
+ '<label class="wf-rights-confirm"><input type="checkbox" name="videoDraft" '+(config.draft===true?'checked':'')+(draftEnabled?'':' disabled')+'> Seedance 2.5 draft preview · fixed 480p, enhance to 1080p (4K requires a full generation)</label>'+
  '<p>Direct Runway models execute through the owner-approved cloud queue. Text, private first-frame and source-video operations are validated against each model profile; Seedance draft previews are billed at 480p. Luma retains its separate generate/edit/reframe contract. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
@@ -401,8 +401,9 @@ document.addEventListener("submit",event=>{
    delete config.sourceVideoAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
   }
   if(model==="seedance2_5"&&data.get("videoDraft")==="on"){
+   if(config.resolution!=="1080p")throw new Error("Seedance draft previews enhance to 1080p. Select 1080p for draft mode; use a separate full generation for 4K.");
    config.draft=true;
-   config.draftTargetResolution=config.resolution==="480p"?"1080p":config.resolution;
+   config.draftTargetResolution="1080p";
    config.resolution="480p";
   }else{delete config.draft;delete config.draftTargetResolution;}
   delete config.editStrength;delete config.sourcePosition;
