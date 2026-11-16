@@ -177,7 +177,7 @@ export function createRunwayCloudVideoAdapter({
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
       }
       if (isImageToVideo) {
-        if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
         let promptImageUri = prepared.promptImageUri;
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -243,9 +243,9 @@ export function createRunwayCloudVideoAdapter({
       if (selectedModel === "gemini_omni_flash_1.2") {
         const mode = input.mode || "reference";
         if (!["reference", "extend", "edit"].includes(mode)) throw fail("Gemini Omni 1.2 video mode must be reference, extend or edit.", "RUNWAY_INPUT_INVALID");
-        const maxSourceSeconds = mode === "extend" ? 30 : 15;
-        if (metadata.durationSeconds < 3 || metadata.durationSeconds > maxSourceSeconds) {
-          throw fail("Gemini Omni 1.2 source video must be 3–" + maxSourceSeconds + " seconds for the selected mode.", "RUNWAY_INPUT_INVALID");
+        const maxSourceSeconds = mode === "extend" ? 30 : 10;
+        if (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds <= 0 || metadata.durationSeconds > maxSourceSeconds || mode === "edit" && metadata.durationSeconds >= 10) {
+          throw fail("Gemini Omni 1.2 reference sources must be at most 10 seconds, edit sources must be under 10 seconds, and extend sources must be at most 30 seconds.", "RUNWAY_INPUT_INVALID");
         }
         if (keyframes.length) throw fail("Gemini Omni 1.2 video-to-video does not accept timestamped keyframe uploads in this worker.", "RUNWAY_INPUT_INVALID");
         if (mode === "edit" && input.duration !== "auto") throw fail("Gemini Omni 1.2 edit mode requires duration='auto'.", "RUNWAY_INPUT_INVALID");
@@ -399,9 +399,11 @@ export function createRunwayCloudVideoAdapter({
               throw fail("Gemini Omni 1.2 extend duration must be auto or 3–15 seconds.", "RUNWAY_INPUT_INVALID");
             }
             body.duration = duration;
+            body.resolution = input.resolution || "720p";
           } else if (mode === "edit") {
             if (input.duration !== "auto") throw fail("Gemini Omni 1.2 edit mode requires duration='auto'.", "RUNWAY_INPUT_INVALID");
             body.duration = "auto";
+            body.resolution = input.resolution || "720p";
           } else {
             throw fail("Gemini Omni 1.2 video mode must be reference, extend or edit.", "RUNWAY_INPUT_INVALID");
           }
