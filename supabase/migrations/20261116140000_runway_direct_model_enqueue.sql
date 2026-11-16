@@ -9,10 +9,12 @@ declare
   old_allowlist text := $old_allowlist$  if not (
     (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
+    or (p_provider = 'luma' and p_model = 'ray-3.2')
   ) then$old_allowlist$;
   new_allowlist text := $new_allowlist$  if not (
     (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
+    or (p_provider = 'luma' and p_model = 'ray-3.2')
   ) then$new_allowlist$;
   old_runway_branch text := $old_runway_branch$  elsif p_provider = 'runway' then
     if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
