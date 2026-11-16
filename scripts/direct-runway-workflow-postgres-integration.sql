@@ -17,11 +17,13 @@ begin
   end if;
   if position('seedance2_5' in quote_sql)=0
      or position('kling_4' in quote_sql)=0
+     or position('kling_4_flash' in quote_sql)=0
      or position('runway_direct_model_list_price' in quote_sql)=0 then
     raise exception 'DIRECT_RUNWAY_WORKFLOW_QUOTE_POLICY_MISSING';
   end if;
   if position('seedance2_5' in approval_sql)=0
      or position('kling_4' in approval_sql)=0
+     or position('kling_4_flash' in approval_sql)=0
      or position('b.model = quote_row.model' in approval_sql)=0 then
     raise exception 'DIRECT_RUNWAY_WORKFLOW_APPROVAL_POLICY_MISSING';
   end if;
@@ -33,6 +35,7 @@ begin
     and conname='video_workflow_quotes_pricing_source_check';
   if model_check is null or position('seedance2_5' in model_check)=0
      or position('kling_4' in model_check)=0
+     or position('kling_4_flash' in model_check)=0
      or position('ray-3.2' in model_check)=0 then
     raise exception 'DIRECT_RUNWAY_WORKFLOW_QUOTE_MODEL_CONSTRAINT_MISSING';
   end if;
