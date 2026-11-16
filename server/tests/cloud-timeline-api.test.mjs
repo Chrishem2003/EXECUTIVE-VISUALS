@@ -892,6 +892,7 @@ test("direct Seedance workflow quote uses the official list-price estimator and 
  assert.equal(result.status,200,JSON.stringify(result.body));
  assert.equal(result.body.quote.billable,false);
  assert.equal(result.body.quote.requiresExplicitApproval,true);
+ assert.equal(result.body.quote.paidExecutionEnabled,false);
  assert.equal(result.body.quote.model,"seedance2_5");
  assert.equal(result.body.quote.estimatedCredits,160);
  assert.equal(result.body.quote.estimatedAmount,1.6);
