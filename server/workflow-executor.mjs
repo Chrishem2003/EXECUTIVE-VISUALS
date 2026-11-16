@@ -416,6 +416,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       mediaType="media.transcode";mediaInput={sourceAssetId,outputFormat:String(config.outputFormat||"mp4"),preset:String(config.preset||"medium")};
     }else if(node.kind==="media.audio-clean"){
       mediaType="media.audio-clean";mediaInput={sourceAssetId,noiseFloor:Number(config.noiseFloor??-25),targetLufs:Number(config.targetLufs??-16)};
+    }else if(node.kind==="media.audio-master"){
+      mediaType="media.audio-master";mediaInput={sourceAssetId,targetLufs:Number(config.targetLufs??-16),targetLra:Number(config.targetLra??11),truePeakDbtp:Number(config.truePeakDbtp??-1.5)};
     }else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale","video.resize"].includes(node.kind)){
       mediaType=node.kind==="video.resize"?"media.resize":node.kind;
       mediaInput={sourceAssetId,width:Number(config.width||(node.kind==="media.upscale"?2560:1920)),height:Number(config.height||(node.kind==="media.upscale"?1440:1080)),fit:String(config.fit||"contain"),algorithm:String(config.algorithm||"lanczos"),sharpness:Number(config.sharpness??0),luma:Number(config.luma??4),chroma:Number(config.chroma??3),brightness:Number(config.brightness??0),contrast:Number(config.contrast??1),saturation:Number(config.saturation??1),fps:Number(config.fps||30)};
@@ -436,7 +438,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       const assetId=result.outputAsset.id;
       output=nodeOutput(node,assetId);output.asset=assetId;
       if(mediaType==="media.thumbnail")output.image=assetId;
-      if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean")output.audio=assetId;
+      if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean"||mediaType==="media.audio-master")output.audio=assetId;
       if(mediaType==="media.transcode"||mediaType==="timeline.render")output.video=assetId;
     }else if(result.metadata){
       output=nodeOutput(node,result.metadata);output.report=node.kind==="quality-check"?buildMediaQualityReport(result.metadata,{requireVideo:config.requireVideo!==false,requireAudio:config.requireAudio===true}):result.metadata;
