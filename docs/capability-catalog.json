@@ -505,6 +505,11 @@
       "Manage ordered media tracks"
     ],
     [
+      "video.audio-replace",
+      "video",
+      "Replace video soundtrack with an approved audio derivative"
+    ],
+    [
       "video.continuity-check",
       "video",
       "Evaluate visual and narrative continuity across shots"
@@ -672,6 +677,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 119,
+  "capabilityCount": 120,
   "domainCount": 23
 }
