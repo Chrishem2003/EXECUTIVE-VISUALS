@@ -430,7 +430,7 @@ test("Seedance 2.5 reference video-to-video validates and uploads a private sour
   const input = {
     provider: "runway", model: "seedance2_5", operation: "video-to-video",
     sourceVideoAssetId: "source-video", prompt: "Continue the same cinematic scene",
-    mode: "reference", durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+    mode: "reference", durationSeconds: 8, aspectRatio: "16:9", resolution: "720p", audio: false
   };
   const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
   assert.equal(prepared.videoUri, "runway://ephemeral/seedance-source");
@@ -439,7 +439,7 @@ test("Seedance 2.5 reference video-to-video validates and uploads a private sour
   assert.deepEqual(submitted, {
     model: "seedance2_5", videoUri: "runway://ephemeral/seedance-source",
     promptText: "Continue the same cinematic scene", mode: "reference",
-    duration: 8, ratio: "1280:720", resolution: "720p"
+    duration: 8, ratio: "1280:720", resolution: "720p", audio: false
   });
 });
 
