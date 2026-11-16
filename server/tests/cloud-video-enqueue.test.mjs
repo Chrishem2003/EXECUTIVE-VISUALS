@@ -149,6 +149,17 @@ test("cloud video deferral and quarantine reject invalid controls before network
   assert.equal(calls, 0);
 });
 
+test("Seedance draft enqueue rejects unpriced or unsupported preview configurations before network access", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
+  const seedance = { ...input, provider: "runway", model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview", durationSeconds: 8, outputFormat: "mp4" };
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "720p" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, draft: "true" } })), error => error.code === "VIDEO_DRAFT_FLAG_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "480p", operation: "video-to-video", mode: "edit" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  assert.equal(calls, 0);
+});
+
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
