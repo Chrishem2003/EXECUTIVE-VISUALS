@@ -165,6 +165,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!source||source.owner_id!==ownerId||source.project_id!==projectId||source.job_type!=="video.generate"||source.status!=="succeeded"||
      !Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
      input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||
+     input.operation==="video-to-video"&&input.mode!=="reference"||
      output.provider!=="runway"||output.model!=="seedance2_5"||!safeId(output.providerTaskId)||
      requestedDraftTaskId&&output.providerTaskId!==requestedDraftTaskId||
      !Array.isArray(output.assetIds)||output.assetIds.length<1||
@@ -172,7 +173,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    throw Object.assign(new Error("The source must be a succeeded Seedance 2.5 480p preview from this project, owned by this account and created within the last seven days."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
   }
   return {...node,config:{...config,provider:"runway",model:"seedance2_5",durationSeconds:input.durationSeconds,
-   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId:output.providerTaskId,sourceDraftJobId:sourceJobId}};
+   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId:output.providerTaskId,sourceDraftJobId:sourceJobId,
+   ...(safeId(input.sourceVideoAssetId)?{sourceDraftVideoAssetId:input.sourceVideoAssetId}:{})}};
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
@@ -357,10 +359,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(directRunway&&!await validateDirectRunwayFrameAsset(service.assets,ownerId,projectId,workflowRequest.input.startFrameAssetId))
       return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"Seedance and Kling first frames must be verified private image assets in this exact project."}});
      let sourceMetadata=null;
-     if(workflowRequest.input.sourceVideoAssetId){
-      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
-      sourceMetadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
-      if(!sourceMetadata||sourceMetadata.ownerId!==ownerId||sourceMetadata.projectId!==projectId||sourceMetadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+     const metadataSourceAssetId=workflowRequest.input.sourceVideoAssetId||workflowRequest.input.sourceDraftVideoAssetId;
+     if(metadataSourceAssetId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video source quotes require a server-side private source metadata probe."}});
+      sourceMetadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:metadataSourceAssetId});
+      if(!sourceMetadata||sourceMetadata.ownerId!==ownerId||sourceMetadata.projectId!==projectId||sourceMetadata.assetId!==metadataSourceAssetId||
          !String(sourceMetadata.mediaType||"").startsWith("video/")||!Number.isFinite(sourceMetadata.durationSeconds)||
          sourceMetadata.durationSeconds<2||sourceMetadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
@@ -390,7 +393,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        durationSeconds:workflowRequest.model==="kling_4"&&workflowRequest.operation==="video-to-video"?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
-       inputType:input.sourceVideoAssetId?"video":input.startFrameAssetId?"image":"text"
+       inputType:input.sourceVideoAssetId||input.sourceDraftVideoAssetId?"video":input.startFrameAssetId?"image":"text"
       });
       estimate={provider:"runway",model:workflowRequest.model,estimatedCredits:Math.ceil(priced.credits),
        estimatedUsd:Number((Math.ceil(priced.credits)*0.01).toFixed(6)),currency:priced.currency,billable:false,
@@ -467,15 +470,16 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"The first frame must remain a verified private image asset in this exact project."}});
      if(isLuma&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
       return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must remain verified private image assets in this exact project."}});
-     if(workflowRequest.input.sourceVideoAssetId){
-      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video approval requires a private server-side source metadata probe."}});
-      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
-      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+     const approvalMetadataSourceId=workflowRequest.input.sourceVideoAssetId||workflowRequest.input.sourceDraftVideoAssetId;
+     if(approvalMetadataSourceId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video source approval requires a private server-side source metadata probe."}});
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:approvalMetadataSourceId});
+      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==approvalMetadataSourceId||
          !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
          metadata.durationSeconds<2||metadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must remain a verified project asset between 2 and 30 seconds."}});
       }
-      if(Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+      if(!directRunway&&Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
       }
      }
