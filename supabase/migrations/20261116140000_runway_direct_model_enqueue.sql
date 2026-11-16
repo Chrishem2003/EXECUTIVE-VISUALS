@@ -11,14 +11,14 @@ declare
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
   ) then$old_allowlist$;
   new_allowlist text := $new_allowlist$  if not (
-    (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
+    (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
   ) then$new_allowlist$;
   old_runway_branch text := $old_runway_branch$  elsif p_provider = 'runway' then
     if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;$old_runway_branch$;
-  new_runway_branch text := $new_runway_branch$  elsif p_provider = 'runway' and p_model in ('seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k') then
+  new_runway_branch text := $new_runway_branch$  elsif p_provider = 'runway' and p_model in ('seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k') then
     if coalesce(p_input ->> 'operation','') not in ('text-to-video','image-to-video','video-to-video') then
       raise exception 'VIDEO_PRICE_OPERATION_INVALID';
     end if;
@@ -27,6 +27,7 @@ declare
     end if;
     if (p_model = 'seedance2_5' and ((p_input ->> 'durationSeconds')::numeric < 4 or (p_input ->> 'durationSeconds')::numeric > 30))
        or (p_model = 'kling_4' and ((p_input ->> 'durationSeconds')::numeric < 3 or (p_input ->> 'durationSeconds')::numeric > 30))
+       or (p_model = 'kling_4_flash' and ((p_input ->> 'durationSeconds')::numeric < 3 or (p_input ->> 'durationSeconds')::numeric > 20))
        or (p_model in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') and ((p_input ->> 'durationSeconds')::numeric < 3 or (p_input ->> 'durationSeconds')::numeric > 15)) then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
@@ -36,7 +37,7 @@ declare
     if coalesce(p_input ->> 'prompt','') = '' or
        length(p_input ->> 'prompt') > case
          when p_model = 'seedance2_5' then 15000
-         when p_model = 'kling_4' then 26000
+         when p_model in ('kling_4','kling_4_flash') then 26000
          else 2500
        end then
       raise exception 'VIDEO_GENERATION_PROMPT_INVALID';
@@ -47,6 +48,9 @@ declare
     if p_model = 'kling_4' and coalesce(p_input ->> 'resolution','') not in ('720p','1080p') then
       raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
     end if;
+    if p_model = 'kling_4_flash' and coalesce(p_input ->> 'resolution','') <> '720p' then
+      raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
+    end if;
     if p_model in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') and
        coalesce(p_input ->> 'resolution','') <> 'provider_default' then
       raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
@@ -55,7 +59,7 @@ declare
       raise exception 'VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED';
     end if;
     if p_input ->> 'operation' = 'video-to-video' and
-       (p_model not in ('seedance2_5','kling_4') or coalesce(p_input ->> 'sourceVideoAssetId','') = '') then
+       (p_model not in ('seedance2_5','kling_4','kling_4_flash') or coalesce(p_input ->> 'sourceVideoAssetId','') = '') then
       raise exception 'VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED';
     end if;
     if p_model = 'seedance2_5' and p_input ->> 'operation' = 'video-to-video' and
