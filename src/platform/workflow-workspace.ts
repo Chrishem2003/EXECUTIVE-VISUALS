@@ -82,9 +82,24 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",operation=String(config.operation||"generate");
- const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
- const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":"provider_default");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",operation=String(config.operation||"generate");
+ const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
+  model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
+  model==="kling_4_flash"?["720p"]:model.startsWith("kling3.0_")?["provider_default"]:
+  model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"?"720p":"provider_default");
+ const modelOptions=luma?[{id:"ray-3.2",label:"Luma Ray 3.2"}]:[
+  {id:"model-router",label:"Runway Model Router"},{id:"gen4.5",label:"Gen-4.5"},{id:"seedance2_5",label:"Seedance 2.5"},
+  {id:"kling_4",label:"Kling 4.0"},{id:"kling_4_flash",label:"Kling 4.0 Flash"},
+  {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"}
+ ];
+ const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
+  directRunway?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"}]:[{id:"generate",label:"Generate new video"}];
+ const sourceVideoEnabled=luma&&operation!=="generate"||directRunway&&operation==="video-to-video";
+ const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
+ const draftEnabled=provider==="runway"&&model==="seedance2_5";
+ const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
+ const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
@@ -92,21 +107,22 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const imageAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("image/"));
  const selectedKeyframes=new Set(Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.map(String):[]);
  const selectedSource=String(config.sourceVideoAssetId||"");
- return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
- '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
- '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation!=="reframe"?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma&&operation!=="reframe"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
+ return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
+ '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
+ '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!luma||operation==="generate"?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
- '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
+ '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!sourceVideoEnabled?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!sourceVideoEnabled?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop X<input name="sourcePositionX" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.x_norm??0)+'"></label><label>Reframe crop Y<input name="sourcePositionY" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.y_norm??0)+'"></label></div>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
- '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!startFrameEnabled?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Choose keyframe images from this project · asset-library order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · match selected asset-library order<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
+ (draftEnabled?'<label class="wf-rights-confirm"><input type="checkbox" name="videoDraft" '+(config.draft===true?'checked':'')+'> Seedance 2.5 draft preview · fixed 480p quote, save intended master resolution for follow-on enhancement</label>':'')+
+ '<p>Direct Runway models execute through the owner-approved cloud queue. Text, private first-frame and source-video operations are validated against each model profile; Seedance draft previews are billed at 480p. Luma retains its separate generate/edit/reframe contract. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
 function renderVideoCostEstimate(){
