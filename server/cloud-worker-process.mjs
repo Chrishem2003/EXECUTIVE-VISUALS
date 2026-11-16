@@ -28,7 +28,7 @@ export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
  if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
- let googleOmni=false;
+ let googleOmni=false,luma=false;
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
   const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
@@ -46,7 +46,7 @@ export function readCloudWorkerConfig(env=process.env){
   const lumaRequested=truth(env.LUMA_VIDEO_ENABLED)||truth(env.LUMA_VIDEO_ALLOW_REMOTE);
   const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
   const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
-  const luma=truth(env.LUMA_VIDEO_ENABLED)&&truth(env.LUMA_VIDEO_ALLOW_REMOTE)&&
+  luma=truth(env.LUMA_VIDEO_ENABLED)&&truth(env.LUMA_VIDEO_ALLOW_REMOTE)&&
    Boolean(env.LUMA_AGENTS_API_KEY)&&lumaRateValid;
   if(lumaRequested&&!luma)throw new Error("Luma requires both remote gates, a server-side LUMA_AGENTS_API_KEY and an explicit positive LUMA_USD_PER_CREDIT account/contract rate.");
   if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, fully gated Google Omni, or fully configured Luma Ray 3.2.");
