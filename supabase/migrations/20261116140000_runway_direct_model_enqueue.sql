@@ -32,12 +32,13 @@ declare
         (p_input ->> 'operation' = 'video-to-video' and coalesce(p_input ->> 'mode','reference') <> 'reference')) then
       raise exception 'VIDEO_DRAFT_CONFIGURATION_INVALID';
     end if;
-    if p_input ? 'draftTaskId' and
-       (p_model <> 'seedance2_5' or coalesce(p_input ->> 'operation','') <> 'text-to-video' or
-        coalesce(p_input ->> 'resolution','') <> '1080p' or p_input ->> 'draft' = 'true' or coalesce(p_input ->> 'draftEnhancement','') <> 'true' or
-        coalesce(p_input ->> 'draftTaskId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' or
-        coalesce(p_input ->> 'sourceDraftJobId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') then
-      raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID';
+    if coalesce(p_input ->> 'draftTaskId','') <> '' then
+      if p_model <> 'seedance2_5' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
+      if coalesce(p_input ->> 'operation','') <> 'text-to-video' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
+      if coalesce(p_input ->> 'resolution','') <> '1080p' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
+      if p_input ->> 'draft' = 'true' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
+      if coalesce(p_input ->> 'draftEnhancement','') <> 'true' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
+      if coalesce(p_input ->> 'sourceDraftJobId','') = '' then raise exception 'VIDEO_DRAFT_ENHANCEMENT_INVALID'; end if;
     end if;
     if coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]{1,2}$' then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
