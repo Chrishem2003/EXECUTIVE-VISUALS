@@ -41,7 +41,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   prepareRunwayInput,
   resolveRunwaySourceMetadata,
   resolveRunwayActualCost,
-  runwayModels = String(env.RUNWAY_VIDEO_MODELS || "").split(",").map(value => value.trim()).filter(Boolean),
+  runwayModels = String(env.RUNWAY_VIDEO_MODELS || env.RUNWAY_VIDEO_MODEL || "").split(",").map(value => value.trim()).filter(Boolean),
   allowedOutputHosts = [],
   validateMedia,
   ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
