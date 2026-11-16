@@ -1,6 +1,6 @@
 # Current release status — 16 November 2026
 
-Current GitHub `main` and the Render production deployment are both on `ad69c98ba3a7bfa1986acbf48349cfa42a4ca95d`. Render deployment `dep-dbt2lsp5efls73fc9vdg` is live on that exact commit. PR #648 integrated the word-level transcription and editable WebVTT pipeline; the five-batch production integration remains under review in PR #649.
+GitHub `main` now includes the five-batch production integration in commit `d2bbf0ec088fc0ab95e65d36a747622a3d8116c6` (PR #649). Render automatically started deployment `dep-dbt951mq1p3s73fkvv9g` for that exact commit; deployment verification is pending. The previous live deployment remains `dep-dbt2lsp5efls73fc9vdg` on `ad69c98ba3a7bfa1986acbf48349cfa42a4ca95d` until the new build succeeds.
 
 **The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
 
