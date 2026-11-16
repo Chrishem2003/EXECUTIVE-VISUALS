@@ -29,7 +29,7 @@ test("cloud timeline accepts private video assets on overlay tracks for final co
  ]};
  const result=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline}});
  assert.equal(result.status,200,JSON.stringify(result.body));
- assert.equal(result.body.timeline.tracks[1].clips[0].assetId,"asset-1");
+ assert.equal(result.body.timeline.timeline.tracks[1].clips[0].assetId,"asset-1");
 });
 
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
@@ -944,10 +944,10 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
  assert.equal(result.status,200,JSON.stringify(result.body));
  assert.equal(result.body.quote.operation,"text-to-video");
  assert.equal(result.body.quote.estimatedCredits,544);
- assert.equal(quoteArgs.p_input.resolution,"1080p");
- assert.equal(quoteArgs.p_input.draftTaskId,draftTaskId);
- assert.equal(quoteArgs.p_input.sourceDraftJobId,sourceDraftJobId);
- assert.equal(quoteArgs.p_input.durationSeconds,8);
+ assert.equal(quoteArgs.p_model,"seedance2_5");
+ assert.equal(quoteArgs.p_operation,"text-to-video");
+ assert.equal(quoteArgs.p_estimated_credits,544);
+ assert.equal(quoteArgs.p_estimated_amount,5.44);
 });
 
 test("Seedance draft enhancement rejects a source job from another project",async()=>{
