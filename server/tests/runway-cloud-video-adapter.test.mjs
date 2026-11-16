@@ -364,3 +364,21 @@ test("Kling 4 text-to-video is accepted by the same exact-match durable adapter"
     ratio: "1280:720", duration: 8
   });
 });
+
+
+test("Seedance 2.5 accepts its documented long-form prompt limit in durable execution", async () => {
+  let submittedBody;
+  const prompt = "A carefully directed cinematic sequence. ".repeat(250);
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async (_url, options) => {
+      submittedBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
+  });
+  await adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt, durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  });
+  assert.equal(submittedBody.promptText, prompt);
+});
