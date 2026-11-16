@@ -950,6 +950,42 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
  assert.equal(quoteArgs.p_estimated_amount,5.44);
 });
 
+test("Seedance video-to-video draft enhancement quote includes the verified input-video billing duration",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceVideoAssetId="423e4567-e89b-42d3-a456-426614174000";
+ let quoteArgs,metadataCalls=0;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"reference",sourceVideoAssetId,draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const sourceResolver={async resolveMetadata(args){metadataCalls++;return{...args,ownerId,projectId,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",runwaySourceResolver:sourceResolver,
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+    quoteArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-video-quote",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
+  values:{}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(metadataCalls,1);
+ assert.equal(quoteArgs.p_estimated_credits,748);
+ assert.equal(quoteArgs.p_estimated_amount,7.48);
+});
+
 test("Seedance draft enhancement rejects a source job from another project",async()=>{
  const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
  const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
