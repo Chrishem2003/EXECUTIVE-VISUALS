@@ -1,6 +1,6 @@
-# Current release status — 15 November 2026
+# Current release status — 16 November 2026
 
-Current main and the current Render production deployment are both on `1bd5e9b39ba18a6d63368667f4bcf2d3cea5c5a1`. The deployment is live. PR #600 integrated the private GCS mirror backend, migrations, API routes and recovery worker, with all 24 Quality workflow jobs passing.
+Current GitHub `main` and the Render production deployment are both on `ad69c98ba3a7bfa1986acbf48349cfa42a4ca95d`. Render deployment `dep-dbt2lsp5efls73fc9vdg` is live on that exact commit. PR #648 integrated the word-level transcription and editable WebVTT pipeline; the five-batch production integration remains under review in PR #649.
 
 **The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
 
