@@ -50,6 +50,23 @@ test("cloud video worker may be configured with Runway Model Router without FAL 
  }),/saved config/);
 });
 
+test("Luma Ray 3.2 can be the only video provider with an explicit account settlement rate",()=>{
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"api.lumalabs.ai",
+  LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",LUMA_AGENTS_API_KEY:"server-only",LUMA_USD_PER_CREDIT:"0.003"
+ });
+ assert.equal(config.video,true);assert.equal(config.luma,true);
+});
+test("Luma refuses partial remote gates, missing credentials and missing account billing rate",()=>{
+ const base={...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"api.lumalabs.ai",
+  LUMA_VIDEO_ENABLED:"true",LUMA_VIDEO_ALLOW_REMOTE:"true",LUMA_AGENTS_API_KEY:"server-only",LUMA_USD_PER_CREDIT:"0.003"};
+ assert.throws(()=>readCloudWorkerConfig({...base,LUMA_VIDEO_ALLOW_REMOTE:"false"}),/both remote gates/);
+ assert.throws(()=>readCloudWorkerConfig({...base,LUMA_AGENTS_API_KEY:""}),/LUMA_AGENTS_API_KEY/);
+ assert.throws(()=>readCloudWorkerConfig({...base,LUMA_USD_PER_CREDIT:""}),/account\/contract rate/);
+ assert.throws(()=>readCloudWorkerConfig({...base,LUMA_USD_PER_CREDIT:"0"}),/account\/contract rate/);
+});
 test("Google Omni can be the only video provider when every server-side execution and paid-tier gate is explicit",()=>{
  const config=readCloudWorkerConfig({
   ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
