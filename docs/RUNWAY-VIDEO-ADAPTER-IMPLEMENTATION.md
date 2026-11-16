@@ -25,6 +25,12 @@ This adapter implements **text-to-video and one first-frame image-to-video input
 
 The adapter returns provider cost metadata when Runway supplies it, but Executive Visuals does not yet calculate customer-facing prices, reserve subscription credits, or reconcile provider charges against a subscription ledger.
 
+## Veo 3.1 follow-on adapter
+
+The shared Runway cloud adapter now also implements Veo 3.1 (`veo3.1`) and Veo 3.1 Fast (`veo3.1_fast`) for text-to-video and first/last-frame image-to-video. The dedicated contract, supported controls, limits, and estimate-only credit preflight are documented in [RUNWAY-VEO-31-EXECUTION.md](./RUNWAY-VEO-31-EXECUTION.md).
+
+Unlike the initial Gen-4.5 profile, Veo accepts 4/6/8-second output, only 16:9/9:16, and maps 1080p to 8-second output. A last frame requires a first frame. Veo pricing preflight is a reservation estimate only; task-level actual-cost evidence is still mandatory for settlement. Both Veo model catalog entries remain disabled pending explicit remote opt-in, a verified task-level billing resolver, private output ingestion allowlisting, and staging acceptance.
+
 ## Configuration
 
 The adapter is disabled unless the server is explicitly configured:
