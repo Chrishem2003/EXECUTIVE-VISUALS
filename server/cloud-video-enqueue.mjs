@@ -506,6 +506,7 @@ export function createCloudVideoEnqueue({
         (provider === "runway" && model === "gen4.5") ||
         (provider === "runway" && model === "aleph2" && input.operation === "video-to-video" && input.outputFormat === "mp4") ||
         (provider === "runway" && model === "model-router" && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
+        (provider === "runway" && ["seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model) && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
         (provider === "google" && model === "gemini-omni-1.1-flash");
       if (!sqlEnqueueSupported) {
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");
