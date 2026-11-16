@@ -188,6 +188,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Verify cloud-video submission, budget and recovery contracts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply guarded Runway direct-model enqueue migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116140000_runway_direct_model_enqueue.sql
+      - name: Verify Kling Flash durable enqueue SQL contract
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/runway-direct-model-postgres-integration.sql
       - name: Apply private Gemini provider-file mappings
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
       - name: Apply durable Gemini upload-attempt ledger
