@@ -433,7 +433,7 @@ test("builds a deterministic direct Seedance 2.5 4K text-to-video request",()=>{
 });
 test("maps a private first frame into the direct Kling 4 image-to-video contract",()=>{
  const request=createVideoWorkflowCloudRequest({
-  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",startFrameAssetId:"private-first-frame"}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",startFrameAssetId:"private-first-frame",rightsConfirmed:true}},
   projectId:"project-1",requestId:"runway-kling4-image",values:{prompt:"Animate this approved first frame"}
  });
  assert.equal(request.operation,"image-to-video");assert.equal(request.input.startFrameAssetId,"private-first-frame");
@@ -459,7 +459,7 @@ test("builds Kling 3.0 multi-shot workflow requests with provider segment settin
 });
 test("rejects Kling 3.0 video-to-video because no adapter profile is enabled",()=>{
  assert.throws(()=>createVideoWorkflowCloudRequest({
-  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",operation:"video-to-video",sourceVideoAssetId:"private-source"}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",operation:"video-to-video",sourceVideoAssetId:"private-source",rightsConfirmed:true}},
   projectId:"project-1",requestId:"runway-kling3-v2v",values:{prompt:"Edit the clip"}
  }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
