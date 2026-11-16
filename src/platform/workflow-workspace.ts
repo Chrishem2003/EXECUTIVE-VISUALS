@@ -464,6 +464,15 @@ document.addEventListener("change",event=>{
    else if(Number(duration.value)>max)duration.value=String(max);
   }
  }
+ if(target.name==="videoDraft"){
+  const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
+  const draft=target as HTMLInputElement;
+  const selectedNode=state.graph.nodes.find(node=>node.id===state.selectedNode);
+  const targetResolution=String(selectedNode?.config.draftTargetResolution||"1080p");
+  if(resolution&&resolution.value==="480p")resolution.value=targetResolution;
+  if(draft.checked&&resolution&&resolution.value==="provider_default")resolution.value="1080p";
+ }
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
 document.addEventListener("dragstart",event=>{
