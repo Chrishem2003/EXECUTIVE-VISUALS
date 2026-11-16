@@ -22,6 +22,8 @@ export function createRunwaySourceAssetResolver({
   storageProvider = process.env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
   r2AccountId = process.env.R2_ACCOUNT_ID,
   r2Bucket = process.env.R2_BUCKET || "executive-visuals-media",
+  b2Region = process.env.B2_REGION,
+  b2Bucket = process.env.B2_BUCKET || "executive-visuals-media",
   ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
   execFileImpl = execFile,
   maxBytes = 200 * 1024 * 1024,
@@ -39,6 +41,10 @@ export function createRunwaySourceAssetResolver({
       if (!/^[a-f0-9]{32}$/i.test(String(r2AccountId || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(r2Bucket))) throw new Error();
       expectedOrigin = "https://" + r2AccountId + ".r2.cloudflarestorage.com";
       expectedPathPrefix = "/" + r2Bucket + "/";
+    } else if (String(storageProvider).toLowerCase() === "b2") {
+      if (!/^[a-z0-9]+-[a-z0-9]+-\\d{3}$/.test(String(b2Region || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(b2Bucket))) throw new Error();
+      expectedOrigin = "https://s3." + b2Region + ".backblazeb2.com";
+      expectedPathPrefix = "/" + b2Bucket + "/";
     } else {
       const base = new URL(supabaseUrl);
       if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error();
