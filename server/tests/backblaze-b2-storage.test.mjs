@@ -22,6 +22,7 @@ test("B2 adapter requires explicit account credentials and safe limits", () => {
   assert.throws(() => createBackblazeB2Storage({ ...config, region: "" }), /B2_REGION/);
   assert.throws(() => createBackblazeB2Storage({ ...config, secretAccessKey: "short" }), /credentials/);
   assert.throws(() => createBackblazeB2Storage({ ...config, bucket: "bad bucket" }), /bucket/);
+  assert.doesNotThrow(() => createBackblazeB2Storage({ ...config, secretAccessKey: "s".repeat(20) }));
 });
 
 test("uploads private bytes with an AWS SigV4 request and exact object path", async () => {
