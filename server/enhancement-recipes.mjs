@@ -1,14 +1,14 @@
-import {buildMediaOperationArgs} from "./media.mjs";
+import {buildMediaOperationArgs,buildAudioMasterAnalysisArgs} from "./media.mjs";
 import {validateWorkflowGraph} from "./workflow-validation.mjs";
 
 const VIDEO_STEPS=new Set(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
-const AUDIO_STEPS=new Set(["media.audio-clean"]);
+const AUDIO_STEPS=new Set(["media.audio-clean","media.audio-master"]);
 const MAX_STEPS=12;
 const PARAMETER_KEYS={
   "media.denoise":["luma","chroma"],"media.color":["brightness","contrast","saturation"],
   "media.resize":["width","height","fit"],"media.interpolate":["fps"],
   "media.upscale":["width","height","fit","algorithm","sharpness"],
-  "media.audio-clean":["noiseFloor","targetLufs"]
+  "media.audio-clean":["noiseFloor","targetLufs"],"media.audio-master":["targetLufs","targetLra","truePeakDbtp"]
 };
 
 export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,steps=[]}={}) {
@@ -32,7 +32,8 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
       buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.mp4",outputPath:"/recipe/output.mp4"});
     } else if(AUDIO_STEPS.has(operation)) {
       if(!currentType.startsWith("audio/"))throw Object.assign(new Error(operation+" requires an audio source."),{code:"RECIPE_MEDIA_TYPE_MISMATCH",step:index});
-      buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.wav",outputPath:"/recipe/output.wav"});
+      if(operation==="media.audio-master")buildAudioMasterAnalysisArgs({sourcePath:"/recipe/source.wav",input:parameters});
+      else buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.wav",outputPath:"/recipe/output.wav"});
       currentType="audio/wav";
     } else {
       throw Object.assign(new Error("Unsupported recipe operation: "+operation),{code:"RECIPE_OPERATION_UNSUPPORTED",step:index});
@@ -45,7 +46,7 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
       method:operation==="media.upscale"||operation==="media.resize"?"deterministic-resampling":
         operation==="media.interpolate"?"optical-flow-frame-interpolation":
         operation==="media.denoise"?"classical-video-denoising":
-        operation==="media.color"?"deterministic-color-adjustment":"classical-audio-filtering",
+        operation==="media.color"?"deterministic-color-adjustment":operation==="media.audio-master"?"ebu-r128-two-pass-mastering":"classical-audio-filtering",
       requiresApproval:true
     };
   });
