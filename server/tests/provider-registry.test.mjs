@@ -232,3 +232,27 @@ test("Luma Ray 3.2 readiness requires the actual worker gate, private schema, pr
  assert.equal(getProviderCatalog({...env,LUMA_PROVIDER_FILES_SCHEMA_READY:"false"}).providers.find(item=>item.id==="video-luma").status,"needs_configuration");
  assert.equal(getProviderCatalog({...env,VIDEO_GATEWAY_ALLOW_REMOTE:"false"}).providers.find(item=>item.id==="video-luma").status,"remote_opt_in_required");
 });
+
+test("Runway model selection exposes only exact allowlisted profiles as executable",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ const seedance=video.availableModels.find(model=>model.id==="seedance2_5");
+ const kling=video.availableModels.find(model=>model.id==="kling_4");
+ assert.equal(seedance.available,true);
+ assert.equal(seedance.executionVerified,true);
+ assert.equal(seedance.readiness,"ready");
+ assert.equal(kling.available,false);
+ assert.equal(kling.executionVerified,false);
+});
+test("Runway durable worker allowlist can expose multiple exact model profiles",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4,kling3.0_standard"
+ });
+ const models=catalog.providers.find(item=>item.id==="video").availableModels;
+ for(const id of ["seedance2_5","kling_4","kling3.0_standard"])assert.equal(models.find(model=>model.id===id).available,true);
+ assert.equal(models.find(model=>model.id==="kling3.0_pro").available,false);
+});
