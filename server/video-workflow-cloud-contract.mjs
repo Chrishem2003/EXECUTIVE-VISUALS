@@ -66,9 +66,9 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  const aspectRatio=String(config.aspectRatio||"16:9");
  const requestedResolution=String(config.resolution||"provider_default");
  const resolution=model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
-  model==="kling_4"?(requestedResolution==="provider_default"?"720p":requestedResolution):
-  model==="kling3.0_4k"?"4k":"provider_default";
- const audio=typeof config.audio==="boolean"?config.audio:(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)?true:undefined);
+  model==="kling_4"?(requestedResolution==="provider_default"?"720p":requestedResolution):"provider_default";
+ const audio=["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)
+  ?(typeof config.audio==="boolean"?config.audio:true):undefined;
  const multiPrompt=config.multiPrompt;
  const shotType=String(config.shotType||"customize");
  if(multiPrompt!==undefined&&multiPrompt!==null){
