@@ -28,7 +28,7 @@ The shared cloud worker can register these exact Runway model IDs, subject to it
 
 ## Deliberate limitations
 
-This does not claim last/middle keyframes, multi-shot prompt segmentation, large reference image/video/audio collections, or every provider-side advanced parameter. Those need separate contracts and acceptance tests. The UI must not advertise unsupported controls.
+Kling 3 multi-shot prompt segmentation is implemented through providerSettings.multiPrompt (up to six segments, each 3–512 characters, total duration 3–15 seconds). This is not the separate Runway multi_shot_video recipe endpoint, and per-shot editable outputs are not created. Last/middle keyframes, large reference image/video/audio collections, and other provider-side advanced controls remain unadvertised until their own contracts and acceptance tests are complete. The UI must not advertise unsupported controls.
 
 ## Configuration and safety
 
