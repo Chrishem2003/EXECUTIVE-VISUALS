@@ -443,20 +443,24 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const duration=Math.min(safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate)),cursor-start);
     if(duration<=0)continue;
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
-    if(!asset||!asset.media_type.startsWith("image/"))throw Object.assign(new Error("Overlay tracks currently require accessible still-image assets."),{code:"UNSUPPORTED_OVERLAY_SOURCE"});
+    if(!asset||(!asset.media_type.startsWith("image/")&&!asset.media_type.startsWith("video/")))throw Object.assign(new Error("Overlay tracks require accessible still-image or video assets."),{code:"UNSUPPORTED_OVERLAY_SOURCE"});
     const metadata=clip.metadata||{},overlayWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*0.24))),overlayHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*0.24)));
     const rawX=Number(metadata.x),rawY=Number(metadata.y),x=Math.max(0,Math.min(width-overlayWidth,Number.isFinite(rawX)?Math.round(rawX):width-overlayWidth-24)),y=Math.max(0,Math.min(height-overlayHeight,Number.isFinite(rawY)?Math.round(rawY):24));
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
-    const file=join(mediaRoot,asset.storage_path);
-    args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
+    const file=join(mediaRoot,asset.storage_path),isVideo=asset.media_type.startsWith("video/");
+    if(isVideo){
+      const sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate)),sourceDuration=Math.min(sourceDurationForTimelineClip(clip,duration),duration);
+      args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);
+    }else args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
     const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
-    if(motion){
-      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+    if(!motion)throw Object.assign(new Error("Overlay transform settings could not be compiled."),{code:"INVALID_MOTION_KEYFRAMES"});
+    if(isVideo){
+      const sourceDuration=Math.min(sourceDurationForTimelineClip(clip,duration),duration);
+      videoEffects.push(`[${inputIndex}:v]trim=duration=${sourceDuration.toFixed(6)},setpts=PTS-STARTPTS,fps=${fpsNum}/${fpsDen},${motion.filters.join(",")},setpts=PTS-STARTPTS+${start.toFixed(6)}/TB[${imageLabel}]`);
       videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
     }else{
-      const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
-      videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-      videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
     }
     currentVideo=`[${videoLabel}]`;inputIndex++;
   }
