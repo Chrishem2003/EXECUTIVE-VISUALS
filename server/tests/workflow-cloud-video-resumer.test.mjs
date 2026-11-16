@@ -37,7 +37,7 @@ function fixture(cloudStatus="succeeded",originalJobStatus="blocked",cloudJobOve
    throw new Error("Unexpected SQL: "+sql);
   }
  };
- const cloudTimelineApi={async handle(input){assert.equal(input.ownerId,owner);assert.equal(input.path,"/api/cloud/jobs/"+cloudJobId);return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:project,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash},status:cloudStatus,error:{message:"Provider rejected the request."},...cloudJobOverrides}}};}};
+ const cloudTimelineApi={async handle(input){assert.equal(input.ownerId,owner);assert.equal(input.path,"/api/cloud/jobs/"+cloudJobId);return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:project,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash,approvedMaxAmount:2},status:cloudStatus,error:{message:"Provider rejected the request."},...cloudJobOverrides}}};}};
  return{db,run,node,parkedJob,jobs,events,audits,cloudTimelineApi};
 }
 
@@ -99,7 +99,8 @@ test("does not resume or terminalize a cloud job whose owner, project, type or a
   {job_type:"timeline.render"},
   {input:{workflowQuoteId:"923e4567-e89b-42d3-a456-426614174000",workflowRequestId:requestId,requestHash}},
   {input:{workflowQuoteId:quoteId,workflowRequestId:"workflow-other-request",requestHash}},
-  {input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash:"b".repeat(64)}}
+  {input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash:"b".repeat(64)}},
+  {input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash,approvedMaxAmount:3}}
  ];
  for(const override of cases){
   const f=fixture("succeeded","blocked",override),errors=[];
