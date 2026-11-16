@@ -295,3 +295,12 @@ test("Runway cancels declared oversized JSON and media bodies before reading",as
  await assert.rejects(()=>downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  assert.equal(mediaCancelled,true);
 });
+
+
+test("reports native-audio modes only for Runway profiles with documented audio behavior", async () => {
+  const { getRunwayVideoCapabilities } = await import("../runway-video-gateway.mjs");
+  assert.deepEqual(getRunwayVideoCapabilities("seedance2_5").audioModes, ["generated", "none"]);
+  assert.deepEqual(getRunwayVideoCapabilities("kling3.0_standard").audioModes, ["generated", "none"]);
+  assert.deepEqual(getRunwayVideoCapabilities("kling_4").audioModes, ["generated"]);
+  assert.deepEqual(getRunwayVideoCapabilities("gen4.5").audioModes, []);
+});
