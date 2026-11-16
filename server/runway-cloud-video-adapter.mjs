@@ -41,7 +41,7 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
+  if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
     throw fail("This Runway cloud adapter supports only its exact verified generation and source-operation model profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
@@ -177,7 +177,7 @@ export function createRunwayCloudVideoAdapter({
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
       }
       if (isImageToVideo) {
-        if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (!["gen4.5", "seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
         let promptImageUri = prepared.promptImageUri;
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
