@@ -27,7 +27,7 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
  audioClean:{kind:"media.audio-clean",label:"Audio Cleanup",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
  audioMaster:{kind:"media.audio-master",label:"Audio Mastering · EBU R128",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
- replaceAudio:{kind:"video.replace-audio",label:"Replace Video Soundtrack",inputs:[port("video","video",true),port("audio","audio",true),port("approval","any",true)],outputs:[port("video","video"),port("asset","asset")]},
+ replaceAudio:{kind:"video.replace-audio",label:"Replace Video Soundtrack",inputs:[port("media","media",true),port("audio","audio",true),port("approval","any",true)],outputs:[port("video","video"),port("asset","asset")]},
  transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
  timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
  upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
