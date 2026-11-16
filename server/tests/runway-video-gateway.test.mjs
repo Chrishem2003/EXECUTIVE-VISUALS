@@ -14,6 +14,13 @@ test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
   model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8
  });
 });
+test("Seedance 2.5 draft previews are explicitly fixed to 480p",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",draft:true}),{
+  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"854:480",duration:8,draft:true
+ });
+ assert.throws(()=>buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",resolution:"720p",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:"A coastal sunrise",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
 test("Kling 4 maps portrait 1080p dimensions",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"kling_4",prompt:"A moving camera",durationSeconds:8,aspectRatio:"9:16",resolution:"1080p"}),{
   model:"kling_4",promptText:"A moving camera",ratio:"1080:1920",duration:8
@@ -35,6 +42,11 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
  assert.equal(seedance.ratio,"720:1280");
  const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
  assert.equal(kling.ratio,"auto_720p");
+});
+test("Seedance image-to-video draft previews use the 480p portrait ratio",()=>{
+ const payload=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"Animate this scene",promptImage:"data:image/png;base64,iVBORw0KGgo=",aspectRatio:"9:16",draft:true});
+ assert.equal(payload.ratio,"480:854");
+ assert.equal(payload.draft,true);
 });
 test("image-to-video rejects oversized or malformed frame data",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
