@@ -912,11 +912,11 @@ test("direct Runway approval uses the exact worker allowlist and stable model co
    }
    return{ok:true,status:200,async text(){return"[]";}};
   },
-  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId};}}},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,owner};}}},
   authorize:async()=>true,
   env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com"}
  });
- const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId,body:{
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",owner,body:{
   confirmed:true,projectId,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-direct-approve-001",
   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
   values:{prompt:"A cinematic product reveal"},approvedMaxAmount:1.6,approvalNote:"Approve this exact Seedance draft."
