@@ -37,25 +37,39 @@ async function validateDirectRunwayFrameAsset(assets,ownerId,projectId,assetId){
 }
 const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
-function cloudVideoWorkerLaunchConfigured(env={}) {
+function cloudVideoCommonConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
- const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
+ const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\\*\\.)?[a-z0-9.-]{1,253}$/i.test(host));
  const storageProvider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
  const privateStorageReady=storageProvider==="r2"?Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY):
-  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):true;
- const common=env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):storageProvider==="supabase";
+ return env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
   Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&privateStorageReady&&validOutputHosts;
- const runwayReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+}
+function runwayRouterLaunchConfigured(env={}) {
+ return cloudVideoCommonConfigured(env)&&env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
   /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&
   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
+}
+function lumaLaunchConfigured(env={}) {
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
- const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
-  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&privateStorageReady&&
-  /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
- const directRunwayReady=env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&
-  String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).some(model=>DIRECT_RUNWAY_WORKFLOW_MODELS.has(model));
- return common&&(runwayReady||directRunwayReady||lumaReady);
+ return cloudVideoCommonConfigured(env)&&env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
+  /^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+}
+function directRunwayLaunchConfigured(env={},model) {
+ return cloudVideoCommonConfigured(env)&&directRunwayEnabled(env,model);
+}
+function workflowProviderLaunchConfigured(env={},request) {
+ if(request?.provider==="luma"&&request.model==="ray-3.2")return lumaLaunchConfigured(env);
+ if(request?.provider==="runway"&&request.model==="model-router")return runwayRouterLaunchConfigured(env);
+ if(request?.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(request.model))return directRunwayLaunchConfigured(env,request.model);
+ return false;
+}
+function cloudVideoWorkerLaunchConfigured(env={}) {
+ return runwayRouterLaunchConfigured(env)||lumaLaunchConfigured(env)||
+  [...DIRECT_RUNWAY_WORKFLOW_MODELS].some(model=>directRunwayLaunchConfigured(env,model));
 }
 
 function timelineDurationSeconds(timeline){
@@ -391,7 +405,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
       currency:estimate.currency,configId:estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):null),
       pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
-      requiresExplicitApproval:true,paidExecutionEnabled:cloudVideoWorkerLaunchConfigured(env),
+      requiresExplicitApproval:true,paidExecutionEnabled:workflowProviderLaunchConfigured(env,workflowRequest),
       expiresAt
      }});
     }catch(error){
@@ -421,7 +435,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
      const quoteAdapter=isLuma?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
-     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):directRunway?(directRunwayEnabled(env,workflowRequest.model)&&cloudVideoWorkerLaunchConfigured(env)):
+     const remoteReady=isLuma?lumaLaunchConfigured(env):directRunway?directRunwayLaunchConfigured(env,workflowRequest.model):runwayRouterLaunchConfigured(env);
       env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
       env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
       env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
