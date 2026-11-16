@@ -154,7 +154,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "seedance2_5",
         name: "Seedance 2.5",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "runway-cloud-worker",
         gateway: "runway",
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: true,
@@ -164,7 +164,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           referenceImages: true, referenceVideos: true, referenceAudio: true,
           audioModes: ["generated", "none", "reference"],
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-          resolutions: ["480p", "720p", "1080p"],
+          resolutions: ["480p", "720p", "1080p", "4k"],
           minDurationSeconds: 4, maxDurationSeconds: 30
         },
         constraints: {
@@ -624,7 +624,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "kling_4",
         name: "Kling 4.0 (Runway Dev)",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "runway-cloud-worker",
         gateway: "runway",
         capabilities: {
           textToVideo: true,
@@ -637,9 +637,9 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           negativePrompt: false,
           seed: false,
           startFrame: true,
-          endFrame: true,
+          endFrame: false,
           motionReference: false,
-          referenceImages: true,
+          referenceImages: false,
           audioModes: ["provider_default"],
           aspectRatios: ["16:9", "9:16", "1:1", "21:9"],
           resolutions: ["720p", "1080p"],
@@ -663,6 +663,78 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           pricingSnapshotDate: "2026-11-04",
           creditUsdValue: 0.01,
           source: "https://dev.runwayml.com/learn/kling-4-0-api"
+        }
+      },
+      {
+        id: "kling3.0_standard",
+        name: "Kling 3.0 Standard",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16", "1:1"],
+          resolutions: ["provider_default"], minDurationSeconds: 3, maxDurationSeconds: 15
+        },
+        constraints: {
+          maxPromptCharacters: 2500, multiPromptMaxSegments: 6,
+          multiPromptSegmentCharacters: { min: 3, max: 512 },
+          multiPromptTotalDurationSeconds: { min: 3, max: 15 },
+          pricingModel: "kling3.0_standard", outputFormat: "mp4",
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
+        id: "kling3.0_pro",
+        name: "Kling 3.0 Pro",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16", "1:1"],
+          resolutions: ["provider_default"], minDurationSeconds: 3, maxDurationSeconds: 15
+        },
+        constraints: {
+          maxPromptCharacters: 2500, multiPromptMaxSegments: 6,
+          multiPromptSegmentCharacters: { min: 3, max: 512 },
+          multiPromptTotalDurationSeconds: { min: 3, max: 15 },
+          pricingModel: "kling3.0_pro", outputFormat: "mp4",
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
+        id: "kling3.0_4k",
+        name: "Kling 3.0 4K",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16", "1:1"],
+          resolutions: ["provider_default"], minDurationSeconds: 3, maxDurationSeconds: 15
+        },
+        constraints: {
+          maxPromptCharacters: 2500, multiPromptMaxSegments: 6,
+          multiPromptSegmentCharacters: { min: 3, max: 512 },
+          multiPromptTotalDurationSeconds: { min: 3, max: 15 },
+          pricingModel: "kling3.0_4k", outputFormat: "mp4",
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
         }
       }
     ]
