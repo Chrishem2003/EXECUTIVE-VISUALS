@@ -39,7 +39,7 @@ const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","medi
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 function cloudVideoCommonConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
- const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\\*\\.)?[a-z0-9.-]{1,253}$/i.test(host));
+ const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
  const storageProvider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
  const privateStorageReady=storageProvider==="r2"?Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY):
   storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):storageProvider==="supabase";
@@ -56,7 +56,7 @@ function lumaLaunchConfigured(env={}) {
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  return cloudVideoCommonConfigured(env)&&env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
   env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
-  /^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+  /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
 }
 function directRunwayLaunchConfigured(env={},model) {
  return cloudVideoCommonConfigured(env)&&directRunwayEnabled(env,model);
