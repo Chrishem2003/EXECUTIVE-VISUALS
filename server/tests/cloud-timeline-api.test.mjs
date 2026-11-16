@@ -926,7 +926,7 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
   projectId:project,requestId:"seedance-enhance-quote-001",
-  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
   values:{}
  }});
  assert.equal(result.status,200,JSON.stringify(result.body));
@@ -960,7 +960,7 @@ test("Seedance draft enhancement rejects a source job from another project",asyn
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
   projectId:project,requestId:"seedance-enhance-cross-project",
-  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
   values:{}
  }});
  assert.equal(result.status,422);
@@ -1000,7 +1000,7 @@ test("Seedance draft enhancement approval revalidates the source and atomically 
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-enhance-approve-001",
-  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
   values:{},approvedMaxAmount:5.44,approvalNote:"Approve this separately priced Seedance draft enhancement."
  }});
  assert.equal(result.status,202,JSON.stringify(result.body));
