@@ -502,3 +502,8 @@ test("direct Runway source media requires explicit rights confirmation before qu
   }),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
  }
 });
+
+test("Video Studio workflow inspector exposes direct Runway models, private first-frame selection and Seedance draft controls",()=>{
+ const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
+ for(const token of ["kling_4_flash","seedance2_5","name=\"videoDraft\"","name=\"startFrameAssetPicker\"","name=\"sourceVideoAssetPicker\"","video-to-video","draftTargetResolution"]){assert.ok(ui.includes(token),"missing Studio workflow control: "+token);}
+});
