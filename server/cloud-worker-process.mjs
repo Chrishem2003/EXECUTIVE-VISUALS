@@ -40,7 +40,16 @@ export function readCloudWorkerConfig(env=process.env){
    env.GEMINI_OMNI_PAID_TIER_CONFIRMED==="true"&&env.GEMINI_OMNI_WORKER_ENABLED==="true"&&
    env.GOOGLE_OMNI_CONNECTION_STATUS==="connected"&&Boolean(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY);
   if(googleOmniRequested&&!googleOmni)throw new Error("Google Omni requires all provider, transport, paid-tier, hosted-worker and verified-connection gates plus a server-side API key.");
-  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, or fully gated Google Omni.");
+
+  // Luma's worker adapter is implemented, but its actual-cost settlement must
+  // use the operator's account/contract credit rate—not the public list price.
+  const lumaRequested=truth(env.LUMA_VIDEO_ENABLED)||truth(env.LUMA_VIDEO_ALLOW_REMOTE);
+  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
+  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+  const luma=truth(env.LUMA_VIDEO_ENABLED)&&truth(env.LUMA_VIDEO_ALLOW_REMOTE)&&
+   Boolean(env.LUMA_AGENTS_API_KEY)&&lumaRateValid;
+  if(lumaRequested&&!luma)throw new Error("Luma requires both remote gates, a server-side LUMA_AGENTS_API_KEY and an explicit positive LUMA_USD_PER_CREDIT account/contract rate.");
+  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, fully gated Google Omni, or fully configured Luma Ray 3.2.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
   if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Direct Runway model execution remains disabled until its task-level actual-cost resolver is integrated.");
  }
@@ -49,7 +58,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,googleOmni,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
+  media,timeline,video,googleOmni,luma,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
   cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
   cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
   cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
