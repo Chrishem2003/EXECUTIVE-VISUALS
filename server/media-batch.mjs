@@ -1,4 +1,4 @@
-import { buildMediaOperationArgs, buildProxyVideoArgs } from "./media.mjs";
+import { buildMediaOperationArgs, buildProxyVideoArgs, buildAudioMasterAnalysisArgs } from "./media.mjs";
 
 const OPTIONS=Object.freeze({
  "media.color":["brightness","contrast","saturation"],
@@ -6,7 +6,8 @@ const OPTIONS=Object.freeze({
  "media.resize":["width","height","fit"],
  "media.interpolate":["fps"],
  "media.proxy":["proxyWidth","proxyCrf"],
- "media.audio_extract":[]
+ "media.audio_extract":[],
+ "media.audio-master":["targetLufs","targetLra","truePeakDbtp"]
 });
 const fail=(message,code="INVALID_MEDIA_BATCH",status=400)=>Object.assign(new Error(message),{code,status});
 const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
@@ -16,7 +17,7 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
  if(typeof ownerId!=="string"||!ownerId.trim())throw fail("Authentication is required.","AUTH_REQUIRED",401);
  if(!Object.hasOwn(OPTIONS,String(jobType)))throw fail("Choose a supported deterministic media operation.","MEDIA_BATCH_OPERATION_UNSUPPORTED");
  if(!plain(options))throw fail("Media batch options must be an object.");
- if(!Array.isArray(items)||items.length<1||items.length>50)throw fail("Select between 1 and 50 source videos for a media batch.","INVALID_MEDIA_BATCH_SIZE");
+ if(!Array.isArray(items)||items.length<1||items.length>50)throw fail("Select between 1 and 50 source media assets for a batch.","INVALID_MEDIA_BATCH_SIZE");
  if(typeof getAsset!=="function"||typeof canWriteProject!=="function")throw new TypeError("Media batch authorization dependencies are required.");
  const allowed=new Set(OPTIONS[jobType]);
  if(Object.keys(options).some(key=>!allowed.has(key)))throw fail("Media batch contains an unsupported operation option.","MEDIA_BATCH_OPTION_UNSUPPORTED");
@@ -37,12 +38,14 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
   "media.resize":{width:1920,height:1080,fit:"contain"},
   "media.interpolate":{fps:30},
   "media.proxy":{proxyWidth:960,proxyCrf:28},
-  "media.audio_extract":{}
+  "media.audio_extract":{},
+  "media.audio-master":{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}
  };
  const operationOptions={...defaults[jobType],...normalizedOptions};
  if(jobType==="media.proxy"&&(!Number.isInteger(operationOptions.proxyWidth)||operationOptions.proxyWidth<320||operationOptions.proxyWidth>1920||!Number.isInteger(operationOptions.proxyCrf)||operationOptions.proxyCrf<18||operationOptions.proxyCrf>35))throw fail("Proxy width must be 320–1920 and CRF must be 18–35.","INVALID_MEDIA_OPTIONS");
  try{
   if(jobType==="media.proxy")buildProxyVideoArgs({sourcePath:"/tmp/ev-batch-source.mp4",outputPath:"/tmp/ev-batch-proxy.mp4",input:operationOptions});
+  else if(jobType==="media.audio-master")buildAudioMasterAnalysisArgs({sourcePath:"/tmp/ev-batch-source.wav",input:operationOptions});
   else if(jobType!=="media.audio_extract")buildMediaOperationArgs({jobType,input:operationOptions,sourcePath:"/tmp/ev-batch-source.mp4",outputPath:"/tmp/ev-batch-output.mp4"});
  }catch(error){throw fail(error.message||"Media batch options are invalid.",error.code||"INVALID_MEDIA_OPTIONS");}
  let selectedProject=projectId==null||projectId===""?null:String(projectId);
@@ -55,7 +58,8 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
   const source=getAsset(sourceAssetId);
   if(!source)throw fail("Every source video must be accessible and editable.","SOURCE_ASSET_NOT_FOUND",404);
   const mediaType=String(source.media_type||source.mediaType||"");
-  if(!mediaType.startsWith("video/"))throw fail("This batch operation requires video source assets.","UNSUPPORTED_MEDIA_TYPE",415);
+  const expectedType=jobType==="media.audio-master"?"audio/":"video/";
+  if(!mediaType.startsWith(expectedType))throw fail(jobType==="media.audio-master"?"Audio mastering batches require audio source assets.":"This batch operation requires video source assets.","UNSUPPORTED_MEDIA_TYPE",415);
   const sourceProjectId=source.project_id??source.projectId??null;
   if(normalizedItems.length===0&&selectedProject===null)selectedProject=sourceProjectId;
   if(sourceProjectId!==selectedProject)throw fail("All batch videos must belong to the same selected project or private workspace.","PROJECT_MISMATCH");
