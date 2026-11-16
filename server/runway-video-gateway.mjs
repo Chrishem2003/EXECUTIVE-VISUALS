@@ -6,7 +6,8 @@ const MODEL_PROFILES=Object.freeze({
   "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p","1080p","4k"],defaultResolution:"480p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
   "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
+  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
+  "kling3.0_4k":Object.freeze({label:"Kling 3.0 4K",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
 });
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -28,7 +29,8 @@ const ratioFor=(model,ratio,resolution)=>{
       "21:9":resolution==="1080p"?"2200:940":"1460:624"
     },
     "kling3.0_standard":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960"},
-    "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"}
+    "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"},
+    "kling3.0_4k":{"16:9":"3840:2160","9:16":"2160:3840","1:1":"2880:2880"}
   };
   return maps[model]?.[ratio]||"";
 };
@@ -45,13 +47,25 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
-    referenceImages:true,audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro"].includes(String(model||"").trim())?["generated","none"]:String(model||"").trim()==="kling_4"?["generated"]:[]),
+    referenceImages:true,audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(String(model||"").trim())?["generated","none"]:String(model||"").trim()==="kling_4"?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
   });
 }
-export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
+function validateKlingMultiPrompt(model,multiPrompt,shotType,promptText){
+ if(multiPrompt===undefined||multiPrompt===null)return null;
+ if(!String(model||"").startsWith("kling3.0_"))throw fail("Multi-shot prompts are supported only by Kling 3.0 profiles.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!Array.isArray(multiPrompt)||multiPrompt.length<1||multiPrompt.length>6)throw fail("Kling multi-shot prompts require one to six segments.","VIDEO_GATEWAY_INVALID_INPUT");
+ const segments=multiPrompt.map(segment=>({prompt:String(segment?.prompt||"").trim(),duration:Number(segment?.duration)}));
+ if(segments.some(segment=>segment.prompt.length<3||segment.prompt.length>512||!Number.isInteger(segment.duration)||segment.duration<1||segment.duration>15))throw fail("Each Kling shot requires a 3–512 character prompt and an integer duration from 1 to 15 seconds.","VIDEO_GATEWAY_INVALID_INPUT");
+ const total=segments.reduce((sum,item)=>sum+item.duration,0);
+ if(total<3||total>15)throw fail("Kling multi-shot segment durations must total 3–15 seconds.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!["customize","intelligence"].includes(shotType))throw fail("Kling multi-shot shotType must be customize or intelligence.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(shotType==="intelligence"&&(String(promptText||"").trim().length<2||String(promptText||"").length>2500))throw fail("Kling intelligence shot type requires a 2–2,500 character promptText.","VIDEO_GATEWAY_INVALID_INPUT");
+ return Object.freeze(segments.map(item=>Object.freeze(item)));
+}
+export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize"}={}){
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
@@ -67,7 +81,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
 
   return Object.freeze(payload);
 }
-export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
+export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize"}={}){
  const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
  if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
