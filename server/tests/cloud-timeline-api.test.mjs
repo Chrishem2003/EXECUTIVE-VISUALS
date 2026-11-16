@@ -968,6 +968,49 @@ test("Seedance draft enhancement rejects a source job from another project",asyn
  assert.equal(databaseWrites,0);
 });
 
+test("Seedance draft enhancement approval revalidates the source and atomically queues the 1080p follow-on",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ let approvalArgs;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{
+     job_id:"823e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,
+     budget_reservation_id:"923e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"
+    }]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",
+   CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-enhance-approve-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  values:{},approvedMaxAmount:5.44,approvalNote:"Approve this separately priced Seedance draft enhancement."
+ }});
+ assert.equal(result.status,202,JSON.stringify(result.body));
+ assert.equal(approvalArgs.p_input.resolution,"1080p");
+ assert.equal(approvalArgs.p_input.draftTaskId,draftTaskId);
+ assert.equal(approvalArgs.p_input.sourceDraftJobId,sourceDraftJobId);
+ assert.equal(approvalArgs.p_input.draftEnhancement,true);
+ assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
+});
+
 test("direct Runway approval uses the exact worker allowlist and stable model config ID",async()=>{
  let approvalArgs;
  const api=createCloudTimelineApi({
