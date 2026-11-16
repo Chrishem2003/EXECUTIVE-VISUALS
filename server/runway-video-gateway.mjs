@@ -49,7 +49,7 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
-    referenceImages:String(model||"").trim()!=="kling_4_flash",audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k","kling_4_flash"].includes(String(model||"").trim())?["generated","none"]:String(model||"").trim()==="kling_4"?["generated"]:[]),
+    referenceImages:String(model||"").trim()!=="kling_4_flash",audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(String(model||"").trim())?["generated","none"]:["kling_4","kling_4_flash"].includes(String(model||"").trim())?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
