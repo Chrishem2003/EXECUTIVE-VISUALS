@@ -127,7 +127,7 @@ export function createCloudVideoEnqueue({
       if (input.provider !== provider || input.model !== model || input.requestHash !== requestHash ||
           (input.projectId || null) !== projectId) throw new Error("Video generation input does not match its enqueue scope.");
       if (input.draft !== undefined && typeof input.draft !== "boolean") throw Object.assign(new Error("Draft mode must be a boolean."), { code: "VIDEO_DRAFT_FLAG_INVALID" });
-      if (input.draft === true && (provider !== "runway" || model !== "seedance2_5" || input.resolution !== "480p" ||
+      if (input.draft === true && (provider !== "runway" || model !== "seedance2_5" || input.resolution !== "480p" || input.draftTargetResolution !== "1080p" ||
           !["text-to-video", "image-to-video", "video-to-video"].includes(input.operation) ||
           input.operation === "video-to-video" && (input.mode || "reference") !== "reference")) {
         throw Object.assign(new Error("Seedance draft requires the explicitly priced 480p tier and reference-compatible operation."), { code: "VIDEO_DRAFT_CONFIGURATION_INVALID" });
