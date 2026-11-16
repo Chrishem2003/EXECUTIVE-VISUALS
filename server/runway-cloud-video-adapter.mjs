@@ -288,8 +288,8 @@ export function createRunwayCloudVideoAdapter({
         return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4"].includes(selectedModel)) {
-        const promptLimit = selectedModel === "seedance2_5" ? 15000 : 1000;
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > (selectedModel === "kling_4" ? 26000 : promptLimit)) {
+        const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : 1000;
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
         }
         if (!isRunwayUri(input.videoUri)) throw fail("Video-to-video requires a prepared private source upload.", "RUNWAY_INPUT_INVALID");
@@ -334,7 +334,7 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
-      const promptLimit = selectedModel === "seedance2_5" ? 15000 : 1000;
+      const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : 1000;
       if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
       }
