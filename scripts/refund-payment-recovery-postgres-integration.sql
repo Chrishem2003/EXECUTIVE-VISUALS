@@ -1,5 +1,3 @@
-\\set ON_ERROR_STOP on
-
 -- Disposable PostgreSQL regression coverage for the repaired refund and payment
 -- recovery RPCs. All generated rows are rolled back at the end of this script.
 begin;
