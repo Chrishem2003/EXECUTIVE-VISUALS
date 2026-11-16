@@ -263,7 +263,8 @@ export function createRunwayCloudVideoAdapter({
         return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (selectedModel === "aleph2") {
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
+        const promptLimit = selectedModel === "seedance2_5" ? 15000 : 1000;
+      if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
           throw fail("Video-edit prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
         }
         if (input.operation !== "video-to-video" || !isRunwayUri(input.videoUri)) {
