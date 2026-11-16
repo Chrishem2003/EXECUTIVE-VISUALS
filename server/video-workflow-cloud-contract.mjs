@@ -29,7 +29,7 @@ function assetList(value, label, maximum) {
   return ids;
 }
 
-const DIRECT_RUNWAY_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
+const DIRECT_RUNWAY_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
 function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,model}){
  const prompt=firstString(values.prompt,values.text,values.input,config.prompt);
  const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
@@ -43,7 +43,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  if(model==="kling3.0_4k"&&operation==="video-to-video")throw fail("Kling 3.0 4K does not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(model.startsWith("kling3.0_")&&operation==="video-to-video")throw fail("Kling 3.0 profiles do not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(!prompt)throw fail("Runway direct generation requires a non-empty prompt.","PROMPT_REQUIRED");
- const promptLimit=model==="seedance2_5"?15000:model==="kling_4"?26000:model.startsWith("kling3.0_")?2500:1000;
+ const promptLimit=model==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(model)?26000:model.startsWith("kling3.0_")?2500:1000;
  if(prompt.length>promptLimit)throw fail("Prompt exceeds the selected Runway model limit of "+promptLimit+" characters.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const mode=String(config.mode||"reference");
  const durationValue=config.duration;
@@ -62,7 +62,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  }else if(model==="kling_4"&&operation==="video-to-video"){
   durationSeconds=30;
  }else{
-  const limits=model==="seedance2_5"?[4,30]:model==="kling_4"?[3,30]:model.startsWith("kling3.0_")?[3,15]:[2,10];
+  const limits=model==="seedance2_5"?[4,30]:model==="kling_4"?[3,30]:model==="kling_4_flash"?[3,20]:model.startsWith("kling3.0_")?[3,15]:[2,10];
   if(!Number.isInteger(durationSeconds)||durationSeconds<limits[0]||durationSeconds>limits[1])throw fail("Duration is outside the selected Runway model range.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  }
  const aspectRatio=String(config.aspectRatio||"16:9");
@@ -71,7 +71,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  if(config.draft!==undefined&&typeof config.draft!=="boolean")throw fail("Seedance draft mode must be a boolean.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(draft&&model!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const resolution=draft?"480p":model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
-  model==="kling_4"?(requestedResolution==="provider_default"?"720p":requestedResolution):"provider_default";
+  model==="kling_4"||model==="kling_4_flash"?(requestedResolution==="provider_default"?"720p":requestedResolution):"provider_default";
  const audio=["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)
   ?(typeof config.audio==="boolean"?config.audio:true):undefined;
  const multiPrompt=config.multiPrompt;
@@ -84,7 +84,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
   // Extend and edit keep the source framing and do not accept a ratio or output resolution.
  }else if(operation==="image-to-video"){
   buildRunwayImageToVideoPayload({model,prompt,promptImage:"data:image/png;base64,AA==",durationSeconds,aspectRatio,resolution,multiPrompt,shotType,draft});
- }else if(!(model==="kling_4"&&operation==="video-to-video")){
+ }else if(!(["kling_4","kling_4_flash"].includes(model)&&operation==="video-to-video")){
   buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution,multiPrompt,shotType,draft});
  }
  const audioMode=model==="kling_4"?"provider_default":audio===false?"none":audio===true?"generated":"provider_default";
