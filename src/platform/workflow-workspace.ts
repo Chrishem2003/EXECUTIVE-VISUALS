@@ -416,6 +416,12 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
+ if(target.name==="sourceVideoAssetPicker"||target.name==="startFrameAssetPicker"){
+  const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const manualName=target.name==="sourceVideoAssetPicker"?"sourceVideoAssetId":"startFrameAssetId";
+  const manual=form?.querySelector<HTMLInputElement>('[name="'+manualName+'"]');
+  if(manual)manual.value="";
+ }
  if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
  if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
