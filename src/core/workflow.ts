@@ -13,7 +13,7 @@ export type WorkflowNodeKind =
   | "prompt" | "text" | "upload" | "reference" | "script" | "storyboard"
   | "image.generate" | "image.edit" | "image.upscale" | "image.remove-background"
   | "video.generate" | "video.extract-frame" | "video.stitch" | "video.add-audio"
-  | "video.extract-audio" | "video.reframe"
+  | "video.extract-audio" | "video.reframe" | "video.replace-audio"
   | "avatar.generate" | "voice.generate" | "voice.transcribe" | "voice.caption"
   | "voice.translate" | "voice.lipsync"
   | "llm.prompt" | "llm.analyze"
