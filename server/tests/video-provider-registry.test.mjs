@@ -83,7 +83,7 @@ test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit 
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
-test("Kling 4.0 is catalogued as a Runway-routed model but has no executable adapter", () => {
+test("Kling 4.0 source-video edit is registered behind explicit execution gates", () => {
   const model = getVideoProviderModel("runway", "kling_4");
   assert.equal(model.gateway, "runway");
   assert.equal(model.availability, "disabled");
