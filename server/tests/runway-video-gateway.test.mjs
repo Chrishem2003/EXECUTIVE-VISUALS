@@ -16,7 +16,7 @@ test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
 });
 test("Seedance 2.5 draft previews are explicitly fixed to 480p",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"480p",draft:true}),{
-  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"854:480",duration:8,draft:true
+  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8,draft:true
  });
  assert.throws(()=>buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",resolution:"720p",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:"A coastal sunrise",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
