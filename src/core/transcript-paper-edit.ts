@@ -40,15 +40,15 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
 }
 
 export function parseTranscriptSrt(input:string):TranscriptCue[]{
- const text=String(input??"").replace(/^\\uFEFF/,"").replace(/\\r\\n?/g,"\\n");
+ const text=String(input??"").replace(/^\uFEFF/,"").replace(/\r\n?/g,"\n");
  if(new TextEncoder().encode(text).byteLength>MAX_BYTES)throw new Error("Transcript exceeds the 2 MiB limit.");
- const blocks=text.trim().split(/\\n\\s*\\n+/).filter(block=>block.trim());
+ const blocks=text.trim().split(/\n\s*\n+/).filter(block=>block.trim());
  const cues:TranscriptCue[]=[];
  for(const block of blocks){
-  const lines=block.split("\\n");
+  const lines=block.split("\n");
   const timingIndex=lines.findIndex(line=>line.includes("-->"));
   if(timingIndex<0)throw new Error("SRT cue "+(cues.length+1)+" is missing its timing line.");
-  const match=lines[timingIndex].match(/^\\s*(\\S+)\\s+-->\\s+(\\S+)(?:\\s+.*)?$/);
+  const match=lines[timingIndex].match(/^\s*(\S+)\s+-->\s+(\S+)(?:\s+.*)?$/);
   const start=match?parseTimestamp(match[1]):null,end=match?parseTimestamp(match[2]):null;
   const rawBody=lines.slice(timingIndex+1).join(" ");
   const cueText=rawBody.replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
@@ -61,8 +61,8 @@ export function parseTranscriptSrt(input:string):TranscriptCue[]{
 }
 
 export function parseTranscriptInput(input:string):TranscriptCue[]{
- const text=String(input??"").replace(/^\\uFEFF/,"").trimStart();
- if(/^WEBVTT(?:\\s|$)/.test(text))return parseTranscriptWebVtt(text);
+ const text=String(input??"").replace(/^\uFEFF/,"").trimStart();
+ if(/^WEBVTT(?:\s|$)/.test(text))return parseTranscriptWebVtt(text);
  return parseTranscriptSrt(text);
 }
 
