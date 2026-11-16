@@ -40,6 +40,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  if(requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  if(model==="gen4.5"&&operation==="video-to-video")throw fail("Gen-4.5 direct worker does not support source-video editing.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(model==="kling3.0_4k"&&operation==="video-to-video")throw fail("Kling 3.0 4K does not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(model.startsWith("kling3.0_")&&operation==="video-to-video")throw fail("Kling 3.0 profiles do not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(!prompt)throw fail("Runway direct generation requires a non-empty prompt.","PROMPT_REQUIRED");
  const promptLimit=model==="seedance2_5"?15000:model==="kling_4"?26000:model.startsWith("kling3.0_")?2500:1000;
  if(prompt.length>promptLimit)throw fail("Prompt exceeds the selected Runway model limit of "+promptLimit+" characters.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
