@@ -387,7 +387,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      }
      const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
-     const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId};
+     const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
       p_quote_id:quoteId,p_approval_id:randomUUID(),p_owner_id:ownerId,p_project_id:projectId,
       p_request_hash:workflowRequest.requestHash,p_config_id:configId,p_idempotency_key:requestId,

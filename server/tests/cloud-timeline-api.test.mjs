@@ -366,6 +366,7 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
  assert.equal(args.p_input.workflowQuoteId,args.p_quote_id);
  assert.equal(args.p_input.workflowRequestId,args.p_idempotency_key);
  assert.equal(args.p_input.requestHash,args.p_request_hash);
+ assert.equal(args.p_input.approvedMaxAmount,2.75);
 });
 
 test("cloud workflow approval rejects missing explicit confirmation without database writes",async()=>{
@@ -865,4 +866,5 @@ test("Luma approval uses the same governed quote adapter and stable config ID",a
  assert.equal(approvalArgs.p_input.provider,"luma");
  assert.equal(approvalArgs.p_input.model,"ray-3.2");
  assert.equal(approvalArgs.p_input.operation,"generate");
+ assert.equal(approvalArgs.p_input.approvedMaxAmount,0.5);
 });
