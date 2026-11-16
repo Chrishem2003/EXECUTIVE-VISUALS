@@ -306,3 +306,23 @@ test("Kling 4 accepts its documented 26,000-character prompt limit",()=>{
  assert.equal(buildRunwayVideoPayload({model:"kling_4",prompt,durationSeconds:5}).promptText.length,26000);
  assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:prompt+"x",durationSeconds:5}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
 });
+
+test("Kling 3.0 multi-shot validates six segments and sends providerSettings",()=>{
+ const multiPrompt=[{prompt:"Wide shot of a storm approaching",duration:5},{prompt:"Close-up of rain hitting the glass",duration:4}];
+ const payload=buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt,aspectRatio:"16:9"});
+ assert.deepEqual(payload,{model:"kling3.0_pro",ratio:"1920:1080",providerSettings:{multiPrompt,shotType:"customize"}});
+ assert.equal("duration" in payload,false);
+});
+test("Kling 3.0 multi-shot enforces segment counts, prompt lengths, total duration and intelligence prompt",()=>{
+ const valid=[{prompt:"Shot one",duration:2},{prompt:"Shot two",duration:2}];
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:[]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:[{prompt:"x",duration:3}]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:Array.from({length:7},()=>({prompt:"shot",duration:1}))}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:valid,shotType:"intelligence"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:"",multiPrompt:valid}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Kling 3.0 4K maps only its documented 4K aspect ratios",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"kling3.0_4k",prompt:"A cinematic shot",durationSeconds:8,aspectRatio:"16:9"}),{
+  model:"kling3.0_4k",promptText:"A cinematic shot",ratio:"3840:2160",duration:8
+ });
+});
