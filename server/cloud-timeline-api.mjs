@@ -19,7 +19,7 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
+const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
 const directRunwayConfigId=model=>"runway-direct-"+String(model).replace(/[^a-z0-9]+/gi,"-").toLowerCase();
 function directRunwayEnabled(env,model){
  const allowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -336,13 +336,14 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       if(workflowRequest.model==="seedance2_5"&&Math.min(sourceMetadata.width,sourceMetadata.height)<480){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
       }
-      if(workflowRequest.model==="kling_4"){
+      if(["kling_4","kling_4_flash"].includes(workflowRequest.model)){
        const aspect=sourceMetadata.width/sourceMetadata.height;
-       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>30||
+       const maxSourceSeconds=workflowRequest.model==="kling_4_flash"?21:30;
+       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>maxSourceSeconds||
           Math.min(sourceMetadata.width,sourceMetadata.height)<700||
           !Number.isFinite(sourceMetadata.frameRate)||sourceMetadata.frameRate<24||sourceMetadata.frameRate>60||
           aspect<0.4||aspect>2.5){
-        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Kling 4 source video must meet its 3–30 second, 700px, 24–60 fps and aspect-ratio requirements."}});
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Kling source video must meet its model-specific duration, 700px, 24–60 fps and aspect-ratio requirements."}});
        }
       }
      }
