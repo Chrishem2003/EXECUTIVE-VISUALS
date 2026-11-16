@@ -14,7 +14,7 @@ test("cloud soundtrack replacement materializes both private assets and publishe
  const source=join(directory,"source.mp4"),audio=join(directory,"replacement.mp3"),argsLog=join(directory,"ffmpeg-args.txt");
  await writeFile(source,"source-video");await writeFile(audio,"replacement-audio");
  const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
-printf '%s\\n' "$@" > "${argsLog}"
+printf '%s\n' "$@" > "${argsLog}"
 for last do :; done
 printf 'localized-video' > "$last"`);
  const ffprobe=await executable(directory,"ffprobe",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
@@ -54,11 +54,11 @@ esac`);
   assert.ok(leaseChecks>=1);
   assert.equal(result.outputAsset.id,"localized-derivative");
   const ffmpegArgs=await readFile(argsLog,"utf8");
-  assert.match(ffmpegArgs,/-map\\n0:v:0/);
-  assert.match(ffmpegArgs,/-map\\n1:a:0/);
-  assert.match(ffmpegArgs,/-af\\napad/);
-  assert.match(ffmpegArgs,/-c:v\\ncopy/);
-  assert.match(ffmpegArgs,/-c:a\\naac/);
+  assert.ok(ffmpegArgs.includes("-map\n0:v:0"));
+  assert.ok(ffmpegArgs.includes("-map\n1:a:0"));
+  assert.ok(ffmpegArgs.includes("-af\napad"));
+  assert.ok(ffmpegArgs.includes("-c:v\ncopy"));
+  assert.ok(ffmpegArgs.includes("-c:a\naac"));
  }finally{
   if(previousFfmpeg===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previousFfmpeg;
   if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;
