@@ -619,7 +619,7 @@ test("Gemini Omni 1.2 edit mode submits an owner-resolved source with automatic 
   assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
   assert.deepEqual(submitted, {
     model: "gemini_omni_flash_1.2", videoUri: "runway://ephemeral/gemini-source",
-    promptText: "Replace the background with a quiet coastal road", mode: "edit", duration: "auto"
+    promptText: "Replace the background with a quiet coastal road", mode: "edit", duration: "auto", resolution: "720p"
   });
 });
 
@@ -654,7 +654,7 @@ test("Gemini Omni 1.2 reference mode maps resolution and ratio; extend omits rat
   const extend = await adapter.prepareInput({
     provider: "runway", model: "gemini_omni_flash_1.2", operation: "video-to-video",
     sourceVideoAssetId: "source-video", prompt: "Continue the scene",
-    mode: "extend", duration: 5, durationSeconds: 5
+    mode: "extend", duration: 5, durationSeconds: 5, resolution: "1080p"
   }, { job: { owner_id: "owner-1" } });
   await adapter.submit(extend);
   assert.deepEqual(bodies[0], {
@@ -663,7 +663,42 @@ test("Gemini Omni 1.2 reference mode maps resolution and ratio; extend omits rat
   });
   assert.deepEqual(bodies[1], {
     model: "gemini_omni_flash_1.2", videoUri: "runway://ephemeral/gemini-ref",
-    promptText: "Continue the scene", mode: "extend", duration: 5
+    promptText: "Continue the scene", mode: "extend", duration: 5, resolution: "1080p"
+  });
+});
+
+test("Gemini Omni 1.2 accepts an authorized first frame through the durable image-to-video path", async () => {
+  let submitted;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "gemini_omni_flash_1.2",
+    prepareInput: async () => ({
+      firstFrame: { buffer: Buffer.alloc(512), filename: "first.png", mimeType: "image/png" }
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/gemini-first-frame",
+        fields: { key: "gemini-first-frame" }, runwayUri: "runway://ephemeral/gemini-first-frame"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/gemini-first-frame") return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) {
+        submitted = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "gemini_omni_flash_1.2", operation: "image-to-video",
+    prompt: "Animate the approved opening frame", startFrameAssetId: "first-frame-asset",
+    durationSeconds: 5, aspectRatio: "9:16", resolution: "1080p"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.promptImageUri, "runway://ephemeral/gemini-first-frame");
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  assert.deepEqual(submitted, {
+    model: "gemini_omni_flash_1.2", promptText: "Animate the approved opening frame",
+    promptImage: "runway://ephemeral/gemini-first-frame", ratio: "1080:1920", duration: 5
   });
 });
 
