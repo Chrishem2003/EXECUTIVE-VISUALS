@@ -26,7 +26,7 @@ The original text-to-video adapter described above was the first implementation 
 - Direct generation: Gen-4.5, Seedance 2.5, Kling 4.0, Kling 4.0 Flash, Kling 3.0 profiles and Gemini Omni Flash 1.2.
 - Source-video operations: Aleph 2, Seedance 2.5, Kling 4.0, Kling 4.0 Flash and Gemini Omni Flash 1.2, with model-specific source duration, resolution and mode validation.
 - Seedance 2.5 supports reference, extend and edit modes, 480p draft previews and a separately approved 1080p draft enhancement.
-- Gemini Omni Flash 1.2 supports reference, extend and edit modes; edit/extend requests use the provider's automatic source-length behavior and fixed 720p output.
+- Gemini Omni Flash 1.2 supports text-to-video, first-frame image-to-video and source-video reference, extend and edit modes. Reference mode accepts a source clip up to 10 seconds and uses output ratio plus a 3–15 second generated duration. Edit mode requires a source clip shorter than 10 seconds, uses automatic source-length output and accepts a selectable 360p/720p/1080p/4K resolution. Extend mode accepts source clips up to 30 seconds, adds 3–15 seconds (or provider-selected automatic duration), and accepts a selectable output resolution. Edit/extend preserve source orientation and omit the output ratio.
 - Private source assets are resolved within the authenticated owner/project boundary, probed server-side, uploaded to Runway's ephemeral storage and then submitted as durable provider tasks.
 - Provider task IDs, lease-fenced submission state, private output ingestion and task-level cost reconciliation remain part of the existing durable job path.
 - The Video Studio exposes source-video selection, rights confirmation, mode selection and output controls for the supported direct models.
