@@ -7,7 +7,7 @@ test("soundtrack replacement copies the original video and maps only the replace
  assert.deepEqual(args,[
   "-hide_banner","-y","-i","/private/source.mp4","-i","/private/derived/dub.mp3",
   "-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k",
-  "-shortest","-movflags","+faststart","/private/derived/localized.mp4"
+  "-af","apad","-shortest","-movflags","+faststart","/private/derived/localized.mp4"
  ]);
 });
 
