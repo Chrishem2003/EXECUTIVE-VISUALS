@@ -362,7 +362,7 @@ export function createRunwayCloudVideoAdapter({
       if (selectedModel === "veo3.1" || selectedModel === "veo3.1_fast") {
         const requestPlan = buildVeoRequest(input);
         const submitted = await request(requestPlan.endpoint, { method: "POST", submission: true, body: requestPlan.body });
-        return { taskId: taskId(submitted.id), status: "queued" };
+        return { taskId: taskId(submitted.id), status: "queued", metadata: { submittedAt: new Date().toISOString() } };
       }
 
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
