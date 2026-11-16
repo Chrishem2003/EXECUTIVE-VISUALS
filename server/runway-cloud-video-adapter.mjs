@@ -288,8 +288,9 @@ export function createRunwayCloudVideoAdapter({
         return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4"].includes(selectedModel)) {
-        const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : 1000;
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+        const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+        const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
+      if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
         }
         if (!isRunwayUri(input.videoUri)) throw fail("Video-to-video requires a prepared private source upload.", "RUNWAY_INPUT_INVALID");
@@ -356,7 +357,9 @@ export function createRunwayCloudVideoAdapter({
             promptImage: "data:image/png;base64,AA==",
             durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
             aspectRatio: input.aspectRatio || "16:9",
-            resolution: input.resolution || "provider_default"
+            resolution: input.resolution || "provider_default",
+            multiPrompt: input.multiPrompt,
+            shotType: input.shotType || "customize"
           }),
           promptImage: input.promptImageUri
         };
@@ -366,7 +369,9 @@ export function createRunwayCloudVideoAdapter({
           prompt: input.prompt.trim(),
           durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
           aspectRatio: input.aspectRatio || "16:9",
-          resolution: input.resolution || "provider_default"
+          resolution: input.resolution || "provider_default",
+          multiPrompt: input.multiPrompt,
+          shotType: input.shotType || "customize"
         });
       }
       if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro"].includes(selectedModel)) {
