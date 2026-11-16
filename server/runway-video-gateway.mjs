@@ -120,6 +120,12 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
+ }else if(id==="gemini_omni_flash_1.2"){
+  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by Gemini Omni 1.2 image-to-video.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const ratio=ratioFor(id,aspectRatio,effectiveResolution);
+  if(!ratio)throw fail("No verified Gemini Omni 1.2 image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  payload.ratio=ratio;
  }else if(id==="kling_4"){
   payload.ratio=resolution==="1080p"?"auto_1080p":"auto_720p";
  }else if(id.startsWith("kling3.0_")){
