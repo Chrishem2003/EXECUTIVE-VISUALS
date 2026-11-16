@@ -507,3 +507,18 @@ test("Kling 4 video-to-video submits a private source after validating source me
     promptText: "Replace the background with a studio"
   });
 });
+
+test("Kling 3.0 durable worker submits a multi-shot task without a top-level prompt",async()=>{
+ let submitted;
+ const adapter=createRunwayCloudVideoAdapter({
+  ...base,model:"kling3.0_pro",
+  fetchImpl:async(url,options={})=>{
+   if(String(url).endsWith("/text_to_video")){submitted=JSON.parse(options.body);return new Response(JSON.stringify({id}),{status:200});}
+   throw new Error("unexpected URL "+String(url));
+  }
+ });
+ const multiPrompt=[{prompt:"A wide establishing shot of a forest",duration:5},{prompt:"A close-up of a bird taking flight",duration:5}];
+ const result=await adapter.submit({provider:"runway",model:"kling3.0_pro",operation:"text-to-video",prompt:"",multiPrompt,aspectRatio:"16:9"});
+ assert.deepEqual(result,{taskId:id,status:"queued"});
+ assert.deepEqual(submitted,{model:"kling3.0_pro",ratio:"1920:1080",providerSettings:{multiPrompt,shotType:"customize"}});
+});
