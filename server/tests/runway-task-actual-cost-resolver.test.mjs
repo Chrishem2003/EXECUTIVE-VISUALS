@@ -42,6 +42,14 @@ test("billing readiness blocks Veo generation if Enterprise workspace usage is n
   await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
 });
 
+test("billing readiness rejects malformed pagination envelopes", async () => {
+  const resolve = createRunwayTaskActualCostResolver({
+    apiKey: "server-test-key", enabled: true, now: () => current,
+    fetchImpl: async () => response({ data: [], hasMore: true, nextCursor: null })
+  });
+  await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
+});
+
 test("settles Veo task cost from the exact Enterprise per-generation usage row", async () => {
   let url;
   const resolve = resolver(async value => {
