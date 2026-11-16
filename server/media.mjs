@@ -86,7 +86,7 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
  const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
  if(jobType==="media.audio_replace"){
   if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath||typeof input.replacementAudioPath!=="string"||!input.replacementAudioPath)fail("Video and replacement audio paths are required.");
-  return ["-hide_banner","-y","-i",sourcePath,"-i",input.replacementAudioPath,"-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",outputPath];
+  return ["-hide_banner","-y","-i",sourcePath,"-i",input.replacementAudioPath,"-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-af","apad","-shortest","-movflags","+faststart",outputPath];
  }
  const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
  const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
