@@ -447,6 +447,14 @@ document.addEventListener("change",event=>{
   const activeOperation=operationValues.some(([id])=>id===operation)?operation:"generate";
   const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
   const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate";
+  if(!sourceVideoEnabled){
+   const picker=form?.querySelector<HTMLSelectElement>('[name="sourceVideoAssetPicker"]');if(picker)picker.value="";
+   const manual=form?.querySelector<HTMLInputElement>('[name="sourceVideoAssetId"]');if(manual)manual.value="";
+  }
+  if(!startFrameEnabled){
+   const picker=form?.querySelector<HTMLSelectElement>('[name="startFrameAssetPicker"]');if(picker)picker.value="";
+   const manual=form?.querySelector<HTMLInputElement>('[name="startFrameAssetId"]');if(manual)manual.value="";
+  }
   for(const name of ["sourceVideoAssetPicker","sourceVideoAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!sourceVideoEnabled;}
   for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="edit";}
   for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="reframe";}
