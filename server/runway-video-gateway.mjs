@@ -109,6 +109,8 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   payload.ratio=ratio;
  }else if(id==="kling_4"){
   payload.ratio=resolution==="1080p"?"auto_1080p":"auto_720p";
+ }else if(id.startsWith("kling3.0_")){
+  payload.ratio=ratioFor(id,aspectRatio,profile.defaultResolution);
  }
  return Object.freeze(payload);
 }
