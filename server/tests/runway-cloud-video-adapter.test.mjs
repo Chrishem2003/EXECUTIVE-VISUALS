@@ -437,7 +437,7 @@ test("Seedance 2.5 reference video-to-video validates and uploads a private sour
   assert.equal(prepared.sourceMetadata.width, 1920);
   assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
   assert.deepEqual(submitted, {
-    model: "seedance2_5", promptVideo: "runway://ephemeral/seedance-source",
+    model: "seedance2_5", videoUri: "runway://ephemeral/seedance-source",
     promptText: "Continue the same cinematic scene", mode: "reference",
     duration: 8, ratio: "1280:720", audio: false
   });
