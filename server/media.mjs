@@ -669,6 +669,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
+  if(job.job_type==="media.audio_replace"){
+    const streams=Array.isArray(outputMetadata.streams)?outputMetadata.streams:[];
+    if(!streams.some(stream=>stream.codec_type==="video")||!streams.some(stream=>stream.codec_type==="audio")){await unlink(outputPath).catch(()=>{});throw Object.assign(new Error("Localized video output must contain both the preserved picture stream and the replacement audio stream."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});}
+  }
   let c2paPreservation;
   try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});}
   catch(error){await unlink(outputPath).catch(()=>{});throw error;}
@@ -677,7 +681,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}), c2paPreservation });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacement.id,replacementAudioSha256:replacement.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation, c2paPreservation };
 }
