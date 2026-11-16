@@ -180,8 +180,8 @@ test("capability atlas is authenticated, read-only and distinguishes implemented
   assert.equal(response.status,200);
   const atlas=await response.json();
   assert.equal(atlas.version,2);
-  assert.equal(atlas.summary.implementedOperations,2);
-  assert.equal(atlas.summary.documentedNotIntegrated,10);
+  assert.equal(atlas.summary.implementedOperations,6);
+  assert.equal(atlas.summary.documentedNotIntegrated,6);
   assert.equal(atlas.providers[0].policy.requestsSubmitted,false);
   assert.equal(atlas.providers[0].policy.credentialsExposed,false);
   assert.equal(atlas.providers[0].operations.find(x=>x.id==="video.video_to_video").status,"documented_not_integrated");
