@@ -232,6 +232,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const mediaType=String(asset.mediaType||"");
     const compatible=jobType==="media.probe"?/^(image|video|audio)\//.test(mediaType):
      ["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
+     jobType==="media.audio-master"?mediaType.startsWith("audio/"):
      jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
      jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
      jobType==="media.transcode"?(mediaType.startsWith("video/")||mediaType.startsWith("audio/")):false;
@@ -240,7 +241,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!options||typeof options!=="object"||Array.isArray(options))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options must be a JSON object."}});
     const allowedOptions=new Set(optionKeys[jobType]);
     if(Object.keys(options).some(key=>!allowedOptions.has(key)))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options contain unsupported fields for this operation."}});
-    const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
+    const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],targetLra:[1,20],truePeakDbtp:[-9,-1],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
+    if(jobType==="media.audio-master"&&options.targetLufs!==undefined&&(!Number.isFinite(options.targetLufs)||options.targetLufs< -24||options.targetLufs> -12))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Audio mastering integrated loudness must be between -24 and -12 LUFS."}});
     for(const [key,[minimum,maximum]] of Object.entries(numericRanges)){
      if(options[key]!==undefined&&(!Number.isFinite(options[key])||options[key]<minimum||options[key]>maximum))
       return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media option "+key+" is outside its supported range."}});
