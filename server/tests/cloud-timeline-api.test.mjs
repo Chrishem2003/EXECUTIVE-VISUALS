@@ -341,7 +341,7 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:{async prepareInput(input,context){prepared.push({input,context});return{...input};},async preflight(){throw new Error("approval must not call provider preflight");}},
-  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
  });
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
