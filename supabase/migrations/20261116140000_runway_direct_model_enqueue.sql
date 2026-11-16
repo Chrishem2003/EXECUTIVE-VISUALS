@@ -34,7 +34,7 @@ declare
     end if;
     if p_input ? 'draftTaskId' and
        (p_model <> 'seedance2_5' or coalesce(p_input ->> 'operation','') <> 'text-to-video' or
-        coalesce(p_input ->> 'resolution','') <> '1080p' or p_input ->> 'draft' = 'true' or
+        coalesce(p_input ->> 'resolution','') <> '1080p' or p_input ->> 'draft' = 'true' or coalesce(p_input ->> 'draftEnhancement','') <> 'true' or
         coalesce(p_input ->> 'draftTaskId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}    if coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]{1,2}$' then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
