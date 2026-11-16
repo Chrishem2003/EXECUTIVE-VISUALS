@@ -69,8 +69,8 @@ export function createProviderAwareCloudVideoWorkerComposition({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) {
     throw new Error("Provider-aware cloud video worker timeout is invalid.");
   }
-  if (!Array.isArray(runwayModels) || runwayModels.length > 10 ||
-      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) ||
+  if (!Array.isArray(runwayModels) || runwayModels.length > 11 ||
+      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) ||
       new Set(runwayModels).size !== runwayModels.length) {
     throw new Error("Runway model registration must be a unique list of explicitly supported model profiles.");
   }
@@ -190,7 +190,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           typeof prepareInput !== "function") {
         throw new Error("Runway source operations require an owner-scoped source-media resolver.");
       }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "seedance2_5", "kling_4", "kling_4_flash"].includes(model)) &&
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "seedance2_5", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(model)) &&
           typeof resolveSourceMetadata !== "function") {
         throw new Error("Runway source operations require a server-side media metadata resolver for safe budget reservation.");
       }
