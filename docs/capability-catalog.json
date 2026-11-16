@@ -105,6 +105,11 @@
       "Transcribe audio with timing"
     ],
     [
+      "audio.voice-isolation",
+      "audio",
+      "Isolate dialogue from background noise"
+    ],
+    [
       "campaign.product-ingest",
       "campaign",
       "Ingest product facts and media"
@@ -288,6 +293,11 @@
       "integration.webhook",
       "integration",
       "Receive verified provider event"
+    ],
+    [
+      "localization.audio-dub",
+      "localization",
+      "Dub approved audio into a target language"
     ],
     [
       "localization.dub",
@@ -662,6 +672,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 117,
+  "capabilityCount": 119,
   "domainCount": 23
 }
