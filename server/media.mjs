@@ -602,7 +602,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     return { metadata, outputAsset:null };
   }
 
-  let ext, args, outputName, mime;
+  let ext, args, outputName, mime, replacementAudioAsset=null;
   if (job.job_type === "media.thumbnail") {
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Frame extraction requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const seconds = Math.max(0, Math.min(3600, Number(input.seconds ?? 1) || 0));
@@ -613,14 +613,14 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
   } else if(job.job_type==="media.audio_replace"){
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Soundtrack replacement requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    const replacement=getAccessibleAsset(db,job.owner_id,String(input.replacementAudioAssetId||""),true);
-    if(!replacement||!String(replacement.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Replacement soundtrack must be an accessible private audio asset."),{code:"SOURCE_AUDIO_NOT_FOUND"});
-    const replacementPath=join(mediaRoot,replacement.storage_path);
+    replacementAudioAsset=getAccessibleAsset(db,job.owner_id,String(input.replacementAudioAssetId||""),true);
+    if(!replacementAudioAsset||!String(replacementAudioAsset.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Replacement soundtrack must be an accessible private audio asset."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const replacementPath=join(mediaRoot,replacementAudioAsset.storage_path);
     const replacementStat=await stat(replacementPath);
-    if(!replacementStat.isFile()||replacementStat.size!==replacement.byte_size||replacementStat.size<=0)throw Object.assign(new Error("Replacement audio asset is missing or changed since ingest."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    if(!replacementStat.isFile()||replacementStat.size!==replacementAudioAsset.byte_size||replacementStat.size<=0)throw Object.assign(new Error("Replacement audio asset is missing or changed since ingest."),{code:"ASSET_CHECKSUM_MISMATCH"});
     const replacementHash=createHash("sha256");
     await pipeline(createReadStream(replacementPath),new Transform({transform(chunk,enc,cb){replacementHash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
-    if(replacementHash.digest("hex")!==replacement.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    if(replacementHash.digest("hex")!==replacementAudioAsset.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
     ext="mp4";mime="video/mp4";outputName=source.original_name.replace(/\\.[^.]+$/,"")+"-localized.mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input:{...input,replacementAudioPath:replacementPath},sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else if(job.job_type==="media.audio-clean"){
@@ -681,7 +681,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacement.id,replacementAudioSha256:replacement.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacementAudioAsset?.id,replacementAudioSha256:replacementAudioAsset?.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation, c2paPreservation };
 }
