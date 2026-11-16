@@ -10,7 +10,8 @@ const base = {
   enabled: true,
   allowRemote: true,
   ingestOutputs: async () => ({ assetIds: ["asset-1"] }),
-  resolveActualCost: async () => ({ amount: 12, currency: "USD", evidenceReference: "runway:usage-row:1" })
+  resolveActualCost: async () => ({ amount: 12, currency: "USD", evidenceReference: "runway:usage-row:1" }),
+  assertActualCostReady: async () => true
 };
 
 test("submits one Gen-4.5 text-to-video task using the pinned API version", async () => {
