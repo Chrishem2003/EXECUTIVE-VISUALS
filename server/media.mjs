@@ -637,7 +637,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     return { metadata, outputAsset:null };
   }
 
-  let ext, args, outputName, mime, replacementAudioAsset=null;
+  let ext, args, outputName, mime, replacementAudioAsset=null, audioMasterMetrics=null;
   if (job.job_type === "media.thumbnail") {
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Frame extraction requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const seconds = Math.max(0, Math.min(3600, Number(input.seconds ?? 1) || 0));
@@ -658,6 +658,15 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     if(replacementHash.digest("hex")!==replacementAudioAsset.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
     ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-localized.mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input:{...input,replacementAudioPath:replacementPath},sourcePath,outputPath:join(outputDir,id+"."+ext)});
+  } else if(job.job_type==="media.audio-master"){
+    if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio mastering requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+    ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-mastered.wav";
+    onProgress(15);
+    const analysis=await run("ffmpeg",buildAudioMasterAnalysisArgs({sourcePath,input}),5*60*1000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    audioMasterMetrics=parseAudioMasterMeasurement(analysis.stderr);
+    audioMasterMetrics.targets={integratedLufs:Number(input.targetLufs??-16),loudnessRangeLu:Number(input.targetLra??11),truePeakDbtp:Number(input.truePeakDbtp??-1.5)};
+    args=buildAudioMasterRenderArgs({sourcePath,outputPath:join(outputDir,id+"."+ext),input,measurement:audioMasterMetrics});
   } else if(job.job_type==="media.audio-clean"){
     if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-cleaned.wav";
@@ -716,7 +725,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacementAudioAsset?.id,replacementAudioSha256:replacementAudioAsset?.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacementAudioAsset?.id,replacementAudioSha256:replacementAudioAsset?.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(audioMasterMetrics?{audioMastering:{standard:"EBU R128",method:"two-pass loudnorm",measurement:audioMasterMetrics,output:{codec:"pcm_s24le",sampleRateHz:48000}}}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation, c2paPreservation };
 }
