@@ -32,6 +32,12 @@ begin
      or position('sourceVideoAssetId' in function_sql) = 0 then
     raise exception 'KLING_FLASH_SOURCE_ASSET_POLICY_MISSING';
   end if;
+  if position('VIDEO_DRAFT_CONFIGURATION_INVALID' in function_sql) = 0
+     or position('VIDEO_DRAFT_FLAG_INVALID' in function_sql) = 0
+     or position('p_input ->> ''draft''' in function_sql) = 0
+     or position('''480p''' in function_sql) = 0 then
+    raise exception 'SEEDANCE_DRAFT_PRICE_POLICY_MISSING';
+  end if;
 end
 $runway_direct_model_contract$;
 
