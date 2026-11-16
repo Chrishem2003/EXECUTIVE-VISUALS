@@ -8,7 +8,7 @@ const project="423e4567-e89b-42d3-a456-426614174000";
 const assetId="823e4567-e89b-42d3-a456-426614174000";
 const jobId="923e4567-e89b-42d3-a456-426614174000";
 
-function mediaJobApi({asset={id:assetId,ownerId:owner,projectId:project,name:"scene.mp4",mediaType:"video/mp4",size:100,sha256:"a".repeat(64)},canWrite=true,canRead=true,existing=[] ,mediaJobsEnabled=true}={}){
+function mediaJobApi({asset={id:assetId,ownerId:owner,projectId:project,name:"scene.mp4",mediaType:"video/mp4",size:100,sha256:"a".repeat(64)},replacementAudioAsset=null,canWrite=true,canRead=true,existing=[] ,mediaJobsEnabled=true}={}){
  const calls=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
@@ -21,7 +21,7 @@ function mediaJobApi({asset={id:assetId,ownerId:owner,projectId:project,name:"sc
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,mediaJobsEnabled,
-  timelineService:{timelines:{},assets:{async get(input){calls.push({assetGet:input});return asset;}}},
+  timelineService:{timelines:{},assets:{async get(input){calls.push({assetGet:input});return input.assetId===asset.id?asset:replacementAudioAsset;}}},
   authorize:async input=>input.ownerId===owner&&(!input.projectId||input.projectId===project)&&(input.action==="read"?canRead:canWrite)
  });
  return{api,calls};
@@ -58,6 +58,26 @@ test("cloud media jobs accept bounded EBU R128 mastering targets only for privat
  const video=mediaJobApi();
  const mismatch=await video.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-master-003",body:{jobType:"media.audio-master",options:{targetLufs:-16}}});
  assert.equal(mismatch.status,415);
+});
+
+test("cloud media jobs authorize a same-project private replacement soundtrack before queueing",async()=>{
+ const replacementAudioAsset={id:"a23e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"dub.mp3",mediaType:"audio/mpeg",size:120,sha256:"b".repeat(64)};
+ const f=mediaJobApi({replacementAudioAsset});
+ const accepted=await f.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-replace-001",body:{jobType:"media.audio_replace",options:{replacementAudioAssetId:replacementAudioAsset.id}}});
+ assert.equal(accepted.status,202);
+ const created=JSON.parse(f.calls.find(call=>call.url?.includes("/jobs?")&&call.options.method==="POST").options.body);
+ assert.equal(created.job_type,"media.audio_replace");
+ assert.deepEqual(created.input,{sourceAssetId:assetId,replacementAudioAssetId:replacementAudioAsset.id});
+ assert.ok(f.calls.some(call=>call.assetGet?.assetId===replacementAudioAsset.id));
+ const wrongProject=mediaJobApi({replacementAudioAsset:{...replacementAudioAsset,projectId:"523e4567-e89b-42d3-a456-426614174000"}});
+ const denied=await wrongProject.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-replace-002",body:{jobType:"media.audio_replace",options:{replacementAudioAssetId:replacementAudioAsset.id}}});
+ assert.equal(denied.status,422);
+ const wrongType=mediaJobApi({replacementAudioAsset:{...replacementAudioAsset,mediaType:"video/mp4"}});
+ const rejected=await wrongType.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-replace-003",body:{jobType:"media.audio_replace",options:{replacementAudioAssetId:replacementAudioAsset.id}}});
+ assert.equal(rejected.status,422);
+ const missing=mediaJobApi();
+ const missingAsset=await missing.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-replace-004",body:{jobType:"media.audio_replace",options:{replacementAudioAssetId:replacementAudioAsset.id}}});
+ assert.equal(missingAsset.status,422);
 });
 
 test("cloud media jobs enforce editor authorization and media compatibility before writes",async()=>{
