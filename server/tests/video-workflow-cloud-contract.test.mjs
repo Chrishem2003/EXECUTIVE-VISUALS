@@ -441,7 +441,7 @@ test("maps a private first frame into the direct Kling 4 image-to-video contract
 });
 test("maps Seedance 2.5 private video extension to auto duration",()=>{
  const request=createVideoWorkflowCloudRequest({
-  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"extend",duration:"auto",sourceVideoAssetId:"private-source"}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"extend",duration:"auto",sourceVideoAssetId:"private-source",rightsConfirmed:true}},
   projectId:"project-1",requestId:"runway-seedance-extend",values:{prompt:"Continue the same scene"}
  });
  assert.equal(request.operation,"video-to-video");assert.equal(request.input.mode,"extend");
@@ -471,6 +471,7 @@ test("builds a Seedance 2.5 draft workflow request with a 480p quote and preserv
   projectId:"project-1",requestId:"seedance-draft-workflow",values:{prompt:"A cinematic product reveal"}
  });
  assert.equal(request.input.draft,true);
+ assert.equal(request.input.draftTargetResolution,"1080p");
  assert.equal(request.input.resolution,"480p");
  assert.equal(request.input.durationSeconds,8);
  assert.equal(request.operation,"text-to-video");
@@ -485,10 +486,19 @@ test("rejects draft mode for non-Seedance workflow models",()=>{
 
 test("builds a governed Kling 4.0 Flash cloud video-to-video request",()=>{
  const request=createVideoWorkflowCloudRequest({
-  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"private-source",durationSeconds:8,resolution:"720p",aspectRatio:"16:9"}},
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"private-source",durationSeconds:8,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true}},
   projectId:"project-1",requestId:"kling-flash-workflow",values:{prompt:"Continue the scene with a slow camera move"}
  });
  assert.equal(request.provider,"runway");assert.equal(request.model,"kling_4_flash");
  assert.equal(request.operation,"video-to-video");assert.equal(request.input.durationSeconds,8);
  assert.equal(request.input.resolution,"720p");assert.equal(request.input.sourceVideoAssetId,"private-source");
+});
+
+test("direct Runway source media requires explicit rights confirmation before quote",()=>{
+ for(const values of [{sourceVideoAssetId:"source"},{image:"first-frame"}]){
+  assert.throws(()=>createVideoWorkflowCloudRequest({
+   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",durationSeconds:8}},
+   projectId:"project-1",requestId:"direct-rights-missing",values:{prompt:"A cinematic scene",...values}
+  }),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
+ }
 });
