@@ -507,3 +507,10 @@ test("Video Studio workflow inspector exposes direct Runway models, private firs
  const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
  for(const token of ["kling_4_flash","seedance2_5","name=\"videoDraft\"","name=\"startFrameAssetPicker\"","name=\"sourceVideoAssetPicker\"","video-to-video","draftTargetResolution"]){assert.ok(ui.includes(token),"missing Studio workflow control: "+token);}
 });
+
+test("rejects Seedance draft enhancement targets other than 1080p",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,draftTargetResolution:"4k",durationSeconds:8,resolution:"480p"}},
+  projectId:"project-1",requestId:"invalid-draft-master-tier",values:{prompt:"A cinematic product reveal"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
