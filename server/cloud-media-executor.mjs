@@ -367,6 +367,10 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           throw Object.assign(new Error("Derivative has no valid, verifiable duration; it was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
       }
       outputProbe = structuralMetadata;
+      if(job.job_type==="media.audio-master"){
+        const mastered=structuralStreams.find(stream=>stream?.codec_type==="audio");
+        if(!mastered||mastered.codec_name!=="pcm_s24le"||Number(mastered.sample_rate)!==48000)throw Object.assign(new Error("Audio master must be verified as 48 kHz 24-bit PCM before publication."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+      }
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
         const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
