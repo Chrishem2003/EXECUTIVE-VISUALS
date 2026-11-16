@@ -153,8 +153,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  async function prepareSeedanceDraftEnhancementNode(node,ownerId,projectId){
   const config=node?.config&&typeof node.config==="object"&&!Array.isArray(node.config)?node.config:{};
   if(config.operation!=="draft-enhancement")return node;
-  const sourceJobId=String(config.sourceDraftJobId||""),draftTaskId=String(config.draftTaskId||"");
-  if(!safeId(sourceJobId)||!safeId(draftTaskId))throw Object.assign(new Error("Select a valid completed Seedance draft job and its provider task ID."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
+  const sourceJobId=String(config.sourceDraftJobId||""),requestedDraftTaskId=String(config.draftTaskId||"");
+  if(!safeId(sourceJobId)||(requestedDraftTaskId&&!safeId(requestedDraftTaskId)))throw Object.assign(new Error("Select a valid completed Seedance draft cloud job."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
   const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output,created_at&id=eq."+encodeURIComponent(sourceJobId)+
    "&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+
    "&job_type=eq.video.generate&status=eq.succeeded&limit=1");
@@ -165,13 +165,14 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!source||source.owner_id!==ownerId||source.project_id!==projectId||source.job_type!=="video.generate"||source.status!=="succeeded"||
      !Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
      input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||
-     output.provider!=="runway"||output.model!=="seedance2_5"||output.providerTaskId!==draftTaskId||
+     output.provider!=="runway"||output.model!=="seedance2_5"||!safeId(output.providerTaskId)||
+     requestedDraftTaskId&&output.providerTaskId!==requestedDraftTaskId||
      !Array.isArray(output.assetIds)||output.assetIds.length<1||
      !Number.isInteger(input.durationSeconds)||input.durationSeconds<4||input.durationSeconds>30){
    throw Object.assign(new Error("The source must be a succeeded Seedance 2.5 480p preview from this project, owned by this account and created within the last seven days."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
   }
   return {...node,config:{...config,provider:"runway",model:"seedance2_5",durationSeconds:input.durationSeconds,
-   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId,sourceDraftJobId:sourceJobId}};
+   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId:output.providerTaskId,sourceDraftJobId:sourceJobId}};
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
