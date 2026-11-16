@@ -90,6 +90,11 @@
       "Synchronize speech to presenter"
     ],
     [
+      "audio.master",
+      "audio",
+      "Master audio to EBU R128 loudness and true-peak targets"
+    ],
+    [
       "audio.sound-design",
       "audio",
       "Generate music and sound effects"
@@ -677,6 +682,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 120,
+  "capabilityCount": 121,
   "domainCount": 23
 }
