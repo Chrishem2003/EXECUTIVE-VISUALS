@@ -83,6 +83,23 @@ export async function resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,li
    if(result?.status!==200)continue;
    const cloudJob=result.body?.job;
    if(!cloudJob||cloudJob.id!==cloudJobId)continue;
+   // A local workflow receipt is a capability to resume downstream work. Verify
+   // the full tenant/project/job/quote/request binding before any state change,
+   // including terminalization, rather than trusting a matching cloud job ID.
+   const receiptValid=UUID.test(String(output.quoteId||""))&&
+    typeof output.requestId==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(output.requestId)&&
+    typeof output.requestHash==="string"&&/^[a-f0-9]{64}$/.test(output.requestHash)&&
+    Number.isFinite(Number(output.approvedMaxAmount))&&Number(output.approvedMaxAmount)>0&&
+    cloudJob.owner_id===row.owner_id&&cloudJob.project_id===row.project_id&&
+    cloudJob.job_type==="video.generate"&&
+    cloudJob.input?.workflowQuoteId===output.quoteId&&
+    cloudJob.input?.workflowRequestId===output.requestId&&
+    cloudJob.input?.requestHash===output.requestHash;
+   if(!receiptValid){
+    const mismatch=Object.assign(new Error("Cloud video job does not match the parked workflow owner, project, quote and immutable request receipt."),{code:"WORKFLOW_CLOUD_JOB_RECEIPT_MISMATCH"});
+    onError(mismatch,{runId:row.run_id,nodeId:row.node_id,cloudJobId});
+    continue;
+   }
    if(cloudJob.status==="succeeded"){
     if(transitionToQueued({db,row,cloudJobId}))resumed++;
    }else if(["failed","needs_input","cancelled","canceled"].includes(String(cloudJob.status))){
