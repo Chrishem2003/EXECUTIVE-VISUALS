@@ -190,7 +190,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           typeof prepareInput !== "function") {
         throw new Error("Runway source operations require an owner-scoped source-media resolver.");
       }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "seedance2_5", "kling_4"].includes(model)) &&
           typeof resolveSourceMetadata !== "function") {
         throw new Error("Runway source operations require a server-side media metadata resolver for safe budget reservation.");
       }
