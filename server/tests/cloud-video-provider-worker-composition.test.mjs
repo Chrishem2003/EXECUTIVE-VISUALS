@@ -334,7 +334,7 @@ test("registers verified Seedance 2.5 and Kling 4 models in the durable Runway w
   const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
     createAdapters: undefined,
-    runwayModels: ["seedance2_5", "kling_4"],
+    runwayModels: ["seedance2_5", "kling_4", "kling_4_flash"],
     env: {
       ...env,
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
@@ -349,6 +349,7 @@ test("registers verified Seedance 2.5 and Kling 4 models in the durable Runway w
   });
   assert.ok(worker.listSupported().includes("runway:seedance2_5"));
   assert.ok(worker.listSupported().includes("runway:kling_4"));
+  assert.ok(worker.listSupported().includes("runway:kling_4_flash"));
 });
 
 test("registers Kling 3.0 4K in the durable Runway worker allowlist",()=>{
