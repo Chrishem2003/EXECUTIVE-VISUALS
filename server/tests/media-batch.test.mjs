@@ -6,10 +6,12 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="223e4567-e89b-42d3-a456-426614174000";
 const videoA="323e4567-e89b-42d3-a456-426614174000";
 const videoB="423e4567-e89b-42d3-a456-426614174000";
+const audioA="523e4567-e89b-42d3-a456-426614174000";
 function fixture({canWrite=true,assets={}}={}){
  const records={
   [videoA]:{id:videoA,owner_id:owner,project_id:project,media_type:"video/mp4"},
   [videoB]:{id:videoB,owner_id:owner,project_id:project,media_type:"video/webm"},
+  [audioA]:{id:audioA,owner_id:owner,project_id:project,media_type:"audio/wav"},
   ...assets
  };
  return {getAsset:id=>records[id]||null,canWriteProject:(actor,id)=>actor===owner&&id===project&&canWrite};
@@ -32,6 +34,18 @@ test("supports bounded denoise, resize, interpolation, proxy and audio extractio
  assert.equal(normalizeMediaBatchRequest({ownerId:owner,jobType:"media.interpolate",options:{fps:48},items,...f}).items[0].options.fps,48);
  assert.equal(normalizeMediaBatchRequest({ownerId:owner,jobType:"media.proxy",options:{proxyWidth:720,proxyCrf:30},items,...f}).items[0].options.proxyWidth,720);
  assert.deepEqual(normalizeMediaBatchRequest({ownerId:owner,jobType:"media.audio_extract",items,...f}).items[0].options,{});
+});
+
+test("normalizes audio mastering batches with bounded EBU R128 targets and audio-only sources",()=>{
+ const f=fixture();
+ const result=normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.audio-master",items:[{sourceAssetId:audioA}],...f});
+ assert.equal(result.projectId,project);
+ assert.deepEqual(result.items[0].options,{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5});
+ const custom=normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.audio-master",options:{targetLufs:-14,targetLra:9,truePeakDbtp:-1},items:[{sourceAssetId:audioA}],...f});
+ assert.deepEqual(custom.items[0].options,{targetLufs:-14,targetLra:9,truePeakDbtp:-1});
+ assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.audio-master",options:{targetLufs:-5},items:[{sourceAssetId:audioA}],...f}),error=>error.code==="INVALID_MEDIA_OPTIONS");
+ assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.audio-master",items:[{sourceAssetId:videoA}],...f}),error=>error.code==="UNSUPPORTED_MEDIA_TYPE");
+ assert.throws(()=>normalizeMediaBatchRequest({ownerId:owner,projectId:project,jobType:"media.color",items:[{sourceAssetId:audioA}],...f}),error=>error.code==="UNSUPPORTED_MEDIA_TYPE");
 });
 
 test("rejects batches outside the 1 to 50 item bound and duplicate source assets",()=>{
