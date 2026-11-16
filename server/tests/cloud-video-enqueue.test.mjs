@@ -164,6 +164,11 @@ test("Seedance 480p draft uses the preview rate before durable budget reservatio
   const calls = [];
   const client = createCloudVideoEnqueue({
     ...base,
+    env: {
+      CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+      VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+      RUNWAYML_API_SECRET: "test-only-not-used", RUNWAY_VIDEO_MODELS: "seedance2_5"
+    },
     fetchImpl: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return response([resultRow]); }
   });
   const draftInput = {
