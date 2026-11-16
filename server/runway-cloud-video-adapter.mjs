@@ -267,6 +267,18 @@ export function createRunwayCloudVideoAdapter({
       if (input.draft === true && input.resolution !== "480p") {
         throw fail("Seedance draft requests must explicitly reserve and select the 480p preview tier.", "RUNWAY_INPUT_INVALID");
       }
+      if (input.draftTaskId !== undefined) {
+        if (selectedModel !== "seedance2_5" || input.draft === true || input.resolution !== "1080p" ||
+            typeof input.draftTaskId !== "string" || !UUID.test(input.draftTaskId) ||
+            input.operation !== "text-to-video") {
+          throw fail("Seedance draft enhancement requires a valid succeeded preview task, the 1080p tier and the text-to-video enhancement operation.", "RUNWAY_INPUT_INVALID");
+        }
+        const submitted = await request("/text_to_video", {
+          method: "POST", submission: true,
+          body: { model: "seedance2_5", draftTaskId: taskId(input.draftTaskId) }
+        });
+        return { taskId: taskId(submitted.id), status: "queued", metadata: { operation: "seedance-draft-enhancement", sourceDraftTaskId: input.draftTaskId } };
+      }
       if (input.operation === "video-to-hdr") {
         if (selectedModel !== "ruby" || !isRunwayUri(input.videoUri)) {
           throw fail("Ruby HDR requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
