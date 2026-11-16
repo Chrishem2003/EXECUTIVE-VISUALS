@@ -94,7 +94,8 @@ export async function resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,li
     cloudJob.job_type==="video.generate"&&
     cloudJob.input?.workflowQuoteId===output.quoteId&&
     cloudJob.input?.workflowRequestId===output.requestId&&
-    cloudJob.input?.requestHash===output.requestHash;
+    cloudJob.input?.requestHash===output.requestHash&&
+    Number(cloudJob.input?.approvedMaxAmount)===Number(output.approvedMaxAmount);
    if(!receiptValid){
     const mismatch=Object.assign(new Error("Cloud video job does not match the parked workflow owner, project, quote and immutable request receipt."),{code:"WORKFLOW_CLOUD_JOB_RECEIPT_MISMATCH"});
     onError(mismatch,{runId:row.run_id,nodeId:row.node_id,cloudJobId});
