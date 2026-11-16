@@ -220,6 +220,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261115183000_luma_source_video_edit_reframe.sql
       - name: Apply guarded Runway direct-model enqueue migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116140000_runway_direct_model_enqueue.sql
+      - name: Apply direct Runway workflow quote and approval migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261116160000_direct_runway_workflow_quote_approval.sql
+      - name: Verify direct Runway workflow quote and approval SQL contract
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/direct-runway-workflow-postgres-integration.sql
       - name: Verify Kling Flash durable enqueue SQL contract
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/runway-direct-model-postgres-integration.sql
       - name: Verify Luma quote, owner approval and enqueue RPC gates
