@@ -56,13 +56,13 @@ export function normalizeMediaBatchRequest({ownerId,projectId=null,jobType,optio
   if(!sourceAssetId||sourceAssetId.length>160||seen.has(sourceAssetId))throw fail("Each batch item needs a unique sourceAssetId.","INVALID_MEDIA_BATCH_ITEM");
   seen.add(sourceAssetId);
   const source=getAsset(sourceAssetId);
-  if(!source)throw fail("Every source video must be accessible and editable.","SOURCE_ASSET_NOT_FOUND",404);
+  if(!source)throw fail("Every source asset must be accessible and editable.","SOURCE_ASSET_NOT_FOUND",404);
   const mediaType=String(source.media_type||source.mediaType||"");
   const expectedType=jobType==="media.audio-master"?"audio/":"video/";
   if(!mediaType.startsWith(expectedType))throw fail(jobType==="media.audio-master"?"Audio mastering batches require audio source assets.":"This batch operation requires video source assets.","UNSUPPORTED_MEDIA_TYPE",415);
   const sourceProjectId=source.project_id??source.projectId??null;
   if(normalizedItems.length===0&&selectedProject===null)selectedProject=sourceProjectId;
-  if(sourceProjectId!==selectedProject)throw fail("All batch videos must belong to the same selected project or private workspace.","PROJECT_MISMATCH");
+  if(sourceProjectId!==selectedProject)throw fail("All batch assets must belong to the same selected project or private workspace.","PROJECT_MISMATCH");
   normalizedItems.push({sourceAssetId,options:{...operationOptions}});
  }
  if(selectedProject&&!canWriteProject(ownerId,selectedProject))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
