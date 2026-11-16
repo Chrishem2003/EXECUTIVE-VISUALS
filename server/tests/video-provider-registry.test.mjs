@@ -153,7 +153,7 @@ test("catalog is immutable and unavailable providers can be filtered", () => {
   assert.equal(getVideoProviderModel("missing", "missing"), null);
 });
 
-test("Seedance 2.5 catalogue captures official 30-second references, draft and edit constraints without enabling execution", () => {
+test("Seedance 2.5 catalogue exposes the private source-edit worker and 4K price contract without enabling execution", () => {
   const model = getVideoProviderModel("runway", "seedance2_5");
   assert.equal(model.availability, "disabled");
   assert.equal(model.executionAdapter, "runway-cloud-worker");
