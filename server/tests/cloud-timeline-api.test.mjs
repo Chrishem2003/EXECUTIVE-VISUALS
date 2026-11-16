@@ -901,6 +901,43 @@ test("direct Seedance workflow quote uses the official list-price estimator and 
  assert.equal(persisted.p_pricing_source,"runway_direct_model_list_price");
 });
 
+test("Seedance draft enhancement quote verifies the original succeeded project job and prices 1080p",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ let quoteArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+    quoteArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,env:{CLOUD_VIDEO_WORKER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-quote-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,draftTaskId}},
+  values:{}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.quote.operation,"text-to-video");
+ assert.equal(result.body.quote.estimatedCredits,544);
+ assert.equal(quoteArgs.p_input.resolution,"1080p");
+ assert.equal(quoteArgs.p_input.draftTaskId,draftTaskId);
+ assert.equal(quoteArgs.p_input.sourceDraftJobId,sourceDraftJobId);
+ assert.equal(quoteArgs.p_input.durationSeconds,8);
+});
+
 test("direct Runway approval uses the exact worker allowlist and stable model config ID",async()=>{
  let approvalArgs;
  const api=createCloudTimelineApi({
