@@ -45,7 +45,7 @@ The durable adapter now supports the provider's 480p draft flag for text-to-vide
 - The PostgreSQL enqueue policy independently checks the JSON boolean, model, resolution, and reference-only video mode.
 - The preview is always 480p MP4; the follow-on enhancement is fixed at 1080p (4K requires a separate full generation). The preview uses the dated 480p Runway rate card: 20 credits per output second, plus 10 credits per second of input/reference video (combined video capped at 30 seconds), subject to the 80-credit minimum.
 
-**Not yet implemented in this batch:** the follow-on `draftTaskId` enhancement submission. A draft is therefore a billable preview asset, not yet a one-click draft-to-1080p workflow. The enhancement must be a separate quoted, approved, idempotent durable job, with the provider task ID linked to the preview and the 1080p charge shown separately. Do not infer that linkage from the preview's output asset ID.
+The follow-on `draftTaskId` enhancement is implemented as a separate quoted, owner-approved, idempotent durable job. The provider task ID is resolved from the persisted preview job and linked to the new 1080p task; the 1080p charge is quoted and approved separately. The API does not infer the provider task ID from the preview output asset ID. See the acceptance contract below.
 
 No live provider call is made by tests. Provider execution remains disabled unless the existing server-side gates, private output ingestion, budget approval and authoritative task-level billing resolver are configured.
 
