@@ -20,7 +20,7 @@ const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.audio_replace", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -84,6 +84,10 @@ export function captionStyle(metadata={}){
 }
 export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}){
  const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ if(jobType==="media.audio_replace"){
+  if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath||typeof input.replacementAudioPath!=="string"||!input.replacementAudioPath)fail("Video and replacement audio paths are required.");
+  return ["-hide_banner","-y","-i",sourcePath,"-i",input.replacementAudioPath,"-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",outputPath];
+ }
  const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
  const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
  let filter;
@@ -607,6 +611,18 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   } else if (job.job_type === "media.audio_extract") {
     ext = "mp3"; outputName = source.original_name.replace(/\.[^.]+$/, "")+"-audio.mp3"; mime = "audio/mpeg";
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
+  } else if(job.job_type==="media.audio_replace"){
+    if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Soundtrack replacement requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+    const replacement=getAccessibleAsset(db,job.owner_id,String(input.replacementAudioAssetId||""),true);
+    if(!replacement||!String(replacement.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Replacement soundtrack must be an accessible private audio asset."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const replacementPath=join(mediaRoot,replacement.storage_path);
+    const replacementStat=await stat(replacementPath);
+    if(!replacementStat.isFile()||replacementStat.size!==replacement.byte_size||replacementStat.size<=0)throw Object.assign(new Error("Replacement audio asset is missing or changed since ingest."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    const replacementHash=createHash("sha256");
+    await pipeline(createReadStream(replacementPath),new Transform({transform(chunk,enc,cb){replacementHash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
+    if(replacementHash.digest("hex")!==replacement.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    ext="mp4";mime="video/mp4";outputName=source.original_name.replace(/\\.[^.]+$/,"")+"-localized.mp4";
+    args=buildMediaOperationArgs({jobType:job.job_type,input:{...input,replacementAudioPath:replacementPath},sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else if(job.job_type==="media.audio-clean"){
     if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-cleaned.wav";
