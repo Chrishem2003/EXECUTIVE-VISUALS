@@ -228,7 +228,7 @@ export function createCloudVideoEnqueue({
             const aspect = verifiedSourceMetadata.width / verifiedSourceMetadata.height;
             if (verifiedSourceMetadata.durationSeconds < 3 || verifiedSourceMetadata.durationSeconds > 30 ||
                 Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) < 700 ||
-                verifiedSourceMetadata.frameRate < 24 || verifiedSourceMetadata.frameRate > 60 ||
+                !Number.isFinite(verifiedSourceMetadata.frameRate) || verifiedSourceMetadata.frameRate < 24 || verifiedSourceMetadata.frameRate > 60 ||
                 aspect < 0.4 || aspect > 2.5) {
               const invalid = new Error("Kling 4 source video does not meet duration, dimensions, frame-rate or aspect-ratio requirements.");
               invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
