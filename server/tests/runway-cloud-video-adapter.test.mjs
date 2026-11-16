@@ -583,6 +583,90 @@ test("Seedance 2.5 reference video-to-video validates and uploads a private sour
   });
 });
 
+test("Gemini Omni 1.2 edit mode submits an owner-resolved source with automatic source-length output", async () => {
+  let submitted;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "gemini_omni_flash_1.2",
+    prepareInput: async input => {
+      assert.equal(input.sourceVideoAssetId, "source-video");
+      return {
+        sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+        sourceMetadata: { durationSeconds: 8.4, width: 1920, height: 1080, frameRate: 30 }
+      };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/gemini-source",
+        fields: { key: "gemini-source" }, runwayUri: "runway://ephemeral/gemini-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/gemini-source") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) {
+        submitted = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "gemini_omni_flash_1.2", operation: "video-to-video",
+    sourceVideoAssetId: "source-video", prompt: "Replace the background with a quiet coastal road",
+    mode: "edit", duration: "auto", durationSeconds: 15, resolution: "720p"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/gemini-source");
+  assert.equal(prepared.sourceMetadata.durationSeconds, 8.4);
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  assert.deepEqual(submitted, {
+    model: "gemini_omni_flash_1.2", videoUri: "runway://ephemeral/gemini-source",
+    promptText: "Replace the background with a quiet coastal road", mode: "edit", duration: "auto"
+  });
+});
+
+test("Gemini Omni 1.2 reference mode maps resolution and ratio; extend omits ratio", async () => {
+  const bodies = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "gemini_omni_flash_1.2",
+    prepareInput: async input => ({
+      sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+      sourceMetadata: { durationSeconds: input.mode === "extend" ? 25 : 8, width: 1920, height: 1080, frameRate: 30 }
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/gemini-ref",
+        fields: { key: "gemini-ref" }, runwayUri: "runway://ephemeral/gemini-ref"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/gemini-ref") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) {
+        bodies.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const reference = await adapter.prepareInput({
+    provider: "runway", model: "gemini_omni_flash_1.2", operation: "video-to-video",
+    sourceVideoAssetId: "source-video", prompt: "Use this clip as a visual reference",
+    mode: "reference", durationSeconds: 5, aspectRatio: "16:9", resolution: "1080p"
+  }, { job: { owner_id: "owner-1" } });
+  await adapter.submit(reference);
+  const extend = await adapter.prepareInput({
+    provider: "runway", model: "gemini_omni_flash_1.2", operation: "video-to-video",
+    sourceVideoAssetId: "source-video", prompt: "Continue the scene",
+    mode: "extend", duration: 5, durationSeconds: 5
+  }, { job: { owner_id: "owner-1" } });
+  await adapter.submit(extend);
+  assert.deepEqual(bodies[0], {
+    model: "gemini_omni_flash_1.2", videoUri: "runway://ephemeral/gemini-ref",
+    promptText: "Use this clip as a visual reference", mode: "reference", duration: 5, ratio: "1920:1080"
+  });
+  assert.deepEqual(bodies[1], {
+    model: "gemini_omni_flash_1.2", videoUri: "runway://ephemeral/gemini-ref",
+    promptText: "Continue the scene", mode: "extend", duration: 5
+  });
+});
+
 test("Kling 4 video-to-video rejects source metadata outside the provider contract before submission", async () => {
   let generationCalls = 0;
   const adapter = createRunwayCloudVideoAdapter({
