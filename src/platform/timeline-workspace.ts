@@ -1434,7 +1434,7 @@ function renderTranscriptPauseAnalysis(){
    :'<strong>No long gaps detected</strong><small style="display:block">No gaps of '+threshold.toFixed(1)+'s or longer were found between transcript cues.</small>';
  }catch{pausePanel.textContent="Pause analysis unavailable until the transcript is valid.";}
 }
-function renderTranscriptTextFlags(cues:ReturnType<typeof parseTranscriptWebVtt>){
+function renderTranscriptTextFlags(cues:ReturnType<typeof parseTranscriptInput>){
  const panel=document.getElementById("tl-paper-edit-text-flags");
  if(!panel)return;
  const flags=analyzeTranscriptText(cues);
@@ -1492,7 +1492,7 @@ document.addEventListener("change",async event=>{
   const status=document.getElementById("tl-paper-edit-file-status");
   const transcript=document.getElementById("tl-paper-edit-transcript") as HTMLTextAreaElement|null;
   try{
-   if(!/\\.(?:srt|vtt)$/i.test(file.name))throw new Error("Choose a .srt SubRip or .vtt WebVTT file.");
+   if(!/\.(?:srt|vtt)$/i.test(file.name))throw new Error("Choose a .srt SubRip or .vtt WebVTT file.");
    if(file.size>2*1024*1024)throw new Error("Transcript exceeds the 2 MiB limit.");
    const content=await file.text();
    const cues=parseTranscriptInput(content);
