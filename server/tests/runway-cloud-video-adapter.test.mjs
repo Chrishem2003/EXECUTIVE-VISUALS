@@ -522,3 +522,26 @@ test("Kling 3.0 durable worker submits a multi-shot task without a top-level pro
  assert.deepEqual(result,{taskId:id,status:"queued"});
  assert.deepEqual(submitted,{model:"kling3.0_pro",ratio:"1920:1080",providerSettings:{multiPrompt,shotType:"customize"}});
 });
+
+for (const mode of ["extend","edit"]) {
+ test("Seedance 2.5 "+mode+" video edit submits the documented source mode payload",async()=>{
+  let submitted;
+  const adapter=createRunwayCloudVideoAdapter({
+   ...base,model:"seedance2_5",
+   fetchImpl:async(url,options={})=>{
+    if(String(url).endsWith("/video_to_video")){submitted=JSON.parse(options.body);return new Response(JSON.stringify({id}),{status:200});}
+    throw new Error("unexpected URL "+String(url));
+   }
+  });
+  const result=await adapter.submit({
+   provider:"runway",model:"seedance2_5",operation:"video-to-video",
+   videoUri:"runway://ephemeral/seedance-source",prompt:"Make the scene more cinematic",
+   mode,duration:"auto"
+  });
+  assert.deepEqual(result,{taskId:id,status:"queued"});
+  assert.deepEqual(submitted,{
+   model:"seedance2_5",promptVideo:"runway://ephemeral/seedance-source",
+   promptText:"Make the scene more cinematic",mode,duration:"auto"
+  });
+ });
+}
