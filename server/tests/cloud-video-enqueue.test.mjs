@@ -558,3 +558,43 @@ test("Aleph 2 enqueue is enabled only for the reviewed video-to-video MP4 contra
  await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,outputFormat:"prores"},reservedAmount:3})),/supports MP4 outputs/);
  assert.equal(calls.length,1);
 });
+
+test("direct Seedance 2.5 durable enqueue requires exact worker gates and a priced USD reservation",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{
+   CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+   RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"seedance2_5"
+  },
+  fetchImpl:async(url,options)=>{calls.push({url,options});return response([resultRow]);}
+ });
+ const directInput={
+  ...input,provider:"runway",model:"seedance2_5",operation:"text-to-video",
+  prompt:"A cinematic sequence",durationSeconds:5,aspectRatio:"16:9",
+  resolution:"720p",audio:true,audioMode:"generated",outputFormat:"mp4"
+ };
+ const result=await client.enqueue(args({provider:"runway",model:"seedance2_5",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,"https://example.supabase.co/rest/v1/rpc/enqueue_video_generation_job");
+});
+test("direct Kling 3 durable enqueue is blocked unless its exact model is allowlisted",async()=>{
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{
+   CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+   RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling3.0_standard"
+  },
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={
+  ...input,provider:"runway",model:"kling3.0_pro",operation:"text-to-video",
+  prompt:"A cinematic sequence",durationSeconds:5,aspectRatio:"16:9",
+  resolution:"provider_default",audio:true,audioMode:"generated",outputFormat:"mp4"
+ };
+ await assert.rejects(()=>client.enqueue(args({provider:"runway",model:"kling3.0_pro",input:directInput,reservedAmount:10,currency:"USD"})),
+  error=>error.code==="RUNWAY_DIRECT_REMOTE_DISABLED");
+});
