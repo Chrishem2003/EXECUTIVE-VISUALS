@@ -32,7 +32,7 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
  const gen=buildRunwayImageToVideoPayload({model:"gen4.5",prompt:"A moving camera",promptImage:image,durationSeconds:5,aspectRatio:"16:9"});
  assert.equal(gen.promptImage,image);assert.equal(gen.ratio,"1280:720");
  const seedance=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
- assert.equal(seedance.ratio,"480:854");
+ assert.equal(seedance.ratio,"720:1280");
  const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
  assert.equal(kling.ratio,"auto_720p");
 });
