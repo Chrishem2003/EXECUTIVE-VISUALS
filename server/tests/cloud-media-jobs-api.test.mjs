@@ -46,6 +46,20 @@ test("cloud media jobs enqueue only authorized private assets with server-owned 
  assert.equal(f.calls.some(call=>call.url?.includes("job_events")),true);
 });
 
+test("cloud media jobs accept bounded EBU R128 mastering targets only for private audio assets",async()=>{
+ const audio=mediaJobApi({asset:{id:assetId,ownerId:owner,projectId:project,name:"dialogue.wav",mediaType:"audio/wav",size:100,sha256:"b".repeat(64)}});
+ const accepted=await audio.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-master-001",body:{jobType:"media.audio-master",options:{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}}});
+ assert.equal(accepted.status,202);
+ const created=JSON.parse(audio.calls.find(call=>call.url?.includes("/jobs?")&&call.options.method==="POST").options.body);
+ assert.equal(created.job_type,"media.audio-master");
+ assert.deepEqual(created.input,{sourceAssetId:assetId,targetLufs:-16,targetLra:11,truePeakDbtp:-1.5});
+ const invalid=await audio.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-master-002",body:{jobType:"media.audio-master",options:{targetLufs:-5}}});
+ assert.equal(invalid.status,400);
+ const video=mediaJobApi();
+ const mismatch=await video.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"audio-master-003",body:{jobType:"media.audio-master",options:{targetLufs:-16}}});
+ assert.equal(mismatch.status,415);
+});
+
 test("cloud media jobs enforce editor authorization and media compatibility before writes",async()=>{
  const denied=mediaJobApi({canWrite:false});
  const forbidden=await denied.api.handle({method:"POST",path,ownerId:owner,idempotencyKey:"media-denied-1",body:{jobType:"media.color"}});
