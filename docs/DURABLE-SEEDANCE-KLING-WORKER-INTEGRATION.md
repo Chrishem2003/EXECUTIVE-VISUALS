@@ -39,9 +39,9 @@ No provider credentials are included. No paid generation requests are made by te
 
 The durable adapter now supports the provider's 480p draft flag for text-to-video, image-to-video, and video-to-video **reference mode**:
 
-- Set `draft: true` and explicitly set `resolution: "480p"` in the quoted request.
+- Set `draft: true` in the Video Studio node. The workflow contract fixes the billable preview tier at `480p`; users cannot quote a draft at a different price tier.
 - The server rejects a draft request with any other resolution, model, or unsupported video mode before budget reservation.
-- The adapter sends `draft: true` with the 480p ratio; it does not silently reinterpret a 720p/1080p quote as a draft.
+- The adapter sends `draft: true` and an aspect-ratio-preserving 720p ratio value; Runway renders the preview at 480p. The quoted cost remains the 480p rate.
 - The PostgreSQL enqueue policy independently checks the JSON boolean, model, resolution, and reference-only video mode.
 - The preview uses the dated 480p Runway rate card: 20 credits per output second, plus 10 credits per second of input/reference video (combined video capped at 30 seconds), subject to the 80-credit minimum.
 
