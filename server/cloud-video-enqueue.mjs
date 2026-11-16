@@ -275,7 +275,7 @@ export function createCloudVideoEnqueue({
         sourceHeight: verifiedSourceMetadata.sourceHeight,
         sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange,
         ...(runwayDirectVideoEditEnabled && (model === "kling_4" || input.mode === "edit" || input.mode === "extend")
-          ? { resolution: model === "kling_4" ? (directSourceResolution === "480p" ? "720p" : directSourceResolution === "4k" ? "1080p" : directSourceResolution) : directSourceResolution }
+          ? { resolution: model === "kling_4" ? (directSourceResolution === "480p" ? "720p" : directSourceResolution === "4k" ? "1080p" : directSourceResolution) : (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) > 720 ? "1080p" : "720p") }
           : {})
       } : input;
       const estimate = runwayRouterEnabled
