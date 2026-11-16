@@ -22,7 +22,7 @@ export type WorkflowNodeKind =
   | "utility.convert" | "utility.compress"
   | "media.process" | "media.upscale" | "media.denoise" | "media.interpolate"
   | "media.stabilize" | "media.remove-object" | "media.convert" | "media.compress"
-  | "media.audio-extract" | "media.color-match" | "media.compare"
+  | "media.audio-extract" | "media.audio-clean" | "media.audio-master" | "media.color-match" | "media.compare"
   | "campaign.create" | "approval" | "quality-check" | "timeline" | "export"
   | "connector" | "branch" | "merge" | "batch" | "subworkflow" | "knowledge.search";
 
