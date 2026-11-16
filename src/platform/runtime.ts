@@ -443,7 +443,7 @@ export function renderVideoModelOptions(){
  });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
-function selectedVideoModel(){
+export function selectedVideoModel(){
  const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
  return providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
   .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
@@ -461,8 +461,9 @@ export function renderVideoResolutionOptions(){
 }
 export function renderVideoDurationOptions(){
  const selected=selectedVideoModel(),model=selected?.model;
- const values=Array.isArray(model?.durationsSeconds)&&model.durationsSeconds.length?model.durationsSeconds:
-  Array.from({length:Math.max(1,Math.min(60,Number(model?.maxDurationSeconds||10)-Number(model?.minDurationSeconds||2)+1))},(_,index)=>Number(model?.minDurationSeconds||2)+index);
+ const minimum=Math.max(1,Math.ceil(Number(model?.minDurationSeconds??2)));
+ const maximum=Math.max(minimum,Math.min(60,Math.floor(Number(model?.maxDurationSeconds??10))));
+ const values:number[]=Array.from({length:maximum-minimum+1},(_,index)=>minimum+index);
  return values.map((duration,index)=>'<option value="'+duration+'"'+(duration===5||index===0?' selected':'')+'>'+duration+' seconds</option>').join("");
 }
 export function renderVideoModelNote(){
