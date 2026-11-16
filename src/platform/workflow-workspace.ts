@@ -484,11 +484,13 @@ document.addEventListener("change",event=>{
   const draft=form?.querySelector<HTMLInputElement>('[name="videoDraft"]');if(draft)draft.disabled=!(provider==="runway"&&modelValue==="seedance2_5");
   const values=luma?(activeOperation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
    modelValue==="seedance2_5"?["480p","720p","1080p","4k"]:modelValue==="kling_4"?["720p","1080p"]:
-   modelValue==="kling_4_flash"?["720p"]:modelValue.startsWith("kling3.0_")?["provider_default"]:
+   modelValue==="kling_4_flash"?["720p"]:modelValue==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:modelValue.startsWith("kling3.0_")?["provider_default"]:
    modelValue==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
+  const activeMode=videoMode?.value||"reference";
+  if(resolution)resolution.disabled=modelValue==="gemini_omni_flash_1.2"&&activeOperation==="video-to-video"&&activeMode!=="reference";
   if(resolution){
    const previous=resolution.value;
-   const fallback=luma?"720p":modelValue==="seedance2_5"?"1080p":modelValue==="kling_4"||modelValue==="kling_4_flash"?"720p":"provider_default";
+   const fallback=luma?"720p":modelValue==="seedance2_5"?"1080p":modelValue==="kling_4"||modelValue==="kling_4_flash"||modelValue==="gemini_omni_flash_1.2"?"720p":"provider_default";
    const selected=values.includes(previous)&&!(activeOperation==="reframe"&&previous==="1080p")?previous:fallback;
    resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===selected?"selected":"")+'>'+value+'</option>').join("");
   }
