@@ -310,7 +310,7 @@ export function createRunwayCloudVideoAdapter({
             ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
           if (mode === "reference") {
             const referencePayload = buildRunwayVideoPayload({
-              model: selectedModel, prompt: input.prompt.trim(),
+              model: selectedModel, prompt: String(input.prompt || "").trim(),
               durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
               aspectRatio: input.aspectRatio || "16:9",
               resolution: input.resolution || "provider_default"
