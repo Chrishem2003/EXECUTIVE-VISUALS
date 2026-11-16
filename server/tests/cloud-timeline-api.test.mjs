@@ -1019,15 +1019,17 @@ test("Seedance draft enhancement rejects a source job from another project",asyn
 test("Seedance draft enhancement approval revalidates the source and atomically queues the 1080p follow-on",async()=>{
  const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
  const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceVideoAssetId="423e4567-e89b-42d3-a456-426614174000";
  let approvalArgs;
  const sourceJob={
   id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
   created_at:new Date().toISOString(),
-  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  input:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"reference",sourceVideoAssetId,draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
   output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  runwaySourceResolver:{async resolveMetadata(args){return{...args,ownerId,projectId,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}},
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
    if(String(url).endsWith("/rpc/approve_and_enqueue_video_workflow")){
@@ -1049,12 +1051,13 @@ test("Seedance draft enhancement approval revalidates the source and atomically 
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
   confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-enhance-approve-001",
   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
-  values:{},approvedMaxAmount:5.44,approvalNote:"Approve this separately priced Seedance draft enhancement."
+  values:{},approvedMaxAmount:7.48,approvalNote:"Approve this separately priced Seedance draft enhancement."
  }});
  assert.equal(result.status,202,JSON.stringify(result.body));
  assert.equal(approvalArgs.p_input.resolution,"1080p");
  assert.equal(approvalArgs.p_input.draftTaskId,draftTaskId);
  assert.equal(approvalArgs.p_input.sourceDraftJobId,sourceDraftJobId);
+ assert.equal(approvalArgs.p_input.sourceDraftVideoAssetId,sourceVideoAssetId);
  assert.equal(approvalArgs.p_input.draftEnhancement,true);
  assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
 });
