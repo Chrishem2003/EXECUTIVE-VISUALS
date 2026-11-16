@@ -140,7 +140,7 @@ export function createCloudVideoEnqueue({
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
         ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation);
-      const runwayDirectModels = new Set(["seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"]);
+      const runwayDirectModels = new Set(["seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"]);
       const runwayDirectEnabled = provider === "runway" && runwayDirectModels.has(model) &&
         ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation);
       const runwayDirectVideoEditEnabled = runwayDirectEnabled && input.operation === "video-to-video";
@@ -235,6 +235,17 @@ export function createCloudVideoEnqueue({
               throw invalid;
             }
           }
+          if (model === "kling_4_flash") {
+            const aspect = verifiedSourceMetadata.width / verifiedSourceMetadata.height;
+            if (verifiedSourceMetadata.durationSeconds < 3 || verifiedSourceMetadata.durationSeconds > 21 ||
+                Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) < 700 ||
+                !Number.isFinite(verifiedSourceMetadata.frameRate) || verifiedSourceMetadata.frameRate < 24 || verifiedSourceMetadata.frameRate > 60 ||
+                aspect < 0.4 || aspect > 2.5) {
+              const invalid = new Error("Kling 4.0 Flash source video must be 3–21 seconds, at least 700px on each side, 24–60 fps and within 0.4–2.5 aspect ratio.");
+              invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+              throw invalid;
+            }
+          }
         }
         if (runwayUpscaleEnabled && (!Number.isSafeInteger(verifiedSourceMetadata.frameCount) ||
             verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000)) {
@@ -310,7 +321,7 @@ export function createCloudVideoEnqueue({
           throw invalid;
         }
       } else if (runwayDirectEnabled) {
-        const promptLimit = model === "seedance2_5" ? 15000 : model === "kling_4" ? 26000 : 2500;
+        const promptLimit = model === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(model) ? 26000 : 2500;
         if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
           const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
@@ -337,6 +348,8 @@ export function createCloudVideoEnqueue({
             });
           } else if (model === "kling_4") {
             if (input.multiPrompt !== undefined || input.audio !== undefined) throw new Error("Kling 4 video editing does not accept multi-shot or audio-toggle fields.");
+          } else if (model === "kling_4_flash") {
+            if (input.multiPrompt !== undefined || input.audio !== undefined) throw new Error("Kling 4.0 Flash video editing does not accept multi-shot or audio-toggle fields.");
           } else {
             throw new Error("The selected Kling 3.0 profile does not support video-to-video in this worker.");
           }
@@ -358,7 +371,7 @@ export function createCloudVideoEnqueue({
             multiPrompt: input.multiPrompt, shotType: input.shotType
           });
         }
-        if (model === "kling_4" && input.audio !== undefined) {
+        if (["kling_4", "kling_4_flash"].includes(model) && input.audio !== undefined) {
           const invalid = new Error("Kling 4 always includes native audio and does not accept an audio toggle.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
@@ -506,7 +519,7 @@ export function createCloudVideoEnqueue({
         (provider === "runway" && model === "gen4.5") ||
         (provider === "runway" && model === "aleph2" && input.operation === "video-to-video" && input.outputFormat === "mp4") ||
         (provider === "runway" && model === "model-router" && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
-        (provider === "runway" && ["seedance2_5", "kling_4", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model) && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
+        (provider === "runway" && ["seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model) && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
         (provider === "google" && model === "gemini-omni-1.1-flash");
       if (!sqlEnqueueSupported) {
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");
