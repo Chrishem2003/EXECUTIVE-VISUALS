@@ -70,7 +70,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  const requestedResolution=String(config.resolution||"provider_default");
  const draft=config.draft===true;
  const draftTargetResolution=draft?String(config.draftTargetResolution||(requestedResolution==="provider_default"?"1080p":requestedResolution)):"";
- if(draft&&!["720p","1080p","4k"].includes(draftTargetResolution))throw fail("Seedance draft target resolution must be 720p, 1080p or 4k.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(draft&&draftTargetResolution!=="1080p")throw fail("Seedance draft enhancement is fixed at 1080p; 4K requires a separate full generation.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(config.draft!==undefined&&typeof config.draft!=="boolean")throw fail("Seedance draft mode must be a boolean.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(draft&&model!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  const resolution=draft?"480p":model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
