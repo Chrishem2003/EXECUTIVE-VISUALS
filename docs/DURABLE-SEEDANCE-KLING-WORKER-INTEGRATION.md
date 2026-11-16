@@ -34,3 +34,17 @@ Kling 3 multi-shot prompt segmentation is implemented in Video Studio through pr
 ## Configuration and safety
 
 No provider credentials are included. No paid generation requests are made by tests. The SQL migration `20261116140000_runway_direct_model_enqueue.sql` adds a guarded direct-model allowlist while preserving the existing budget reservation and approval path; it must be applied and validated in staging before any production rollout. The worker remains disabled unless all existing cloud-worker and remote-execution gates are explicitly enabled. Every production adapter registration still requires private output ingestion and authoritative task-level billing evidence. Model registration alone does not enable production execution.
+
+## Seedance 2.5 draft preview contract
+
+The durable adapter now supports the provider's 480p draft flag for text-to-video, image-to-video, and video-to-video **reference mode**:
+
+- Set `draft: true` and explicitly set `resolution: "480p"` in the quoted request.
+- The server rejects a draft request with any other resolution, model, or unsupported video mode before budget reservation.
+- The adapter sends `draft: true` with the 480p ratio; it does not silently reinterpret a 720p/1080p quote as a draft.
+- The PostgreSQL enqueue policy independently checks the JSON boolean, model, resolution, and reference-only video mode.
+- The preview uses the dated 480p Runway rate card: 20 credits per output second, plus 10 credits per second of input/reference video (combined video capped at 30 seconds), subject to the 80-credit minimum.
+
+**Not yet implemented in this batch:** the follow-on `draftTaskId` enhancement submission. A draft is therefore a billable preview asset, not yet a one-click draft-to-1080p workflow. The enhancement must be a separate quoted, approved, idempotent durable job, with the provider task ID linked to the preview and the 1080p charge shown separately. Do not infer that linkage from the preview's output asset ID.
+
+No live provider call is made by tests. Provider execution remains disabled unless the existing server-side gates, private output ingestion, budget approval and authoritative task-level billing resolver are configured.
