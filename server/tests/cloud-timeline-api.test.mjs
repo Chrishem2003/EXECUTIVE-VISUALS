@@ -868,3 +868,62 @@ test("Luma approval uses the same governed quote adapter and stable config ID",a
  assert.equal(approvalArgs.p_input.operation,"generate");
  assert.equal(approvalArgs.p_input.approvedMaxAmount,0.5);
 });
+
+
+test("direct Seedance workflow quote uses the official list-price estimator and records the exact model",async()=>{
+ const ownerId=owner,projectId=project,requestId="seedance-direct-quote-001";let persisted;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){
+    persisted=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(persisted.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:projectId,ownerId};}}},
+  authorize:async()=>true,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId,body:{
+  projectId,requestId,node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresExplicitApproval,true);
+ assert.equal(result.body.quote.model,"seedance2_5");
+ assert.equal(result.body.quote.estimatedCredits,160);
+ assert.equal(result.body.quote.estimatedAmount,1.6);
+ assert.equal(persisted.p_model,"seedance2_5");
+ assert.equal(persisted.p_config_id,"runway-direct-seedance2-5");
+ assert.equal(persisted.p_pricing_source,"runway_direct_model_list_price");
+});
+
+test("direct Runway approval uses the exact worker allowlist and stable model config ID",async()=>{
+ let approvalArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{job_id:"e23e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,budget_reservation_id:"f23e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"}]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId};}}},
+  authorize:async()=>true,
+  env:{CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId,body:{
+  confirmed:true,projectId,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-direct-approve-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:1.6,approvalNote:"Approve this exact Seedance draft."
+ }});
+ assert.equal(result.status,202,JSON.stringify(result.body));
+ assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
+ assert.equal(approvalArgs.p_input.provider,"runway");
+ assert.equal(approvalArgs.p_input.model,"seedance2_5");
+ assert.equal(approvalArgs.p_input.draft,true);
+ assert.equal(approvalArgs.p_input.resolution,"480p");
+});
