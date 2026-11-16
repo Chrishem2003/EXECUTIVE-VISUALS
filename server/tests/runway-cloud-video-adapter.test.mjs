@@ -281,3 +281,86 @@ test("prepares an authorized SDR source and submits a durable Ruby HDR task", as
     model: "ruby", videoUri: "runway://ephemeral/hdr-source", outputFormat: "hlg"
   });
 });
+
+
+test("submits Seedance 2.5 text-to-video through the durable worker adapter with model-specific payload", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id, estimatedCost: { credits: 80 } }), { status: 200 });
+    }
+  });
+  const submitted = await adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "A cinematic dawn over a quiet city", durationSeconds: 8,
+    aspectRatio: "16:9", resolution: "720p"
+  });
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "seedance2_5", promptText: "A cinematic dawn over a quiet city",
+    ratio: "1280:720", duration: 8, resolution: "720p"
+  });
+});
+
+test("prepares a private first frame and submits Seedance 2.5 image-to-video", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async (input, context) => {
+      assert.equal(input.startFrameAssetId, "first-frame-asset");
+      assert.equal(context.job.owner_id, "owner-1");
+      return { firstFrame: { buffer: Buffer.alloc(512), filename: "frame.png", mimeType: "image/png" } };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/signed-seedance",
+        fields: { key: "seedance-first-frame" },
+        runwayUri: "runway://ephemeral/seedance-first-frame"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/signed-seedance") return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) {
+        call = { url: target, options };
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    prompt: "Animate the approved product frame", startFrameAssetId: "first-frame-asset",
+    durationSeconds: 8, aspectRatio: "9:16", resolution: "720p"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.promptImageUri, "runway://ephemeral/seedance-first-frame");
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/image_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "seedance2_5", promptText: "Animate the approved product frame",
+    promptImage: "runway://ephemeral/seedance-first-frame",
+    duration: 8, ratio: "720:1280", resolution: "720p"
+  });
+});
+
+test("Kling 4 text-to-video is accepted by the same exact-match durable adapter", async () => {
+  let body;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "kling_4",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
+  });
+  await adapter.submit({
+    provider: "runway", model: "kling_4", operation: "text-to-video",
+    prompt: "A cinematic tracking shot", durationSeconds: 8,
+    aspectRatio: "16:9", resolution: "720p"
+  });
+  assert.deepEqual(body, {
+    model: "kling_4", promptText: "A cinematic tracking shot",
+    ratio: "1280:720", duration: 8
+  });
+});
