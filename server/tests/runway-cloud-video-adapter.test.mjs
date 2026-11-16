@@ -444,14 +444,23 @@ test("Seedance 2.5 reference video-to-video validates and uploads a private sour
 });
 
 test("Kling 4 video-to-video rejects source metadata outside the provider contract before submission", async () => {
-  let providerCalls = 0;
+  let generationCalls = 0;
   const adapter = createRunwayCloudVideoAdapter({
     ...base, model: "kling_4",
     prepareInput: async () => ({
       sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
       sourceMetadata: { durationSeconds: 8, width: 640, height: 360, frameRate: 30 }
     }),
-    fetchImpl: async () => { providerCalls += 1; return new Response(JSON.stringify({ id }), { status: 200 }); }
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/invalid-kling-source", fields: { key: "invalid" },
+        runwayUri: "runway://ephemeral/invalid-kling-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/invalid-kling-source") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) generationCalls += 1;
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
   });
   await assert.rejects(
     () => adapter.prepareInput({
@@ -460,5 +469,5 @@ test("Kling 4 video-to-video rejects source metadata outside the provider contra
     }, { job: { owner_id: "owner-1" } }),
     error => error.code === "RUNWAY_INPUT_INVALID"
   );
-  assert.equal(providerCalls, 0);
+  assert.equal(generationCalls, 0);
 });
