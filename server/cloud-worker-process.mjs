@@ -45,7 +45,7 @@ export function readCloudWorkerConfig(env=process.env){
   // use the operator's account/contract credit rate—not the public list price.
   const lumaRequested=truth(env.LUMA_VIDEO_ENABLED)||truth(env.LUMA_VIDEO_ALLOW_REMOTE);
   const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
-  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
+  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
   const luma=truth(env.LUMA_VIDEO_ENABLED)&&truth(env.LUMA_VIDEO_ALLOW_REMOTE)&&
    Boolean(env.LUMA_AGENTS_API_KEY)&&lumaRateValid;
   if(lumaRequested&&!luma)throw new Error("Luma requires both remote gates, a server-side LUMA_AGENTS_API_KEY and an explicit positive LUMA_USD_PER_CREDIT account/contract rate.");
