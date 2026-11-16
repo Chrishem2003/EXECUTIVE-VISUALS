@@ -128,7 +128,7 @@ export function createCloudVideoEnqueue({
           (input.projectId || null) !== projectId) throw new Error("Video generation input does not match its enqueue scope.");
       if (input.draft !== undefined && typeof input.draft !== "boolean") throw Object.assign(new Error("Draft mode must be a boolean."), { code: "VIDEO_DRAFT_FLAG_INVALID" });
       if (input.draftTaskId !== undefined && (provider !== "runway" || model !== "seedance2_5" ||
-          input.operation !== "text-to-video" || input.resolution !== "1080p" || input.draft === true ||
+          input.operation !== "text-to-video" || input.resolution !== "1080p" || input.draft === true || input.draftEnhancement !== true ||
           typeof input.draftTaskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.draftTaskId) ||
           typeof input.sourceDraftJobId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.sourceDraftJobId))) {
         throw Object.assign(new Error("Seedance draft enhancement requires a verified 1080p follow-on request and source job."), { code: "VIDEO_DRAFT_ENHANCEMENT_INVALID" });
