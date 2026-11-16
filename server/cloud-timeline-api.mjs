@@ -333,14 +333,14 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       if(!directRunway&&Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
       }
-      if(workflowRequest.model==="seedance2_5"&&Math.min(sourceMetadata.width,sourceMetadata.height)<480){
+      if(workflowRequest.model==="seedance2_5"&&(!Number.isSafeInteger(sourceMetadata.width)||!Number.isSafeInteger(sourceMetadata.height)||Math.min(sourceMetadata.width,sourceMetadata.height)<480)){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
       }
       if(["kling_4","kling_4_flash"].includes(workflowRequest.model)){
        const aspect=sourceMetadata.width/sourceMetadata.height;
        const maxSourceSeconds=workflowRequest.model==="kling_4_flash"?21:30;
        if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>maxSourceSeconds||
-          Math.min(sourceMetadata.width,sourceMetadata.height)<700||
+          !Number.isSafeInteger(sourceMetadata.width)||!Number.isSafeInteger(sourceMetadata.height)||Math.min(sourceMetadata.width,sourceMetadata.height)<700||
           !Number.isFinite(sourceMetadata.frameRate)||sourceMetadata.frameRate<24||sourceMetadata.frameRate>60||
           aspect<0.4||aspect>2.5){
         return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Kling source video must meet its model-specific duration, 700px, 24–60 fps and aspect-ratio requirements."}});
