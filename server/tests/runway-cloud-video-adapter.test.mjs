@@ -540,7 +540,7 @@ for (const mode of ["extend","edit"]) {
   });
   assert.deepEqual(result,{taskId:id,status:"queued"});
   assert.deepEqual(submitted,{
-   model:"seedance2_5",promptVideo:"runway://ephemeral/seedance-source",
+   model:"seedance2_5",videoUri:"runway://ephemeral/seedance-source",
    promptText:"Make the scene more cinematic",mode,duration:"auto"
   });
  });
