@@ -170,7 +170,7 @@ export function createRunwayRouterApprovalLedger({
           WHERE id=? AND state='approved' AND input_hash=?`)
           .run(actorId, current.toISOString(), approvalId, inputHash);
         if (changed.changes !== 1) throw fail("Approval has already been consumed or is not approved.", "RUNWAY_APPROVAL_STATE_INVALID");
-        return { record: get(approvalId) };
+        return { record: getById(approvalId) };
       });
       if (result.expired) throw fail("The approved preflight has expired; approval cannot authorize execution.", "RUNWAY_APPROVAL_EXPIRED");
       return result.record;
