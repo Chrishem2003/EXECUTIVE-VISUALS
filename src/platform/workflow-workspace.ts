@@ -83,25 +83,26 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(model),operation=String(config.operation||"generate");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(model),operation=String(config.operation||"generate");
  const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
   model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
-  model==="kling_4_flash"?["720p"]:model.startsWith("kling3.0_")?["provider_default"]:
+  model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
   model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
- const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"?"720p":"provider_default");
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default");
  const modelOptions=luma?[{id:"ray-3.2",label:"Luma Ray 3.2"}]:[
   {id:"model-router",label:"Runway Model Router"},{id:"gen4.5",label:"Gen-4.5"},{id:"seedance2_5",label:"Seedance 2.5"},
   {id:"kling_4",label:"Kling 4.0"},{id:"kling_4_flash",label:"Kling 4.0 Flash"},
-  {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"}
+  {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"},{id:"gemini_omni_flash_1.2",label:"Gemini Omni Flash 1.2"}
  ];
  const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
   directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
+ const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(model);
  const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
  const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
  const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
- const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
- const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
+ const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
@@ -111,6 +112,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const selectedSource=String(config.sourceVideoAssetId||"");
  return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
  '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
+ (supportsVideoMode?'<label>Source-video mode<select name="videoMode" '+(operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>':'')+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  (draftEnhancement?'<label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p>':'')+
@@ -336,19 +338,19 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
   try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="video.replace-audio")config.sourceRightsConfirmed=data.get("sourceRightsConfirmed")==="on";if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
- const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(model);
- const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"];
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(model);
+ const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"];
  if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
  const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):"generate";
  if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&(operation==="video-to-video"||model==="seedance2_5"&&operation==="draft-enhancement")):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
- const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
+ const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  if(!Number.isInteger(durationSeconds)||durationSeconds<minDuration||durationSeconds>maxDuration||
     luma&&operation==="generate"&&![5,10].includes(durationSeconds))throw new Error("Duration is outside the selected provider/model's supported range.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
- config.resolution=String(data.get("videoResolution")||(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"?"720p":"provider_default"));
+ config.resolution=String(data.get("videoResolution")||(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
  if(luma||directRunway)config.operation=operation;else delete config.operation;
  if(operation==="draft-enhancement"){
@@ -401,7 +403,12 @@ document.addEventListener("submit",event=>{
    if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the source video before saving this operation.");
    if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video transformations cannot be combined with first/last frame or keyframe inputs.");
    config.sourceVideoAssetId=sourceVideoAssetId;
-   if(model==="seedance2_5")config.mode="reference";else delete config.mode;
+   if(["seedance2_5","gemini_omni_flash_1.2"].includes(model)){
+    config.mode=String(data.get("videoMode")||"reference");
+    if(config.mode==="edit")config.duration="auto";
+    else if(config.mode==="extend")config.duration=durationSeconds;
+    else delete config.duration;
+   }else delete config.mode;
    delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
   }else{
    if(sourceVideoAssetId)throw new Error("Clear the source-video asset when generating from text or a first frame.");
@@ -445,7 +452,7 @@ document.addEventListener("change",event=>{
    if(operationSelect)operationSelect.value="generate";
   }
   const modelValue=model?.value||"model-router";
-  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(modelValue);
+  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(modelValue);
   const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
   const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
    directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
