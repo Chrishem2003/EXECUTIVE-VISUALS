@@ -37,7 +37,10 @@ begin
      or position('p_input ->> ''draft''' in function_sql) = 0
      or position('draftTargetResolution' in function_sql) = 0
      or position('''480p''' in function_sql) = 0
-     or position('''1080p''' in function_sql) = 0 then
+     or position('''1080p''' in function_sql) = 0
+     or position('draftTaskId' in function_sql) = 0
+     or position('sourceDraftJobId' in function_sql) = 0
+     or position('VIDEO_DRAFT_ENHANCEMENT_INVALID' in function_sql) = 0 then
     raise exception 'SEEDANCE_DRAFT_PRICE_POLICY_MISSING';
   end if;
 end
