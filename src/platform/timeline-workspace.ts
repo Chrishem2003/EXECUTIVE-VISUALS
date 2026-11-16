@@ -110,8 +110,9 @@ function sourceRate(asset:Asset,kind:string){
  return fps();
 }
 function timelineMediaTools(track:TimelineTrack,clip:TimelineTrack["clips"][number],sourceIn:number,proxyAssetId:string,proxyName:string){
- if(track.kind!=="video")return "";
  const asset=state.assets.find(item=>item.id===clip.assetId);
+ if(track.kind==="overlay"&&asset?.mediaType.startsWith("video/"))return '<div class="timeline-media-tools"><p class="muted">Video overlays are composited in final master renders with position, size, opacity and motion. The browser program-monitor overlay preview currently supports still images only.</p></div>';
+ if(track.kind!=="video")return "";
  if(!asset||!asset.mediaType.startsWith("video/"))return "";
  if(state.mode==="cloud")return '<div class="timeline-media-tools"><div class="eyebrow">CLOUD PROXY & FRAME PREVIEW</div><p class="muted">Cloud proxy and thumbnail job APIs and worker code are implemented, but this hosted deployment has no active, verified cloud media worker and isolated durable storage. Actions are intentionally gated to prevent jobs from remaining queued without execution. Local proxy and frame-preview processing remains available.</p></div>';
  const description="Generate a compact editing copy for playback. Final master rendering continues to use the original source asset.";
