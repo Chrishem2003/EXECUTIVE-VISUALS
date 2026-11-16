@@ -508,6 +508,24 @@ test("Video Studio workflow inspector exposes direct Runway models, private firs
  for(const token of ["kling_4_flash","seedance2_5","name=\"videoDraft\"","name=\"startFrameAssetPicker\"","name=\"sourceVideoAssetPicker\"","video-to-video","draftTargetResolution"]){assert.ok(ui.includes(token),"missing Studio workflow control: "+token);}
 });
 
+test("builds a separately priced 1080p Seedance draft enhancement request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{
+   provider:"runway",model:"seedance2_5",operation:"draft-enhancement",
+   sourceDraftJobId:"323e4567-e89b-42d3-a456-426614174000",
+   draftTaskId:"223e4567-e89b-42d3-a456-426614174000",
+   durationSeconds:8,aspectRatio:"16:9",resolution:"1080p",audio:true
+  }},
+  projectId:"project-1",requestId:"seedance-enhance-001",values:{}
+ });
+ assert.equal(request.operation,"text-to-video");
+ assert.equal(request.input.resolution,"1080p");
+ assert.equal(request.input.draftTaskId,"223e4567-e89b-42d3-a456-426614174000");
+ assert.equal(request.input.sourceDraftJobId,"323e4567-e89b-42d3-a456-426614174000");
+ assert.equal(request.input.draftEnhancement,true);
+ assert.equal(request.input.draft,undefined);
+});
+
 test("rejects Seedance draft enhancement targets other than 1080p",()=>{
  assert.throws(()=>createVideoWorkflowCloudRequest({
   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,draftTargetResolution:"4k",durationSeconds:8,resolution:"480p"}},
