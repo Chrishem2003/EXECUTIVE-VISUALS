@@ -533,14 +533,15 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "kling_4_flash",
         name: "Kling 4.0 Flash",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "runway-cloud-worker",
+        executionCapabilities: ["textToVideo", "imageToVideo", "videoEdit"],
         gateway: "runway",
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: true,
           videoEdit: true, videoExtend: false, videoReframe: false,
           nativeAudio: true, negativePrompt: false, seed: false,
           startFrame: true, endFrame: false, motionReference: false,
-          referenceImages: true, referenceVideos: true, referenceAudio: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
           audioModes: ["generated"],
           resolutions: ["720p"],
           minDurationSeconds: 3, maxDurationSeconds: 20
@@ -558,6 +559,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           outputCreditsPerSecondWithInputVideo: 6.3,
           inputVideoCreditsPerSecond: 6.3,
           pricingSnapshotDate: "2026-11-07",
+          adapterSupportedOperations: ["text-to-video", "image-to-video", "video-to-video"],
+          adapterReferenceCollections: false,
           source: "https://docs.dev.runwayml.com/guides/pricing/"
         }
       },
