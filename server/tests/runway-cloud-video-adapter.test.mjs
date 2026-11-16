@@ -402,6 +402,21 @@ test("Veo rejects invalid frame pairs, unsupported durations and 1080p short cli
   assert.equal(calls, 0);
 });
 
+test("Veo preflight rejects invalid requests before the worker can begin a provider submission", async () => {
+  const adapter = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1" });
+  await assert.rejects(() => adapter.preflight({
+    provider: "runway", model: "veo3.1", prompt: "Bad duration", durationSeconds: 5
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.preflight({
+    provider: "runway", model: "veo3.1", prompt: "Bad resolution", durationSeconds: 4,
+    resolution: "1080p"
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.preflight({
+    provider: "runway", model: "veo3.1", operation: "image-to-video",
+    promptImage: [{ uri: "runway://ephemeral/last", position: "last" }], durationSeconds: 8
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+});
+
 test("Veo preflight rates are model-specific and do not alter other Runway adapters", async () => {
   const standard = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1" });
   const fast = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1_fast" });
