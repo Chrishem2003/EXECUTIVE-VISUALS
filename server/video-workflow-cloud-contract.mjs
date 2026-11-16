@@ -31,14 +31,18 @@ function assetList(value, label, maximum) {
 
 const DIRECT_RUNWAY_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
 function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,model}){
- const prompt=firstString(values.prompt,values.text,values.input,config.prompt);
- const sourceVideoAssetId=firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
- const startFrameAssetId=firstString(values.startFrameAssetId,values["start-frame"],values.image,values.referenceImage,values.reference,config.startFrameAssetId,config.referenceAssetId);
+ const draftEnhancement=config.operation==="draft-enhancement";
+ const prompt=draftEnhancement?"Enhance approved Seedance 2.5 preview to 1080p":firstString(values.prompt,values.text,values.input,config.prompt);
+ const sourceVideoAssetId=draftEnhancement?"":firstString(values.sourceVideoAssetId,values.sourceVideo,values.video,config.sourceVideoAssetId);
+ const startFrameAssetId=draftEnhancement?"":firstString(values.startFrameAssetId,values["start-frame"],values.image,values.referenceImage,values.reference,config.startFrameAssetId,config.referenceAssetId);
+ if(draftEnhancement&&(model!=="seedance2_5"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(String(config.draftTaskId||""))||
+    !/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(String(config.sourceDraftJobId||""))))
+  throw fail("Seedance draft enhancement requires a verified source job and provider task ID.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(sourceVideoAssetId&&startFrameAssetId)throw fail("Runway direct source-video edits and first-frame generation must be separate operations.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
- const operation=sourceVideoAssetId?"video-to-video":startFrameAssetId?"image-to-video":"text-to-video";
+ const operation=draftEnhancement?"text-to-video":sourceVideoAssetId?"video-to-video":startFrameAssetId?"image-to-video":"text-to-video";
  if((sourceVideoAssetId||startFrameAssetId)&&config.rightsConfirmed!==true)throw fail("Confirm rights to use direct Runway source media before quoting or approving generation.","MEDIA_RIGHTS_REQUIRED");
  const requestedOperation=firstString(config.operation);
- if(requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ if(!draftEnhancement&&requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  if(requestedOperation==="generate"&&operation==="video-to-video")throw fail("Choose the explicit video-to-video operation when a source video is connected.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  if(model==="gen4.5"&&operation==="video-to-video")throw fail("Gen-4.5 direct worker does not support source-video editing.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(model==="kling3.0_4k"&&operation==="video-to-video")throw fail("Kling 3.0 4K does not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
@@ -73,7 +77,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  if(draft&&draftTargetResolution!=="1080p")throw fail("Seedance draft enhancement is fixed at 1080p; 4K requires a separate full generation.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(config.draft!==undefined&&typeof config.draft!=="boolean")throw fail("Seedance draft mode must be a boolean.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(draft&&model!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
- const resolution=draft?"480p":model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
+ const resolution=draft?"480p":draftEnhancement?"1080p":model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
   model==="kling_4"||model==="kling_4_flash"?(requestedResolution==="provider_default"?"720p":requestedResolution):"provider_default";
  const audio=["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)
   ?(typeof config.audio==="boolean"?config.audio:true):undefined;
@@ -101,6 +105,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
   ...normalized,provider:"runway",model,operation,
   ...(audio!==undefined?{audio}:{}),
   ...(draft?{draft:true,draftTargetResolution}:{}),
+  ...(draftEnhancement?{draftTaskId:String(config.draftTaskId),sourceDraftJobId:String(config.sourceDraftJobId),draftEnhancement:true}:{}),
   ...(multiPrompt?{multiPrompt,shotType}:{}),
   ...(model==="seedance2_5"&&operation==="video-to-video"?{mode,...(durationValue!==undefined?{duration:durationValue}:{})}:{})
  };
