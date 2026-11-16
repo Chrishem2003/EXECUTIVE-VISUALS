@@ -36,6 +36,45 @@ test("submits Kling 4.0 Flash text-to-video through the durable worker adapter",
   });
 });
 
+test("enhances a Seedance draft with the exact model and draftTaskId payload", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
+  });
+  const result = await adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "Stored preview prompt is intentionally not sent again",
+    durationSeconds: 8, resolution: "1080p",
+    draftTaskId: "223e4567-e89b-42d3-a456-426614174000"
+  });
+  assert.equal(result.taskId, id);
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "seedance2_5", draftTaskId: "223e4567-e89b-42d3-a456-426614174000"
+  });
+});
+
+test("rejects invalid Seedance draft enhancement inputs before provider submission", async () => {
+  let calls = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async () => { calls++; return new Response(JSON.stringify({ id }), { status: 200 }); }
+  });
+  const valid = {
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "Enhance", durationSeconds: 8, resolution: "1080p",
+    draftTaskId: "223e4567-e89b-42d3-a456-426614174000"
+  };
+  await assert.rejects(() => adapter.submit({ ...valid, resolution: "4k" }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...valid, draft: true }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({ ...valid, draftTaskId: "not-a-task-id" }), error => error.code === "RUNWAY_INPUT_INVALID");
+  assert.equal(calls, 0);
+});
+
 test("submits one Gen-4.5 text-to-video task using the pinned API version", async () => {
   let call;
   const adapter = createRunwayCloudVideoAdapter({
