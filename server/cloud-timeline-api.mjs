@@ -67,10 +67,6 @@ function workflowProviderLaunchConfigured(env={},request) {
  if(request?.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(request.model))return directRunwayLaunchConfigured(env,request.model);
  return false;
 }
-function cloudVideoWorkerLaunchConfigured(env={}) {
- return runwayRouterLaunchConfigured(env)||lumaLaunchConfigured(env)||
-  [...DIRECT_RUNWAY_WORKFLOW_MODELS].some(model=>directRunwayLaunchConfigured(env,model));
-}
 
 function timelineDurationSeconds(timeline){
  let end=0;
