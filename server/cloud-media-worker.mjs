@@ -5,7 +5,7 @@ import { createCloudMediaExecutor } from "./cloud-media-executor.mjs";
 import { runCloudWorkerCycle } from "./cloud-worker.mjs";
 
 const MEDIA_JOB_TYPES = Object.freeze([
-  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
+  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.audio_replace",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
   "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
 ]);
