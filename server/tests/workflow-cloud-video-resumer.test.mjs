@@ -6,7 +6,10 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
 const runId="523e4567-e89b-42d3-a456-426614174000";
 const nodeId="video-node";
-const cloudJobId="623e4567-e89b-42d3-a456-426614174000";\nconst quoteId="723e4567-e89b-42d3-a456-426614174000";\nconst requestId="workflow-test-request";\nconst requestHash="a".repeat(64);
+const cloudJobId="623e4567-e89b-42d3-a456-426614174000";
+const quoteId="723e4567-e89b-42d3-a456-426614174000";
+const requestId="workflow-test-request";
+const requestHash="a".repeat(64);
 
 function fixture(cloudStatus="succeeded",originalJobStatus="blocked",cloudJobOverrides={}){
  const run={id:runId,owner_id:owner,project_id:project,status:"blocked",job_id:"old-local-job"};
@@ -110,7 +113,8 @@ test("does not resume or terminalize a cloud job whose owner, project, type or a
   assert.equal(errors[0].code,"WORKFLOW_CLOUD_JOB_RECEIPT_MISMATCH");
  }
 });
-\ntest("running cloud job leaves the workflow parked without creating local jobs",async()=>{
+
+test("running cloud job leaves the workflow parked without creating local jobs",async()=>{
  const f=fixture("running");
  const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi});
  assert.deepEqual(result,{scanned:1,resumed:0,terminal:0});
