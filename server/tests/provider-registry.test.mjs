@@ -4,7 +4,7 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,8);
+ assert.equal(catalog.summary.total,9);
  assert.equal(catalog.summary.ready,0);
  assert.equal(catalog.summary.disabled,6);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
@@ -24,7 +24,7 @@ test("local gateways become ready without remote opt-in and secrets remain hidde
  assert.equal(catalog.providers.find(x=>x.id==="voice").status,"ready");
  assert.equal(catalog.providers.find(x=>x.id==="transcription").status,"ready");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"ready");
- assert.deepEqual(catalog.providers.find(x=>x.id==="local-media").capabilities.filter(value=>value.startsWith("media.")),["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
+ assert.deepEqual(catalog.providers.find(x=>x.id==="local-media").capabilities.filter(value=>value.startsWith("media.")),["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.audio-master","media.audio_replace","media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
  assert.equal(findProviderForCapability(catalog,"text.generate").provider,"text");
 });
@@ -95,7 +95,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
 
 test("Runway adapter exposes verified text-to-video and first-frame image-to-video models",()=>{
  const catalog=getProviderCatalog({
-  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
   RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"seedance2_5"
  });
  const video=catalog.providers.find(item=>item.id==="video");
@@ -108,9 +108,9 @@ test("Runway adapter exposes verified text-to-video and first-frame image-to-vid
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });
 test("Runway remains blocked without remote opt-in or credentials",()=>{
- const noKey=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODEL:"seedance2_5"});
+ const noKey=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODEL:"seedance2_5"});
  assert.equal(noKey.providers.find(item=>item.id==="video").status,"needs_configuration");
- const noOptIn=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"false",RUNWAYML_API_SECRET:"secret",RUNWAY_VIDEO_MODEL:"seedance2_5"});
+ const noOptIn=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"secret",RUNWAY_VIDEO_MODEL:"seedance2_5"});
  assert.equal(noOptIn.providers.find(item=>item.id==="video").status,"remote_opt_in_required");
 });
 test("Gemini Nano Banana Pro is exposed only when configured and explicitly opted in",()=>{
