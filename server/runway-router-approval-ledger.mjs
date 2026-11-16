@@ -73,7 +73,7 @@ export function createRunwayRouterApprovalLedger({
     if (typeof fn !== "function") throw new TypeError(name + " must be a function.");
   }
 
-  const get = id => view(db.prepare("SELECT * FROM runway_router_approvals WHERE id=?").get(id));
+  const getById = id => view(db.prepare("SELECT * FROM runway_router_approvals WHERE id=?").get(id));
   const transact = fn => {
     db.exec("BEGIN IMMEDIATE");
     try { const result = fn(); db.exec("COMMIT"); return result; }
@@ -121,7 +121,7 @@ export function createRunwayRouterApprovalLedger({
         VALUES(?,?,?,?,?,?,?,?,?,'pending_approval',?,?,?)`)
         .run(id, ownerId, projectId, configId, provider, model, inputHash,
           decision.estimatedCredits, maxEstimatedCredits, createdAt, expiresAt, "{}");
-      return get(id);
+      return getById(id);
     },
 
     approve({ approvalId, ownerId, projectId, actorId, inputHash } = {}) {
@@ -144,7 +144,7 @@ export function createRunwayRouterApprovalLedger({
           WHERE id=? AND state='pending_approval' AND input_hash=?`)
           .run(actorId, current.toISOString(), approvalId, inputHash);
         if (changed.changes !== 1) throw fail("Approval is no longer pending and cannot be replayed.", "RUNWAY_APPROVAL_STATE_INVALID");
-        return { record: get(approvalId) };
+        return { record: getById(approvalId) };
       });
       if (result.expired) throw fail("The preflight approval window has expired; run a fresh preflight.", "RUNWAY_APPROVAL_EXPIRED");
       return result.record;
@@ -189,14 +189,24 @@ export function createRunwayRouterApprovalLedger({
           WHERE id=? AND state IN ('pending_approval','approved')`)
           .run(actorId, current.toISOString(), approvalId);
         if (changed.changes !== 1) throw fail("Only pending or approved records can be revoked.", "RUNWAY_APPROVAL_STATE_INVALID");
-        return get(approvalId);
+        return getById(approvalId);
       });
     },
 
-    get,
-    listForProject({ ownerId, projectId, limit = 50 } = {}) {
-      required(ownerId, "ownerId"); required(projectId, "projectId");
+    get({ approvalId, ownerId, projectId, actorId } = {}) {
+      required(approvalId, "approvalId"); required(ownerId, "ownerId");
+      required(projectId, "projectId"); required(actorId, "actorId");
+      const row = db.prepare("SELECT * FROM runway_router_approvals WHERE id=?").get(approvalId);
+      if (!row || row.owner_id !== ownerId || row.project_id !== projectId) {
+        throw fail("Approval record was not found in this project scope.", "RUNWAY_APPROVAL_NOT_FOUND");
+      }
+      assertScope(ownerId, projectId, actorId, authorizeProject, "RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
+      return view(row);
+    },
+    listForProject({ ownerId, projectId, actorId, limit = 50 } = {}) {
+      required(ownerId, "ownerId"); required(projectId, "projectId"); required(actorId, "actorId");
       if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw fail("Approval history limit is invalid.");
+      assertScope(ownerId, projectId, actorId, authorizeProject, "RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
       return db.prepare(`SELECT * FROM runway_router_approvals
         WHERE owner_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?`)
         .all(ownerId, projectId, limit).map(view);
