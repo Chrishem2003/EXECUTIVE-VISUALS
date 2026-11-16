@@ -57,7 +57,9 @@ export function createRunwayTaskActualCostResolver({
     if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw fail("Runway workspace usage response exceeded 2 MiB.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
     let page;
     try { page = JSON.parse(raw); } catch { throw fail("Runway workspace usage returned invalid JSON.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID"); }
-    if (!page || typeof page !== "object" || !Array.isArray(page.data) || typeof page.hasMore !== "boolean") {
+    if (!page || typeof page !== "object" || !Array.isArray(page.data) || page.data.length > 1 ||
+        typeof page.hasMore !== "boolean" || (page.nextCursor !== null && typeof page.nextCursor !== "string") ||
+        page.hasMore && !page.nextCursor) {
       throw fail("Runway workspace usage readiness response is malformed.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
     }
     return true;
