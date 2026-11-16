@@ -6,7 +6,7 @@ test("provider catalog is safe by default and never exposes credentials or submi
  const catalog=getProviderCatalog({});
  assert.equal(catalog.summary.total,9);
  assert.equal(catalog.summary.ready,0);
- assert.equal(catalog.summary.disabled,6);
+ assert.equal(catalog.summary.disabled,7);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.equal(catalog.providers.find(x=>x.id==="video-luma").status,"disabled");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
@@ -250,7 +250,7 @@ test("Runway model selection exposes only exact allowlisted profiles as executab
 test("Runway durable worker allowlist can expose multiple exact model profiles",()=>{
  const catalog=getProviderCatalog({
   VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
-  RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4,kling3.0_standard"
+  RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4,kling3.0_standard,kling3.0_4k"
  });
  const models=catalog.providers.find(item=>item.id==="video").availableModels;
  for(const id of ["seedance2_5","kling_4","kling3.0_standard","kling3.0_4k"])assert.equal(models.find(model=>model.id===id).available,true);
