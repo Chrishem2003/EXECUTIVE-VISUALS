@@ -160,6 +160,24 @@ test("Seedance draft enqueue rejects unpriced or unsupported preview configurati
   assert.equal(calls, 0);
 });
 
+test("Seedance 480p draft uses the preview rate before durable budget reservation", async () => {
+  const calls = [];
+  const client = createCloudVideoEnqueue({
+    ...base,
+    fetchImpl: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return response([resultRow]); }
+  });
+  const draftInput = {
+    ...input, model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview",
+    durationSeconds: 8, outputFormat: "mp4", resolution: "480p", draft: true
+  };
+  const result = await client.enqueue(args({ model: "seedance2_5", input: draftInput, reservedAmount: 5 }));
+  assert.equal(result.jobId, resultRow.job_id);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.p_model, "seedance2_5");
+  assert.equal(calls[0].body.p_input.resolution, "480p");
+  assert.equal(calls[0].body.p_input.draft, true);
+});
+
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
