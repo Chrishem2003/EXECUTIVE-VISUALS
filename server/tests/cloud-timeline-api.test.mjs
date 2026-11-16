@@ -20,6 +20,18 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
  return{api,calls,created};
 }
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
+test("cloud timeline accepts private video assets on overlay tracks for final compositing",async()=>{
+ const f=setup({assetMediaType:"video/mp4"});
+ const clip={id:"clip-1",assetId:"asset-1",name:"source.mp4",timelineStart:{value:0,rate:1},duration:{value:24,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:24,rate:24}},enabled:true};
+ const timeline={...timelineDoc,tracks:[
+  {id:"video-track",kind:"video",name:"Primary",enabled:true,locked:false,clips:[clip]},
+  {id:"overlay-track",kind:"overlay",name:"Picture in picture",enabled:true,locked:false,clips:[{...clip,id:"overlay-clip",timelineStart:{value:6,rate:24},duration:{value:12,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:12,rate:24}},metadata:{x:16,y:16,width:160,height:90,opacity:0.7}}]}
+ ]};
+ const result=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline}});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.timeline.tracks[1].clips[0].assetId,"asset-1");
+});
+
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202,JSON.stringify(result.body));const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
 test("billable cloud render reserves a server-calculated amount before the job is queued",async()=>{
