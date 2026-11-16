@@ -19,7 +19,7 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"]);
+const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"]);
 const directRunwayConfigId=model=>"runway-direct-"+String(model).replace(/[^a-z0-9]+/gi,"-").toLowerCase();
 function directRunwayEnabled(env,model){
  const allowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -405,7 +405,10 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       const input=workflowRequest.input;
       const priced=estimateVideoGenerationCost({
        provider:"runway",model:workflowRequest.model,operation:workflowRequest.operation,
-       durationSeconds:workflowRequest.model==="kling_4"&&workflowRequest.operation==="video-to-video"?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
+       durationSeconds:workflowRequest.operation==="video-to-video"&&(
+        workflowRequest.model==="kling_4"||
+        workflowRequest.model==="gemini_omni_flash_1.2"&&input.mode==="edit"
+       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
        inputType:input.sourceVideoAssetId||input.sourceDraftVideoAssetId?"video":input.startFrameAssetId?"image":"text"
