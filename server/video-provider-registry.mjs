@@ -650,9 +650,6 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         },
         constraints: {
           maxPromptCharacters: 26000,
-          maxReferenceImages: 10,
-          maxReferenceVideos: 5,
-          maxCombinedImageReferences: 10,
           inputVideoMaxSeconds: 30,
           outputUrlTemporary: true,
           billingBasis: "output_plus_max_input_or_output_duration",
