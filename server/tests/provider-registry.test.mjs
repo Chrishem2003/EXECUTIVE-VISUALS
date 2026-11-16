@@ -235,7 +235,7 @@ test("Luma Ray 3.2 readiness requires the actual worker gate, private schema, pr
 
 test("Runway model selection exposes only exact allowlisted profiles as executable",()=>{
  const catalog=getProviderCatalog({
-  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
   RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODEL:"seedance2_5"
  });
  const video=catalog.providers.find(item=>item.id==="video");
@@ -249,7 +249,7 @@ test("Runway model selection exposes only exact allowlisted profiles as executab
 });
 test("Runway durable worker allowlist can expose multiple exact model profiles",()=>{
  const catalog=getProviderCatalog({
-  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
   RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4,kling3.0_standard"
  });
  const models=catalog.providers.find(item=>item.id==="video").availableModels;
