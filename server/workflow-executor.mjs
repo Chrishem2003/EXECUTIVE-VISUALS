@@ -10,6 +10,7 @@ import { generateRunwayVideo, getRunwayVideoCapabilities } from "./runway-video-
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
+import { processRunwayAudio } from "./runway-audio-gateway.mjs";
 import { buildWebVtt, storeCaptionAsset, applyTranslatedSegments } from "./captions.mjs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -224,6 +225,27 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const vtt=buildWebVtt(segments,{offsetSeconds:Number(config.offsetSeconds??0)});
     const asset=await storeCaptionAsset({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,sourceAssetId:source?.id||"",language:String(values.language||config.language||""),segments,content:vtt});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.subtitle=asset.id;output.subtitleAssetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.sourceAssetId=source?.id||null;output.cueCount=segments.length;output.wordLevel=Boolean(words);
+   }else if(node.kind==="voice.isolate"||node.kind==="voice.dub"){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before remote voice processing."),{code:"APPROVAL_REQUIRED"});
+    const sourceAssetId=inputAsset(values,config);
+    const source=getAccessibleAsset(db,job.owner_id,sourceAssetId,false);
+    if(!source||!String(source.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Voice isolation and dubbing require an accessible audio asset. Extract the video audio track first."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const root=resolve(mediaRoot),absolute=resolve(root,source.storage_path),storedRelative=relative(root,absolute);
+    if(!storedRelative||storedRelative===".."||storedRelative.startsWith(".."+sep)||absolute===root)throw Object.assign(new Error("Audio asset path failed validation."),{code:"ASSET_PATH_INVALID"});
+    const buffer=await readFile(absolute);
+    if(!buffer.length||buffer.length>200*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Audio asset is empty, oversized or changed since ingest."),{code:"RUNWAY_AUDIO_INVALID_INPUT"});
+    const checksum=createHash("sha256").update(buffer).digest("hex");
+    if(checksum!==source.sha256)throw Object.assign(new Error("Audio asset checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    const operation=node.kind==="voice.isolate"?"isolate":"dub";
+    const capability=operation==="isolate"?"voice.isolate":"voice.dub";
+    const provider=requireExecutionProvider(capability,"RUNWAY_AUDIO_ALLOW_REMOTE");
+    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability});
+    const usageStarted=Date.now();
+    const ext=source.media_type==="audio/mpeg"||source.media_type==="audio/mp3"?".mp3":source.media_type==="audio/wav"||source.media_type==="audio/x-wav"?".wav":source.media_type==="audio/flac"?".flac":source.media_type==="audio/mp4"?".m4a":source.media_type==="audio/aac"?".aac":".mp3";
+    const result=await processRunwayAudio({operation,buffer,filename:"source-audio"+ext,mimeType:source.media_type,targetLang:String(config.targetLang||""),disableVoiceCloning:config.disableVoiceCloning===true,dropBackgroundAudio:config.dropBackgroundAudio===true,numSpeakers:config.numSpeakers===undefined?undefined:Number(config.numSpeakers)});
+    recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability,model:result.model,usage:result.usage||{estimatedCostCredits:result.estimatedCostCredits},durationMs:Date.now()-usageStarted});
+    const asset=await storeGeneratedAudio({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:operation==="dub"?"Voice dubbing to "+String(config.targetLang||""):"Voice isolation from "+source.original_name,model:result.model,buffer:result.buffer,mimeType:result.mimeType});
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.audio=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.sourceAssetId=source.id;output.provider=provider.provider;output.requestId=result.requestId;output.estimatedCostCredits=result.estimatedCostCredits;
    }else if(node.kind==="image.generate"){
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
@@ -425,7 +447,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","RUNWAY_AUDIO_DISABLED","RUNWAY_AUDIO_REMOTE_DISABLED","RUNWAY_AUDIO_CONFIG_INVALID","RUNWAY_AUDIO_UNAVAILABLE","RUNWAY_AUDIO_RATE_LIMITED","RUNWAY_AUDIO_SERVER_ERROR","RUNWAY_AUDIO_REQUEST_REJECTED","RUNWAY_AUDIO_INVALID_RESPONSE","RUNWAY_AUDIO_INVALID_INPUT","RUNWAY_AUDIO_JOB_FAILED","RUNWAY_AUDIO_TIMEOUT","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
    const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
