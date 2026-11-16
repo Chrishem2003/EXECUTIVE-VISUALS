@@ -389,6 +389,12 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       if(workflowRequest.model==="seedance2_5"&&(!Number.isSafeInteger(sourceMetadata.width)||!Number.isSafeInteger(sourceMetadata.height)||Math.min(sourceMetadata.width,sourceMetadata.height)<480)){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
       }
+      if(workflowRequest.model==="gemini_omni_flash_1.2"){
+       const maxSourceSeconds=workflowRequest.input.mode==="extend"?30:15;
+       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>maxSourceSeconds){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 source video must be 3–"+maxSourceSeconds+" seconds for the selected mode."}});
+       }
+      }
       if(["kling_4","kling_4_flash"].includes(workflowRequest.model)){
        const aspect=sourceMetadata.width/sourceMetadata.height;
        const maxSourceSeconds=workflowRequest.model==="kling_4_flash"?21:30;
@@ -408,7 +414,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        durationSeconds:workflowRequest.operation==="video-to-video"&&(
         workflowRequest.model==="kling_4"||
         workflowRequest.model==="gemini_omni_flash_1.2"&&input.mode==="edit"
-       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
+       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:workflowRequest.model==="gemini_omni_flash_1.2"&&workflowRequest.operation==="video-to-video"&&input.mode!=="reference"?"720p":input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
        inputType:input.sourceVideoAssetId||input.sourceDraftVideoAssetId?"video":input.startFrameAssetId?"image":"text"
@@ -496,6 +502,12 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
          !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
          metadata.durationSeconds<2||metadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must remain a verified project asset between 2 and 30 seconds."}});
+      }
+      if(workflowRequest.model==="gemini_omni_flash_1.2"){
+       const maxSourceSeconds=workflowRequest.input.mode==="extend"?30:15;
+       if(metadata.durationSeconds<3||metadata.durationSeconds>maxSourceSeconds){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 source video must be 3–"+maxSourceSeconds+" seconds for the selected mode."}});
+       }
       }
       if(!directRunway&&Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
