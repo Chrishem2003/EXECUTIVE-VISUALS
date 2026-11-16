@@ -19,11 +19,21 @@
 - Integration with the existing approved workflow executor, remote usage reservation, private generated-asset storage and provenance metadata.
 - Deterministic tests with a fake HTTP provider; tests do not make external API calls.
 
-## Explicit limitations
+## Current mainline capability status
 
-This adapter implements **text-to-video and one first-frame image-to-video input** for the listed models. It does not yet implement video-to-video editing/extension, last/middle keyframes, multi-shot prompt segmentation, video/audio references, native audio controls, model-specific advanced parameters, or provider-side cancellation. The first-frame image must be a valid PNG/JPEG/WebP data URI no larger than Runway’s documented 5 MiB data-URI limit. The UI must not advertise unsupported features as available.
+The original text-to-video adapter described above was the first implementation slice, not the current feature boundary. The current durable provider worker and workflow contract have expanded beyond that foundation:
 
-The adapter returns provider cost metadata when Runway supplies it, but Executive Visuals does not yet calculate customer-facing prices, reserve subscription credits, or reconcile provider charges against a subscription ledger.
+- Direct generation: Gen-4.5, Seedance 2.5, Kling 4.0, Kling 4.0 Flash, Kling 3.0 profiles and Gemini Omni Flash 1.2.
+- Source-video operations: Aleph 2, Seedance 2.5, Kling 4.0, Kling 4.0 Flash and Gemini Omni Flash 1.2, with model-specific source duration, resolution and mode validation.
+- Seedance 2.5 supports reference, extend and edit modes, 480p draft previews and a separately approved 1080p draft enhancement.
+- Gemini Omni Flash 1.2 supports reference, extend and edit modes; edit/extend requests use the provider's automatic source-length behavior and fixed 720p output.
+- Private source assets are resolved within the authenticated owner/project boundary, probed server-side, uploaded to Runway's ephemeral storage and then submitted as durable provider tasks.
+- Provider task IDs, lease-fenced submission state, private output ingestion and task-level cost reconciliation remain part of the existing durable job path.
+- The Video Studio exposes source-video selection, rights confirmation, mode selection and output controls for the supported direct models.
+
+The adapter intentionally does not claim universal Runway feature parity. Remaining model-specific restrictions include direct-worker reference collections that require the separate Model Router path, unsupported Kling 3.0 source-video editing, non-MP4 professional video-edit outputs, and provider-side cancellation where no verified cancellation adapter is registered. Unsupported combinations fail closed.
+
+Tests use mocked provider and storage boundaries; they do not make paid external requests. Remote execution remains disabled unless server-side credentials, model allowlists, cost reconciliation, storage and worker gates are explicitly configured.
 
 ## Configuration
 
