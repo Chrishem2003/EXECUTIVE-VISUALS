@@ -463,3 +463,21 @@ test("rejects Kling 3.0 video-to-video because no adapter profile is enabled",()
   projectId:"project-1",requestId:"runway-kling3-v2v",values:{prompt:"Edit the clip"}
  }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
 });
+
+
+test("builds a Seedance 2.5 draft workflow request with a 480p quote and preserves draft intent",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p"}},
+  projectId:"project-1",requestId:"seedance-draft-workflow",values:{prompt:"A cinematic product reveal"}
+ });
+ assert.equal(request.input.draft,true);
+ assert.equal(request.input.resolution,"480p");
+ assert.equal(request.input.durationSeconds,8);
+ assert.equal(request.operation,"text-to-video");
+});
+test("rejects draft mode for non-Seedance workflow models",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",draft:true,durationSeconds:5}},
+  projectId:"project-1",requestId:"invalid-draft-model",values:{prompt:"A cinematic product reveal"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
