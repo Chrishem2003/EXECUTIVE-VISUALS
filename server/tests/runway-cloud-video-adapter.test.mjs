@@ -328,6 +328,28 @@ test("submits Seedance 2.5 text-to-video through the durable worker adapter with
   });
 });
 
+test("submits Seedance 2.5 draft text-to-video at the fixed 480p preview tier", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id, estimatedCost: { credits: 160 } }), { status: 200 });
+    }
+  });
+  const submitted = await adapter.submit({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "A cinematic dawn over a quiet city", durationSeconds: 8,
+    aspectRatio: "16:9", draft: true
+  });
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "seedance2_5", promptText: "A cinematic dawn over a quiet city",
+    ratio: "854:480", duration: 8, draft: true
+  });
+});
+
 test("prepares a private first frame and submits Seedance 2.5 image-to-video", async () => {
   let call;
   const adapter = createRunwayCloudVideoAdapter({
@@ -365,6 +387,34 @@ test("prepares a private first frame and submits Seedance 2.5 image-to-video", a
     model: "seedance2_5", promptText: "Animate the approved product frame",
     promptImage: "runway://ephemeral/seedance-first-frame",
     duration: 8, ratio: "720:1280"
+  });
+});
+
+test("Seedance 2.5 image-to-video supports a 480p draft without exposing source paths", async () => {
+  let body;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({ firstFrame: { buffer: Buffer.alloc(512), filename: "frame.png", mimeType: "image/png" } }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/signed-draft-frame", fields: { key: "draft-frame" },
+        runwayUri: "runway://ephemeral/draft-frame"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/signed-draft-frame") return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) { body = JSON.parse(options.body); return new Response(JSON.stringify({ id }), { status: 200 }); }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    prompt: "Animate the approved frame", startFrameAssetId: "approved-frame", durationSeconds: 6,
+    aspectRatio: "16:9", draft: true
+  }, { job: { owner_id: "owner-1" } });
+  await adapter.submit(prepared);
+  assert.deepEqual(body, {
+    model: "seedance2_5", promptText: "Animate the approved frame", promptImage: "runway://ephemeral/draft-frame",
+    duration: 6, ratio: "854:480", draft: true
   });
 });
 
