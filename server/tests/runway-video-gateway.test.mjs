@@ -7,8 +7,23 @@ test("catalog contains only models with explicit text-to-video profiles",()=>{
  assert.ok(models.some(x=>x.id==="seedance2_5"));
  assert.ok(models.some(x=>x.id==="kling_4"));
  assert.ok(models.some(x=>x.id==="gen4.5"));
+ assert.ok(models.some(x=>x.id==="gemini_omni_flash_1.2"&&x.inputModes.includes("video-to-video")));
  assert.ok(!models.some(x=>x.id==="nano_banana_pro"));
 });
+test("Gemini Omni 1.2 exposes documented output tiers for text and first-frame generation",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"A cinematic city at dusk",durationSeconds:5,aspectRatio:"16:9",resolution:"4k"}),{
+  model:"gemini_omni_flash_1.2",promptText:"A cinematic city at dusk",ratio:"3840:2160",duration:5
+ });
+ assert.deepEqual(buildRunwayImageToVideoPayload({
+  model:"gemini_omni_flash_1.2",prompt:"Animate the approved first frame",
+  promptImage:"data:image/png;base64,AA==",durationSeconds:5,aspectRatio:"9:16",resolution:"1080p"
+ }),{
+  model:"gemini_omni_flash_1.2",promptText:"Animate the approved first frame",
+  promptImage:"data:image/png;base64,AA==",ratio:"1080:1920",duration:5
+ });
+ assert.equal(getRunwayVideoCapabilities("gemini_omni_flash_1.2").maxDurationSeconds,15);
+});
+
 test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"720p"}),{
   model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8
