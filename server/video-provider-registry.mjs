@@ -186,14 +186,14 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "veo3.1",
         name: "Veo 3.1",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "runway-cloud-worker",
         gateway: "runway",
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: false,
           videoEdit: false, videoExtend: false, videoReframe: false,
           nativeAudio: true, negativePrompt: true, seed: true,
           startFrame: true, endFrame: true, motionReference: false,
-          referenceImages: true, referenceVideos: false, referenceAudio: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
           audioModes: ["generated", "none"],
           aspectRatios: ["16:9", "9:16"],
           resolutions: ["720p", "1080p"],
@@ -205,7 +205,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
           outputCreditsPerSecond: { audio: 40, noAudio: 20 },
           eightSecondsOnlyAt1080p: true,
-          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
           asynchronousTaskPolling: true, outputUrlTemporary: true,
           source: "https://dev.runwayml.com/learn/veo-3-1-api"
         }
@@ -214,14 +214,14 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "veo3.1_fast",
         name: "Veo 3.1 Fast",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "runway-cloud-worker",
         gateway: "runway",
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: false,
           videoEdit: false, videoExtend: false, videoReframe: false,
           nativeAudio: true, negativePrompt: true, seed: true,
           startFrame: true, endFrame: true, motionReference: false,
-          referenceImages: true, referenceVideos: false, referenceAudio: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
           audioModes: ["generated", "none"],
           aspectRatios: ["16:9", "9:16"],
           resolutions: ["720p", "1080p"],
@@ -233,7 +233,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
           outputCreditsPerSecond: { audio: 15, noAudio: 10 },
           eightSecondsOnlyAt1080p: true,
-          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
           asynchronousTaskPolling: true, outputUrlTemporary: true,
           source: "https://dev.runwayml.com/learn/veo-3-1-api"
         }
