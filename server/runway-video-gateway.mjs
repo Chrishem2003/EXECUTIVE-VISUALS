@@ -73,7 +73,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const text=typeof prompt==="string"?prompt.trim():"";
   if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
   if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
-  if(draft&&!["provider_default","480p"].includes(resolution))throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const kling3=id.startsWith("kling3.0_");
   const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
@@ -95,7 +95,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  const text=typeof prompt==="string"?prompt.trim():"";
  if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
  if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
- if(draft&&!["provider_default","480p"].includes(resolution))throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const kling3=id.startsWith("kling3.0_");
  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
