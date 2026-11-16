@@ -330,7 +330,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
          sourceMetadata.durationSeconds<2||sourceMetadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
       }
-      if(workflowRequest.model!=="kling_4"&&Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+      if(!(workflowRequest.model==="kling_4"||workflowRequest.model==="seedance2_5"&&workflowRequest.input.mode!=="reference")&&Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
       }
       if(workflowRequest.model==="seedance2_5"&&Math.min(sourceMetadata.width,sourceMetadata.height)<480){
@@ -356,8 +356,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        hasStartFrame:Boolean(input.startFrameAssetId),
        inputType:input.sourceVideoAssetId?"video":input.startFrameAssetId?"image":"text"
       });
-      estimate={provider:"runway",model:workflowRequest.model,estimatedCredits:priced.credits,
-       estimatedUsd:priced.amount,currency:priced.currency,billable:false,
+      estimate={provider:"runway",model:workflowRequest.model,estimatedCredits:Math.ceil(priced.credits),
+       estimatedUsd:Number((Math.ceil(priced.credits)*0.01).toFixed(6)),currency:priced.currency,billable:false,
        pricingSource:"runway_direct_model_list_price",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/"};
      }else{
       const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId},sourceMetadata});
