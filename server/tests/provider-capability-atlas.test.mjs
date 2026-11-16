@@ -7,8 +7,8 @@ test("capability atlas separates implemented operations from documented but unin
  assert.equal(atlas.version,2);
  assert.equal(atlas.summary.models,5);
  assert.equal(atlas.summary.operations,12);
- assert.equal(atlas.summary.implementedOperations,2);
- assert.equal(atlas.summary.documentedNotIntegrated,10);
+ assert.equal(atlas.summary.implementedOperations,6);
+ assert.equal(atlas.summary.documentedNotIntegrated,6);
  const provider=atlas.providers[0];
  assert.equal(provider.id,"runway");
  assert.equal(provider.policy.credentialsExposed,false);
@@ -18,7 +18,7 @@ test("capability atlas separates implemented operations from documented but unin
  assert.equal(provider.models.find(x=>x.id==="seedance2_5").constraints.startFrame,true);
  assert.equal(provider.models.find(x=>x.id==="seedance2_5").constraints.endFrame,false);
  assert.equal(provider.operations.find(x=>x.id==="video.image_to_video").status,"implemented");
- assert.equal(provider.operations.find(x=>x.id==="video.video_to_video").status,"documented_not_integrated");
+ assert.equal(provider.operations.find(x=>x.id==="video.video_to_video").status,"implemented");
 });
 test("capability atlas does not select a model or enable unimplemented operations by default",()=>{
  const atlas=getProviderCapabilityAtlas();
