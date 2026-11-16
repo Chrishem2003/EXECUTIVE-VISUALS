@@ -238,8 +238,10 @@ export function createRunwaySourceAssetResolver({
       }
       if (["video-to-video", "video-upscale", "video-to-hdr"].includes(input?.operation)) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.sourceVideoAssetId, kinds: "video" });
+        const sourceMetadata = await probeVideo(resolved.bytes);
         const prepared = {
-          sourceVideo: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType }
+          sourceVideo: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType },
+          sourceMetadata
         };
         if (Array.isArray(input.keyframes) && input.keyframes.length) {
           if (input.operation !== "video-to-video" || input.keyframes.length > 5) {
