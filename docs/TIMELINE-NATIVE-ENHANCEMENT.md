@@ -35,7 +35,7 @@ Undo/Redo history is currently session-scoped and held in the editor client. It 
 - Proxy playback and automatic proxy/original switching.
 - Durable revision browser and restore UI.
 - FlashVSR job submission directly from a clip; that engine remains separately gated and must first land through its own PR and pass runtime readiness checks.
-- Transitions, animated overlays and video-on-video compositing.
+- Multiple primary video tracks, blend modes, chroma key and nested sequences. A private video asset can now be composited on an overlay track for final rendering, but its browser preview remains limited to the existing still-image overlay path.
 
 These are follow-on milestones, not implied by the current UI controls.
 
