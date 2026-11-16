@@ -253,6 +253,6 @@ test("Runway durable worker allowlist can expose multiple exact model profiles",
   RUNWAYML_API_SECRET:"private-test-key",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4,kling3.0_standard"
  });
  const models=catalog.providers.find(item=>item.id==="video").availableModels;
- for(const id of ["seedance2_5","kling_4","kling3.0_standard"])assert.equal(models.find(model=>model.id===id).available,true);
+ for(const id of ["seedance2_5","kling_4","kling3.0_standard","kling3.0_4k"])assert.equal(models.find(model=>model.id===id).available,true);
  assert.equal(models.find(model=>model.id==="kling3.0_pro").available,false);
 });
