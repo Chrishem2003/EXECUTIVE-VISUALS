@@ -93,7 +93,8 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(response.status,200);
   const catalog=await response.json();
   assert.equal(catalog.version,1);
-  assert.equal(catalog.providers.length,8);
+  assert.equal(catalog.providers.length,9);
+  assert.ok(catalog.providers.some(item=>item.id==="runway-audio"),"Runway audio provider readiness must be visible without exposing credentials");
   assert.equal(catalog.policy.requestsSubmitted,false);
   assert.equal(catalog.policy.credentialsExposed,false);
   assert.equal(catalog.policy.pricesEstimated,false);
@@ -184,7 +185,7 @@ test("capability atlas is authenticated, read-only and distinguishes implemented
   assert.equal(atlas.summary.documentedNotIntegrated,6);
   assert.equal(atlas.providers[0].policy.requestsSubmitted,false);
   assert.equal(atlas.providers[0].policy.credentialsExposed,false);
-  assert.equal(atlas.providers[0].operations.find(x=>x.id==="video.video_to_video").status,"documented_not_integrated");
+  assert.equal(atlas.providers[0].operations.find(x=>x.id==="video.video_to_video").status,"implemented");
 });
 test("usage API reports account request allowance without exposing secrets",async()=>{
   assert.equal((await fetch(base+"/api/usage")).status,401);
