@@ -94,10 +94,11 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
   {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"}
  ];
  const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
-  directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"}]:[{id:"generate",label:"Generate new video"}];
+  directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
+ const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
  const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
- const draftEnabled=provider==="runway"&&model==="seedance2_5";
+ const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
  const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
  const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
@@ -111,6 +112,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
+ (draftEnhancement?'<div class="wf-video-provider-grid"><label>Completed draft job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID of the succeeded draft"></label><label>Original Runway draft task ID<input name="draftTaskId" value="'+esc(config.draftTaskId||"")+'" maxlength="160" placeholder="Provider task ID from the draft job"></label></div><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. The provider reuses the original prompt, references, duration, seed and audio.</p>':'')+
  '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!sourceVideoEnabled?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!sourceVideoEnabled?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
@@ -337,7 +339,7 @@ document.addEventListener("submit",event=>{
  const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"];
  if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
  const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):"generate";
- if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&operation==="video-to-video"):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
+ if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&(operation==="video-to-video"||model==="seedance2_5"&&operation==="draft-enhancement")):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
  const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
  const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
@@ -348,6 +350,12 @@ document.addEventListener("submit",event=>{
  config.resolution=String(data.get("videoResolution")||(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
  if(luma||directRunway)config.operation=operation;else delete config.operation;
+ if(operation==="draft-enhancement"){
+  config.sourceDraftJobId=String(data.get("sourceDraftJobId")||"").trim();
+  config.draftTaskId=String(data.get("draftTaskId")||"").trim();
+  if(!config.sourceDraftJobId||!config.draftTaskId)throw new Error("Enter the completed draft job ID and its original Runway task ID.");
+  delete config.draft;delete config.draftTargetResolution;delete config.sourceVideoAssetId;delete config.startFrameAssetId;
+ }else{delete config.sourceDraftJobId;delete config.draftTaskId;}
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetPicker")||data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
  const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
