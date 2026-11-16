@@ -39,6 +39,37 @@ async function executable(directory, name, body) {
   return path;
 }
 
+test("cloud worker performs two-pass EBU R128 mastering and publishes loudness evidence",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-audio-master-"));
+ const source=join(directory,"source.wav");await writeFile(source,"source-audio");
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+case "$*" in
+ *print_format=json*) printf '%s\\n' '{"input_i":"-20.0","input_tp":"-3.0","input_lra":"4.0","input_thresh":"-30.0","target_offset":"0.0"}' >&2; exit 0 ;;
+ *) for last do :; done; printf 'mastered-audio' > "$last"; exit 0 ;;
+esac`);
+ const ffprobe=await executable(directory,"ffprobe",String.raw`if [ "$1" = "-version" ]; then exit 0; fi
+printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"pcm_s24le","sample_rate":"48000"}],"format":{"duration":"1.0"}}'`);
+ let published=null,cleaned=false;
+ try{
+  const execute=createCloudMediaExecutor({ffmpeg,ffprobe,tempRoot:directory,c2paPreserver:noC2paPreservation,mediaIO:{
+   async materialize(args){assert.deepEqual(args,{ownerId:"verified-owner",assetId:"audio-source"});return{path:source,asset:{id:"audio-source",name:"dialogue.wav",mediaType:"audio/wav",sha256:"b".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(args){published=args;return{id:"audio-master-derivative",name:args.filename,mediaType:args.mediaType,derivativeOf:args.derivativeOf};}
+  }});
+  const result=await execute({job:{id:"audio-master-job",owner_id:"verified-owner",project_id:"project-1",job_type:"media.audio-master",lease_owner:"worker-1",lease_token:"11111111-1111-4111-8111-111111111111",input:{sourceAssetId:"audio-source",targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}},onProgress(){}});
+  assert.equal(published.filename,"dialogue-mastered.wav");
+  assert.equal(published.mediaType,"audio/wav");
+  assert.equal(published.derivativeOf,"audio-source");
+  assert.equal(published.metadata.audioMastering.standard,"EBU R128");
+  assert.equal(published.metadata.audioMastering.method,"two-pass loudnorm");
+  assert.equal(published.metadata.audioMastering.measurement.integratedLufs,-20);
+  assert.equal(published.metadata.audioMastering.output.codec,"pcm_s24le");
+  assert.equal(published.metadata.audioMastering.output.sampleRateHz,48000);
+  assert.equal(published.publicationKey,"audio-master-job:output:v1");
+  assert.equal(result.outputAsset.id,"audio-master-derivative");
+  assert.equal(cleaned,true);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test("cloud media probe uses the leased owner and cleans up its materialized source", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-executor-test-"));
   const previous = process.env.FFPROBE_PATH;
