@@ -13,6 +13,29 @@ const base = {
   resolveActualCost: async () => ({ amount: 12, currency: "USD", evidenceReference: "runway:usage-row:1" })
 };
 
+test("submits Kling 4.0 Flash text-to-video through the durable worker adapter", async () => {
+  let call;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    model: "kling_4_flash",
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
+  });
+  const result = await adapter.submit({
+    provider: "runway", model: "kling_4_flash", operation: "text-to-video",
+    prompt: "A cinematic city at night", durationSeconds: 5,
+    aspectRatio: "16:9", resolution: "720p"
+  });
+  assert.equal(result.taskId, id);
+  assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
+  assert.deepEqual(JSON.parse(call.options.body), {
+    model: "kling_4_flash", ratio: "1280:720",
+    promptText: "A cinematic city at night", duration: 5
+  });
+});
+
 test("submits one Gen-4.5 text-to-video task using the pinned API version", async () => {
   let call;
   const adapter = createRunwayCloudVideoAdapter({
