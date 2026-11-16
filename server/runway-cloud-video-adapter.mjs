@@ -215,6 +215,7 @@ export function createRunwayCloudVideoAdapter({
       }
       if (selectedModel === "aleph2") return { ...input, videoUri, keyframes };
       const metadata = prepared.sourceMetadata;
+      const sourceMetadata = metadata;
       if (!metadata || !Number.isFinite(metadata.durationSeconds) || !Number.isInteger(metadata.width) ||
           !Number.isInteger(metadata.height) || !Number.isFinite(metadata.frameRate)) {
         throw fail("Seedance and Kling video edits require probed source metadata before submission.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
