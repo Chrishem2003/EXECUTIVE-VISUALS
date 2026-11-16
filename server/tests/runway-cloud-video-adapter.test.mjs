@@ -414,7 +414,7 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   await adapter.submit(prepared);
   assert.deepEqual(body, {
     model: "seedance2_5", promptText: "Animate the approved frame", promptImage: "runway://ephemeral/draft-frame",
-    duration: 6, ratio: "854:480", draft: true
+    duration: 6, ratio: "1280:720", draft: true
   });
 });
 
