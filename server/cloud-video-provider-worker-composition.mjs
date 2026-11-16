@@ -70,7 +70,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
     throw new Error("Provider-aware cloud video worker timeout is invalid.");
   }
   if (!Array.isArray(runwayModels) || runwayModels.length > 10 ||
-      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) ||
+      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby", "veo3.1", "veo3.1_fast"].includes(model)) ||
       new Set(runwayModels).size !== runwayModels.length) {
     throw new Error("Runway model registration must be a unique list of explicitly supported model profiles.");
   }
