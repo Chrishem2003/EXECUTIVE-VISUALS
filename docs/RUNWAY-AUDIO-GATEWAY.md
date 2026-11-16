@@ -44,7 +44,7 @@ The provider may reject recordings outside its documented duration or media cons
 2. Confirm source-media rights and choose the target language.
 3. Keep generic voice selected unless speaker permission for voice cloning is available and explicitly confirmed.
 4. The workflow waits for approval, extracts the source video's audio locally, then submits the audio to the dubbing adapter.
-5. The dubbed audio is saved as a private derivative for placement on the existing timeline. The source video is not overwritten. Automatic replacement/remux of the video's original audio track is a separate finishing step and is not claimed as complete by this adapter.
+5. The dubbed audio is saved as a private derivative. The workflow then invokes the local `video.replace-audio` finishing node, which verifies the source video and dubbed audio assets, copies the original video stream without re-encoding, encodes the replacement audio as AAC, and publishes a new private localized MP4 derivative. The original source video is never overwritten. The output is probed and must contain both video and audio streams before publication.
 
 ## Tests
 
