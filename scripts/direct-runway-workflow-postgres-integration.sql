@@ -32,10 +32,12 @@ begin
   from pg_constraint where conrelid='executive_visuals.video_workflow_quotes'::regclass
     and conname='video_workflow_quotes_pricing_source_check';
   if model_check is null or position('seedance2_5' in model_check)=0
-     or position('kling_4' in model_check)=0 then
+     or position('kling_4' in model_check)=0
+     or position('ray-3.2' in model_check)=0 then
     raise exception 'DIRECT_RUNWAY_WORKFLOW_QUOTE_MODEL_CONSTRAINT_MISSING';
   end if;
-  if pricing_check is null or position('runway_direct_model_list_price' in pricing_check)=0 then
+  if pricing_check is null or position('runway_direct_model_list_price' in pricing_check)=0
+     or position('luma_ray32_published_credits_contract_rate' in pricing_check)=0 then
     raise exception 'DIRECT_RUNWAY_WORKFLOW_QUOTE_PRICING_CONSTRAINT_MISSING';
   end if;
 end
