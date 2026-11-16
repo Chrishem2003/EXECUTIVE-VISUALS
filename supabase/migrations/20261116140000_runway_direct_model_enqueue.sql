@@ -33,6 +33,24 @@ declare
     if p_input ->> 'outputFormat' is distinct from 'mp4' then
       raise exception 'VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED';
     end if;
+    if coalesce(p_input ->> 'prompt','') = '' or
+       length(p_input ->> 'prompt') > case
+         when p_model = 'seedance2_5' then 15000
+         when p_model = 'kling_4' then 26000
+         else 2500
+       end then
+      raise exception 'VIDEO_GENERATION_PROMPT_INVALID';
+    end if;
+    if p_model = 'seedance2_5' and coalesce(p_input ->> 'resolution','') not in ('480p','720p','1080p','4k') then
+      raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
+    end if;
+    if p_model = 'kling_4' and coalesce(p_input ->> 'resolution','') not in ('720p','1080p') then
+      raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
+    end if;
+    if p_model in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') and
+       coalesce(p_input ->> 'resolution','') <> 'provider_default' then
+      raise exception 'VIDEO_GENERATION_RESOLUTION_INVALID';
+    end if;
     if p_input ->> 'operation' = 'image-to-video' and coalesce(p_input ->> 'startFrameAssetId','') = '' then
       raise exception 'VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED';
     end if;
@@ -47,8 +65,11 @@ declare
     if p_model = 'seedance2_5' and p_input ->> 'mode' = 'edit' and p_input ->> 'duration' is distinct from 'auto' then
       raise exception 'VIDEO_PRICE_DURATION_INVALID';
     end if;
-    if p_model in ('kling3.0_standard','kling3.0_pro') and jsonb_typeof(p_input -> 'multiPrompt') = 'array' and
-       jsonb_array_length(p_input -> 'multiPrompt') > 6 then
+    if p_model in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') and jsonb_typeof(p_input -> 'multiPrompt') = 'array' then
+      if jsonb_array_length(p_input -> 'multiPrompt') > 6 then
+        raise exception 'VIDEO_GENERATION_UNSUPPORTED_CAPABILITY';
+      end if;
+    elsif p_input ? 'multiPrompt' and p_model not in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') then
       raise exception 'VIDEO_GENERATION_UNSUPPORTED_CAPABILITY';
     end if;
     if p_model in ('kling3.0_standard','kling3.0_pro') and coalesce(p_input ->> 'audio','') not in ('true','false') then
