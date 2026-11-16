@@ -335,8 +335,9 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
-      const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : 1000;
-      if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+      const promptLimit = selectedModel === "seedance2_5" ? 15000 : selectedModel === "kling_4" ? 26000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
+      if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       if (input.referenceAssetIds?.length || input.referenceImageDataUrl) {
@@ -374,7 +375,7 @@ export function createRunwayCloudVideoAdapter({
           shotType: input.shotType || "customize"
         });
       }
-      if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro"].includes(selectedModel)) {
+      if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) {
         payload = { ...payload, audio: input.audio };
       }
       const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", {
