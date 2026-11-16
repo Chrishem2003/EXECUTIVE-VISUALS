@@ -443,22 +443,27 @@ export function renderVideoModelOptions(){
  });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
-export function renderVideoAspectRatioOptions(){
+function selectedVideoModel(){
  const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
- const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
+ return providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
   .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
    (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
- if(selected?.provider.provider==="luma")return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9</option>';
- return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option>';
+}
+export function renderVideoAspectRatioOptions(){
+ const selected=selectedVideoModel();
+ const ratios=Array.isArray(selected?.model.aspectRatios)&&selected.model.aspectRatios.length?selected.model.aspectRatios:["16:9","9:16"];
+ return ratios.map((ratio,index)=>'<option value="'+esc(ratio)+'"'+(index===0?' selected':'')+'>'+esc(ratio)+'</option>').join("");
 }
 export function renderVideoResolutionOptions(){
- const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
- const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
-  .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
-   (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
- if(selected?.provider.provider==="luma")return '<option value="360p">360p · Draft</option><option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
- if(selected?.provider.provider==="google")return '<option value="720p" selected>720p · Gemini Omni</option>';
- return '<option value="provider_default" selected>Provider default</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>';
+ const selected=selectedVideoModel();
+ const resolutions=Array.isArray(selected?.model.resolutions)&&selected.model.resolutions.length?selected.model.resolutions:["provider_default"];
+ return resolutions.map((resolution,index)=>'<option value="'+esc(resolution)+'"'+(index===0?' selected':'')+'>'+esc(resolution==="provider_default"?"Provider default":resolution.toUpperCase())+'</option>').join("");
+}
+export function renderVideoDurationOptions(){
+ const selected=selectedVideoModel(),model=selected?.model;
+ const values=Array.isArray(model?.durationsSeconds)&&model.durationsSeconds.length?model.durationsSeconds:
+  Array.from({length:Math.max(1,Math.min(60,Number(model?.maxDurationSeconds||10)-Number(model?.minDurationSeconds||2)+1))},(_,index)=>Number(model?.minDurationSeconds||2)+index);
+ return values.map((duration,index)=>'<option value="'+duration+'"'+(duration===5||index===0?' selected':'')+'>'+duration+' seconds</option>').join("");
 }
 export function renderVideoModelNote(){
  const luma=state.providers.find(item=>item.provider==="luma");
@@ -470,7 +475,7 @@ export function renderVideoModelNote(){
  }
  const provider=state.providers.find(item=>item.provider==="runway");
  if(!provider)return "The active provider is configured server-side. Verified Runway and Luma models appear only when their worker and governance gates are ready.";
- return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The adapter supports text-to-video and one first-frame image-to-video reference. Multi-frame references, video-to-video and native audio controls are not yet enabled.";
+ return esc(provider.status==="ready"?"Runway is configured. Only exact allowlisted model profiles are selectable; provider billing applies to each approved generation.":provider.reason)+" Seedance 2.5 supports text, first-frame image and private source-video reference/extend/edit. Kling 4 supports text, first-frame image and private source-video editing. Kling 3.0 Standard, Pro and 4K support text/image generation, multi-shot prompt segments and model-gated audio. Unsupported reference collections and keyframe modes remain disabled.";
 }
 export function renderEngineStatus(){
  const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";
