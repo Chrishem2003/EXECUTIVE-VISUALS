@@ -47,7 +47,7 @@ assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,sharpness:5},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.execute-shell",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 const replaceArgs=buildMediaOperationArgs({jobType:"media.audio_replace",input:{replacementAudioPath:"/private/dubbed.wav"},sourcePath:base.sourcePath,outputPath:base.outputPath});
-assert.deepEqual(replaceArgs.slice(replaceArgs.indexOf("-map"),replaceArgs.indexOf("-movflags")),["-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-shortest"]);
+assert.deepEqual(replaceArgs.slice(replaceArgs.indexOf("-map"),replaceArgs.indexOf("-movflags")),["-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-af","apad","-shortest"]);
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.audio_replace",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 const audioArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-30,targetLufs:-18},sourcePath:base.sourcePath,outputPath:"/private/cleaned.wav"});
 assert.equal(audioArgs[audioArgs.indexOf("-af")+1],"afftdn=nf=-30.0:tn=1,loudnorm=I=-18.0:TP=-1.5:LRA=11");
