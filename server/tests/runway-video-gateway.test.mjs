@@ -45,7 +45,7 @@ test("capabilities are model-specific and declare only implemented first-frame r
  assert.equal(caps.referenceImages,true);
  assert.equal(caps.startFrame,true);
  assert.equal(caps.maxDurationSeconds,30);
- assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p"]);
+ assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p","4k"]);
 });
 test("remote execution stays disabled until explicit server opt-in",async()=>{
  const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
