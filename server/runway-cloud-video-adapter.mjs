@@ -231,7 +231,7 @@ export function createRunwayCloudVideoAdapter({
       }
       if (selectedModel === "kling_4") {
         const aspect = metadata.width / metadata.height;
-        if (metadata.durationSeconds < 3 || metadata.durationSeconds > 31 ||
+        if (metadata.durationSeconds < 3 || metadata.durationSeconds > 30 ||
             Math.min(metadata.width, metadata.height) < 700 ||
             metadata.frameRate < 24 || metadata.frameRate > 60 || aspect < 0.4 || aspect > 2.5) {
           throw fail("Kling 4 source video must meet its duration, dimensions, frame-rate and aspect-ratio requirements.", "RUNWAY_INPUT_INVALID");
@@ -289,7 +289,7 @@ export function createRunwayCloudVideoAdapter({
       }
       if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4"].includes(selectedModel)) {
         const promptLimit = selectedModel === "seedance2_5" ? 15000 : 1000;
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > (selectedModel === "kling_4" ? 26000 : promptLimit)) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
         }
         if (!isRunwayUri(input.videoUri)) throw fail("Video-to-video requires a prepared private source upload.", "RUNWAY_INPUT_INVALID");
@@ -305,7 +305,7 @@ export function createRunwayCloudVideoAdapter({
             ...(keyframes.length ? { keyframes } : {}), outputFormat: "mp4" };
         } else if (selectedModel === "seedance2_5") {
           const mode = input.mode || "reference";
-          body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode,
+          body = { model: selectedModel, promptVideo: input.videoUri, promptText: input.prompt.trim(), mode,
             ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
           if (mode === "reference") {
             const referencePayload = buildRunwayVideoPayload({
@@ -314,8 +314,7 @@ export function createRunwayCloudVideoAdapter({
               aspectRatio: input.aspectRatio || "16:9",
               resolution: input.resolution || "provider_default"
             });
-            body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio,
-              ...(referencePayload.resolution ? { resolution: referencePayload.resolution } : {}) };
+            body = { ...body, duration: referencePayload.duration, ratio: referencePayload.ratio };
           } else if (mode === "extend") {
             const duration = input.durationSeconds === undefined ? "auto" : input.durationSeconds;
             if (duration !== "auto" && (!Number.isInteger(duration) || duration < 4 || duration > 30)) {
