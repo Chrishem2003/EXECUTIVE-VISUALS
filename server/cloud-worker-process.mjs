@@ -49,9 +49,15 @@ export function readCloudWorkerConfig(env=process.env){
   luma=truth(env.LUMA_VIDEO_ENABLED)&&truth(env.LUMA_VIDEO_ALLOW_REMOTE)&&
    Boolean(env.LUMA_AGENTS_API_KEY)&&lumaRateValid;
   if(lumaRequested&&!luma)throw new Error("Luma requires both remote gates, a server-side LUMA_AGENTS_API_KEY and an explicit positive LUMA_USD_PER_CREDIT account/contract rate.");
-  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, fully gated Google Omni, or fully configured Luma Ray 3.2.");
+  const directRunwayModels=String(env.RUNWAY_VIDEO_MODELS||"").split(",").map(value=>value.trim()).filter(Boolean);
+  const directRunwayRequested=directRunwayModels.length>0;
+  const directRunwayVeoOnly=directRunwayModels.every(model=>model==="veo3.1"||model==="veo3.1_fast");
+  const directRunwayConfigured=directRunwayRequested&&directRunwayVeoOnly&&
+   env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.RUNWAY_WORKSPACE_USAGE_ENABLED==="true"&&
+   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
+  if(directRunwayRequested&&!directRunwayConfigured)throw new Error("Direct Runway Veo requires both remote gates, a server API key and Enterprise per-generation workspace usage reconciliation; other direct Runway profiles still require a separately integrated task-level resolver.");
+  if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma&&!directRunwayConfigured)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, gated Google Omni, configured Luma, or verified direct Veo task billing.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
-  if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Direct Runway model execution remains disabled until its task-level actual-cost resolver is integrated.");
  }
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
