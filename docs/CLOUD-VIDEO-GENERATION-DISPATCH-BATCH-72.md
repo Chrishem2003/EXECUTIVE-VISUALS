@@ -37,7 +37,7 @@ A retry after a timeout uses the same approval identity and idempotency key. The
 
 Dispatch and provider execution are separate switches:
 - `CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED=true` enables authenticated approval mirroring and queue creation.
-- `CLOUD_WORKER_ENABLED=true` plus `CLOUD_VIDEO_GENERATION_WORKER_ENABLED=true` starts the worker family.
+- `CLOUD_WORKER_ENABLED=true` plus `CLOUD_VIDEO_WORKER_ENABLED=true` starts the provider-aware video worker family.
 - The video worker additionally requires `VIDEO_GATEWAY_ENABLED=true`, `VIDEO_GATEWAY_ALLOW_REMOTE=true`, and a server-only `RUNWAYML_API_SECRET`.
 
 Enabling dispatch alone does not generate a video or incur provider charges. No environment variables were changed by this code batch.
@@ -51,4 +51,20 @@ Added:
 
 ## Rollout status
 
-Code and tests are committed to the existing draft PR. The additive Supabase migration from Batch 71 remains unapplied. Dispatch remains disabled unless explicitly enabled by an operator after the isolated Supabase schema is reviewed and migrated. No production deployment, paid generation, or hosted database mutation occurred.
+Code and tests are committed to the existing draft PR. The Batch 71 additive Supabase migration is now present in the isolated `Chrishem Platform Staging` migration history and its approval/task tables exist there. Dispatch remains disabled unless explicitly enabled by an operator after the connected runtime and authenticated cloud-media acceptance checks pass. No production deployment, paid generation, or hosted database mutation occurred.
+
+
+## Provider activation correction — 16 November 2026
+
+The provider-aware worker composition already includes a Luma Ray 3.2 adapter, but worker configuration previously rejected Luma as a sole configured provider. The worker configuration now recognizes Luma only when all of the following are true:
+
+- `VIDEO_GATEWAY_ENABLED=true` and `VIDEO_GATEWAY_ALLOW_REMOTE=true`.
+- `LUMA_VIDEO_ENABLED=true` and `LUMA_VIDEO_ALLOW_REMOTE=true`.
+- A server-only `LUMA_AGENTS_API_KEY`.
+- An explicit positive `LUMA_USD_PER_CREDIT` account/contract rate used for actual usage settlement.
+- `CLOUD_VIDEO_OUTPUT_HOSTS` is configured.
+- Supabase server credentials and the cloud worker gates are present.
+
+Public list pricing is not accepted as actual settlement evidence. Missing/partial Luma configuration fails startup rather than allowing unmetered provider execution. The worker configuration tests cover valid Luma-only configuration and each missing/partial prerequisite.
+
+This change does not enable provider execution, change Render settings, or add credentials.
