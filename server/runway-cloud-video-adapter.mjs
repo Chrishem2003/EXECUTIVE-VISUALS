@@ -305,7 +305,8 @@ export function createRunwayCloudVideoAdapter({
             ...(keyframes.length ? { keyframes } : {}), outputFormat: "mp4" };
         } else if (selectedModel === "seedance2_5") {
           const mode = input.mode || "reference";
-          body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode };
+          body = { model: selectedModel, videoUri: input.videoUri, promptText: input.prompt.trim(), mode,
+            ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}) };
           if (mode === "reference") {
             const referencePayload = buildRunwayVideoPayload({
               model: selectedModel, prompt: input.prompt.trim(),
