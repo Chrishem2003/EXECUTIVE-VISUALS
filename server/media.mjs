@@ -223,6 +223,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
     "media.upscale":["width","height","fit","algorithm","sharpness"],
     "media.interpolate":["fps"],
     "media.audio-clean":["noiseFloor","targetLufs"],
+    "media.audio-master":["targetLufs","targetLra","truePeakDbtp"],
     "media.transcode":["container","videoCodec","audioCodec","preset"],
     "media.proxy":["container","videoCodec","audioCodec","preset","proxyWidth","proxyCrf","proxyProfile"],
     "media.audio_extract":[],
@@ -245,6 +246,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
       jobType==="media.denoise"?"classical-video-denoising":
       jobType==="media.color"?"deterministic-color-adjustment":
       jobType==="media.audio-clean"?"classical-audio-filtering":
+      jobType==="media.audio-master"?"ebu-r128-two-pass-mastering":
       jobType==="media.audio_extract"?"audio-stream-extraction":
       jobType==="media.thumbnail"?"frame-extraction":jobType==="media.proxy"?"editing-proxy-transcode":"deterministic-transcoding",
     sourceAssetId:typeof sourceAsset.id==="string"?sourceAsset.id:null,
