@@ -71,7 +71,7 @@ export function createBackblazeB2Storage({
   const secret = String(secretAccessKey || "");
   const bucketName = safeBucket(bucket);
   if (!/^[a-z0-9]+-[a-z0-9]+-\d{3}$/.test(signingRegion)) throw new Error("B2_REGION must be a Backblaze S3 region such as us-west-004.");
-  if (!/^[A-Za-z0-9]{16,128}$/.test(keyId) || secret.length < 32 || secret.length > 256) {
+  if (!/^[A-Za-z0-9]{16,128}$/.test(keyId) || secret.length < 16 || secret.length > 256) {
     throw new Error("B2 access key credentials are missing or invalid.");
   }
   if (typeof fetchImpl !== "function") throw new Error("B2 storage requires a fetch implementation.");
