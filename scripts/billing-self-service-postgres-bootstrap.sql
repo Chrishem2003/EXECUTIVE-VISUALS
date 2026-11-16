@@ -1,8 +1,6 @@
 create extension if not exists pgcrypto;
 create schema if not exists auth;
-create or replace function auth.uid() returns uuid language sql stable as $
-  select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid
-$;
+create or replace function auth.uid() returns uuid language sql stable as 'select nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid';
 create schema if not exists executive_visuals;
 do $$ begin
   create role anon nologin;
