@@ -35,21 +35,24 @@ do $direct_runway_quote_rpc$
 declare
   function_oid regprocedure;
   function_sql text;
+  old_identity text := $old$or not ((p_provider='runway' and p_model='model-router')
+       or (p_provider='google' and p_model='gemini-omni-1.1-flash')
+       or (p_provider='luma' and p_model='ray-3.2'))
+     or not ((p_provider='runway' and p_operation in ('text-to-video','image-to-video','video-to-video'))
+       or (p_provider='google' and p_operation in ('generate','edit','extend'))
+       or (p_provider='luma' and p_operation in ('generate','video_edit','video_reframe')))$old$;
   new_identity text := $new$or not ((p_provider='runway' and p_model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
        or (p_provider='google' and p_model='gemini-omni-1.1-flash')
        or (p_provider='luma' and p_model='ray-3.2'))
      or not ((p_provider='runway' and p_operation in ('text-to-video','image-to-video','video-to-video'))
        or (p_provider='google' and p_operation in ('generate','edit','extend'))
        or (p_provider='luma' and p_operation in ('generate','video_edit','video_reframe')))$new$;
-  new_identity text := $new$or not ((p_provider='runway' and p_model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
-       or (p_provider='google' and p_model='gemini-omni-1.1-flash'))
-     or not ((p_provider='runway' and p_operation in ('text-to-video','image-to-video','video-to-video'))
-       or (p_provider='google' and p_operation in ('generate','edit','extend')))$new$;
+  old_pricing text := $old$or not ((p_provider='runway' and p_pricing_source='runway_model_router_dry_run')
+       or (p_provider='google' and p_pricing_source='google_gemini_omni_token_pricing_2026-11-05')
+       or (p_provider='luma' and p_pricing_source='luma_ray32_published_credits_contract_rate'))$old$;
   new_pricing text := $new$or not ((p_provider='runway' and p_pricing_source in ('runway_model_router_dry_run','runway_direct_model_list_price'))
        or (p_provider='google' and p_pricing_source='google_gemini_omni_token_pricing_2026-11-05')
        or (p_provider='luma' and p_pricing_source='luma_ray32_published_credits_contract_rate'))$new$;
-  new_pricing text := $new$or not ((p_provider='runway' and p_pricing_source in ('runway_model_router_dry_run','runway_direct_model_list_price'))
-       or (p_provider='google' and p_pricing_source='google_gemini_omni_token_pricing_2026-11-05'))$new$;
 begin
   function_oid := to_regprocedure(
     'executive_visuals.record_video_workflow_quote(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,numeric,text,text,text,timestamptz)'
@@ -72,11 +75,12 @@ do $direct_runway_approval_rpc$
 declare
   function_oid regprocedure;
   function_sql text;
+  old_identity text := $old$or not ((quote_row.provider='runway' and quote_row.model='model-router')
+       or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash')
+       or (quote_row.provider='luma' and quote_row.model='ray-3.2'))$old$;
   new_identity text := $new$or not ((quote_row.provider='runway' and quote_row.model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
        or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash')
        or (quote_row.provider='luma' and quote_row.model='ray-3.2'))$new$;
-  new_identity text := $new$or not ((quote_row.provider='runway' and quote_row.model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
-       or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash'))$new$;
 begin
   function_oid := to_regprocedure(
     'executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)'
