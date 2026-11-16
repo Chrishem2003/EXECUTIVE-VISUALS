@@ -67,7 +67,10 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  }
  const aspectRatio=String(config.aspectRatio||"16:9");
  const requestedResolution=String(config.resolution||"provider_default");
- const resolution=model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
+ const draft=config.draft===true;
+ if(config.draft!==undefined&&typeof config.draft!=="boolean")throw fail("Seedance draft mode must be a boolean.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ if(draft&&model!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+ const resolution=draft?"480p":model==="seedance2_5"?(requestedResolution==="provider_default"?"720p":requestedResolution):
   model==="kling_4"?(requestedResolution==="provider_default"?"720p":requestedResolution):"provider_default";
  const audio=["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)
   ?(typeof config.audio==="boolean"?config.audio:true):undefined;
@@ -80,9 +83,9 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  if(model==="seedance2_5"&&operation==="video-to-video"&&mode!=="reference"){
   // Extend and edit keep the source framing and do not accept a ratio or output resolution.
  }else if(operation==="image-to-video"){
-  buildRunwayImageToVideoPayload({model,prompt,promptImage:"data:image/png;base64,AA==",durationSeconds,aspectRatio,resolution,multiPrompt,shotType});
+  buildRunwayImageToVideoPayload({model,prompt,promptImage:"data:image/png;base64,AA==",durationSeconds,aspectRatio,resolution,multiPrompt,shotType,draft});
  }else if(!(model==="kling_4"&&operation==="video-to-video")){
-  buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution,multiPrompt,shotType});
+  buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution,multiPrompt,shotType,draft});
  }
  const audioMode=model==="kling_4"?"provider_default":audio===false?"none":audio===true?"generated":"provider_default";
  const normalized=normalizeVideoGenerationRequest({
@@ -94,6 +97,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  const input={
   ...normalized,provider:"runway",model,operation,
   ...(audio!==undefined?{audio}:{}),
+  ...(draft?{draft:true}:{}),
   ...(multiPrompt?{multiPrompt,shotType}:{}),
   ...(model==="seedance2_5"&&operation==="video-to-video"?{mode,...(durationValue!==undefined?{duration:durationValue}:{})}:{})
  };
