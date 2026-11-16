@@ -32,7 +32,38 @@ export function createRunwayTaskActualCostResolver({
     throw fail("Runway workspace usage client configuration is invalid.", "RUNWAY_TASK_BILLING_CONFIG_INVALID");
   }
 
-  return async function resolveRunwayTaskActualCost({
+  async function assertAvailable() {
+    const end = validTimestamp(now());
+    if (!end) throw fail("Runway workspace usage readiness check has an invalid clock.", "RUNWAY_TASK_BILLING_CONFIG_INVALID");
+    const url = new URL(API_ORIGIN + "/v1/organization/webapp/usage");
+    url.searchParams.set("from", new Date(end.getTime() - 86400000).toISOString());
+    url.searchParams.set("to", new Date(end.getTime() + 60000).toISOString());
+    url.searchParams.set("limit", "1");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        method: "GET",
+        headers: { authorization: "Bearer " + key, "X-Runway-Version": API_VERSION, accept: "application/json" },
+        signal: controller.signal, redirect: "error"
+      });
+    } catch (error) {
+      throw fail(error?.name === "AbortError" ? "Runway workspace usage readiness check timed out." : "Runway workspace usage is unavailable.", "RUNWAY_TASK_BILLING_UNAVAILABLE");
+    } finally { clearTimeout(timer); }
+    if (response.status === 401 || response.status === 403) throw fail("Runway linked-workspace usage requires an authorized Enterprise workspace connection.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+    if (!response.ok) throw fail("Runway workspace usage readiness check failed (HTTP " + response.status + ").", "RUNWAY_TASK_BILLING_UNAVAILABLE");
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw fail("Runway workspace usage response exceeded 2 MiB.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
+    let page;
+    try { page = JSON.parse(raw); } catch { throw fail("Runway workspace usage returned invalid JSON.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID"); }
+    if (!page || typeof page !== "object" || !Array.isArray(page.data) || typeof page.hasMore !== "boolean") {
+      throw fail("Runway workspace usage readiness response is malformed.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
+    }
+    return true;
+  }
+
+  const resolveRunwayTaskActualCost = async function({
     job, input, task, providerTaskId, submissionMetadata
   } = {}) {
     const model = input?.model || task?.model;
@@ -128,4 +159,6 @@ export function createRunwayTaskActualCostResolver({
       providerTool: matchingTool
     });
   };
+  resolveRunwayTaskActualCost.assertAvailable = assertAvailable;
+  return resolveRunwayTaskActualCost;
 }
