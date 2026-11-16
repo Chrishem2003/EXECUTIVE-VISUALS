@@ -19,6 +19,7 @@ The existing durable cloud render polling and cancellation controls now summariz
 
 ## Operational boundaries
 - Search is limited to already-authorized asset records supplied to the editor; project filtering is applied again in the browser before results are shown.
+- In cloud mode, media search now refuses to run until an authorized cloud project is selected; it never falls back to searching the entire in-memory asset collection when the project context is missing.
 - Search is lexical over available metadata/transcripts, not a substitute for a visual embedding index. Transcript indexing is bounded to the first 5,000 timed segments per transcript collection and 5,200 extracted text fields per asset to keep browser work predictable; longer source media should be split or indexed by a future server-side search service.
 - Creative Director and storyboard calls require configured server-side gateway settings and user confirmation.
 - Storyboard creation saves a plan-only cloud timeline; it does not generate, buy or submit media.
