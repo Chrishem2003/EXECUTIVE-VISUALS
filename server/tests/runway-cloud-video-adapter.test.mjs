@@ -385,7 +385,7 @@ test("submits Seedance 2.5 draft text-to-video at the fixed 480p preview tier", 
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "seedance2_5", promptText: "A cinematic dawn over a quiet city",
-    ratio: "854:480", duration: 8, draft: true
+    ratio: "1280:720", duration: 8, draft: true
   });
 });
 
@@ -453,7 +453,7 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   await adapter.submit(prepared);
   assert.deepEqual(body, {
     model: "seedance2_5", promptText: "Animate the approved frame", promptImage: "runway://ephemeral/draft-frame",
-    duration: 6, ratio: "1280:720", draft: true
+    duration: 6, ratio: "854:480", draft: true
   });
 });
 
@@ -470,7 +470,7 @@ test("Seedance 2.5 reference video-to-video draft is fixed at 480p", async () =>
   });
   assert.deepEqual(body, {
     model: "seedance2_5", videoUri: "runway://ephemeral/source", promptText: "Continue the approved scene",
-    mode: "reference", draft: true, duration: 6, ratio: "854:480"
+    mode: "reference", draft: true, duration: 6, ratio: "1280:720"
   });
 });
 
