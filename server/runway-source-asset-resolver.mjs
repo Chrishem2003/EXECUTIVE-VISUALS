@@ -232,9 +232,20 @@ export function createRunwaySourceAssetResolver({
           ...(referenceAudio.length ? { referenceAudio } : {})
         };
       }
-      if (input?.operation === "image-to-video" || input?.startFrameAssetId) {
-        const resolved = await resolveAsset({ ownerId, projectId, assetId: input.startFrameAssetId, kinds: "image" });
-        return { firstFrame: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType } };
+      if (input?.operation === "image-to-video" || input?.startFrameAssetId || input?.endFrameAssetId) {
+        const firstFrameId = input.startFrameAssetId || null;
+        const lastFrameId = input.endFrameAssetId || null;
+        if (!firstFrameId) throw fail("Image-to-video requires an owner-scoped first-frame asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        if (lastFrameId && lastFrameId === firstFrameId) throw fail("First and last frame assets must be distinct.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+        const first = await resolveAsset({ ownerId, projectId, assetId: firstFrameId, kinds: "image" });
+        const prepared = {
+          firstFrame: { buffer: first.bytes, filename: first.asset.name, mimeType: first.asset.mediaType }
+        };
+        if (lastFrameId) {
+          const last = await resolveAsset({ ownerId, projectId, assetId: lastFrameId, kinds: "image" });
+          prepared.lastFrame = { buffer: last.bytes, filename: last.asset.name, mimeType: last.asset.mediaType };
+        }
+        return prepared;
       }
       if (["video-to-video", "video-upscale", "video-to-hdr"].includes(input?.operation)) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.sourceVideoAssetId, kinds: "video" });
