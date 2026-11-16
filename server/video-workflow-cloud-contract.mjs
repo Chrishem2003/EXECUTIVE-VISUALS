@@ -105,7 +105,8 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
   ...normalized,provider:"runway",model,operation,
   ...(audio!==undefined?{audio}:{}),
   ...(draft?{draft:true,draftTargetResolution}:{}),
-  ...(draftEnhancement?{draftTaskId:String(config.draftTaskId),sourceDraftJobId:String(config.sourceDraftJobId),draftEnhancement:true}:{}),
+  ...(draftEnhancement?{draftTaskId:String(config.draftTaskId),sourceDraftJobId:String(config.sourceDraftJobId),draftEnhancement:true,
+    ...(config.sourceDraftVideoAssetId?{sourceDraftVideoAssetId:String(config.sourceDraftVideoAssetId)}:{})}:{}),
   ...(multiPrompt?{multiPrompt,shotType}:{}),
   ...(model==="seedance2_5"&&operation==="video-to-video"?{mode,...(durationValue!==undefined?{duration:durationValue}:{})}:{})
  };
