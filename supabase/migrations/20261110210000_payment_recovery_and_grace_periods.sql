@@ -55,8 +55,8 @@ begin
   do update set
     failure_code=excluded.failure_code,
     failure_message=excluded.failure_message,
-    status=case when current_attempt.status in ('succeeded','cancelled') then executive_visuals.payment_attempts.status else 'retry_scheduled' end,
-    next_retry_at=case when executive_visuals.payment_attempts.status in ('succeeded','cancelled') then current_attempt.next_retry_at else excluded.next_retry_at end,
+    status=case when current_attempt.status in ('succeeded','cancelled') then current_attempt.status else 'retry_scheduled' end,
+    next_retry_at=case when current_attempt.status in ('succeeded','cancelled') then current_attempt.next_retry_at else excluded.next_retry_at end,
     updated_at=now()
   returning * into attempt_row;
 
