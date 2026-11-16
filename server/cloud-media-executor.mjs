@@ -198,7 +198,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const outputExtension = job.job_type === "media.video-ai-upscale" ? "mp4" : job.job_type === "media.ai-upscale" ? String(input.format || "png")
       : job.job_type === "media.thumbnail" ? "jpg"
       : job.job_type === "media.audio_extract" ? "mp3"
-      : job.job_type === "media.audio-clean" ? "wav"
+      : job.job_type === "media.audio-clean" || job.job_type === "media.audio-master" ? "wav"
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
