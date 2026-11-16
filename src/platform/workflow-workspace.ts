@@ -457,7 +457,6 @@ document.addEventListener("change",event=>{
   const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(modelValue);
   const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
   const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(modelValue);
-  const videoMode=form?.querySelector<HTMLSelectElement>('[name="videoMode"]');
   if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
   const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
    directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
