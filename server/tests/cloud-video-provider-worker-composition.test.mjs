@@ -328,3 +328,25 @@ test("Google Omni remains fail-closed until the connection status and live verif
     env: { ...allGates, GOOGLE_OMNI_CONNECTION_STATUS: "connected" }
   }), /live connection verifier/);
 });
+
+
+test("registers verified Seedance 2.5 and Kling 4 models in the durable Runway worker", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    runwayModels: ["seedance2_5", "kling_4"],
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 0.2, currency: "USD", evidenceReference: "test:runway-task-cost"
+    })
+  });
+  assert.ok(worker.listSupported().includes("runway:seedance2_5"));
+  assert.ok(worker.listSupported().includes("runway:kling_4"));
+});
