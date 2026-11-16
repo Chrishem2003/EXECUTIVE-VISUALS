@@ -322,6 +322,9 @@ export function createRunwayCloudVideoAdapter({
           resolution: input.resolution || "provider_default"
         });
       }
+      if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro"].includes(selectedModel)) {
+        payload = { ...payload, audio: input.audio };
+      }
       const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", {
         method: "POST",
         submission: true,
