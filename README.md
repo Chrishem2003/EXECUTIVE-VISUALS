@@ -1,6 +1,6 @@
 # Current release status — 16 November 2026
 
-GitHub `main` now includes the five-batch production integration in commit `d2bbf0ec088fc0ab95e65d36a747622a3d8116c6` (PR #649). Render automatically started deployment `dep-dbt951mq1p3s73fkvv9g` for that exact commit; deployment verification is pending. The previous live deployment remains `dep-dbt2lsp5efls73fc9vdg` on `ad69c98ba3a7bfa1986acbf48349cfa42a4ca95d` until the new build succeeds.
+GitHub `main` includes PR #649's five-batch production integration, PR #650's tenant/project-bound workflow recovery receipts, and PR #651's exact approved-spend ceiling binding. Latest main commit: `a4872af9264c67eb6bbabec63f08dd1b67efa9c8`. Render auto-deployment `dep-dbt9et6q1p3s73fl9v70` is building that commit; the previous live deployment remains on `8a4bf008a2e610feabc6f96a7ea94435c6270cca` until the new build succeeds.
 
 **The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
 
