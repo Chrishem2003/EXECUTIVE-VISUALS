@@ -186,7 +186,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
       if (typeof resolveRunwayActualCost !== "function") {
         throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
       }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) &&
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby", "seedance2_5", "kling_4"].includes(model)) &&
           typeof prepareInput !== "function") {
         throw new Error("Runway source operations require an owner-scoped source-media resolver.");
       }
