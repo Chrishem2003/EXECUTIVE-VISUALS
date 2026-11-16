@@ -382,3 +382,21 @@ test("Seedance 2.5 accepts its documented long-form prompt limit in durable exec
   });
   assert.equal(submittedBody.promptText, prompt);
 });
+
+
+test("passes explicit native-audio control only to Runway models that document an audio toggle", async () => {
+  let body;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "kling3.0_pro",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({ id }), { status: 200 });
+    }
+  });
+  await adapter.submit({
+    provider: "runway", model: "kling3.0_pro", operation: "text-to-video",
+    prompt: "A cinematic scene with clear ambient sound", durationSeconds: 8,
+    aspectRatio: "16:9", audio: false
+  });
+  assert.equal(body.audio, false);
+});
