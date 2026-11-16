@@ -20,7 +20,7 @@ const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.audio_replace", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.audio_replace", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.audio-master", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -120,6 +120,41 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   filter=`minterpolate=fps=${fps.toFixed(3)}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`;
  }else fail("Unsupported local media operation.");
  return [...base,"-vf",filter,...video];
+}
+export function buildAudioMasterAnalysisArgs({sourcePath,input={}}={}) {
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ const targetLufs=Number(input.targetLufs??-16),targetLra=Number(input.targetLra??11),truePeakDbtp=Number(input.truePeakDbtp??-1.5);
+ if(typeof sourcePath!=="string"||!sourcePath)fail("An audio source path is required.");
+ if(!Number.isFinite(targetLufs)||targetLufs< -24||targetLufs> -12)fail("Integrated loudness target must be between -24 and -12 LUFS.");
+ if(!Number.isFinite(targetLra)||targetLra<1||targetLra>20)fail("Loudness range target must be between 1 and 20 LU.");
+ if(!Number.isFinite(truePeakDbtp)||truePeakDbtp< -9||truePeakDbtp> -1)fail("True-peak ceiling must be between -9 and -1 dBTP.");
+ const filter="loudnorm=I="+targetLufs.toFixed(1)+":LRA="+targetLra.toFixed(1)+":TP="+truePeakDbtp.toFixed(1)+":print_format=json";
+ return ["-hide_banner","-nostats","-i",sourcePath,"-map","0:a:0","-af",filter,"-f","null","-"];
+}
+export function parseAudioMasterMeasurement(stderr) {
+ const source=String(stderr||"");
+ const start=source.lastIndexOf("{");
+ const end=source.indexOf("}",start);
+ if(start<0||end<0)throw Object.assign(new Error("FFmpeg did not return EBU R128 loudness measurements."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});
+ let parsed;
+ try{parsed=JSON.parse(source.slice(start,end+1));}catch{throw Object.assign(new Error("FFmpeg loudness measurements could not be parsed."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});}
+ const fields=["input_i","input_tp","input_lra","input_thresh","target_offset"];
+ const values={};
+ for(const field of fields){
+  const value=Number(parsed[field]);
+  if(!Number.isFinite(value))throw Object.assign(new Error("Audio is silent or its loudness measurement is incomplete ("+field+")."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});
+  values[field]=Number(value.toFixed(3));
+ }
+ return {integratedLufs:values.input_i,truePeakDbtp:values.input_tp,loudnessRangeLu:values.input_lra,thresholdLufs:values.input_thresh,targetOffsetDb:values.target_offset};
+}
+export function buildAudioMasterRenderArgs({sourcePath,outputPath,input={},measurement}={}) {
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath)fail("Audio source and output paths are required.");
+ if(!measurement||![measurement.integratedLufs,measurement.truePeakDbtp,measurement.loudnessRangeLu,measurement.thresholdLufs,measurement.targetOffsetDb].every(Number.isFinite))fail("A valid first-pass loudness measurement is required.");
+ const targetLufs=Number(input.targetLufs??-16),targetLra=Number(input.targetLra??11),truePeakDbtp=Number(input.truePeakDbtp??-1.5);
+ if(!Number.isFinite(targetLufs)||targetLufs< -24||targetLufs> -12||!Number.isFinite(targetLra)||targetLra<1||targetLra>20||!Number.isFinite(truePeakDbtp)||truePeakDbtp< -9||truePeakDbtp> -1)fail("Audio mastering targets are outside supported ranges.");
+ const filter="loudnorm=I="+targetLufs.toFixed(1)+":LRA="+targetLra.toFixed(1)+":TP="+truePeakDbtp.toFixed(1)+":measured_I="+measurement.integratedLufs.toFixed(3)+":measured_TP="+measurement.truePeakDbtp.toFixed(3)+":measured_LRA="+measurement.loudnessRangeLu.toFixed(3)+":measured_thresh="+measurement.thresholdLufs.toFixed(3)+":offset="+measurement.targetOffsetDb.toFixed(3)+":linear=true:print_format=summary,aresample=48000";
+ return ["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-af",filter,"-c:a","pcm_s24le","-ar","48000",outputPath];
 }
 export function executableAvailable(name) {
   const executable=name==="ffmpeg"?(process.env.FFMPEG_PATH||name):name==="ffprobe"?(process.env.FFPROBE_PATH||name):name;
