@@ -413,7 +413,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        provider:"runway",model:workflowRequest.model,operation:workflowRequest.operation,
        durationSeconds:workflowRequest.operation==="video-to-video"&&(
         workflowRequest.model==="kling_4"||
-        workflowRequest.model==="gemini_omni_flash_1.2"&&input.mode==="edit"
+        ["seedance2_5","gemini_omni_flash_1.2"].includes(workflowRequest.model)&&input.mode==="edit"
        )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:workflowRequest.model==="gemini_omni_flash_1.2"&&workflowRequest.operation==="video-to-video"&&input.mode!=="reference"?"720p":input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
