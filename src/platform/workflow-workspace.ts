@@ -82,7 +82,7 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",operation=String(config.operation||"generate");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(model),operation=String(config.operation||"generate");
  const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
   model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
   model==="kling_4_flash"?["720p"]:model.startsWith("kling3.0_")?["provider_default"]:
@@ -94,8 +94,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
   {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"}
  ];
  const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
-  directRunway?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"}]:[{id:"generate",label:"Generate new video"}];
- const sourceVideoEnabled=luma&&operation!=="generate"||directRunway&&operation==="video-to-video";
+  directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"}]:[{id:"generate",label:"Generate new video"}];
+ const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
  const draftEnabled=provider==="runway"&&model==="seedance2_5";
  const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
@@ -332,11 +332,11 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
   try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
- const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router";
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(model);
  const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"];
  if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
  const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):"generate";
- if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?["generate","video-to-video"].includes(operation):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
+ if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&operation==="video-to-video"):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
  const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
  const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
@@ -428,17 +428,17 @@ document.addEventListener("change",event=>{
    if(operationSelect)operationSelect.value="generate";
   }
   const modelValue=model?.value||"model-router";
-  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router";
+  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash"].includes(modelValue);
   const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
   const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
-   directRunway?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
+   directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
   if(operationSelect){
    const selected=operationValues.some(([id])=>id===operation)?operation:"generate";
    operationSelect.innerHTML=operationValues.map(([id,label])=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
    operationSelect.disabled=!(luma||directRunway);
   }
   const activeOperation=operationValues.some(([id])=>id===operation)?operation:"generate";
-  const sourceVideoEnabled=luma&&activeOperation!=="generate"||directRunway&&activeOperation==="video-to-video";
+  const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
   const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate";
   for(const name of ["sourceVideoAssetPicker","sourceVideoAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!sourceVideoEnabled;}
   for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="edit";}
