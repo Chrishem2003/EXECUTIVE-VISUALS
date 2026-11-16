@@ -301,6 +301,14 @@ test("Seedance 2.5 4K uses a documented pixel ratio and no unsupported resolutio
  assert.deepEqual(payload,{model:"seedance2_5",promptText:"A filmic scene",ratio:"3840:2160",duration:8});
  assert.equal("resolution" in payload,false);
 });
+test("Kling 4.0 Flash exposes its documented 720p duration and framing contract",()=>{
+ const text=buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A cinematic city at night",durationSeconds:5,aspectRatio:"16:9",resolution:"720p"});
+ assert.deepEqual(text,{model:"kling_4_flash",ratio:"1280:720",promptText:"A cinematic city at night",duration:5});
+ const image=buildRunwayImageToVideoPayload({model:"kling_4_flash",prompt:"Animate the opening frame",promptImage:"data:image/png;base64,AA==",durationSeconds:5});
+ assert.deepEqual(image,{model:"kling_4_flash",promptText:"Animate the opening frame",promptImage:"data:image/png;base64,AA==",duration:5});
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"Too long",durationSeconds:21}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"Bad ratio",durationSeconds:5,aspectRatio:"4:3"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
 test("Kling 4 accepts its documented 26,000-character prompt limit",()=>{
  const prompt="x".repeat(26000);
  assert.equal(buildRunwayVideoPayload({model:"kling_4",prompt,durationSeconds:5}).promptText.length,26000);
