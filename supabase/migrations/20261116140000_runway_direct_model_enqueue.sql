@@ -34,12 +34,10 @@ declare
     if p_input ->> 'outputFormat' is distinct from 'mp4' then
       raise exception 'VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED';
     end if;
-    if coalesce(p_input ->> 'prompt','') = '' or
-       length(p_input ->> 'prompt') > case
-         when p_model = 'seedance2_5' then 15000
-         when p_model in ('kling_4','kling_4_flash') then 26000
-         else 2500
-       end then
+    if coalesce(p_input ->> 'prompt','') = ''
+       or (p_model = 'seedance2_5' and length(p_input ->> 'prompt') > 15000)
+       or (p_model in ('kling_4','kling_4_flash') and length(p_input ->> 'prompt') > 26000)
+       or (p_model in ('kling3.0_standard','kling3.0_pro','kling3.0_4k') and length(p_input ->> 'prompt') > 2500) then
       raise exception 'VIDEO_GENERATION_PROMPT_INVALID';
     end if;
     if p_model = 'seedance2_5' and coalesce(p_input ->> 'resolution','') not in ('480p','720p','1080p','4k') then
