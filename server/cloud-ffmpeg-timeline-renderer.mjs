@@ -336,9 +336,13 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   for(const clip of overlayClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
-   const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("image/"))fail("Overlay tracks require still-image assets.","UNSUPPORTED_OVERLAY_SOURCE");
-   args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",asset.path);
-   overlayInputs.push({inputIndex,clip});inputIndex++;
+   const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
+   if(mediaType.startsWith("image/"))args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",asset.path);
+   else if(mediaType.startsWith("video/")){
+    const sourceStart=seconds(clip.sourceRange?.start),sourceDuration=Math.min(sourceDurationForClip(clip,duration),duration);
+    args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
+   }else fail("Overlay tracks require still-image or video assets.","UNSUPPORTED_OVERLAY_SOURCE");
+   overlayInputs.push({inputIndex,clip,mediaType});inputIndex++;
   }
   const sequence=buildVideoSequenceGraph(segments,fps);
   const videoGraph=segments.map(item=>item.filter).join(";")+(sequence.filter?";"+sequence.filter:"");
@@ -351,13 +355,14 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
    const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index,motion=buildTimelineMotionFilters({x,y,width:ow,height:oh,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
-   if(motion){
-    videoEffects.push(`[${item.inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+   if(!motion)fail("Overlay transform settings could not be compiled.","INVALID_MOTION_KEYFRAMES");
+   if(String(item.mediaType||"").startsWith("video/")){
+    const sourceDuration=Math.min(sourceDurationForClip(clip,duration),duration);
+    videoEffects.push(`[${item.inputIndex}:v]trim=duration=${sourceDuration.toFixed(6)},setpts=PTS-STARTPTS,fps=${fpsNum}/${fpsDen},${motion.filters.join(",")},setpts=PTS-STARTPTS+${start.toFixed(6)}/TB[${imageLabel}]`);
     videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    }else{
-    const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
-    videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    videoEffects.push(`[${item.inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+    videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    }
    currentVideo=`[${videoLabel}]`;
   }
@@ -395,7 +400,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const targetLoudnessRange=Number(timeline.audioMastering?.loudnessRange??11);
    masteringEvidence={applied:true,profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak,dualMono:timeline.audioMastering?.dualMono===true,measurement:measured,qualityControl:evaluateAudioMasteringQuality(measured,{profile:masteringProfile,integratedLoudness:targetLoudness,loudnessRange:targetLoudnessRange,truePeak:targetTruePeak})};
   }
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,audioCrossfades:audioFadeOutFrames.size,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,clipFadeClips:[...clips,...audioClips].filter(clip=>["fadeInSeconds","fadeOutSeconds"].some(key=>Number(clip.metadata?.[key])>0)).length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,audioCrossfades:audioFadeOutFrames.size,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,overlayVideoClips:overlayInputs.filter(item=>String(item.mediaType||"").startsWith("video/")).length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,transitions:clips.filter(clip=>clip.transitionToNext?.type==="dip-to-black").length,clipFadeClips:[...clips,...audioClips].filter(clip=>["fadeInSeconds","fadeOutSeconds"].some(key=>Number(clip.metadata?.[key])>0)).length,motionInterpolatedClips:motionClips.length,durationSeconds:cursor,audioMastering:masteringEvidence}};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
