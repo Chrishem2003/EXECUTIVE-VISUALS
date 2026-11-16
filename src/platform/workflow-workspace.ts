@@ -446,6 +446,8 @@ document.addEventListener("change",event=>{
   const operationSelect=form?.querySelector<HTMLSelectElement>('[name="videoOperation"]');
   const model=form?.querySelector<HTMLSelectElement>('[name="videoModel"]');
   const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
+  const aspectRatio=form?.querySelector<HTMLSelectElement>('[name="videoAspectRatio"]');
+  const videoMode=form?.querySelector<HTMLSelectElement>('[name="videoMode"]');
   const duration=form?.querySelector<HTMLInputElement>('[name="videoDuration"]');
   if(target.name==="videoProvider"){
    if(model)model.value=provider==="luma"?"ray-3.2":"model-router";
@@ -487,7 +489,10 @@ document.addEventListener("change",event=>{
    modelValue==="kling_4_flash"?["720p"]:modelValue==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:modelValue.startsWith("kling3.0_")?["provider_default"]:
    modelValue==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
   const activeMode=videoMode?.value||"reference";
-  if(resolution)resolution.disabled=modelValue==="gemini_omni_flash_1.2"&&activeOperation==="video-to-video"&&activeMode!=="reference";
+  const geminiSourceMode=modelValue==="gemini_omni_flash_1.2"&&activeOperation==="video-to-video";
+  if(resolution)resolution.disabled=false;
+  if(aspectRatio)aspectRatio.disabled=geminiSourceMode&&activeMode!=="reference";
+  if(duration)duration.disabled=geminiSourceMode&&activeMode==="edit";
   if(resolution){
    const previous=resolution.value;
    const fallback=luma?"720p":modelValue==="seedance2_5"?"1080p":modelValue==="kling_4"||modelValue==="kling_4_flash"||modelValue==="gemini_omni_flash_1.2"?"720p":"provider_default";
@@ -496,7 +501,7 @@ document.addEventListener("change",event=>{
   }
   if(duration){
    const min=luma&&activeOperation==="generate"?5:modelValue==="seedance2_5"?4:modelValue==="kling_4"||modelValue==="kling_4_flash"||modelValue.startsWith("kling3.0_")?3:2;
-   const max=luma?10:modelValue==="seedance2_5"||modelValue==="kling_4"?30:modelValue==="kling_4_flash"?20:modelValue.startsWith("kling3.0_")?15:modelValue==="gen4.5"?10:30;
+   const max=luma?10:modelValue==="seedance2_5"||modelValue==="kling_4"?30:modelValue==="kling_4_flash"?20:modelValue==="gemini_omni_flash_1.2"?15:modelValue.startsWith("kling3.0_")?15:modelValue==="gen4.5"?10:30;
    duration.min=String(min);duration.max=String(max);duration.step="1";
    if(Number(duration.value)<min)duration.value=String(min);
    else if(Number(duration.value)>max)duration.value=String(max);
