@@ -21,7 +21,7 @@
 
 ## Explicit limitations
 
-This adapter implements **text-to-video and one first-frame image-to-video input** for the listed models. It does not yet implement video-to-video editing/extension, last/middle keyframes, multi-shot prompt segmentation, video/audio references, native audio controls, model-specific advanced parameters, or provider-side cancellation. The first-frame image must be a valid PNG/JPEG/WebP data URI no larger than Runway’s documented 5 MiB data-URI limit. The UI must not advertise unsupported features as available.
+The direct gateway supports text-to-video and first-frame image-to-video for the listed models. The durable provider-aware worker now also registers Seedance 2.5, Kling 4.0 and Kling 3.0 Standard/Pro using those model-specific request builders, plus the existing Aleph2 video-edit, Magnific video-upscale and Ruby HDR source operations. Private source assets are resolved by owner/project scope and uploaded through Runway ephemeral uploads before provider submission. See `DURABLE-SEEDANCE-KLING-WORKER-INTEGRATION.md` for the worker integration boundary. Seedance/Kling video-to-video, last/middle keyframes, multi-shot prompt segmentation, video/audio reference collections and native audio controls are still not complete for those newer profiles; do not expose them as available.
 
 The adapter returns provider cost metadata when Runway supplies it, but Executive Visuals does not yet calculate customer-facing prices, reserve subscription credits, or reconcile provider charges against a subscription ledger.
 
