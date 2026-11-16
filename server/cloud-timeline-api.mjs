@@ -390,9 +390,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
       }
       if(workflowRequest.model==="gemini_omni_flash_1.2"){
-       const maxSourceSeconds=workflowRequest.input.mode==="extend"?30:15;
-       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>maxSourceSeconds){
-        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 source video must be 3–"+maxSourceSeconds+" seconds for the selected mode."}});
+       const mode=workflowRequest.input.mode||"reference";
+       const maxSourceSeconds=mode==="extend"?30:10;
+       if(!["reference","extend","edit"].includes(mode)||!Number.isFinite(sourceMetadata.durationSeconds)||sourceMetadata.durationSeconds<=0||
+          sourceMetadata.durationSeconds>maxSourceSeconds||mode==="edit"&&sourceMetadata.durationSeconds>=10){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 reference sources must be at most 10 seconds, edit sources must be under 10 seconds, and extend sources must be at most 30 seconds."}});
        }
       }
       if(["kling_4","kling_4_flash"].includes(workflowRequest.model)){
@@ -414,7 +416,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        durationSeconds:workflowRequest.operation==="video-to-video"&&(
         workflowRequest.model==="kling_4"||
         ["seedance2_5","gemini_omni_flash_1.2"].includes(workflowRequest.model)&&input.mode==="edit"
-       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:workflowRequest.model==="gemini_omni_flash_1.2"&&workflowRequest.operation==="video-to-video"&&input.mode!=="reference"?"720p":input.resolution,
+       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
        inputType:input.sourceVideoAssetId||input.sourceDraftVideoAssetId?"video":input.startFrameAssetId?"image":"text"
@@ -504,9 +506,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must remain a verified project asset between 2 and 30 seconds."}});
       }
       if(workflowRequest.model==="gemini_omni_flash_1.2"){
-       const maxSourceSeconds=workflowRequest.input.mode==="extend"?30:15;
-       if(metadata.durationSeconds<3||metadata.durationSeconds>maxSourceSeconds){
-        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 source video must be 3–"+maxSourceSeconds+" seconds for the selected mode."}});
+       const mode=workflowRequest.input.mode||"reference";
+       const maxSourceSeconds=mode==="extend"?30:10;
+       if(!["reference","extend","edit"].includes(mode)||!Number.isFinite(metadata.durationSeconds)||metadata.durationSeconds<=0||
+          metadata.durationSeconds>maxSourceSeconds||mode==="edit"&&metadata.durationSeconds>=10){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 reference sources must be at most 10 seconds, edit sources must be under 10 seconds, and extend sources must be at most 30 seconds."}});
        }
       }
       if(!directRunway&&Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
