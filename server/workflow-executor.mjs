@@ -403,8 +403,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     output=nodeOutput(node,assetId);output.asset=assetId;
    }else{
     let mediaType=null,mediaInput={};
-    const sourceAssetId=inputAsset(values,config);
-    if(["utility.frame-extract","video.extract-frame"].includes(node.kind)){
+    const sourceAssetId=node.kind==="video.replace-audio"?String(config.sourceAssetId||""):inputAsset(values,config);
+    if(node.kind==="video.replace-audio"){
+      if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before replacing a video soundtrack."),{code:"APPROVAL_REQUIRED"});
+      if(config.sourceRightsConfirmed!==true)throw Object.assign(new Error("Soundtrack replacement requires explicit source-media rights confirmation."),{code:"SOURCE_RIGHTS_REQUIRED"});
+      mediaType="media.audio_replace";mediaInput={sourceAssetId,replacementAudioAssetId:String(values.audio||values.replacementAudio||config.replacementAudioAssetId||"")};
+    }else if(["utility.frame-extract","video.extract-frame"].includes(node.kind)){
       mediaType="media.thumbnail";mediaInput={sourceAssetId,timecodeSeconds:Number(config.timecodeSeconds??1)};
     }else if(["utility.audio-extract","video.extract-audio"].includes(node.kind)){
       mediaType="media.audio_extract";mediaInput={sourceAssetId};
