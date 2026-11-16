@@ -913,7 +913,7 @@ test("direct Runway approval uses the exact worker allowlist and stable model co
   },
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId};}}},
   authorize:async()=>true,
-  env:{CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com"}
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com"}
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId,body:{
   confirmed:true,projectId,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-direct-approve-001",
