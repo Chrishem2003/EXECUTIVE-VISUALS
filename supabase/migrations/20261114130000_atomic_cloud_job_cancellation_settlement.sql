@@ -13,7 +13,7 @@ returns setof executive_visuals.jobs
 language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 declare claimed executive_visuals.jobs;
 begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 then
@@ -54,7 +54,7 @@ begin
   if claimed.id is not null then return next claimed; end if;
   return;
 end;
-$;
+$$;
 
 create or replace function executive_visuals.finish_job_v2(
   p_job_id uuid,

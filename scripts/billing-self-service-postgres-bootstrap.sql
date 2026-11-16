@@ -1,5 +1,6 @@
 create extension if not exists pgcrypto;
 create schema if not exists auth;
+create or replace function auth.uid() returns uuid language sql stable as 'select nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid';
 create schema if not exists executive_visuals;
 do $$ begin
   create role anon nologin;
@@ -119,6 +120,7 @@ create table executive_visuals.credit_ledger(
  credit_delta bigint not null check(credit_delta<>0),
  idempotency_key text not null,
  payment_transaction_id uuid references executive_visuals.payment_transactions(id),
+ refund_id uuid,
  reason text not null,
  metadata jsonb not null default '{}'::jsonb,
  created_at timestamptz not null default now(),

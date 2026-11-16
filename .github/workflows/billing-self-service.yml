@@ -120,6 +120,14 @@ jobs:
           echo "POSTGRES_SERVICE_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
       - name: Bootstrap disposable Supabase-compatible billing schema
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/billing-self-service-postgres-bootstrap.sql
+      - name: Apply financial intelligence foundation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110120000_financial_intelligence_foundation.sql
+      - name: Apply atomic payment refund migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110130000_financial_refund_atomicity.sql
+      - name: Apply payment recovery and grace-period migration
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110210000_payment_recovery_and_grace_periods.sql
+      - name: Verify atomic refunds and payment recovery invariants
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/refund-payment-recovery-postgres-integration.sql
       - name: Apply customer subscription self-service migration
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261110220000_customer_subscription_self_service.sql
       - name: Apply first subscription purchase migration
