@@ -332,53 +332,82 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
   try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
- if(!((provider==="runway"&&model==="model-router")||(provider==="luma"&&model==="ray-3.2")))throw new Error("Choose a supported provider/model pair.");
- const operation=provider==="luma"?String(data.get("videoOperation")||"generate"):"generate";
- if(!["generate","edit","reframe"].includes(operation))throw new Error("Choose a supported Luma operation.");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router";
+ const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"];
+ if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
+ const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):"generate";
+ if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?["generate","video-to-video"].includes(operation):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- if(provider==="luma"&&operation!=="reframe"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<(provider==="luma"?2:2)||durationSeconds>(provider==="luma"?10:30)))throw new Error(operation==="reframe"?"Reframe source duration must be 2–10 whole seconds.":"Generation/edit duration must be 5 or 10 seconds.");
+ const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model.startsWith("kling3.0_")?3:2;
+ const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ if(!Number.isInteger(durationSeconds)||durationSeconds<minDuration||durationSeconds>maxDuration||
+    luma&&operation==="generate"&&![5,10].includes(durationSeconds))throw new Error("Duration is outside the selected provider/model's supported range.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
- config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
+ config.resolution=String(data.get("videoResolution")||(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
- if(provider==="luma")config.operation=operation;else delete config.operation;
+ if(luma||directRunway)config.operation=operation;else delete config.operation;
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
  const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
  const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
  const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
- if(operation==="generate"){
-  if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
-  if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId||assetText||indexText))throw new Error("Private frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
-  if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
-  if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
-  if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
-  if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
-  if(assetText||indexText){
-   if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
-   const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
-   const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
-   if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
-   let previous=-1;
-   for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
-   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
-   config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
-  }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
-  delete config.sourceVideoAssetId;delete config.sourcePosition;delete config.editStrength;
- }else{
-  if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
-  if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
-  if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
-  if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers; longer edits remain blocked until pricing is verified.");
-  if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
-  config.sourceVideoAssetId=sourceVideoAssetId;
-  delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
-  if(operation==="edit"){config.editStrength=String(data.get("editStrength")||"flex_2");delete config.sourcePosition;}
-  else{
-   delete config.editStrength;
-   const sourcePosition={x_norm:Number(data.get("sourcePositionX")||0),y_norm:Number(data.get("sourcePositionY")||0),w_norm:Number(data.get("sourcePositionW")||1),h_norm:Number(data.get("sourcePositionH")||1)};
-   if(!Number.isFinite(sourcePosition.x_norm)||sourcePosition.x_norm< -2||sourcePosition.x_norm>2||!Number.isFinite(sourcePosition.y_norm)||sourcePosition.y_norm< -2||sourcePosition.y_norm>2||!Number.isFinite(sourcePosition.w_norm)||sourcePosition.w_norm<=0||sourcePosition.w_norm>2||!Number.isFinite(sourcePosition.h_norm)||sourcePosition.h_norm<=0||sourcePosition.h_norm>2)throw new Error("Reframe crop coordinates must be normalized and within the supported bounds.");
-   config.sourcePosition=sourcePosition;
+ if(luma){
+  if(operation==="generate"){
+   if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
+   if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
+   if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+   if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
+   if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
+   if(assetText||indexText){
+    if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
+    const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
+    const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
+    if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
+    let previous=-1;
+    for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
+    if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
+    config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
+   }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
+   delete config.sourceVideoAssetId;delete config.sourcePosition;delete config.editStrength;
+  }else{
+   if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
+   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
+   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
+   if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers.");
+   if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
+   config.sourceVideoAssetId=sourceVideoAssetId;
+   delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+   if(operation==="edit"){config.editStrength=String(data.get("editStrength")||"flex_2");delete config.sourcePosition;}
+   else{
+    delete config.editStrength;
+    const sourcePosition={x_norm:Number(data.get("sourcePositionX")||0),y_norm:Number(data.get("sourcePositionY")||0),w_norm:Number(data.get("sourcePositionW")||1),h_norm:Number(data.get("sourcePositionH")||1)};
+    if(!Number.isFinite(sourcePosition.x_norm)||sourcePosition.x_norm< -2||sourcePosition.x_norm>2||!Number.isFinite(sourcePosition.y_norm)||sourcePosition.y_norm< -2||sourcePosition.y_norm>2||!Number.isFinite(sourcePosition.w_norm)||sourcePosition.w_norm<=0||sourcePosition.w_norm>2||!Number.isFinite(sourcePosition.h_norm)||sourcePosition.h_norm<=0||sourcePosition.h_norm>2)throw new Error("Reframe crop coordinates must be normalized and within the supported bounds.");
+    config.sourcePosition=sourcePosition;
+   }
   }
+ }else if(directRunway){
+  if(operation==="video-to-video"){
+   if(!sourceVideoAssetId)throw new Error("Choose a private source-video asset from this project.");
+   if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the source video before saving this operation.");
+   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video transformations cannot be combined with first/last frame or keyframe inputs.");
+   config.sourceVideoAssetId=sourceVideoAssetId;
+   if(model==="seedance2_5")config.mode="reference";else delete config.mode;
+   delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+  }else{
+   if(sourceVideoAssetId)throw new Error("Clear the source-video asset when generating from text or a first frame.");
+   if(startFrameAssetId&&config.rightsConfirmed!==true)throw new Error("Confirm rights to use the first-frame image before saving.");
+   if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+   delete config.sourceVideoAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+  }
+  if(model==="seedance2_5"&&data.get("videoDraft")==="on"){
+   config.draft=true;
+   config.draftTargetResolution=config.resolution==="480p"?"1080p":config.resolution;
+   config.resolution="480p";
+  }else{delete config.draft;delete config.draftTargetResolution;}
+  delete config.editStrength;delete config.sourcePosition;
+ }else{
+  if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Runway Model Router workflow mode uses its separately governed input contract; direct source assets require a direct Runway model.");
+  delete config.sourceVideoAssetId;delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;delete config.draft;delete config.draftTargetResolution;
  }
  }node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.costEstimate=null;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
   catch(error){alert(error instanceof Error?error.message:String(error));}
