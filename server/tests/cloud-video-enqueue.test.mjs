@@ -610,6 +610,27 @@ test("Seedance reference video-to-video prices output and probed input duration 
  const result=await client.enqueue(args({provider:"runway",model:"seedance2_5",input:directInput,reservedAmount:10,currency:"USD"}));
  assert.equal(result.jobId,resultRow.job_id);
 });
+test("Kling 4.0 Flash text and first-frame generation use the exact worker allowlist and 720p price",async()=>{
+ const env={CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4_flash"};
+ const textClient=createCloudVideoEnqueue({...base,env,fetchImpl:async()=>response([resultRow])});
+ const textInput={...input,provider:"runway",model:"kling_4_flash",operation:"text-to-video",prompt:"A cinematic city at night",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const textResult=await textClient.enqueue(args({provider:"runway",model:"kling_4_flash",input:textInput,reservedAmount:0.5,currency:"USD"}));
+ assert.equal(textResult.jobId,resultRow.job_id);
+ const imageClient=createCloudVideoEnqueue({...base,env,fetchImpl:async()=>response([resultRow])});
+ const imageInput={...input,provider:"runway",model:"kling_4_flash",operation:"image-to-video",prompt:"Animate the opening frame",startFrameAssetId:"private-first-frame",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const imageResult=await imageClient.enqueue(args({provider:"runway",model:"kling_4_flash",input:imageInput,reservedAmount:0.5,currency:"USD"}));
+ assert.equal(imageResult.jobId,resultRow.job_id);
+});
+test("Kling 4.0 Flash video editing requires server-probed source media and prices input plus output",async()=>{
+ const metadata={ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:8.5,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30};
+ const env={CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4_flash"};
+ const client=createCloudVideoEnqueue({...base,env,resolveRunwaySourceMetadata:async()=>metadata,fetchImpl:async()=>response([resultRow])});
+ const directInput={...input,provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"source-video",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"kling_4_flash",input:directInput,reservedAmount:1,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ const invalid=createCloudVideoEnqueue({...base,env,resolveRunwaySourceMetadata:async()=>({...metadata,width:640,height:360,sourceWidth:640,sourceHeight:360}),fetchImpl:async()=>response([resultRow])});
+ await assert.rejects(()=>invalid.enqueue(args({provider:"runway",model:"kling_4_flash",input:directInput,reservedAmount:1,currency:"USD"})),error=>error.code==="VIDEO_SOURCE_METADATA_INVALID");
+});
 test("Kling 4 video-to-video prices the server-probed source duration and rejects unsupported source metadata",async()=>{
  const metadata={ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:8.5,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30};
  const client=createCloudVideoEnqueue({
