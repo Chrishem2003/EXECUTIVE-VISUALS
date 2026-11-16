@@ -28,7 +28,7 @@ declare
       raise exception 'VIDEO_DRAFT_FLAG_INVALID';
     end if;
     if p_input ->> 'draft' = 'true' and
-       (p_model <> 'seedance2_5' or p_input ->> 'resolution' <> '480p' or
+       (p_model <> 'seedance2_5' or p_input ->> 'resolution' <> '480p' or p_input ->> 'draftTargetResolution' <> '1080p' or
         (p_input ->> 'operation' = 'video-to-video' and coalesce(p_input ->> 'mode','reference') <> 'reference')) then
       raise exception 'VIDEO_DRAFT_CONFIGURATION_INVALID';
     end if;
