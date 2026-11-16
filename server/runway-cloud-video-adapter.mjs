@@ -39,8 +39,8 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
-    throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing, Magnific upscaling and Ruby HDR profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby", "veo3.1", "veo3.1_fast"].includes(selectedModel)) {
+    throw fail("This Runway cloud adapter supports only verified Gen-4.5, Veo 3.1, Aleph2, Magnific and Ruby profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
   if (typeof fetchImpl !== "function") throw new Error("Runway cloud adapter requires fetch.");
@@ -161,10 +161,11 @@ export function createRunwayCloudVideoAdapter({
       const isVideoEdit = input.operation === "video-to-video";
       const isVideoUpscale = input.operation === "video-upscale";
       const isVideoHdr = input.operation === "video-to-hdr";
-      const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
+      const isVeo = selectedModel === "veo3.1" || selectedModel === "veo3.1_fast";
+      const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId) || Boolean(input.endFrameAssetId);
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
         Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
-        Boolean(input.startFrameAssetId) ||
+        Boolean(input.startFrameAssetId) || Boolean(input.endFrameAssetId) ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
       if ((hasReferences || isVideoEdit || isVideoUpscale || isVideoHdr || isImageToVideo) && typeof prepareInput !== "function") {
         throw fail("Runway source and reference assets require an authenticated project-scoped input resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -173,6 +174,21 @@ export function createRunwayCloudVideoAdapter({
       const prepared = await prepareInput(input, context);
       if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) {
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+      }
+      if (isVeo) {
+        if (isImageToVideo) {
+          let firstFrameUri = prepared.promptImageUri || prepared.firstFrameUri;
+          let lastFrameUri = prepared.lastFrameUri;
+          if (prepared.firstFrame) firstFrameUri = await uploadEphemeral(prepared.firstFrame);
+          if (prepared.lastFrame) lastFrameUri = await uploadEphemeral(prepared.lastFrame);
+          if (!isRunwayUri(firstFrameUri)) throw fail("Veo image-to-video requires an authorized first-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+          if (input.endFrameAssetId && !isRunwayUri(lastFrameUri)) throw fail("Veo last-frame interpolation requires an authorized last-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+          return { ...input, promptImage: [
+            { uri: firstFrameUri, position: "first" },
+            ...(lastFrameUri ? [{ uri: lastFrameUri, position: "last" }] : [])
+          ] };
+        }
+        return input;
       }
       if (isImageToVideo) {
         if (selectedModel !== "gen4.5") throw fail("First-frame generation currently requires the verified Gen-4.5 profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
@@ -213,6 +229,23 @@ export function createRunwayCloudVideoAdapter({
         keyframes.push({ uri, at: frame.at });
       }
       return { ...input, videoUri, keyframes };
+    },
+
+    async preflight(input) {
+      if (selectedModel !== "veo3.1" && selectedModel !== "veo3.1_fast") return null;
+      const duration = input?.durationSeconds;
+      if (![4, 6, 8].includes(duration)) throw fail("Veo preflight requires an explicit 4, 6 or 8 second duration.", "RUNWAY_INPUT_INVALID");
+      const audio = input.audio !== false;
+      const creditsPerSecond = selectedModel === "veo3.1"
+        ? (audio ? 40 : 20)
+        : (audio ? 15 : 10);
+      const estimatedCredits = duration * creditsPerSecond;
+      return Object.freeze({
+        billable: false, provider: "runway", model: selectedModel,
+        estimatedCredits, estimatedUsd: Number((estimatedCredits * 0.01).toFixed(2)), currency: "USD",
+        pricingSource: "https://dev.runwayml.com/learn/veo-3-1-api",
+        audio, durationSeconds: duration
+      });
     },
 
     async submit(input) {
@@ -282,6 +315,50 @@ export function createRunwayCloudVideoAdapter({
         });
         return { taskId: taskId(submitted.id), status: "queued" };
       }
+      if (selectedModel === "veo3.1" || selectedModel === "veo3.1_fast") {
+        if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) throw fail("Veo supports only text-to-video and image-to-video operations.", "RUNWAY_INPUT_INVALID");
+        const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
+        if (prompt.length > 1000) throw fail("Veo prompts are limited to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+        const imageToVideo = input.operation === "image-to-video" || input.promptImage !== undefined;
+        if (!prompt && !imageToVideo) throw fail("Veo text-to-video requires a prompt.", "RUNWAY_INPUT_INVALID");
+        const duration = input.durationSeconds;
+        if (![4, 6, 8].includes(duration)) throw fail("Veo duration must be 4, 6 or 8 seconds.", "RUNWAY_INPUT_INVALID");
+        const aspect = input.aspectRatio || "16:9";
+        if (!["16:9", "9:16"].includes(aspect)) throw fail("Veo supports 16:9 or 9:16 aspect ratios.", "RUNWAY_INPUT_INVALID");
+        const resolution = input.resolution || "720p";
+        if (!["720p", "1080p"].includes(resolution)) throw fail("Veo resolution must be 720p or 1080p.", "RUNWAY_INPUT_INVALID");
+        if (resolution === "1080p" && duration !== 8) throw fail("Veo 1080p output is available only for 8-second clips.", "RUNWAY_INPUT_INVALID");
+        const ratio = resolution === "1080p"
+          ? (aspect === "16:9" ? "1920:1080" : "1080:1920")
+          : (aspect === "16:9" ? "1280:720" : "720:1280");
+        if (typeof input.audio !== "undefined" && typeof input.audio !== "boolean") throw fail("Veo audio must be a boolean.", "RUNWAY_INPUT_INVALID");
+        if (input.seed !== undefined && (!Number.isSafeInteger(input.seed) || input.seed < 0 || input.seed > 4294967295)) throw fail("Veo seed must be an unsigned 32-bit integer.", "RUNWAY_INPUT_INVALID");
+        if (input.negativePrompt !== undefined && (typeof input.negativePrompt !== "string" || !input.negativePrompt.trim() || input.negativePrompt.length > 1000)) throw fail("Veo negative prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+        let promptImage;
+        if (imageToVideo) {
+          promptImage = input.promptImage;
+          if (typeof promptImage === "string") promptImage = [{ uri: promptImage, position: "first" }];
+          if (!Array.isArray(promptImage) || promptImage.length < 1 || promptImage.length > 2 ||
+              promptImage.some(frame => !frame || !isRunwayUri(frame.uri) || !["first", "last"].includes(frame.position)) ||
+              new Set(promptImage.map(frame => frame.position)).size !== promptImage.length ||
+              !promptImage.some(frame => frame.position === "first")) {
+            throw fail("Veo image-to-video requires one first frame and may include one last frame; last-frame-only requests are invalid.", "RUNWAY_INPUT_INVALID");
+          }
+        }
+        const body = {
+          model: selectedModel,
+          ...(prompt ? { promptText: prompt } : {}),
+          ...(imageToVideo ? { promptImage } : {}),
+          ratio,
+          duration,
+          ...(typeof input.audio === "boolean" ? { audio: input.audio } : {}),
+          ...(input.negativePrompt ? { negativePrompt: input.negativePrompt.trim() } : {}),
+          ...(input.seed !== undefined ? { seed: input.seed } : {})
+        };
+        const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", { method: "POST", submission: true, body });
+        return { taskId: taskId(submitted.id), status: "queued" };
+      }
+
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
