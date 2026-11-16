@@ -598,3 +598,34 @@ test("direct Kling 3 durable enqueue is blocked unless its exact model is allowl
  await assert.rejects(()=>client.enqueue(args({provider:"runway",model:"kling3.0_pro",input:directInput,reservedAmount:10,currency:"USD"})),
   error=>error.code==="RUNWAY_DIRECT_REMOTE_DISABLED");
 });
+
+test("Seedance reference video-to-video prices output and probed input duration separately",async()=>{
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"seedance2_5"},
+  resolveRunwaySourceMetadata:async()=>({ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:10.2,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30}),
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={...input,provider:"runway",model:"seedance2_5",operation:"video-to-video",sourceVideoAssetId:"source-video",mode:"reference",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",audio:true,audioMode:"generated",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"seedance2_5",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+});
+test("Kling 4 video-to-video prices the server-probed source duration and rejects unsupported source metadata",async()=>{
+ const metadata={ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:8.5,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30};
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4"},
+  resolveRunwaySourceMetadata:async()=>metadata,
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={...input,provider:"runway",model:"kling_4",operation:"video-to-video",sourceVideoAssetId:"source-video",durationSeconds:30,aspectRatio:"16:9",resolution:"1080p",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"kling_4",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ const invalid=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4"},
+  resolveRunwaySourceMetadata:async()=>({...metadata,width:640,height:360,sourceWidth:640,sourceHeight:360}),
+  fetchImpl:async()=>response([resultRow])
+ });
+ await assert.rejects(()=>invalid.enqueue(args({provider:"runway",model:"kling_4",input:directInput,reservedAmount:10,currency:"USD"})),error=>error.code==="VIDEO_SOURCE_METADATA_INVALID");
+});
