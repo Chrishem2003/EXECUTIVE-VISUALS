@@ -48,3 +48,15 @@ The durable adapter now supports the provider's 480p draft flag for text-to-vide
 **Not yet implemented in this batch:** the follow-on `draftTaskId` enhancement submission. A draft is therefore a billable preview asset, not yet a one-click draft-to-1080p workflow. The enhancement must be a separate quoted, approved, idempotent durable job, with the provider task ID linked to the preview and the 1080p charge shown separately. Do not infer that linkage from the preview's output asset ID.
 
 No live provider call is made by tests. Provider execution remains disabled unless the existing server-side gates, private output ingestion, budget approval and authoritative task-level billing resolver are configured.
+
+
+## Seedance draft enhancement
+
+A preview enhancement is a separate, owner-approved 1080p generation. The Studio workflow offers an **Enhance completed draft to 1080p** operation. The API accepts the source cloud job ID and original provider task ID, then verifies that the source job:
+- belongs to the authenticated owner and the same project;
+- is a succeeded `video.generate` job from Runway Seedance 2.5;
+- was created as a 480p draft;
+- contains the same provider task ID in its persisted output; and
+- was created within the provider's seven-day enhancement window.
+
+The quote uses the original job's persisted duration, aspect ratio and audio setting, prices the follow-on at the 1080p rate, and creates a new budget approval. The worker sends the provider's exact enhancement payload: `model` and `draftTaskId` only. The original preview remains unchanged; the enhanced result is ingested as a separate private asset and separately settled. The enqueue SQL and server contract reject unverified or malformed enhancement requests.
