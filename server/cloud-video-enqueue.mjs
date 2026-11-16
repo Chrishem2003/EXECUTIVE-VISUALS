@@ -309,6 +309,70 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
         }
+      } else if (runwayDirectEnabled) {
+        const promptLimit = model === "seedance2_5" ? 15000 : model === "kling_4" ? 26000 : 2500;
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+          const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (requestedOutputFormat !== "mp4") {
+          const unsupported = new Error("Direct Seedance and Kling worker profiles currently deliver MP4 only.");
+          unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
+          throw unsupported;
+        }
+        if (runwayDirectVideoEditEnabled) {
+          if (!input.sourceVideoAssetId || !verifiedSourceMetadata) {
+            const invalid = new Error("Seedance and Kling video edits require an authorized, probed private source video.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+            throw invalid;
+          }
+          if (model === "seedance2_5") {
+            if (!["reference", "extend", "edit"].includes(input.mode)) throw new Error("Seedance source edit mode must be reference, extend or edit.");
+            if (input.mode === "edit" && input.duration !== "auto") throw new Error("Seedance edit mode requires duration='auto'.");
+            if (input.mode === "extend" && input.duration !== "auto" && (!Number.isInteger(input.duration) || input.duration < 4 || input.duration > 30)) throw new Error("Seedance extend duration must be auto or 4–30 seconds.");
+            if (input.mode === "reference") buildRunwayVideoPayload({
+              model, prompt: input.prompt, durationSeconds: input.durationSeconds,
+              aspectRatio: input.aspectRatio, resolution: input.resolution
+            });
+          } else if (model === "kling_4") {
+            if (input.multiPrompt !== undefined || input.audio !== undefined) throw new Error("Kling 4 video editing does not accept multi-shot or audio-toggle fields.");
+          } else {
+            throw new Error("The selected Kling 3.0 profile does not support video-to-video in this worker.");
+          }
+        } else if (input.operation === "image-to-video") {
+          if (!input.startFrameAssetId) {
+            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped private first-frame asset.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+            throw invalid;
+          }
+          buildRunwayImageToVideoPayload({
+            model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
+            durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+            resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+          });
+        } else {
+          buildRunwayVideoPayload({
+            model, prompt: input.prompt, durationSeconds: input.durationSeconds,
+            aspectRatio: input.aspectRatio, resolution: input.resolution,
+            multiPrompt: input.multiPrompt, shotType: input.shotType
+          });
+        }
+        if (model === "kling_4" && input.audio !== undefined) {
+          const invalid = new Error("Kling 4 always includes native audio and does not accept an audio toggle.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (["kling3.0_standard", "kling3.0_pro"].includes(model) && typeof input.audio !== "boolean") {
+          const invalid = new Error("Kling 3.0 Standard and Pro require an explicit native-audio choice for pricing.");
+          invalid.code = "VIDEO_PRICE_INPUT_REQUIRED";
+          throw invalid;
+        }
+        if (input.multiPrompt !== undefined && !model.startsWith("kling3.0_")) {
+          const invalid = new Error("Multi-shot prompt segments are supported only by Kling 3.0 models.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
       } else if (runwayTextEnabled || runwayImageEnabled) {
         // Gen-4.5's hosted worker currently supports provider-default resolution only.
         if (input.resolution !== undefined && input.resolution !== "provider_default") {
