@@ -403,7 +403,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     output=nodeOutput(node,assetId);output.asset=assetId;
    }else{
     let mediaType=null,mediaInput={};
-    const sourceAssetId=node.kind==="video.replace-audio"?String(config.sourceAssetId||""):inputAsset(values,config);
+    const sourceAssetId=inputAsset(values,config);
     if(node.kind==="video.replace-audio"){
       if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before replacing a video soundtrack."),{code:"APPROVAL_REQUIRED"});
       if(config.sourceRightsConfirmed!==true)throw Object.assign(new Error("Soundtrack replacement requires explicit source-media rights confirmation."),{code:"SOURCE_RIGHTS_REQUIRED"});
@@ -439,7 +439,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       output=nodeOutput(node,assetId);output.asset=assetId;
       if(mediaType==="media.thumbnail")output.image=assetId;
       if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean"||mediaType==="media.audio-master")output.audio=assetId;
-      if(mediaType==="media.transcode"||mediaType==="timeline.render")output.video=assetId;
+      if(mediaType==="media.transcode"||mediaType==="timeline.render"||mediaType==="media.audio_replace")output.video=assetId;
     }else if(result.metadata){
       output=nodeOutput(node,result.metadata);output.report=node.kind==="quality-check"?buildMediaQualityReport(result.metadata,{requireVideo:config.requireVideo!==false,requireAudio:config.requireAudio===true}):result.metadata;
     }else output=nodeOutput(node,result);
