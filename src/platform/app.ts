@@ -402,8 +402,9 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
  const googleOmni=requestedProvider==="google"||requestedModel==="gemini-omni-1.1-flash";
  const lumaRay=requestedProvider==="luma"||requestedModel==="ray-3.2";
  const lumaOperation=String(config.operation||"generate"),sourceVideoAssetId=String(config.sourceVideoAssetId||"").trim();
- if(!lumaRay&&lumaOperation!=="generate")throw new Error("Choose Luma Ray 3.2 for source-video edit and reframe operations.");
- if(lumaRay&&lumaOperation!=="generate"&&!sourceVideoAssetId)throw new Error("Choose a private project source video for Luma edit or reframe.");
+ const runwayVideoEdit=requestedProvider==="runway"&&["seedance2_5","kling_4"].includes(requestedModel)&&lumaOperation==="video-to-video";
+ if(!lumaRay&&!runwayVideoEdit&&lumaOperation!=="generate")throw new Error("Choose a verified model that supports the selected source-video operation.");
+ if((lumaRay&&lumaOperation!=="generate"||runwayVideoEdit)&&!sourceVideoAssetId)throw new Error("Choose a private project source video for this edit operation.");
  if(lumaRay&&lumaOperation==="generate"&&sourceVideoAssetId)throw new Error("Source video is only accepted for Luma edit or reframe; clear the source selection to generate new footage.");
  const referenceAssetId=String(config.referenceAssetId||"").trim();
  const generationConfig=image?config:{
@@ -417,7 +418,7 @@ async function queueGenerationWorkflow(kind:"image.generate"|"video.generate",pr
   rightsConfirmed:config.rightsConfirmed===true,
   referenceAssetId:undefined,
   ...(lumaRay?{operation:String(config.operation||"generate"),...(String(config.operation||"generate")==="generate"?{}:{sourceVideoAssetId:String(config.sourceVideoAssetId||"").trim(),editStrength:String(config.editStrength||"flex_2")})}:{}),
-  ...(referenceAssetId?(googleOmni?{firstFrameAssetId:referenceAssetId}:lumaRay&&String(config.operation||"generate")!=="generate"?{}:{startFrameAssetId:referenceAssetId}):{}),
+  ...(referenceAssetId?(googleOmni?{firstFrameAssetId:referenceAssetId}:lumaRay&&String(config.operation||"generate")!=="generate"||runwayVideoEdit?{}:{startFrameAssetId:referenceAssetId}):{}),
   ...(googleOmni?{operation:"generate",outputFormat:"mp4",audioMode:"none"}:lumaRay?{outputFormat:"mp4",audioMode:"none"}:{})
  };
  const approvalNode={id:approvalId,kind:"approval",label:"Human approval · paid generation",inputs:[{id:"input",label:"Generation request",type:"any",required:true}],outputs:[{id:"result",label:"Approved prompt",type:"any"},{id:"approved",label:"Approval record",type:"structured-data"}],config:{input:prompt},position:{x:30,y:40}};
