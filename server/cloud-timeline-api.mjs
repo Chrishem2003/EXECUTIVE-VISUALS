@@ -330,8 +330,20 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
          sourceMetadata.durationSeconds<2||sourceMetadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
       }
-      if(Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+      if(workflowRequest.model!=="kling_4"&&Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
+      }
+      if(workflowRequest.model==="seedance2_5"&&Math.min(sourceMetadata.width,sourceMetadata.height)<480){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
+      }
+      if(workflowRequest.model==="kling_4"){
+       const aspect=sourceMetadata.width/sourceMetadata.height;
+       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>30||
+          Math.min(sourceMetadata.width,sourceMetadata.height)<700||
+          !Number.isFinite(sourceMetadata.frameRate)||sourceMetadata.frameRate<24||sourceMetadata.frameRate>60||
+          aspect<0.4||aspect>2.5){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Kling 4 source video must meet its 3–30 second, 700px, 24–60 fps and aspect-ratio requirements."}});
+       }
       }
      }
      let estimate;
@@ -339,7 +351,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       const input=workflowRequest.input;
       const priced=estimateVideoGenerationCost({
        provider:"runway",model:workflowRequest.model,operation:workflowRequest.operation,
-       durationSeconds:input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
+       durationSeconds:workflowRequest.model==="kling_4"&&workflowRequest.operation==="video-to-video"?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
        audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
        hasStartFrame:Boolean(input.startFrameAssetId),
        inputType:input.sourceVideoAssetId?"video":input.startFrameAssetId?"image":"text"
@@ -408,7 +420,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
      const quoteAdapter=isLuma?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
-     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):directRunway?directRunwayEnabled(env,workflowRequest.model):
+     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):directRunway?(directRunwayEnabled(env,workflowRequest.model)&&cloudVideoWorkerLaunchConfigured(env)):
       env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
       env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
       env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
