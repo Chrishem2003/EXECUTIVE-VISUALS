@@ -8,8 +8,8 @@ test("voice isolation payload uses the documented audio-only model",()=>{
  });
 });
 test("voice dubbing payload validates language and consent-safe options",()=>{
- assert.deepEqual(buildRunwayAudioPayload({operation:"dub",audioUri:"runway://upload/source-audio",targetLang:"sw",disableVoiceCloning:true,dropBackgroundAudio:true,numSpeakers:2}),{
-  model:"eleven_voice_dubbing",audioUri:"runway://upload/source-audio",targetLang:"sw",disableVoiceCloning:true,dropBackgroundAudio:true,numSpeakers:2
+ assert.deepEqual(buildRunwayAudioPayload({operation:"dub",audioUri:"runway://upload/source-audio",targetLang:"hi",disableVoiceCloning:true,dropBackgroundAudio:true,numSpeakers:2}),{
+  model:"eleven_voice_dubbing",audioUri:"runway://upload/source-audio",targetLang:"hi",disableVoiceCloning:true,dropBackgroundAudio:true,numSpeakers:2
  });
 });
 test("voice dubbing rejects unsupported languages, invalid speaker counts and untrusted inputs",()=>{
@@ -33,7 +33,7 @@ test("voice isolation uploads an approved audio buffer, submits once and stores 
  const fetchImpl=async(url,options={})=>{
   const target=String(url);calls.push({url:target,method:options.method||"GET",body:typeof options.body==="string"?JSON.parse(options.body):null});
   if(target.endsWith("/uploads"))return new Response(JSON.stringify({runwayUri:"runway://upload/source-audio",uploadUrl:"https://uploads.example.com/presigned",fields:{key:"audio-key"}}),{status:200,headers:{"content-type":"application/json"}});
-  if(target==="https://uploads.example.com/presigned")return new Response("",{status:204});
+  if(target==="https://uploads.example.com/presigned")return new Response(null,{status:204});
   if(target.endsWith("/voice_isolation"))return new Response(JSON.stringify({id:taskId,estimatedCost:{credits:4}}),{status:200,headers:{"content-type":"application/json"}});
   if(target.endsWith("/tasks/"+taskId))return new Response(JSON.stringify({id:taskId,status:"SUCCEEDED",model:"eleven_voice_isolation",output:["https://cdn.example.cloudfront.net/isolated.mp3"]}),{status:200,headers:{"content-type":"application/json"}});
   if(target==="https://cdn.example.cloudfront.net/isolated.mp3")return new Response(output,{status:200,headers:{"content-type":"audio/mpeg","content-length":String(output.length)}});
