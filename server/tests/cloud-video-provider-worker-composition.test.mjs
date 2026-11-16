@@ -350,3 +350,12 @@ test("registers verified Seedance 2.5 and Kling 4 models in the durable Runway w
   assert.ok(worker.listSupported().includes("runway:seedance2_5"));
   assert.ok(worker.listSupported().includes("runway:kling_4"));
 });
+
+test("registers Kling 3.0 4K in the durable Runway worker allowlist",()=>{
+ const worker=createProviderAwareCloudVideoWorkerComposition({
+  ...base,createAdapters:undefined,runwayModels:["kling3.0_4k"],
+  env:{...env,FAL_VIDEO_MODEL:"fal-ai/wan/v2.7/text-to-video",FAL_KEY:"queue-test-key",FAL_BILLING_KEY:"billing-test-key",RUNWAY_API_KEY:"runway-test-key",RUNWAY_VIDEO_ALLOW_REMOTE:"true"},
+  resolveRunwayActualCost:async()=>({amount:0.2,currency:"USD",evidenceReference:"test:runway-task-cost"})
+ });
+ assert.ok(worker.listSupported().includes("runway:kling3.0_4k"));
+});
