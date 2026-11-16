@@ -1,8 +1,13 @@
 # Executive Visuals — implementation status
 
 **Updated:** 16 November 2026  
-**Branch:** `main` (PR #649 merged as `d2bbf0ec088fc0ab95e65d36a747622a3d8116c6`; Render auto-deployment `dep-dbt951mq1p3s73fkvv9g` is building that commit; previous live deployment remains on `ad69c98ba3a7bfa1986acbf48349cfa42a4ca95d` until verification; isolated D1 staging remains separate from production)
+**Branch:** `main` (PR #649, #650 and #651 merged; latest commit `a4872af9264c67eb6bbabec63f08dd1b67efa9c8`; Render auto-deployment `dep-dbt9et6q1p3s73fl9v70` is building; previous live commit `8a4bf008a2e610feabc6f96a7ea94435c6270cca` remains active until verification; isolated D1 staging remains separate from production)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
+
+## Mainline delta — 16 November 2026
+
+- **Workflow recovery receipt binding — PR #650 merged:** Parked cloud video workflows now verify owner, project, job type, quote ID, workflow request ID and SHA-256 request hash before requeue or terminal transitions. Six regression scenarios cover cross-owner/project and mismatched receipts.
+- **Approved spend ceiling binding — PR #651 merged:** The exact project-owner USD ceiling is persisted in the durable cloud job input and compared without numeric coercion by both the execution bridge and recovery supervisor. API, bridge and recovery tests cover tampering/mismatch. Exact-head quality, PostgreSQL integration, billing, financial, Google Drive recovery, remediation and release-gate workflows all passed before merge.
 
 ## Mainline delta — 15 November 2026 (latest)
 
