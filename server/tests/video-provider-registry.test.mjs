@@ -44,7 +44,7 @@ test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit 
   const mini = getVideoProviderModel("runway", "seedance2_mini");
   for (const model of [full, fast, mini]) {
     assert.equal(model.availability, "disabled");
-    assert.equal(model.executionAdapter, model === kling ? "runway-cloud-worker" : "not_implemented");
+    assert.equal(model.executionAdapter, "not_implemented");
     assert.equal(model.gateway, "runway");
     assert.equal(model.capabilities.textToVideo, true);
     assert.equal(model.capabilities.imageToVideo, true);
@@ -232,7 +232,7 @@ test("November 2026 Runway model releases are catalogued with verified constrain
   for (const model of [kling, omni]) {
     assert.ok(model);
     assert.equal(model.availability, "disabled");
-    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.executionAdapter, model === kling ? "runway-cloud-worker" : "not_implemented");
     assert.equal(model.gateway, "runway");
     assert.equal(model.constraints.pricingSnapshotDate, "2026-11-07");
   }
