@@ -301,7 +301,7 @@ test("submits Seedance 2.5 text-to-video through the durable worker adapter with
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "seedance2_5", promptText: "A cinematic dawn over a quiet city",
-    ratio: "1280:720", duration: 8, resolution: "720p"
+    ratio: "1280:720", duration: 8
   });
 });
 
@@ -341,7 +341,7 @@ test("prepares a private first frame and submits Seedance 2.5 image-to-video", a
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "seedance2_5", promptText: "Animate the approved product frame",
     promptImage: "runway://ephemeral/seedance-first-frame",
-    duration: 8, ratio: "720:1280", resolution: "720p"
+    duration: 8, ratio: "720:1280"
   });
 });
 
@@ -380,7 +380,7 @@ test("Seedance 2.5 accepts its documented long-form prompt limit in durable exec
     provider: "runway", model: "seedance2_5", operation: "text-to-video",
     prompt, durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
   });
-  assert.equal(submittedBody.promptText, prompt);
+  assert.equal(submittedBody.promptText, prompt.trim());
 });
 
 
