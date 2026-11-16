@@ -65,7 +65,8 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},audioMastering:{enabled:true,integratedLoudness:-16,loudnessRange:11,truePeak:-1.5,dualMono:true},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{timelineEffects:{brightness:0.05,contrast:1.1,saturation:0.9,denoise:1,sharpen:0.3}}}]},
-   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]}
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]},
+    {id:"ov",kind:"overlay",clips:[{id:"ov1",assetId:"asset-video",timelineStart:time(0.25),duration:time(0.5),sourceRange:{start:time(0),duration:time(0.5)},metadata:{x:12,y:12,width:96,height:72,opacity:0.65}}]}
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
@@ -80,6 +81,8 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.effectClips,1);
   assert.equal(result.render.audioClips,1);
+   assert.equal(result.render.overlayClips,1);
+   assert.equal(result.render.overlayVideoClips,1);
   assert.equal(result.render.audioMastering.applied,true);
   assert.equal(result.render.audioMastering.profile,"custom");
   assert.equal(result.render.audioMastering.integratedLoudness,-16);
