@@ -17,7 +17,7 @@ begin
     add constraint video_workflow_quotes_provider_check
       check (provider in ('runway','google','luma')),
     add constraint video_workflow_quotes_model_check
-      check ((provider='runway' and model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
+      check ((provider='runway' and model in ('model-router','gen4.5','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
           or (provider='google' and model='gemini-omni-1.1-flash')
           or (provider='luma' and model='ray-3.2')),
     add constraint video_workflow_quotes_operation_check
@@ -41,7 +41,7 @@ declare
      or not ((p_provider='runway' and p_operation in ('text-to-video','image-to-video','video-to-video'))
        or (p_provider='google' and p_operation in ('generate','edit','extend'))
        or (p_provider='luma' and p_operation in ('generate','video_edit','video_reframe')))$old$;
-  new_identity text := $new$or not ((p_provider='runway' and p_model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
+  new_identity text := $new$or not ((p_provider='runway' and p_model in ('model-router','gen4.5','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
        or (p_provider='google' and p_model='gemini-omni-1.1-flash')
        or (p_provider='luma' and p_model='ray-3.2'))
      or not ((p_provider='runway' and p_operation in ('text-to-video','image-to-video','video-to-video'))
@@ -78,7 +78,7 @@ declare
   old_identity text := $old$or not ((quote_row.provider='runway' and quote_row.model='model-router')
        or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash')
        or (quote_row.provider='luma' and quote_row.model='ray-3.2'))$old$;
-  new_identity text := $new$or not ((quote_row.provider='runway' and quote_row.model in ('model-router','gen4.5','seedance2_5','kling_4','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
+  new_identity text := $new$or not ((quote_row.provider='runway' and quote_row.model in ('model-router','gen4.5','seedance2_5','kling_4','kling_4_flash','kling3.0_standard','kling3.0_pro','kling3.0_4k'))
        or (quote_row.provider='google' and quote_row.model='gemini-omni-1.1-flash')
        or (quote_row.provider='luma' and quote_row.model='ray-3.2'))$new$;
 begin
