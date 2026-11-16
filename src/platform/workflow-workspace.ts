@@ -116,7 +116,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop X<input name="sourcePositionX" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.x_norm??0)+'"></label><label>Reframe crop Y<input name="sourcePositionY" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.y_norm??0)+'"></label></div>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
- '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!startFrameEnabled?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Choose first-frame image from this project<select name="startFrameAssetPicker" '+(!startFrameEnabled?"disabled ":"")+'><option value="">No first frame</option>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(String(config.startFrameAssetId||"")===asset.id?"selected":"")+'>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private first-frame asset ID<input name="startFrameAssetId" '+(!startFrameEnabled?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Choose keyframe images from this project · asset-library order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
@@ -348,7 +349,7 @@ document.addEventListener("submit",event=>{
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
  if(luma||directRunway)config.operation=operation;else delete config.operation;
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
- const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
+ const startFrameAssetId=String(data.get("startFrameAssetPicker")||data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
  const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
  const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
  if(luma){
@@ -443,7 +444,7 @@ document.addEventListener("change",event=>{
   for(const name of ["sourceVideoAssetPicker","sourceVideoAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!sourceVideoEnabled;}
   for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="edit";}
   for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="reframe";}
-  for(const name of ["startFrameAssetId"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!startFrameEnabled;}
+  for(const name of ["startFrameAssetPicker","startFrameAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!startFrameEnabled;}
   for(const name of ["endFrameAssetId","keyframeAssetPicker","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!luma||activeOperation!=="generate";}
   const draft=form?.querySelector<HTMLInputElement>('[name="videoDraft"]');if(draft)draft.disabled=!(provider==="runway"&&modelValue==="seedance2_5");
   const values=luma?(activeOperation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
