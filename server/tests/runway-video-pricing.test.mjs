@@ -177,3 +177,15 @@ test("Gemini Omni 1.2 image-to-video pricing accepts first and optional last key
   assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,inputType:"image",hasStartFrame:true,referenceImageCount:1,resolution:"720p",pricingDate:"2026-11-07"}).estimatedCredits,37);
   assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,inputType:"image",hasStartFrame:true,referenceImageCount:2,resolution:"720p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
+
+test("Seedance 2.5 4K preflight uses the documented 110 output and 57 input credits per second",()=>{
+ const estimate=estimateRunwayVideoCredits({model:"seedance2_5",durationSeconds:5,resolution:"4k",inputVideoSeconds:10,pricingDate:date});
+ assert.equal(estimate.estimatedCredits,1120);
+ assert.equal(estimate.amount,11.2);
+});
+test("Kling 3.0 4K pricing is independent of the optional audio toggle",()=>{
+ const withAudio=estimateRunwayVideoCredits({model:"kling3.0_4k",durationSeconds:5,audio:true,pricingDate:date});
+ const withoutAudio=estimateRunwayVideoCredits({model:"kling3.0_4k",durationSeconds:5,audio:false,pricingDate:date});
+ assert.equal(withAudio.estimatedCredits,215);
+ assert.equal(withoutAudio.estimatedCredits,215);
+});
