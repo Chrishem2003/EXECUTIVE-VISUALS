@@ -111,7 +111,7 @@ function sourceRate(asset:Asset,kind:string){
 }
 function timelineMediaTools(track:TimelineTrack,clip:TimelineTrack["clips"][number],sourceIn:number,proxyAssetId:string,proxyName:string){
  const asset=state.assets.find(item=>item.id===clip.assetId);
- if(track.kind==="overlay"&&asset?.mediaType.startsWith("video/"))return '<div class="timeline-media-tools"><p class="muted">Video overlays are composited in final master renders with position, size, opacity and motion. The browser program-monitor overlay preview currently supports still images only.</p></div>';
+ if(track.kind==="overlay"&&asset?.mediaType.startsWith("video/"))return '<div class="timeline-media-tools"><p class="muted">Video overlays are composited in final master renders and browser program-monitor previews with position, size and opacity. Motion keyframes are reflected in final renders.</p></div>';
  if(track.kind!=="video")return "";
  if(!asset||!asset.mediaType.startsWith("video/"))return "";
  if(state.mode==="cloud")return '<div class="timeline-media-tools"><div class="eyebrow">CLOUD PROXY & FRAME PREVIEW</div><p class="muted">Cloud proxy and thumbnail job APIs and worker code are implemented, but this hosted deployment has no active, verified cloud media worker and isolated durable storage. Actions are intentionally gated to prevent jobs from remaining queued without execution. Local proxy and frame-preview processing remains available.</p></div>';
@@ -331,7 +331,7 @@ async function loadTimelinePreview(){
    const source=state.assets.find(item=>item.id===clip.assetId);
    if(!source||!(source.mediaType.startsWith("video/")||source.mediaType.startsWith("audio/")||source.mediaType.startsWith("image/")))continue;
    const selected=previewAssetForClip(clip,source);if(selected.id!==source.id)proxyCount++;
-   if(track.kind==="overlay"&&!selected.mediaType.startsWith("image/"))continue;required.set(selected.id,{asset:selected,source});
+   if(track.kind==="overlay"&&!selected.mediaType.startsWith("image/")&&!selected.mediaType.startsWith("video/"))continue;required.set(selected.id,{asset:selected,source});
   }
  }
  if(!required.size){state.previewLoading=false;throw new Error("No enabled accessible video, audio or image clips are available for preview.");}
@@ -474,14 +474,15 @@ function timelinePlaybackPanel(){
  const duration=clampTimelineFrame(timelineDurationSeconds(state.timeline)*fps(),state.timeline);
  const elements=state.previewLoaded?state.timeline.tracks.flatMap((track,trackIndex)=>track.enabled&&track.kind!=="caption"?track.clips.filter(clip=>clip.enabled).map(clip=>{
   const source=state.assets.find(item=>item.id===clip.assetId),asset=source?previewAssetForClip(clip,source):undefined,src=asset?state.previewAssetUrls[asset.id]:"";
-  if(!asset||!src||track.kind==="overlay"&&!asset.mediaType.startsWith("image/"))return "";
+  if(!asset||!src||track.kind==="overlay"&&!asset.mediaType.startsWith("image/")&&!asset.mediaType.startsWith("video/"))return "";
   const base='data-preview-media="true" data-preview-clip="'+esc(clip.id)+'" data-preview-kind="'+(asset.mediaType.startsWith("audio/")||track.kind==="audio"?"audio":asset.mediaType.startsWith("image/")?"image":"video")+'" data-preview-proxy="'+(source&&asset.id!==source.id?'true':'false')+'" data-preview-asset="'+esc(asset.id)+'" data-preview-track-index="'+trackIndex+'"';
   if(asset.mediaType.startsWith("audio/")||track.kind==="audio")return '<audio '+base+' preload="metadata" src="'+esc(src)+'"></audio>';
   if(asset.mediaType.startsWith("image/")){
    const metadata=clip.metadata||{},x=track.kind==="overlay"?Number(metadata.x)||0:0,y=track.kind==="overlay"?Number(metadata.y)||0:0,w=track.kind==="overlay"?Number(metadata.width)||state.timeline!.width:state.timeline!.width,h=track.kind==="overlay"?Number(metadata.height)||state.timeline!.height:state.timeline!.height,opacity=track.kind==="overlay"?Math.max(0,Math.min(1,Number(metadata.opacity??1))):1;
    return '<img '+base+' alt="'+esc(clip.name)+'" src="'+esc(src)+'" style="display:none;z-index:'+trackIndex+';left:'+(x/state.timeline!.width*100)+'%;top:'+(y/state.timeline!.height*100)+'%;width:'+(w/state.timeline!.width*100)+'%;height:'+(h/state.timeline!.height*100)+'%;opacity:'+opacity+'">';
   }
-  return '<video '+base+' playsinline preload="metadata" src="'+esc(src)+'" style="display:none;z-index:'+trackIndex+'"></video>';
+  const metadata=clip.metadata||{},isOverlay=track.kind==="overlay",x=isOverlay?Number(metadata.x)||0:0,y=isOverlay?Number(metadata.y)||0:0,w=isOverlay?Number(metadata.width)||state.timeline!.width:state.timeline!.width,h=isOverlay?Number(metadata.height)||state.timeline!.height:state.timeline!.height,opacity=isOverlay?Math.max(0,Math.min(1,Number(metadata.opacity??1))):1;
+  return '<video '+base+' playsinline preload="metadata" src="'+esc(src)+'" style="display:none;z-index:'+trackIndex+(isOverlay?';position:absolute;left:'+(x/state.timeline!.width*100)+'%;top:'+(y/state.timeline!.height*100)+'%;width:'+(w/state.timeline!.width*100)+'%;height:'+(h/state.timeline!.height*100)+'%;object-fit:contain;opacity:'+opacity:'')+'"></video>';
  }).join(""):"").join(""):"";
  const safeGuide=resolveCaptionSafeAreaGuide(state.timeline.width,state.timeline.height);
  const safeAreaOverlay=state.previewSafeAreaVisible?'<div class="timeline-safe-area-overlay" aria-label="Preview-only safe-area guides"><div class="timeline-safe-area-title-guide" style="inset:'+safeGuide.titleInsetPercent+'%"><span>Title safe · 10% inset</span></div><div class="timeline-safe-area-subtitle-guide" style="left:'+safeGuide.subtitleLeftPercent+'%;right:'+safeGuide.subtitleRightPercent+'%;bottom:'+safeGuide.subtitleBottomPercent+'%;height:'+safeGuide.subtitleHeightPercent+'%"><span>Subtitle guide</span></div></div>':"";
