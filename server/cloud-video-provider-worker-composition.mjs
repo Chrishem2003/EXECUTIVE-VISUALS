@@ -212,6 +212,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           prepareInput,
           ingestOutputs: ingest,
           resolveActualCost: runwayActualCostResolver,
+          assertActualCostReady: runwayActualCostResolver.assertAvailable,
           timeoutMs: Math.min(timeoutMs, 30000)
         }));
       }
