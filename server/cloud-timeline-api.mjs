@@ -150,6 +150,27 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   return data;
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
+ async function prepareSeedanceDraftEnhancementNode(node,ownerId,projectId){
+  const config=node?.config&&typeof node.config==="object"&&!Array.isArray(node.config)?node.config:{};
+  if(config.operation!=="draft-enhancement")return node;
+  const sourceJobId=String(config.sourceDraftJobId||""),draftTaskId=String(config.draftTaskId||"");
+  if(!safeId(sourceJobId)||!safeId(draftTaskId))throw Object.assign(new Error("Select a valid completed Seedance draft job and its provider task ID."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
+  const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output,created_at&id=eq."+encodeURIComponent(sourceJobId)+
+   "&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+
+   "&job_type=eq.video.generate&status=eq.succeeded&limit=1");
+  const source=Array.isArray(rows)?rows[0]:null;
+  const created=Date.parse(source?.created_at||"");
+  const input=source?.input&&typeof source.input==="object"&&!Array.isArray(source.input)?source.input:{};
+  const output=source?.output&&typeof source.output==="object"&&!Array.isArray(source.output)?source.output:{};
+  if(!source||!Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
+     input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||
+     output.provider!=="runway"||output.model!=="seedance2_5"||output.providerTaskId!==draftTaskId||
+     !Number.isInteger(input.durationSeconds)||input.durationSeconds<4||input.durationSeconds>30){
+   throw Object.assign(new Error("The source must be a succeeded Seedance 2.5 480p preview from this project, owned by this account and created within the last seven days."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
+  }
+  return {...node,config:{...config,provider:"runway",model:"seedance2_5",durationSeconds:input.durationSeconds,
+   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId,sourceDraftJobId:sourceJobId}};
+ }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
   if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
@@ -323,7 +344,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     if(quoteProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"The project owner must create and approve paid video workflow quotes. Editors can prepare the workflow, but cannot authorize project spending."}});
     try{
      const requestId=String(body.requestId||"");
-     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     const quoteNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
+     const workflowRequest=createVideoWorkflowCloudRequest({node:quoteNode,values:body.values||{},projectId,requestId});
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
      if(!quoteAdapter&&!directRunway)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
@@ -426,7 +448,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     const approvalNote=typeof body.approvalNote==="string"?body.approvalNote.trim():"Approved by project editor in Video Studio";
     if(!approvalNote||approvalNote.length>1000)return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_NOTE_INVALID",message:"Approval note must contain 1 to 1,000 characters."}});
     try{
-     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     const approvalNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
+     const workflowRequest=createVideoWorkflowCloudRequest({node:approvalNode,values:body.values||{},projectId,requestId});
      const isLuma=workflowRequest.provider==="luma";
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
