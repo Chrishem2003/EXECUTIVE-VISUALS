@@ -42,7 +42,7 @@ export function createRunwaySourceAssetResolver({
       expectedOrigin = "https://" + r2AccountId + ".r2.cloudflarestorage.com";
       expectedPathPrefix = "/" + r2Bucket + "/";
     } else if (String(storageProvider).toLowerCase() === "b2") {
-      if (!/^[a-z0-9]+-[a-z0-9]+-\\d{3}$/.test(String(b2Region || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(b2Bucket))) throw new Error();
+      if (!/^[a-z0-9]+-[a-z0-9]+-\d{3}$/.test(String(b2Region || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(b2Bucket))) throw new Error();
       expectedOrigin = "https://s3." + b2Region + ".backblazeb2.com";
       expectedPathPrefix = "/" + b2Bucket + "/";
     } else {
