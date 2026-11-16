@@ -440,7 +440,7 @@ document.addEventListener("change",event=>{
   if(manual)manual.value="";
  }
  if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
- if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"){
+ if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"||target.name==="videoMode"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
   const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
   const operationSelect=form?.querySelector<HTMLSelectElement>('[name="videoOperation"]');
