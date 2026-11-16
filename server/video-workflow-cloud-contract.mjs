@@ -38,6 +38,7 @@ function createRunwayDirectWorkflowRequest({values,config,projectId,requestId,mo
  const operation=sourceVideoAssetId?"video-to-video":startFrameAssetId?"image-to-video":"text-to-video";
  const requestedOperation=firstString(config.operation);
  if(requestedOperation&&requestedOperation!=="generate"&&requestedOperation!==operation)throw fail("Configured operation does not match the connected source asset.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
+ if(requestedOperation==="generate"&&operation==="video-to-video")throw fail("Choose the explicit video-to-video operation when a source video is connected.","VIDEO_WORKFLOW_CLOUD_OPERATION_MISMATCH");
  if(model==="gen4.5"&&operation==="video-to-video")throw fail("Gen-4.5 direct worker does not support source-video editing.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(model==="kling3.0_4k"&&operation==="video-to-video")throw fail("Kling 3.0 4K does not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
  if(model.startsWith("kling3.0_")&&operation==="video-to-video")throw fail("Kling 3.0 profiles do not expose video-to-video in this adapter.","VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
