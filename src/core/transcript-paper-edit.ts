@@ -39,6 +39,33 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
  return cues.sort((a,b)=>a.start-b.start||a.index-b.index);
 }
 
+export function parseTranscriptSrt(input:string):TranscriptCue[]{
+ const text=String(input??"").replace(/^\\uFEFF/,"").replace(/\\r\\n?/g,"\\n");
+ if(new TextEncoder().encode(text).byteLength>MAX_BYTES)throw new Error("Transcript exceeds the 2 MiB limit.");
+ const blocks=text.trim().split(/\\n\\s*\\n+/).filter(block=>block.trim());
+ const cues:TranscriptCue[]=[];
+ for(const block of blocks){
+  const lines=block.split("\\n");
+  const timingIndex=lines.findIndex(line=>line.includes("-->"));
+  if(timingIndex<0)throw new Error("SRT cue "+(cues.length+1)+" is missing its timing line.");
+  const match=lines[timingIndex].match(/^\\s*(\\S+)\\s+-->\\s+(\\S+)(?:\\s+.*)?$/);
+  const start=match?parseTimestamp(match[1]):null,end=match?parseTimestamp(match[2]):null;
+  const rawBody=lines.slice(timingIndex+1).join(" ");
+  const cueText=rawBody.replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
+  if(start===null||end===null||end<=start||!cueText)throw new Error("SRT cue "+(cues.length+1)+" has invalid timing or empty text.");
+  cues.push({index:cues.length,start,end,text:cueText});
+  if(cues.length>MAX_CUES)throw new Error("Transcript exceeds the 5,000 cue limit.");
+ }
+ if(!cues.length)throw new Error("Transcript contains no usable SRT cues.");
+ return cues.sort((a,b)=>a.start-b.start||a.index-b.index);
+}
+
+export function parseTranscriptInput(input:string):TranscriptCue[]{
+ const text=String(input??"").replace(/^\\uFEFF/,"").trimStart();
+ if(/^WEBVTT(?:\\s|$)/.test(text))return parseTranscriptWebVtt(text);
+ return parseTranscriptSrt(text);
+}
+
 export interface TranscriptTextFlag {
  cueIndex:number;
  kind:"filler"|"repetition";
