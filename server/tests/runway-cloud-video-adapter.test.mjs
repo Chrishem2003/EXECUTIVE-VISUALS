@@ -702,6 +702,24 @@ test("Gemini Omni 1.2 accepts an authorized first frame through the durable imag
   });
 });
 
+test("Gemini Omni 1.2 enforces distinct reference, edit and extension source limits", async () => {
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "gemini_omni_flash_1.2",
+    prepareInput: async input => ({
+      videoUri: "runway://ephemeral/source",
+      sourceMetadata: { durationSeconds: input.testDuration, width: 1920, height: 1080, frameRate: 30 }
+    }),
+    fetchImpl: async () => { throw new Error("provider submission must not run during source validation"); }
+  });
+  for (const [mode, seconds] of [["reference", 10.01], ["edit", 10], ["extend", 30.01]]) {
+    await assert.rejects(() => adapter.prepareInput({
+      provider: "runway", model: "gemini_omni_flash_1.2", operation: "video-to-video",
+      sourceVideoAssetId: "source-video", prompt: "Apply a cinematic visual transformation",
+      mode, duration: mode === "edit" ? "auto" : 5, testDuration: seconds
+    }, { job: { owner_id: "owner-1" } }), error => error.code === "RUNWAY_INPUT_INVALID");
+  }
+});
+
 test("Kling 4 video-to-video rejects source metadata outside the provider contract before submission", async () => {
   let generationCalls = 0;
   const adapter = createRunwayCloudVideoAdapter({
