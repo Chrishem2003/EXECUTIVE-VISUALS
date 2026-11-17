@@ -53,7 +53,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
    const pathParts=objectPath.split("/");
    if(pathParts[0]!== (projectId||ownerId) || pathParts[1]!==assetId)throw new TypeError("Multipart object path must be bound to the verified owner/project and reserved asset ID.");
    if(!input.idempotencyKey||String(input.idempotencyKey).length>200)throw new TypeError("Multipart idempotency key is invalid.");
-   if(!/^[A-Za-z0-9_-]{8,512}$/.test(String(input.uploadId||"")))throw new TypeError("B2 multipart upload ID is invalid.");
+   if(!/^[\x21-\x7E]{8,512}$/.test(String(input.uploadId||"")))throw new TypeError("B2 multipart upload ID is invalid.");
    if(!SHA256.test(String(input.sha256||"")))throw new TypeError("Multipart source SHA-256 is invalid.");
    if(!Number.isSafeInteger(input.size)||input.size<1||!Number.isSafeInteger(input.partSize)||input.partSize<5000000||input.partSize>5368709120)throw new TypeError("Multipart source or part size is invalid.");
    const partCount=Math.ceil(input.size/input.partSize);if(partCount<1||partCount>10000)throw new TypeError("Multipart part count is invalid.");
