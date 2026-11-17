@@ -71,6 +71,7 @@
     "verify:finance-assurance-report": "node --test server/tests/finance-assurance-report-batch-58.test.mjs",
     "verify:reviewer-performance": "node --test server/tests/reviewer-performance-batch-59.test.mjs",
     "verify:review-asset-version": "node --test server/tests/review-asset-version.test.mjs",
+    "verify:cloud-review-asset-version": "node --test server/tests/cloud-reviews.test.mjs server/tests/cloud-timeline-api.test.mjs",
     "verify:video-shot-preflight": "node --test server/tests/video-shot-preflight.test.mjs",
     "verify:video-generation-approval": "node --test server/tests/video-generation-approval.test.mjs",
     "verify:runway-durable-tasks": "node --test server/tests/runway-video-gateway.test.mjs",
