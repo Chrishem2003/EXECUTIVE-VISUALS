@@ -8,5 +8,13 @@ test("project owners may read and write",async()=>{const f=setup({ownerRows:[{id
 test("editors may read and write project assets",async()=>{const f=setup({memberRows:[{project_id:project,role:"editor"}]});assert.equal(await f.authorize({ownerId:editor,projectId:project,action:"read"}),true);assert.equal(await f.authorize({ownerId:editor,projectId:project,action:"write"}),true);});
 test("reviewers and viewers may read but cannot write project assets",async()=>{const f=setup({memberRows:[{project_id:project,role:"reviewer"}]});assert.equal(await f.authorize({ownerId:reviewer,projectId:project,action:"read"}),true);assert.equal(await f.authorize({ownerId:reviewer,projectId:project,action:"write"}),false);});
 test("unrelated users and malformed identifiers are denied",async()=>{const f=setup();assert.equal(await f.authorize({ownerId:editor,projectId:project,action:"read"}),false);assert.equal(await f.authorize({ownerId:"not-a-uuid",projectId:project,action:"write"}),false);assert.equal(await f.authorize({ownerId:editor,projectId:"bad",action:"read"}),false);});
+test("sends opaque Supabase secret keys only through the apikey header",async()=>{
+ let headers;
+ const authorize=createCloudAssetAuthorizer({url:"https://example.supabase.co",serviceRoleKey:"sb_secret_test_key",fetchImpl:async(_url,options)=>{headers=options.headers;return{ok:true,async json(){return[{id:project}];}};}});
+ assert.equal(await authorize({ownerId,projectId:project,action:"write"}),true);
+ assert.equal(headers.apikey,"sb_secret_test_key");
+ assert.equal("authorization" in headers,false);
+});
+
 test("permission service errors fail closed rather than granting access",async()=>{const f=setup({failStatus:500});await assert.rejects(()=>f.authorize({ownerId:editor,projectId:project,action:"read"}),/permission lookup failed/);});
 test("authorization pins requests to the private schema and server credential",async()=>{const f=setup({ownerRows:[{id:project}]});await f.authorize({ownerId:owner,projectId:project,action:"write"});assert.equal(f.calls[0].options.headers["accept-profile"],"executive_visuals");assert.equal(f.calls[0].options.headers.authorization,"Bearer service-secret");assert.match(f.calls[0].url,/owner_id=eq\./);});
