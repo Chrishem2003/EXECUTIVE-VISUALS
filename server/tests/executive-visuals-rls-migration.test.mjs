@@ -22,14 +22,14 @@ test("tenant write policies correlate membership to the target row project", () 
     assert.match(migration, new RegExp("alter policy " + policy + "\\b", "i"), policy + " must be altered");
     assert.match(migration, new RegExp("m\\.project_id = " + outerProject.replace(".", "\\.") , "i"), policy + " must scope membership to " + outerProject);
   }
-  assert.doesNotMatch(migration, /m\\.project_id\\s*=\\s*m\\.project_id/i);
+  assert.doesNotMatch(migration, /m\.project_id\s*=\s*m\.project_id/i);
 });
 
 test("private storage policies correlate project ownership to the stored object path", () => {
-  assert.match(migration, /alter policy ev_storage_read on storage\\.objects/i);
-  assert.match(migration, /alter policy ev_storage_insert on storage\\.objects/i);
-  assert.match(migration, /alter policy ev_storage_update on storage\\.objects/i);
-  assert.match(migration, /alter policy ev_storage_delete on storage\\.objects/i);
-  assert.match(migration, /storage\\.foldername\\(objects\\.name\\)/i);
-  assert.doesNotMatch(migration, /storage\\.foldername\\(p\\.name\\)/i);
+  assert.match(migration, /alter policy ev_storage_read on storage\.objects/i);
+  assert.match(migration, /alter policy ev_storage_insert on storage\.objects/i);
+  assert.match(migration, /alter policy ev_storage_update on storage\.objects/i);
+  assert.match(migration, /alter policy ev_storage_delete on storage\.objects/i);
+  assert.match(migration, /storage\.foldername\(objects\.name\)/i);
+  assert.doesNotMatch(migration, /storage\.foldername\(p\.name\)/i);
 });
