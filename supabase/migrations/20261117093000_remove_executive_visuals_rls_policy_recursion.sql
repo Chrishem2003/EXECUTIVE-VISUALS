@@ -40,7 +40,6 @@ revoke all on function executive_visuals.is_project_owner(uuid) from public, ano
 revoke all on function executive_visuals.has_project_role(uuid, text[]) from public, anon;
 grant execute on function executive_visuals.is_project_owner(uuid) to authenticated, service_role;
 grant execute on function executive_visuals.has_project_role(uuid, text[]) to authenticated, service_role;
-grant usage on schema executive_visuals to authenticated;
 
 alter policy ev_projects_read on executive_visuals.projects
 using (
