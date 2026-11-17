@@ -58,6 +58,14 @@ test("checks that both durable multipart ledger tables are available before acti
  assert.ok(calls.some(call=>call.url.includes("asset_multipart_upload_parts")));
 });
 
+test("uses the Supabase secret key as an apikey rather than a bearer token",async()=>{
+ const calls=[];
+ const store=createB2MultipartUploadStore({url:"https://example.supabase.co",serviceRoleKey:"sb_secret_test_key",fetchImpl:async(_url,options)=>{calls.push(options.headers);return{ok:true,status:200,async text(){return"[]";}};}});
+ await store.checkReadiness();
+ assert.equal(calls.length,2);
+ for(const headers of calls){assert.equal(headers.apikey,"sb_secret_test_key");assert.equal("authorization" in headers,false);}
+});
+
 test("persists a tenant-scoped upload session and returns the same session on idempotent retry",async()=>{
  const {store,sessions,calls}=setup();
  const first=await store.create(createInput()),second=await store.create(createInput());
