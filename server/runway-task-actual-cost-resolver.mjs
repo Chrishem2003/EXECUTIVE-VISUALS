@@ -13,10 +13,10 @@ function validTimestamp(value) {
 }
 
 /**
- * Reconcile a single Runway task against the Enterprise per-generation
- * workspace usage ledger. The aggregate organization usage endpoint is not
- * sufficient for per-job settlement; this resolver requires the linked
- * workspace usage endpoint and exact provider task ID.
+ * Reconcile a single Runway task against the linked workspace per-generation
+ * usage ledger. The aggregate organization usage endpoint is not sufficient
+ * for per-job settlement; this resolver requires the linked workspace usage
+ * endpoint and exact provider task ID.
  */
 export function createRunwayTaskActualCostResolver({
   apiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET,
@@ -51,7 +51,7 @@ export function createRunwayTaskActualCostResolver({
     } catch (error) {
       throw fail(error?.name === "AbortError" ? "Runway workspace usage readiness check timed out." : "Runway workspace usage is unavailable.", "RUNWAY_TASK_BILLING_UNAVAILABLE");
     } finally { clearTimeout(timer); }
-    if (response.status === 401 || response.status === 403) throw fail("Runway linked-workspace usage requires an authorized Enterprise workspace connection.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+    if (response.status === 401 || response.status === 403) throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
     if (!response.ok) throw fail("Runway workspace usage readiness check failed (HTTP " + response.status + ").", "RUNWAY_TASK_BILLING_UNAVAILABLE");
     const raw = await response.text();
     if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw fail("Runway workspace usage response exceeded 2 MiB.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
@@ -130,8 +130,8 @@ export function createRunwayTaskActualCostResolver({
         const timestamp = validTimestamp(row.timestamp);
         if (!timestamp || timestamp.getTime() < submittedAt.getTime() - 5 * 60000 || timestamp.getTime() > current.getTime() + 5 * 60000 ||
             typeof row.transactionId !== "string" || !row.transactionId.trim() || row.transactionId.length > 256 ||
-            row.unit !== "credits" || !["charge", "refund"].includes(row.type) ||
-            !Number.isSafeInteger(row.credits) || row.credits < 0 ||
+            row.unit !== "credits" || row.type !== "charge" ||
+            !Number.isSafeInteger(row.credits) || row.credits < 1 ||
             typeof row.tool !== "string" || row.tool.trim().toLowerCase() !== expectedTool) {
           throw fail("Runway usage row does not match the exact task, model, time window or credit schema.", "RUNWAY_TASK_BILLING_ROW_INVALID");
         }
@@ -147,10 +147,8 @@ export function createRunwayTaskActualCostResolver({
     }
 
     if (!transactions.size) throw fail("Runway has not reported per-generation credits for this task yet.", "RUNWAY_TASK_BILLING_NOT_SETTLED");
-    const charged = [...transactions.values()].filter(row => row.type === "charge").reduce((sum, row) => sum + row.credits, 0);
-    const refunded = [...transactions.values()].filter(row => row.type === "refund").reduce((sum, row) => sum + row.credits, 0);
-    if (charged < 1 || refunded > charged) throw fail("Runway task usage has no valid net charge.", "RUNWAY_TASK_BILLING_ROW_INVALID");
-    const credits = charged - refunded;
+    const credits = [...transactions.values()].reduce((sum, row) => sum + row.credits, 0);
+    if (!Number.isSafeInteger(credits) || credits < 1) throw fail("Runway task usage has no valid charge.", "RUNWAY_TASK_BILLING_ROW_INVALID");
     return Object.freeze({
       amount: Number((credits * 0.01).toFixed(2)),
       currency: "USD",
