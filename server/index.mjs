@@ -997,7 +997,7 @@ export function createAppServer() {
         if(result.status<300&&result.body?.session&&!result.body.idempotentReplay)audit(db,user.id,"asset.multipart_upload_started","asset",result.body.session.assetId,{sessionId:result.body.session.id,size:result.body.session.size,mediaType:body.mediaType},body.projectId||null);
         send(res,result.status,result.body,cors);return;
       }
-      const b2UploadSessionMatch=path.match(/^\\/api\\/cloud\\/uploads\\/([0-9a-f-]{36})(?:\\/(?:parts\\/([0-9]{1,5})\\/(url|receipt)|complete|abort))?$/i);
+      const b2UploadSessionMatch=path.match(/^\/api\/cloud\/uploads\/([0-9a-f-]{36})(?:\/(?:parts\/([0-9]{1,5})\/(url|receipt)|complete|abort))?$/i);
       if(b2MultipartUploadApi&&b2UploadSessionMatch){
         const sessionId=b2UploadSessionMatch[1],partNumber=b2UploadSessionMatch[2]?Number(b2UploadSessionMatch[2]):null,action=b2UploadSessionMatch[3]||path.split("/").at(-1);
         let result;
