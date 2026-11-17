@@ -1,4 +1,13 @@
-# Current release status — 17 November 2026
+# Current release status — 18 November 2026
+
+GitHub `main` now includes the verified 17 November production-editor and media-reliability batch through PR #696, merge commit `f5131d1b6635cc995a2b6202a3c38db3659c575c`. Merged work includes: PR #691 bounded cleanup of abandoned B2 multipart sessions (worker disabled by default); PR #692 bounded browser part-upload retries with fresh signed URLs; PR #693 eight validated directional wipe/slide transitions in local/cloud FFmpeg rendering; PR #694 accurate browser preview composition for those transitions; PR #695 live storyboard-to-timeline attachment status; and PR #696 validated attachment of authorized, probed project videos to exact storyboard shots as editable clips with lineage and undo/history support.
+
+These merges improve the editor and upload code paths; they do **not** change the public-release decision. Cloud storage, B2 and remote provider execution remain fail-closed until their separate operator configuration and live acceptance gates pass. In particular, issue #663 still requires protected `SUPABASE_SERVICE_ROLE_KEY` configuration on the dedicated cloud-staging service and successful isolated staging acceptance for auth, private media, project isolation, timeline persistence, durable queue/worker recovery and the complete creative-production journey. Do not request or commit the secret in chat or source control.
+
+The production runtime is still not approved for customer uploads or public launch until durable hosted persistence, isolated identity/database configuration, private object storage, worker recovery, backup/restore, billing acceptance and operational monitoring are verified. Preserve production and shared NEMA/platform resources; do not repair shared Supabase migration history or apply this repository's migrations to a shared/production database. See [P0 cloud staging and end-to-end pipeline acceptance](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/issues/663) and [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+
+---
+
 
 GitHub `main` is at `563e2d0fe8642449ac4dc222cff666da8f5a4ab7`. PR #685 adds bounded-memory incremental SHA-256 for the B2 multipart upload client: source files and each part are hashed in 8 MiB slices rather than loading the entire media file into one ArrayBuffer. The B2 workflow itself remains fail-closed and is not activated by this checksum improvement.
 
