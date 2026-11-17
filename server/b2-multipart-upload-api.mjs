@@ -12,7 +12,7 @@ function validUuid(value){return typeof value==="string"&&UUID.test(value);}
 function safeName(value){return String(value||"upload").normalize("NFKC").replace(/[\\/\u0000-\u001f\u007f]/g,"_").replace(/[^\p{L}\p{N}._() -]/gu,"_").trim().slice(0,180)||"upload";}
 
 export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBytes=1024*1024*1024,partSize=DEFAULT_PART,clock=()=>new Date(),signedUrlTtlSeconds=300}={}){
- if(!storage||typeof storage.beginMultipartUpload!=="function"||typeof storage.createMultipartPartSignedUrl!=="function"||typeof storage.listMultipartParts!=="function"||typeof storage.completeMultipartUpload!=="function"||typeof storage.abortMultipartUpload!=="function"||typeof storage.verifyObject!=="function")throw new Error("B2 multipart API requires the complete private storage adapter.");
+ if(!storage||typeof storage.beginMultipartUpload!=="function"||typeof storage.remove!=="function"||typeof storage.createMultipartPartSignedUrl!=="function"||typeof storage.listMultipartParts!=="function"||typeof storage.completeMultipartUpload!=="function"||typeof storage.abortMultipartUpload!=="function"||typeof storage.verifyObject!=="function")throw new Error("B2 multipart API requires the complete private storage adapter.");
  if(!store||!["create","findByIdempotencyKey","get","recordPart","listParts","claimCompletion","markCompleted","markAborted"].every(k=>typeof store[k]==="function"))throw new Error("B2 multipart API requires the durable session ledger.");
  if(!assets||typeof assets.registerVerifiedObject!=="function"||typeof assets.getStorageUsage!=="function")throw new Error("B2 multipart API requires verified Asset Library registration and quota checks.");
  if(typeof authorize!=="function")throw new Error("B2 multipart API requires project authorization.");
@@ -48,7 +48,7 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
   if(code==="CLOUD_ASSET_ACCESS_DENIED")return 403;
   if(code==="B2_MULTIPART_SESSION_NOT_FOUND")return 404;
   if(code==="B2_MULTIPART_IDEMPOTENCY_CONFLICT"||code==="B2_MULTIPART_PART_CONFLICT")return 409;
-  if(code==="B2_MULTIPART_SESSION_NOT_ACTIVE")return 409;
+  if(code==="B2_MULTIPART_SESSION_NOT_ACTIVE"||code==="CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED")return 409;
   if(code==="B2_STORAGE_TIMEOUT"||code==="B2_MULTIPART_LEDGER_TIMEOUT")return 503;
   return 502;
  }
@@ -130,7 +130,16 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     await storage.completeMultipartUpload(session.objectPath,session.uploadId,expected.map(p=>({partNumber:p.partNumber,etag:p.etag})));
     verified=await storage.verifyObject(session.objectPath,{expectedSize:session.size,expectedSha256:session.sha256,contentType:session.mediaType});
    }
-   const asset=await assets.registerVerifiedObject({ownerId,projectId:session.projectId,assetId:session.assetId,originalName:session.originalName,mediaType:session.mediaType,size:session.size,sha256:session.sha256,metadata:{uploadProvider:"backblaze-b2",multipartSessionId:session.id},verifiedReceipt:verified});
+   let asset;
+   try{
+    asset=await assets.registerVerifiedObject({ownerId,projectId:session.projectId,assetId:session.assetId,originalName:session.originalName,mediaType:session.mediaType,size:session.size,sha256:session.sha256,metadata:{uploadProvider:"backblaze-b2",multipartSessionId:session.id},verifiedReceipt:verified});
+   }catch(error){
+    if(error?.code==="CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"){
+     await storage.remove(session.objectPath);
+     await store.markAborted({ownerId,sessionId});
+    }
+    throw error;
+   }
    if(verified?.path!==session.objectPath||verified?.size!==session.size||verified?.sha256!==session.sha256)throw Object.assign(new Error("Verified object receipt does not match the upload session."),{code:"B2_MULTIPART_VERIFICATION_MISMATCH"});
    const marked=await store.markCompleted({ownerId,sessionId});
    if(!marked)throw Object.assign(new Error("Asset was published but the upload session completion state could not be committed."),{code:"B2_MULTIPART_FINALIZE_PENDING"});
