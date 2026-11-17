@@ -23,6 +23,7 @@ function setup(){
   const matches=row=>[...params.entries()].every(([key,filter])=>{
    const [op,...rest]=filter.split("."),value=rest.join(".");
    if(op==="eq")return String(row[key]??"")===value;
+   if(op==="lt")return String(row[key]??"")<value;
    if(op==="in")return value.slice(1,-1).split(",").includes(String(row[key]??""));
    return true;
   });
@@ -154,6 +155,42 @@ test("expired and inactive sessions cannot accept additional part checkpoints",a
  const {store,advance}=setup();const session=await store.create(createInput({expiresAt:"2026-11-17T12:01:00.000Z"}));
  advance(120_000);
  await assert.rejects(()=>store.recordPart({ownerId:owner,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000}),{code:"B2_MULTIPART_SESSION_NOT_ACTIVE"});
+});
+
+
+test("claims expired active sessions with a lease and transitions them to expired after provider cleanup",async()=>{
+ const {store,sessions,calls}=setup();
+ const session=await store.create(createInput({expiresAt:"2026-11-17T11:00:00.000Z"}));
+ const claimed=await store.claimExpiredSessions({limit:10});
+ assert.equal(claimed.length,1);
+ assert.equal(claimed[0].id,session.id);
+ assert.equal(claimed[0].status,"cleanup_pending");
+ assert.equal(sessions[0].status,"cleanup_pending");
+ assert.ok(sessions[0].cleanup_claimed_at);
+ assert.ok(calls.some(call=>call.method==="PATCH"&&call.body.status==="cleanup_pending"));
+ assert.equal(await store.markAborted({ownerId:owner,sessionId:session.id,expired:true}),true);
+ assert.equal(sessions[0].status,"expired");
+});
+
+test("does not reclaim a live completion claim and reclaims only stale cleanup leases",async()=>{
+ const {store,sessions,advance}=setup();
+ const session=await store.create(createInput({expiresAt:"2026-11-17T11:00:00.000Z"}));
+ sessions[0].status="completing";
+ sessions[0].completion_claimed_at="2026-11-17T11:59:00.000Z";
+ assert.deepEqual(await store.claimExpiredSessions({limit:10}),[]);
+ sessions[0].status="cleanup_pending";
+ sessions[0].cleanup_claimed_at="2026-11-17T11:50:00.000Z";
+ const reclaimed=await store.claimExpiredSessions({limit:10,cleanupLeaseMs:5*60*1000});
+ assert.equal(reclaimed.length,1);
+ assert.equal(reclaimed[0].id,session.id);
+ assert.equal(sessions[0].status,"cleanup_pending");
+ assert.equal(sessions[0].cleanup_claimed_at,now().toISOString());
+});
+
+test("cleanup claims are bounded and reject invalid lease settings",async()=>{
+ const {store}=setup();
+ await assert.rejects(()=>store.claimExpiredSessions({limit:101}),/batch limit/);
+ await assert.rejects(()=>store.claimExpiredSessions({cleanupLeaseMs:1000}),/cleanup lease/);
 });
 
 test("rejects malformed identifiers, unsafe paths, invalid hashes and impossible part geometry",async()=>{
