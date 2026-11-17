@@ -28,7 +28,7 @@ export function validateCloudUploadFiles<T extends CloudUploadFileLike>(files: r
     } else if (!Number.isSafeInteger(file.size) || file.size < 1) {
       rejected.push({ file, reason: "The file is empty or has an invalid size." });
     } else if (file.size > MAX_CLOUD_UPLOAD_BYTES) {
-      rejected.push({ file, reason: "The file exceeds the 250 MiB per-file limit." });
+      rejected.push({ file, reason: "The file exceeds the 50 MiB per-file limit." });
     } else if (!ALLOWED_TYPES.has(String(file.type || "").toLowerCase())) {
       rejected.push({ file, reason: "This file type is not supported for private cloud upload." });
     } else {
