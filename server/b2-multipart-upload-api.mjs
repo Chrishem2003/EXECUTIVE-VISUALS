@@ -68,7 +68,7 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
    await permitted(ownerId,projectId,"write");
    const existing=await store.findByIdempotencyKey({ownerId,idempotencyKey});
    if(existing){
-    const matches=existing.projectId===projectId&&existing.size===size&&existing.sha256===sha256&&existing.mediaType===mediaType&&existing.originalName===safeName(body.originalName)&&existing.partSize===chosenPartSize;
+    const matches=existing.projectId===projectId&&existing.size===size&&existing.sha256===sha256&&existing.mediaType===mediaType&&existing.originalName===safeName(body.originalName);
     if(!matches)return fail(409,"B2_MULTIPART_IDEMPOTENCY_CONFLICT","This idempotency key is already bound to different upload data.");
     return {status:200,body:{session:publicSession(existing),idempotentReplay:true}};
    }
