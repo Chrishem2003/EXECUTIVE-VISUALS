@@ -33,6 +33,7 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
@@ -82,6 +83,11 @@ if (REQUIRE_PERSISTENT_DATA_DIR && (!existsSync(DATA_DIR) || !isWithinDataDir(DB
   throw new Error("Persistent storage is required. Mount the configured data volume before starting the service.");
 }
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
+const CLOUD_MEDIA_MAX_UPLOAD_BYTES = resolveCloudMediaMaxUploadBytes({
+  storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+  configuredMaxBytes:process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES,
+  fallbackMaxBytes:MAX_UPLOAD_BYTES
+});
 const SESSION_DAYS = 30;
 const ALLOWED_MEDIA = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
@@ -229,7 +235,7 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const cloudPublicationAuditApiEnabled=process.env.CLOUD_PUBLICATION_AUDIT_API_ENABLED==="true";
 if(cloudPublicationAuditApiEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud publication audit API requires verified Supabase authentication.");
