@@ -1,14 +1,18 @@
-# Current release status — 16 November 2026
+# Current release status — 17 November 2026
 
-GitHub `main` includes PR #649's five-batch production integration, PR #650's tenant/project-bound workflow recovery receipts, and PR #651's exact approved-spend ceiling binding. Latest main commit: `a4872af9264c67eb6bbabec63f08dd1b67efa9c8`. Render auto-deployment `dep-dbt9et6q1p3s73fl9v70` is building that commit; the previous live deployment remains on `8a4bf008a2e610feabc6f96a7ea94435c6270cca` until the new build succeeds.
+GitHub `main` is at `05cf230ee9e682f161268cbef62d00d07fad683d`, which adds the authenticated, resumable Backblaze B2 multipart upload path to the Asset Library: browser part uploads, durable session/receipt records, refresh recovery, provider-part reconciliation, independent object verification, quota enforcement, and publication cleanup. The B2 migration and API are deliberately fail-closed; this commit does not activate B2 or apply a migration to a connected Supabase project.
 
-**The live deployment is not yet a public-ready hosted production system.** The API runtime still uses SQLite and local-disk storage. Render Free services are preview/testing resources: local files are ephemeral and are lost on restart, redeploy or spin-down. Do not accept customer uploads or claim durable production storage on this service.
+Render production deployment `dep-dbu9fp5bedkc73dhkmd0` and the separate `executive-visuals-cloud-staging` deployment `dep-dbu9fp5bedkc73dhkmm0` both completed successfully on this commit. The production service remains on Render Free and is still a preview/testing deployment, not a public-ready hosted production system.
 
-The Cloudflare D1 workspace remains an isolated metadata/workspace staging path, not production persistence or large-media storage. The new GCS mirror is in main but deliberately inactive: both GCS flags remain off, the `google-auth-library` dependency/lockfile is still outstanding, no real GCS bucket/WIF/IAM has been configured, and its Supabase migrations have only been tested in disposable CI PostgreSQL. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+**Public release remains NOT APPROVED.** The production API still uses SQLite/local-disk persistence, and the Render Free filesystem is ephemeral. Do not accept customer uploads or claim durable customer storage on the current production service. The new B2 workflow is not available to customers until the additive Supabase migration is applied to an isolated Executive Visuals database, a private B2 bucket and exact-origin CORS are configured, and end-to-end upload/resume/authorization/revocation/recovery acceptance passes.
 
-Paddle is the primary and Pesapal the secondary billing provider. Merchant sandbox acceptance and production webhook verification remain outstanding; Pesapal automatic recurring billing is not implemented. Keep live checkout, customer uploads and remote generation disabled until their respective isolated infrastructure and safety gates pass.
+Exact-head GitHub checks for `05cf230`: 27 successful, one skipped, and one failed. Build, Product Verification, Release Integration Gate, PostgreSQL integration and Cloudflare app build/deploy checks passed. The failed Supabase Preview check reports: `Remote migration versions not found in local migrations directory.` This migration-history mismatch is being investigated read-only; do not repair it by resetting, deleting, or applying migrations to a shared/production database.
 
-The latest production build succeeds but emits a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. This is a frontend modularization/performance task, not a deployment failure.
+The Cloudflare D1 workspace remains an isolated metadata/workspace staging path, not production persistence or large-media storage. The GCS mirror is in main but remains deliberately inactive: no real GCS bucket, WIF identity/IAM or live upload/read-back acceptance has been configured. `google-auth-library@11.3.4` is already declared and locked; dependency resolution is no longer the outstanding GCS blocker. See [Public release gates](docs/PUBLIC-RELEASE-GATES.md).
+
+Paddle is the primary and Pesapal the secondary billing provider. Merchant sandbox acceptance and production webhook verification remain outstanding; Pesapal automatic recurring billing is not implemented. Keep live checkout and paid remote generation disabled until their respective isolated infrastructure, approval, budget and billing gates pass.
+
+The last recorded production build emitted a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. Frontend modularization and code splitting remain a performance milestone, not a substitute for release gates.
 
 ---
 
