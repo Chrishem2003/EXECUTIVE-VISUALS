@@ -103,6 +103,7 @@ export async function uploadCloudAssetResumable(
   }
   if (session && ["aborted", "expired", "failed"].includes(session.status)) {
     removeResumeRecord(key);
+    record = undefined;
     session = null;
   }
   if (!session) {
