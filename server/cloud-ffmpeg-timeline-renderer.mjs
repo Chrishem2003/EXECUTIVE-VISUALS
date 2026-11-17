@@ -235,9 +235,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(fadeFrames>nextDurationFrames)fail("The transition fade cannot be longer than the incoming clip.","INVALID_TIMELINE_TRANSITION");
   if(transition?.type==="dip-to-black"){
    if(Math.abs(seconds(next.timelineStart)-(seconds(clip.timelineStart)+seconds(clip.duration)))>0.5/fps)fail("A dip-to-black transition requires the next enabled video clip to begin immediately after this clip.","INVALID_TIMELINE_TRANSITION");
-  }else if(transition?.type==="crossfade"){
+  }else if(["crossfade","wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(String(transition?.type))){
    const expectedNextStart=seconds(clip.timelineStart)+seconds(clip.duration)-fadeDuration;
-   if(Math.abs(seconds(next.timelineStart)-expectedNextStart)>0.5/fps)fail("A video crossfade requires the next clip to overlap the outgoing clip by exactly its configured fade duration.","INVALID_TIMELINE_TRANSITION");
+   if(Math.abs(seconds(next.timelineStart)-expectedNextStart)>0.5/fps)fail("A video transition requires the next clip to overlap the outgoing clip by exactly its configured fade duration.","INVALID_TIMELINE_TRANSITION");
   }else fail("Select a supported video transition.","INVALID_TIMELINE_TRANSITION");
  }
  if(timeline.audioMastering?.enabled===true&&!audioClips.length)fail("Audio mastering requires at least one enabled audio clip.","AUDIO_MASTERING_REQUIRES_AUDIO");
@@ -273,7 +273,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const speed=normalizeClipSpeed(clip.speed??1),sourceDuration=sourceDurationForClip(clip,duration),speedExpression=buildVariableSpeedSetptsExpression(clip,duration);
    if(start+0.000001<cursor){
     const previous=clips[clipPosition-1],transition=previous?.transitionToNext;
-    if(transition?.type!=="crossfade")fail("Primary video track contains overlapping clips without a configured crossfade.","TIMELINE_OVERLAP");
+    if(!["crossfade","wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(String(transition?.type)))fail("Primary video track contains overlapping clips without a configured supported transition.","TIMELINE_OVERLAP");
     const expectedStart=cursor-Number(transition.fadeFrames)/fps;
     if(Math.abs(start-expectedStart)>0.5/fps)fail("Video clip overlap must exactly match the configured crossfade duration.","INVALID_TIMELINE_TRANSITION");
    }
