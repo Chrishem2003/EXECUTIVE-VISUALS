@@ -50,7 +50,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
   async checkReadiness(){
    const [sessions,parts]=await Promise.all([
     request("asset_multipart_upload_sessions?select=id&limit=0"),
-    request("asset_multipart_upload_parts?select=id&limit=0")
+    request("asset_multipart_upload_parts?select=session_id&limit=0")
    ]);
    if(!Array.isArray(sessions)||!Array.isArray(parts))throw new Error("B2 multipart session ledger readiness check returned invalid table responses.");
    return {ready:true,sessionsTable:"asset_multipart_upload_sessions",partsTable:"asset_multipart_upload_parts"};
