@@ -122,6 +122,39 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
    const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.active",{method:"PATCH",body:{status:"completing",completion_claimed_at:nowIso,updated_at:nowIso},prefer:"return=representation"});
    return {claimed:Array.isArray(changed)&&changed.length===1,reason:Array.isArray(changed)&&changed.length===1?"claimed":"claim_race"};
   },
+  async checkCleanupReadiness(){
+   const rows=await request("asset_multipart_upload_sessions?select=id,cleanup_claimed_at&limit=0");
+   if(!Array.isArray(rows))throw new Error("B2 multipart cleanup readiness check returned an invalid session response.");
+   return {ready:true,cleanupClaimColumn:"cleanup_claimed_at"};
+  },
+  async claimExpiredSessions({limit=25,cleanupLeaseMs=5*60*1000,completionLeaseMs=5*60*1000}={}){
+   if(!Number.isInteger(limit)||limit<1||limit>100)throw new TypeError("B2 multipart cleanup batch limit must be between 1 and 100.");
+   for(const [name,value] of [["cleanup lease",cleanupLeaseMs],["completion lease",completionLeaseMs]])if(!Number.isInteger(value)||value<30_000||value>60*60*1000)throw new TypeError("B2 multipart "+name+" is invalid.");
+   const now=clock(),nowIso=now.toISOString(),completionCutoff=new Date(now.getTime()-completionLeaseMs).toISOString(),cleanupCutoff=new Date(now.getTime()-cleanupLeaseMs).toISOString();
+   const candidates=[];
+   const queries=[
+    {status:"active",filter:"status=eq.active&expires_at=lt."+encodeURIComponent(nowIso),stale:null},
+    {status:"completing",filter:"status=eq.completing&expires_at=lt."+encodeURIComponent(nowIso)+"&completion_claimed_at=lt."+encodeURIComponent(completionCutoff),stale:"completion_claimed_at"},
+    {status:"cleanup_pending",filter:"status=eq.cleanup_pending&cleanup_claimed_at=lt."+encodeURIComponent(cleanupCutoff),stale:"cleanup_claimed_at"}
+   ];
+   for(const query of queries){
+    if(candidates.length>=limit)break;
+    const remaining=limit-candidates.length;
+    const rows=await request("asset_multipart_upload_sessions?select=*&"+query.filter+"&order=expires_at.asc&limit="+remaining);
+    if(!Array.isArray(rows))throw new Error("B2 multipart cleanup candidate query returned an invalid response.");
+    for(const row of rows){
+     const id=validUuid(row.id,"session ID");
+     const claimFilter="id=eq."+encodeURIComponent(id)+"&status=eq."+query.status+
+      (query.status==="active"?"&expires_at=lt."+encodeURIComponent(nowIso):
+       query.status==="completing"?"&expires_at=lt."+encodeURIComponent(nowIso)+"&completion_claimed_at=lt."+encodeURIComponent(completionCutoff):
+       "&cleanup_claimed_at=lt."+encodeURIComponent(cleanupCutoff));
+     const claimed=await request("asset_multipart_upload_sessions?"+claimFilter,{method:"PATCH",body:{status:"cleanup_pending",cleanup_claimed_at:nowIso,updated_at:nowIso},prefer:"return=representation"});
+     if(Array.isArray(claimed)&&claimed.length===1)candidates.push({...normalizeSession(claimed[0]),cleanupClaimedAt:claimed[0].cleanup_claimed_at});
+     if(candidates.length>=limit)break;
+    }
+   }
+   return candidates;
+  },
   async markCompleted({ownerId,sessionId}={}){
    ownerId=validUuid(ownerId,"owner ID");sessionId=validUuid(sessionId,"session ID");
    const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.completing",{method:"PATCH",body:{status:"completed",completed_at:clock().toISOString(),updated_at:clock().toISOString()},prefer:"return=representation"});
@@ -130,7 +163,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
   async markAborted({ownerId,sessionId,expired=false}={}){
    ownerId=validUuid(ownerId,"owner ID");sessionId=validUuid(sessionId,"session ID");
    const status=expired?"expired":"aborted",now=clock().toISOString();
-   const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(active,completing)",{method:"PATCH",body:{status,aborted_at:now,updated_at:now},prefer:"return=representation"});
+   const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(active,completing,cleanup_pending)",{method:"PATCH",body:{status,aborted_at:now,updated_at:now},prefer:"return=representation"});
    return Array.isArray(changed)&&changed.length===1;
   }
  });
