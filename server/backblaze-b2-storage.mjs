@@ -438,6 +438,71 @@ export function createBackblazeB2Storage({
       return { ready: true, storage: "private", provider: "backblaze-b2", bucket: bucketName };
     },
 
+    /**
+     * Stream a completed private object through a server-side SHA-256 verifier.
+     * No object bytes or provider URL are returned to the caller.
+     */
+    async verifyObject(objectPath, { expectedSize, expectedSha256, contentType = null, signal = null } = {}) {
+      const path = safeObjectPath(objectPath);
+      if (!Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > maxBytes) {
+        throw new Error("B2 object verification size is invalid.");
+      }
+      if (!/^[a-f0-9]{64}$/i.test(String(expectedSha256 || ""))) {
+        throw new Error("B2 object verification SHA-256 is invalid.");
+      }
+      if (contentType !== null && !MIME_TYPES.has(contentType)) {
+        throw new Error("B2 object verification media type is invalid.");
+      }
+      const controller = new AbortController();
+      const combinedSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await request("GET", objectUrl(path), { signal: combinedSignal });
+        const rawLength = response.headers?.get?.("content-length");
+        if (rawLength !== null && rawLength !== undefined && (!/^\d+$/.test(String(rawLength)) || Number(rawLength) !== expectedSize)) {
+          throw Object.assign(new Error("B2 completed object length does not match the upload reservation."), { code: "B2_OBJECT_SIZE_MISMATCH" });
+        }
+        const returnedType = String(response.headers?.get?.("content-type") || "").split(";")[0].trim().toLowerCase();
+        if (contentType && returnedType !== contentType) {
+          throw Object.assign(new Error("B2 completed object media type does not match the upload reservation."), { code: "B2_OBJECT_MEDIA_TYPE_MISMATCH" });
+        }
+        if (!response.body || typeof response.body[Symbol.asyncIterator] !== "function") {
+          throw Object.assign(new Error("B2 completed object response has no readable body."), { code: "B2_OBJECT_BODY_MISSING" });
+        }
+        const hash = createHash("sha256");
+        let size = 0;
+        for await (const chunk of response.body) {
+          if (signal?.aborted) {
+            const cancelled = new Error("B2 object verification was cancelled.");
+            cancelled.code = "B2_STORAGE_ABORTED";
+            throw cancelled;
+          }
+          size += chunk.length;
+          if (size > expectedSize || size > maxBytes) {
+            throw Object.assign(new Error("B2 completed object exceeds its reserved size."), { code: "B2_OBJECT_SIZE_MISMATCH" });
+          }
+          hash.update(chunk);
+        }
+        const sha256 = hash.digest("hex");
+        if (size !== expectedSize) {
+          throw Object.assign(new Error("B2 completed object length does not match the upload reservation."), { code: "B2_OBJECT_SIZE_MISMATCH" });
+        }
+        if (sha256 !== String(expectedSha256).toLowerCase()) {
+          throw Object.assign(new Error("B2 completed object SHA-256 does not match the upload reservation."), { code: "B2_OBJECT_SHA256_MISMATCH" });
+        }
+        return { bucket: bucketName, path: objectPath, size, sha256, contentType: returnedType || contentType };
+      } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) {
+          const timeout = new Error("B2 object verification timed out.");
+          timeout.code = "B2_STORAGE_TIMEOUT";
+          throw timeout;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
     async upload(objectPath, bytes, contentType) {
       const path = safeObjectPath(objectPath);
       if (!MIME_TYPES.has(contentType)) throw new Error("Unsupported B2 media content type.");

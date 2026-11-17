@@ -13,11 +13,12 @@ const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal",quotaError=null,storageUsageResponse=[{global_bytes:4,global_asset_count:1,owner_bytes:4,owner_asset_count:1,max_total_bytes:786432000,max_owner_bytes:536870912,remaining_total_bytes:786431996,remaining_owner_bytes:536870908}]}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,verifiedObjectReceipt=null,verifiedObjectError=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal",quotaError=null,storageUsageResponse=[{global_bytes:4,global_asset_count:1,owner_bytes:4,owner_asset_count:1,max_total_bytes:786432000,max_owner_bytes:536870912,remaining_total_bytes:786431996,remaining_owner_bytes:536870908}]}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError,deletePatchAttempted=false;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return uploadFileReceipt||{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
+  async verifyObject(path,options={}){storageCalls.push({op:"verifyObject",path,options});if(verifiedObjectError)throw verifiedObjectError;return verifiedObjectReceipt||{bucket:"executive-visuals-media",path,size:options.expectedSize,sha256:options.expectedSha256,contentType:options.contentType};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeFails)throw new Error("storage cleanup unavailable");return true;}
  };
@@ -74,6 +75,49 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
  };
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;},get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
 }
+
+test("registers an independently verified private object without uploading the source a second time",async()=>{
+ const f=fixture();
+ const sha256=createHash("sha256").update(bytes).digest("hex");
+ const asset=await f.repo.registerVerifiedObject({
+  ownerId,projectId,assetId,originalName:"final cut.mp4",mediaType:"video/mp4",
+  size:bytes.length,sha256,metadata:{role:"master"}
+ });
+ assert.equal(asset.id,assetId);
+ assert.equal(asset.name,"final cut.mp4");
+ assert.equal(asset.size,bytes.length);
+ assert.equal(asset.sha256,sha256);
+ const verified=f.storageCalls.find(call=>call.op==="verifyObject");
+ assert.ok(verified);
+ assert.equal(verified.path,projectId+"/"+assetId+"/original.mp4");
+ assert.equal(verified.options.expectedSize,bytes.length);
+ assert.equal(verified.options.expectedSha256,sha256);
+ assert.equal(f.storageCalls.some(call=>call.op==="upload"||call.op==="uploadFile"),false);
+ const inserted=f.calls.find(call=>call.url.includes("/assets?")&&call.options.method==="POST");
+ assert.ok(inserted);
+ const body=JSON.parse(inserted.options.body);
+ assert.equal(body.id,assetId);
+ assert.equal(body.object_path,verified.path);
+ assert.equal(body.sha256,sha256);
+});
+
+test("does not publish asset metadata when independent private-object verification fails",async()=>{
+ const f=fixture({verifiedObjectError:Object.assign(new Error("checksum mismatch"),{code:"B2_OBJECT_SHA256_MISMATCH"})});
+ await assert.rejects(()=>f.repo.registerVerifiedObject({
+  ownerId,projectId,assetId,originalName:"final cut.mp4",mediaType:"video/mp4",
+  size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex"),metadata:{role:"master"}
+ }),error=>error.code==="B2_OBJECT_SHA256_MISMATCH");
+ assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false);
+});
+
+test("rejects a storage verification receipt that does not match the reserved object identity",async()=>{
+ const f=fixture({verifiedObjectReceipt:{bucket:"public-bucket",path:"other/path",size:4,sha256:"a".repeat(64),contentType:"video/mp4"}});
+ await assert.rejects(()=>f.repo.registerVerifiedObject({
+  ownerId,projectId,assetId,originalName:"final cut.mp4",mediaType:"video/mp4",
+  size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex"),metadata:{role:"master"}
+ }),error=>error.code==="CLOUD_STORAGE_OBJECT_VERIFICATION_MISMATCH");
+ assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false);
+});
 
 test("returns validated global and owner storage usage from the private quota RPC",async()=>{
  const f=fixture();
