@@ -45,7 +45,7 @@ test("cloud upload queue never exceeds its configured concurrency and reports ev
 test("cloud upload queue reports byte-level progress and final completion",async()=>{
   const updates=[];
   const results=await runCloudUploadQueue([item("1","progress.mp4")],async(value,_signal,onProgress)=>{
-    onProgress(25,value.size/2);
+    onProgress(value.size/2,value.size);
     onProgress(value.size,value.size);
   },{signal:new AbortController().signal,onUpdate:value=>updates.push(value)});
   assert.equal(results[0].status,"succeeded");
