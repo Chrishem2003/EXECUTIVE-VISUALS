@@ -19,7 +19,7 @@ test("cloud upload preflight accepts supported media and rejects empty, oversize
   ]);
   assert.deepEqual(result.accepted.map(x=>x.name),["clip.mp4"]);
   assert.equal(result.rejected.length,3);
-  assert.match(result.rejected[1].reason,/250 MiB/);
+  assert.match(result.rejected[1].reason,/50 MiB/);
 });
 
 test("cloud upload preflight bounds a selection to 50 files without silently dropping overflow",()=>{
