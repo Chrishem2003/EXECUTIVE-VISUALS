@@ -544,6 +544,33 @@ export function createBackblazeB2Storage({
       return { bucket: bucketName, path: objectPath, size: file.size, sha256: file.sha256, contentType, multipart: false };
     },
 
+    async createMultipartPartSignedUrl(objectPath, uploadId, partNumber, expiresIn = 300) {
+      const path = safeObjectPath(objectPath);
+      if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) ||
+          !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+        throw new Error("B2 multipart signed-part request is invalid.");
+      }
+      if (!Number.isInteger(expiresIn) || expiresIn < 30 || expiresIn > 900) {
+        throw new Error("B2 multipart signed-part expiry must be between 30 and 900 seconds.");
+      }
+      const { amzDate, date } = timestamp();
+      const scope = date + "/" + signingRegion + "/s3/aws4_request";
+      const query = new Map([
+        ["partNumber", String(partNumber)],
+        ["uploadId", String(uploadId)],
+        ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+        ["X-Amz-Credential", keyId + "/" + scope],
+        ["X-Amz-Date", amzDate],
+        ["X-Amz-Expires", String(expiresIn)],
+        ["X-Amz-SignedHeaders", "host"]
+      ]);
+      const canonical = canonicalQuery(query);
+      const canonicalRequest = ["PUT", bucketPath + "/" + path, canonical, "host:" + host + "\n", "host", "UNSIGNED-PAYLOAD"].join("\n");
+      const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, createHash("sha256").update(canonicalRequest).digest("hex")].join("\n");
+      query.set("X-Amz-Signature", hmac(signingKey(secret, date, signingRegion), stringToSign, "hex"));
+      return base + bucketPath + "/" + path + "?" + canonicalQuery(query);
+    },
+
     async createSignedUrl(objectPath, expiresIn = 300) {
       const path = safeObjectPath(objectPath);
       if (!Number.isInteger(expiresIn) || expiresIn < 30 || expiresIn > 3600) {
