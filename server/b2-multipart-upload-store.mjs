@@ -49,6 +49,8 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
   async create(input={}){
    const ownerId=validUuid(input.ownerId,"owner ID"),projectId=input.projectId?validUuid(input.projectId,"project ID"):null,assetId=validUuid(input.assetId,"asset ID");
    const objectPath=validPath(input.objectPath);
+   const pathParts=objectPath.split("/");
+   if(pathParts[0]!== (projectId||ownerId) || pathParts[1]!==assetId)throw new TypeError("Multipart object path must be bound to the verified owner/project and reserved asset ID.");
    if(!input.idempotencyKey||String(input.idempotencyKey).length>200)throw new TypeError("Multipart idempotency key is invalid.");
    if(!/^[A-Za-z0-9_-]{8,512}$/.test(String(input.uploadId||"")))throw new TypeError("B2 multipart upload ID is invalid.");
    if(!SHA256.test(String(input.sha256||"")))throw new TypeError("Multipart source SHA-256 is invalid.");
@@ -60,7 +62,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
    const saved=Array.isArray(created)?created[0]:null;
    const existing=saved||await (async()=>{const rows=await request("asset_multipart_upload_sessions?select=*&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(row.idempotency_key)+"&limit=1");return Array.isArray(rows)?rows[0]||null:null;})();
    if(!existing)throw new Error("Multipart session could not be persisted.");
-   for(const key of ["asset_id","project_id","object_path","upload_id","source_sha256","byte_size","part_size","part_count"])if((existing[key]??null)!==(row[key]??null))throw Object.assign(new Error("Multipart idempotency key is already bound to different upload data."),{code:"B2_MULTIPART_IDEMPOTENCY_CONFLICT"});
+   for(const key of ["asset_id","project_id","object_path","upload_id","original_name","media_type","source_sha256","byte_size","part_size","part_count","storage_bucket","storage_provider"])if((existing[key]??null)!==(row[key]??null))throw Object.assign(new Error("Multipart idempotency key is already bound to different upload data."),{code:"B2_MULTIPART_IDEMPOTENCY_CONFLICT"});
    return normalizeSession(existing);
   },
   async get({ownerId,sessionId}={}){
