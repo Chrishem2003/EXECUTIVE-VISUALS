@@ -32,7 +32,7 @@ function fixture({authorize=async()=>true,existing=null,providerParts=null,verif
  const api=createB2MultipartUploadApi({storage,store,assets,authorize,maxBytes:100_000_000,partSize:5_000_000});
  return{api,calls,get session(){return session;},get parts(){return parts;}};
 }
-const startInput={ownerId,projectId,body:{projectId,originalName:"scene.mp4",mediaType:"video/mp4",size:6_000_000,sha256},idempotencyKey:"upload-key-0001"};
+const startInput={ownerId,projectId,body:{projectId,originalName:"scene.mp4",mediaType:"video/mp4",size:6_000_000,sha256:sha},idempotencyKey:"upload-key-0001"};
 
 test("starts an authorized B2 multipart session and keeps provider upload IDs private",async()=>{
  const f=fixture();
@@ -61,9 +61,9 @@ test("returns a scoped presigned URL and validates the exact part receipt size",
  assert.equal(url.status,200);
  assert.equal(url.body.url,"https://b2.example/signed?part=2");
  assert.equal("uploadId" in url.body,false);
- const bad=await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256,size:5_000_000}});
+ const bad=await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:5_000_000}});
  assert.equal(bad.status,400);
- const good=await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256,size:1_000_000}});
+ const good=await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
  assert.equal(good.status,200);
 });
 
@@ -71,8 +71,8 @@ test("reconciles provider parts, verifies the completed object, and only then pu
  const f=fixture({verifyInitially:true});
  await f.api.start(startInput);
  const id=f.session.id;
- await f.api.recordPart({ownerId,sessionId:id,partNumber:1,body:{etag:etag1,sha256,size:5_000_000}});
- await f.api.recordPart({ownerId,sessionId:id,partNumber:2,body:{etag:etag2,sha256,size:1_000_000}});
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
  const result=await f.api.complete({ownerId,sessionId:id});
  assert.equal(result.status,200);
  assert.equal(result.body.asset.id,f.session.assetId);
@@ -84,8 +84,8 @@ test("reconciles provider parts, verifies the completed object, and only then pu
 test("recovers an already completed provider object without completing the multipart upload twice",async()=>{
  const f=fixture({verifyInitially:false});
  await f.api.start(startInput);
- await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256,size:5_000_000}});
- await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256,size:1_000_000}});
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
  const result=await f.api.complete({ownerId,sessionId:f.session.id});
  assert.equal(result.status,200);
  assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,0);
@@ -98,8 +98,8 @@ test("does not publish metadata when provider part reconciliation fails",async()
  const f=fixture({verifyInitially:true,providerParts:[{partNumber:1,etag:"c".repeat(32),size:5_000_000},{partNumber:2,etag:etag2,size:1_000_000}]});
  await f.api.start(startInput);
  const id=f.session.id;
- await f.api.recordPart({ownerId,sessionId:id,partNumber:1,body:{etag:etag1,sha256,size:5_000_000}});
- await f.api.recordPart({ownerId,sessionId:id,partNumber:2,body:{etag:etag2,sha256,size:1_000_000}});
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
  const result=await f.api.complete({ownerId,sessionId:id});
  assert.equal(result.status,502);
  assert.equal(f.calls.assets.length,0);
