@@ -1,5 +1,5 @@
 export const MAX_CLOUD_UPLOAD_FILES = 50;
-export const MAX_CLOUD_UPLOAD_BYTES = 250 * 1024 * 1024;
+export const MAX_CLOUD_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_CLOUD_UPLOAD_CONCURRENCY = 3;
 
 const ALLOWED_TYPES = new Set([
