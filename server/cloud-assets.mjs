@@ -310,13 +310,13 @@ export function createCloudAssetRepository({
       ownerId=validUuid(ownerId,"owner ID");
       const rows=await request("rpc/get_asset_storage_usage",{method:"POST",body:{p_owner_id:ownerId}});
       const row=Array.isArray(rows)?rows[0]:null;
-      if(!row)throw new Error("Cloud asset storage usage returned no authoritative quota record.");
+      if(!row){const error=new Error("Cloud asset storage quota configuration is missing.");error.code="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING";throw error;}
       const fields=["global_bytes","global_asset_count","owner_bytes","owner_asset_count","max_total_bytes","max_owner_bytes","remaining_total_bytes","remaining_owner_bytes"];
       const values=Object.fromEntries(fields.map(key=>[key,Number(row[key])]));
       if(fields.some(key=>!Number.isSafeInteger(values[key])||values[key]<0)||
          values.remaining_total_bytes!==Math.max(0,values.max_total_bytes-values.global_bytes)||
          values.remaining_owner_bytes!==Math.max(0,values.max_owner_bytes-values.owner_bytes)) {
-        throw new Error("Cloud asset storage usage returned an invalid quota record.");
+        throw Object.assign(new Error("Cloud asset storage usage returned an invalid quota record."),{code:"CLOUD_ASSET_STORAGE_USAGE_INVALID"});
       }
       return {
         globalBytes:values.global_bytes,globalAssetCount:values.global_asset_count,
