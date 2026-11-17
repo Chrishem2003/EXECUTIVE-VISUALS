@@ -279,11 +279,15 @@ export function createRunwayCloudVideoAdapter({
     },
 
     ...(selectedModel === "veo3.1" || selectedModel === "veo3.1_fast" ? {
-      async preflight(input) {
-        const requestPlan = buildVeoRequest(input);
-        await assertActualCostReady();
-        const duration = requestPlan.duration;
-        const audio = requestPlan.audio;
+      async preflight(input = {}) {
+        const duration = input.durationSeconds;
+        if (![4, 6, 8].includes(duration)) throw fail("Veo duration must be 4, 6 or 8 seconds.", "RUNWAY_INPUT_INVALID");
+        const resolution = input.resolution || "720p";
+        if (!["720p", "1080p"].includes(resolution) || (resolution === "1080p" && duration !== 8)) {
+          throw fail("Veo 1080p output is available only for 8-second clips.", "RUNWAY_INPUT_INVALID");
+        }
+        if (input.audio !== undefined && typeof input.audio !== "boolean") throw fail("Veo audio must be a boolean.", "RUNWAY_INPUT_INVALID");
+        const audio = input.audio !== false;
         const creditsPerSecond = selectedModel === "veo3.1"
           ? (audio ? 40 : 20)
           : (audio ? 15 : 10);
@@ -366,6 +370,7 @@ export function createRunwayCloudVideoAdapter({
       }
       if (selectedModel === "veo3.1" || selectedModel === "veo3.1_fast") {
         const requestPlan = buildVeoRequest(input);
+        await assertActualCostReady();
         const submitted = await request(requestPlan.endpoint, { method: "POST", submission: true, body: requestPlan.body });
         return { taskId: taskId(submitted.id), status: "queued", metadata: { submittedAt: new Date().toISOString() } };
       }
