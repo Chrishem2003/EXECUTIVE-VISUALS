@@ -35,8 +35,13 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
  }
  function publicSession(session){
   if(!session)return null;
-  const {uploadId,ownerId,...safe}=session;
-  return safe;
+  return {
+   id:session.id,assetId:session.assetId,projectId:session.projectId||null,
+   originalName:session.originalName,mediaType:session.mediaType,size:session.size,
+   sha256:session.sha256,partSize:session.partSize,partCount:session.partCount,
+   status:session.status,expiresAt:session.expiresAt,createdAt:session.createdAt,updatedAt:session.updatedAt,
+   parts:Array.isArray(session.parts)?session.parts.map(part=>({partNumber:part.partNumber,etag:part.etag,sha256:part.sha256,size:part.size,recordedAt:part.recordedAt})):undefined
+  };
  }
  function statusFor(error){
   const code=error?.code||"B2_MULTIPART_UPLOAD_FAILED";
