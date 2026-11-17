@@ -223,6 +223,14 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(200,{review});
     }
    }
+   if(path==="/api/cloud/assets/usage"&&method==="GET"){
+    if(typeof service.assets.getStorageUsage!=="function")return response(503,{error:{code:"CLOUD_ASSET_QUOTA_UNAVAILABLE",message:"Storage quota reporting is not configured."}});
+    const snapshot=await service.assets.getStorageUsage({ownerId});
+    return response(200,{usage:{
+     usedBytes:snapshot.ownerBytes,assetCount:snapshot.ownerAssetCount,
+     limitBytes:snapshot.maxOwnerBytes,remainingBytes:snapshot.remainingOwnerBytes
+    }});
+   }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
@@ -770,6 +778,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
+   if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING"||error.code==="CLOUD_ASSET_STORAGE_USAGE_INVALID")return response(503,{error:{code:"CLOUD_ASSET_QUOTA_UNAVAILABLE",message:"Private media storage quota is not ready."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    if(error.code==="CLOUD_TIMELINE_NOT_FOUND")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
@@ -789,6 +798,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }
   const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
   if(!Array.isArray(leaseColumns))throw new Error("Cloud timeline API readiness check failed for worker lease and cancellation columns.");
+  const quota=await request("rpc/get_asset_storage_usage",{method:"POST",body:{p_owner_id:"00000000-0000-4000-8000-000000000000"}});
+  const quotaRow=Array.isArray(quota)?quota[0]:null;
+  if(!quotaRow||!Number.isSafeInteger(Number(quotaRow.max_total_bytes))||Number(quotaRow.max_total_bytes)<1||
+     !Number.isSafeInteger(Number(quotaRow.max_owner_bytes))||Number(quotaRow.max_owner_bytes)<1)
+   throw new Error("Cloud timeline API readiness check failed for private asset storage quotas.");
   if(typeof service.storage?.checkReadiness==="function"){
    await service.storage.checkReadiness();
   }else{
@@ -838,6 +852,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    return response(201,{asset});
   }catch(error){
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
+   if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"||error.code==="CLOUD_ASSET_OWNER_QUOTA_EXCEEDED")return response(507,{error:{code:error.code,message:"Private media storage quota has been reached."}});
+   if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING")return response(503,{error:{code:error.code,message:"Private media storage quota is not configured."}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED"||error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    throw error;
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}

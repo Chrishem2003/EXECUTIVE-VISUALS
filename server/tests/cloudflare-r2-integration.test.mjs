@@ -99,7 +99,7 @@ test("cloud timeline readiness delegates the private-bucket check to the configu
     serviceRoleKey: "server-only-test-value",
     fetchImpl: async url => {
       calls.push(String(url));
-      return { ok: true, status: 200, async text() { return "[]"; } };
+      return { ok: true, status: 200, async text() { return String(url).endsWith("/rpc/get_asset_storage_usage") ? JSON.stringify([{ max_total_bytes: 786432000, max_owner_bytes: 536870912 }]) : "[]"; } };
     },
     timelineService: {
       projects: {},

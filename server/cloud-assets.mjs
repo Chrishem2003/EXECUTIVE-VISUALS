@@ -73,8 +73,13 @@ export function createCloudAssetRepository({
       let data=null;
       if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Cloud asset service returned an invalid response.");}}
       if(!response.ok){
-        const error=new Error("Cloud asset metadata request failed (HTTP "+response.status+").");
-        error.code="CLOUD_ASSET_HTTP_"+response.status;error.status=response.status;throw error;
+        const message=typeof data?.message==="string"?data.message:"";
+        const quotaCode=["CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED","CLOUD_ASSET_OWNER_QUOTA_EXCEEDED","CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING"].find(code=>message.includes(code));
+        const error=new Error(quotaCode||"Cloud asset metadata request failed (HTTP "+response.status+").");
+        error.code=quotaCode||"CLOUD_ASSET_HTTP_"+response.status;
+        error.status=response.status;
+        if(data?.details||data?.detail)error.detail=data.details||data.detail;
+        throw error;
       }
       return data;
     } catch(error) {
@@ -300,6 +305,25 @@ export function createCloudAssetRepository({
       const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+"&deleted_at=is.null&order=created_at.desc&limit="+limit+"&offset="+offset);
       return (Array.isArray(rows)?rows:[]).map(publicAsset);
+    },
+    async getStorageUsage({ownerId}={}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      const rows=await request("rpc/get_asset_storage_usage",{method:"POST",body:{p_owner_id:ownerId}});
+      const row=Array.isArray(rows)?rows[0]:null;
+      if(!row){const error=new Error("Cloud asset storage quota configuration is missing.");error.code="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING";throw error;}
+      const fields=["global_bytes","global_asset_count","owner_bytes","owner_asset_count","max_total_bytes","max_owner_bytes","remaining_total_bytes","remaining_owner_bytes"];
+      const values=Object.fromEntries(fields.map(key=>[key,Number(row[key])]));
+      if(fields.some(key=>!Number.isSafeInteger(values[key])||values[key]<0)||
+         values.remaining_total_bytes!==Math.max(0,values.max_total_bytes-values.global_bytes)||
+         values.remaining_owner_bytes!==Math.max(0,values.max_owner_bytes-values.owner_bytes)) {
+        throw Object.assign(new Error("Cloud asset storage usage returned an invalid quota record."),{code:"CLOUD_ASSET_STORAGE_USAGE_INVALID"});
+      }
+      return {
+        globalBytes:values.global_bytes,globalAssetCount:values.global_asset_count,
+        ownerBytes:values.owner_bytes,ownerAssetCount:values.owner_asset_count,
+        maxTotalBytes:values.max_total_bytes,maxOwnerBytes:values.max_owner_bytes,
+        remainingTotalBytes:values.remaining_total_bytes,remainingOwnerBytes:values.remaining_owner_bytes
+      };
     },
     async get({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
