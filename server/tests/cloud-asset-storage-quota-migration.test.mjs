@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const migration = readFileSync(new URL("../../supabase/migrations/20261117100000_add_cloud_asset_storage_quotas.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../../supabase/migrations/20261117093508_add_cloud_asset_storage_quotas.sql", import.meta.url), "utf8");
 
 test("storage quota config starts below the Supabase free storage allowance", () => {
   assert.match(migration, /values\s*\(true\s*,\s*786432000\s*,\s*536870912\)/i);
