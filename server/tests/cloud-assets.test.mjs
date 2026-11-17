@@ -13,7 +13,7 @@ const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal"}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null,deletePatchMode="normal",quotaError=null,storageUsageResponse=[{global_bytes:4,global_asset_count:1,owner_bytes:4,owner_asset_count:1,max_total_bytes:786432000,max_owner_bytes:536870912,remaining_total_bytes:786431996,remaining_owner_bytes:536870908}]}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null,removeFails=removeError,deletePatchAttempted=false;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
@@ -24,6 +24,8 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
  const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z",deleted_at:null};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
+  if(url.includes("/rpc/get_asset_storage_usage"))return response(storageUsageResponse);
+  if(url.includes("/assets?")&&options.method==="POST"&&quotaError)return response({message:quotaError,details:"configured storage cap reached"},400);
   if(url.includes("/asset_storage_cleanup")){
    if(options.method==="POST")return response([{id:"cleanup-1",...JSON.parse(options.body)}]);
    if(options.method==="PATCH")return response([{id:"cleanup-1"}]);
@@ -72,6 +74,20 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
  };
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;},get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
 }
+
+test("returns validated global and owner storage usage from the private quota RPC",async()=>{
+ const f=fixture();
+ const usage=await f.repo.getStorageUsage({ownerId});
+ assert.deepEqual(usage,{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908});
+ assert.ok(f.calls[0].url.endsWith("/rpc/get_asset_storage_usage"));
+ assert.deepEqual(JSON.parse(f.calls[0].options.body),{p_owner_id:ownerId});
+});
+
+test("preserves database storage quota errors and compensates the uploaded object",async()=>{
+ const f=fixture({quotaError:"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"over-quota.mp4",mediaType:"video/mp4",bytes}),error=>error.code==="CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED");
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["upload","remove"]);
+});
 
 test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
  let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
