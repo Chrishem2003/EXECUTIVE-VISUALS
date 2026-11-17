@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
+import { CLOUD_MEDIA_JOB_TYPES } from "./cloud-media-job-types.mjs";
 import { buildMediaOperationArgs, executableAvailable, buildAudioMasterAnalysisArgs, parseAudioMasterMeasurement, buildAudioMasterRenderArgs } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
@@ -22,11 +23,7 @@ export function aiUpscaleMediaType(format) {
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
-const SUPPORTED = new Set([
-  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.audio-master", "media.audio_replace",
-  "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
-]);
+const SUPPORTED = new Set(CLOUD_MEDIA_JOB_TYPES);
 
 function parseInput(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) return value;
