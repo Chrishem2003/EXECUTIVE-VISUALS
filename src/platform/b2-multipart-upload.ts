@@ -122,6 +122,7 @@ export async function uploadCloudAssetResumable(
   session = refreshed.session;
   const completed = new Map((session.parts || []).map(part => [part.partNumber, part]));
   let uploadedBytes = 0;
+  try {
   for (let partNumber = 1; partNumber <= session.partCount; partNumber++) {
     if (signal.aborted) throw new Error("Upload cancelled.");
     const start = (partNumber - 1) * session.partSize;
@@ -144,6 +145,14 @@ export async function uploadCloudAssetResumable(
     });
     uploadedBytes += chunk.size;
     onProgress(uploadedBytes, file.size);
+  }
+  } catch (error) {
+    if (signal.aborted) {
+      await apiRequest("/api/cloud/uploads/" + encodeURIComponent(session.id) + "/abort", { method: "POST" }).catch(() => {});
+      removeResumeRecord(key);
+      throw new Error("Upload cancelled.");
+    }
+    throw error;
   }
   if (signal.aborted) {
     await apiRequest("/api/cloud/uploads/" + encodeURIComponent(session.id) + "/abort", { method: "POST" }).catch(() => {});
