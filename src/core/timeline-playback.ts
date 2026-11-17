@@ -75,8 +75,8 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
         const index=enabledVideoClips.findIndex(item=>item.id===clip.id),previous=enabledVideoClips[index-1];
         const incomingTransition=previous?.transitionToNext;
         const outgoingTransition=clip.transitionToNext;
-        const fadeIn=incomingTransition&&(incomingTransition.type==="dip-to-black"||incomingTransition.type==="crossfade")?incomingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
-        const fadeOut=outgoingTransition&&(outgoingTransition.type==="dip-to-black"||outgoingTransition.type==="crossfade")?outgoingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeIn=incomingTransition&&(incomingTransition.type==="dip-to-black"||incomingTransition.type==="crossfade"||["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(incomingTransition.type))?incomingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeOut=outgoingTransition&&(outgoingTransition.type==="dip-to-black"||outgoingTransition.type==="crossfade"||["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(outgoingTransition.type))?outgoingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
         if(fadeIn>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(safeTime-start)/fadeIn)));
         if(fadeOut>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(end-safeTime)/fadeOut)));
       }
