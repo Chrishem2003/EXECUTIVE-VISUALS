@@ -6,7 +6,7 @@ import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24}}={}){
+function setup({canWrite=true,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24},quotaError=null}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocument,otio:null};
  const timelines={
