@@ -35,7 +35,7 @@ export function validateTimelineDocument(timeline,db,ownerId){
     const fadeFrames=Number(transition?.fadeFrames),fadeSeconds=fadeFrames/fps;
     const supportedVideo=["crossfade","wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"];
     const supported=track.kind==="video"?supportedVideo.includes(String(transition?.type)):track.kind==="audio"&&transition?.type==="crossfade";
-    if(!supported||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||Math.abs(start-(seconds(previous.timelineStart)+seconds(previous.duration)-fadeSeconds))>0.5/fps)
+    if(!previous||!supported||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||Math.abs(start-(seconds(previous.timelineStart)+seconds(previous.duration)-fadeSeconds))>0.5/fps)
      issues.push("Clips overlap on the same track only when a supported video transition or audio crossfade matches the exact overlap.");
    }
    if(Number.isFinite(start)&&Number.isFinite(duration))end=Math.max(end,start+duration);
