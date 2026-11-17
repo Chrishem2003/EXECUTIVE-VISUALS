@@ -111,10 +111,10 @@ test("reclaims a stale completion claim after a worker restart using compare-and
  const session=await store.create(createInput());
  await store.recordPart({ownerId,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000});
  await store.recordPart({ownerId,sessionId:session.id,partNumber:2,etag:etag2,sha256:"f".repeat(64),size:5_000_000});
- assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:true,reason:"claimed"});
+ assert.deepEqual(await store.claimCompletion({ownerId:owner,sessionId:session.id}),{claimed:true,reason:"claimed"});
  const firstClaim=sessions[0].completion_claimed_at;
  advance(5*60*1000+1);
- assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:true,reason:"reclaimed_stale_completion"});
+ assert.deepEqual(await store.claimCompletion({ownerId:owner,sessionId:session.id}),{claimed:true,reason:"reclaimed_stale_completion"});
  assert.notEqual(sessions[0].completion_claimed_at,firstClaim);
  assert.equal(sessions[0].status,"completing");
 });
@@ -124,9 +124,9 @@ test("does not reclaim a completion claim before its lease expires",async()=>{
  const session=await store.create(createInput());
  await store.recordPart({ownerId,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000});
  await store.recordPart({ownerId,sessionId:session.id,partNumber:2,etag:etag2,sha256:"f".repeat(64),size:5_000_000});
- await store.claimCompletion({ownerId,sessionId:session.id});
+ await store.claimCompletion({ownerId:owner,sessionId:session.id});
  advance(5*60*1000-1);
- assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:false,reason:"already_completing"});
+ assert.deepEqual(await store.claimCompletion({ownerId:owner,sessionId:session.id}),{claimed:false,reason:"already_completing"});
 });
 
 test("rejects unsafe completion lease durations",()=>{
