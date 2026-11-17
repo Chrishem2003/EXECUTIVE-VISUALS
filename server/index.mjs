@@ -996,7 +996,7 @@ export function createAppServer() {
       if(b2MultipartUploadApi&&path==="/api/cloud/uploads"&&req.method==="POST"){
         if(!rateAllowed("b2-upload-start:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload sessions. Try again shortly.");return;}
         const body=await readJson(req,32*1024);
-        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body?.idempotencyKey||"")});
         if(result.status<300&&result.body?.session&&!result.body.idempotentReplay)audit(db,user.id,"asset.multipart_upload_started","asset",result.body.session.assetId,{sessionId:result.body.session.id,size:result.body.session.size,mediaType:body.mediaType},body.projectId||null);
         send(res,result.status,result.body,cors);return;
       }
@@ -1004,11 +1004,26 @@ export function createAppServer() {
       if(b2MultipartUploadApi&&b2UploadSessionMatch){
         const sessionId=b2UploadSessionMatch[1],partNumber=b2UploadSessionMatch[2]?Number(b2UploadSessionMatch[2]):null,action=b2UploadSessionMatch[3]||path.split("/").at(-1);
         let result;
-        if(req.method==="GET"&&path==="/api/cloud/uploads/"+sessionId)result=await b2MultipartUploadApi.getSession({ownerId:user.id,sessionId});
-        else if(req.method==="POST"&&action==="url"&&partNumber!==null)result=await b2MultipartUploadApi.partUrl({ownerId:user.id,sessionId,partNumber});
-        else if(req.method==="POST"&&action==="receipt"&&partNumber!==null){const body=await readJson(req,12*1024);result=await b2MultipartUploadApi.recordPart({ownerId:user.id,sessionId,partNumber,body});}
-        else if(req.method==="POST"&&action==="complete"){result=await b2MultipartUploadApi.complete({ownerId:user.id,sessionId});if(result.status<300&&result.body?.asset)audit(db,user.id,"asset.multipart_upload_completed","asset",result.body.asset.id,{sessionId,sha256:result.body.asset.sha256,size:result.body.asset.size},result.body.asset.projectId);}
-        else if(req.method==="POST"&&action==="abort")result=await b2MultipartUploadApi.abort({ownerId:user.id,sessionId});
+        if(req.method==="GET"&&path==="/api/cloud/uploads/"+sessionId){
+          if(!rateAllowed("b2-upload-session-read:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many upload-session reads. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.getSession({ownerId:user.id,sessionId});
+        }
+        else if(req.method==="POST"&&action==="url"&&partNumber!==null){
+          if(!rateAllowed("b2-upload-part-url:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many part URL requests. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.partUrl({ownerId:user.id,sessionId,partNumber});
+        }
+        else if(req.method==="POST"&&action==="receipt"&&partNumber!==null){
+          if(!rateAllowed("b2-upload-part-receipt:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many part receipts. Try again shortly.");return;}
+          const body=await readJson(req,12*1024);result=await b2MultipartUploadApi.recordPart({ownerId:user.id,sessionId,partNumber,body});
+        }
+        else if(req.method==="POST"&&action==="complete"){
+          if(!rateAllowed("b2-upload-complete:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload completion attempts. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.complete({ownerId:user.id,sessionId});if(result.status<300&&result.body?.asset)audit(db,user.id,"asset.multipart_upload_completed","asset",result.body.asset.id,{sessionId,sha256:result.body.asset.sha256,size:result.body.asset.size},result.body.asset.projectId);
+        }
+        else if(req.method==="POST"&&action==="abort"){
+          if(!rateAllowed("b2-upload-abort:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload cancellation attempts. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.abort({ownerId:user.id,sessionId});
+        }
         else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
         send(res,result.status,result.body,cors);return;
       }
