@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createStoryboardTimeline, reflowStoryboardTimelinePlan, getStoryboardShotAssetAttachments } from "../src/core/storyboard-timeline.ts";
+import { createStoryboardTimeline, reflowStoryboardTimelinePlan, getStoryboardShotAssetAttachments, attachStoryboardShotAsset } from "../src/core/storyboard-timeline.ts";
 import { addClip, createGeneratedVideoClip, rational, validateTimeline } from "../src/core/timeline.ts";
 import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history-operations.ts";
 
@@ -45,6 +45,33 @@ assert.equal(plan.scenes[0].shots[0].status,"planned");
 
 const pendingAttachments=getStoryboardShotAssetAttachments(timeline,plan,[]);
 assert.equal(pendingAttachments.get("shot-1").status,"pending");
+const manuallyAttached=attachStoryboardShotAsset(timeline,plan,"shot-1",{
+ clipId:"manual-shot-1",assetId:"private-library-video-1",name:"Workshop take 01.mp4",
+ mediaType:"video/mp4",sourceDurationSeconds:12
+});
+const manualClip=manuallyAttached.tracks.find(track=>track.id===plan.trackIds.picture).clips[0];
+assert.equal(manualClip.timelineStart.value,0);
+assert.equal(manualClip.duration.value,300);
+assert.equal(manualClip.metadata.storyboardShotId,"shot-1");
+assert.equal(manualClip.metadata.source,"storyboard-asset-attachment");
+assert.equal(getStoryboardShotAssetAttachments(manuallyAttached,plan,["private-library-video-1"]).get("shot-1").status,"attached");
+assert.throws(()=>attachStoryboardShotAsset(timeline,plan,"shot-1",{
+ clipId:"short-source",assetId:"short-video",name:"Short.mp4",mediaType:"video/mp4",sourceDurationSeconds:2
+}),/shorter than the planned shot/);
+assert.throws(()=>attachStoryboardShotAsset(timeline,plan,"shot-1",{
+ clipId:"wrong-media",assetId:"image-1",name:"Still.png",mediaType:"image/png",sourceDurationSeconds:20
+}),/video assets only/);
+assert.throws(()=>attachStoryboardShotAsset(manuallyAttached,plan,"shot-1",{
+ clipId:"duplicate-attachment",assetId:"another-video",name:"Another.mp4",mediaType:"video/mp4",sourceDurationSeconds:20
+}),/already has a linked clip/);
+const lockedPicture={...timeline,tracks:timeline.tracks.map(track=>track.id===plan.trackIds.picture?{...track,locked:true}:track)};
+assert.throws(()=>attachStoryboardShotAsset(lockedPicture,plan,"shot-1",{
+ clipId:"locked-attachment",assetId:"video-2",name:"Video.mp4",mediaType:"video/mp4",sourceDurationSeconds:20
+}),/Unlock and enable/);
+const stalePlan={...plan,sourceInputHash:"b".repeat(64)};
+assert.throws(()=>attachStoryboardShotAsset(timeline,stalePlan,"shot-1",{
+ clipId:"stale-attachment",assetId:"video-3",name:"Video.mp4",mediaType:"video/mp4",sourceDurationSeconds:20
+}),/does not belong to the current timeline/);
 const approvedClip=createGeneratedVideoClip({
  id:"approved-shot-1",assetId:"private-asset-1",name:"Approved shot one.mp4",durationSeconds:10,
  frameRate:timeline.frameRate,startFrame:plan.scenes[0].shots[0].startFrame,
