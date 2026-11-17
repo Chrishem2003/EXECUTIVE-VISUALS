@@ -255,6 +255,8 @@ const b2MultipartAssetService=b2MultipartUploadEnabled?createCloudAssetService({
 const b2MultipartStore=b2MultipartUploadEnabled?createB2MultipartUploadStore({
  url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch
 }):null;
+const b2MultipartStoreReadiness=b2MultipartStore?await b2MultipartStore.checkReadiness():{ready:false};
+if(b2MultipartStore&&!b2MultipartStoreReadiness.ready)throw new Error("B2 multipart uploads cannot start until the durable session-ledger migration is applied.");
 const b2MultipartUploadApi=b2MultipartUploadEnabled?createB2MultipartUploadApi({
  storage:b2MultipartAssetService.storage,store:b2MultipartStore,assets:b2MultipartAssetService.assets,
  authorize:b2MultipartAuthorize,maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,
