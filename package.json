@@ -129,7 +129,7 @@
     "verify:media-batch": "node --test server/tests/media-batch.test.mjs",
     "verify:cloud-upload-queue": "node --experimental-strip-types --test server/tests/cloud-upload-queue.test.mjs",
     "verify:workflow-templates": "node --experimental-strip-types --test server/tests/workflow-templates.test.mjs",
-    "verify:b2-upload-client": "node --experimental-strip-types --test server/tests/b2-upload-client-hash.test.mjs"
+    "verify:b2-upload-client": "node --experimental-strip-types --test server/tests/b2-upload-client-hash.test.mjs server/tests/b2-part-retry.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

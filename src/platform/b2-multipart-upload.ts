@@ -1,5 +1,6 @@
 import { ApiError, apiRequest } from "../core/api";
 import { sha256Blob } from "../core/streaming-sha256";
+import { retryB2PartUpload } from "../core/b2-part-retry";
 
 type UploadSession = {
   id: string;
@@ -61,13 +62,13 @@ function putPart(url: string, blob: Blob, signal: AbortSignal, onProgress: (load
     xhr.timeout = 15 * 60 * 1000;
     xhr.upload.onprogress = event => onProgress(Math.min(blob.size, event.loaded));
     xhr.onload = () => {
-      if (xhr.status < 200 || xhr.status >= 300) { finish(new Error("B2 part upload failed (HTTP " + xhr.status + ").")); return; }
+      if (xhr.status < 200 || xhr.status >= 300) { finish(Object.assign(new Error("B2 part upload failed (HTTP " + xhr.status + ")."), { status: xhr.status, code: "B2_PART_HTTP_" + xhr.status })); return; }
       const etag = xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "";
       if (!etag) { finish(new Error("B2 did not expose the part ETag. Check the private bucket CORS ExposeHeader setting for ETag.")); return; }
       finish(undefined, etag.replace(/^"|"$/g, ""));
     };
-    xhr.onerror = () => finish(new Error("Network error while uploading a B2 part. Retry to resume."));
-    xhr.ontimeout = () => finish(new Error("B2 part upload timed out. Retry to resume."));
+    xhr.onerror = () => finish(Object.assign(new Error("Network error while uploading a B2 part. Retry to resume."), { code: "B2_PART_NETWORK_ERROR" }));
+    xhr.ontimeout = () => finish(Object.assign(new Error("B2 part upload timed out. Retry to resume."), { status: 408, code: "B2_PART_TIMEOUT" }));
     xhr.onabort = () => finish(new Error("Upload cancelled."));
     signal.addEventListener("abort", abort, { once: true });
     xhr.send(blob);
@@ -139,8 +140,14 @@ export async function uploadCloudAssetResumable(
       onProgress(uploadedBytes, file.size);
       continue;
     }
-    const signed = await apiRequest<PartUrlResponse>("/api/cloud/uploads/" + encodeURIComponent(session.id) + "/parts/" + partNumber + "/url", { method: "POST" });
-    const etag = await putPart(signed.url, chunk, signal, loaded => onProgress(uploadedBytes + loaded, file.size));
+    const etag = await retryB2PartUpload({
+      // Obtain a fresh short-lived presigned URL for every retry. A URL that
+      // failed at the provider is never reused for another transfer attempt.
+      upload: async () => {
+        const signed = await apiRequest<PartUrlResponse>("/api/cloud/uploads/" + encodeURIComponent(session.id) + "/parts/" + partNumber + "/url", { method: "POST" });
+        return putPart(signed.url, chunk, signal, loaded => onProgress(uploadedBytes + loaded, file.size));
+      }
+    });
     await apiRequest("/api/cloud/uploads/" + encodeURIComponent(session.id) + "/parts/" + partNumber + "/receipt", {
       method: "POST",
       headers: { "content-type": "application/json" },
