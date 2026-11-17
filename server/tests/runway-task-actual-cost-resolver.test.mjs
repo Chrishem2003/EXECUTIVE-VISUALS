@@ -20,7 +20,7 @@ function resolver(fetchImpl, model = "veo3.1") {
   });
 }
 
-test("billing readiness verifies linked Enterprise workspace access before generation", async () => {
+test("billing readiness verifies linked linked workspace access before generation", async () => {
   let requested;
   const resolve = createRunwayTaskActualCostResolver({
     apiKey: "server-test-key", enabled: true, now: () => current,
@@ -39,7 +39,7 @@ test("billing readiness blocks Veo generation if linked workspace usage is not a
     apiKey: "server-test-key", enabled: true, now: () => current,
     fetchImpl: async () => response({ error: "enterprise required" }, 403)
   });
-  await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+  await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_LINK_REQUIRED");
 });
 
 test("billing readiness rejects malformed pagination envelopes", async () => {
@@ -50,7 +50,7 @@ test("billing readiness rejects malformed pagination envelopes", async () => {
   await assert.rejects(() => resolve.assertAvailable(), error => error.code === "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
 });
 
-test("settles Veo task cost from the exact Enterprise per-generation usage row", async () => {
+test("settles Veo task cost from the exact linked-workspace per-generation usage row", async () => {
   let url;
   const resolve = resolver(async value => {
     url = new URL(value);
@@ -84,7 +84,7 @@ test("paginates all exact task charge transactions without inventing refund sema
   assert.equal(cost.transactionCount, 2);
 });
 
-test("keeps budget unresolved when the Enterprise workspace usage row has not settled", async () => {
+test("keeps budget unresolved when the linked-workspace usage row has not settled", async () => {
   const resolve = resolver(async () => response({ data: [], hasMore: false, nextCursor: null }));
   await assert.rejects(
     () => resolve({ job, input, task, providerTaskId: id, submissionMetadata: { submittedAt } }),
@@ -125,7 +125,7 @@ test("fails closed when linked workspace usage is unauthorized", async () => {
   const resolve = resolver(async () => response({ error: "enterprise required" }, 403));
   await assert.rejects(
     () => resolve({ job, input, task, providerTaskId: id, submissionMetadata: { submittedAt } }),
-    error => error.code === "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED"
+    error => error.code === "RUNWAY_TASK_BILLING_LINK_REQUIRED"
   );
 });
 
