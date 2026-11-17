@@ -14,7 +14,7 @@ create table if not exists executive_visuals.asset_multipart_upload_sessions (
   media_type text not null check (char_length(media_type) between 1 and 128),
   byte_size bigint not null check (byte_size > 0),
   source_sha256 text not null check (source_sha256 ~ '^[0-9a-f]{64}$'),
-  part_size integer not null check (part_size between 5000000 and 5368709120),
+  part_size bigint not null check (part_size between 5000000 and 5368709120),
   part_count integer not null check (part_count between 1 and 10000),
   status text not null default 'active'
     check (status in ('active','completing','completed','aborted','expired','failed')),
@@ -41,7 +41,7 @@ create table if not exists executive_visuals.asset_multipart_upload_parts (
   part_number integer not null check (part_number between 1 and 10000),
   etag text not null check (char_length(etag) between 8 and 128),
   sha256 text not null check (sha256 ~ '^[0-9a-f]{64}$'),
-  byte_size integer not null check (byte_size > 0),
+  byte_size bigint not null check (byte_size > 0),
   recorded_at timestamptz not null default now(),
   primary key(session_id,part_number)
 );
