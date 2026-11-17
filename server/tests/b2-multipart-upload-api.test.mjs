@@ -17,7 +17,7 @@ function fixture({authorize=async()=>true,existing=null,providerParts=null,verif
   async listMultipartParts(path,id){calls.storage.push(["list",path,id]);return{parts:providerParts||[{partNumber:1,etag:etag1,size:5_000_000},{partNumber:2,etag:etag2,size:1_000_000}],truncated:false};},
   async completeMultipartUpload(path,id,items){calls.storage.push(["complete",path,id,items]);return{bucket:"executive-visuals-media",path,parts:items.length};},
   async abortMultipartUpload(path,id){calls.storage.push(["abort",path,id]);return true;},
-  async verifyObject(path,options){calls.storage.push(["verify",path,options]);if(verifyInitially){verifyInitially=false;throw Object.assign(new Error("not yet complete"),{code:"B2_OBJECT_NOT_FOUND"});}return verifyReceiptOverride||{bucket:"executive-visuals-media",path,size:options.expectedSize,sha256:options.expectedSha256,contentType:options.contentType};}
+  async verifyObject(path,options){calls.storage.push(["verify",path,options]);if(verifyInitially){verifyInitially=false;throw Object.assign(new Error("not yet complete"),{code:"B2_OBJECT_NOT_FOUND"});}return{bucket:"executive-visuals-media",path,size:options.expectedSize,sha256:options.expectedSha256,contentType:options.contentType,...(verifyReceiptOverride||{})};}
  };
  const store={
   async findByIdempotencyKey(){return existing;},
@@ -142,7 +142,7 @@ test("rejects a mismatched final object receipt before publishing any Asset Libr
 });
 
 test("checks the final provider content type before Asset Library publication",async()=>{
- const f=fixture({verifyReceiptOverride:{bucket:"executive-visuals-media",path:"valid/private/object.mp4",size:6_000_000,sha256:sha,contentType:"video/webm"}});
+ const f=fixture({verifyReceiptOverride:{contentType:"video/webm"}});
  await f.api.start(startInput);
  await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
  await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
