@@ -119,7 +119,11 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
   try{
    let verified;
    try{verified=await storage.verifyObject(session.objectPath,{expectedSize:session.size,expectedSha256:session.sha256,contentType:session.mediaType});}
-   catch{
+   catch(error){
+    // Reconcile multipart parts only when the final object is genuinely absent.
+    // Integrity, authorization, timeout and transport failures must not trigger
+    // a second completion attempt or mask the original verification failure.
+    if(error?.code!=="B2_OBJECT_NOT_FOUND"&&error?.code!=="B2_STORAGE_HTTP_404")throw error;
     const provider=await storage.listMultipartParts(session.objectPath,session.uploadId);
     if(provider.truncated||provider.parts.length!==session.partCount)throw Object.assign(new Error("Provider parts do not match the upload reservation."),{code:"B2_MULTIPART_PROVIDER_PARTS_MISMATCH"});
     const recorded=await store.listParts({ownerId,sessionId});
