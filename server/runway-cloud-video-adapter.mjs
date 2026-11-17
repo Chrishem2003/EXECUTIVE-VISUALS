@@ -280,14 +280,12 @@ export function createRunwayCloudVideoAdapter({
 
     ...(selectedModel === "veo3.1" || selectedModel === "veo3.1_fast" ? {
       async preflight(input = {}) {
-        const duration = input.durationSeconds;
-        if (![4, 6, 8].includes(duration)) throw fail("Veo duration must be 4, 6 or 8 seconds.", "RUNWAY_INPUT_INVALID");
-        const resolution = input.resolution || "720p";
-        if (!["720p", "1080p"].includes(resolution) || (resolution === "1080p" && duration !== 8)) {
-          throw fail("Veo 1080p output is available only for 8-second clips.", "RUNWAY_INPUT_INVALID");
-        }
-        if (input.audio !== undefined && typeof input.audio !== "boolean") throw fail("Veo audio must be a boolean.", "RUNWAY_INPUT_INVALID");
-        const audio = input.audio !== false;
+        // Run the exact model request validator during the non-billable quote
+        // so invalid prompts, frame pairs, ratios, seeds and model identities
+        // cannot be approved and fail only after the worker starts.
+        const requestPlan = buildVeoRequest(input);
+        const duration = requestPlan.duration;
+        const audio = requestPlan.audio;
         const creditsPerSecond = selectedModel === "veo3.1"
           ? (audio ? 40 : 20)
           : (audio ? 15 : 10);
