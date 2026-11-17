@@ -90,6 +90,7 @@ const pictureIndex=attachedTimeline.tracks.findIndex(track=>track.id===plan.trac
 const duplicateClip={...approvedClip,id:"duplicate-shot-1",assetId:"private-asset-2",name:"Duplicate take.mp4"};
 const duplicateTimeline={...attachedTimeline,tracks:attachedTimeline.tracks.map((track,index)=>index===pictureIndex?{...track,clips:[...track.clips,duplicateClip]}:track)};
 assert.equal(getStoryboardShotAssetAttachments(duplicateTimeline,plan,["private-asset-1","private-asset-2"]).get("shot-1").status,"ambiguous");
+assert.equal(getStoryboardShotAssetAttachments(duplicateTimeline,plan,["private-asset-1"]).get("shot-1").status,"ambiguous","an inaccessible duplicate must not be hidden by one accessible match");
 const wrongTrackTimeline={...attachedTimeline,tracks:attachedTimeline.tracks.map(track=>track.id===plan.trackIds.picture?{...track,clips:[]}:track)};
 assert.equal(getStoryboardShotAssetAttachments(wrongTrackTimeline,plan,["private-asset-1"]).get("shot-1").status,"pending");
 
