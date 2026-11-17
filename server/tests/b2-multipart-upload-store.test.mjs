@@ -14,6 +14,7 @@ const now=()=>new Date("2026-11-17T12:00:00.000Z");
 
 function setup(){
  const sessions=[],parts=[],calls=[];
+ let instant=new Date("2026-11-17T12:00:00.000Z");
  const fetchImpl=async(url,options={})=>{
   const parsed=new URL(url),table=parsed.pathname.split("/").pop(),params=parsed.searchParams,method=options.method||"GET";
   calls.push({url,method,body:options.body?JSON.parse(options.body):null,headers:options.headers});
@@ -44,7 +45,7 @@ function setup(){
   }
   return{ok:false,status:405,async text(){return"{}";}};
  };
- return{store:createB2MultipartUploadStore({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,clock:now}),sessions,parts,calls};
+ return{store:createB2MultipartUploadStore({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,clock:()=>new Date(instant)}),sessions,parts,calls,advance:ms=>{instant=new Date(instant.getTime()+ms);}};
 }
 function createInput(overrides={}){return{ownerId:owner,projectId:project,assetId:asset,idempotencyKey:"upload-job-123",objectPath,uploadId,originalName:"master.mp4",mediaType:"video/mp4",size:10_000_000,sha256,partSize:5_000_000,expiresAt:"2026-11-18T12:00:00.000Z",...overrides};}
 
@@ -83,7 +84,8 @@ test("completion requires every ordered part and uses a compare-and-set state tr
 });
 
 test("expired and inactive sessions cannot accept additional part checkpoints",async()=>{
- const {store}=setup();const session=await store.create(createInput({expiresAt:"2026-11-17T11:59:59.000Z"}));
+ const {store,advance}=setup();const session=await store.create(createInput({expiresAt:"2026-11-17T12:01:00.000Z"}));
+ advance(120_000);
  await assert.rejects(()=>store.recordPart({ownerId:owner,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000}),{code:"B2_MULTIPART_SESSION_NOT_ACTIVE"});
 });
 
