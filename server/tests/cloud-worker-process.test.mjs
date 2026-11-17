@@ -50,7 +50,7 @@ test("cloud video worker may be configured with Runway Model Router without FAL 
  }),/saved config/);
 });
 
-test("direct Veo models require explicit Runway remote gates and Enterprise per-generation usage",()=>{
+test("direct Veo models require explicit Runway remote gates and linked-workspace per-generation usage",()=>{
  const base={...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
   RUNWAY_VIDEO_MODELS:"veo3.1,veo3.1_fast",RUNWAY_API_KEY:"server-only",
