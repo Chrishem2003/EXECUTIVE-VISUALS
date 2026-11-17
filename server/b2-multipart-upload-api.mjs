@@ -130,6 +130,12 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     await storage.completeMultipartUpload(session.objectPath,session.uploadId,expected.map(p=>({partNumber:p.partNumber,etag:p.etag})));
     verified=await storage.verifyObject(session.objectPath,{expectedSize:session.size,expectedSha256:session.sha256,contentType:session.mediaType});
    }
+   // Treat the provider receipt as an untrusted boundary: validate every
+   // immutable upload attribute before the Asset Library can publish metadata.
+   if(verified?.path!==session.objectPath||verified?.size!==session.size||
+      verified?.sha256!==session.sha256||verified?.contentType!==session.mediaType){
+    throw Object.assign(new Error("Verified object receipt does not match the upload session."),{code:"B2_MULTIPART_VERIFICATION_MISMATCH"});
+   }
    let asset;
    try{
     asset=await assets.registerVerifiedObject({ownerId,projectId:session.projectId,assetId:session.assetId,originalName:session.originalName,mediaType:session.mediaType,size:session.size,sha256:session.sha256,metadata:{uploadProvider:"backblaze-b2",multipartSessionId:session.id},verifiedReceipt:verified});
@@ -140,7 +146,6 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     }
     throw error;
    }
-   if(verified?.path!==session.objectPath||verified?.size!==session.size||verified?.sha256!==session.sha256)throw Object.assign(new Error("Verified object receipt does not match the upload session."),{code:"B2_MULTIPART_VERIFICATION_MISMATCH"});
    const marked=await store.markCompleted({ownerId,sessionId});
    if(!marked)throw Object.assign(new Error("Asset was published but the upload session completion state could not be committed."),{code:"B2_MULTIPART_FINALIZE_PENDING"});
    return {status:200,body:{session:publicSession({...session,status:"completed"}),asset,idempotentReplay:false}};
