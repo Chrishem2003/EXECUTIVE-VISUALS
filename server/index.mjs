@@ -241,17 +241,18 @@ if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supa
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
+const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
 if(b2MultipartUploadEnabled&&AUTH_MODE!=="supabase")throw new Error("B2 multipart uploads require verified Supabase authentication.");
 if(b2MultipartUploadEnabled&&String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"").toLowerCase()!=="b2")throw new Error("B2 multipart uploads require CLOUD_MEDIA_STORAGE_PROVIDER=b2.");
-if(b2MultipartUploadEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("B2 multipart uploads require server-side Supabase credentials.");
-const b2MultipartAuthorize=b2MultipartUploadEnabled?createCloudAssetAuthorizer({url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch}):null;
+if(b2MultipartUploadEnabled&&(!process.env.SUPABASE_URL||!b2MultipartSupabaseServerKey))throw new Error("B2 multipart uploads require server-side Supabase secret credentials.");
+const b2MultipartAuthorize=b2MultipartUploadEnabled?createCloudAssetAuthorizer({url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch}):null;
 const b2MultipartAssetService=b2MultipartUploadEnabled?createCloudAssetService({
- url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,
+ url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,
  storageProvider:"b2",authorize:b2MultipartAuthorize,fetchImpl:globalThis.fetch,
  maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES
 }):null;
 const b2MultipartStore=b2MultipartUploadEnabled?createB2MultipartUploadStore({
- url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch
+ url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch
 }):null;
 const b2MultipartUploadApi=b2MultipartUploadEnabled?createB2MultipartUploadApi({
  storage:b2MultipartAssetService.storage,store:b2MultipartStore,assets:b2MultipartAssetService.assets,
