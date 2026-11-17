@@ -996,8 +996,9 @@ export function createAppServer() {
       }
       if(b2MultipartUploadApi&&path==="/api/cloud/uploads"&&req.method==="POST"){
         if(!rateAllowed("b2-upload-start:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload sessions. Try again shortly.");return;}
-        const body=await readJson(req,32*1024);
-        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body?.idempotencyKey||"")});
+        const parsedBody=await readJson(req,32*1024);
+        const body=parsedBody&&typeof parsedBody==="object"&&!Array.isArray(parsedBody)?parsedBody:{};
+        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
         if(result.status<300&&result.body?.session&&!result.body.idempotentReplay)audit(db,user.id,"asset.multipart_upload_started","asset",result.body.session.assetId,{sessionId:result.body.session.id,size:result.body.session.size,mediaType:body.mediaType},body.projectId||null);
         send(res,result.status,result.body,cors);return;
       }
