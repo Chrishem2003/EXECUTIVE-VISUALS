@@ -264,7 +264,10 @@ export function createBackblazeB2Storage({
       if (marker !== null) query.set("part-number-marker", String(marker));
       const response = await request("GET", objectUrl(path) + "?" + canonicalQuery(query), { query, signal });
       const xml = await response.text();
-      parts.push(...multipartPartsFromXml(xml));
+      const pageParts = multipartPartsFromXml(xml);
+      const known = new Set(parts.map(part => part.partNumber));
+      if (pageParts.some(part => known.has(part.partNumber))) throw new Error("B2 returned duplicate multipart part numbers.");
+      parts.push(...pageParts);
       const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/i.test(xml);
       if (!truncated) return { parts, truncated: false };
       const next = Number(xmlTag(xml, "NextPartNumberMarker"));
@@ -282,6 +285,8 @@ export function createBackblazeB2Storage({
     }
     const info = await stat(filePath);
     if (!info.isFile() || end >= info.size) throw new Error("B2 multipart part range exceeds the source file.");
+    const partSize = end - start + 1;
+    if (end < info.size - 1 && partSize < MIN_MULTIPART_PART_BYTES) throw new Error("Non-final B2 multipart parts must be at least 5 MiB.");
     const part = await digestFileRange(filePath, start, end);
     const query = new Map([["partNumber", String(partNumber)], ["uploadId", uploadId]]);
     const response = await request("PUT", objectUrl(path) + "?" + canonicalQuery(query), {
@@ -290,6 +295,11 @@ export function createBackblazeB2Storage({
     });
     const etag = response.headers?.get?.("etag")?.replace(/^"|"$/g, "");
     if (!etag || !/^[A-Fa-f0-9-]{8,128}$/.test(etag)) throw new Error("B2 multipart part response omitted a valid ETag.");
+    const after = await stat(filePath);
+    const verified = await digestFileRange(filePath, start, end);
+    if (after.size !== info.size || after.mtimeMs !== info.mtimeMs || verified.sha256 !== part.sha256) {
+      throw new Error("B2 multipart source file changed while a part was uploaded.");
+    }
     return { partNumber, etag, sha256: part.sha256, size: part.size };
   }
 
