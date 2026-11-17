@@ -33,6 +33,7 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
@@ -82,12 +83,11 @@ if (REQUIRE_PERSISTENT_DATA_DIR && (!existsSync(DATA_DIR) || !isWithinDataDir(DB
   throw new Error("Persistent storage is required. Mount the configured data volume before starting the service.");
 }
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
-const SUPABASE_FREE_MAX_FILE_BYTES = 50 * 1024 * 1024;
-const CLOUD_MEDIA_STORAGE_PROVIDER = String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase").trim().toLowerCase();
-const CONFIGURED_CLOUD_MEDIA_MAX_UPLOAD_BYTES = Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES);
-const CLOUD_MEDIA_MAX_UPLOAD_BYTES = CLOUD_MEDIA_STORAGE_PROVIDER === "supabase"
-  ? Math.min(CONFIGURED_CLOUD_MEDIA_MAX_UPLOAD_BYTES, SUPABASE_FREE_MAX_FILE_BYTES)
-  : CONFIGURED_CLOUD_MEDIA_MAX_UPLOAD_BYTES;
+const CLOUD_MEDIA_MAX_UPLOAD_BYTES = resolveCloudMediaMaxUploadBytes({
+  storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+  configuredMaxBytes:process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES,
+  fallbackMaxBytes:MAX_UPLOAD_BYTES
+});
 const SESSION_DAYS = 30;
 const ALLOWED_MEDIA = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
