@@ -1,11 +1,23 @@
 # Public release gates
 
 **Current decision: NOT APPROVED for public users.**  
-**Last reviewed:** 15 November 2026.  
-**Current main:** `6ef500f78f9e820d29b782085e9294c549545932` (PR #606: undoable track-wide caption presets).  
-**Current production deployment:** `6ef500f78f9e820d29b782085e9294c549545932` (Render deployment `dep-dbslg15bedkc73caub50` is live; R2/GCS feature flags remain off).
+**Last reviewed:** 17 November 2026.  
+**Current main:** `05cf230ee9e682f161268cbef62d00d07fad683d` (resumable, authenticated B2 multipart upload integration).  
+**Current production deployment:** `05cf230ee9e682f161268cbef62d00d07fad683d` (Render deployment `dep-dbu9fp5bedkc73dhkmd0` completed successfully; B2/GCS flags remain off).
 
-## Mainline checkpoint — 15 November 2026
+## Mainline checkpoint — 17 November 2026
+
+- Main now includes the browser-to-B2 resumable multipart upload path: authenticated begin/status/part-URL/receipt/complete/abort routes, durable owner/project-scoped session and part receipts, idempotent initiation, provider List Parts reconciliation, independent completed-object verification, quota checks, and cleanup if Asset Library publication fails.
+- The browser client stores only a local resume pointer/idempotency key and can resume recorded parts after refresh. Provider upload IDs and object paths remain server-side; short-lived signed part URLs are bearer capabilities and must not be logged or persisted.
+- New migration `20261117160000_b2_multipart_upload_sessions.sql` is present in the repository but has **not** been applied to a connected Supabase project. `B2_MULTIPART_UPLOAD_API_ENABLED=false` remains the default. Activation additionally requires `CLOUD_MEDIA_STORAGE_PROVIDER=b2`, verified Supabase auth, a private B2 bucket and exact-origin S3 CORS exposing ETag, plus isolated end-to-end acceptance.
+- Exact-head checks on `05cf230`: 27 successful, one skipped, one failed. Build, all Product Verification jobs, Release Integration Gate, PostgreSQL integration and Cloudflare app build/deploy passed. Supabase Preview failed with `Remote migration versions not found in local migrations directory.`
+- Read-only migration comparison against the connected `Chrishem Platform Staging` database found 96 remote migration records: only 4 versions exactly match local migration filenames; 81 additional records have names that match local migrations but different version timestamps; 11 remote migration names do not exist in this repository. The remote-only names include shared-AI and NEMA migrations, `executive_visuals_core_staging`, and three API-schema exposure/locking migrations. This confirms that the connected staging database has a separate/shared migration history and is not an isolated Executive Visuals production database.
+- Do not run `migration repair`, `db reset --linked`, delete/rename migration files, or apply/replay migrations to force this integration green. Those operations would rewrite or destroy history/data in a shared project. No Supabase schema, migration ledger, storage, or data was changed during this investigation. The safe resolution requires an explicitly approved isolated Executive Visuals database target and a reviewed migration-baseline plan; the existing two Supabase Free projects are already allocated, so no new project or paid resource is being provisioned.
+- Render production deployment `dep-dbu9fp5bedkc73dhkmd0` and the separate `executive-visuals-cloud-staging` deployment `dep-dbu9fp5bedkc73dhkmm0` both completed successfully on `05cf230`. Both services are Free preview/testing resources. This confirms deployment only, not durable storage or public release readiness.
+- `google-auth-library@11.3.4` is already declared and locked on main. The GCS mirror remains inactive because real bucket/WIF/IAM setup, isolated migration application and real-cloud upload/read-back/ownership/revocation/recovery acceptance are outstanding.
+- Remaining public-release blockers include dedicated isolated Executive Visuals identity/database, durable private media storage with backup/restore evidence, independently operated durable workers, verified provider credentials and spend limits, merchant sandbox/webhook acceptance, and operational monitoring.
+
+## Historical checkpoint — 15 November 2026 (superseded)
 
 - PR #602 remains merged in history and supplies `google-auth-library@11.3.3` for the fail-closed GCS Workload Identity Federation bootstrap.
 - PR #606 is merged as commit `6ef500f78f9e820d29b782085e9294c549545932`. It adds an explicit, undoable caption-track preset action with clip/timing/metadata preservation; exact-head Quality checks passed (27/27 jobs), and Render deployment `dep-dbslg15bedkc73caub50` is live. This is an editor capability, not a change to storage, billing or provider execution.
@@ -16,12 +28,13 @@
 - The remaining production blockers are unchanged: isolated Executive Visuals identity/database, durable private media storage, live storage acceptance, independently operated durable workers, provider credentials and billing controls, subscription sandbox acceptance, and backup/restore evidence.
 - The application entry bundle remains oversized (the last recorded build was 784.39 kB JavaScript). Treat code splitting as a separate performance milestone, not a release gate substitute.
 
-## Verified deployment
+## Latest verified deployment — 17 November 2026
 
-- Render production service `EXECUTIVE-VISUALS` is `live` on the exact current main commit above.
+- Render production service `EXECUTIVE-VISUALS` completed build and deploy for `05cf230ee9e682f161268cbef62d00d07fad683d`; deployment: `dep-dbu9fp5bedkc73dhkmd0`.
 - Production URL: https://executive-visuals.onrender.com
-- Render plan: Free, Frankfurt.
-- Build and deploy events both report success.
+- The separate `executive-visuals-cloud-staging` service also completed deployment of the same commit; deployment: `dep-dbu9fp5bedkc73dhkmm0`.
+- Both services are Free, Frankfurt preview/testing services. A successful deploy does not certify persistent storage, database isolation, or public-release readiness.
+- The application runtime remains SQLite/local-disk based on the production service; Render Free storage is ephemeral.
 - The runtime started `node server/index.mjs`; startup logs show Node's experimental SQLite warning.
 - The latest build emitted a 784.39 kB JavaScript entry bundle and a 119.88 kB CSS bundle. Vite/Rolldown warned that the JavaScript chunk exceeds 500 kB; treat this as a frontend performance/refactoring item, not a failed build.
 
