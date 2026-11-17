@@ -41,6 +41,8 @@ test("starts an authorized B2 multipart session and keeps provider upload IDs pr
  assert.equal(result.body.session.projectId,projectId);
  assert.equal(result.body.session.size,6_000_000);
  assert.equal("uploadId" in result.body.session,false);
+ assert.equal("objectPath" in result.body.session,false);
+ assert.equal("ownerId" in result.body.session,false);
  assert.equal(f.calls.storage[0][0],"begin");
  assert.equal(f.calls.ledger[0][0],"create");
 });
@@ -75,6 +77,17 @@ test("reconciles provider parts, verifies the completed object, and only then pu
  assert.equal(result.status,200);
  assert.equal(result.body.asset.id,f.session.assetId);
  assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,1);
+ assert.equal(f.calls.assets.length,1);
+ assert.equal(f.calls.ledger.at(-1)[0],"completed");
+});
+
+test("recovers an already completed provider object without completing the multipart upload twice",async()=>{
+ const f=fixture({verifyInitially:false});
+ await f.api.start(startInput);
+ const result=await f.api.complete({ownerId,sessionId:f.session.id});
+ assert.equal(result.status,200);
+ assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,0);
+ assert.equal(f.calls.storage.filter(x=>x[0]==="list").length,0);
  assert.equal(f.calls.assets.length,1);
  assert.equal(f.calls.ledger.at(-1)[0],"completed");
 });
