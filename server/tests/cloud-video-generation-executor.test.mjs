@@ -152,7 +152,7 @@ test("cloud executor quarantines failed Veo tasks until potentially billable usa
   const veoJob = { ...job, input: { ...job.input, model: "veo3.1" } };
   const veoAdapter = { ...f.adapter, model: "veo3.1" };
   await assert.rejects(
-    executeCloudVideoGenerationJob({ job: veoJob, adapter: veoAdapter, workerId: "worker-1", ...f }),
+    executeCloudVideoGenerationJob({ ...f, job: veoJob, adapter: veoAdapter, workerId: "worker-1" }),
     error => error.code === "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
   );
   assert.equal(f.calls.some(call => call[0] === "cost"), false);
