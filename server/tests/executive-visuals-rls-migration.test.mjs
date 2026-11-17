@@ -36,20 +36,20 @@ test("private storage policies correlate project ownership to the stored object 
 });
 
 test("project and membership policies use non-recursive security-definer helpers", () => {
-  assert.match(recursionMigration, /create or replace function executive_visuals\\.is_project_owner/i);
-  assert.match(recursionMigration, /create or replace function executive_visuals\\.has_project_role/i);
+  assert.match(recursionMigration, /create or replace function executive_visuals\.is_project_owner/i);
+  assert.match(recursionMigration, /create or replace function executive_visuals\.has_project_role/i);
   assert.match(recursionMigration, /security definer/i);
   assert.match(recursionMigration, /set row_security = off/i);
   assert.match(recursionMigration, /grant usage on schema executive_visuals to authenticated/i);
   const policyChanges = recursionMigration.slice(recursionMigration.toLowerCase().indexOf("alter policy"));
-  assert.doesNotMatch(policyChanges, /from executive_visuals\\.projects/i);
-  assert.doesNotMatch(policyChanges, /from executive_visuals\\.project_members/i);
+  assert.doesNotMatch(policyChanges, /from executive_visuals\.projects/i);
+  assert.doesNotMatch(policyChanges, /from executive_visuals\.project_members/i);
   for (const policy of [
     "ev_projects_read", "ev_members_read", "ev_members_insert", "ev_members_update",
     "ev_project_workspace_read", "ev_workflows_read", "ev_workflow_runs_read",
     "ev_assets_insert", "ev_jobs_insert", "ev_timelines_insert",
     "ev_reviews_insert", "ev_storage_read", "ev_storage_insert"
   ]) {
-    assert.match(policyChanges, new RegExp("alter policy " + policy + "\\\\b", "i"));
+    assert.match(policyChanges, new RegExp("alter policy " + policy + "\\b", "i"));
   }
 });
