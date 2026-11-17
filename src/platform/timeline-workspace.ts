@@ -621,7 +621,7 @@ function currentStoryboardTimelinePlan():StoryboardTimelinePlan|null{
 function storyboardTimelinePlanPanel(){
  const plan=currentStoryboardTimelinePlan();
  if(!plan||!state.timeline)return "";
- const authorizedAssetIds=state.assets.filter(asset=>asset.projectId===state.cloudProjectId&&asset.mediaType.startsWith("video/")).map(asset=>asset.id);
+ const authorizedAssetIds=state.assets.filter(asset=>asset.mediaType.startsWith("video/")).map(asset=>asset.id);
  const attachments=getStoryboardShotAssetAttachments(state.timeline,plan,authorizedAssetIds);
  const shots=plan.scenes.flatMap(scene=>scene.shots),attachedCount=shots.filter(shot=>attachments.get(shot.id)?.status==="attached").length;
  const reviewCount=shots.filter(shot=>["unavailable","ambiguous"].includes(attachments.get(shot.id)?.status||"")).length;
