@@ -286,8 +286,10 @@ test("prepares an authorized SDR source and submits a durable Ruby HDR task", as
 
 test("Veo 3.1 submits text-to-video with strict frame, audio and cost preflight controls", async () => {
   let call;
+  let billingReadinessCalls = 0;
   const adapter = createRunwayCloudVideoAdapter({
     ...base, model: "veo3.1",
+    assertActualCostReady: async () => { billingReadinessCalls += 1; return true; },
     fetchImpl: async (url, options) => {
       call = { url: String(url), options };
       return new Response(JSON.stringify({ id }));
@@ -295,6 +297,7 @@ test("Veo 3.1 submits text-to-video with strict frame, audio and cost preflight 
   });
   assert.equal(typeof adapter.preflight, "function");
   const quote = await adapter.preflight({ durationSeconds: 4, audio: true });
+  assert.equal(billingReadinessCalls, 0, "non-billable estimates must not call provider billing endpoints");
   assert.deepEqual({
     billable: quote.billable, provider: quote.provider, model: quote.model,
     estimatedCredits: quote.estimatedCredits, estimatedUsd: quote.estimatedUsd, currency: quote.currency
@@ -310,6 +313,7 @@ test("Veo 3.1 submits text-to-video with strict frame, audio and cost preflight 
   assert.equal(submitted.taskId, id);
   assert.equal(submitted.status, "queued");
   assert.ok(Number.isFinite(Date.parse(submitted.metadata.submittedAt)));
+  assert.equal(billingReadinessCalls, 1, "linked-workspace billing access must be checked before paid submission");
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/text_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "veo3.1", promptText: "A lighthouse at dusk", ratio: "1280:720",
