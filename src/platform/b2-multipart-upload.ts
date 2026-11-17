@@ -1,4 +1,5 @@
 import { ApiError, apiRequest } from "../core/api";
+import { sha256Blob } from "../core/streaming-sha256";
 
 type UploadSession = {
   id: string;
@@ -43,11 +44,6 @@ function saveResumeRecord(record: ResumeRecord): void {
 function removeResumeRecord(key: string): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(readResumeRecords().filter(item => item.key !== key))); } catch { /* Best-effort local cleanup. */ }
 }
-async function sha256(blob: Blob): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("Secure browser cryptography is required for resumable uploads.");
-  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-  return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
-}
 function putPart(url: string, blob: Blob, signal: AbortSignal, onProgress: (loaded: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -87,7 +83,7 @@ export async function uploadCloudAssetResumable(
   if (file.size <= SMALL_UPLOAD_LIMIT) throw new Error("Resumable multipart upload is reserved for files larger than 50 MiB.");
   if (!projectId) throw new Error("Select a cloud project before uploading.");
   if (file.size < 5_000_000) throw new Error("B2 multipart uploads require files of at least 5 MB.");
-  const digest = await sha256(file);
+  const digest = await sha256Blob(file, { signal });
   if (signal.aborted) throw new Error("Upload cancelled.");
   const key = resumeKey(file, projectId);
   let record = readResumeRecords().find(item => item.key === key && item.projectId === projectId && item.sha256 === digest);
@@ -134,7 +130,7 @@ export async function uploadCloudAssetResumable(
     const start = (partNumber - 1) * session.partSize;
     const end = Math.min(file.size, start + session.partSize);
     const chunk = file.slice(start, end);
-    const chunkHash = await sha256(chunk);
+    const chunkHash = await sha256Blob(chunk, { signal });
     if (signal.aborted) throw new Error("Upload cancelled.");
     const saved = completed.get(partNumber);
     if (saved) {
