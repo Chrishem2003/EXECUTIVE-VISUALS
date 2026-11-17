@@ -206,6 +206,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const filterListing=(capabilities.stdout||"")+"\n"+(capabilities.stderr||"");
   if(needsRubberband&&!/\brubberband\b/.test(filterListing))fail("Variable-speed audio export requires an FFmpeg build with librubberband support; this render worker does not provide that filter.","RUBBERBAND_UNAVAILABLE");
   if(motionClips.length&&!/\bminterpolate\b/.test(filterListing))fail("This FFmpeg worker does not include the minterpolate filter required for optical-flow slow motion.","MOTION_INTERPOLATION_UNAVAILABLE");
+   if(needsXfade&&!/\bxfade\b/.test(filterListing))fail("This FFmpeg worker does not include the xfade filter required for video crossfades, wipes and slides.","VIDEO_TRANSITION_FILTER_UNAVAILABLE");
  }
  if(tracks.some(track=>["overlay","caption"].includes(track.kind)&&(track.clips||[]).some(clip=>enabled(clip)&&clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video and audio tracks.","INVALID_TIMELINE_TRANSITION");
  const fps=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)))/Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
