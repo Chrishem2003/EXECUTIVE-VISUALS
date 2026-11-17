@@ -187,7 +187,7 @@ export function getStoryboardShotAssetAttachments(
       clip.metadata?.storyboardShotId===shot.id
     );
     const matches=candidates.filter(clip=>authorized.has(clip.assetId));
-    if(matches.length>1){
+    if(candidates.length>1){
       result.set(shot.id,{status:"ambiguous"});
     }else if(matches.length===1){
       const clip=matches[0];
