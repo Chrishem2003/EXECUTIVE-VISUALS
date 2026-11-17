@@ -106,6 +106,33 @@ test("completion requires every ordered part and uses a compare-and-set state tr
  assert.equal(sessions[0].status,"completed");
 });
 
+test("reclaims a stale completion claim after a worker restart using compare-and-set",async()=>{
+ const {store,sessions,advance}=setup();
+ const session=await store.create(createInput());
+ await store.recordPart({ownerId,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000});
+ await store.recordPart({ownerId,sessionId:session.id,partNumber:2,etag:etag2,sha256:"f".repeat(64),size:5_000_000});
+ assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:true,reason:"claimed"});
+ const firstClaim=sessions[0].completion_claimed_at;
+ advance(5*60*1000+1);
+ assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:true,reason:"reclaimed_stale_completion"});
+ assert.notEqual(sessions[0].completion_claimed_at,firstClaim);
+ assert.equal(sessions[0].status,"completing");
+});
+
+test("does not reclaim a completion claim before its lease expires",async()=>{
+ const {store,advance}=setup();
+ const session=await store.create(createInput());
+ await store.recordPart({ownerId,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000});
+ await store.recordPart({ownerId,sessionId:session.id,partNumber:2,etag:etag2,sha256:"f".repeat(64),size:5_000_000});
+ await store.claimCompletion({ownerId,sessionId:session.id});
+ advance(5*60*1000-1);
+ assert.deepEqual(await store.claimCompletion({ownerId,sessionId:session.id}),{claimed:false,reason:"already_completing"});
+});
+
+test("rejects unsafe completion lease durations",()=>{
+ assert.throws(()=>createB2MultipartUploadStore({url:"https://example.supabase.co",serviceRoleKey:"service-secret",completionLeaseMs:1}),/completion lease/);
+});
+
 test("expired and inactive sessions cannot accept additional part checkpoints",async()=>{
  const {store,advance}=setup();const session=await store.create(createInput({expiresAt:"2026-11-17T12:01:00.000Z"}));
  advance(120_000);
