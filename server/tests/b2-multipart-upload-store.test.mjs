@@ -63,7 +63,7 @@ test("rejects reuse of an idempotency key for a different source, name, media ty
   {sha256:"d".repeat(64)},
   {originalName:"different.mp4"},
   {mediaType:"video/webm"},
-  {objectPath:owner+"/"+asset+"/original.mp4"}
+  {objectPath:project+"/"+asset+"/different.mp4"}
  ])await assert.rejects(()=>store.create(createInput(overrides)),{code:"B2_MULTIPART_IDEMPOTENCY_CONFLICT"});
 });
 test("binds the object path to the authenticated owner or project and reserved asset ID",async()=>{
