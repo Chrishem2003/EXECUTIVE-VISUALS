@@ -25,6 +25,56 @@ test("B2 adapter requires explicit account credentials and safe limits", () => {
   assert.doesNotThrow(() => createBackblazeB2Storage({ ...config, secretAccessKey: "s".repeat(20) }));
 });
 
+test("verifies completed B2 objects by streaming exact size and SHA-256 without exposing bytes", async () => {
+  const bytes = Buffer.from("completed-private-video");
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const calls = [];
+  const storage = createBackblazeB2Storage({
+    ...config,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true, status: 200,
+        headers: { get: name => name.toLowerCase() === "content-length" ? String(bytes.length) : name.toLowerCase() === "content-type" ? "video/mp4" : null },
+        body: (async function*(){ yield bytes.subarray(0, 7); yield bytes.subarray(7); })()
+      };
+    }
+  });
+  const receipt = await storage.verifyObject(path, { expectedSize: bytes.length, expectedSha256: digest, contentType: "video/mp4" });
+  assert.deepEqual(receipt, { bucket: "executive-visuals-media", path, size: bytes.length, sha256: digest, contentType: "video/mp4" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.method, "GET");
+  assert.match(calls[0].options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=/);
+});
+
+test("rejects completed B2 objects with a mismatched length or SHA-256", async () => {
+  const bytes = Buffer.from("wrong-object-bytes");
+  const storage = createBackblazeB2Storage({
+    ...config,
+    fetchImpl: async () => ({
+      ok: true, status: 200,
+      headers: { get: name => name.toLowerCase() === "content-length" ? String(bytes.length) : name.toLowerCase() === "content-type" ? "video/mp4" : null },
+      body: (async function*(){ yield bytes; })()
+    })
+  });
+  await assert.rejects(
+    () => storage.verifyObject(path, { expectedSize: bytes.length, expectedSha256: "a".repeat(64), contentType: "video/mp4" }),
+    error => error.code === "B2_OBJECT_SHA256_MISMATCH"
+  );
+  await assert.rejects(
+    () => storage.verifyObject(path, { expectedSize: bytes.length + 1, expectedSha256: createHash("sha256").update(bytes).digest("hex"), contentType: "video/mp4" }),
+    error => error.code === "B2_OBJECT_SIZE_MISMATCH"
+  );
+});
+
+test("rejects invalid B2 completed-object verification inputs before network access", async () => {
+  let calls = 0;
+  const storage = createBackblazeB2Storage({ ...config, fetchImpl: async () => { calls++; return response(200); } });
+  await assert.rejects(() => storage.verifyObject(path, { expectedSize: 0, expectedSha256: "a".repeat(64) }), /size is invalid/);
+  await assert.rejects(() => storage.verifyObject(path, { expectedSize: 4, expectedSha256: "bad" }), /SHA-256 is invalid/);
+  assert.equal(calls, 0);
+});
+
 test("uploads private bytes with an AWS SigV4 request and exact object path", async () => {
   const calls = [];
   const storage = createBackblazeB2Storage({
