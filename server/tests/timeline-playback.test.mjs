@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, rational, validateTimeline, splitClip, trimClip, toOpenTimelineIo } from "../../src/core/timeline.ts";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview } from "../../src/core/timeline-playback.ts";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineClipMediaTimeSeconds, timelineDurationSeconds, timelineSecondsToFrame, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, directionalVideoTransitionPreviewStyle } from "../../src/core/timeline-playback.ts";
 
 function fixture(){
  let timeline=createTimeline("project-1","timeline-1","Playback",{numerator:30000,denominator:1001});
@@ -229,4 +229,51 @@ test("video crossfade overlap must match the configured frame duration",()=>{
  timeline.tracks[0].clips[0].transitionToNext={type:"crossfade",fadeFrames:6};
  timeline.tracks[0].clips[1].timelineStart=rational(20,24);
  assert.ok(validateTimeline(timeline).issues.some(issue=>issue.code==="crossfade_overlap_mismatch"));
+});
+
+
+test("browser preview generates directional wipe masks that reveal the incoming clip by progress",()=>{
+ const cases=[
+  ["wipeleft","inset(0 0 0 75.000%)"],
+  ["wiperight","inset(0 75.000% 0 0)"],
+  ["wipeup","inset(0 0 75.000% 0)"],
+  ["wipedown","inset(75.000% 0 0 0)"]
+ ];
+ for(const [type,clipPath] of cases){
+  const style=directionalVideoTransitionPreviewStyle(type,0.25,"incoming");
+  assert.equal(style.clipPath,clipPath,type);
+  assert.equal(style.transform,"none",type);
+  assert.deepEqual(directionalVideoTransitionPreviewStyle(type,0.25,"outgoing"),{clipPath:"none",transform:"none"});
+ }
+});
+
+test("browser preview animates incoming and outgoing slide layers in opposite directions",()=>{
+ const cases=[
+  ["slideleft","translateX(75.000%)","translateX(-25.000%)"],
+  ["slideright","translateX(-75.000%)","translateX(25.000%)"],
+  ["slideup","translateY(75.000%)","translateY(-25.000%)"],
+  ["slidedown","translateY(-75.000%)","translateY(25.000%)"]
+ ];
+ for(const [type,incoming,outgoing] of cases){
+  assert.equal(directionalVideoTransitionPreviewStyle(type,0.25,"incoming").transform,incoming,type+" incoming");
+  assert.equal(directionalVideoTransitionPreviewStyle(type,0.25,"outgoing").transform,outgoing,type+" outgoing");
+  assert.equal(directionalVideoTransitionPreviewStyle(type,0.25,"incoming").clipPath,"none",type);
+ }
+});
+
+test("browser preview clamps transition progress and safely ignores unsupported effects",()=>{
+ assert.equal(directionalVideoTransitionPreviewStyle("wipeleft",-2,"incoming").clipPath,"inset(0 0 0 100.000%)");
+ assert.equal(directionalVideoTransitionPreviewStyle("wipeleft",2,"incoming").clipPath,"inset(0 0 0 0.000%)");
+ assert.deepEqual(directionalVideoTransitionPreviewStyle("shell-command",0.5,"incoming"),{clipPath:"none",transform:"none"});
+ assert.deepEqual(directionalVideoTransitionPreviewStyle("slideleft",Number.NaN,"incoming"),{clipPath:"none",transform:"translateX(100.000%)"});
+});
+
+test("directional video transitions do not apply dissolve opacity envelopes in playback state",()=>{
+ const timeline=transitionFixture();
+ timeline.tracks[0].clips[0].transitionToNext={type:"wipeleft",fadeFrames:6};
+ timeline.tracks[0].clips[1].timelineStart=rational(18,24);
+ const outgoing=getTimelinePlaybackFrame(timeline,0.875).activeVideo.find(item=>item.clipId==="outgoing");
+ const incoming=getTimelinePlaybackFrame(timeline,0.875).activeVideo.find(item=>item.clipId==="incoming");
+ assert.equal(outgoing.opacity,1);
+ assert.equal(incoming.opacity,1);
 });

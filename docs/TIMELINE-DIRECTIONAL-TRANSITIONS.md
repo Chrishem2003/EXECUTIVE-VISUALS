@@ -20,10 +20,17 @@ The editor validates the same frame-based contract before saving. The transition
 
 ## Preview and master rendering
 
-The browser program monitor currently approximates directional wipes and slides with a dissolve because its HTML compositor does not implement the full FFmpeg transition shader. The clip inspector states this limitation. Final local/cloud FFmpeg master renders use the exact selected wipe or slide transition.
+The browser program monitor composites directional wipes with CSS clip masks and slides with synchronized incoming/outgoing transforms. The outgoing and incoming media layers remain independently clocked from the same sequence playhead; directional transitions do not also receive a dissolve opacity ramp. Final local/cloud FFmpeg master renders use the exact selected wipe or slide transition. Browser and FFmpeg implementations are visually aligned, while FFmpeg remains authoritative for final frame output.
 
 Before rendering, the worker verifies that its FFmpeg build exposes the `xfade` filter. If unavailable, the job fails with `VIDEO_TRANSITION_FILTER_UNAVAILABLE` rather than silently producing a cut or a different effect.
 
 ## Verification
 
 Run `npm run verify:timeline-transitions` and `npm run verify:timeline`. Tests cover all eight directional types, frame overlap validation, cumulative sequence duration, and real FFmpeg rendering for representative wipe and slide transitions when FFmpeg/FFprobe are installed.
+
+
+## Browser preview compositor
+
+The program monitor uses the same frame-counted transition window as the sequence model. For a wipe, the incoming layer is revealed through a directional clip mask while the outgoing layer remains underneath. For a slide, both layers translate in opposite directions over the exact overlap window. Directional transitions retain full opacity; only crossfades and dip-to-black use opacity envelopes. The editor resets compositor styles when a clip leaves its transition window so seeking backward or jumping between clips cannot retain stale masks or transforms.
+
+The playback unit suite covers all eight directions, incoming/outgoing slide motion, wipe masks, progress clamping, unsupported transition fallback, and the absence of accidental dissolve envelopes.
