@@ -72,6 +72,19 @@ test("binds the object path to the authenticated owner or project and reserved a
  await assert.rejects(()=>store.create(createInput({objectPath:project+"/423e4567-e89b-42d3-a456-426614174000/original.mp4"})),/bound to the verified owner\/project/);
 });
 
+test("finds an existing session by owner-scoped idempotency key before provider initiation",async()=>{
+ const {store}=setup();
+ const created=await store.create(createInput());
+ const found=await store.findByIdempotencyKey({ownerId:owner,idempotencyKey:"upload-job-123"});
+ assert.equal(found.id,created.id);
+ assert.equal(found.uploadId,uploadId);
+ assert.deepEqual(found.parts,[]);
+ assert.equal(await store.findByIdempotencyKey({ownerId:"523e4567-e89b-42d3-a456-426614174000",idempotencyKey:"upload-job-123"}),null);
+});
+test("rejects malformed idempotency keys during preflight lookup",async()=>{
+ const {store}=setup();
+ await assert.rejects(()=>store.findByIdempotencyKey({ownerId:owner,idempotencyKey:""}),/idempotency key/);
+});
 test("records each part idempotently and rejects mismatched retries and cross-owner reads",async()=>{
  const {store,parts}=setup();const session=await store.create(createInput());
  const first=await store.recordPart({ownerId:owner,sessionId:session.id,partNumber:1,etag:etag1,sha256:"e".repeat(64),size:5_000_000});
