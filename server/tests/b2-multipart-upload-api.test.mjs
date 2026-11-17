@@ -7,7 +7,7 @@ const projectId="22222222-2222-4222-8222-222222222222";
 const sha="a".repeat(64);
 const etag1="a".repeat(32),etag2="b".repeat(32);
 
-function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,claim={claimed:true,reason:"claimed"}}={}){
+function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,claim={claimed:true,reason:"claimed"},quota={remainingOwnerBytes:1_000_000_000,remainingTotalBytes:1_000_000_000}}={}){
  const calls={storage:[],ledger:[],assets:[]};
  let session=null,parts=[];
  const storage={
@@ -28,7 +28,7 @@ function fixture({authorize=async()=>true,existing=null,providerParts=null,verif
   async markCompleted(){session={...session,status:"completed"};calls.ledger.push(["completed"]);return true;},
   async markAborted(){session={...session,status:"aborted"};return true;}
  };
- const assets={async registerVerifiedObject(input){calls.assets.push(input);return{id:input.assetId,ownerId,projectId:input.projectId,name:input.originalName,size:input.size,sha256:input.sha256};}};
+ const assets={async getStorageUsage(){return quota;},async registerVerifiedObject(input){calls.assets.push(input);return{id:input.assetId,ownerId,projectId:input.projectId,name:input.originalName,size:input.size,sha256:input.sha256};}};
  const api=createB2MultipartUploadApi({storage,store,assets,authorize,maxBytes:100_000_000,partSize:5_000_000});
  return{api,calls,get session(){return session;},get parts(){return parts;}};
 }
@@ -45,6 +45,14 @@ test("starts an authorized B2 multipart session and keeps provider upload IDs pr
  assert.equal("ownerId" in result.body.session,false);
  assert.equal(f.calls.storage[0][0],"begin");
  assert.equal(f.calls.ledger[0][0],"create");
+});
+
+test("rejects initiation when owner or global private storage quota is insufficient",async()=>{
+ const f=fixture({quota:{remainingOwnerBytes:5_000_000,remainingTotalBytes:1_000_000_000}});
+ const result=await f.api.start(startInput);
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED");
+ assert.equal(f.calls.storage.length,0);
 });
 
 test("refuses session creation when the project authorization check fails",async()=>{
