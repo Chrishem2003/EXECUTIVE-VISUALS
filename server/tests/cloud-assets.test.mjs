@@ -101,6 +101,18 @@ test("registers an independently verified private object without uploading the s
  assert.equal(body.sha256,sha256);
 });
 
+test("registers an already independently verified object receipt without reading the object twice",async()=>{
+ const f=fixture();
+ const sha256=createHash("sha256").update(bytes).digest("hex");
+ const verifiedReceipt={bucket:"executive-visuals-media",path:projectId+"/"+assetId+"/original.mp4",size:bytes.length,sha256,contentType:"video/mp4"};
+ const asset=await f.repo.registerVerifiedObject({
+  ownerId,projectId,assetId,originalName:"final cut.mp4",mediaType:"video/mp4",
+  size:bytes.length,sha256,metadata:{role:"master"},verifiedReceipt
+ });
+ assert.equal(asset.id,assetId);
+ assert.equal(f.storageCalls.filter(call=>call.op==="verifyObject").length,0);
+});
+
 test("does not publish asset metadata when independent private-object verification fails",async()=>{
  const f=fixture({verifiedObjectError:Object.assign(new Error("checksum mismatch"),{code:"B2_OBJECT_SHA256_MISMATCH"})});
  await assert.rejects(()=>f.repo.registerVerifiedObject({
