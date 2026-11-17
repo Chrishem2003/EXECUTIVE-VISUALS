@@ -264,8 +264,8 @@ export function createBackblazeB2Storage({
         uploadedParts.push({ partNumber, etag });
       }
 
-      const afterParts = await stat(filePath);
-      if (afterParts.size !== file.size || afterParts.mtimeMs !== file.mtimeMs) throw new Error("B2 media file changed during multipart upload.");
+      const afterParts = await digestFile(filePath);
+      if (afterParts.size !== file.size || afterParts.mtimeMs !== file.mtimeMs || afterParts.sha256 !== file.sha256) throw new Error("B2 media file changed during multipart upload.");
       const partsXml = uploadedParts.map(part =>
         "<Part><ETag>" + xmlEscape(part.etag) + "</ETag><PartNumber>" + part.partNumber + "</PartNumber></Part>"
       ).join("");
@@ -301,7 +301,7 @@ export function createBackblazeB2Storage({
           signal: signal?.aborted ? null : signal
         });
       } catch {
-        error.cleanupFailed = true;
+        if (error && typeof error === "object") error.cleanupFailed = true;
       }
       throw error;
     }
