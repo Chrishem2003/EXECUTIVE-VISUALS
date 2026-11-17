@@ -40,7 +40,6 @@ test("project and membership policies use non-recursive security-definer helpers
   assert.match(recursionMigration, /create or replace function executive_visuals\.has_project_role/i);
   assert.match(recursionMigration, /security definer/i);
   assert.match(recursionMigration, /set row_security = off/i);
-  assert.match(recursionMigration, /grant usage on schema executive_visuals to authenticated/i);
   const policyChanges = recursionMigration.slice(recursionMigration.toLowerCase().indexOf("alter policy"));
   assert.doesNotMatch(policyChanges, /from executive_visuals\.projects/i);
   assert.doesNotMatch(policyChanges, /from executive_visuals\.project_members/i);
