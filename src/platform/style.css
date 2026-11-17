@@ -1541,3 +1541,5 @@ body{
 
 /* Dialogue-aware music ducking controls */
 .audio-ducking-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}.audio-ducking-options label{display:grid;gap:5px;min-width:0;font-size:11px;color:var(--muted,#686474)}.audio-ducking-options input{width:100%;min-width:0}.audio-ducking-options input:focus-visible{outline:2px solid var(--accent,#7655d8);outline-offset:2px}@media(max-width:560px){.audio-ducking-options{grid-template-columns:1fr}}
+
+.cloud-storage-usage{margin-top:14px}.cloud-storage-meter{height:10px;overflow:hidden;border:1px solid #3b3450;background:#0d1119;border-radius:20px;margin:14px 0 10px}.cloud-storage-meter span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#8b5cf6,#c4b5fd);transition:width .2s ease}.cloud-storage-stats{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 20px;color:#aeb5c2;font-size:10px}.cloud-storage-stats>b{font:700 18px Manrope;color:#f2f3f6}.cloud-storage-stats>b small{font:400 10px 'DM Sans';color:#9ca3af}.cloud-storage-stats>span{font-size:9px;color:#a39bb8}
