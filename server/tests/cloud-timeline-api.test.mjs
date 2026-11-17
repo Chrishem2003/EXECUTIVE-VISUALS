@@ -23,7 +23,8 @@ test("cloud asset usage endpoint returns only the verified owner's quota snapsho
  const f=setup();
  const result=await f.api.handle({method:"GET",path:"/api/cloud/assets/usage",ownerId:owner});
  assert.equal(result.status,200);
- assert.equal(result.body.usage.ownerBytes,4);
+ assert.equal(result.body.usage.usedBytes,4);
+ assert.equal("globalBytes" in result.body.usage,false);
  assert.deepEqual(f.calls.find(call=>call[0]==="asset-usage")[1],{ownerId:owner});
 });
 
@@ -34,6 +35,7 @@ test("private media upload returns 507 and a typed error when storage quota is r
  const result=await f.api.uploadAsset({req,ownerId:owner,projectId,originalName:"quota.mp4",mediaType:"video/mp4"});
  assert.equal(result.status,507);
  assert.equal(result.body.error.code,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED");
+ assert.equal("detail" in result.body.error,false);
 });
 
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
