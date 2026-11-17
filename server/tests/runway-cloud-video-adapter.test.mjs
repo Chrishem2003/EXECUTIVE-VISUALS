@@ -409,16 +409,16 @@ test("Veo rejects invalid frame pairs, unsupported durations and 1080p short cli
   assert.equal(calls, 0);
 });
 
-test("Veo preflight refuses paid submission when linked Enterprise billing is unavailable", async () => {
+test("Veo preflight refuses paid submission when linked linked-workspace billing is unavailable", async () => {
   let providerCalls = 0;
   const adapter = createRunwayCloudVideoAdapter({
     ...base, model: "veo3.1",
-    assertActualCostReady: async () => { throw Object.assign(new Error("Enterprise link missing"), { code: "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED" }); },
+    assertActualCostReady: async () => { throw Object.assign(new Error("Workspace account link missing"), { code: "RUNWAY_TASK_BILLING_LINK_REQUIRED" }); },
     fetchImpl: async () => { providerCalls += 1; return new Response(JSON.stringify({ id })); }
   });
   await assert.rejects(
     () => adapter.preflight({ provider: "runway", model: "veo3.1", prompt: "A quiet mountain lake", durationSeconds: 4 }),
-    error => error.code === "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED"
+    error => error.code === "RUNWAY_TASK_BILLING_LINK_REQUIRED"
   );
   assert.equal(providerCalls, 0);
 });
