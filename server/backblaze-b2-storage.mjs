@@ -252,15 +252,23 @@ export function createBackblazeB2Storage({
         const part = await digestFileRange(filePath, start, end);
         const partQuery = new Map([["partNumber", String(partNumber)], ["uploadId", uploadId]]);
         const partUrl = objectUrl(path) + "?" + canonicalQuery(partQuery);
-        const response = await request("PUT", partUrl, {
-          query: partQuery,
-          payloadHash: part.sha256,
-          body: createReadStream(filePath, { start, end }),
-          contentLength: part.size,
-          signal
-        });
-        const etag = response.headers?.get?.("etag")?.replace(/^"|"$/g, "");
-        if (!etag || !/^[A-Fa-f0-9-]{8,128}$/.test(etag)) throw new Error("B2 multipart part response omitted a valid ETag.");
+        let etag = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const response = await request("PUT", partUrl, {
+              query: partQuery,
+              payloadHash: part.sha256,
+              body: createReadStream(filePath, { start, end }),
+              contentLength: part.size,
+              signal
+            });
+            etag = response.headers?.get?.("etag")?.replace(/^"|"$/g, "") || null;
+            if (!etag || !/^[A-Fa-f0-9-]{8,128}$/.test(etag)) throw new Error("B2 multipart part response omitted a valid ETag.");
+            break;
+          } catch (error) {
+            if (signal?.aborted || (error?.status && error.status < 500) || attempt === 3) throw error;
+          }
+        }
         uploadedParts.push({ partNumber, etag });
       }
 
