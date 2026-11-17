@@ -314,6 +314,8 @@ test("creates scoped presigned multipart PUT URLs", async () => {
   assert.equal(signed.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
   assert.equal(signed.searchParams.get("X-Amz-Expires"), "300");
   assert.match(signed.searchParams.get("X-Amz-Signature"), /^[a-f0-9]{64}$/);
+  const opaque = new URL(await storage.createMultipartPartSignedUrl(path, "upload+id/12345=", 4, 300));
+  assert.equal(opaque.searchParams.get("uploadId"), "upload+id/12345=");
   await assert.rejects(() => storage.createMultipartPartSignedUrl(path, "upload_12345678", 0), /invalid/);
   await assert.rejects(() => storage.createMultipartPartSignedUrl(path, "upload_12345678", 1, 10), /expiry/);
 });
