@@ -23,7 +23,7 @@ A timestamped WebVTT transcript can be produced by the existing review-first tra
 - Every retained cue must fall inside the selected clip's source range.
 - The builder supports constant playback speed from 0.25× through 4×.
 - Variable-speed curves are rejected because a cue's source time cannot safely be mapped to the timeline with a constant-rate calculation.
-- Transcript input is limited to 2 MiB and 5,000 cues; cue text is bounded to 1,000 characters. SRT cue numbers and comma-millisecond timestamps are supported; WebVTT cue identifiers, voice tags and metadata remain supported.
+- Transcript input is limited to 2 MiB and 5,000 cues; cue text over 1,000 characters is rejected rather than silently truncated. SRT cue numbers and comma-millisecond timestamps are supported; WebVTT cue identifiers, voice tags and metadata remain supported.
 - Cues shorter than one timeline frame are skipped. If no usable cues remain, the operation is rejected.
 
 ## Safety and editing behavior

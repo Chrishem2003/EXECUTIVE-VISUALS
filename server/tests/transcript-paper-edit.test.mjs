@@ -48,6 +48,12 @@ test("parses SubRip SRT cue numbers, comma timestamps, markup and multiline dial
  assert.deepEqual(parseTranscriptInput(vtt),parseTranscriptWebVtt(vtt));
 });
 
+test("rejects overlong WebVTT and SRT cue text instead of silently truncating dialogue",()=>{
+ const long="x".repeat(1001);
+ assert.throws(()=>parseTranscriptWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n"+long),/1,000-character limit/);
+ assert.throws(()=>parseTranscriptSrt("1\n00:00:00,000 --> 00:00:01,000\n"+long),/1,000-character limit/);
+});
+
 test("rejects malformed and oversized SRT inputs",()=>{
  assert.throws(()=>parseTranscriptSrt("not an SRT file"),/missing its timing line/);
  assert.throws(()=>parseTranscriptSrt("1\n00:00:03,000 --> 00:00:01,000\nInvalid order"),/invalid timing/);
