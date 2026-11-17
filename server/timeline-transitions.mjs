@@ -53,13 +53,16 @@ export function buildVideoSequenceGraph(segments, fps) {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(nextInput) || !Number.isFinite(nextDuration) || nextDuration <= 0) {
       throw new Error("Video sequence segments require safe labels and positive durations.");
     }
-    if (previous?.transitionToNext?.type === "crossfade") {
+    const transitionType = String(previous?.transitionToNext?.type || "");
+    const supportedTransitions = new Set(["crossfade", "wipeleft", "wiperight", "wipeup", "wipedown", "slideleft", "slideright", "slideup", "slidedown"]);
+    if (supportedTransitions.has(transitionType)) {
       const frames = Number(previous.transitionToNext.fadeFrames);
       const fade = frames / frameRate;
       if (!Number.isSafeInteger(frames) || frames < 1 || fade > duration || fade > nextDuration) {
         throw new Error("Video crossfade length must fit both adjacent clips.");
       }
-      filters.push(`[${current}][${nextInput}]xfade=transition=fade:duration=${fade.toFixed(6)}:offset=${Math.max(0, duration - fade).toFixed(6)}[${nextLabel}]`);
+      const ffmpegTransition = transitionType === "crossfade" ? "fade" : transitionType;
+      filters.push(`[${current}][${nextInput}]xfade=transition=${ffmpegTransition}:duration=${fade.toFixed(6)}:offset=${Math.max(0, duration - fade).toFixed(6)}[${nextLabel}]`);
       duration += nextDuration - fade;
     } else {
       filters.push(`[${current}][${nextInput}]concat=n=2:v=1:a=0[${nextLabel}]`);
