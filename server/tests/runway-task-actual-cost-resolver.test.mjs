@@ -34,7 +34,7 @@ test("billing readiness verifies linked Enterprise workspace access before gener
   assert.equal(requested.searchParams.get("limit"), "1");
 });
 
-test("billing readiness blocks Veo generation if Enterprise workspace usage is not authorized", async () => {
+test("billing readiness blocks Veo generation if linked workspace usage is not authorized", async () => {
   const resolve = createRunwayTaskActualCostResolver({
     apiKey: "server-test-key", enabled: true, now: () => current,
     fetchImpl: async () => response({ error: "enterprise required" }, 403)
@@ -70,17 +70,17 @@ test("settles Veo task cost from the exact Enterprise per-generation usage row",
   assert.equal(url.searchParams.get("to"), "2026-11-16T10:07:00.000Z");
 });
 
-test("paginates all task transactions and nets explicit refunds", async () => {
+test("paginates all exact task charge transactions without inventing refund semantics", async () => {
   let page = 0;
   const resolve = resolver(async () => {
     page += 1;
     if (page === 1) return response({ data: [row()], hasMore: true, nextCursor: "opaque-next" });
-    return response({ data: [row({ transactionId: "txn-refund", credits: 20, type: "refund" })], hasMore: false, nextCursor: null });
+    return response({ data: [row({ transactionId: "txn-002", credits: 20 })], hasMore: false, nextCursor: null });
   });
   const cost = await resolve({ job, input, task, providerTaskId: id, submissionMetadata: { submittedAt } });
   assert.equal(page, 2);
-  assert.equal(cost.creditsCharged, 140);
-  assert.equal(cost.amount, 1.4);
+  assert.equal(cost.creditsCharged, 180);
+  assert.equal(cost.amount, 1.8);
   assert.equal(cost.transactionCount, 2);
 });
 
@@ -110,7 +110,8 @@ test("rejects usage rows for a different model, task, timestamp or malformed cre
     row({ tool: "Veo 3.1 Fast" }),
     row({ timestamp: "2026-11-17T10:01:00.000Z" }),
     row({ credits: "160" }),
-    row({ unit: "usd" })
+    row({ unit: "usd" }),
+    row({ type: "refund" })
   ]) {
     const resolve = resolver(async () => response({ data: [bad], hasMore: false, nextCursor: null }));
     await assert.rejects(
@@ -120,7 +121,7 @@ test("rejects usage rows for a different model, task, timestamp or malformed cre
   }
 });
 
-test("fails closed when linked Enterprise workspace usage is unauthorized", async () => {
+test("fails closed when linked workspace usage is unauthorized", async () => {
   const resolve = resolver(async () => response({ error: "enterprise required" }, 403));
   await assert.rejects(
     () => resolve({ job, input, task, providerTaskId: id, submissionMetadata: { submittedAt } }),
