@@ -55,7 +55,7 @@ export function readCloudWorkerConfig(env=process.env){
   const directRunwayConfigured=directRunwayRequested&&directRunwayVeoOnly&&
    env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.RUNWAY_WORKSPACE_USAGE_ENABLED==="true"&&
    Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-  if(directRunwayRequested&&!directRunwayConfigured)throw new Error("Direct Runway Veo requires both remote gates, a server API key and Enterprise per-generation workspace usage reconciliation; other direct Runway profiles still require a separately integrated task-level resolver.");
+  if(directRunwayRequested&&!directRunwayConfigured)throw new Error("Direct Runway Veo requires both remote gates, a server API key and linked-workspace per-generation usage reconciliation; other direct Runway profiles still require a separately integrated task-level resolver.");
   if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma&&!directRunwayConfigured)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, gated Google Omni, configured Luma, or verified direct Veo task billing.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
  }
