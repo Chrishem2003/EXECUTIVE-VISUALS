@@ -54,7 +54,7 @@ test("Veo 3.1 tiers are mapped to the implemented Runway worker while remaining 
     assert.equal(model.constraints.lastFrameRequiresFirstFrame, true);
     assert.equal(model.constraints.eightSecondsOnlyAt1080p, true);
     assert.equal(model.constraints.creditUsdValue, 0.01);
-    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-16");
+    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-17");
   }
   assert.deepEqual(standard.constraints.outputCreditsPerSecond, { audio: 40, noAudio: 20 });
   assert.deepEqual(fast.constraints.outputCreditsPerSecond, { audio: 15, noAudio: 10 });
