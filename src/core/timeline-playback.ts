@@ -75,8 +75,8 @@ export function getTimelinePlaybackFrame(timeline: EditorialTimeline, playheadSe
         const index=enabledVideoClips.findIndex(item=>item.id===clip.id),previous=enabledVideoClips[index-1];
         const incomingTransition=previous?.transitionToNext;
         const outgoingTransition=clip.transitionToNext;
-        const fadeIn=incomingTransition&&(incomingTransition.type==="dip-to-black"||incomingTransition.type==="crossfade"||["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(incomingTransition.type))?incomingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
-        const fadeOut=outgoingTransition&&(outgoingTransition.type==="dip-to-black"||outgoingTransition.type==="crossfade"||["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(outgoingTransition.type))?outgoingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeIn=incomingTransition&&(incomingTransition.type==="dip-to-black"||incomingTransition.type==="crossfade")?incomingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
+        const fadeOut=outgoingTransition&&(outgoingTransition.type==="dip-to-black"||outgoingTransition.type==="crossfade")?outgoingTransition.fadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator):0;
         if(fadeIn>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(safeTime-start)/fadeIn)));
         if(fadeOut>0)opacity=Math.min(opacity,Math.max(0,Math.min(1,(end-safeTime)/fadeOut)));
       }
@@ -174,4 +174,29 @@ export function shouldFallbackToTimelineSourcePreview(
 ):boolean {
   return isProxy&&sourceAssetId.length>0&&proxyAssetId.length>0&&
     sourceAssetId!==proxyAssetId&&!unavailableProxyAssetIds.includes(proxyAssetId);
+}
+
+
+export type DirectionalVideoTransitionType="wipeleft"|"wiperight"|"wipeup"|"wipedown"|"slideleft"|"slideright"|"slideup"|"slidedown";
+export type DirectionalVideoTransitionRole="incoming"|"outgoing";
+export interface DirectionalVideoTransitionPreviewStyle { clipPath:string; transform:string; }
+
+/** Return deterministic browser-compositor styles for the directional FFmpeg transitions. */
+export function directionalVideoTransitionPreviewStyle(
+  type:string,progress:number,role:DirectionalVideoTransitionRole,
+):DirectionalVideoTransitionPreviewStyle {
+  const p=Math.max(0,Math.min(1,Number.isFinite(progress)?progress:0));
+  if(type==="wipeleft"||type==="wiperight"||type==="wipeup"||type==="wipedown"){
+    if(role==="outgoing")return {clipPath:"none",transform:"none"};
+    const inset=(100*(1-p)).toFixed(3)+"%";
+    const clipPath=type==="wipeleft"?"inset(0 0 0 "+inset+")":
+      type==="wiperight"?"inset(0 "+inset+" 0 0)":
+      type==="wipeup"?"inset(0 0 "+inset+" 0)":"inset("+inset+" 0 0 0)";
+    return {clipPath,transform:"none"};
+  }
+  if(type==="slideleft")return {clipPath:"none",transform:role==="incoming"?"translateX("+(100*(1-p)).toFixed(3)+"%)":"translateX("+(-100*p).toFixed(3)+"%)"};
+  if(type==="slideright")return {clipPath:"none",transform:role==="incoming"?"translateX("+(-100*(1-p)).toFixed(3)+"%)":"translateX("+(100*p).toFixed(3)+"%)"};
+  if(type==="slideup")return {clipPath:"none",transform:role==="incoming"?"translateY("+(100*(1-p)).toFixed(3)+"%)":"translateY("+(-100*p).toFixed(3)+"%)"};
+  if(type==="slidedown")return {clipPath:"none",transform:role==="incoming"?"translateY("+(-100*(1-p)).toFixed(3)+"%)":"translateY("+(100*p).toFixed(3)+"%)"};
+  return {clipPath:"none",transform:"none"};
 }
