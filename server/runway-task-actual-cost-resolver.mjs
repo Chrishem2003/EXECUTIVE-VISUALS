@@ -51,7 +51,7 @@ export function createRunwayTaskActualCostResolver({
     } catch (error) {
       throw fail(error?.name === "AbortError" ? "Runway workspace usage readiness check timed out." : "Runway workspace usage is unavailable.", "RUNWAY_TASK_BILLING_UNAVAILABLE");
     } finally { clearTimeout(timer); }
-    if (response.status === 401 || response.status === 403) throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+    if (response.status === 401 || response.status === 403) throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_LINK_REQUIRED");
     if (!response.ok) throw fail("Runway workspace usage readiness check failed (HTTP " + response.status + ").", "RUNWAY_TASK_BILLING_UNAVAILABLE");
     const raw = await response.text();
     if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw fail("Runway workspace usage response exceeded 2 MiB.", "RUNWAY_TASK_BILLING_RESPONSE_INVALID");
@@ -111,7 +111,7 @@ export function createRunwayTaskActualCostResolver({
         clearTimeout(timer);
       }
       if (response.status === 401 || response.status === 403) {
-        throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+        throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_LINK_REQUIRED");
       }
       if (response.status === 429 || response.status >= 500) {
         throw fail("Runway workspace usage is temporarily unavailable; keep the budget reservation unresolved.", "RUNWAY_TASK_BILLING_UNAVAILABLE");
