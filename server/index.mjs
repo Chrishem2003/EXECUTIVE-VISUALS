@@ -42,6 +42,7 @@ import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dis
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
+import { captureReviewAssetVersion, reviewAssetVersionStatus } from "./review-asset-version.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession, requestSupabasePasswordRecovery, updateSupabasePassword, isSupabaseRecoveryToken } from "./supabase-password-auth.mjs";
 import { createSupabaseSessionStore, assertSameOriginMutation } from "./supabase-session-store.mjs";
@@ -1963,9 +1964,9 @@ export function createAppServer() {
         const projectId=url.searchParams.get("projectId");
         if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         const rows=projectId
-          ? db.prepare("SELECT * FROM reviews WHERE project_id=? ORDER BY created_at DESC").all(projectId)
-          : db.prepare("SELECT * FROM reviews WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 200").all(user.id,user.id,user.id);
-        send(res,200,{reviews:rows},cors);return;
+          ? db.prepare("SELECT reviews.*,CASE WHEN assets.deleted_at IS NULL THEN assets.sha256 ELSE NULL END AS current_asset_sha256 FROM reviews LEFT JOIN assets ON assets.id=reviews.asset_id WHERE reviews.project_id=? ORDER BY reviews.created_at DESC").all(projectId)
+          : db.prepare("SELECT reviews.*,CASE WHEN assets.deleted_at IS NULL THEN assets.sha256 ELSE NULL END AS current_asset_sha256 FROM reviews LEFT JOIN assets ON assets.id=reviews.asset_id WHERE (reviews.project_id IS NULL AND reviews.owner_id=?) OR reviews.project_id IN (SELECT id FROM projects WHERE owner_id=?) OR reviews.project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY reviews.created_at DESC LIMIT 200").all(user.id,user.id,user.id);
+        send(res,200,{reviews:rows.map(row=>{const {current_asset_sha256,...review}=row;return{...review,asset_version_status:reviewAssetVersionStatus(review.asset_sha256,current_asset_sha256)};})},cors);return;
       }
       if(path==="/api/reviews"&&req.method==="POST"){
         const body=await readJson(req),projectId=String(body.projectId||"");
@@ -1978,12 +1979,20 @@ export function createAppServer() {
         const timecode=body.timecodeSeconds===undefined||body.timecodeSeconds===null?null:Number(body.timecodeSeconds);
         if(timecode!==null&&(!Number.isFinite(timecode)||timecode<0)){fail(res,400,"INVALID_TIMECODE","Review timecode must be a non-negative number.");return;}
         const assetId=body.assetId||null;
-        if(assetId){const asset=getAccessibleAsset(db,user.id,String(assetId));if(!asset||asset.project_id&&asset.project_id!==projectId){fail(res,404,"ASSET_NOT_FOUND","Review asset is not accessible in this project.");return;}}
+        let assetSha256=null;
+        if(assetId){
+          const asset=getAccessibleAsset(db,user.id,String(assetId));
+          if(!asset||asset.project_id&&asset.project_id!==projectId){fail(res,404,"ASSET_NOT_FOUND","Review asset is not accessible in this project.");return;}
+          try{assetSha256=captureReviewAssetVersion(asset,body.assetSha256);}
+          catch(error){fail(res,error.status||409,error.code||"REVIEW_ASSET_VERSION_INVALID",error.message);return;}
+        }else if(body.assetSha256!==undefined&&body.assetSha256!==null){
+          fail(res,400,"REVIEW_ASSET_REQUIRED","An asset version fingerprint requires an assetId.");return;
+        }
         const id=randomUUID(),status=decision==="approve"?"resolved":"open";
-        db.prepare("INSERT INTO reviews(id,owner_id,project_id,asset_id,reviewer_id,timecode_seconds,decision,body,status,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
-          .run(id,user.id,projectId,assetId,decision==="comment"?null:user.id,timecode,decision,text,status,status==="resolved"?now():null);
-        audit(db,user.id,"review.created","review",id,{decision,timecodeSeconds:timecode},projectId);
-        send(res,201,{review:{id,projectId,assetId,decision,body:text,status,timecodeSeconds:timecode,createdAt:now()}},cors);return;
+        db.prepare("INSERT INTO reviews(id,owner_id,project_id,asset_id,asset_sha256,reviewer_id,timecode_seconds,decision,body,status,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+          .run(id,user.id,projectId,assetId,assetSha256,decision==="comment"?null:user.id,timecode,decision,text,status,status==="resolved"?now():null);
+        audit(db,user.id,"review.created","review",id,{decision,timecodeSeconds:timecode,assetSha256},projectId);
+        send(res,201,{review:{id,projectId,assetId,assetSha256,assetVersionStatus:assetSha256?"current":"unbound",version:1,decision,body:text,status,timecodeSeconds:timecode,createdAt:now()}},cors);return;
       }
       const reviewMatch=path.match(/^\/api\/reviews\/([0-9a-f-]+)$/i);
       if(reviewMatch){
