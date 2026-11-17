@@ -164,6 +164,10 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
 });
 
 test("registers Veo 3.1 standard and Fast through the shared Runway worker without enabling paid execution", () => {
+  const resolveRunwayActualCost = async ({ providerTaskId, model }) => ({
+    amount: 1, currency: "USD", evidenceReference: "test:runway-veo:" + model + ":" + providerTaskId
+  });
+  resolveRunwayActualCost.assertAvailable = async () => true;
   const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
     createAdapters: undefined,
@@ -173,9 +177,7 @@ test("registers Veo 3.1 standard and Fast through the shared Runway worker witho
       RUNWAY_API_KEY: "runway-test-key",
       RUNWAY_VIDEO_ALLOW_REMOTE: "false"
     },
-    resolveRunwayActualCost: async ({ providerTaskId, model }) => ({
-      amount: 1, currency: "USD", evidenceReference: "test:runway-veo:" + model + ":" + providerTaskId
-    })
+    resolveRunwayActualCost
   });
   assert.deepEqual(worker.listSupported(), [
     "fal:fal-ai/wan/v2.7/text-to-video",
