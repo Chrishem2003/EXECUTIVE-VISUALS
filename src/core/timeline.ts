@@ -4,7 +4,8 @@ export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
 export interface SpeedKeyframe { timeSeconds:number; speed:number }
-export interface TimelineTransition { type:"dip-to-black"|"crossfade"; fadeFrames:number }
+export type VideoXfadeTransitionType="crossfade"|"wipeleft"|"wiperight"|"wipeup"|"wipedown"|"slideleft"|"slideright"|"slideup"|"slidedown";
+export interface TimelineTransition { type:"dip-to-black"|VideoXfadeTransitionType; fadeFrames:number }
 export interface TimelineClip {
   id:string; assetId:string; name:string; sourceRange:TimeRange;
   timelineStart:RationalTime; duration:RationalTime;
@@ -338,10 +339,10 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
         const transition=clip.transitionToNext,position=enabledClips.findIndex(item=>item.id===clip.id),next=enabledClips[position+1];
         const fadeFrames=Number(transition?.fadeFrames),fps=timeline.frameRate.numerator/timeline.frameRate.denominator,clipFrames=Math.round(duration*fps);
         const videoDip=track.kind==="video"&&transition?.type==="dip-to-black";
-        const videoCrossfade=track.kind==="video"&&transition?.type==="crossfade";
+        const videoCrossfade=track.kind==="video"&&["crossfade","wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(String(transition?.type));
         const audioCrossfade=track.kind==="audio"&&transition?.type==="crossfade";
         if((!videoDip&&!videoCrossfade&&!audioCrossfade)||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)
-          issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black and video/audio crossfade transitions require a positive integer fade length no longer than the outgoing clip."});
+          issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video dip-to-black, directional video transitions and audio crossfades require a positive integer fade length no longer than the outgoing clip."});
         else if(!next)
           issues.push({code:"transition_requires_next_clip",trackId:track.id,clipId:clip.id,message:"A transition requires the next enabled clip on the same track."});
         else if(videoDip&&Math.abs(seconds(next.timelineStart)-(start+duration))>0.5/fps)
@@ -360,7 +361,7 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       const previousFadeFrames=Number(previousEnabled?.transitionToNext?.fadeFrames)||0;
       const expectedCrossfadeStart=seconds(previousEnabled?.timelineStart??clip.timelineStart)+seconds(previousEnabled?.duration??clip.duration)-previousFadeFrames/(timeline.frameRate.numerator/timeline.frameRate.denominator);
       const allowedAudioCrossfade=track.kind==="audio"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-expectedCrossfadeStart)<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
-      const allowedVideoCrossfade=track.kind==="video"&&previousEnabled?.transitionToNext?.type==="crossfade"&&Math.abs(start-expectedCrossfadeStart)<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
+      const allowedVideoCrossfade=track.kind==="video"&&["crossfade","wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(String(previousEnabled?.transitionToNext?.type))&&Math.abs(start-expectedCrossfadeStart)<=0.5/(timeline.frameRate.numerator/timeline.frameRate.denominator);
       if(clip.enabled&&start+0.000001<end&&!allowedAudioCrossfade&&!allowedVideoCrossfade)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use a validated video/audio crossfade or another track."});
       end=Math.max(end,start+duration);
     }
