@@ -29,7 +29,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
  async function request(path,{method="GET",body=null,prefer=null}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};
+   const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
    if(body!==null)headers["content-type"]="application/json";if(prefer)headers.prefer=prefer;
    const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
    const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Multipart ledger returned invalid JSON.");}}
