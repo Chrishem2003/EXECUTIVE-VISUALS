@@ -127,7 +127,7 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     await storage.completeMultipartUpload(session.objectPath,session.uploadId,expected.map(p=>({partNumber:p.partNumber,etag:p.etag})));
     verified=await storage.verifyObject(session.objectPath,{expectedSize:session.size,expectedSha256:session.sha256,contentType:session.mediaType});
    }
-   const asset=await assets.registerVerifiedObject({ownerId,projectId:session.projectId,assetId:session.assetId,originalName:session.originalName,mediaType:session.mediaType,size:session.size,sha256:session.sha256,metadata:{uploadProvider:"backblaze-b2",multipartSessionId:session.id}});
+   const asset=await assets.registerVerifiedObject({ownerId,projectId:session.projectId,assetId:session.assetId,originalName:session.originalName,mediaType:session.mediaType,size:session.size,sha256:session.sha256,metadata:{uploadProvider:"backblaze-b2",multipartSessionId:session.id},verifiedReceipt:verified});
    if(verified?.path!==session.objectPath||verified?.size!==session.size||verified?.sha256!==session.sha256)throw Object.assign(new Error("Verified object receipt does not match the upload session."),{code:"B2_MULTIPART_VERIFICATION_MISMATCH"});
    const marked=await store.markCompleted({ownerId,sessionId});
    if(!marked)throw Object.assign(new Error("Asset was published but the upload session completion state could not be committed."),{code:"B2_MULTIPART_FINALIZE_PENDING"});
