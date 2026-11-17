@@ -7,7 +7,7 @@ const projectId="22222222-2222-4222-8222-222222222222";
 const sha="a".repeat(64);
 const etag1="a".repeat(32),etag2="b".repeat(32);
 
-function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,claim={claimed:true,reason:"claimed"},quota={remainingOwnerBytes:1_000_000_000,remainingTotalBytes:1_000_000_000},registrationError=null}={}){
+function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,verifyReceiptOverride=null,claim={claimed:true,reason:"claimed"},quota={remainingOwnerBytes:1_000_000_000,remainingTotalBytes:1_000_000_000},registrationError=null}={}){
  const calls={storage:[],ledger:[],assets:[]};
  let session=null,parts=[];
  const storage={
@@ -17,7 +17,7 @@ function fixture({authorize=async()=>true,existing=null,providerParts=null,verif
   async listMultipartParts(path,id){calls.storage.push(["list",path,id]);return{parts:providerParts||[{partNumber:1,etag:etag1,size:5_000_000},{partNumber:2,etag:etag2,size:1_000_000}],truncated:false};},
   async completeMultipartUpload(path,id,items){calls.storage.push(["complete",path,id,items]);return{bucket:"executive-visuals-media",path,parts:items.length};},
   async abortMultipartUpload(path,id){calls.storage.push(["abort",path,id]);return true;},
-  async verifyObject(path,options){calls.storage.push(["verify",path,options]);if(verifyInitially){verifyInitially=false;throw Object.assign(new Error("not yet complete"),{code:"B2_OBJECT_NOT_FOUND"});}return{bucket:"executive-visuals-media",path,size:options.expectedSize,sha256:options.expectedSha256,contentType:options.contentType};}
+  async verifyObject(path,options){calls.storage.push(["verify",path,options]);if(verifyInitially){verifyInitially=false;throw Object.assign(new Error("not yet complete"),{code:"B2_OBJECT_NOT_FOUND"});}return verifyReceiptOverride||{bucket:"executive-visuals-media",path,size:options.expectedSize,sha256:options.expectedSha256,contentType:options.contentType};}
  };
  const store={
   async findByIdempotencyKey(){return existing;},
@@ -126,6 +126,29 @@ test("does not publish metadata when provider part reconciliation fails",async()
  assert.equal(result.status,502);
  assert.equal(f.calls.assets.length,0);
  assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,0);
+});
+
+
+test("rejects a mismatched final object receipt before publishing any Asset Library metadata",async()=>{
+ const f=fixture({verifyReceiptOverride:{bucket:"executive-visuals-media",path:"different/private/object.mp4",size:6_000_000,sha256:"b".repeat(64),contentType:"video/webm"}});
+ await f.api.start(startInput);
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
+ const result=await f.api.complete({ownerId,sessionId:f.session.id});
+ assert.equal(result.status,502);
+ assert.equal(result.body.error.code,"B2_MULTIPART_VERIFICATION_MISMATCH");
+ assert.equal(f.calls.assets.length,0);
+ assert.equal(f.calls.ledger.some(call=>call[0]==="completed"),false);
+});
+
+test("checks the final provider content type before Asset Library publication",async()=>{
+ const f=fixture({verifyReceiptOverride:{bucket:"executive-visuals-media",path:"valid/private/object.mp4",size:6_000_000,sha256:sha,contentType:"video/webm"}});
+ await f.api.start(startInput);
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
+ const result=await f.api.complete({ownerId,sessionId:f.session.id});
+ assert.equal(result.body.error.code,"B2_MULTIPART_VERIFICATION_MISMATCH");
+ assert.equal(f.calls.assets.length,0);
 });
 
 test("rejects unauthenticated and undersized multipart initiation",async()=>{
