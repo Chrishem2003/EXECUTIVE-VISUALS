@@ -73,7 +73,7 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     return {status:200,body:{session:publicSession(existing),idempotentReplay:true}};
    }
    const usage=await assets.getStorageUsage({ownerId});
-   if(!usage||!Number.isSafeInteger(usage.remainingOwnerBytes)||!Number.isSafeInteger(usage.remainingTotalBytes))throw Object.assign(new Error("Private asset storage quota could not be verified."),{code:"CLOUD_ASSET_STORAGE_QUOTA_UNAVAILABLE"});
+   if(!usage||!!Number.isSafeInteger(usage.remainingOwnerBytes)||!Number.isSafeInteger(usage.remainingTotalBytes))throw Object.assign(new Error("Private asset storage quota could not be verified."),{code:"CLOUD_ASSET_STORAGE_QUOTA_UNAVAILABLE"});
    if(size>usage.remainingOwnerBytes||size>usage.remainingTotalBytes)return fail(409,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED","This upload exceeds the remaining private storage quota.");
    const assetId=randomUUID(),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"})[mediaType]});
    const begun=await storage.beginMultipartUpload(objectPath,mediaType);
