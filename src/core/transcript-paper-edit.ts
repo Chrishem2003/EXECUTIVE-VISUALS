@@ -30,7 +30,8 @@ export function parseTranscriptWebVtt(input:string):TranscriptCue[]{
   const rawBody=body.join(" ");
   const voice=rawBody.match(/<v(?:\s+([^>]+))?>/i);
   const speaker=voice?.[1]?.trim().replace(/\s+/g," ").slice(0,100);
-  const cueText=rawBody.replace(/<v(?:\s+[^>]*)?>/gi,"").replace(/<\/v>/gi,"").replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
+  const cueText=rawBody.replace(/<v(?:\s+[^>]*)?>/gi,"").replace(/<\/v>/gi,"").replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim();
+  if(cueText.length>1000)throw new Error("Transcript cue "+(cues.length+1)+" exceeds the 1,000-character limit.");
   if(start===null||end===null||end<=start||!cueText)throw new Error("Transcript cue "+(cues.length+1)+" has invalid timing or empty text.");
   cues.push({index:cues.length,start,end,text:cueText,...(speaker?{speaker}:{})});
   if(cues.length>MAX_CUES)throw new Error("Transcript exceeds the 5,000 cue limit.");
@@ -51,7 +52,8 @@ export function parseTranscriptSrt(input:string):TranscriptCue[]{
   const match=lines[timingIndex].match(/^\s*(\S+)\s+-->\s+(\S+)(?:\s+.*)?$/);
   const start=match?parseTimestamp(match[1]):null,end=match?parseTimestamp(match[2]):null;
   const rawBody=lines.slice(timingIndex+1).join(" ");
-  const cueText=rawBody.replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim().slice(0,1000);
+  const cueText=rawBody.replace(/<[^>]*>/g,"").replace(/&nbsp;/gi," ").trim();
+  if(cueText.length>1000)throw new Error("SRT cue "+(cues.length+1)+" exceeds the 1,000-character limit.");
   if(start===null||end===null||end<=start||!cueText)throw new Error("SRT cue "+(cues.length+1)+" has invalid timing or empty text.");
   cues.push({index:cues.length,start,end,text:cueText});
   if(cues.length>MAX_CUES)throw new Error("Transcript exceeds the 5,000 cue limit.");
