@@ -226,6 +226,115 @@ export function createBackblazeB2Storage({
     return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
   }
 
+  function multipartPartsFromXml(xml) {
+    const parts = [];
+    for (const match of String(xml).matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
+      const body = match[1];
+      const partNumber = Number(xmlTag(body, "PartNumber"));
+      const etag = xmlTag(body, "ETag").replace(/^"|"$/g, "");
+      const size = Number(xmlTag(body, "Size"));
+      if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
+          !/^[A-Fa-f0-9-]{8,128}$/.test(etag) || !Number.isSafeInteger(size) || size < 1) {
+        throw new Error("B2 returned an invalid multipart part listing.");
+      }
+      parts.push({ partNumber, etag, size });
+    }
+    return parts;
+  }
+
+  async function beginMultipartUpload(objectPath, contentType, signal = null) {
+    const path = safeObjectPath(objectPath);
+    if (!MIME_TYPES.has(contentType)) throw new Error("Unsupported B2 media content type.");
+    const query = new Map([["uploads", ""]]);
+    const response = await request("POST", objectUrl(path) + "?" + canonicalQuery(query), {
+      query, contentType, signal
+    });
+    const uploadId = xmlTag(await response.text(), "UploadId");
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
+    return { bucket: bucketName, path: objectPath, uploadId };
+  }
+
+  async function listMultipartParts(objectPath, uploadId, { signal = null } = {}) {
+    const path = safeObjectPath(objectPath);
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
+    const parts = [];
+    let marker = null;
+    for (let page = 0; page < 10; page++) {
+      const query = new Map([["uploadId", uploadId]]);
+      if (marker !== null) query.set("part-number-marker", String(marker));
+      const response = await request("GET", objectUrl(path) + "?" + canonicalQuery(query), { query, signal });
+      const xml = await response.text();
+      const pageParts = multipartPartsFromXml(xml);
+      const known = new Set(parts.map(part => part.partNumber));
+      if (pageParts.some(part => known.has(part.partNumber))) throw new Error("B2 returned duplicate multipart part numbers.");
+      parts.push(...pageParts);
+      const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/i.test(xml);
+      if (!truncated) return { parts, truncated: false };
+      const next = Number(xmlTag(xml, "NextPartNumberMarker"));
+      if (!Number.isInteger(next) || next <= (marker || 0) || next > 10000) throw new Error("B2 returned an invalid multipart pagination marker.");
+      marker = next;
+    }
+    throw new Error("B2 multipart part listing exceeded the pagination limit.");
+  }
+
+  async function uploadMultipartPartFile(objectPath, uploadId, partNumber, filePath, start, end, { signal = null } = {}) {
+    const path = safeObjectPath(objectPath);
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
+        !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
+      throw new Error("B2 multipart part request is invalid.");
+    }
+    const info = await stat(filePath);
+    if (!info.isFile() || end >= info.size) throw new Error("B2 multipart part range exceeds the source file.");
+    const partSize = end - start + 1;
+    if (end < info.size - 1 && partSize < MIN_MULTIPART_PART_BYTES) throw new Error("Non-final B2 multipart parts must be at least 5 MiB.");
+    const part = await digestFileRange(filePath, start, end);
+    const query = new Map([["partNumber", String(partNumber)], ["uploadId", uploadId]]);
+    const response = await request("PUT", objectUrl(path) + "?" + canonicalQuery(query), {
+      query, payloadHash: part.sha256, body: createReadStream(filePath, { start, end }),
+      contentLength: part.size, signal
+    });
+    const etag = response.headers?.get?.("etag")?.replace(/^"|"$/g, "");
+    if (!etag || !/^[A-Fa-f0-9-]{8,128}$/.test(etag)) throw new Error("B2 multipart part response omitted a valid ETag.");
+    const after = await stat(filePath);
+    const verified = await digestFileRange(filePath, start, end);
+    if (after.size !== info.size || after.mtimeMs !== info.mtimeMs || verified.sha256 !== part.sha256) {
+      throw new Error("B2 multipart source file changed while a part was uploaded.");
+    }
+    return { partNumber, etag, sha256: part.sha256, size: part.size };
+  }
+
+  async function completeMultipartUpload(objectPath, uploadId, parts, { signal = null } = {}) {
+    const path = safeObjectPath(objectPath);
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) || !Array.isArray(parts) || parts.length < 1 || parts.length > 10000) {
+      throw new Error("B2 multipart completion request is invalid.");
+    }
+    const ordered = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+    if (ordered.some((part, index) => part.partNumber !== index + 1 || !/^[A-Fa-f0-9-]{8,128}$/.test(String(part.etag || "")))) {
+      throw new Error("B2 multipart completion requires contiguous ordered part receipts.");
+    }
+    const partsXml = ordered.map(part =>
+      "<Part><ETag>" + xmlEscape(part.etag) + "</ETag><PartNumber>" + part.partNumber + "</PartNumber></Part>"
+    ).join("");
+    const body = "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">" + partsXml + "</CompleteMultipartUpload>";
+    const bytes = Buffer.from(body);
+    const query = new Map([["uploadId", uploadId]]);
+    const response = await request("POST", objectUrl(path) + "?" + canonicalQuery(query), {
+      query, payloadHash: createHash("sha256").update(bytes).digest("hex"),
+      contentType: "application/xml", body, contentLength: bytes.length, signal
+    });
+    const xml = await response.text();
+    if (/<Error(?:\s|>)/.test(xml)) throw new Error("B2 rejected multipart completion.");
+    return { bucket: bucketName, path: objectPath, parts: ordered.length };
+  }
+
+  async function abortMultipartUpload(objectPath, uploadId, { signal = null } = {}) {
+    const path = safeObjectPath(objectPath);
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
+    const query = new Map([["uploadId", uploadId]]);
+    await request("DELETE", objectUrl(path) + "?" + canonicalQuery(query), { query, signal });
+    return true;
+  }
+
   async function uploadFileMultipart(objectPath, filePath, contentType, file, signal) {
     const path = safeObjectPath(objectPath);
     const partCount = Math.ceil(file.size / multipartPartBytes);
@@ -318,6 +427,11 @@ export function createBackblazeB2Storage({
   return Object.freeze({
     bucket: bucketName,
     endpoint: base,
+    beginMultipartUpload,
+    listMultipartParts,
+    uploadMultipartPartFile,
+    completeMultipartUpload,
+    abortMultipartUpload,
 
     async checkReadiness() {
       await request("HEAD", base + bucketPath);

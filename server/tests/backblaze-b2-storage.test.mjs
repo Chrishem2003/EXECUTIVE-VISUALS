@@ -165,6 +165,67 @@ test("rejects invalid multipart sizing before contacting B2", () => {
   assert.throws(() => createBackblazeB2Storage({ ...config, multipartPartBytes: 1024, fetchImpl }), /part size/);
 });
 
+test("exposes signed multipart begin, list-parts, part-upload, completion and abort primitives", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ev-b2-multipart-primitives-"));
+  const file = join(root, "part.bin");
+  const bytes = Buffer.alloc(5 * 1024 * 1024, 0x4d);
+  await writeFile(file, bytes);
+  const calls = [];
+  const etag = "a".repeat(32);
+  try {
+    const storage = createBackblazeB2Storage({
+      ...config,
+      fetchImpl: async (url, options) => {
+        const parsed = new URL(url);
+        calls.push({ url, options });
+        if (options.method === "POST" && parsed.searchParams.has("uploads")) {
+          return { ok: true, status: 200, text: async () => "<UploadId>upload_12345678</UploadId>" };
+        }
+        if (options.method === "GET" && parsed.searchParams.has("uploadId")) {
+          return { ok: true, status: 200, text: async () => "<ListPartsResult><IsTruncated>false</IsTruncated><Part><PartNumber>1</PartNumber><ETag>\"" + etag + "\"</ETag><Size>" + bytes.length + "</Size></Part></ListPartsResult>" };
+        }
+        if (options.method === "PUT" && parsed.searchParams.has("partNumber")) {
+          for await (const chunk of options.body) { /* consume the bounded part stream */ }
+          return { ok: true, status: 200, headers: { get: name => name.toLowerCase() === "etag" ? "\"" + etag + "\"" : null } };
+        }
+        if (options.method === "POST" && parsed.searchParams.has("uploadId")) {
+          return { ok: true, status: 200, text: async () => "<CompleteMultipartUploadResult/>" };
+        }
+        if (options.method === "DELETE" && parsed.searchParams.has("uploadId")) {
+          return { ok: true, status: 204 };
+        }
+        throw new Error("Unexpected B2 multipart operation.");
+      }
+    });
+    assert.equal(typeof storage.beginMultipartUpload, "function");
+    const begun = await storage.beginMultipartUpload(path, "video/mp4");
+    assert.equal(begun.uploadId, "upload_12345678");
+    const listed = await storage.listMultipartParts(path, begun.uploadId);
+    assert.deepEqual(listed.parts, [{ partNumber: 1, etag, size: bytes.length }]);
+    const part = await storage.uploadMultipartPartFile(path, begun.uploadId, 1, file, 0, bytes.length - 1);
+    assert.equal(part.sha256, createHash("sha256").update(bytes).digest("hex"));
+    assert.equal(part.etag, etag);
+    const completed = await storage.completeMultipartUpload(path, begun.uploadId, [{ partNumber: 1, etag }]);
+    assert.equal(completed.parts, 1);
+    assert.equal(await storage.abortMultipartUpload(path, begun.uploadId), true);
+    assert.deepEqual(calls.map(call => call.options.method), ["POST", "GET", "PUT", "POST", "DELETE"]);
+    for (const call of calls) assert.match(call.options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects malformed multipart listings and non-contiguous completion receipts", async () => {
+  const storage = createBackblazeB2Storage({
+    ...config,
+    fetchImpl: async (url, options) => options.method === "GET"
+      ? { ok: true, status: 200, text: async () => "<ListPartsResult><IsTruncated>false</IsTruncated><Part><PartNumber>0</PartNumber><ETag>bad</ETag><Size>1</Size></Part></ListPartsResult>" }
+      : { ok: true, status: 200, text: async () => "<UploadId>upload_12345678</UploadId>" }
+  });
+  await assert.rejects(() => storage.listMultipartParts(path, "upload_12345678"), /invalid multipart part listing/);
+  await assert.rejects(() => storage.completeMultipartUpload(path, "upload_12345678", [{ partNumber: 2, etag: "a".repeat(32) }]), /contiguous ordered/);
+});
+
 test("creates short-lived host-bound presigned URLs", async () => {
   const storage = createBackblazeB2Storage({ ...config, fetchImpl: async () => response(200) });
   const signed = new URL(await storage.createSignedUrl(path, 300));
