@@ -165,11 +165,11 @@ test("cloud job cancellation requires editor access and excludes provider-manage
  assert.equal(result.status,409);assert.equal(result.body.error.code,"JOB_CANCELLATION_UNSUPPORTED");
 });
 test("cloud timeline API readiness requires exposed schema tables and a private bucket",async()=>{
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:false};}})});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return url.endsWith("/rpc/get_asset_storage_usage")?JSON.stringify([{max_total_bytes:786432000,max_owner_bytes:536870912}]):"[]";},async json(){return{public:false};}})});
  const result=await api.checkReadiness();assert.equal(result.ready,true);assert.equal(result.storage,"private");
 });
 test("cloud timeline readiness blocks when lease or cancellation columns are missing",async()=>{
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:!url.includes("lease_token"),status:url.includes("lease_token")?400:200,async text(){return url.includes("lease_token")?JSON.stringify({message:"column cancel_requested_at does not exist"}):"[]";},async json(){return{public:false};}})});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:!url.includes("lease_token"),status:url.includes("lease_token")?400:200,async text(){return url.includes("lease_token")?JSON.stringify({message:"column cancel_requested_at does not exist"}):url.endsWith("/rpc/get_asset_storage_usage")?JSON.stringify([{max_total_bytes:786432000,max_owner_bytes:536870912}]):"[]";},async json(){return{public:false};}})});
  await assert.rejects(()=>api.checkReadiness());
 });
 test("cloud timeline API refuses a public media bucket",async()=>{
