@@ -419,6 +419,7 @@ function syncPreviewAtFrame(frame:number){
   element.style.opacity=isAudio?"1":String(item?.opacity??1);
   if(isImage){
    element.style.display=item?"block":"none";
+   if(pictureClip)element.style.transform=directionalTransform;
    if(previewTrack?.kind==="overlay"&&previewClip&&item){
     const metadata=previewClip.metadata||{},duration=previewClip.duration.value/previewClip.duration.rate,localTime=Math.max(0,seconds-previewClip.timelineStart.value/previewClip.timelineStart.rate),base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||state.timeline!.width*.24),height:Math.max(16,Number(metadata.height)||state.timeline!.height*.24),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Number(metadata.rotation)||0};
     const motion=evaluateMotionKeyframes(metadata.motionKeyframes as MotionKeyframe[]|undefined,localTime,base,duration,(metadata.motionPlaybackMode==="loop"||metadata.motionPlaybackMode==="ping-pong"?metadata.motionPlaybackMode:"none") as MotionPlaybackMode);
