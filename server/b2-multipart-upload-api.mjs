@@ -26,10 +26,17 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
  }
  async function ownedSession(ownerId,sessionId,action="write"){
   if(!validUuid(sessionId))return {error:fail(400,"B2_MULTIPART_SESSION_ID_INVALID","Upload session ID is invalid.")};
-  const session=await store.get({ownerId,sessionId});
-  if(!session)return {error:fail(404,"B2_MULTIPART_SESSION_NOT_FOUND","Upload session was not found.")};
-  await permitted(ownerId,session.projectId,action);
-  return {session};
+  try{
+   const session=await store.get({ownerId,sessionId});
+   if(!session)return {error:fail(404,"B2_MULTIPART_SESSION_NOT_FOUND","Upload session was not found.")};
+   await permitted(ownerId,session.projectId,action);
+   return {session};
+  }catch(error){return {error:fail(statusFor(error),error.code||"B2_MULTIPART_SESSION_LOOKUP_FAILED","Upload session could not be accessed.")};}
+ }
+ function publicSession(session){
+  if(!session)return null;
+  const {uploadId,ownerId,...safe}=session;
+  return safe;
  }
  function statusFor(error){
   const code=error?.code||"B2_MULTIPART_UPLOAD_FAILED";
@@ -58,13 +65,13 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
    if(existing){
     const matches=existing.projectId===projectId&&existing.size===size&&existing.sha256===sha256&&existing.mediaType===mediaType&&existing.originalName===safeName(body.originalName)&&existing.partSize===chosenPartSize;
     if(!matches)return fail(409,"B2_MULTIPART_IDEMPOTENCY_CONFLICT","This idempotency key is already bound to different upload data.");
-    return {status:200,body:{session:existing,idempotentReplay:true}};
+    return {status:200,body:{session:publicSession(existing),idempotentReplay:true}};
    }
    const assetId=randomUUID(),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"})[mediaType]});
    const begun=await storage.beginMultipartUpload(objectPath,mediaType);
    try{
     const session=await store.create({ownerId,projectId,assetId,objectPath,idempotencyKey,uploadId:begun.uploadId,originalName:safeName(body.originalName),mediaType,size,sha256,partSize:chosenPartSize,expiresAt:new Date(clock().getTime()+24*60*60*1000).toISOString()});
-    return {status:201,body:{session,idempotentReplay:false}};
+    return {status:201,body:{session:publicSession(session),idempotentReplay:false}};
    }catch(error){await storage.abortMultipartUpload(objectPath,begun.uploadId).catch(()=>{});throw error;}
   }catch(error){return fail(statusFor(error),error.code||"B2_MULTIPART_START_FAILED",error.message||"Multipart upload could not be started.");}
  }
@@ -92,12 +99,12 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
  }
  async function getSession({ownerId,sessionId}){
   const owned=await ownedSession(ownerId,sessionId,"read");if(owned.error)return owned.error;
-  return {status:200,body:{session:owned.session}};
+  return {status:200,body:{session:publicSession(owned.session)}};
  }
  async function complete({ownerId,sessionId}){
   const owned=await ownedSession(ownerId,sessionId);if(owned.error)return owned.error;
   const {session}=owned;
-  if(session.status==="completed")return {status:200,body:{session,assetId:session.assetId,idempotentReplay:true}};
+  if(session.status==="completed")return {status:200,body:{session:publicSession(session),assetId:session.assetId,idempotentReplay:true}};
   const claim=await store.claimCompletion({ownerId,sessionId});
   if(!claim.claimed)return fail(claim.reason==="parts_incomplete"?409:claim.reason==="not_found"?404:409,"B2_MULTIPART_COMPLETION_NOT_CLAIMED","Upload completion could not be claimed: "+claim.reason+".");
   try{
@@ -118,13 +125,13 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
    if(verified?.path!==session.objectPath||verified?.size!==session.size||verified?.sha256!==session.sha256)throw Object.assign(new Error("Verified object receipt does not match the upload session."),{code:"B2_MULTIPART_VERIFICATION_MISMATCH"});
    const marked=await store.markCompleted({ownerId,sessionId});
    if(!marked)throw Object.assign(new Error("Asset was published but the upload session completion state could not be committed."),{code:"B2_MULTIPART_FINALIZE_PENDING"});
-   return {status:200,body:{session:{...session,status:"completed"},asset,idempotentReplay:false}};
+   return {status:200,body:{session:publicSession({...session,status:"completed"}),asset,idempotentReplay:false}};
   }catch(error){return fail(statusFor(error),error.code||"B2_MULTIPART_COMPLETION_FAILED",error.message||"Multipart upload could not be completed.");}
  }
  async function abort({ownerId,sessionId}){
   const owned=await ownedSession(ownerId,sessionId);if(owned.error)return owned.error;
   const {session}=owned;
-  if(["completed","aborted","expired"].includes(session.status))return {status:200,body:{session,alreadyFinal:true}};
+  if(["completed","aborted","expired"].includes(session.status))return {status:200,body:{session:publicSession(session),alreadyFinal:true}};
   try{
    await storage.abortMultipartUpload(session.objectPath,session.uploadId);
    const changed=await store.markAborted({ownerId,sessionId});
