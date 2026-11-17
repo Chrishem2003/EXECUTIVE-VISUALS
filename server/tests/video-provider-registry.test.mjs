@@ -200,7 +200,7 @@ test("Veo 3.1 and Fast catalogue enforce duration, resolution, audio and tier-sp
   const fast = getVideoProviderModel("runway", "veo3.1_fast");
   for (const model of [standard, fast]) {
     assert.equal(model.availability, "disabled");
-    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.executionAdapter, "runway-cloud-worker");
     assert.equal(model.capabilities.nativeAudio, true);
     assert.deepEqual(model.constraints.supportedDurationsSeconds, [4, 6, 8]);
     assert.equal(model.constraints.eightSecondsOnlyAt1080p, true);
