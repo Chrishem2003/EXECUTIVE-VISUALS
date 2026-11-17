@@ -223,6 +223,11 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(200,{review});
     }
    }
+   if(path==="/api/cloud/assets/usage"&&method==="GET"){
+    if(typeof service.assets.getStorageUsage!=="function")return response(503,{error:{code:"CLOUD_ASSET_QUOTA_UNAVAILABLE",message:"Storage quota reporting is not configured."}});
+    const usage=await service.assets.getStorageUsage({ownerId});
+    return response(200,{usage});
+   }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
@@ -838,6 +843,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    return response(201,{asset});
   }catch(error){
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
+   if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"||error.code==="CLOUD_ASSET_OWNER_QUOTA_EXCEEDED")return response(507,{error:{code:error.code,message:"Private media storage quota has been reached.",detail:error.detail||null}});
+   if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING")return response(503,{error:{code:error.code,message:"Private media storage quota is not configured."}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED"||error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    throw error;
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
