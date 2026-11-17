@@ -16,6 +16,9 @@ export type CloudUploadItem<T extends CloudUploadFileLike> = {
   file: T;
   status: CloudUploadStatus;
   error?: string;
+  progress?: number;
+  uploadedBytes?: number;
+  totalBytes?: number;
 };
 export type RejectedCloudUpload<T extends CloudUploadFileLike> = { file: T; reason: string };
 
@@ -40,7 +43,7 @@ export function validateCloudUploadFiles<T extends CloudUploadFileLike>(files: r
 
 export async function runCloudUploadQueue<T extends CloudUploadFileLike>(
   items: readonly CloudUploadItem<T>[],
-  upload: (file: T, signal: AbortSignal) => Promise<unknown>,
+  upload: (file: T, signal: AbortSignal, onProgress: (uploadedBytes: number, totalBytes: number) => void) => Promise<unknown>,
   options: {
     signal: AbortSignal;
     concurrency?: number;
@@ -64,12 +67,16 @@ export async function runCloudUploadQueue<T extends CloudUploadFileLike>(
         update(index, { status: "cancelled", error: "Upload cancelled." });
         continue;
       }
-      update(index, { status: "uploading", error: undefined });
+      update(index, { status: "uploading", error: undefined, progress: 0, uploadedBytes: 0, totalBytes: results[index].file.size });
       try {
-        await upload(results[index].file, options.signal);
+        await upload(results[index].file, options.signal, (uploadedBytes, totalBytes) => {
+          const safeTotal = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : results[index].file.size;
+          const safeUploaded = Math.max(0, Math.min(safeTotal, Number.isFinite(uploadedBytes) ? uploadedBytes : 0));
+          update(index, { uploadedBytes: safeUploaded, totalBytes: safeTotal, progress: Math.round(safeUploaded / safeTotal * 100) });
+        });
         update(index, options.signal.aborted
           ? { status: "cancelled", error: "Upload cancelled." }
-          : { status: "succeeded", error: undefined });
+          : { status: "succeeded", error: undefined, progress: 100, uploadedBytes: results[index].file.size, totalBytes: results[index].file.size });
       } catch (error) {
         update(index, options.signal.aborted
           ? { status: "cancelled", error: "Upload cancelled." }
