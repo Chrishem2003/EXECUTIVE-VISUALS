@@ -244,6 +244,7 @@ const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="tr
 const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
 if(b2MultipartUploadEnabled&&AUTH_MODE!=="supabase")throw new Error("B2 multipart uploads require verified Supabase authentication.");
 if(b2MultipartUploadEnabled&&!cloudTimelineApiEnabled)throw new Error("B2 multipart uploads require CLOUD_TIMELINE_API_ENABLED=true for Asset Library integration.");
+if(b2MultipartUploadEnabled&&!cloudTimelineReadiness.ready)throw new Error("B2 multipart uploads require a ready Cloud Timeline and Asset Library database.");
 if(b2MultipartUploadEnabled&&String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"").toLowerCase()!=="b2")throw new Error("B2 multipart uploads require CLOUD_MEDIA_STORAGE_PROVIDER=b2.");
 if(b2MultipartUploadEnabled&&(!process.env.SUPABASE_URL||!b2MultipartSupabaseServerKey))throw new Error("B2 multipart uploads require server-side Supabase secret credentials.");
 const b2MultipartAuthorize=b2MultipartUploadEnabled?createCloudAssetAuthorizer({url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch}):null;
