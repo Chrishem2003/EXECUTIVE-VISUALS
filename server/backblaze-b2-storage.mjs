@@ -398,7 +398,7 @@ export function createBackblazeB2Storage({
         signal
       });
       const completeXml = await completed.text();
-    if (/<Error(?:\s|>)/.test(xml)) throw new Error("B2 rejected multipart completion.");
+      if (/<Error(?:\s|>)/.test(completeXml)) throw new Error("B2 rejected multipart completion.");
       const afterComplete = await stat(filePath);
       if (afterComplete.size !== file.size || afterComplete.mtimeMs !== file.mtimeMs) throw new Error("B2 media file changed before multipart receipt was finalized.");
       return {
