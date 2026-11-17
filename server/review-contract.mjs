@@ -1,7 +1,7 @@
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const object=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
-const allowedCreate=new Set(["projectId","assetId","timelineId","timelineRevision","frameNumber","durationFrames","timecodeSeconds","body","decision","visibility","annotation","requestId"]);
+const allowedCreate=new Set(["projectId","assetId","assetSha256","timelineId","timelineRevision","frameNumber","durationFrames","timecodeSeconds","body","decision","visibility","annotation","requestId"]);
 const allowedPatch=new Set(["body","decision","status","visibility","annotation"]);
 
 function boundedText(value,label,min,max){
@@ -41,6 +41,8 @@ export function normalizeReviewCreate(input){
  const projectId=optionalUuid(input.projectId,"Project ID");
  if(!projectId)fail("REVIEW_INVALID","Project ID is required.");
  const assetId=optionalUuid(input.assetId,"Asset ID");
+ const assetSha256=input.assetSha256===undefined||input.assetSha256===null?null:input.assetSha256;
+ if(assetSha256!==null&&(typeof assetSha256!=="string"||!/^[a-f0-9]{64}$/i.test(assetSha256)))fail("REVIEW_ASSET_VERSION_INVALID","Asset SHA-256 must be a 64-character hexadecimal fingerprint.");
  const timelineId=optionalUuid(input.timelineId,"Timeline ID");
  const timelineRevision=input.timelineRevision===undefined||input.timelineRevision===null?null:input.timelineRevision;
  const frameNumber=input.frameNumber===undefined||input.frameNumber===null?null:input.frameNumber;
@@ -61,7 +63,7 @@ export function normalizeReviewCreate(input){
  const visibility=input.visibility??"project";
  if(!["project","internal"].includes(visibility))fail("REVIEW_INVALID","Review visibility must be project or internal.");
  const requestId=input.requestId===undefined||input.requestId===null?null:boundedText(input.requestId,"Request ID",8,128);
- return{projectId,assetId,timelineId,timelineRevision,frameNumber,durationFrames,timecodeSeconds,body:boundedText(input.body,"Review comment",1,10000),decision,visibility,annotation,requestId};
+ return{projectId,assetId,assetSha256:assetSha256?.toLowerCase()||null,timelineId,timelineRevision,frameNumber,durationFrames,timecodeSeconds,body:boundedText(input.body,"Review comment",1,10000),decision,visibility,annotation,requestId};
 }
 export function normalizeReviewPatch(input){
  if(!object(input)||Object.keys(input).length===0||Object.keys(input).some(key=>!allowedPatch.has(key)))fail("REVIEW_INVALID","Review update contains unsupported fields.");
