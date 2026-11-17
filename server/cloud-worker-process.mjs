@@ -20,14 +20,18 @@ import { createGoogleGeminiFilesRepository } from "./google-gemini-files-reposit
 import { createGoogleGeminiFilesRetentionWorker } from "./google-gemini-files-retention-worker.mjs";
 import { createGoogleGeminiFilesRecoveryWorker } from "./google-gemini-files-recovery-worker.mjs";
 import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror-bootstrap.mjs";
+import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
+import { createBackblazeB2Storage } from "./backblaze-b2-storage.mjs";
+import { createB2MultipartCleanupWorker } from "./b2-multipart-cleanup-worker.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
- if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED),publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED),geminiFilesCleanup=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED),geminiFilesRecovery=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED),b2MultipartCleanup=truth(env.B2_MULTIPART_CLEANUP_WORKER_ENABLED);
+ if(!media&&!timeline&&!video&&!publicationCleanup&&!geminiFilesCleanup&&!geminiFilesRecovery&&!b2MultipartCleanup)throw new Error("Enable at least one supported cloud worker family or maintenance task.");
+ if(b2MultipartCleanup&&(env.B2_MULTIPART_UPLOAD_API_ENABLED!=="true"||env.CLOUD_MEDIA_STORAGE_PROVIDER!=="b2"))throw new Error("B2 multipart cleanup requires the B2 upload API and B2 storage provider to be explicitly enabled.");
  let googleOmni=false,luma=false;
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
@@ -64,7 +68,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,video,googleOmni,luma,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,
+  media,timeline,video,googleOmni,luma,publicationCleanup,geminiFilesCleanup,geminiFilesRecovery,b2MultipartCleanup,
   cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
   cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
   cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
@@ -74,6 +78,8 @@ export function readCloudWorkerConfig(env=process.env){
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   cleanupIntervalMs:integer(env.CLOUD_STORAGE_CLEANUP_INTERVAL_MS,300000,60000,3600000,"Cloud storage cleanup interval"),
+  b2MultipartCleanupLimit:integer(env.B2_MULTIPART_CLEANUP_BATCH_LIMIT,25,1,100,"B2 multipart cleanup batch limit"),
+  b2MultipartCleanupLeaseMs:integer(env.B2_MULTIPART_CLEANUP_LEASE_MS,300000,30000,3600000,"B2 multipart cleanup lease"),
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
   tempRoot:resolve(env.CLOUD_WORKER_TEMP_ROOT||tmpdir())
  });
@@ -218,6 +224,25 @@ export async function startCloudWorkerProcess(env=process.env){
  const storage=createCloudStorage({...cloudCredentials,maxBytes:config.maxBytes});
  const assetRepository=createCloudAssetRepository({...cloudCredentials,storage,authorize:async()=>false});
  const maintenanceTasks=[async()=>assetRepository.reconcilePendingStorageCleanup({limit:100})];
+ if(config.b2MultipartCleanup){
+  const b2Store=createB2MultipartUploadStore({
+   ...cloudCredentials,
+   serviceRoleKey:env.SUPABASE_SECRET_KEY||env.SUPABASE_SERVICE_ROLE_KEY,
+   fetchImpl:globalThis.fetch
+  });
+  const b2Storage=createBackblazeB2Storage({
+   region:env.B2_REGION,accessKeyId:env.B2_APPLICATION_KEY_ID,
+   secretAccessKey:env.B2_APPLICATION_KEY,bucket:env.B2_BUCKET,
+   fetchImpl:globalThis.fetch,maxBytes:config.maxBytes
+  });
+  await b2Store.checkCleanupReadiness();
+  const b2Cleanup=createB2MultipartCleanupWorker({
+   store:b2Store,storage:b2Storage,limit:config.b2MultipartCleanupLimit,
+   cleanupLeaseMs:config.b2MultipartCleanupLeaseMs,
+   onEvent:event=>process.stdout.write(JSON.stringify(event)+"\\n")
+  });
+  maintenanceTasks.push(()=>b2Cleanup.runCycle());
+ }
  const gcsMirrorRecoveryEnabled=truth(env.GEMINI_GCS_MIRROR_RECOVERY_ENABLED);
  if(gcsMirrorRecoveryEnabled){
   const task=await createGoogleGeminiGcsMirrorRecoveryMaintenanceTask({
