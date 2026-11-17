@@ -57,8 +57,8 @@ test("direct Veo models require explicit Runway remote gates and Enterprise per-
   RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_WORKSPACE_USAGE_ENABLED:"true"};
  const config=readCloudWorkerConfig(base);
  assert.equal(config.video,true);
- assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_WORKSPACE_USAGE_ENABLED:"false"}),/Enterprise per-generation workspace usage/);
- assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_VIDEO_ALLOW_REMOTE:"false"}),/Enterprise per-generation workspace usage/);
+ assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_WORKSPACE_USAGE_ENABLED:"false"}),/linked-workspace per-generation usage/);
+ assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_VIDEO_ALLOW_REMOTE:"false"}),/linked-workspace per-generation usage/);
  assert.throws(()=>readCloudWorkerConfig({...base,RUNWAY_VIDEO_MODELS:"gen4.5"}),/other direct Runway profiles/);
 });
 
