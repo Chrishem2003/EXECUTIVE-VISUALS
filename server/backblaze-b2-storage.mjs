@@ -417,6 +417,11 @@ export function createBackblazeB2Storage({
   return Object.freeze({
     bucket: bucketName,
     endpoint: base,
+    beginMultipartUpload,
+    listMultipartParts,
+    uploadMultipartPartFile,
+    completeMultipartUpload,
+    abortMultipartUpload,
 
     async checkReadiness() {
       await request("HEAD", base + bucketPath);
