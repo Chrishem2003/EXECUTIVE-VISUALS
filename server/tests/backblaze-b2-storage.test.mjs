@@ -47,6 +47,22 @@ test("verifies completed B2 objects by streaming exact size and SHA-256 without 
   assert.match(calls[0].options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=/);
 });
 
+test("rejects completed B2 objects whose stored media type differs from the reservation", async () => {
+  const bytes = Buffer.from("wrong-content-type");
+  const storage = createBackblazeB2Storage({
+    ...config,
+    fetchImpl: async () => ({
+      ok: true, status: 200,
+      headers: { get: name => name.toLowerCase() === "content-length" ? String(bytes.length) : name.toLowerCase() === "content-type" ? "application/octet-stream" : null },
+      body: (async function*(){ yield bytes; })()
+    })
+  });
+  await assert.rejects(
+    () => storage.verifyObject(path, { expectedSize: bytes.length, expectedSha256: createHash("sha256").update(bytes).digest("hex"), contentType: "video/mp4" }),
+    error => error.code === "B2_OBJECT_MEDIA_TYPE_MISMATCH"
+  );
+});
+
 test("rejects completed B2 objects with a mismatched length or SHA-256", async () => {
   const bytes = Buffer.from("wrong-object-bytes");
   const storage = createBackblazeB2Storage({
