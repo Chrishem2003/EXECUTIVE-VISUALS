@@ -70,6 +70,101 @@ test("streams a media file and returns a verified SHA-256 receipt", async () => 
   }
 });
 
+
+test("streams large files through signed multipart upload and completes with ordered ETags", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ev-b2-multipart-"));
+  const file = join(root, "large-master.mp4");
+  const bytes = Buffer.alloc(5 * 1024 * 1024 + 123, 0x5a);
+  await writeFile(file, bytes);
+  const calls = [];
+  const etags = ["a".repeat(32), "b".repeat(32)];
+  try {
+    const storage = createBackblazeB2Storage({
+      ...config,
+      multipartThresholdBytes: 1,
+      multipartPartBytes: 5 * 1024 * 1024,
+      fetchImpl: async (url, options) => {
+        const parsed = new URL(url);
+        let body = options.body;
+        if (body && typeof body !== "string" && typeof body[Symbol.asyncIterator] === "function") {
+          const chunks = [];
+          for await (const chunk of body) chunks.push(Buffer.from(chunk));
+          body = Buffer.concat(chunks);
+        }
+        calls.push({ url, options, body });
+        if (options.method === "POST" && parsed.searchParams.has("uploads")) {
+          return { ok: true, status: 200, text: async () => "<InitiateMultipartUploadResult><UploadId>upload_12345678</UploadId></InitiateMultipartUploadResult>" };
+        }
+        if (options.method === "PUT") {
+          const part = Number(parsed.searchParams.get("partNumber"));
+          if (part === 1 && calls.filter(x => x.options.method === "PUT" && new URL(x.url).searchParams.get("partNumber") === "1").length === 1) {
+            return { ok: false, status: 503 };
+          }
+          return { ok: true, status: 200, headers: { get: name => name.toLowerCase() === "etag" ? '"' + etags[part - 1] + '"' : null } };
+        }
+        if (options.method === "POST" && parsed.searchParams.has("uploadId")) {
+          return { ok: true, status: 200, text: async () => "<CompleteMultipartUploadResult/>" };
+        }
+        throw new Error("Unexpected B2 request.");
+      }
+    });
+    const result = await storage.uploadFile(path, file, "video/mp4");
+    assert.equal(result.multipart, true);
+    assert.equal(result.parts, 2);
+    assert.equal(result.size, bytes.length);
+    assert.equal(result.sha256, createHash("sha256").update(bytes).digest("hex"));
+    assert.deepEqual(calls.filter(x => x.options.method === "PUT").map(x => x.body.length), [5 * 1024 * 1024, 5 * 1024 * 1024, 123]);
+    assert.deepEqual(calls.filter(x => x.options.method === "PUT").map(x => x.options.headers["x-amz-content-sha256"]), [
+      createHash("sha256").update(bytes.subarray(0, 5 * 1024 * 1024)).digest("hex"),
+      createHash("sha256").update(bytes.subarray(0, 5 * 1024 * 1024)).digest("hex"),
+      createHash("sha256").update(bytes.subarray(5 * 1024 * 1024)).digest("hex")
+    ]);
+    const completion = calls.find(x => x.options.method === "POST" && new URL(x.url).searchParams.has("uploadId"));
+    assert.match(completion.body, /<PartNumber>1<\/PartNumber>/);
+    assert.match(completion.body, /<PartNumber>2<\/PartNumber>/);
+    assert.ok(completion.body.indexOf(etags[0]) < completion.body.indexOf(etags[1]));
+    assert.match(calls[0].options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=/);
+    assert.match(calls[1].options.headers.authorization, /^AWS4-HMAC-SHA256 Credential=/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aborts a multipart upload after a failed part instead of leaving partial storage behind", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ev-b2-multipart-abort-"));
+  const file = join(root, "large-master.mp4");
+  await writeFile(file, Buffer.alloc(5 * 1024 * 1024 + 1, 0x31));
+  const methods = [];
+  try {
+    const storage = createBackblazeB2Storage({
+      ...config,
+      multipartThresholdBytes: 1,
+      multipartPartBytes: 5 * 1024 * 1024,
+      fetchImpl: async (url, options) => {
+        const parsed = new URL(url);
+        methods.push({ method: options.method, query: parsed.searchParams });
+        if (options.method === "POST" && parsed.searchParams.has("uploads")) {
+          return { ok: true, status: 200, text: async () => "<UploadId>upload_12345678</UploadId>" };
+        }
+        if (options.method === "PUT") return { ok: false, status: 403 };
+        if (options.method === "DELETE") return { ok: true, status: 204 };
+        throw new Error("Unexpected B2 request.");
+      }
+    });
+    await assert.rejects(() => storage.uploadFile(path, file, "video/mp4"), error => error.code === "B2_STORAGE_HTTP_403");
+    assert.deepEqual(methods.map(x => x.method), ["POST", "PUT", "DELETE"]);
+    assert.equal(methods[2].query.get("uploadId"), "upload_12345678");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects invalid multipart sizing before contacting B2", () => {
+  const fetchImpl = async () => { throw new Error("Network must not be called."); };
+  assert.throws(() => createBackblazeB2Storage({ ...config, maxBytes: 1024, multipartThresholdBytes: 2048, fetchImpl }), /threshold/);
+  assert.throws(() => createBackblazeB2Storage({ ...config, multipartPartBytes: 1024, fetchImpl }), /part size/);
+});
+
 test("creates short-lived host-bound presigned URLs", async () => {
   const storage = createBackblazeB2Storage({ ...config, fetchImpl: async () => response(200) });
   const signed = new URL(await storage.createSignedUrl(path, 300));

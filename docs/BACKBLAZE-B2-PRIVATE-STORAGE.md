@@ -24,6 +24,12 @@ The S3 endpoint is derived as `https://s3.<B2_REGION>.backblazeb2.com`. Do not s
 4. Store the key ID and secret in the hosting provider's encrypted environment-variable store.
 5. Deploy first to the isolated cloud-staging service. Do not set the provider on production until the acceptance checks below pass.
 
+## Large-file upload behavior
+
+The B2 adapter automatically uses S3 multipart upload when a file exceeds 100 MiB. It streams 64 MiB parts by default, computes a SHA-256 digest for each part, and retries transient network/server failures up to three attempts per part. The final part may be smaller than 5 MiB; non-final parts must meet B2's 5 MiB minimum. The adapter enforces the 10,000-part maximum, verifies the source file's whole-file SHA-256 before completion, and aborts the multipart upload after permanent part or completion failures.
+
+Smaller files continue to use the existing streamed single-object PUT path. Multipart transfer currently retries within the active upload process; it does not yet persist upload IDs and completed-part checkpoints across process restarts. Do not advertise cross-restart resumability until a durable, tenant-scoped upload-session ledger is implemented and tested.
+
 ## Data and safety contract
 
 - B2 object paths continue to use the existing project/owner UUID, asset UUID and filename layout.

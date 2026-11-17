@@ -4,6 +4,9 @@ import { stat } from "node:fs/promises";
 
 const DEFAULT_BUCKET = "executive-visuals-media";
 const EMPTY_SHA256 = createHash("sha256").update("").digest("hex");
+const MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MULTIPART_PART_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MULTIPART_THRESHOLD_BYTES = 100 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MIME_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -64,6 +67,8 @@ export function createBackblazeB2Storage({
   fetchImpl = globalThis.fetch,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024,
+  multipartThresholdBytes = Math.min(DEFAULT_MULTIPART_THRESHOLD_BYTES, maxBytes),
+  multipartPartBytes = DEFAULT_MULTIPART_PART_BYTES,
   clock = () => new Date()
 } = {}) {
   const signingRegion = String(region || "").trim().toLowerCase();
@@ -78,6 +83,8 @@ export function createBackblazeB2Storage({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("B2 storage timeout must be between 1000 and 120000 milliseconds.");
   if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 1024 * 1024 * 1024) throw new Error("B2 storage size limit is invalid.");
   if (typeof clock !== "function") throw new Error("B2 storage clock must be a function.");
+  if (!Number.isSafeInteger(multipartThresholdBytes) || multipartThresholdBytes < 1 || multipartThresholdBytes > maxBytes) throw new Error("B2 multipart threshold is invalid.");
+  if (!Number.isSafeInteger(multipartPartBytes) || multipartPartBytes < MIN_MULTIPART_PART_BYTES || multipartPartBytes > 5 * 1024 * 1024 * 1024) throw new Error("B2 multipart part size must be between 5 MiB and 5 GiB.");
 
   const host = "s3." + signingRegion + ".backblazeb2.com";
   const base = "https://" + host;
@@ -94,7 +101,7 @@ export function createBackblazeB2Storage({
     return base + bucketPath + "/" + safeObjectPath(path);
   }
 
-  function signedHeaders({ method, path, payloadHash, contentType = null, body = null, signal = null }) {
+  function signedHeaders({ method, path, query = new Map(), payloadHash, contentType = null, body = null, signal = null }) {
     const { amzDate, date } = timestamp();
     const headers = {
       host,
@@ -107,7 +114,7 @@ export function createBackblazeB2Storage({
     const canonicalRequest = [
       method,
       path,
-      "",
+      canonicalQuery(query),
       canonicalHeaders,
       signedHeaderNames,
       payloadHash
@@ -134,7 +141,7 @@ export function createBackblazeB2Storage({
     };
   }
 
-  async function request(method, url, { payloadHash = EMPTY_SHA256, contentType = null, body = null, contentLength = null, signal = null, acceptNotFound = false } = {}) {
+  async function request(method, url, { query = new Map(), payloadHash = EMPTY_SHA256, contentType = null, body = null, contentLength = null, signal = null, acceptNotFound = false } = {}) {
     const parsed = new URL(url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -143,6 +150,7 @@ export function createBackblazeB2Storage({
       const signed = signedHeaders({
         method,
         path: parsed.pathname,
+        query,
         payloadHash,
         contentType,
         body,
@@ -197,6 +205,116 @@ export function createBackblazeB2Storage({
     return { size, sha256: digest.digest("hex"), mtimeMs: before.mtimeMs };
   }
 
+  async function digestFileRange(filePath, start, end) {
+    const digest = createHash("sha256");
+    let size = 0;
+    for await (const chunk of createReadStream(filePath, { start, end })) {
+      size += chunk.length;
+      digest.update(chunk);
+    }
+    if (size !== end - start + 1) throw new Error("B2 multipart source file changed while reading a part.");
+    return { size, sha256: digest.digest("hex") };
+  }
+
+  function xmlTag(xml, name) {
+    const match = String(xml).match(new RegExp("<" + name + ">([\\s\\S]*?)</" + name + ">"));
+    if (!match) throw new Error("B2 multipart response omitted " + name + ".");
+    return match[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  }
+
+  function xmlEscape(value) {
+    return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  }
+
+  async function uploadFileMultipart(objectPath, filePath, contentType, file, signal) {
+    const path = safeObjectPath(objectPath);
+    const partCount = Math.ceil(file.size / multipartPartBytes);
+    if (partCount < 1 || partCount > 10000) throw new Error("B2 multipart upload exceeds the 10,000-part limit.");
+    const uploadQuery = new Map([["uploads", ""]]);
+    const initiated = await request("POST", objectUrl(path) + "?" + canonicalQuery(uploadQuery), {
+      query: uploadQuery,
+      contentType,
+      signal
+    });
+    const uploadId = xmlTag(await initiated.text(), "UploadId");
+    if (!/^[A-Za-z0-9_-]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
+
+    const uploadedParts = [];
+    try {
+      for (let partNumber = 1; partNumber <= partCount; partNumber++) {
+        if (signal?.aborted) {
+          const cancelled = new Error("B2 multipart upload was cancelled.");
+          cancelled.code = "B2_STORAGE_ABORTED";
+          throw cancelled;
+        }
+        const start = (partNumber - 1) * multipartPartBytes;
+        const end = Math.min(file.size, start + multipartPartBytes) - 1;
+        const part = await digestFileRange(filePath, start, end);
+        const partQuery = new Map([["partNumber", String(partNumber)], ["uploadId", uploadId]]);
+        const partUrl = objectUrl(path) + "?" + canonicalQuery(partQuery);
+        let etag = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const response = await request("PUT", partUrl, {
+              query: partQuery,
+              payloadHash: part.sha256,
+              body: createReadStream(filePath, { start, end }),
+              contentLength: part.size,
+              signal
+            });
+            etag = response.headers?.get?.("etag")?.replace(/^"|"$/g, "") || null;
+            if (!etag || !/^[A-Fa-f0-9-]{8,128}$/.test(etag)) throw new Error("B2 multipart part response omitted a valid ETag.");
+            break;
+          } catch (error) {
+            if (signal?.aborted || (error?.status && error.status < 500) || attempt === 3) throw error;
+          }
+        }
+        uploadedParts.push({ partNumber, etag });
+      }
+
+      const afterParts = await digestFile(filePath);
+      if (afterParts.size !== file.size || afterParts.mtimeMs !== file.mtimeMs || afterParts.sha256 !== file.sha256) throw new Error("B2 media file changed during multipart upload.");
+      const partsXml = uploadedParts.map(part =>
+        "<Part><ETag>" + xmlEscape(part.etag) + "</ETag><PartNumber>" + part.partNumber + "</PartNumber></Part>"
+      ).join("");
+      const completeBody = "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">" + partsXml + "</CompleteMultipartUpload>";
+      const completeBytes = Buffer.from(completeBody);
+      const completeQuery = new Map([["uploadId", uploadId]]);
+      const completed = await request("POST", objectUrl(path) + "?" + canonicalQuery(completeQuery), {
+        query: completeQuery,
+        payloadHash: createHash("sha256").update(completeBytes).digest("hex"),
+        contentType: "application/xml",
+        body: completeBody,
+        contentLength: completeBytes.length,
+        signal
+      });
+      const completeXml = await completed.text();
+      if (/<Error(?:\s|>)/.test(completeXml)) throw new Error("B2 rejected multipart completion.");
+      const afterComplete = await stat(filePath);
+      if (afterComplete.size !== file.size || afterComplete.mtimeMs !== file.mtimeMs) throw new Error("B2 media file changed before multipart receipt was finalized.");
+      return {
+        bucket: bucketName,
+        path: objectPath,
+        size: file.size,
+        sha256: file.sha256,
+        contentType,
+        multipart: true,
+        parts: uploadedParts.length
+      };
+    } catch (error) {
+      try {
+        const abortQuery = new Map([["uploadId", uploadId]]);
+        await request("DELETE", objectUrl(path) + "?" + canonicalQuery(abortQuery), {
+          query: abortQuery,
+          signal: signal?.aborted ? null : signal
+        });
+      } catch {
+        if (error && typeof error === "object") error.cleanupFailed = true;
+      }
+      throw error;
+    }
+  }
+
   return Object.freeze({
     bucket: bucketName,
     endpoint: base,
@@ -230,6 +348,9 @@ export function createBackblazeB2Storage({
       if (afterDigest.size !== file.size || afterDigest.mtimeMs !== file.mtimeMs) {
         throw new Error("B2 media file changed before upload.");
       }
+      if (file.size > multipartThresholdBytes) {
+        return uploadFileMultipart(objectPath, filePath, contentType, file, signal);
+      }
       await request("PUT", objectUrl(path), {
         payloadHash: file.sha256,
         contentType,
@@ -241,7 +362,7 @@ export function createBackblazeB2Storage({
       if (afterUpload.size !== file.size || afterUpload.mtimeMs !== file.mtimeMs) {
         throw new Error("B2 media file changed while it was uploaded.");
       }
-      return { bucket: bucketName, path: objectPath, size: file.size, sha256: file.sha256, contentType };
+      return { bucket: bucketName, path: objectPath, size: file.size, sha256: file.sha256, contentType, multipart: false };
     },
 
     async createSignedUrl(objectPath, expiresIn = 300) {
