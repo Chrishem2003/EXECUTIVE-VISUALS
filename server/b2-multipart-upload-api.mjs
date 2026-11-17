@@ -61,7 +61,7 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
   if(!MEDIA.has(mediaType))return fail(415,"UNSUPPORTED_MEDIA_TYPE","This media type is not supported.");
   if(!SHA256.test(sha256))return fail(400,"B2_MULTIPART_SHA256_INVALID","A valid source SHA-256 checksum is required.");
   if(typeof idempotencyKey!=="string"||idempotencyKey.trim().length<8||idempotencyKey.length>200)return fail(400,"IDEMPOTENCY_KEY_REQUIRED","Provide an idempotency key between 8 and 200 characters.");
-  const chosenPartSize=Math.max(MIN_PART,Math.min(partSize,Math.ceil(size/10000)));
+  const chosenPartSize=Math.max(MIN_PART,partSize,Math.ceil(size/10000));
   const partCount=Math.ceil(size/chosenPartSize);
   if(partCount>10000)return fail(400,"B2_MULTIPART_PART_COUNT_INVALID","Upload requires too many parts.");
   try{
