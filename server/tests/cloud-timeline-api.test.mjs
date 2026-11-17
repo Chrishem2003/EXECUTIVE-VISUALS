@@ -16,9 +16,26 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const route=new URL(url).searchParams,id=route.get("id")?.slice(3),expected=route.get("status")?.slice(3),row=existing.find(item=>item.id===id&&item.status===expected);if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};},async getStorageUsage(input){calls.push(["asset-usage",input]);return{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908};},async createFromFile(input){calls.push(["asset-create-from-file",input]);if(quotaError)throw Object.assign(new Error(quotaError),{code:quotaError});return{id:"asset-uploaded",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,size:4};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
  return{api,calls,created};
 }
+test("cloud asset usage endpoint returns only the verified owner's quota snapshot",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets/usage",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.usage.ownerBytes,4);
+ assert.deepEqual(f.calls.find(call=>call[0]==="asset-usage")[1],{ownerId:owner});
+});
+
+test("private media upload returns 507 and a typed error when storage quota is reached",async()=>{
+ const f=setup({quotaError:"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"});
+ const payload=Buffer.from([0,0,0,20,0x66,0x74,0x79,0x70,0,0,0,0]);
+ const req=Readable.from([payload]);req.headers={"content-length":String(payload.length)};
+ const result=await f.api.uploadAsset({req,ownerId:owner,projectId,originalName:"quota.mp4",mediaType:"video/mp4"});
+ assert.equal(result.status,507);
+ assert.equal(result.body.error.code,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED");
+});
+
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
 test("cloud timeline accepts private video assets on overlay tracks for final compositing",async()=>{
  const f=setup({assetMediaType:"video/mp4"});
