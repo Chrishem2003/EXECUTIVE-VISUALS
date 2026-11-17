@@ -11,7 +11,7 @@ test("unrelated users and malformed identifiers are denied",async()=>{const f=se
 test("sends opaque Supabase secret keys only through the apikey header",async()=>{
  let headers;
  const authorize=createCloudAssetAuthorizer({url:"https://example.supabase.co",serviceRoleKey:"sb_secret_test_key",fetchImpl:async(_url,options)=>{headers=options.headers;return{ok:true,async json(){return[{id:project}];}};}});
- assert.equal(await authorize({ownerId,projectId:project,action:"write"}),true);
+ assert.equal(await authorize({ownerId:owner,projectId:project,action:"write"}),true);
  assert.equal(headers.apikey,"sb_secret_test_key");
  assert.equal("authorization" in headers,false);
 });
