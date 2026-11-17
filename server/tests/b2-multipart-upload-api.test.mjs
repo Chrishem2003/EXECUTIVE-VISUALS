@@ -84,6 +84,8 @@ test("reconciles provider parts, verifies the completed object, and only then pu
 test("recovers an already completed provider object without completing the multipart upload twice",async()=>{
  const f=fixture({verifyInitially:false});
  await f.api.start(startInput);
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:1,body:{etag:etag1,sha256,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:f.session.id,partNumber:2,body:{etag:etag2,sha256,size:1_000_000}});
  const result=await f.api.complete({ownerId,sessionId:f.session.id});
  assert.equal(result.status,200);
  assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,0);
