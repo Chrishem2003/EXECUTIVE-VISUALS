@@ -43,3 +43,12 @@ The panel distinguishes:
 - **Multiple clips reference this shot** — ambiguous linkage requiring review
 
 Unrelated timeline clips and assets from other projects are never counted as storyboard attachments. Status is derived from the live timeline rather than cached plan metadata, so deleting or replacing a linked clip cannot leave a stale "attached" label.
+
+
+## Attaching existing project media to planned shots
+
+The storyboard panel can attach an already-imported, already-probed video asset from the current project to a pending shot. The selector excludes non-video media, assets outside the selected cloud project, and videos whose known duration is shorter than the planned shot.
+
+Attachment creates a real video clip on the storyboard's planned picture track at the exact shot start frame and duration. The clip stores the storyboard, scene and shot lineage in its metadata. The operation uses the timeline's validated clip insertion path and entity-level undo/redo history; it does not generate media, call a provider, copy source bytes, or silently replace an existing shot attachment.
+
+The server remains authoritative for asset ownership and project access when the timeline is saved. If the timeline is locked, disabled, has a conflicting clip, or no longer contains the same storyboard plan, the operation fails closed. Users must probe/import a sufficiently long source video before it can be attached.
