@@ -15,6 +15,10 @@ The B2 S3-compatible adapter can upload large media as multipart objects. The ad
 
 Each session is bound to owner, optional project, asset ID, idempotency key, exact private bucket/object path, provider upload ID, source size and SHA-256, part size/count, and expiry. The parts table stores the ETag, SHA-256, byte size, and timestamp for each part. Repeating the same receipt is idempotent; reusing a part number with different bytes is rejected.
 
+## Browser transfer reliability
+
+The browser uploader retries transient part-transfer failures (network errors, timeouts, HTTP 408/425/429 and 5xx) up to three attempts with bounded exponential backoff. Every retry requests a fresh short-lived signed part URL; it never reuses a failed URL. Authorization, validation, conflict and cancellation failures are not retried. The browser client hashes the complete source and each part, persists an idempotent resume record, reconciles already-recorded parts, and uploads missing parts directly to B2. The API stores only the ETag/checksum/size receipt; provider upload IDs and object paths remain server-side.
+
 ## Security
 
 Both tables have RLS enabled and deny access to public, anon, and authenticated roles. Only server-side Supabase secret/service-role credentials can access them. The authenticated API verifies the signed-in owner and project membership before each operation. Raw provider `upload_id` values and object paths are omitted from session metadata. A short-lived presigned part URL necessarily embeds the scoped object key and multipart upload ID as part of its signed request; treat that URL as a temporary bearer capability, never log it, and never persist it. Service credentials never leave the server. The preferred `SUPABASE_SECRET_KEY` (`sb_secret_...`) is sent only in the Supabase `apikey` header because the new key is not a JWT; the legacy `SUPABASE_SERVICE_ROLE_KEY` fallback retains its bearer-header compatibility path.
