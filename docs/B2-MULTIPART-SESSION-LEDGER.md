@@ -17,7 +17,7 @@ Each session is bound to owner, optional project, asset ID, idempotency key, exa
 
 ## Security
 
-Both tables have RLS enabled and deny access to public, anon, and authenticated roles. Only server-side Supabase credentials can access them. The authenticated API verifies the signed-in owner and project membership before each operation. Provider `upload_id` values and object paths remain server-side; browser clients receive only short-lived, part-scoped presigned PUT URLs and sanitized session state. Service credentials never leave the server.
+Both tables have RLS enabled and deny access to public, anon, and authenticated roles. Only server-side Supabase secret/service-role credentials can access them. The authenticated API verifies the signed-in owner and project membership before each operation. Provider `upload_id` values and object paths remain server-side; browser clients receive only short-lived, part-scoped presigned PUT URLs and sanitized session state. Service credentials never leave the server.
 
 ## Important integration boundary
 
@@ -29,6 +29,7 @@ Before enabling the flag, apply this additive migration to the isolated Supabase
 
 `npm run verify:cloud-queue` includes:
 - `server/tests/b2-multipart-upload-store.test.mjs`
+- `server/tests/b2-multipart-upload-api.test.mjs`
 - `server/tests/b2-multipart-upload-migration.test.mjs`
 - Existing B2 adapter and cloud queue regression suites.
 
