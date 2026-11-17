@@ -23,3 +23,9 @@ The migration does not alter the public schema, NEMA tables, bucket visibility, 
 7. Re-run tenant-isolation and private-media upload/download acceptance before enabling production cloud media.
 
 Do not enable the cloud media API or provider workers until the staging acceptance above passes.
+
+## Recursive-policy correction
+
+A staging integration test found a second PostgreSQL issue: `projects` read policy queried `project_members`, while the membership read policy queried `projects`. Similar cross-table subqueries propagated through assets, jobs, timelines, workflows, reviews and storage policies, producing PostgreSQL's infinite-recursion error.
+
+Migration `20261117093000_remove_executive_visuals_rls_policy_recursion.sql` introduces two narrowly-scoped `SECURITY DEFINER` boolean helpers. They read only the requested project ownership or current-user membership role with `row_security=off`, fixed `search_path`, and no caller-supplied user identity. All affected policies now call those helpers instead of querying the two mutually-dependent tables directly. Table privileges remain separate; this migration does not expose the Executive Visuals tables through PostgREST.
