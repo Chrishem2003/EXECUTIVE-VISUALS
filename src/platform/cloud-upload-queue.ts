@@ -1,5 +1,6 @@
 export const MAX_CLOUD_UPLOAD_FILES = 50;
 export const MAX_CLOUD_UPLOAD_BYTES = 250 * 1024 * 1024;
+export const DEFAULT_CLOUD_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_CLOUD_UPLOAD_CONCURRENCY = 3;
 
 const ALLOWED_TYPES = new Set([
@@ -22,7 +23,8 @@ export type CloudUploadItem<T extends CloudUploadFileLike> = {
 };
 export type RejectedCloudUpload<T extends CloudUploadFileLike> = { file: T; reason: string };
 
-export function validateCloudUploadFiles<T extends CloudUploadFileLike>(files: readonly T[]) {
+export function validateCloudUploadFiles<T extends CloudUploadFileLike>(files: readonly T[], configuredMaxBytes = DEFAULT_CLOUD_UPLOAD_BYTES) {
+  const maxBytes = Number.isSafeInteger(configuredMaxBytes) ? Math.max(1, Math.min(MAX_CLOUD_UPLOAD_BYTES, configuredMaxBytes)) : DEFAULT_CLOUD_UPLOAD_BYTES;
   const accepted: T[] = [];
   const rejected: RejectedCloudUpload<T>[] = [];
   for (const [index, file] of files.entries()) {
@@ -30,8 +32,8 @@ export function validateCloudUploadFiles<T extends CloudUploadFileLike>(files: r
       rejected.push({ file, reason: "A batch can contain at most 50 files." });
     } else if (!Number.isSafeInteger(file.size) || file.size < 1) {
       rejected.push({ file, reason: "The file is empty or has an invalid size." });
-    } else if (file.size > MAX_CLOUD_UPLOAD_BYTES) {
-      rejected.push({ file, reason: "The file exceeds the 250 MiB per-file limit." });
+    } else if (file.size > maxBytes) {
+      rejected.push({ file, reason: "The file exceeds the " + Math.floor(maxBytes / 1024 / 1024) + " MiB per-file limit configured for this storage provider." });
     } else if (!ALLOWED_TYPES.has(String(file.type || "").toLowerCase())) {
       rejected.push({ file, reason: "This file type is not supported for private cloud upload." });
     } else {
