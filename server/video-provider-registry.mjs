@@ -205,7 +205,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
           outputCreditsPerSecond: { audio: 40, noAudio: 20 },
           eightSecondsOnlyAt1080p: true,
-          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
+          pricingSnapshotDate: "2026-11-17", creditUsdValue: 0.01,
           asynchronousTaskPolling: true, outputUrlTemporary: true,
           source: "https://dev.runwayml.com/learn/veo-3-1-api"
         }
@@ -233,7 +233,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
           outputCreditsPerSecond: { audio: 15, noAudio: 10 },
           eightSecondsOnlyAt1080p: true,
-          pricingSnapshotDate: "2026-11-16", creditUsdValue: 0.01,
+          pricingSnapshotDate: "2026-11-17", creditUsdValue: 0.01,
           asynchronousTaskPolling: true, outputUrlTemporary: true,
           source: "https://dev.runwayml.com/learn/veo-3-1-api"
         }
