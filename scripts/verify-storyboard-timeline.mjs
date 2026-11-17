@@ -72,6 +72,10 @@ const stalePlan={...plan,sourceInputHash:"b".repeat(64)};
 assert.throws(()=>attachStoryboardShotAsset(timeline,stalePlan,"shot-1",{
  clipId:"stale-attachment",assetId:"video-3",name:"Video.mp4",mediaType:"video/mp4",sourceDurationSeconds:20
 }),/does not belong to the current timeline/);
+const staleShotPlan={...plan,scenes:plan.scenes.map(scene=>({...scene,shots:scene.shots.map(item=>item.id==="shot-1"?{...item,startFrame:item.startFrame+1}:item)}))};
+assert.throws(()=>attachStoryboardShotAsset(timeline,staleShotPlan,"shot-1",{
+ clipId:"stale-timing-attachment",assetId:"video-4",name:"Video.mp4",mediaType:"video/mp4",sourceDurationSeconds:20
+}),/stale or has invalid picture-track lineage/);
 const approvedClip=createGeneratedVideoClip({
  id:"approved-shot-1",assetId:"private-asset-1",name:"Approved shot one.mp4",durationSeconds:10,
  frameRate:timeline.frameRate,startFrame:plan.scenes[0].shots[0].startFrame,
