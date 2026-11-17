@@ -238,7 +238,7 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
 const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
