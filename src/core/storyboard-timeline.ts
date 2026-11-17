@@ -165,3 +165,38 @@ export function reflowStoryboardTimelinePlan(plan:StoryboardTimelinePlan):Storyb
   if(totalShots<2||cursor/plan.frameRate>1800)throw fail("Edited storyboard timeline exceeds the sixty-shot or thirty-minute planning limit.");
   return {...plan,scenes,totalFrames:cursor,durationSeconds:cursor/plan.frameRate};
 }
+
+
+export type StoryboardShotAttachmentStatus="pending"|"attached"|"unavailable"|"ambiguous";
+export interface StoryboardShotAssetAttachment {
+  status:StoryboardShotAttachmentStatus;
+  clipId?:string;
+  assetId?:string;
+  clipName?:string;
+}
+
+/** Resolve shot-to-clip links only from the storyboard's picture track and caller-authorized project assets. */
+export function getStoryboardShotAssetAttachments(
+  timeline:EditorialTimeline,plan:StoryboardTimelinePlan,authorizedAssetIds:readonly string[],
+):Map<string,StoryboardShotAssetAttachment>{
+  const result=new Map<string,StoryboardShotAssetAttachment>();
+  const pictureTrack=timeline.tracks.find(track=>track.id===plan.trackIds.picture&&track.kind==="video");
+  const authorized=new Set(authorizedAssetIds.filter(id=>validId(id)));
+  for(const shot of plan.scenes.flatMap(scene=>scene.shots)){
+    const candidates=(pictureTrack?.clips||[]).filter(clip=>
+      clip.metadata?.storyboardShotId===shot.id
+    );
+    const matches=candidates.filter(clip=>authorized.has(clip.assetId));
+    if(matches.length>1){
+      result.set(shot.id,{status:"ambiguous"});
+    }else if(matches.length===1){
+      const clip=matches[0];
+      result.set(shot.id,{status:"attached",clipId:clip.id,assetId:clip.assetId,clipName:clip.name});
+    }else if(candidates.length){
+      result.set(shot.id,{status:"unavailable"});
+    }else{
+      result.set(shot.id,{status:"pending"});
+    }
+  }
+  return result;
+}
