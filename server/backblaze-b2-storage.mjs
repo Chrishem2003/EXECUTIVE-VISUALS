@@ -279,7 +279,7 @@ export function createBackblazeB2Storage({
 
   async function uploadMultipartPartFile(objectPath, uploadId, partNumber, filePath, start, end, { signal = null } = {}) {
     const path = safeObjectPath(objectPath);
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
+    if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || "")) || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
         !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
       throw new Error("B2 multipart part request is invalid.");
     }
