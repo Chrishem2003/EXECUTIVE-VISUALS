@@ -111,7 +111,7 @@ export function createRunwayTaskActualCostResolver({
         clearTimeout(timer);
       }
       if (response.status === 401 || response.status === 403) {
-        throw fail("Runway linked-workspace usage requires an authorized Enterprise workspace connection.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
+        throw fail("Runway linked-workspace usage requires an authorized account link to the workspace.", "RUNWAY_TASK_BILLING_ENTERPRISE_REQUIRED");
       }
       if (response.status === 429 || response.status >= 500) {
         throw fail("Runway workspace usage is temporarily unavailable; keep the budget reservation unresolved.", "RUNWAY_TASK_BILLING_UNAVAILABLE");
