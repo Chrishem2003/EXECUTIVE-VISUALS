@@ -74,5 +74,6 @@ test("reviewer frame anchors resolve project-owned assets and timelines under ow
  assert.deepEqual(f.timelineOwners,[owner]);
 });
 
+test("review updates cannot rewrite the source media fingerprint",async()=>{const row={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,asset_sha256:assetSha256,reviewer_id:editor,last_actor_id:editor,body:"Original note",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};const f=setup({existing:[row]});await assert.rejects(()=>f.repo.update({actorId:editor,reviewId,input:{assetSha256:"b".repeat(64)}}),error=>error.code==="REVIEW_INVALID");assert.equal(f.rows[0].asset_sha256,assetSha256);assert.equal(f.calls.some(call=>call.method==="PATCH"),false);});
 test("rejects a stale review form when the source asset checksum changed",async()=>{const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,assetSha256:"b".repeat(64)}}),error=>error.code==="REVIEW_ASSET_VERSION_STALE");assert.equal(f.rows.length,0);});
 test("rejects malformed client fingerprints before writing a review",async()=>{const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,assetSha256:"not-a-checksum"}}),error=>error.code==="REVIEW_ASSET_VERSION_INVALID");assert.equal(f.rows.length,0);});
