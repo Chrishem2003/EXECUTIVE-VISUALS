@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
-import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
+import { CLOUD_MEDIA_JOB_TYPES } from "./cloud-media-job-types.mjs";
+import { buildMediaOperationArgs, executableAvailable, buildAudioMasterAnalysisArgs, parseAudioMasterMeasurement, buildAudioMasterRenderArgs } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { createVideoAiUpscaleProcessor } from "./video-ai-upscale.mjs";
 import { parseSceneChangeTimes, parseFreezeEvents } from "./media-signal-analysis.mjs";
@@ -22,11 +23,7 @@ export function aiUpscaleMediaType(format) {
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
-const SUPPORTED = new Set([
-  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
-  "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"
-]);
+const SUPPORTED = new Set(CLOUD_MEDIA_JOB_TYPES);
 
 function parseInput(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) return value;
@@ -106,6 +103,19 @@ export function buildCloudMediaOutputPlan(jobType, input, source, sourcePath, ou
   }
   if (jobType === "media.audio_extract") {
     return { args: ["-hide_banner", "-y", "-i", sourcePath, "-vn", "-c:a", "libmp3lame", "-q:a", "2", outputPath], name: baseName + "-audio.mp3", mediaType: "audio/mpeg" };
+  }
+  if (jobType === "media.audio_replace") {
+    const replacementAudioPath = String(input.replacementAudioPath || "");
+    const replacementAudioType = String(input.replacementAudioMediaType || "");
+    const sourceDurationSeconds = Number(input.sourceDurationSeconds);
+    if (!String(source.mediaType || "").startsWith("video/")) throw Object.assign(new Error("Soundtrack replacement requires a video source."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+    if (!replacementAudioPath || !replacementAudioType.startsWith("audio/")) throw Object.assign(new Error("Soundtrack replacement requires a separately authorized audio asset."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+    if (!Number.isFinite(sourceDurationSeconds) || sourceDurationSeconds <= 0 || sourceDurationSeconds > 6 * 60 * 60) throw Object.assign(new Error("The source video duration could not be verified for soundtrack replacement."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+    return {
+      args: ["-hide_banner", "-y", "-i", sourcePath, "-i", replacementAudioPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-t", sourceDurationSeconds.toFixed(3), "-map_metadata", "0", "-movflags", "+faststart", outputPath],
+      name: baseName + "-soundtrack-replaced.mp4",
+      mediaType: "video/mp4"
+    };
   }
   if (jobType === "media.audio-clean" || ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale"].includes(jobType)) {
     const isAudio = jobType === "media.audio-clean";
@@ -198,12 +208,23 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const outputExtension = job.job_type === "media.video-ai-upscale" ? "mp4" : job.job_type === "media.ai-upscale" ? String(input.format || "png")
       : job.job_type === "media.thumbnail" ? "jpg"
       : job.job_type === "media.audio_extract" ? "mp3"
-      : job.job_type === "media.audio-clean" ? "wav"
-      : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
+      : job.job_type === "media.audio-clean" || job.job_type === "media.audio-master" ? "wav"
+      : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy", "media.audio_replace"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
+    let replacementAudioMaterialized = null;
     try {
       await copyFile(materialized.path, sourcePath);
+      let replacementAudioPath = null;
+      if (job.job_type === "media.audio_replace") {
+        const replacementAudioAssetId = String(input.replacementAudioAssetId || "");
+        if (!replacementAudioAssetId || replacementAudioAssetId === sourceId) throw Object.assign(new Error("A distinct replacement-audio asset is required."), { code: "SOURCE_ASSET_NOT_FOUND" });
+        replacementAudioMaterialized = await mediaIO.materialize({ ownerId: job.owner_id, assetId: replacementAudioAssetId });
+        if (!String(replacementAudioMaterialized.asset?.mediaType || "").startsWith("audio/")) throw Object.assign(new Error("The selected replacement asset is not audio."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+        const replacementExtension = extname(replacementAudioMaterialized.asset.name || "").slice(0, 12);
+        replacementAudioPath = join(workDir, "replacement-audio" + replacementExtension);
+        await copyFile(replacementAudioMaterialized.path, replacementAudioPath);
+      }
       if (job.job_type === "media.ai-upscale") {
         if (!String(materialized.asset.mediaType || "").startsWith("image/")) {
           throw Object.assign(new Error("AI super-resolution currently accepts still images only; video frame processing is not enabled."), { code: "UNSUPPORTED_MEDIA_TYPE" });
@@ -334,7 +355,28 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
         sourceDurationSeconds = parsedSourceDuration;
       }
-      const plan = buildCloudMediaOutputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
+      let audioMastering=null;
+      let audioReplacement=null;
+      let plan;
+      if(job.job_type==="media.audio_replace"){
+        if(!String(materialized.asset.mediaType||"").startsWith("video/"))throw Object.assign(new Error("Soundtrack replacement requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+        if(!executableAvailable("ffprobe"))throw Object.assign(new Error("FFprobe is required to verify source-video duration before soundtrack replacement."),{code:"MEDIA_ENGINE_MISSING"});
+        const sourceProbe=await runProcess(ffprobe,["-v","error","-show_entries","stream=codec_type:format=duration","-of","json",sourcePath],{signal,timeoutMs,onProgress});
+        let sourceMetadata;try{sourceMetadata=JSON.parse(sourceProbe.stdout||"{}");}catch{throw Object.assign(new Error("FFprobe returned invalid source-video metadata."),{code:"MEDIA_PROBE_INVALID"});}
+        if(!(sourceMetadata.streams||[]).some(stream=>stream.codec_type==="video"))throw Object.assign(new Error("Soundtrack replacement source has no video stream."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+        const sourceDurationSeconds=Number(sourceMetadata.format?.duration);
+        if(!Number.isFinite(sourceDurationSeconds)||sourceDurationSeconds<=0||sourceDurationSeconds>6*60*60)throw Object.assign(new Error("Source-video duration is missing or outside the supported range."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+        audioReplacement={sourceDurationSeconds,replacementAudioAssetId:String(input.replacementAudioAssetId),replacementAudioSha256:replacementAudioMaterialized.asset.sha256};
+        plan=buildCloudMediaOutputPlan(job.job_type,{...input,replacementAudioPath,replacementAudioMediaType:replacementAudioMaterialized.asset.mediaType,sourceDurationSeconds},materialized.asset,sourcePath,outputPath);
+      }else if(job.job_type==="media.audio-master"){
+        if(!String(materialized.asset.mediaType||"").startsWith("audio/"))throw Object.assign(new Error("Audio mastering requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+        onProgress(15);
+        const analysis=await runProcess(ffmpeg,buildAudioMasterAnalysisArgs({sourcePath,input}),{signal,timeoutMs:Math.min(timeoutMs,5*60*1000),onProgress});
+        audioMastering=parseAudioMasterMeasurement(analysis.stderr);
+        audioMastering.targets={integratedLufs:Number(input.targetLufs??-16),loudnessRangeLu:Number(input.targetLra??11),truePeakDbtp:Number(input.truePeakDbtp??-1.5)};
+        const audioSourceName=String(materialized.asset.name||"audio");
+        plan={args:buildAudioMasterRenderArgs({sourcePath,outputPath,input,measurement:audioMastering}),name:(audioSourceName.includes(".")?audioSourceName.slice(0,audioSourceName.lastIndexOf(".")):audioSourceName).slice(0,140)+"-mastered.wav",mediaType:"audio/wav"};
+      }else plan=buildCloudMediaOutputPlan(job.job_type,input,materialized.asset,sourcePath,outputPath);
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
@@ -358,6 +400,20 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           throw Object.assign(new Error("Derivative has no valid, verifiable duration; it was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
       }
       outputProbe = structuralMetadata;
+      if(job.job_type==="media.audio_replace"){
+        const replacementStream=structuralStreams.find(stream=>stream?.codec_type==="audio");
+        if(!replacementStream||replacementStream.codec_name!=="aac")throw Object.assign(new Error("Soundtrack replacement output must contain a verified AAC audio stream."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+        const outputDuration=Number(structuralMetadata.format?.duration||matchingStream.duration);
+        const tolerance=Math.max(0.25,audioReplacement.sourceDurationSeconds*0.02);
+        if(!Number.isFinite(outputDuration)||Math.abs(outputDuration-audioReplacement.sourceDurationSeconds)>tolerance)throw Object.assign(new Error("Soundtrack replacement changed the source-video duration beyond the allowed tolerance."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+        audioReplacement.outputDurationSeconds=outputDuration;
+        audioReplacement.outputAudioCodec=replacementStream.codec_name;
+        audioReplacement.durationToleranceSeconds=tolerance;
+      }
+      if(job.job_type==="media.audio-master"){
+        const mastered=structuralStreams.find(stream=>stream?.codec_type==="audio");
+        if(!mastered||mastered.codec_name!=="pcm_s24le"||Number(mastered.sample_rate)!==48000)throw Object.assign(new Error("Audio master must be verified as 48 kHz 24-bit PCM before publication."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+      }
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
         const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
@@ -394,7 +450,15 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
       }
       onProgress(85);
-      const processing = job.job_type === "media.upscale" ? {
+      const processing = job.job_type === "media.audio_replace" ? {
+        method: "video-stream-copy-aac-audio-replacement",
+        replacementAudioAssetId: audioReplacement.replacementAudioAssetId,
+        replacementAudioSha256: audioReplacement.replacementAudioSha256,
+        sourceDurationSeconds: audioReplacement.sourceDurationSeconds,
+        outputDurationSeconds: audioReplacement.outputDurationSeconds,
+        outputAudioCodec: audioReplacement.outputAudioCodec,
+        durationToleranceSeconds: audioReplacement.durationToleranceSeconds
+      } : job.job_type === "media.upscale" ? {
         method: "classical-resampling",
         algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
         sharpness: Number(input.sharpness ?? 0),
@@ -408,6 +472,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
+      await assertLease();
       const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:plan.mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
       const info=await stat(outputPath);
       const digest=await checksum(outputPath);
@@ -418,12 +483,15 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         mediaType: plan.mediaType,
         path: outputPath,
         derivativeOf: sourceId,
-        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}), c2paPreservation },
-        publicationKey: job.id + ":output:v1"
+        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}), ...(audioMastering?{audioMastering:{standard:"EBU R128",method:"two-pass loudnorm",measurement:audioMastering,output:{codec:"pcm_s24le",sampleRateHz:48000}}}:{}), c2paPreservation },
+        publicationKey: job.id + ":output:v1",
+        assertLease, signal,
+        leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
       });
       onProgress(100);
       return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}), c2paPreservation };
     } finally {
+      await replacementAudioMaterialized?.cleanup?.().catch(() => {});
       await materialized.cleanup?.().catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
     }

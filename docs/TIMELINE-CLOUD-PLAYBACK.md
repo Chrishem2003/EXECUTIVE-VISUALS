@@ -19,7 +19,7 @@ A clip's \`metadata.proxyAssetId\` is treated as a preference, not as authority.
 
 If the proxy cannot be signed, the preview falls back to the original source. If the browser later reports a proxy media error, the preview marks that proxy unavailable for the session and loads the original source instead. The canonical \`clip.assetId\` is never changed; master renders continue using the original source.
 
-Cloud proxy generation and source-frame extraction are not included because the cloud media worker does not yet expose those job types. This batch reuses existing linked derivatives only.
+Cloud proxy generation (`media.proxy`) and source-frame extraction (`media.thumbnail`) are implemented in the cloud media executor and the lease-aware cloud media worker. However, the cloud timeline UI deliberately keeps those actions gated until the hosted deployment proves that a cloud media worker is actively running against isolated durable storage. The presence of worker code or a queued job is not evidence of execution. In cloud mode this batch therefore reuses existing linked derivatives only; local mode can generate proxies and frame previews.
 
 ## Playback diagnostics
 

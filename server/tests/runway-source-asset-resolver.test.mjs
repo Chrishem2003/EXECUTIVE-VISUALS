@@ -266,3 +266,14 @@ test("Runway source resolver normalizes failures raised after private download h
     error => error.code === "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED"
   );
 });
+
+test("Seedance and Kling video edits receive ffprobe metadata while legacy source operations remain probe-independent",async()=>{
+ const seedance=fixture();
+ const prepared=await seedance.resolver.prepare({provider:"runway",model:"seedance2_5",operation:"video-to-video",projectId:PROJECT,sourceVideoAssetId:ASSET},{job:{owner_id:OWNER}});
+ assert.equal(prepared.sourceMetadata.width,1920);
+ assert.equal(prepared.sourceMetadata.height,1080);
+ assert.equal(prepared.sourceMetadata.durationSeconds,11.2);
+ const legacy=fixture({execFileImpl:()=>{throw new Error("legacy Aleph2 path must not probe");}});
+ const old=await legacy.resolver.prepare({provider:"runway",model:"aleph2",operation:"video-to-video",projectId:PROJECT,sourceVideoAssetId:ASSET},{job:{owner_id:OWNER}});
+ assert.equal("sourceMetadata" in old,false);
+});

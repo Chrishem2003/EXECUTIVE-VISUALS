@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCloudMediaWorker } from "../cloud-media-worker.mjs";
+import { CLOUD_MEDIA_JOB_TYPES } from "../cloud-media-job-types.mjs";
 
 test("cloud media worker composes the leased queue and injected media executor", async () => {
   const calls = [];
@@ -20,7 +21,8 @@ test("cloud media worker composes the leased queue and injected media executor",
     execute: async () => ({ ok: true })
   });
   assert.deepEqual(await worker.runCycle({ onEvent: event => calls.push(event.type) }), { claimed: false });
-  assert.deepEqual(claimedTypes, ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.video-ai-upscale", "media.transcode", "media.proxy"]);
+  assert.strictEqual(claimedTypes, CLOUD_MEDIA_JOB_TYPES);
+  assert.equal(Object.isFrozen(claimedTypes), true);
   assert.equal(await worker.recoverExpired(25), 2);
   assert.deepEqual(calls, ["claim", "recover:25"]);
 });

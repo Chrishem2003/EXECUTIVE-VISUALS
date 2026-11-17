@@ -13,7 +13,7 @@ export type WorkflowNodeKind =
   | "prompt" | "text" | "upload" | "reference" | "script" | "storyboard"
   | "image.generate" | "image.edit" | "image.upscale" | "image.remove-background"
   | "video.generate" | "video.extract-frame" | "video.stitch" | "video.add-audio"
-  | "video.extract-audio" | "video.reframe"
+  | "video.extract-audio" | "video.reframe" | "video.replace-audio"
   | "avatar.generate" | "voice.generate" | "voice.transcribe" | "voice.caption"
   | "voice.translate" | "voice.lipsync"
   | "llm.prompt" | "llm.analyze"
@@ -22,7 +22,7 @@ export type WorkflowNodeKind =
   | "utility.convert" | "utility.compress"
   | "media.process" | "media.upscale" | "media.denoise" | "media.interpolate"
   | "media.stabilize" | "media.remove-object" | "media.convert" | "media.compress"
-  | "media.audio-extract" | "media.color-match" | "media.compare"
+  | "media.audio-extract" | "media.audio-clean" | "media.audio-master" | "media.color-match" | "media.compare"
   | "campaign.create" | "approval" | "quality-check" | "timeline" | "export"
   | "connector" | "branch" | "merge" | "batch" | "subworkflow" | "knowledge.search";
 

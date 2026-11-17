@@ -3,25 +3,30 @@ const API_VERSION="2024-11-06";
 const MAX_OUTPUT_BYTES=250*1024*1024;
 const MODEL_PROFILES=Object.freeze({
   "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","4:3","3:4","3:2","2:3","21:9"],resolutions:["provider_default","480p","720p","1080p"],defaultResolution:"480p"}),
+  "gemini_omni_flash_1.2":Object.freeze({label:"Gemini Omni Flash 1.2",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16"],resolutions:["provider_default","360p","720p","1080p","4k"],defaultResolution:"720p"}),
+  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["21:9","16:9","4:3","1:1","3:4","9:16"],resolutions:["provider_default","480p","720p","1080p","4k"],defaultResolution:"720p"}),
   "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
+  "kling_4_flash":Object.freeze({label:"Kling 4.0 Flash",minDurationSeconds:3,maxDurationSeconds:20,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p"],defaultResolution:"720p"}),
   "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
+  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
+  "kling3.0_4k":Object.freeze({label:"Kling 3.0 4K",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
 });
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ratioFor=(model,ratio,resolution)=>{
   const maps={
     "gen4.5":{"16:9":"1280:720","9:16":"720:1280"},
+    "gemini_omni_flash_1.2":{
+      "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="360p"?"640:360":"1280:720",
+      "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="360p"?"360:640":"720:1280"
+    },
     "seedance2_5":{
-      "16:9":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
-      "9:16":resolution==="1080p"?"1080:1920":resolution==="720p"?"720:1280":"480:854",
-      "1:1":resolution==="1080p"?"1080:1080":resolution==="720p"?"720:720":"480:480",
-      "4:3":resolution==="1080p"?"1440:1080":resolution==="720p"?"960:720":"640:480",
-      "3:4":resolution==="1080p"?"1080:1440":resolution==="720p"?"720:960":"480:640",
-      "3:2":resolution==="1080p"?"1620:1080":resolution==="720p"?"1080:720":"720:480",
-      "2:3":resolution==="1080p"?"1080:1620":resolution==="720p"?"720:1080":"480:720",
-      "21:9":resolution==="1080p"?"2520:1080":resolution==="720p"?"1680:720":"1120:480"
+      "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="720p"?"1280:720":"854:480",
+      "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="720p"?"720:1280":"480:854",
+      "1:1":resolution==="4k"?"3840:3840":resolution==="1080p"?"1440:1440":resolution==="720p"?"960:960":"640:640",
+      "4:3":resolution==="4k"?"3840:2880":resolution==="1080p"?"1664:1248":resolution==="720p"?"1112:834":"752:560",
+      "3:4":resolution==="4k"?"2880:3840":resolution==="1080p"?"1248:1664":resolution==="720p"?"834:1112":"560:752",
+      "21:9":resolution==="4k"?"3840:1646":resolution==="1080p"?"2206:946":resolution==="720p"?"1470:630":"992:432"
     },
     "kling_4":{
       "16:9":resolution==="1080p"?"1920:1080":"1280:720",
@@ -29,8 +34,10 @@ const ratioFor=(model,ratio,resolution)=>{
       "1:1":resolution==="1080p"?"1440:1440":"940:940",
       "21:9":resolution==="1080p"?"2200:940":"1460:624"
     },
+    "kling_4_flash":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960","21:9":"1464:628"},
     "kling3.0_standard":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960"},
-    "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"}
+    "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"},
+    "kling3.0_4k":{"16:9":"3840:2160","9:16":"2160:3840","1:1":"2880:2880"}
   };
   return maps[model]?.[ratio]||"";
 };
@@ -38,7 +45,7 @@ export function listRunwayVideoModels(){
   return Object.entries(MODEL_PROFILES).map(([id,profile])=>({
     id,label:profile.label,minDurationSeconds:profile.minDurationSeconds,
     maxDurationSeconds:profile.maxDurationSeconds,aspectRatios:[...profile.aspectRatios],
-    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video","image-to-video"],
+    resolutions:[...profile.resolutions],execution:"async",inputModes:["kling_4_flash","gemini_omni_flash_1.2"].includes(id)?["text-to-video","image-to-video","video-to-video"]:["text-to-video","image-to-video"],
     readiness:"adapter-supported; credentials and remote opt-in required"
   }));
 }
@@ -47,49 +54,83 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
-    referenceImages:true,audioModes:Object.freeze([]),
+    referenceImages:String(model||"").trim()!=="kling_4_flash",audioModes:Object.freeze(["seedance2_5","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(String(model||"").trim())?["generated","none"]:["kling_4","kling_4_flash"].includes(String(model||"").trim())?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
   });
 }
-export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
+function validateKlingMultiPrompt(model,multiPrompt,shotType,promptText){
+ if(multiPrompt===undefined||multiPrompt===null)return null;
+ if(!String(model||"").startsWith("kling3.0_"))throw fail("Multi-shot prompts are supported only by Kling 3.0 profiles.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!Array.isArray(multiPrompt)||multiPrompt.length<1||multiPrompt.length>6)throw fail("Kling multi-shot prompts require one to six segments.","VIDEO_GATEWAY_INVALID_INPUT");
+ const segments=multiPrompt.map(segment=>({prompt:String(segment?.prompt||"").trim(),duration:Number(segment?.duration)}));
+ if(segments.some(segment=>segment.prompt.length<3||segment.prompt.length>512||!Number.isInteger(segment.duration)||segment.duration<1||segment.duration>15))throw fail("Each Kling shot requires a 3–512 character prompt and an integer duration from 1 to 15 seconds.","VIDEO_GATEWAY_INVALID_INPUT");
+ const total=segments.reduce((sum,item)=>sum+item.duration,0);
+ if(total<3||total>15)throw fail("Kling multi-shot segment durations must total 3–15 seconds.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!["customize","intelligence"].includes(shotType))throw fail("Kling multi-shot shotType must be customize or intelligence.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(shotType==="intelligence"&&(String(promptText||"").trim().length<2||String(promptText||"").length>2500))throw fail("Kling intelligence shot type requires a 2–2,500 character promptText.","VIDEO_GATEWAY_INVALID_INPUT");
+ return Object.freeze(segments.map(item=>Object.freeze(item)));
+}
+export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize",draft=false}={}){
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
-  if(!text||text.length>1000)throw fail("Runway text-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
-  if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const kling3=id.startsWith("kling3.0_");
+  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
+  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
+  if((!text&&!segments)||text.length>maxPrompt)throw fail("Runway text-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
-  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
-  const ratio=ratioFor(id,aspectRatio,effectiveResolution);
+  const effectiveResolution=draft?"480p":resolution==="provider_default"?profile.defaultResolution:resolution;
+  const ratio=ratioFor(id,aspectRatio,draft?"720p":effectiveResolution);
   if(!ratio)throw fail("No verified output ratio mapping exists for this model and aspect ratio.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
-  const payload={model:id,promptText:text,ratio,duration:durationSeconds};
-  if(id==="seedance2_5"&&effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
+  const payload={model:id,ratio,...(text?{promptText:text}:{}),...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(draft?{draft:true}:{})};
+  if(id==="seedance2_5"&&segments)throw fail("Seedance multi-shot requests require the dedicated recipe adapter and are not enabled in this worker.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   return Object.freeze(payload);
 }
-export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
+export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",multiPrompt,shotType="customize",draft=false}={}){
  const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
  if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
- if(!text||text.length>1000)throw fail("Runway image-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(typeof draft!=="boolean")throw fail("Draft mode must be a boolean.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(draft&&id!=="seedance2_5")throw fail("Draft previews are supported only by Seedance 2.5.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(draft&&resolution!=="480p")throw fail("Seedance 2.5 draft previews are fixed at 480p.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const kling3=id.startsWith("kling3.0_");
+ const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
+ const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
+ if((!text&&!segments)||text.length>maxPrompt)throw fail("Runway image-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
- if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
- const payload={model:id,promptText:text,promptImage,duration:durationSeconds};
+ const payload={model:id,...(text?{promptText:text}:{}),promptImage,...(segments?{providerSettings:{multiPrompt:segments,shotType}}:{duration:durationSeconds}),...(draft?{draft:true}:{})};
  if(id==="seedance2_5"){
-  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  const effectiveResolution=draft?"480p":resolution==="provider_default"?profile.defaultResolution:resolution;
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   const ratio=ratioFor(id,aspectRatio,effectiveResolution);
   if(!ratio)throw fail("No verified Seedance image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
-  if(effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
  }else if(id==="gen4.5"){
   const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
+ }else if(id==="gemini_omni_flash_1.2"){
+  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by Gemini Omni 1.2 image-to-video.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const ratio=ratioFor(id,aspectRatio,effectiveResolution);
+  if(!ratio)throw fail("No verified Gemini Omni 1.2 image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  payload.ratio=ratio;
+ }else if(id==="kling_4"){
+  payload.ratio=resolution==="1080p"?"auto_1080p":"auto_720p";
+ }else if(id.startsWith("kling3.0_")){
+  payload.ratio=ratioFor(id,aspectRatio,profile.defaultResolution);
  }
- // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
 }
 async function readBoundedJsonText(response,maxBytes=2*1024*1024){
@@ -216,7 +257,14 @@ const UPLOAD_TYPES = Object.freeze({
   "video/quicktime": ".mov",
   "image/png": ".png",
   "image/jpeg": ".jpg",
-  "image/webp": ".webp"
+  "image/webp": ".webp",
+  "audio/mpeg": ".mp3",
+  "audio/mp3": ".mp3",
+  "audio/wav": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/flac": ".flac",
+  "audio/mp4": ".m4a",
+  "audio/aac": ".aac"
 });
 
 /**

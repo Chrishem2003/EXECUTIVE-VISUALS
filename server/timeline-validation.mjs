@@ -21,7 +21,7 @@ export function validateTimelineDocument(timeline,db,ownerId){
    if(!asset)issues.push("Every timeline clip must reference a source asset accessible to this account.");
    else if(track.kind==="video"&&!asset.media_type.startsWith("video/")&&!asset.media_type.startsWith("image/"))issues.push("Primary video tracks accept only video or still-image assets.");
    else if(track.kind==="audio"&&!asset.media_type.startsWith("audio/"))issues.push("Audio tracks accept only audio assets.");
-   else if(track.kind==="overlay"&&!asset.media_type.startsWith("image/"))issues.push("Overlay tracks currently accept only still-image assets.");
+   else if(track.kind==="overlay"&&!asset.media_type.startsWith("image/")&&!asset.media_type.startsWith("video/"))issues.push("Overlay tracks accept only still-image or video assets.");
    else if(track.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.media_type)||![".srt",".vtt"].includes(String(asset.original_name||"").toLowerCase().slice(String(asset.original_name||"").lastIndexOf(".")))))issues.push("Caption tracks accept only SRT or VTT text assets.");
    if(Number(clip.speed??1)!==1)issues.push("Clip speed changes are not supported until time remapping is implemented.");
    if(track.kind==="audio"&&clip.gainDb!==undefined&&(!Number.isFinite(Number(clip.gainDb))||Number(clip.gainDb)<-60||Number(clip.gainDb)>24))issues.push("Audio gain must be between -60 dB and +24 dB.");

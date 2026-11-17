@@ -22,12 +22,20 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  if(!imageFal&&!imageGemini&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation.";}
  image.availableModels=imageGemini?listGeminiImageModels():[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
+ const runwayAllowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
+ const runwayPrimaryModel=String(env.RUNWAY_VIDEO_MODEL||runwayAllowlist[0]||"").trim();
  const video=videoProvider==="runway"
-  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&env.RUNWAY_VIDEO_MODEL),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL on the server."})
+  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&runwayAllowlist.length),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:runwayPrimaryModel,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."})
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
- video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
- video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
+ if(videoProvider==="runway"&&video.status==="ready"&&(env.CLOUD_VIDEO_WORKER_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true")){video.status="needs_configuration";video.reason="Enable the durable cloud worker and RUNWAY_VIDEO_ALLOW_REMOTE before Runway models can be selected.";}
+ video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(runwayPrimaryModel):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
+ video.availableModels=videoProvider==="runway"?listRunwayVideoModels().map(model=>{
+  const allowlisted=runwayAllowlist.includes(model.id);
+  const ready=video.status==="ready"&&allowlisted;
+  return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":"not_configured",
+   reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
+ }):[];
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";
@@ -60,7 +68,8 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  }];
  const voice=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&env.VOICE_GATEWAY_MODEL),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_GATEWAY_MODEL,provider:"voice",capabilities:["voice.generate"]});
  const transcription=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true"&&env.VOICE_TRANSCRIPTION_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&(env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL)),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL,provider:"transcription",capabilities:["voice.transcribe"]});
- const localMedia={id:"local-media",provider:"local",enabled:Boolean(media.ffmpeg&&media.ffprobe),configured:Boolean(media.ffmpeg&&media.ffprobe),remote:false,model:"FFmpeg / FFprobe",status:media.ffmpeg&&media.ffprobe?"ready":"unavailable",reason:media.ffmpeg&&media.ffprobe?"Local media tools are available.":"Install FFmpeg and FFprobe on the worker host.",capabilities:["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]};
+ const runwayAudio=gatewayState({enabled:env.RUNWAY_AUDIO_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET),url:"https://api.dev.runwayml.com",allowRemote:env.RUNWAY_AUDIO_ALLOW_REMOTE==="true",model:"eleven_voice_isolation / eleven_voice_dubbing",provider:"runway",id:"runway-audio",capabilities:["voice.isolate","voice.dub"],reasonIfMissing:"Set RUNWAYML_API_SECRET and explicitly enable RUNWAY_AUDIO_ENABLED after reviewing Runway audio pricing and data handling."});
+ const localMedia={id:"local-media",provider:"local",enabled:Boolean(media.ffmpeg&&media.ffprobe),configured:Boolean(media.ffmpeg&&media.ffprobe),remote:false,model:"FFmpeg / FFprobe",status:media.ffmpeg&&media.ffprobe?"ready":"unavailable",reason:media.ffmpeg&&media.ffprobe?"Local media tools are available.":"Install FFmpeg and FFprobe on the worker host.",capabilities:["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.audio-master","media.audio_replace","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]};
  const ai=media.aiUpscale||{available:false,executionEnabled:false,reason:"Configure an NCNN/Vulkan engine and allowlisted model files."};
  // Process success and image-header checks do not prove neural inference or perceptual quality.
  const executionVerified=Boolean(ai.executionVerified);
@@ -77,7 +86,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const aiUpscale={id:"ai-upscale",provider:"local",enabled:Boolean(ai.executionEnabled),configured:Boolean(ai.available),remote:false,model:selectedModel,executionVerified,qualityVerified,availableModels,status:!ai.available?"unavailable":!ai.executionEnabled?"disabled":!executionVerified?"unverified":qualityVerified?"ready":"unverified",reason:!ai.available?"Configure the engine executable and allowlisted model files.":!ai.executionEnabled?"AI upscaling is not enabled.":!executionVerified?"Run the selected model-specific execution self-test on this worker.":qualityVerified?"Independent model-specific fixture quality evidence is recorded.":"Execution checks passed; model-specific neural quality remains unverified.",capabilities:ai.available&&ai.executionEnabled&&executionVerified&&qualityVerified?["media.ai-upscale"]:[]};
  const pricingCatalog=parseVideoPricingCatalog(env.VIDEO_MODEL_PRICING_JSON||"");
  video.pricing={configured:pricingCatalog.configured,models:pricingCatalog.records.map(record=>({provider:record.provider,model:record.model,currency:record.currency,sourceUrl:record.sourceUrl,observedAt:record.observedAt,expiresAt:record.expiresAt})),rejectedCount:pricingCatalog.rejectedCount};
- const providers=[text,image,video,luma,voice,transcription,localMedia,aiUpscale];
+ const providers=[text,image,video,luma,voice,transcription,runwayAudio,localMedia,aiUpscale];
  const counts=providers.reduce((out,item)=>{out[item.status]=(out[item.status]||0)+1;return out;},{});
  return {version:1,providers,summary:{total:providers.length,ready:providers.filter(x=>x.status==="ready").length,disabled:counts.disabled||0,unverified:counts.unverified||0,needsConfiguration:counts.needs_configuration||0,remoteOptInRequired:counts.remote_opt_in_required||0,unavailable:counts.unavailable||0},policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:pricingCatalog.configured,requestsSubmitted:false}};
 }

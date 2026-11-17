@@ -20,7 +20,7 @@ const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, parseTemporalLumaSamples, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.audio_replace", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.audio-master", "media.ai-upscale", "media.video-ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -84,6 +84,10 @@ export function captionStyle(metadata={}){
 }
 export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}){
  const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ if(jobType==="media.audio_replace"){
+  if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath||typeof input.replacementAudioPath!=="string"||!input.replacementAudioPath)fail("Video and replacement audio paths are required.");
+  return ["-hide_banner","-y","-i",sourcePath,"-i",input.replacementAudioPath,"-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-af","apad","-shortest","-movflags","+faststart",outputPath];
+ }
  const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
  const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
  let filter;
@@ -116,6 +120,41 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   filter=`minterpolate=fps=${fps.toFixed(3)}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`;
  }else fail("Unsupported local media operation.");
  return [...base,"-vf",filter,...video];
+}
+export function buildAudioMasterAnalysisArgs({sourcePath,input={}}={}) {
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ const targetLufs=Number(input.targetLufs??-16),targetLra=Number(input.targetLra??11),truePeakDbtp=Number(input.truePeakDbtp??-1.5);
+ if(typeof sourcePath!=="string"||!sourcePath)fail("An audio source path is required.");
+ if(!Number.isFinite(targetLufs)||targetLufs< -24||targetLufs> -12)fail("Integrated loudness target must be between -24 and -12 LUFS.");
+ if(!Number.isFinite(targetLra)||targetLra<1||targetLra>20)fail("Loudness range target must be between 1 and 20 LU.");
+ if(!Number.isFinite(truePeakDbtp)||truePeakDbtp< -9||truePeakDbtp> -1)fail("True-peak ceiling must be between -9 and -1 dBTP.");
+ const filter="loudnorm=I="+targetLufs.toFixed(1)+":LRA="+targetLra.toFixed(1)+":TP="+truePeakDbtp.toFixed(1)+":print_format=json";
+ return ["-hide_banner","-nostats","-i",sourcePath,"-map","0:a:0","-af",filter,"-f","null","-"];
+}
+export function parseAudioMasterMeasurement(stderr) {
+ const source=String(stderr||"");
+ const start=source.lastIndexOf("{");
+ const end=source.indexOf("}",start);
+ if(start<0||end<0)throw Object.assign(new Error("FFmpeg did not return EBU R128 loudness measurements."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});
+ let parsed;
+ try{parsed=JSON.parse(source.slice(start,end+1));}catch{throw Object.assign(new Error("FFmpeg loudness measurements could not be parsed."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});}
+ const fields=["input_i","input_tp","input_lra","input_thresh","target_offset"];
+ const values={};
+ for(const field of fields){
+  const value=Number(parsed[field]);
+  if(!Number.isFinite(value))throw Object.assign(new Error("Audio is silent or its loudness measurement is incomplete ("+field+")."),{code:"AUDIO_MASTER_MEASUREMENT_INVALID"});
+  values[field]=Number(value.toFixed(3));
+ }
+ return {integratedLufs:values.input_i,truePeakDbtp:values.input_tp,loudnessRangeLu:values.input_lra,thresholdLufs:values.input_thresh,targetOffsetDb:values.target_offset};
+}
+export function buildAudioMasterRenderArgs({sourcePath,outputPath,input={},measurement}={}) {
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath)fail("Audio source and output paths are required.");
+ if(!measurement||![measurement.integratedLufs,measurement.truePeakDbtp,measurement.loudnessRangeLu,measurement.thresholdLufs,measurement.targetOffsetDb].every(Number.isFinite))fail("A valid first-pass loudness measurement is required.");
+ const targetLufs=Number(input.targetLufs??-16),targetLra=Number(input.targetLra??11),truePeakDbtp=Number(input.truePeakDbtp??-1.5);
+ if(!Number.isFinite(targetLufs)||targetLufs< -24||targetLufs> -12||!Number.isFinite(targetLra)||targetLra<1||targetLra>20||!Number.isFinite(truePeakDbtp)||truePeakDbtp< -9||truePeakDbtp> -1)fail("Audio mastering targets are outside supported ranges.");
+ const filter="loudnorm=I="+targetLufs.toFixed(1)+":LRA="+targetLra.toFixed(1)+":TP="+truePeakDbtp.toFixed(1)+":measured_I="+measurement.integratedLufs.toFixed(3)+":measured_TP="+measurement.truePeakDbtp.toFixed(3)+":measured_LRA="+measurement.loudnessRangeLu.toFixed(3)+":measured_thresh="+measurement.thresholdLufs.toFixed(3)+":offset="+measurement.targetOffsetDb.toFixed(3)+":linear=true:print_format=summary,aresample=48000";
+ return ["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-af",filter,"-c:a","pcm_s24le","-ar","48000",outputPath];
 }
 export function executableAvailable(name) {
   const executable=name==="ffmpeg"?(process.env.FFMPEG_PATH||name):name==="ffprobe"?(process.env.FFPROBE_PATH||name):name;
@@ -184,6 +223,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
     "media.upscale":["width","height","fit","algorithm","sharpness"],
     "media.interpolate":["fps"],
     "media.audio-clean":["noiseFloor","targetLufs"],
+    "media.audio-master":["targetLufs","targetLra","truePeakDbtp"],
     "media.transcode":["container","videoCodec","audioCodec","preset"],
     "media.proxy":["container","videoCodec","audioCodec","preset","proxyWidth","proxyCrf","proxyProfile"],
     "media.audio_extract":[],
@@ -206,6 +246,7 @@ export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}
       jobType==="media.denoise"?"classical-video-denoising":
       jobType==="media.color"?"deterministic-color-adjustment":
       jobType==="media.audio-clean"?"classical-audio-filtering":
+      jobType==="media.audio-master"?"ebu-r128-two-pass-mastering":
       jobType==="media.audio_extract"?"audio-stream-extraction":
       jobType==="media.thumbnail"?"frame-extraction":jobType==="media.proxy"?"editing-proxy-transcode":"deterministic-transcoding",
     sourceAssetId:typeof sourceAsset.id==="string"?sourceAsset.id:null,
@@ -402,20 +443,24 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
     const duration=Math.min(safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate)),cursor-start);
     if(duration<=0)continue;
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
-    if(!asset||!asset.media_type.startsWith("image/"))throw Object.assign(new Error("Overlay tracks currently require accessible still-image assets."),{code:"UNSUPPORTED_OVERLAY_SOURCE"});
+    if(!asset||(!asset.media_type.startsWith("image/")&&!asset.media_type.startsWith("video/")))throw Object.assign(new Error("Overlay tracks require accessible still-image or video assets."),{code:"UNSUPPORTED_OVERLAY_SOURCE"});
     const metadata=clip.metadata||{},overlayWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*0.24))),overlayHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*0.24)));
     const rawX=Number(metadata.x),rawY=Number(metadata.y),x=Math.max(0,Math.min(width-overlayWidth,Number.isFinite(rawX)?Math.round(rawX):width-overlayWidth-24)),y=Math.max(0,Math.min(height-overlayHeight,Number.isFinite(rawY)?Math.round(rawY):24));
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
-    const file=join(mediaRoot,asset.storage_path);
-    args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
+    const file=join(mediaRoot,asset.storage_path),isVideo=asset.media_type.startsWith("video/");
+    if(isVideo){
+      const sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate)),sourceDuration=Math.min(sourceDurationForTimelineClip(clip,duration),duration);
+      args.push("-ss",sourceStart.toFixed(6),"-t",sourceDuration.toFixed(6),"-i",file);
+    }else args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
     const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++,motion=buildTimelineMotionFilters({x,y,width:overlayWidth,height:overlayHeight,opacity,rotation:Number(metadata.rotation)||0,...metadata},duration,width,height);
-    if(motion){
-      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+    if(!motion)throw Object.assign(new Error("Overlay transform settings could not be compiled."),{code:"INVALID_MOTION_KEYFRAMES"});
+    if(isVideo){
+      const sourceDuration=Math.min(sourceDurationForTimelineClip(clip,duration),duration);
+      videoEffects.push(`[${inputIndex}:v]trim=duration=${sourceDuration.toFixed(6)},setpts=PTS-STARTPTS,fps=${fpsNum}/${fpsDen},${motion.filters.join(",")},setpts=PTS-STARTPTS+${start.toFixed(6)}/TB[${imageLabel}]`);
       videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
     }else{
-      const rotation=Number(metadata.rotation)||0,rotationFilter=rotation?`,rotate=angle=${(rotation*Math.PI/180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):c=none`:"";
-      videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba${rotationFilter},colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-      videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+      videoEffects.push(`[${inputIndex}:v]${motion.filters.join(",")}[${imageLabel}]`);
+      videoEffects.push(`${currentVideo}[${imageLabel}]${motion.overlay}:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
     }
     currentVideo=`[${videoLabel}]`;inputIndex++;
   }
@@ -471,7 +516,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,on
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
   const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
-  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,retimedVideoClips:clips.filter(clip=>clip.speedCurve!==undefined).length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
+  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,retimedVideoClips:clips.filter(clip=>clip.speedCurve!==undefined).length,audioClips:audioClips.length,retimedAudioClips:audioClips.filter(clip=>clip.speedCurve!==undefined).length,overlayClips:overlayClips.length,overlayVideoClips:overlayClips.filter(clip=>{const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);return String(asset?.media_type||"").startsWith("video/");}).length,captionClips:captionClips.length,effectClips:segments.filter(segment=>segment.effectsEnabled).length,durationSeconds:cursor}};
 }
 
 export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onResourceMeasurement=null, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter, flashVsrAdapterFactory=createFlashVsrAdapter }) {
@@ -598,7 +643,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     return { metadata, outputAsset:null };
   }
 
-  let ext, args, outputName, mime;
+  let ext, args, outputName, mime, replacementAudioAsset=null, audioMasterMetrics=null;
   if (job.job_type === "media.thumbnail") {
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Frame extraction requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     const seconds = Math.max(0, Math.min(3600, Number(input.seconds ?? 1) || 0));
@@ -607,6 +652,27 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   } else if (job.job_type === "media.audio_extract") {
     ext = "mp3"; outputName = source.original_name.replace(/\.[^.]+$/, "")+"-audio.mp3"; mime = "audio/mpeg";
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
+  } else if(job.job_type==="media.audio_replace"){
+    if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("Soundtrack replacement requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+    replacementAudioAsset=getAccessibleAsset(db,job.owner_id,String(input.replacementAudioAssetId||""),true);
+    if(!replacementAudioAsset||!String(replacementAudioAsset.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Replacement soundtrack must be an accessible private audio asset."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const replacementPath=join(mediaRoot,replacementAudioAsset.storage_path);
+    const replacementStat=await stat(replacementPath);
+    if(!replacementStat.isFile()||replacementStat.size!==replacementAudioAsset.byte_size||replacementStat.size<=0)throw Object.assign(new Error("Replacement audio asset is missing or changed since ingest."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    const replacementHash=createHash("sha256");
+    await pipeline(createReadStream(replacementPath),new Transform({transform(chunk,enc,cb){replacementHash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
+    if(replacementHash.digest("hex")!==replacementAudioAsset.sha256)throw Object.assign(new Error("Replacement audio checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-localized.mp4";
+    args=buildMediaOperationArgs({jobType:job.job_type,input:{...input,replacementAudioPath:replacementPath},sourcePath,outputPath:join(outputDir,id+"."+ext)});
+  } else if(job.job_type==="media.audio-master"){
+    if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio mastering requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+    ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-mastered.wav";
+    onProgress(15);
+    const analysis=await run("ffmpeg",buildAudioMasterAnalysisArgs({sourcePath,input}),5*60*1000,job.id,activeProcesses,cancelled,16000,onResourceMeasurement);
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    audioMasterMetrics=parseAudioMasterMeasurement(analysis.stderr);
+    audioMasterMetrics.targets={integratedLufs:Number(input.targetLufs??-16),loudnessRangeLu:Number(input.targetLra??11),truePeakDbtp:Number(input.truePeakDbtp??-1.5)};
+    args=buildAudioMasterRenderArgs({sourcePath,outputPath:join(outputDir,id+"."+ext),input,measurement:audioMasterMetrics});
   } else if(job.job_type==="media.audio-clean"){
     if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-cleaned.wav";
@@ -653,6 +719,14 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
+  if(job.job_type==="media.audio-master"){
+    const mastered=Array.isArray(outputMetadata.streams)?outputMetadata.streams.find(stream=>stream.codec_type==="audio"):null;
+    if(!mastered||mastered.codec_name!=="pcm_s24le"||Number(mastered.sample_rate)!==48000){await unlink(outputPath).catch(()=>{});throw Object.assign(new Error("Audio master must be verified as 48 kHz 24-bit PCM before publication."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});}
+  }
+  if(job.job_type==="media.audio_replace"){
+    const streams=Array.isArray(outputMetadata.streams)?outputMetadata.streams:[];
+    if(!streams.some(stream=>stream.codec_type==="video")||!streams.some(stream=>stream.codec_type==="audio")){await unlink(outputPath).catch(()=>{});throw Object.assign(new Error("Localized video output must contain both the preserved picture stream and the replacement audio stream."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});}
+  }
   let c2paPreservation;
   try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});}
   catch(error){await unlink(outputPath).catch(()=>{});throw error;}
@@ -661,7 +735,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}), c2paPreservation });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(job.job_type==="media.audio_replace"?{replacementAudioAssetId:replacementAudioAsset?.id,replacementAudioSha256:replacementAudioAsset?.sha256,videoStreamCopied:true,audioStreamReencoded:"aac"}:{}), ...(audioMasterMetrics?{audioMastering:{standard:"EBU R128",method:"two-pass loudnorm",measurement:audioMasterMetrics,output:{codec:"pcm_s24le",sampleRateHz:48000}}}:{}), ...(provenance?{processing:provenance}:{}), c2paPreservation });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation, c2paPreservation };
 }

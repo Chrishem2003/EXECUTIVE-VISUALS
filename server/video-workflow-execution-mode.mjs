@@ -29,12 +29,12 @@ export function assertVideoWorkflowNodeSupport(node, mode) {
   const provider = String(node?.config?.provider || "");
   const model = String(node?.config?.model || "");
   const supported = node?.kind === "video.generate" && (
-    (provider === "runway" && model === "model-router") ||
+    (provider === "runway" && ["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"].includes(model)) ||
     (provider === "luma" && model === "ray-3.2")
   );
   if (supported) return true;
   const error = new Error(
-    "This video workflow node has no approved cloud adapter. Choose Runway Model Router or Luma Ray 3.2, or use a separately approved execution environment."
+    "This video workflow node has no approved cloud adapter. Choose an explicitly governed Runway direct model, Runway Model Router or Luma Ray 3.2, or use a separately approved execution environment."
   );
   error.code = "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE";
   throw error;

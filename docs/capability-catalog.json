@@ -90,6 +90,11 @@
       "Synchronize speech to presenter"
     ],
     [
+      "audio.master",
+      "audio",
+      "Master audio to EBU R128 loudness and true-peak targets"
+    ],
+    [
       "audio.sound-design",
       "audio",
       "Generate music and sound effects"
@@ -103,6 +108,11 @@
       "audio.transcribe",
       "audio",
       "Transcribe audio with timing"
+    ],
+    [
+      "audio.voice-isolation",
+      "audio",
+      "Isolate dialogue from background noise"
     ],
     [
       "campaign.product-ingest",
@@ -288,6 +298,11 @@
       "integration.webhook",
       "integration",
       "Receive verified provider event"
+    ],
+    [
+      "localization.audio-dub",
+      "localization",
+      "Dub approved audio into a target language"
     ],
     [
       "localization.dub",
@@ -495,6 +510,11 @@
       "Manage ordered media tracks"
     ],
     [
+      "video.audio-replace",
+      "video",
+      "Replace video soundtrack with an approved audio derivative"
+    ],
+    [
       "video.continuity-check",
       "video",
       "Evaluate visual and narrative continuity across shots"
@@ -662,6 +682,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 117,
+  "capabilityCount": 121,
   "domainCount": 23
 }

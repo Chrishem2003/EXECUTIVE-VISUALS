@@ -41,6 +41,13 @@ test("plans audio cleanup only for audio assets",()=>{
  assert.deepEqual(plan.steps[0].parameters,{noiseFloor:-30,targetLufs:-18});
 });
 
+test("plans two-pass EBU R128 mastering as an approval-gated audio recipe",()=>{
+ const plan=planEnhancementRecipe({sourceAsset:{id:"audio-master-source",media_type:"audio/wav"},steps:[{operation:"media.audio-master",parameters:{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}}]});
+ assert.equal(plan.steps[0].method,"ebu-r128-two-pass-mastering");
+ assert.deepEqual(plan.steps[0].parameters,{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5});
+ assert.equal(plan.execution.requiresApproval,true);
+});
+
 test("compiles a recipe into a validated workflow paused behind human approval",()=>{
  const compiled=compileEnhancementRecipeToWorkflow({
   sourceAsset:{id:"asset-workflow",media_type:"video/mp4"},

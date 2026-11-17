@@ -3,7 +3,7 @@ import {execFileSync} from "node:child_process";
 import {mkdtemp,stat,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {buildMediaOperationArgs,buildMediaProcessingProvenance,validateMediaOutputProbe} from "../server/media.mjs";
+import {buildMediaOperationArgs,buildMediaProcessingProvenance,validateMediaOutputProbe,buildAudioMasterAnalysisArgs,parseAudioMasterMeasurement,buildAudioMasterRenderArgs,run} from "../server/media.mjs";
 const base={sourcePath:"/private/source.mp4",outputPath:"/private/output.mp4"};
 
 assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"video"},{codec_type:"audio"}],format:{duration:"1.25"}},"video/mp4"),{streamCount:2,durationSeconds:1.25,validatedStreamType:"video"});
@@ -46,16 +46,48 @@ assert.throws(()=>buildMediaOperationArgs({jobType:"media.interpolate",input:{fp
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,algorithm:"made-up"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,sharpness:5},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.execute-shell",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+const replaceArgs=buildMediaOperationArgs({jobType:"media.audio_replace",input:{replacementAudioPath:"/private/dubbed.wav"},sourcePath:base.sourcePath,outputPath:base.outputPath});
+assert.deepEqual(replaceArgs.slice(replaceArgs.indexOf("-map"),replaceArgs.indexOf("-movflags")),["-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","192k","-af","apad","-shortest"]);
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.audio_replace",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 const audioArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-30,targetLufs:-18},sourcePath:base.sourcePath,outputPath:"/private/cleaned.wav"});
 assert.equal(audioArgs[audioArgs.indexOf("-af")+1],"afftdn=nf=-30.0:tn=1,loudnorm=I=-18.0:TP=-1.5:LRA=11");
 assert.ok(audioArgs.includes("pcm_s16le"));
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-90},sourcePath:base.sourcePath,outputPath:base.outputPath}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+const masteringAnalysisArgs=buildAudioMasterAnalysisArgs({sourcePath:base.sourcePath,input:{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}});
+assert.equal(masteringAnalysisArgs[masteringAnalysisArgs.indexOf("-af")+1],"loudnorm=I=-16.0:LRA=11.0:TP=-1.5:print_format=json");
+assert.throws(()=>buildAudioMasterAnalysisArgs({sourcePath:base.sourcePath,input:{targetLufs:-5}}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>parseAudioMasterMeasurement("no measurable loudness stats"),e=>e.code==="AUDIO_MASTER_MEASUREMENT_INVALID");
 const root=await mkdtemp(join(tmpdir(),"executive-visuals-enhancement-"));
 try{
  const ffmpeg=process.env.FFMPEG_PATH||"ffmpeg",ffprobe=process.env.FFPROBE_PATH||"ffprobe",source=join(root,"source.mp4");
  execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc=size=320x180:rate=24","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",source],{stdio:"pipe",timeout:60000});
  const audioSource=join(root,"source.wav"),cleaned=join(root,"cleaned.wav");
  execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:a","pcm_s16le",audioSource],{stdio:"pipe",timeout:60000});
+ const mastered=join(root,"mastered.wav");
+ const masteringPass=await run("ffmpeg",buildAudioMasterAnalysisArgs({sourcePath:audioSource,input:{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}}),120000);
+ const masteringMetrics=parseAudioMasterMeasurement(masteringPass.stderr);
+ assert.ok(Number.isFinite(masteringMetrics.integratedLufs)&&Number.isFinite(masteringMetrics.truePeakDbtp),"mastering first pass must return EBU R128 metrics");
+ const masteringRender=buildAudioMasterRenderArgs({sourcePath:audioSource,outputPath:mastered,input:{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5},measurement:masteringMetrics});
+ execFileSync(ffmpeg,masteringRender,{stdio:"pipe",timeout:120000});
+ assert.ok((await stat(mastered)).size>1000,"two-pass audio mastering must produce a non-empty 24-bit WAV");
+ const masteredMetadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,codec_name,sample_rate,bits_per_sample","-of","json",mastered],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
+ const masteredStream=masteredMetadata.streams.find(stream=>stream.codec_type==="audio");
+ assert.ok(masteredStream,"mastered output must contain an audio stream");
+ assert.equal(masteredStream.codec_name,"pcm_s24le","mastered audio must use 24-bit PCM");
+ assert.equal(Number(masteredStream.sample_rate),48000,"mastered audio must use 48 kHz");
+ const replacementAudio=join(root,"replacement.wav"),localized=join(root,"localized.mp4");
+ execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=880:sample_rate=48000","-t","1","-c:a","pcm_s16le",replacementAudio],{stdio:"pipe",timeout:60000});
+ const replace=buildMediaOperationArgs({jobType:"media.audio_replace",input:{replacementAudioPath:replacementAudio},sourcePath:source,outputPath:localized});
+ execFileSync(ffmpeg,replace,{stdio:"pipe",timeout:120000});
+ assert.ok((await stat(localized)).size>1000,"soundtrack replacement must produce a non-empty localized MP4");
+ const localizedMetadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","format=duration:stream=codec_type,codec_name,width,height","-of","json",localized],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
+ const localizedVideo=localizedMetadata.streams.find(stream=>stream.codec_type==="video");
+ const localizedAudio=localizedMetadata.streams.find(stream=>stream.codec_type==="audio");
+ assert.ok(localizedVideo&&localizedAudio,"localized output must contain video and replacement audio streams");
+ assert.equal(localizedVideo.codec_name,"h264","original video stream should be copied without re-encoding");
+ assert.equal(localizedAudio.codec_name,"aac","replacement audio should be encoded as AAC");
+ assert.deepEqual([localizedVideo.width,localizedVideo.height],[320,180],"localized output must preserve source picture dimensions");
+ assert.ok(Number(localizedMetadata.format?.duration)>=0.85&&Number(localizedMetadata.format?.duration)<=1.25,"localized output duration must remain close to source duration");
  const cleanArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-25,targetLufs:-16},sourcePath:audioSource,outputPath:cleaned});
  execFileSync(ffmpeg,cleanArgs,{stdio:"pipe",timeout:120000});
  assert.ok((await stat(cleaned)).size>1000,"audio cleanup must produce a non-empty WAV");
@@ -75,5 +107,5 @@ try{
   assert.ok(metadata.streams.some(stream=>stream.codec_type==="audio"),kind+" must preserve the source audio stream");
   assert.ok(Number(metadata.format?.duration)>=0.85&&Number(metadata.format?.duration)<=1.25,kind+" output duration must remain close to the one-second source");
  }
- console.log("Verified video enhancement cases and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
+ console.log("Verified video enhancement, audio cleanup, two-pass EBU R128 mastering and dubbed soundtrack replacement through FFmpeg/FFprobe, plus invalid-input rejections.");
 }finally{await rm(root,{recursive:true,force:true})}

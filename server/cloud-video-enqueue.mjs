@@ -1,6 +1,7 @@
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 import { getVideoProviderModel } from "./video-provider-registry.mjs";
 import { assertVideoCapabilities, normalizeVideoGenerationRequest } from "./video-generation-contract.mjs";
+import { buildRunwayVideoPayload, buildRunwayImageToVideoPayload } from "./runway-video-gateway.mjs";
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
@@ -125,6 +126,18 @@ export function createCloudVideoEnqueue({
       if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Video generation input must be an object.");
       if (input.provider !== provider || input.model !== model || input.requestHash !== requestHash ||
           (input.projectId || null) !== projectId) throw new Error("Video generation input does not match its enqueue scope.");
+      if (input.draft !== undefined && typeof input.draft !== "boolean") throw Object.assign(new Error("Draft mode must be a boolean."), { code: "VIDEO_DRAFT_FLAG_INVALID" });
+      if (input.draftTaskId !== undefined && (provider !== "runway" || model !== "seedance2_5" ||
+          input.operation !== "text-to-video" || input.resolution !== "1080p" || input.draft === true || input.draftEnhancement !== true ||
+          typeof input.draftTaskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.draftTaskId) ||
+          typeof input.sourceDraftJobId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.sourceDraftJobId))) {
+        throw Object.assign(new Error("Seedance draft enhancement requires a verified 1080p follow-on request and source job."), { code: "VIDEO_DRAFT_ENHANCEMENT_INVALID" });
+      }
+      if (input.draft === true && (provider !== "runway" || model !== "seedance2_5" || input.resolution !== "480p" || input.draftTargetResolution !== "1080p" ||
+          !["text-to-video", "image-to-video", "video-to-video"].includes(input.operation) ||
+          input.operation === "video-to-video" && (input.mode || "reference") !== "reference")) {
+        throw Object.assign(new Error("Seedance draft requires the explicitly priced 480p tier and reference-compatible operation."), { code: "VIDEO_DRAFT_CONFIGURATION_INVALID" });
+      }
       if (Buffer.byteLength(JSON.stringify(input), "utf8") > 32000) throw new Error("Video generation input exceeds the 32000-byte limit.");
       if (typeof reservedAmount !== "number" || !Number.isFinite(reservedAmount) || reservedAmount <= 0 || reservedAmount > 100000000) {
         throw new Error("Reserved amount must be a positive bounded number.");
@@ -139,9 +152,29 @@ export function createCloudVideoEnqueue({
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
         ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation);
+      const runwayDirectModels = new Set(["seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"]);
+      const runwayDirectEnabled = provider === "runway" && runwayDirectModels.has(model) &&
+        ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation);
+      const runwayDirectVideoEditEnabled = runwayDirectEnabled && input.operation === "video-to-video";
       const runwayRouterVideoEditEnabled = runwayRouterEnabled && input.operation === "video-to-video";
-      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled;
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled || runwayDirectEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
+      if (runwayDirectEnabled) {
+        const allowlistedModels = String(env.RUNWAY_VIDEO_MODELS || env.RUNWAY_VIDEO_MODEL || "").split(",").map(value => value.trim()).filter(Boolean);
+        if (
+          env.CLOUD_VIDEO_WORKER_ENABLED !== "true" ||
+          env.RUNWAY_VIDEO_ALLOW_REMOTE !== "true" ||
+          env.VIDEO_GATEWAY_ENABLED !== "true" ||
+          env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
+          !(env.RUNWAYML_API_SECRET || env.RUNWAY_API_KEY) ||
+          !allowlistedModels.includes(model) ||
+          currency !== "USD"
+        ) {
+          const disabled = new Error("Direct Runway model enqueue requires explicit worker, remote, exact-model allowlist, provider credential and USD budget gates.");
+          disabled.code = "RUNWAY_DIRECT_REMOTE_DISABLED";
+          throw disabled;
+        }
+      }
       if (runwayRouterEnabled && (
         env.RUNWAY_MODEL_ROUTER_ENABLED !== "true" ||
         env.CLOUD_VIDEO_WORKER_ENABLED !== "true" ||
@@ -171,7 +204,7 @@ export function createCloudVideoEnqueue({
         throw disabled;
       }
       let verifiedSourceMetadata = null;
-      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled) {
+      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled || runwayDirectVideoEditEnabled) {
         if (typeof resolveRunwaySourceMetadata !== "function") {
           const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
           unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
@@ -190,10 +223,41 @@ export function createCloudVideoEnqueue({
           throw invalid;
         }
         const billableDurationSeconds = Math.ceil(verifiedSourceMetadata.durationSeconds);
-        if (input.durationSeconds !== billableDurationSeconds) {
-          const invalid = new Error("The submitted duration must match the server-probed, rounded-up source duration.");
-          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
-          throw invalid;
+        if (runwayRouterVideoEditEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled) {
+          if (input.durationSeconds !== billableDurationSeconds) {
+            const invalid = new Error("The submitted duration must match the server-probed, rounded-up source duration.");
+            invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+            throw invalid;
+          }
+        }
+        if (runwayDirectVideoEditEnabled) {
+          if (model === "seedance2_5" && (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) < 480 || verifiedSourceMetadata.durationSeconds > 30)) {
+            const invalid = new Error("Seedance 2.5 source video must be no longer than 30 seconds and at least 480p.");
+            invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+            throw invalid;
+          }
+          if (model === "kling_4") {
+            const aspect = verifiedSourceMetadata.width / verifiedSourceMetadata.height;
+            if (verifiedSourceMetadata.durationSeconds < 3 || verifiedSourceMetadata.durationSeconds > 30 ||
+                Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) < 700 ||
+                !Number.isFinite(verifiedSourceMetadata.frameRate) || verifiedSourceMetadata.frameRate < 24 || verifiedSourceMetadata.frameRate > 60 ||
+                aspect < 0.4 || aspect > 2.5) {
+              const invalid = new Error("Kling 4 source video does not meet duration, dimensions, frame-rate or aspect-ratio requirements.");
+              invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+              throw invalid;
+            }
+          }
+          if (model === "kling_4_flash") {
+            const aspect = verifiedSourceMetadata.width / verifiedSourceMetadata.height;
+            if (verifiedSourceMetadata.durationSeconds < 3 || verifiedSourceMetadata.durationSeconds > 21 ||
+                Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) < 700 ||
+                !Number.isFinite(verifiedSourceMetadata.frameRate) || verifiedSourceMetadata.frameRate < 24 || verifiedSourceMetadata.frameRate > 60 ||
+                aspect < 0.4 || aspect > 2.5) {
+              const invalid = new Error("Kling 4.0 Flash source video must be 3–21 seconds, at least 700px on each side, 24–60 fps and within 0.4–2.5 aspect ratio.");
+              invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+              throw invalid;
+            }
+          }
         }
         if (runwayUpscaleEnabled && (!Number.isSafeInteger(verifiedSourceMetadata.frameCount) ||
             verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000)) {
@@ -216,14 +280,26 @@ export function createCloudVideoEnqueue({
           throw invalid;
         }
       }
+      const sourceDurationSeconds = verifiedSourceMetadata ? Math.ceil(verifiedSourceMetadata.durationSeconds) : undefined;
+      const directSourceResolution = verifiedSourceMetadata
+        ? (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 2160 ? "4k"
+          : Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 1080 ? "1080p"
+          : Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) >= 720 ? "720p" : "480p")
+        : undefined;
+      const directUsesSourceDuration = runwayDirectVideoEditEnabled &&
+        (model === "kling_4" || model === "seedance2_5" && input.mode === "edit");
       const pricingInput = verifiedSourceMetadata ? {
         ...input,
-        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
-        inputVideoSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        ...(directUsesSourceDuration || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled
+          ? { durationSeconds: sourceDurationSeconds } : {}),
+        inputVideoSeconds: sourceDurationSeconds,
         outputFrames: verifiedSourceMetadata.frameCount,
         sourceWidth: verifiedSourceMetadata.sourceWidth,
         sourceHeight: verifiedSourceMetadata.sourceHeight,
-        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange
+        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange,
+        ...(runwayDirectVideoEditEnabled && (model === "kling_4" || input.mode === "edit" || input.mode === "extend")
+          ? { resolution: model === "kling_4" ? (directSourceResolution === "480p" ? "720p" : directSourceResolution === "4k" ? "1080p" : directSourceResolution) : (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) > 720 ? "1080p" : "720p") }
+          : {})
       } : input;
       const estimate = runwayRouterEnabled
         ? { amount: reservedAmount, currency: "USD", source: "approved_budget_ceiling_pending_runway_router_preflight" }
@@ -253,6 +329,72 @@ export function createCloudVideoEnqueue({
             input.aspectRatio !== undefined && !["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].includes(input.aspectRatio) ||
             input.negativePrompt !== undefined && (typeof input.negativePrompt !== "string" || input.negativePrompt.length > 1000)) {
           const invalid = new Error("Runway Model Router video input exceeds its documented prompt, duration, ratio, resolution or negative-prompt limits.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+      } else if (runwayDirectEnabled) {
+        const promptLimit = model === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(model) ? 26000 : 2500;
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+          const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (requestedOutputFormat !== "mp4") {
+          const unsupported = new Error("Direct Seedance and Kling worker profiles currently deliver MP4 only.");
+          unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
+          throw unsupported;
+        }
+        if (runwayDirectVideoEditEnabled) {
+          if (!input.sourceVideoAssetId || !verifiedSourceMetadata) {
+            const invalid = new Error("Seedance and Kling video edits require an authorized, probed private source video.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+            throw invalid;
+          }
+          if (model === "seedance2_5") {
+            if (!["reference", "extend", "edit"].includes(input.mode)) throw new Error("Seedance source edit mode must be reference, extend or edit.");
+            if (input.mode === "edit" && input.duration !== "auto") throw new Error("Seedance edit mode requires duration='auto'.");
+            if (input.mode === "extend" && input.duration !== "auto" && (!Number.isInteger(input.duration) || input.duration < 4 || input.duration > 30)) throw new Error("Seedance extend duration must be auto or 4–30 seconds.");
+            if (input.mode === "reference") buildRunwayVideoPayload({
+              model, prompt: input.prompt, durationSeconds: input.durationSeconds,
+              aspectRatio: input.aspectRatio, resolution: input.resolution
+            });
+          } else if (model === "kling_4") {
+            if (input.multiPrompt !== undefined || input.audio !== undefined) throw new Error("Kling 4 video editing does not accept multi-shot or audio-toggle fields.");
+          } else if (model === "kling_4_flash") {
+            if (input.multiPrompt !== undefined || input.audio !== undefined) throw new Error("Kling 4.0 Flash video editing does not accept multi-shot or audio-toggle fields.");
+          } else {
+            throw new Error("The selected Kling 3.0 profile does not support video-to-video in this worker.");
+          }
+        } else if (input.operation === "image-to-video") {
+          if (!input.startFrameAssetId) {
+            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped private first-frame asset.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+            throw invalid;
+          }
+          buildRunwayImageToVideoPayload({
+            model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
+            durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+            resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+          });
+        } else {
+          buildRunwayVideoPayload({
+            model, prompt: input.prompt, durationSeconds: input.durationSeconds,
+            aspectRatio: input.aspectRatio, resolution: input.resolution,
+            multiPrompt: input.multiPrompt, shotType: input.shotType
+          });
+        }
+        if (["kling_4", "kling_4_flash"].includes(model) && input.audio !== undefined) {
+          const invalid = new Error("Kling 4 always includes native audio and does not accept an audio toggle.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (["kling3.0_standard", "kling3.0_pro"].includes(model) && typeof input.audio !== "boolean") {
+          const invalid = new Error("Kling 3.0 Standard and Pro require an explicit native-audio choice for pricing.");
+          invalid.code = "VIDEO_PRICE_INPUT_REQUIRED";
+          throw invalid;
+        }
+        if (input.multiPrompt !== undefined && !model.startsWith("kling3.0_")) {
+          const invalid = new Error("Multi-shot prompt segments are supported only by Kling 3.0 models.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
         }
@@ -389,6 +531,7 @@ export function createCloudVideoEnqueue({
         (provider === "runway" && model === "gen4.5") ||
         (provider === "runway" && model === "aleph2" && input.operation === "video-to-video" && input.outputFormat === "mp4") ||
         (provider === "runway" && model === "model-router" && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
+        (provider === "runway" && ["seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model) && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
         (provider === "google" && model === "gemini-omni-1.1-flash");
       if (!sqlEnqueueSupported) {
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");

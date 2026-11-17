@@ -421,3 +421,138 @@ test("Luma source edit and reframe produce immutable operation-specific workflow
  assert.equal(reframe.input.aspectRatio,"9:16");
  assert.equal(reframe.input.sourcePosition.w_norm,0.8);
 });
+
+test("builds a deterministic direct Seedance 2.5 4K text-to-video request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"generate",durationSeconds:8,aspectRatio:"16:9",resolution:"4k",audio:true}},
+  projectId:"project-1",requestId:"runway-seedance-4k",values:{prompt:"A connected cinematic sequence"}
+ });
+ assert.equal(request.model,"seedance2_5");assert.equal(request.operation,"text-to-video");
+ assert.equal(request.input.resolution,"4k");assert.equal(request.input.audio,true);
+ assert.equal(request.input.durationSeconds,8);assert.match(request.requestHash,/^[a-f0-9]{64}$/);
+});
+test("maps a private first frame into the direct Kling 4 image-to-video contract",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",durationSeconds:5,resolution:"1080p",startFrameAssetId:"private-first-frame",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"runway-kling4-image",values:{prompt:"Animate this approved first frame"}
+ });
+ assert.equal(request.operation,"image-to-video");assert.equal(request.input.startFrameAssetId,"private-first-frame");
+ assert.equal(request.input.resolution,"1080p");assert.equal(request.input.audio,undefined);
+});
+test("maps Seedance 2.5 private video extension to auto duration",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"extend",duration:"auto",sourceVideoAssetId:"private-source",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"runway-seedance-extend",values:{prompt:"Continue the same scene"}
+ });
+ assert.equal(request.operation,"video-to-video");assert.equal(request.input.mode,"extend");
+ assert.equal(request.input.duration,"auto");assert.equal(request.input.durationSeconds,30);
+ assert.equal(request.input.sourceVideoAssetId,"private-source");
+});
+test("maps Gemini Omni 1.2 source-video edit to an auto-duration governed request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"gemini_omni_flash_1.2",operation:"video-to-video",mode:"edit",duration:"auto",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",sourceVideoAssetId:"private-gemini-source",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"runway-gemini-12-edit",values:{prompt:"Change the lighting to a warm golden-hour look"}
+ });
+ assert.equal(request.model,"gemini_omni_flash_1.2");
+ assert.equal(request.operation,"video-to-video");
+ assert.equal(request.input.mode,"edit");
+ assert.equal(request.input.duration,"auto");
+ assert.equal(request.input.durationSeconds,15);
+ assert.equal(request.input.sourceVideoAssetId,"private-gemini-source");
+ assert.equal(request.input.audio,undefined);
+});
+
+test("maps Gemini Omni 1.2 source-video extension to its separately bounded duration",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"gemini_omni_flash_1.2",operation:"video-to-video",mode:"extend",duration:6,durationSeconds:6,aspectRatio:"16:9",resolution:"720p",sourceVideoAssetId:"private-gemini-source",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"runway-gemini-12-extend",values:{prompt:"Continue the same scene as the camera moves forward"}
+ });
+ assert.equal(request.input.mode,"extend");
+ assert.equal(request.input.duration,6);
+ assert.equal(request.input.durationSeconds,6);
+});
+
+test("builds Kling 3.0 multi-shot workflow requests with provider segment settings",()=>{
+ const multiPrompt=[{prompt:"A wide establishing shot",duration:5},{prompt:"A close-up of the main character",duration:5}];
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",durationSeconds:10,aspectRatio:"16:9",multiPrompt,shotType:"customize",audio:false}},
+  projectId:"project-1",requestId:"runway-kling3-multishot",values:{prompt:"A connected two-shot sequence"}
+ });
+ assert.equal(request.input.audio,false);assert.deepEqual(request.input.multiPrompt,multiPrompt);
+ assert.equal(request.input.shotType,"customize");assert.equal(request.operation,"text-to-video");
+});
+test("rejects Kling 3.0 video-to-video because no adapter profile is enabled",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling3.0_pro",operation:"video-to-video",sourceVideoAssetId:"private-source",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"runway-kling3-v2v",values:{prompt:"Edit the clip"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
+
+
+test("builds a Seedance 2.5 draft workflow request with a 480p quote and preserves draft intent",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p"}},
+  projectId:"project-1",requestId:"seedance-draft-workflow",values:{prompt:"A cinematic product reveal"}
+ });
+ assert.equal(request.input.draft,true);
+ assert.equal(request.input.draftTargetResolution,"1080p");
+ assert.equal(request.input.resolution,"480p");
+ assert.equal(request.input.durationSeconds,8);
+ assert.equal(request.operation,"text-to-video");
+});
+test("rejects draft mode for non-Seedance workflow models",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4",draft:true,durationSeconds:5}},
+  projectId:"project-1",requestId:"invalid-draft-model",values:{prompt:"A cinematic product reveal"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});
+
+
+test("builds a governed Kling 4.0 Flash cloud video-to-video request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"private-source",durationSeconds:8,resolution:"720p",aspectRatio:"16:9",rightsConfirmed:true}},
+  projectId:"project-1",requestId:"kling-flash-workflow",values:{prompt:"Continue the scene with a slow camera move"}
+ });
+ assert.equal(request.provider,"runway");assert.equal(request.model,"kling_4_flash");
+ assert.equal(request.operation,"video-to-video");assert.equal(request.input.durationSeconds,8);
+ assert.equal(request.input.resolution,"720p");assert.equal(request.input.sourceVideoAssetId,"private-source");
+});
+
+test("direct Runway source media requires explicit rights confirmation before quote",()=>{
+ for(const values of [{sourceVideoAssetId:"source"},{image:"first-frame"}]){
+  assert.throws(()=>createVideoWorkflowCloudRequest({
+   node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",durationSeconds:8}},
+   projectId:"project-1",requestId:"direct-rights-missing",values:{prompt:"A cinematic scene",...values}
+  }),error=>error.code==="MEDIA_RIGHTS_REQUIRED");
+ }
+});
+
+test("Video Studio workflow inspector exposes direct Runway models, private first-frame selection and Seedance draft controls",()=>{
+ const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
+ for(const token of ["kling_4_flash","seedance2_5","gemini_omni_flash_1.2","name=\"videoMode\"","name=\"videoDraft\"","name=\"startFrameAssetPicker\"","name=\"sourceVideoAssetPicker\"","video-to-video","draftTargetResolution","draft-enhancement","sourceDraftJobId","draftTaskId"]){assert.ok(ui.includes(token),"missing Studio workflow control: "+token);}
+});
+
+test("builds a separately priced 1080p Seedance draft enhancement request",()=>{
+ const request=createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{
+   provider:"runway",model:"seedance2_5",operation:"draft-enhancement",
+   sourceDraftJobId:"323e4567-e89b-42d3-a456-426614174000",
+   draftTaskId:"223e4567-e89b-42d3-a456-426614174000",
+   durationSeconds:8,aspectRatio:"16:9",resolution:"1080p",audio:true
+  }},
+  projectId:"project-1",requestId:"seedance-enhance-001",values:{}
+ });
+ assert.equal(request.operation,"text-to-video");
+ assert.equal(request.input.resolution,"1080p");
+ assert.equal(request.input.draftTaskId,"223e4567-e89b-42d3-a456-426614174000");
+ assert.equal(request.input.sourceDraftJobId,"323e4567-e89b-42d3-a456-426614174000");
+ assert.equal(request.input.draftEnhancement,true);
+ assert.equal(request.input.draft,undefined);
+});
+
+test("rejects Seedance draft enhancement targets other than 1080p",()=>{
+ assert.throws(()=>createVideoWorkflowCloudRequest({
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,draftTargetResolution:"4k",durationSeconds:8,resolution:"480p"}},
+  projectId:"project-1",requestId:"invalid-draft-master-tier",values:{prompt:"A cinematic product reveal"}
+ }),error=>error.code==="VIDEO_WORKFLOW_CLOUD_CAPABILITY_UNSUPPORTED");
+});

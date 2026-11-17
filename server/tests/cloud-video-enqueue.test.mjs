@@ -149,6 +149,62 @@ test("cloud video deferral and quarantine reject invalid controls before network
   assert.equal(calls, 0);
 });
 
+test("Seedance draft enqueue rejects unpriced or unsupported preview configurations before network access", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
+  const seedance = { ...input, provider: "runway", model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview", durationSeconds: 8, outputFormat: "mp4" };
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "720p" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "480p", draftTargetResolution: "4k" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, draft: "true" } })), error => error.code === "VIDEO_DRAFT_FLAG_INVALID");
+  await assert.rejects(() => client.enqueue(args({ model: "seedance2_5", input: { ...seedance, draft: true, resolution: "480p", operation: "video-to-video", mode: "edit" } })), error => error.code === "VIDEO_DRAFT_CONFIGURATION_INVALID");
+  assert.equal(calls, 0);
+});
+
+test("Seedance 480p draft uses the preview rate before durable budget reservation", async () => {
+  const calls = [];
+  const client = createCloudVideoEnqueue({
+    ...base,
+    env: {
+      CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+      VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+      RUNWAYML_API_SECRET: "test-only-not-used", RUNWAY_VIDEO_MODELS: "seedance2_5"
+    },
+    fetchImpl: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return response([resultRow]); }
+  });
+  const draftInput = {
+    ...input, model: "seedance2_5", operation: "text-to-video", prompt: "A cinematic preview",
+    durationSeconds: 8, outputFormat: "mp4", resolution: "480p", draft: true, draftTargetResolution: "1080p"
+  };
+  const result = await client.enqueue(args({ model: "seedance2_5", input: draftInput, reservedAmount: 5 }));
+  assert.equal(result.jobId, resultRow.job_id);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.p_model, "seedance2_5");
+  assert.equal(calls[0].body.p_input.resolution, "480p");
+  assert.equal(calls[0].body.p_input.draft, true);
+});
+
+test("Seedance draft enhancement reserves the separately priced 1080p rate",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",
+   VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"test-only-not-used",RUNWAY_VIDEO_MODELS:"seedance2_5"},
+  fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}
+ });
+ const enhancement={
+  ...input,model:"seedance2_5",operation:"text-to-video",prompt:"Enhance approved preview",
+  durationSeconds:8,outputFormat:"mp4",resolution:"1080p",audio:true,draftEnhancement:true,
+  draftTaskId:"223e4567-e89b-42d3-a456-426614174000",sourceDraftJobId:"323e4567-e89b-42d3-a456-426614174000"
+ };
+ const result=await client.enqueue(args({model:"seedance2_5",input:enhancement,reservedAmount:5.5}));
+ assert.equal(result.jobId,resultRow.job_id);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].body.p_input.resolution,"1080p");
+ assert.equal(calls[0].body.p_input.draftTaskId,enhancement.draftTaskId);
+ assert.equal(calls[0].body.p_input.draftEnhancement,true);
+});
+
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
@@ -557,4 +613,96 @@ test("Aleph 2 enqueue is enabled only for the reviewed video-to-video MP4 contra
  await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,operation:"text-to-video"},reservedAmount:3})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
  await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,outputFormat:"prores"},reservedAmount:3})),/supports MP4 outputs/);
  assert.equal(calls.length,1);
+});
+
+test("direct Seedance 2.5 durable enqueue requires exact worker gates and a priced USD reservation",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{
+   CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+   RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"seedance2_5"
+  },
+  fetchImpl:async(url,options)=>{calls.push({url,options});return response([resultRow]);}
+ });
+ const directInput={
+  ...input,provider:"runway",model:"seedance2_5",operation:"text-to-video",
+  prompt:"A cinematic sequence",durationSeconds:5,aspectRatio:"16:9",
+  resolution:"720p",audio:true,audioMode:"generated",outputFormat:"mp4"
+ };
+ const result=await client.enqueue(args({provider:"runway",model:"seedance2_5",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,"https://example.supabase.co/rest/v1/rpc/enqueue_video_generation_job");
+});
+test("direct Kling 3 durable enqueue is blocked unless its exact model is allowlisted",async()=>{
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{
+   CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+   RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling3.0_standard"
+  },
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={
+  ...input,provider:"runway",model:"kling3.0_pro",operation:"text-to-video",
+  prompt:"A cinematic sequence",durationSeconds:5,aspectRatio:"16:9",
+  resolution:"provider_default",audio:true,audioMode:"generated",outputFormat:"mp4"
+ };
+ await assert.rejects(()=>client.enqueue(args({provider:"runway",model:"kling3.0_pro",input:directInput,reservedAmount:10,currency:"USD"})),
+  error=>error.code==="RUNWAY_DIRECT_REMOTE_DISABLED");
+});
+
+test("Seedance reference video-to-video prices output and probed input duration separately",async()=>{
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"seedance2_5"},
+  resolveRunwaySourceMetadata:async()=>({ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:10.2,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30}),
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={...input,provider:"runway",model:"seedance2_5",operation:"video-to-video",sourceVideoAssetId:"source-video",mode:"reference",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",audio:true,audioMode:"generated",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"seedance2_5",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+});
+test("Kling 4.0 Flash text and first-frame generation use the exact worker allowlist and 720p price",async()=>{
+ const env={CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4_flash"};
+ const textClient=createCloudVideoEnqueue({...base,env,fetchImpl:async()=>response([resultRow])});
+ const textInput={...input,provider:"runway",model:"kling_4_flash",operation:"text-to-video",prompt:"A cinematic city at night",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const textResult=await textClient.enqueue(args({provider:"runway",model:"kling_4_flash",input:textInput,reservedAmount:0.5,currency:"USD"}));
+ assert.equal(textResult.jobId,resultRow.job_id);
+ const imageClient=createCloudVideoEnqueue({...base,env,fetchImpl:async()=>response([resultRow])});
+ const imageInput={...input,provider:"runway",model:"kling_4_flash",operation:"image-to-video",prompt:"Animate the opening frame",startFrameAssetId:"private-first-frame",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const imageResult=await imageClient.enqueue(args({provider:"runway",model:"kling_4_flash",input:imageInput,reservedAmount:0.5,currency:"USD"}));
+ assert.equal(imageResult.jobId,resultRow.job_id);
+});
+test("Kling 4.0 Flash video editing requires server-probed source media and prices input plus output",async()=>{
+ const metadata={ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:8.5,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30};
+ const env={CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4_flash"};
+ const client=createCloudVideoEnqueue({...base,env,resolveRunwaySourceMetadata:async()=>metadata,fetchImpl:async()=>response([resultRow])});
+ const directInput={...input,provider:"runway",model:"kling_4_flash",operation:"video-to-video",sourceVideoAssetId:"source-video",durationSeconds:5,aspectRatio:"16:9",resolution:"720p",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"kling_4_flash",input:directInput,reservedAmount:1,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ const invalid=createCloudVideoEnqueue({...base,env,resolveRunwaySourceMetadata:async()=>({...metadata,width:640,height:360,sourceWidth:640,sourceHeight:360}),fetchImpl:async()=>response([resultRow])});
+ await assert.rejects(()=>invalid.enqueue(args({provider:"runway",model:"kling_4_flash",input:directInput,reservedAmount:1,currency:"USD"})),error=>error.code==="VIDEO_SOURCE_METADATA_INVALID");
+});
+test("Kling 4 video-to-video prices the server-probed source duration and rejects unsupported source metadata",async()=>{
+ const metadata={ownerId,projectId,assetId:"source-video",mediaType:"video/mp4",durationSeconds:8.5,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,frameRate:30};
+ const client=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4"},
+  resolveRunwaySourceMetadata:async()=>metadata,
+  fetchImpl:async()=>response([resultRow])
+ });
+ const directInput={...input,provider:"runway",model:"kling_4",operation:"video-to-video",sourceVideoAssetId:"source-video",durationSeconds:30,aspectRatio:"16:9",resolution:"1080p",outputFormat:"mp4"};
+ const result=await client.enqueue(args({provider:"runway",model:"kling_4",input:directInput,reservedAmount:10,currency:"USD"}));
+ assert.equal(result.jobId,resultRow.job_id);
+ const invalid=createCloudVideoEnqueue({
+  ...base,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAYML_API_SECRET:"private-test-credential",RUNWAY_VIDEO_MODELS:"kling_4"},
+  resolveRunwaySourceMetadata:async()=>({...metadata,width:640,height:360,sourceWidth:640,sourceHeight:360}),
+  fetchImpl:async()=>response([resultRow])
+ });
+ await assert.rejects(()=>invalid.enqueue(args({provider:"runway",model:"kling_4",input:directInput,reservedAmount:10,currency:"USD"})),error=>error.code==="VIDEO_SOURCE_METADATA_INVALID");
 });

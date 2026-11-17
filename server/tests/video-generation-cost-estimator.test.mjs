@@ -11,6 +11,23 @@ test("shared preflight estimates Runway using the existing dated credit contract
   assert.equal(result.settlementEligible, false);
 });
 
+test("Kling 4.0 Flash estimates published 720p rates and its 29-credit minimum", () => {
+  const text = estimateVideoGenerationCost({
+    provider: "runway", model: "kling_4_flash", durationSeconds: 5,
+    resolution: "720p", inputType: "text", pricingDate: "2026-11-16"
+  });
+  assert.equal(text.credits, 47);
+  assert.equal(text.amount, 0.47);
+  assert.equal(text.billable, false);
+  const edit = estimateVideoGenerationCost({
+    provider: "runway", model: "kling_4_flash", durationSeconds: 5,
+    resolution: "720p", inputType: "video", inputVideoSeconds: 8,
+    pricingDate: "2026-11-16"
+  });
+  assert.equal(edit.credits, 82);
+  assert.equal(edit.amount, 0.82);
+});
+
 test("shared preflight supports Luma Ray 3.2 published generation and edit prices", () => {
   const generation = estimateVideoGenerationCost({
     provider: "luma", model: "ray-3.2", operation: "video", resolution: "720p", durationSeconds: 5

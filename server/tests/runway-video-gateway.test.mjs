@@ -7,12 +7,34 @@ test("catalog contains only models with explicit text-to-video profiles",()=>{
  assert.ok(models.some(x=>x.id==="seedance2_5"));
  assert.ok(models.some(x=>x.id==="kling_4"));
  assert.ok(models.some(x=>x.id==="gen4.5"));
+ assert.ok(models.some(x=>x.id==="gemini_omni_flash_1.2"&&x.inputModes.includes("video-to-video")));
  assert.ok(!models.some(x=>x.id==="nano_banana_pro"));
 });
+test("Gemini Omni 1.2 exposes documented output tiers for text and first-frame generation",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"A cinematic city at dusk",durationSeconds:5,aspectRatio:"16:9",resolution:"4k"}),{
+  model:"gemini_omni_flash_1.2",promptText:"A cinematic city at dusk",ratio:"3840:2160",duration:5
+ });
+ assert.deepEqual(buildRunwayImageToVideoPayload({
+  model:"gemini_omni_flash_1.2",prompt:"Animate the approved first frame",
+  promptImage:"data:image/png;base64,AA==",durationSeconds:5,aspectRatio:"9:16",resolution:"1080p"
+ }),{
+  model:"gemini_omni_flash_1.2",promptText:"Animate the approved first frame",
+  promptImage:"data:image/png;base64,AA==",ratio:"1080:1920",duration:5
+ });
+ assert.equal(getRunwayVideoCapabilities("gemini_omni_flash_1.2").maxDurationSeconds,15);
+});
+
 test("Seedance 2.5 payload maps documented duration, ratio and resolution",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"720p"}),{
-  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8,resolution:"720p"
+  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8
  });
+});
+test("Seedance 2.5 draft previews are explicitly fixed to 480p",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",durationSeconds:8,aspectRatio:"16:9",resolution:"480p",draft:true}),{
+  model:"seedance2_5",promptText:"A coastal sunrise",ratio:"1280:720",duration:8,draft:true
+ });
+ assert.throws(()=>buildRunwayVideoPayload({model:"seedance2_5",prompt:"A coastal sunrise",resolution:"720p",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:"A coastal sunrise",draft:true}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
 });
 test("Kling 4 maps portrait 1080p dimensions",()=>{
  assert.deepEqual(buildRunwayVideoPayload({model:"kling_4",prompt:"A moving camera",durationSeconds:8,aspectRatio:"9:16",resolution:"1080p"}),{
@@ -32,9 +54,14 @@ test("first-frame image-to-video payload uses the correct endpoint contract per 
  const gen=buildRunwayImageToVideoPayload({model:"gen4.5",prompt:"A moving camera",promptImage:image,durationSeconds:5,aspectRatio:"16:9"});
  assert.equal(gen.promptImage,image);assert.equal(gen.ratio,"1280:720");
  const seedance=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
- assert.equal(seedance.ratio,"480:854");
+ assert.equal(seedance.ratio,"720:1280");
  const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
- assert.equal("ratio" in kling,false);
+ assert.equal(kling.ratio,"auto_720p");
+});
+test("Seedance image-to-video draft previews use the 480p portrait ratio",()=>{
+ const payload=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"Animate this scene",promptImage:"data:image/png;base64,iVBORw0KGgo=",aspectRatio:"9:16",resolution:"480p",draft:true});
+ assert.equal(payload.ratio,"480:854");
+ assert.equal(payload.draft,true);
 });
 test("image-to-video rejects oversized or malformed frame data",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
@@ -45,7 +72,7 @@ test("capabilities are model-specific and declare only implemented first-frame r
  assert.equal(caps.referenceImages,true);
  assert.equal(caps.startFrame,true);
  assert.equal(caps.maxDurationSeconds,30);
- assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p"]);
+ assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p","4k"]);
 });
 test("remote execution stays disabled until explicit server opt-in",async()=>{
  const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
@@ -294,4 +321,43 @@ test("Runway cancels declared oversized JSON and media bodies before reading",as
  let mediaCancelled=false;
  await assert.rejects(()=>downloadRunwayVideoTaskOutput({outputUrl:"https://cdn.example.cloudfront.net/oversized.mp4",fetchImpl:async()=>({status:200,ok:true,headers:new Headers({"content-length":String(250*1024*1024+1)}),body:{cancel:async()=>{mediaCancelled=true;}}})}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  assert.equal(mediaCancelled,true);
+});
+
+test("Seedance 2.5 4K uses a documented pixel ratio and no unsupported resolution field",()=>{
+ const payload=buildRunwayVideoPayload({model:"seedance2_5",prompt:"A filmic scene",durationSeconds:8,aspectRatio:"16:9",resolution:"4k"});
+ assert.deepEqual(payload,{model:"seedance2_5",promptText:"A filmic scene",ratio:"3840:2160",duration:8});
+ assert.equal("resolution" in payload,false);
+});
+test("Kling 4.0 Flash exposes its documented 720p duration and framing contract",()=>{
+ const text=buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A cinematic city at night",durationSeconds:5,aspectRatio:"16:9",resolution:"720p"});
+ assert.deepEqual(text,{model:"kling_4_flash",ratio:"1280:720",promptText:"A cinematic city at night",duration:5});
+ const image=buildRunwayImageToVideoPayload({model:"kling_4_flash",prompt:"Animate the opening frame",promptImage:"data:image/png;base64,AA==",durationSeconds:5});
+ assert.deepEqual(image,{model:"kling_4_flash",promptText:"Animate the opening frame",promptImage:"data:image/png;base64,AA==",duration:5});
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"Too long",durationSeconds:21}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"Bad ratio",durationSeconds:5,aspectRatio:"4:3"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Kling 4 accepts its documented 26,000-character prompt limit",()=>{
+ const prompt="x".repeat(26000);
+ assert.equal(buildRunwayVideoPayload({model:"kling_4",prompt,durationSeconds:5}).promptText.length,26000);
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:prompt+"x",durationSeconds:5}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+});
+
+test("Kling 3.0 multi-shot validates six segments and sends providerSettings",()=>{
+ const multiPrompt=[{prompt:"Wide shot of a storm approaching",duration:5},{prompt:"Close-up of rain hitting the glass",duration:4}];
+ const payload=buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt,aspectRatio:"16:9"});
+ assert.deepEqual(payload,{model:"kling3.0_pro",ratio:"1920:1080",providerSettings:{multiPrompt,shotType:"customize"}});
+ assert.equal("duration" in payload,false);
+});
+test("Kling 3.0 multi-shot enforces segment counts, prompt lengths, total duration and intelligence prompt",()=>{
+ const valid=[{prompt:"Shot one",duration:2},{prompt:"Shot two",duration:2}];
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:[]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:[{prompt:"x",duration:3}]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:Array.from({length:7},()=>({prompt:"shot",duration:1}))}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling3.0_pro",prompt:"",multiPrompt:valid,shotType:"intelligence"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4",prompt:"",multiPrompt:valid}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Kling 3.0 4K maps only its documented 4K aspect ratios",()=>{
+ assert.deepEqual(buildRunwayVideoPayload({model:"kling3.0_4k",prompt:"A cinematic shot",durationSeconds:8,aspectRatio:"16:9"}),{
+  model:"kling3.0_4k",promptText:"A cinematic shot",ratio:"3840:2160",duration:8
+ });
 });

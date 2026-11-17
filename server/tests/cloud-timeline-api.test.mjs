@@ -20,6 +20,18 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
  return{api,calls,created};
 }
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
+test("cloud timeline accepts private video assets on overlay tracks for final compositing",async()=>{
+ const f=setup({assetMediaType:"video/mp4"});
+ const clip={id:"clip-1",assetId:"asset-1",name:"source.mp4",timelineStart:{value:0,rate:1},duration:{value:24,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:24,rate:24}},enabled:true};
+ const timeline={...timelineDoc,tracks:[
+  {id:"video-track",kind:"video",name:"Primary",enabled:true,locked:false,clips:[clip]},
+  {id:"overlay-track",kind:"overlay",name:"Picture in picture",enabled:true,locked:false,clips:[{...clip,id:"overlay-clip",timelineStart:{value:6,rate:24},duration:{value:12,rate:24},sourceRange:{start:{value:0,rate:24},duration:{value:12,rate:24}},metadata:{x:16,y:16,width:160,height:90,opacity:0.7}}]}
+ ]};
+ const result=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline}});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.timeline.timeline.tracks[1].clips[0].assetId,"asset-1");
+});
+
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202,JSON.stringify(result.body));const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
 test("billable cloud render reserves a server-calculated amount before the job is queued",async()=>{
@@ -341,7 +353,7 @@ test("cloud workflow approval requires confirmation, revalidates inputs and atom
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:{async prepareInput(input,context){prepared.push({input,context});return{...input};},async preflight(){throw new Error("approval must not call provider preflight");}},
-  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
  });
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
@@ -867,4 +879,213 @@ test("Luma approval uses the same governed quote adapter and stable config ID",a
  assert.equal(approvalArgs.p_input.model,"ray-3.2");
  assert.equal(approvalArgs.p_input.operation,"generate");
  assert.equal(approvalArgs.p_input.approvedMaxAmount,0.5);
+});
+
+
+test("direct Seedance workflow quote uses the official list-price estimator and records the exact model",async()=>{
+ const ownerId=owner,projectId=project,requestId="seedance-direct-quote-001";let persisted;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){
+    persisted=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(persisted.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:projectId,ownerId};}}},
+  authorize:async()=>true,
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId,body:{
+  projectId,requestId,node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresExplicitApproval,true);
+ assert.equal(result.body.quote.paidExecutionEnabled,false);
+ assert.equal(result.body.quote.model,"seedance2_5");
+ assert.equal(result.body.quote.estimatedCredits,160);
+ assert.equal(result.body.quote.estimatedAmount,1.6);
+ assert.equal(persisted.p_model,"seedance2_5");
+ assert.equal(persisted.p_config_id,"runway-direct-seedance2-5");
+ assert.equal(persisted.p_pricing_source,"runway_direct_model_list_price");
+});
+
+test("Seedance draft enhancement quote verifies the original succeeded project job and prices 1080p",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ let quoteArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+    quoteArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,env:{CLOUD_VIDEO_WORKER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-quote-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
+  values:{}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.body.quote.operation,"text-to-video");
+ assert.equal(result.body.quote.estimatedCredits,544);
+ assert.equal(quoteArgs.p_model,"seedance2_5");
+ assert.equal(quoteArgs.p_operation,"text-to-video");
+ assert.equal(quoteArgs.p_estimated_credits,544);
+ assert.equal(quoteArgs.p_estimated_amount,5.44);
+});
+
+test("Seedance video-to-video draft enhancement quote includes the verified input-video billing duration",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceVideoAssetId="423e4567-e89b-42d3-a456-426614174000";
+ let quoteArgs,metadataCalls=0;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"reference",sourceVideoAssetId,draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const sourceResolver={async resolveMetadata(args){metadataCalls++;return{...args,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",runwaySourceResolver:sourceResolver,
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+    quoteArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-video-quote",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
+  values:{}
+ }});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(metadataCalls,1);
+ assert.equal(quoteArgs.p_estimated_credits,748);
+ assert.equal(quoteArgs.p_estimated_amount,7.48);
+});
+
+test("Seedance draft enhancement rejects a source job from another project",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ let databaseWrites=0;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:editor,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   databaseWrites++;
+   return{ok:true,status:200,async text(){return"";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"seedance-enhance-cross-project",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
+  values:{}
+ }});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SEEDANCE_DRAFT_SOURCE_INVALID");
+ assert.equal(databaseWrites,0);
+});
+
+test("Seedance draft enhancement approval revalidates the source and atomically queues the 1080p follow-on",async()=>{
+ const sourceDraftJobId="323e4567-e89b-42d3-a456-426614174000";
+ const draftTaskId="223e4567-e89b-42d3-a456-426614174000";
+ const sourceVideoAssetId="423e4567-e89b-42d3-a456-426614174000";
+ let approvalArgs;
+ const sourceJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"succeeded",
+  created_at:new Date().toISOString(),
+  input:{provider:"runway",model:"seedance2_5",operation:"video-to-video",mode:"reference",sourceVideoAssetId,draft:true,resolution:"480p",durationSeconds:8,aspectRatio:"16:9",audio:true},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:draftTaskId,assetIds:["723e4567-e89b-42d3-a456-426614174000"]}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  runwaySourceResolver:{async resolveMetadata(args){return{...args,assetId:sourceVideoAssetId,mediaType:"video/mp4",durationSeconds:6,width:1920,height:1080,frameRate:30};}},
+  fetchImpl:async(url,options)=>{
+   if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
+   if(String(url).endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{
+     job_id:"823e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,
+     budget_reservation_id:"923e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"
+    }]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",
+   CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",
+   VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+   RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-enhance-approve-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId}},
+  values:{},approvedMaxAmount:7.48,approvalNote:"Approve this separately priced Seedance draft enhancement."
+ }});
+ assert.equal(result.status,202,JSON.stringify(result.body));
+ assert.equal(approvalArgs.p_input.resolution,"1080p");
+ assert.equal(approvalArgs.p_input.draftTaskId,draftTaskId);
+ assert.equal(approvalArgs.p_input.sourceDraftJobId,sourceDraftJobId);
+ assert.equal(approvalArgs.p_input.sourceDraftVideoAssetId,sourceVideoAssetId);
+ assert.equal(approvalArgs.p_input.draftEnhancement,true);
+ assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
+});
+
+test("direct Runway approval uses the exact worker allowlist and stable model config ID",async()=>{
+ let approvalArgs;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    approvalArgs=JSON.parse(options.body);
+    return{ok:true,status:200,async text(){return JSON.stringify([{job_id:"e23e4567-e89b-42d3-a456-426614174000",job_status:"queued",idempotent_replay:false,budget_reservation_id:"f23e4567-e89b-42d3-a456-426614174000",approval_id:"a23e4567-e89b-42d3-a456-426614174000"}]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODELS:"seedance2_5",RUNWAY_API_KEY:"test-key",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",requestId:"seedance-direct-approve-001",
+  node:{kind:"video.generate",config:{provider:"runway",model:"seedance2_5",draft:true,durationSeconds:8,resolution:"1080p",aspectRatio:"16:9"}},
+  values:{prompt:"A cinematic product reveal"},approvedMaxAmount:1.6,approvalNote:"Approve this exact Seedance draft."
+ }});
+ assert.equal(result.status,202,JSON.stringify(result.body));
+ assert.equal(approvalArgs.p_config_id,"runway-direct-seedance2-5");
+ assert.equal(approvalArgs.p_input.provider,"runway");
+ assert.equal(approvalArgs.p_input.model,"seedance2_5");
+ assert.equal(approvalArgs.p_input.draft,true);
+ assert.equal(approvalArgs.p_input.resolution,"480p");
 });

@@ -25,6 +25,9 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  captions:{kind:"voice.caption",label:"Create Timed Captions",inputs:[port("segments","structured-data"),port("words","structured-data"),port("sourceAudio","audio"),port("language","text")],outputs:[port("subtitle","subtitle-file"),port("asset","asset")]},
  frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("media","media",true)],outputs:[port("image","image")]},
  audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
+ audioClean:{kind:"media.audio-clean",label:"Audio Cleanup",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
+ audioMaster:{kind:"media.audio-master",label:"Audio Mastering · EBU R128",inputs:[port("audio","audio",true)],outputs:[port("audio","audio")]},
+ replaceAudio:{kind:"video.replace-audio",label:"Replace Video Soundtrack",inputs:[port("media","media",true),port("audio","audio",true),port("approval","any",true)],outputs:[port("video","video"),port("asset","asset")]},
  transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
  timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
  upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
@@ -38,7 +41,7 @@ function nodePosition(index:number){return {x:30+(index%3)*300,y:30+Math.floor(i
 function addNode(definition:keyof typeof palette){
  if(!state.graph)return;
  const spec=palette[definition],id=crypto.randomUUID();
- const defaultConfig=definition==="video"?{provider:"runway",model:"model-router",durationSeconds:5,aspectRatio:"16:9"}:{};
+ const defaultConfig=definition==="video"?{provider:"runway",model:"model-router",durationSeconds:5,aspectRatio:"16:9"}:definition==="audioClean"?{noiseFloor:-25,targetLufs:-16}:definition==="audioMaster"?{targetLufs:-16,targetLra:11,truePeakDbtp:-1.5}:definition==="replaceAudio"?{sourceRightsConfirmed:false}:{};
  const node:WorkflowNode={id,kind:spec.kind,label:spec.label,inputs:spec.inputs.map(x=>({...x})),outputs:spec.outputs.map(x=>({...x})),config:defaultConfig,position:nodePosition(state.graph.nodes.length)};
  state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,node]};
  state.selectedNode=id;state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});
@@ -80,9 +83,26 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",operation=String(config.operation||"generate");
- const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
- const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":"provider_default");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(model),operation=String(config.operation||"generate");
+ const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
+  model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
+  model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
+  model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default");
+ const modelOptions=luma?[{id:"ray-3.2",label:"Luma Ray 3.2"}]:[
+  {id:"model-router",label:"Runway Model Router"},{id:"gen4.5",label:"Gen-4.5"},{id:"seedance2_5",label:"Seedance 2.5"},
+  {id:"kling_4",label:"Kling 4.0"},{id:"kling_4_flash",label:"Kling 4.0 Flash"},
+  {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"},{id:"gemini_omni_flash_1.2",label:"Gemini Omni Flash 1.2"}
+ ];
+ const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
+  directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
+ const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(model);
+ const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
+ const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
+ const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
+ const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
+ const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
+ const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
@@ -90,21 +110,25 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const imageAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("image/"));
  const selectedKeyframes=new Set(Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.map(String):[]);
  const selectedSource=String(config.sourceVideoAssetId||"");
- return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel"><option value="model-router" '+(model==="model-router"?"selected":"")+'>Runway Model Router</option><option value="ray-3.2" '+(model==="ray-3.2"?"selected":"")+'>Luma Ray 3.2</option></select></label></div>'+
- '<label>Operation<select name="videoOperation" '+(!luma?"disabled":"")+'><option value="generate" '+(operation==="generate"?"selected":"")+'>Generate new video</option><option value="edit" '+(operation==="edit"?"selected":"")+'>Edit existing video</option><option value="reframe" '+(operation==="reframe"?"selected":"")+'>Reframe existing video</option></select></label>'+
- '<div class="wf-video-provider-grid"><label>Duration / source duration · seconds<input name="videoDuration" type="number" min="'+(luma&&operation!=="reframe"?"5":"2")+'" max="'+(luma?"10":"30")+'" step="'+(luma&&operation!=="reframe"?"5":"1")+'" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
+ return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
+ '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
+ '<label>Source-video mode<select name="videoMode" '+(!supportsVideoMode||operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>'+
+ '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!luma||operation==="generate"?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
- '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!luma||operation==="generate"?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
+ (draftEnhancement?'<label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p>':'')+
+ '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!sourceVideoEnabled?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!sourceVideoEnabled?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop X<input name="sourcePositionX" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.x_norm??0)+'"></label><label>Reframe crop Y<input name="sourcePositionY" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="-2" max="2" step="0.01" value="'+esc(position.y_norm??0)+'"></label></div>'+
  '<div class="wf-video-provider-grid"><label>Reframe crop width<input name="sourcePositionW" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.w_norm??1)+'"></label><label>Reframe crop height<input name="sourcePositionH" '+(!luma||operation!=="reframe"?"disabled ":"")+'type="number" min="0.01" max="2" step="0.01" value="'+esc(position.h_norm??1)+'"></label></div>'+
- '<label>Private first-frame asset ID · Generate only<input name="startFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
+ '<label>Choose first-frame image from this project<select name="startFrameAssetPicker" '+(!startFrameEnabled?"disabled ":"")+'><option value="">No first frame</option>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(String(config.startFrameAssetId||"")===asset.id?"selected":"")+'>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
+ '<label>Or enter private first-frame asset ID<input name="startFrameAssetId" '+(!startFrameEnabled?"disabled ":"")+'value="'+esc(config.startFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Private last-frame asset ID · Generate only<input name="endFrameAssetId" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(config.endFrameAssetId||"")+'" maxlength="160" placeholder="Optional project image asset ID"></label>'+
  '<label>Choose keyframe images from this project · asset-library order<select name="keyframeAssetPicker" multiple size="5" '+(!luma||operation!=="generate"?"disabled ":"")+'>'+imageAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedKeyframes.has(asset.id)?"selected":"")+ '>'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private keyframe asset IDs<input name="keyframeAssetIds" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeAssetIds)+'" maxlength="12000" placeholder="Paste project image asset IDs, comma-separated"></label>'+
  '<label>Output-frame indexes · match selected asset-library order<input name="keyframeIndexes" '+(!luma||operation!=="generate"?"disabled ":"")+'value="'+esc(keyframeIndexes)+'" maxlength="1200" placeholder="e.g. 0, 72, 120"></label>'+
- '<p>Generate supports text-to-video, first/last anchors and up to 64 indexed keyframes. Edit and Reframe require a private source-video asset in this project; edit supports 5/10-second clips, while reframe supports up to 10 seconds at verified 360p–720p tiers. Video extension remains gated until ownership of the original Luma generation can be proven. Every source asset is revalidated before quote, approval and provider upload.</p>'+
+ '<label class="wf-rights-confirm"><input type="checkbox" name="videoDraft" '+(config.draft===true?'checked':'')+(draftEnabled?'':' disabled')+'> Seedance 2.5 draft preview · fixed 480p, enhance to 1080p (4K requires a full generation)</label>'+
+ '<p>Direct Runway models execute through the owner-approved cloud queue. Text, private first-frame and source-video operations are validated against each model profile; Seedance draft previews are billed at 480p. Luma retains its separate generate/edit/reframe contract. Every source asset is revalidated before quote, approval and provider upload.</p>'+
  '<label class="wf-rights-confirm"><input type="checkbox" name="rightsConfirmed" '+(config.rightsConfirmed===true?'checked':'')+'> I confirm I have the rights to use every connected source/reference asset.</label>';
 }
 function renderVideoCostEstimate(){
@@ -122,7 +146,7 @@ export function renderWorkflowWorkspace(){
  '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
  '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
- '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+renderUploadAssetField(selected)+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?renderVideoWorkflowConfig(selected):selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model. For saved shot continuity, add a shotId to node configuration.</p>':"")+'<button class="secondary">Apply configuration</button>'+(selected.kind==="video.generate"?'<button type="button" class="secondary" data-wf-action="estimate-cost">Estimate generation cost</button>':"")+'</form>'+(selected.kind==="video.generate"?renderVideoCostEstimate():""):'<div class="empty">Select a node to configure it.</div>')+
+ '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+(selected.kind==="video.replace-audio"?'<label class="check-label"><input type="checkbox" name="sourceRightsConfirmed" '+(selected.config.sourceRightsConfirmed===true?'checked':'')+'> I confirm I have the necessary rights to use both media assets.</label>':"")+renderUploadAssetField(selected)+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?renderVideoWorkflowConfig(selected):selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model. For saved shot continuity, add a shotId to node configuration.</p>':"")+'<button class="secondary">Apply configuration</button>'+(selected.kind==="video.generate"?'<button type="button" class="secondary" data-wf-action="estimate-cost">Estimate generation cost</button>':"")+'</form>'+(selected.kind==="video.generate"?renderVideoCostEstimate():""):'<div class="empty">Select a node to configure it.</div>')+
  '<div class="wf-run-status">'+(state.latestRunId?'<div><b>Latest run</b> · '+esc(state.runStatus)+' <button data-wf-action="refresh-run">Refresh</button>'+(state.runStatus==="awaiting_approval"&&!state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?'<button data-wf-action="approve">Approve step</button>':'')+'</div>'+state.runNodes.map(n=>{const assetId=String(n.output?.assetId||n.output?.video||n.output?.asset||"");const transcript=String(n.output?.transcript||"");return '<span>'+esc(n.node_id)+' · '+esc(n.status)+(n.error?.message?' · '+esc(n.error.message):'')+(n.output?.cloudJobId?' · cloud job '+esc(n.output.cloudJobId):'')+(n.output?.cloudJobId&&!["completed","succeeded","failed","cancelled","needs_input"].includes(n.status)?' · <button data-wf-action="cancel-cloud-video-job" data-wf-job-id="'+esc(n.output.cloudJobId)+'">Cancel cloud job</button>':'')+(n.output?.quoteId?' · quote '+esc(n.output.quoteId):'')+(typeof n.output?.approvedMaxAmount==="number"?' · approved ceiling '+esc(n.output.approvedMaxAmount.toFixed(6))+' USD':'')+(typeof n.output?.actualAmount==="number"?' · actual cost '+esc(n.output.actualAmount.toFixed(6))+' '+esc(n.output.currency||"USD"):'')+(n.output?.provider?' · provider '+esc(n.output.provider):'')+(n.output?.model?' · model '+esc(n.output.model):'')+(assetId?' · <a href="/api/assets/'+encodeURIComponent(assetId)+'/file" target="_blank" rel="noopener noreferrer">Open generated asset</a>':'')+(transcript?'<details class="wf-transcript-preview"><summary>Transcript · '+esc(n.output?.language||"language not detected")+(Array.isArray(n.output?.segments)?" · "+n.output.segments.length+" segments":"")+(Number.isFinite(Number(n.output?.duration))?" · "+Number(n.output?.duration).toFixed(1)+"s":"")+'</summary><p>'+esc(transcript.slice(0,5000))+(transcript.length>5000?"…":"")+'</p></details>':'')+(n.output?.subtitleAssetId?' · <a href="/api/assets/'+encodeURIComponent(n.output.subtitleAssetId)+'/file" download>Download captions (.vtt) · '+esc(n.output.cueCount||0)+' cues</a>':'')+(n.output?.cloudAssetIds?.[0]&&state.graph?.projectId?' · <button data-wf-action="add-to-timeline" data-wf-node-id="'+esc(n.node_id)+'">Add to cloud timeline</button>':'')+'</span>';}).join("")+(state.runStatus==="awaiting_approval"&&state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?(()=>{const q=state.runNodes.find(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?.output?.videoQuote;return '<section class="wf-cost-estimate"><b>Project owner approval required</b><p>'+esc(q?.routedModel||"Runway Model Router")+' · '+esc(q?.currency||"USD")+' '+esc(Number(q?.estimatedAmount||0).toFixed(6))+'</p><p>Quote expires '+esc(q?.expiresAt||"")+'. No provider job or credit reservation exists yet.</p>'+(q?.paidExecutionEnabled===true?'<label for="wf-approved-max-amount">Maximum approved spend (USD)</label><input id="wf-approved-max-amount" type="number" min="'+esc(Number(q?.estimatedAmount||0))+'" step="0.000001" value="'+esc(Number(q?.estimatedAmount||0).toFixed(6))+'"><label><input id="wf-video-approve-confirm" type="checkbox"> I approve this exact quote and authorize the stated maximum spend.</label><button data-wf-action="approve-video-quote">Approve quote and queue generation</button>':'<p>Paid execution is currently disabled by server-side release gates. This quote is non-billable; no approval or generation can be submitted yet.</p>')+'</section>';})():""):'No workflow runs yet.')+'</div><div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Preview is planning-only. Paid provider nodes pause at human approval; execution requires a configured server-side provider and explicit remote opt-in.</p>')+'</div></aside></div></div>';
 }
 async function refresh(){
@@ -312,55 +336,96 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="wf-config-form"){
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
-  try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
+  try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");if(node.kind==="voice.translate"){const targetLanguage=String(data.get("targetLanguage")||"").trim();if(!targetLanguage)throw new Error("Choose a target language.");config.targetLanguage=targetLanguage;}if(node.kind==="video.replace-audio")config.sourceRightsConfirmed=data.get("sourceRightsConfirmed")==="on";if(node.kind==="upload"&&state.graph.nodes.some(item=>item.kind==="voice.transcribe")){const sourceAssetId=String(data.get("sourceAssetId")||"").trim();if(!sourceAssetId)throw new Error("Enter the private audio asset ID before saving this transcription workflow.");config.assetId=sourceAssetId;}if(node.kind==="video.generate"){
  const provider=String(data.get("videoProvider")||"runway"),model=String(data.get("videoModel")||"model-router");
- if(!((provider==="runway"&&model==="model-router")||(provider==="luma"&&model==="ray-3.2")))throw new Error("Choose a supported provider/model pair.");
- const operation=provider==="luma"?String(data.get("videoOperation")||"generate"):"generate";
- if(!["generate","edit","reframe"].includes(operation))throw new Error("Choose a supported Luma operation.");
+ const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(model);
+ const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"];
+ if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
+ const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):"generate";
+ if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&(operation==="video-to-video"||model==="seedance2_5"&&operation==="draft-enhancement")):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
- if(provider==="luma"&&operation!=="reframe"?![5,10].includes(durationSeconds):(!Number.isInteger(durationSeconds)||durationSeconds<(provider==="luma"?2:2)||durationSeconds>(provider==="luma"?10:30)))throw new Error(operation==="reframe"?"Reframe source duration must be 2–10 whole seconds.":"Generation/edit duration must be 5 or 10 seconds.");
+ const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
+ const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ if(!Number.isInteger(durationSeconds)||durationSeconds<minDuration||durationSeconds>maxDuration||
+    luma&&operation==="generate"&&![5,10].includes(durationSeconds))throw new Error("Duration is outside the selected provider/model's supported range.");
  config.provider=provider;config.model=model;config.durationSeconds=durationSeconds;
  config.aspectRatio=String(data.get("videoAspectRatio")||"16:9");
- config.resolution=String(data.get("videoResolution")||(provider==="luma"?"720p":"provider_default"));
+ config.resolution=String(data.get("videoResolution")||(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default"));
  config.rightsConfirmed=data.get("rightsConfirmed")==="on";
- if(provider==="luma")config.operation=operation;else delete config.operation;
+ if(luma||directRunway)config.operation=operation;else delete config.operation;
+ if(operation==="draft-enhancement"){
+  config.sourceDraftJobId=String(data.get("sourceDraftJobId")||"").trim();
+  delete config.draftTaskId;
+  if(!config.sourceDraftJobId)throw new Error("Enter the completed draft cloud job ID.");
+  delete config.draft;delete config.draftTargetResolution;delete config.sourceVideoAssetId;delete config.startFrameAssetId;
+ }else{delete config.sourceDraftJobId;delete config.draftTaskId;}
  const sourceVideoAssetId=String(data.get("sourceVideoAssetPicker")||data.get("sourceVideoAssetId")||"").trim();
- const startFrameAssetId=String(data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
+ const startFrameAssetId=String(data.get("startFrameAssetPicker")||data.get("startFrameAssetId")||"").trim(),endFrameAssetId=String(data.get("endFrameAssetId")||"").trim();
  const pickedKeyframeIds=data.getAll("keyframeAssetPicker").map(value=>String(value).trim()).filter(Boolean);
  const assetText=(pickedKeyframeIds.length?pickedKeyframeIds.join(","):String(data.get("keyframeAssetIds")||"").trim()),indexText=String(data.get("keyframeIndexes")||"").trim();
- if(operation==="generate"){
-  if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
-  if(provider!=="luma"&&(startFrameAssetId||endFrameAssetId||assetText||indexText))throw new Error("Private frame anchors are currently supported only by Luma Ray 3.2 in this workflow.");
-  if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
-  if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
-  if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
-  if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
-  if(assetText||indexText){
-   if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
-   const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
-   const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
-   if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
-   let previous=-1;
-   for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
-   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
-   config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
-  }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
-  delete config.sourceVideoAssetId;delete config.sourcePosition;delete config.editStrength;
- }else{
-  if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
-  if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
-  if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
-  if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers; longer edits remain blocked until pricing is verified.");
-  if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
-  config.sourceVideoAssetId=sourceVideoAssetId;
-  delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
-  if(operation==="edit"){config.editStrength=String(data.get("editStrength")||"flex_2");delete config.sourcePosition;}
-  else{
-   delete config.editStrength;
-   const sourcePosition={x_norm:Number(data.get("sourcePositionX")||0),y_norm:Number(data.get("sourcePositionY")||0),w_norm:Number(data.get("sourcePositionW")||1),h_norm:Number(data.get("sourcePositionH")||1)};
-   if(!Number.isFinite(sourcePosition.x_norm)||sourcePosition.x_norm< -2||sourcePosition.x_norm>2||!Number.isFinite(sourcePosition.y_norm)||sourcePosition.y_norm< -2||sourcePosition.y_norm>2||!Number.isFinite(sourcePosition.w_norm)||sourcePosition.w_norm<=0||sourcePosition.w_norm>2||!Number.isFinite(sourcePosition.h_norm)||sourcePosition.h_norm<=0||sourcePosition.h_norm>2)throw new Error("Reframe crop coordinates must be normalized and within the supported bounds.");
-   config.sourcePosition=sourcePosition;
+ if(luma){
+  if(operation==="generate"){
+   if(sourceVideoAssetId)throw new Error("Clear the source-video asset ID when generating a new video.");
+   if(durationSeconds===10&&(startFrameAssetId||endFrameAssetId))throw new Error("Luma 10-second clips require multi-keyframe mode rather than single first/last anchors.");
+   if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+   if(endFrameAssetId)config.endFrameAssetId=endFrameAssetId;else delete config.endFrameAssetId;
+   if((startFrameAssetId||endFrameAssetId)&&config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving first/last frame anchors.");
+   if(assetText||indexText){
+    if(startFrameAssetId||endFrameAssetId)throw new Error("Use either first/last anchors or multi-keyframe mode, not both.");
+    const assetIds=assetText.split(",").map(value=>value.trim()).filter(Boolean);
+    const indexes=indexText.split(",").map(value=>value.trim()).filter(Boolean).map(Number);
+    if(assetIds.length<1||assetIds.length>64||new Set(assetIds).size!==assetIds.length||indexes.length!==assetIds.length||indexes.some(value=>!Number.isSafeInteger(value)))throw new Error("Enter 1–64 unique private asset IDs and the same number of integer frame indexes.");
+    let previous=-1;
+    for(const index of indexes){if(index<0||index>durationSeconds*24||index<=previous)throw new Error("Frame indexes must be strictly increasing and within the selected clip duration.");previous=index;}
+    if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving multi-keyframe inputs.");
+    config.keyframeAssetIds=assetIds;config.keyframeIndexes=indexes;
+   }else{delete config.keyframeAssetIds;delete config.keyframeIndexes;}
+   delete config.sourceVideoAssetId;delete config.sourcePosition;delete config.editStrength;
+  }else{
+   if(!sourceVideoAssetId)throw new Error("Edit and Reframe require a private source-video asset ID from this project.");
+   if(config.rightsConfirmed!==true)throw new Error("Confirm source-media rights before saving an Edit or Reframe operation.");
+   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video Edit/Reframe cannot be combined with generation frame anchors.");
+   if(operation==="edit"&&![5,10].includes(durationSeconds))throw new Error("Luma Edit quotes currently support the published 5- or 10-second pricing tiers.");
+   if(operation==="reframe"&&config.resolution==="1080p")throw new Error("Luma 1080p Reframe is not enabled until provider account capability is verified.");
+   config.sourceVideoAssetId=sourceVideoAssetId;
+   delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+   if(operation==="edit"){config.editStrength=String(data.get("editStrength")||"flex_2");delete config.sourcePosition;}
+   else{
+    delete config.editStrength;
+    const sourcePosition={x_norm:Number(data.get("sourcePositionX")||0),y_norm:Number(data.get("sourcePositionY")||0),w_norm:Number(data.get("sourcePositionW")||1),h_norm:Number(data.get("sourcePositionH")||1)};
+    if(!Number.isFinite(sourcePosition.x_norm)||sourcePosition.x_norm< -2||sourcePosition.x_norm>2||!Number.isFinite(sourcePosition.y_norm)||sourcePosition.y_norm< -2||sourcePosition.y_norm>2||!Number.isFinite(sourcePosition.w_norm)||sourcePosition.w_norm<=0||sourcePosition.w_norm>2||!Number.isFinite(sourcePosition.h_norm)||sourcePosition.h_norm<=0||sourcePosition.h_norm>2)throw new Error("Reframe crop coordinates must be normalized and within the supported bounds.");
+    config.sourcePosition=sourcePosition;
+   }
   }
+ }else if(directRunway){
+  if(operation==="video-to-video"){
+   if(!sourceVideoAssetId)throw new Error("Choose a private source-video asset from this project.");
+   if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the source video before saving this operation.");
+   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video transformations cannot be combined with first/last frame or keyframe inputs.");
+   config.sourceVideoAssetId=sourceVideoAssetId;
+   if(["seedance2_5","gemini_omni_flash_1.2"].includes(model)){
+    config.mode=String(data.get("videoMode")||"reference");
+    if(config.mode==="edit")config.duration="auto";
+    else if(config.mode==="extend")config.duration=durationSeconds;
+    else delete config.duration;
+   }else delete config.mode;
+   delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+  }else{
+   if(sourceVideoAssetId)throw new Error("Clear the source-video asset when generating from text or a first frame.");
+   if(startFrameAssetId&&config.rightsConfirmed!==true)throw new Error("Confirm rights to use the first-frame image before saving.");
+   if(startFrameAssetId)config.startFrameAssetId=startFrameAssetId;else delete config.startFrameAssetId;
+   delete config.sourceVideoAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;
+  }
+  if(model==="seedance2_5"&&data.get("videoDraft")==="on"){
+   if(config.resolution!=="1080p")throw new Error("Seedance draft previews enhance to 1080p. Select 1080p for draft mode; use a separate full generation for 4K.");
+   config.draft=true;
+   config.draftTargetResolution="1080p";
+   config.resolution="480p";
+  }else{delete config.draft;delete config.draftTargetResolution;}
+  delete config.editStrength;delete config.sourcePosition;
+ }else{
+  if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Runway Model Router workflow mode uses its separately governed input contract; direct source assets require a direct Runway model.");
+  delete config.sourceVideoAssetId;delete config.startFrameAssetId;delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;delete config.draft;delete config.draftTargetResolution;
  }
  }node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.costEstimate=null;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
   catch(error){alert(error instanceof Error?error.message:String(error));}
@@ -368,39 +433,87 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
+ if(target.name==="sourceVideoAssetPicker"||target.name==="startFrameAssetPicker"){
+  const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const manualName=target.name==="sourceVideoAssetPicker"?"sourceVideoAssetId":"startFrameAssetId";
+  const manual=form?.querySelector<HTMLInputElement>('[name="'+manualName+'"]');
+  if(manual)manual.value="";
+ }
  if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
- if(target.name==="videoProvider"||target.name==="videoOperation"){
+ if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"||target.name==="videoMode"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
   const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
   const operationSelect=form?.querySelector<HTMLSelectElement>('[name="videoOperation"]');
   const model=form?.querySelector<HTMLSelectElement>('[name="videoModel"]');
   const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
+  const aspectRatio=form?.querySelector<HTMLSelectElement>('[name="videoAspectRatio"]');
+  const videoMode=form?.querySelector<HTMLSelectElement>('[name="videoMode"]');
   const duration=form?.querySelector<HTMLInputElement>('[name="videoDuration"]');
   if(target.name==="videoProvider"){
    if(model)model.value=provider==="luma"?"ray-3.2":"model-router";
    if(operationSelect)operationSelect.value="generate";
   }
-  const operation=provider==="luma"?(operationSelect?.value||"generate"):"generate";
-  const luma=provider==="luma";
-  if(operationSelect)operationSelect.disabled=!luma;
-  for(const name of ["sourceVideoAssetId"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation==="generate";}
-  for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="edit";}
-  for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="reframe";}
-  for(const name of ["startFrameAssetId","endFrameAssetId","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||operation!=="generate";}
-  const values=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):["provider_default","480p","720p","1080p"];
+  const modelValue=model?.value||"model-router";
+  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(modelValue);
+  const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
+  const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(modelValue);
+  if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
+  const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
+   directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
+  if(operationSelect){
+   const selected=operationValues.some(([id])=>id===operation)?operation:"generate";
+   operationSelect.innerHTML=operationValues.map(([id,label])=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
+   operationSelect.disabled=!(luma||directRunway);
+  }
+  const activeOperation=operationValues.some(([id])=>id===operation)?operation:"generate";
+  if(videoMode)videoMode.disabled=!supportsVideoMode||activeOperation!=="video-to-video";
+  const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
+  const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate";
+  if(!sourceVideoEnabled){
+   const picker=form?.querySelector<HTMLSelectElement>('[name="sourceVideoAssetPicker"]');if(picker)picker.value="";
+   const manual=form?.querySelector<HTMLInputElement>('[name="sourceVideoAssetId"]');if(manual)manual.value="";
+  }
+  if(!startFrameEnabled){
+   const picker=form?.querySelector<HTMLSelectElement>('[name="startFrameAssetPicker"]');if(picker)picker.value="";
+   const manual=form?.querySelector<HTMLInputElement>('[name="startFrameAssetId"]');if(manual)manual.value="";
+  }
+  for(const name of ["sourceVideoAssetPicker","sourceVideoAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!sourceVideoEnabled;}
+  for(const name of ["editStrength"]) {const input=form?.querySelector<HTMLSelectElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="edit";}
+  for(const name of ["sourcePositionX","sourcePositionY","sourcePositionW","sourcePositionH"]) {const input=form?.querySelector<HTMLInputElement>('[name="'+name+'"]');if(input)input.disabled=!luma||activeOperation!=="reframe";}
+  for(const name of ["startFrameAssetPicker","startFrameAssetId"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!startFrameEnabled;}
+  for(const name of ["endFrameAssetId","keyframeAssetPicker","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!luma||activeOperation!=="generate";}
+  const draft=form?.querySelector<HTMLInputElement>('[name="videoDraft"]');if(draft)draft.disabled=!(provider==="runway"&&modelValue==="seedance2_5");
+  const values=luma?(activeOperation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
+   modelValue==="seedance2_5"?["480p","720p","1080p","4k"]:modelValue==="kling_4"?["720p","1080p"]:
+   modelValue==="kling_4_flash"?["720p"]:modelValue==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:modelValue.startsWith("kling3.0_")?["provider_default"]:
+   modelValue==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
+  const activeMode=videoMode?.value||"reference";
+  const geminiSourceMode=modelValue==="gemini_omni_flash_1.2"&&activeOperation==="video-to-video";
+  if(resolution)resolution.disabled=false;
+  if(aspectRatio)aspectRatio.disabled=geminiSourceMode&&activeMode!=="reference";
+  if(duration)duration.disabled=geminiSourceMode&&activeMode==="edit";
   if(resolution){
    const previous=resolution.value;
-   const fallback=luma?"720p":"provider_default";
-   const selected=values.includes(previous)&&!(operation==="reframe"&&previous==="1080p")?previous:fallback;
+   const fallback=luma?"720p":modelValue==="seedance2_5"?"1080p":modelValue==="kling_4"||modelValue==="kling_4_flash"||modelValue==="gemini_omni_flash_1.2"?"720p":"provider_default";
+   const selected=values.includes(previous)&&!(activeOperation==="reframe"&&previous==="1080p")?previous:fallback;
    resolution.innerHTML=values.map(value=>'<option value="'+value+'" '+(value===selected?"selected":"")+'>'+value+'</option>').join("");
   }
   if(duration){
-   const min=luma&&operation==="generate"?"5":"2",max=luma&&operation==="edit"?"18":luma?"10":"30",step=luma&&operation==="generate"?"5":"1";
-   duration.min=min;duration.max=max;duration.step=step;
-   if(luma&&operation==="generate"&&!["5","10"].includes(duration.value))duration.value="5";
-   else if(Number(duration.value)<Number(min))duration.value=min;
-   else if(Number(duration.value)>Number(max))duration.value=max;
+   const min=luma&&activeOperation==="generate"?5:modelValue==="seedance2_5"?4:modelValue==="kling_4"||modelValue==="kling_4_flash"||modelValue.startsWith("kling3.0_")?3:2;
+   const max=luma?10:modelValue==="seedance2_5"||modelValue==="kling_4"?30:modelValue==="kling_4_flash"?20:modelValue==="gemini_omni_flash_1.2"?15:modelValue.startsWith("kling3.0_")?15:modelValue==="gen4.5"?10:30;
+   duration.min=String(min);duration.max=String(max);duration.step="1";
+   if(Number(duration.value)<min)duration.value=String(min);
+   else if(Number(duration.value)>max)duration.value=String(max);
   }
+ }
+ if(target.name==="videoDraft"){
+  const form=target.closest<HTMLFormElement>("#wf-config-form");
+  const resolution=form?.querySelector<HTMLSelectElement>('[name="videoResolution"]');
+  const draft=form?.querySelector<HTMLInputElement>('[name="videoDraft"]');
+  const selectedNode=state.graph.nodes.find(node=>node.id===state.selectedNode);
+  const targetResolution=String(selectedNode?.config.draftTargetResolution||"1080p");
+  if(resolution&&resolution.value==="480p")resolution.value=targetResolution;
+  if(draft?.checked&&resolution&&resolution.value==="provider_default")resolution.value="1080p";
  }
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });

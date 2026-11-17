@@ -41,9 +41,10 @@ test("production defaults to governed cloud execution and fails closed without t
   }), "cloud");
 });
 
-test("cloud mode accepts only explicitly governed Runway Model Router and Luma Ray 3.2 adapters", () => {
+test("cloud mode accepts explicitly governed direct Runway workers, Model Router and Luma Ray 3.2 adapters", () => {
   const supported = [
     { kind: "video.generate", config: { provider: "runway", model: "model-router" } },
+    ...["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"].map(model=>({kind:"video.generate",config:{provider:"runway",model}})),
     { kind: "video.generate", config: { provider: "luma", model: "ray-3.2" } }
   ];
   for (const node of supported) assert.equal(assertVideoWorkflowNodeSupport(node, "cloud"), true);

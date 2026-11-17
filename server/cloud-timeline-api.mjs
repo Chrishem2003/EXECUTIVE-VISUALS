@@ -15,28 +15,57 @@ import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
 import { createLumaWorkflowQuoteAdapter } from "./luma-workflow-quote-adapter.mjs";
 import { createCloudReviewRepository } from "./cloud-reviews.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
+const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"]);
+const directRunwayConfigId=model=>"runway-direct-"+String(model).replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+function directRunwayEnabled(env,model){
+ const allowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
+ return DIRECT_RUNWAY_WORKFLOW_MODELS.has(model)&&env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+  env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+  Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&allowlist.includes(model);
+}
+async function validateDirectRunwayFrameAsset(assets,ownerId,projectId,assetId){
+ if(!assetId)return true;
+ if(typeof assets?.get!=="function")return false;
+ const asset=await assets.get({ownerId,assetId});
+ return Boolean(asset&&asset.id===assetId&&(asset.projectId||null)===projectId&&
+  ["image/jpeg","image/png","image/webp"].includes(String(asset.mediaType||"").toLowerCase())&&
+  Number.isSafeInteger(asset.size)&&asset.size>0&&asset.size<=250*1024*1024&&/^[a-f0-9]{64}$/i.test(asset.sha256||""));
+}
+const CANCELLABLE_CLOUD_JOB_TYPES=new Set(["timeline.render","media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.audio-master","media.audio_replace","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy"]);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
-function cloudVideoWorkerLaunchConfigured(env={}) {
+function cloudVideoCommonConfigured(env={}) {
  const outputHosts=String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);
  const validOutputHosts=outputHosts.length>0&&outputHosts.length<=100&&outputHosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));
  const storageProvider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
  const privateStorageReady=storageProvider==="r2"?Boolean(env.R2_ACCOUNT_ID&&env.R2_ACCESS_KEY_ID&&env.R2_SECRET_ACCESS_KEY):
-  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):true;
- const common=env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
+  storageProvider==="b2"?Boolean(env.B2_REGION&&env.B2_APPLICATION_KEY_ID&&env.B2_APPLICATION_KEY):storageProvider==="supabase";
+ return env.CLOUD_WORKER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
   env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&
   Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY)&&privateStorageReady&&validOutputHosts;
- const runwayReady=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+}
+function runwayRouterLaunchConfigured(env={}) {
+ return cloudVideoCommonConfigured(env)&&env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
   /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&
   Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET)&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
+}
+function lumaLaunchConfigured(env={}) {
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
- const lumaReady=env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
-  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&privateStorageReady&&
+ return cloudVideoCommonConfigured(env)&&env.LUMA_VIDEO_ENABLED==="true"&&env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&
+  env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true"&&Boolean(env.LUMA_AGENTS_API_KEY)&&
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
- return common&&(runwayReady||lumaReady);
+}
+function directRunwayLaunchConfigured(env={},model) {
+ return cloudVideoCommonConfigured(env)&&directRunwayEnabled(env,model);
+}
+function workflowProviderLaunchConfigured(env={},request) {
+ if(request?.provider==="luma"&&request.model==="ray-3.2")return lumaLaunchConfigured(env);
+ if(request?.provider==="runway"&&request.model==="model-router")return runwayRouterLaunchConfigured(env);
+ if(request?.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(request.model))return directRunwayLaunchConfigured(env,request.model);
+ return false;
 }
 
 function timelineDurationSeconds(timeline){
@@ -120,6 +149,32 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
   return data;
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
+ }
+ async function prepareSeedanceDraftEnhancementNode(node,ownerId,projectId){
+  const config=node?.config&&typeof node.config==="object"&&!Array.isArray(node.config)?node.config:{};
+  if(config.operation!=="draft-enhancement")return node;
+  const sourceJobId=String(config.sourceDraftJobId||""),requestedDraftTaskId=String(config.draftTaskId||"");
+  if(!safeId(sourceJobId)||(requestedDraftTaskId&&!safeId(requestedDraftTaskId)))throw Object.assign(new Error("Select a valid completed Seedance draft cloud job."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
+  const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output,created_at&id=eq."+encodeURIComponent(sourceJobId)+
+   "&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+
+   "&job_type=eq.video.generate&status=eq.succeeded&limit=1");
+  const source=Array.isArray(rows)?rows[0]:null;
+  const created=Date.parse(source?.created_at||"");
+  const input=source?.input&&typeof source.input==="object"&&!Array.isArray(source.input)?source.input:{};
+  const output=source?.output&&typeof source.output==="object"&&!Array.isArray(source.output)?source.output:{};
+  if(!source||source.owner_id!==ownerId||source.project_id!==projectId||source.job_type!=="video.generate"||source.status!=="succeeded"||
+     !Number.isFinite(created)||Date.now()-created<0||Date.now()-created>7*24*60*60*1000||
+     input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||
+     input.operation==="video-to-video"&&input.mode!=="reference"||
+     output.provider!=="runway"||output.model!=="seedance2_5"||!safeId(output.providerTaskId)||
+     requestedDraftTaskId&&output.providerTaskId!==requestedDraftTaskId||
+     !Array.isArray(output.assetIds)||output.assetIds.length<1||
+     !Number.isInteger(input.durationSeconds)||input.durationSeconds<4||input.durationSeconds>30){
+   throw Object.assign(new Error("The source must be a succeeded Seedance 2.5 480p preview from this project, owned by this account and created within the last seven days."),{code:"SEEDANCE_DRAFT_SOURCE_INVALID"});
+  }
+  return {...node,config:{...config,provider:"runway",model:"seedance2_5",durationSeconds:input.durationSeconds,
+   aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId:output.providerTaskId,sourceDraftJobId:sourceJobId,
+   ...(safeId(input.sourceVideoAssetId)?{sourceDraftVideoAssetId:input.sourceVideoAssetId}:{})}};
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
@@ -219,6 +274,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      "media.thumbnail":["seconds"],
      "media.audio_extract":[],
      "media.audio-clean":["noiseFloor","targetLufs"],
+     "media.audio-master":["targetLufs","targetLra","truePeakDbtp"],
+     "media.audio_replace":["replacementAudioAssetId"],
      "media.denoise":["luma","chroma"],
      "media.color":["brightness","contrast","saturation"],
      "media.resize":["width","height","fit"],
@@ -231,6 +288,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const mediaType=String(asset.mediaType||"");
     const compatible=jobType==="media.probe"?/^(image|video|audio)\//.test(mediaType):
      ["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
+     jobType==="media.audio-master"?mediaType.startsWith("audio/"):
+     jobType==="media.audio_replace"?mediaType.startsWith("video/"):
      jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
      jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
      jobType==="media.transcode"?(mediaType.startsWith("video/")||mediaType.startsWith("audio/")):false;
@@ -239,7 +298,21 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!options||typeof options!=="object"||Array.isArray(options))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options must be a JSON object."}});
     const allowedOptions=new Set(optionKeys[jobType]);
     if(Object.keys(options).some(key=>!allowedOptions.has(key)))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media options contain unsupported fields for this operation."}});
-    const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
+    if(jobType==="media.audio_replace"){
+     const replacementAudioAssetId=String(options.replacementAudioAssetId||"");
+     if(!safeId(replacementAudioAssetId)||replacementAudioAssetId===asset.id)return response(400,{error:{code:"REPLACEMENT_AUDIO_REQUIRED",message:"Select a different private audio asset for soundtrack replacement."}});
+     let replacementAudioAsset;
+     try{replacementAudioAsset=await service.assets.get({ownerId,assetId:replacementAudioAssetId});}catch{return response(404,{error:{code:"REPLACEMENT_AUDIO_NOT_FOUND",message:"Private replacement audio asset not found."}});}
+     if(!replacementAudioAsset||replacementAudioAsset.ownerId!==ownerId||
+        (replacementAudioAsset.projectId||null)!==(asset.projectId||null)||
+        !String(replacementAudioAsset.mediaType||"").startsWith("audio/")||
+        !Number.isSafeInteger(replacementAudioAsset.size)||replacementAudioAsset.size<1||replacementAudioAsset.size>250*1024*1024||
+        !/^[a-f0-9]{64}$/i.test(replacementAudioAsset.sha256||"")){
+      return response(422,{error:{code:"REPLACEMENT_AUDIO_INVALID",message:"Replacement audio must be a verified private audio asset in the same project."}});
+     }
+    }
+    const numericRanges={seconds:[0,3600],noiseFloor:[-80,0],targetLufs:[-30,-5],targetLra:[1,20],truePeakDbtp:[-9,-1],luma:[0,100],chroma:[0,100],brightness:[-1,1],contrast:[0,3],saturation:[0,3],fps:[1,120],sharpness:[0,2]};
+    if(jobType==="media.audio-master"&&options.targetLufs!==undefined&&(!Number.isFinite(options.targetLufs)||options.targetLufs< -24||options.targetLufs> -12))return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Audio mastering integrated loudness must be between -24 and -12 LUFS."}});
     for(const [key,[minimum,maximum]] of Object.entries(numericRanges)){
      if(options[key]!==undefined&&(!Number.isFinite(options[key])||options[key]<minimum||options[key]>maximum))
       return response(400,{error:{code:"MEDIA_OPTIONS_INVALID",message:"Media option "+key+" is outside its supported range."}});
@@ -291,26 +364,70 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     if(quoteProject.ownerId!==ownerId)return response(403,{error:{code:"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED",message:"The project owner must create and approve paid video workflow quotes. Editors can prepare the workflow, but cannot authorize project spending."}});
     try{
      const requestId=String(body.requestId||"");
-     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
-     const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:workflowRouterAdapter;
-     if(!quoteAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
+     const quoteNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
+     const workflowRequest=createVideoWorkflowCloudRequest({node:quoteNode,values:body.values||{},projectId,requestId});
+     const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
+     const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
+     if(!quoteAdapter&&!directRunway)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
      if(workflowRequest.provider==="luma"&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
       return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must be verified private image assets in this exact project."}});
+     if(directRunway&&!await validateDirectRunwayFrameAsset(service.assets,ownerId,projectId,workflowRequest.input.startFrameAssetId))
+      return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"Seedance and Kling first frames must be verified private image assets in this exact project."}});
      let sourceMetadata=null;
-     if(workflowRequest.input.sourceVideoAssetId){
-      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
-      sourceMetadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
-      if(!sourceMetadata||sourceMetadata.ownerId!==ownerId||sourceMetadata.projectId!==projectId||sourceMetadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+     const metadataSourceAssetId=workflowRequest.input.sourceVideoAssetId||workflowRequest.input.sourceDraftVideoAssetId;
+     if(metadataSourceAssetId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video source quotes require a server-side private source metadata probe."}});
+      sourceMetadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:metadataSourceAssetId});
+      if(!sourceMetadata||sourceMetadata.ownerId!==ownerId||sourceMetadata.projectId!==projectId||sourceMetadata.assetId!==metadataSourceAssetId||
          !String(sourceMetadata.mediaType||"").startsWith("video/")||!Number.isFinite(sourceMetadata.durationSeconds)||
          sourceMetadata.durationSeconds<2||sourceMetadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
       }
-      if(Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+      if(!directRunway&&Math.ceil(sourceMetadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
       }
+      if(workflowRequest.model==="seedance2_5"&&(!Number.isSafeInteger(sourceMetadata.width)||!Number.isSafeInteger(sourceMetadata.height)||Math.min(sourceMetadata.width,sourceMetadata.height)<480)){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Seedance 2.5 source video must be at least 480p."}});
+      }
+      if(workflowRequest.model==="gemini_omni_flash_1.2"){
+       const mode=workflowRequest.input.mode||"reference";
+       const maxSourceSeconds=mode==="extend"?30:10;
+       if(!["reference","extend","edit"].includes(mode)||!Number.isFinite(sourceMetadata.durationSeconds)||sourceMetadata.durationSeconds<=0||
+          sourceMetadata.durationSeconds>maxSourceSeconds||mode==="edit"&&sourceMetadata.durationSeconds>=10){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 reference sources must be at most 10 seconds, edit sources must be under 10 seconds, and extend sources must be at most 30 seconds."}});
+       }
+      }
+      if(["kling_4","kling_4_flash"].includes(workflowRequest.model)){
+       const aspect=sourceMetadata.width/sourceMetadata.height;
+       const maxSourceSeconds=workflowRequest.model==="kling_4_flash"?21:30;
+       if(sourceMetadata.durationSeconds<3||sourceMetadata.durationSeconds>maxSourceSeconds||
+          !Number.isSafeInteger(sourceMetadata.width)||!Number.isSafeInteger(sourceMetadata.height)||Math.min(sourceMetadata.width,sourceMetadata.height)<700||
+          !Number.isFinite(sourceMetadata.frameRate)||sourceMetadata.frameRate<24||sourceMetadata.frameRate>60||
+          aspect<0.4||aspect>2.5){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Kling source video must meet its model-specific duration, 700px, 24–60 fps and aspect-ratio requirements."}});
+       }
+      }
      }
-     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId},sourceMetadata});
-     const estimate=await quoteAdapter.preflight(prepared,{sourceMetadata});
+     let estimate;
+     if(directRunway){
+      const input=workflowRequest.input;
+      const priced=estimateVideoGenerationCost({
+       provider:"runway",model:workflowRequest.model,operation:workflowRequest.operation,
+       durationSeconds:workflowRequest.operation==="video-to-video"&&(
+        workflowRequest.model==="kling_4"||
+        ["seedance2_5","gemini_omni_flash_1.2"].includes(workflowRequest.model)&&input.mode==="edit"
+       )?Math.ceil(sourceMetadata.durationSeconds):input.durationSeconds,outputFormat:"mp4",resolution:input.resolution,
+       audio:input.audio,inputVideoSeconds:sourceMetadata?.durationSeconds||0,
+       hasStartFrame:Boolean(input.startFrameAssetId),
+       inputType:input.sourceVideoAssetId||input.sourceDraftVideoAssetId?"video":input.startFrameAssetId?"image":"text"
+      });
+      estimate={provider:"runway",model:workflowRequest.model,estimatedCredits:Math.ceil(priced.credits),
+       estimatedUsd:Number((Math.ceil(priced.credits)*0.01).toFixed(6)),currency:priced.currency,billable:false,
+       pricingSource:"runway_direct_model_list_price",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/"};
+     }else{
+      const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId},sourceMetadata});
+      estimate=await quoteAdapter.preflight(prepared,{sourceMetadata});
+     }
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
         !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
         !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
@@ -326,7 +443,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
       p_routed_provider:estimate.provider,p_routed_model:estimate.model,
       p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
-      p_currency:estimate.currency,p_config_id:String(estimate.configId||""),
+      p_currency:estimate.currency,p_config_id:String(estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):"")),
       p_pricing_source:String(estimate.pricingSource||"runway_model_router_dry_run"),p_expires_at:expiresAt
      }});
      if(quoteRecord!==quoteId)throw Object.assign(new Error("The non-billable workflow quote could not be durably recorded."),{code:"VIDEO_WORKFLOW_QUOTE_PERSISTENCE_FAILED"});
@@ -336,9 +453,9 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       model:workflowRequest.model,operation:workflowRequest.operation,
       routedProvider:estimate.provider,routedModel:estimate.model,
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
-      currency:estimate.currency,configId:estimate.configId,
+      currency:estimate.currency,configId:estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):null),
       pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
-      requiresExplicitApproval:true,paidExecutionEnabled:cloudVideoWorkerLaunchConfigured(env),
+      requiresExplicitApproval:true,paidExecutionEnabled:workflowProviderLaunchConfigured(env,workflowRequest),
       expiresAt
      }});
     }catch(error){
@@ -363,31 +480,44 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     const approvalNote=typeof body.approvalNote==="string"?body.approvalNote.trim():"Approved by project editor in Video Studio";
     if(!approvalNote||approvalNote.length>1000)return response(400,{error:{code:"VIDEO_WORKFLOW_APPROVAL_NOTE_INVALID",message:"Approval note must contain 1 to 1,000 characters."}});
     try{
-     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     const approvalNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
+     const workflowRequest=createVideoWorkflowCloudRequest({node:approvalNode,values:body.values||{},projectId,requestId});
      const isLuma=workflowRequest.provider==="luma";
-     const configId=isLuma?"luma-ray32":String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
-     const quoteAdapter=isLuma?lumaWorkflowAdapter:workflowRouterAdapter;
-     const remoteReady=isLuma?cloudVideoWorkerLaunchConfigured(env):
+     const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
+     const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
+     const quoteAdapter=isLuma?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
+     const remoteReady=isLuma?lumaLaunchConfigured(env):directRunway?directRunwayLaunchConfigured(env,workflowRequest.model):runwayRouterLaunchConfigured(env);
       env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&
       env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&
       env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(configId)&&
       Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
-     if(!quoteAdapter||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"The selected provider's worker, remote-execution, private-file and gateway release gates are not all configured."}});
+     if((!quoteAdapter&&!directRunway)||!remoteReady)return response(503,{error:{code:"VIDEO_WORKFLOW_CLOUD_EXECUTION_DISABLED",message:"The selected provider's worker, remote-execution, private-file and gateway release gates are not all configured."}});
+     if(directRunway&&!await validateDirectRunwayFrameAsset(service.assets,ownerId,projectId,workflowRequest.input.startFrameAssetId))
+      return response(422,{error:{code:"RUNWAY_WORKFLOW_FRAME_ASSET_INVALID",message:"The first frame must remain a verified private image asset in this exact project."}});
      if(isLuma&&!await validateLumaFrameAssets(ownerId,projectId,workflowRequest.input))
       return response(422,{error:{code:"LUMA_WORKFLOW_FRAME_ASSET_INVALID",message:"Luma frame inputs must remain verified private image assets in this exact project."}});
-     if(workflowRequest.input.sourceVideoAssetId){
-      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video approval requires a private server-side source metadata probe."}});
-      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
-      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+     const approvalMetadataSourceId=workflowRequest.input.sourceVideoAssetId||workflowRequest.input.sourceDraftVideoAssetId;
+     if(approvalMetadataSourceId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video source approval requires a private server-side source metadata probe."}});
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:approvalMetadataSourceId});
+      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==approvalMetadataSourceId||
          !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
          metadata.durationSeconds<2||metadata.durationSeconds>30){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must remain a verified project asset between 2 and 30 seconds."}});
       }
-      if(Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+      if(workflowRequest.model==="gemini_omni_flash_1.2"){
+       const mode=workflowRequest.input.mode||"reference";
+       const maxSourceSeconds=mode==="extend"?30:10;
+       if(!["reference","extend","edit"].includes(mode)||!Number.isFinite(metadata.durationSeconds)||metadata.durationSeconds<=0||
+          metadata.durationSeconds>maxSourceSeconds||mode==="edit"&&metadata.durationSeconds>=10){
+        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"Gemini Omni 1.2 reference sources must be at most 10 seconds, edit sources must be under 10 seconds, and extend sources must be at most 30 seconds."}});
+       }
+      }
+      if(!directRunway&&Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
        return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the current server-probed source duration."}});
       }
      }
-     const prepared=await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}});
+     const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{

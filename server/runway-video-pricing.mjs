@@ -156,7 +156,7 @@ export function estimateRunwayVideoCredits(options={}) {
       minimum(resolutionRate({"480p":7,"720p":15}),28); break;
     case "seedance2_5": {
       const rates={
-        "480p":{output:20,input:10}, "720p":{output:30,input:15}, "1080p":{output:68,input:34}
+        "480p":{output:20,input:10}, "720p":{output:30,input:15}, "1080p":{output:68,input:34}, "4k":{output:110,input:57}
       };
       const rate=rates[resolution(outputResolution,Object.keys(rates))];
       const billableInput=Math.min(30,inputVideo+referenceVideo);

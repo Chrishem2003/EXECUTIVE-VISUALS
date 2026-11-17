@@ -182,6 +182,11 @@ function renderBatchMediaControls():string{
  if(!videos.length)return "";
  return '<section class="ai-upscale-batch"><div class="runtime-section-heading"><div><div class="eyebrow">BATCH VIDEO FINISHING</div><h3>Process selected video originals</h3></div><span>'+videos.length+' eligible video(s)</span></div><p>Select source videos in the library, choose one FFmpeg operation and queue up to 50 independent derivative jobs. Original files are never overwritten; these deterministic operations do not call paid AI providers.</p><form id="ev-media-batch-form" class="ai-upscale-batch-controls"><label>Operation<select name="jobType"><option value="media.color">Color correction</option><option value="media.denoise">Video denoise</option><option value="media.resize">Resize / reframe</option><option value="media.interpolate">Frame interpolation</option><option value="media.proxy">Editing proxy</option><option value="media.audio_extract">Extract audio</option></select></label><label data-ev-media-option="media.color">Brightness · -1 to 1<input name="brightness" type="number" min="-1" max="1" step="0.05" value="0"></label><label data-ev-media-option="media.color">Contrast · 0 to 2<input name="contrast" type="number" min="0" max="2" step="0.05" value="1"></label><label data-ev-media-option="media.color">Saturation · 0 to 3<input name="saturation" type="number" min="0" max="3" step="0.05" value="1"></label><label data-ev-media-option="media.denoise" hidden>Denoise luma · 0 to 10<input name="luma" type="number" min="0" max="10" step="0.5" value="4"></label><label data-ev-media-option="media.denoise" hidden>Denoise chroma · 0 to 10<input name="chroma" type="number" min="0" max="10" step="0.5" value="3"></label><label data-ev-media-option="media.resize" hidden>Output width<input name="width" type="number" min="256" max="4320" step="2" value="1920"></label><label data-ev-media-option="media.resize" hidden>Output height<input name="height" type="number" min="144" max="4320" step="2" value="1080"></label><label data-ev-media-option="media.resize" hidden>Resize fit<select name="fit"><option value="contain">Contain · preserve full frame</option><option value="cover">Cover · fill and crop</option></select></label><label data-ev-media-option="media.interpolate" hidden>Target frame rate<input name="fps" type="number" min="24" max="60" step="1" value="30"></label><label data-ev-media-option="media.proxy" hidden>Proxy width<input name="proxyWidth" type="number" min="320" max="1920" step="2" value="960"></label><label data-ev-media-option="media.proxy" hidden>Proxy quality · CRF<input name="proxyCrf" type="number" min="18" max="35" step="1" value="28"></label><button class="primary" type="submit" '+(state.status==="online"?"":"disabled")+'>Queue selected video batch</button></form><small class="ai-upscale-footnote">Options are validated against the selected FFmpeg operation. Every item has its own queue record, progress, cancellation and derivative lineage. AI object replacement and other generative transformations remain separately gated.</small></section>';
 }
+function renderBatchAudioMasterControls():string{
+ const audios=state.assets.filter(asset=>String(asset.mediaType||"").startsWith("audio/")&&!asset.derivativeOf&&(asset.projectId||null)===(state.projectId||null));
+ if(!audios.length)return "";
+ return '<section class="ai-upscale-batch"><div class="runtime-section-heading"><div><div class="eyebrow">BATCH AUDIO MASTERING</div><h3>Master selected audio originals</h3></div><span>'+audios.length+' eligible audio asset(s)</span></div><p>Run measured two-pass EBU R128 loudness normalization. Each source gets a private 48 kHz / 24-bit PCM WAV master with measured loudness evidence. Originals remain unchanged; no paid AI provider is called.</p><form id="ev-audio-master-batch-form" class="ai-upscale-batch-controls"><div class="form-grid"><label>Integrated loudness · LUFS<input name="targetLufs" type="number" min="-24" max="-12" step="0.5" value="-16" required></label><label>Loudness range · LU<input name="targetLra" type="number" min="1" max="20" step="0.5" value="11" required></label><label>True-peak ceiling · dBTP<input name="truePeakDbtp" type="number" min="-9" max="-1" step="0.5" value="-1.5" required></label></div><fieldset><legend>Select original audio assets · up to 50</legend><div class="runtime-asset-select-list">'+audios.map(asset=>'<label class="runtime-asset-select"><input type="checkbox" name="sourceAssetIds" value="'+esc(asset.id)+'"><span><b>'+esc(asset.name)+'</b><small>'+esc(asset.mediaType)+' · '+(asset.size/1048576).toFixed(2)+' MB</small></span></label>').join("")+'</div></fieldset><button class="primary" type="submit" '+(state.status==="online"?"":"disabled")+'>Queue selected audio masters</button></form><small class="ai-upscale-footnote">Targets are validated before any job is written. Jobs are independently tracked, cancellable and retryable. Very short or silent audio may fail measurement rather than receive a misleading master.</small></section>';
+}
 function rebuildCreativeGraph(){
  const project=state.projects.find(item=>item.id===state.projectId);
  const workspace=state.creativeGraphWorkspace||{},production=project?.settings?.creativeProduction||{};
@@ -372,7 +377,7 @@ function renderJobs(){
   const batchMeta=batchId?'<small class="runtime-job-batch">Batch '+esc(batchId.slice(0,8))+' · '+esc(batchOperation)+' · item '+(batchIndex||"—")+'/'+(batchTotal||"—")+'</small>':"";
   const retryMeta=Number.isSafeInteger(j.input?.retrySequence)?'<small class="runtime-job-batch">Retry #'+Number(j.input.retrySequence)+' · of '+esc(String(j.input.retryOfJobId||"").slice(0,8))+'</small>':"";
   const canWriteJob=!j.projectId||["owner","editor"].includes(state.projects.find(project=>project.id===j.projectId)?.access_role||"");
-  return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div>'+batchMeta+retryMeta+'<code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+(j.status==="failed"&&canWriteJob&&["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"].includes(j.jobType)?'<button class="secondary" data-ev-retry="'+esc(j.id)+'">Retry job</button>':"")+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
+  return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div>'+batchMeta+retryMeta+'<code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+(j.status==="failed"&&canWriteJob&&["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"].includes(j.jobType)?'<button class="secondary" data-ev-retry="'+esc(j.id)+'">Retry job</button>':"")+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
  }).join("")+'</div>';
 }
 function persistenceNoticeMarkup(){
@@ -408,7 +413,7 @@ export function renderAssetLibrary(){
  startLocalJobPolling();
  return '<div id="runtime-workspace" data-runtime-view="library"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out</button>':'')+'</div>'+
  (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
- '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderBatchUpscaleControls()+renderBatchMediaControls()+renderAssets()+'</section>'+renderCloudAssetLibrary()+
+ '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderBatchUpscaleControls()+renderBatchMediaControls()+renderBatchAudioMasterControls()+renderAssets()+'</section>'+renderCloudAssetLibrary()+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3><small id="local-media-job-refresh-status">Live updates every 5 seconds while this library is open.</small><div id="local-media-jobs-list">'+renderJobs()+'</div></section></div>';
 }
 export function renderReferenceImageOptions(){
@@ -443,22 +448,28 @@ export function renderVideoModelOptions(){
  });
  return options.join("")||'<option value="" disabled>No verified video models available</option>';
 }
-export function renderVideoAspectRatioOptions(){
+export function selectedVideoModel(){
  const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
- const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
+ return providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
   .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
    (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
- if(selected?.provider.provider==="luma")return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9</option>';
- return '<option value="16:9" selected>16:9</option><option value="9:16">9:16</option>';
+}
+export function renderVideoAspectRatioOptions(){
+ const selected=selectedVideoModel();
+ const ratios=Array.isArray(selected?.model.aspectRatios)&&selected.model.aspectRatios.length?selected.model.aspectRatios:["16:9","9:16"];
+ return ratios.map((ratio,index)=>'<option value="'+esc(ratio)+'"'+(index===0?' selected':'')+'>'+esc(ratio)+'</option>').join("");
 }
 export function renderVideoResolutionOptions(){
- const providers=state.providers.filter(item=>item.provider==="runway"||item.provider==="google"||item.provider==="luma");
- const selected=providers.flatMap(provider=>(provider.availableModels||[]).map(model=>({provider,model})))
-  .find(({provider,model})=>provider.status==="ready"&&model.available===true&&model.executionVerified===true&&
-   (model.qualityVerified===true||model.readiness==="ready")&&provider.model===model.id);
- if(selected?.provider.provider==="luma")return '<option value="360p">360p · Draft</option><option value="540p">540p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>';
- if(selected?.provider.provider==="google")return '<option value="720p" selected>720p · Gemini Omni</option>';
- return '<option value="provider_default" selected>Provider default</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>';
+ const selected=selectedVideoModel();
+ const resolutions=Array.isArray(selected?.model.resolutions)&&selected.model.resolutions.length?selected.model.resolutions:["provider_default"];
+ return resolutions.map((resolution,index)=>'<option value="'+esc(resolution)+'"'+(index===0?' selected':'')+'>'+esc(resolution==="provider_default"?"Provider default":resolution.toUpperCase())+'</option>').join("");
+}
+export function renderVideoDurationOptions(){
+ const selected=selectedVideoModel(),model=selected?.model;
+ const minimum=Math.max(1,Math.ceil(Number(model?.minDurationSeconds??2)));
+ const maximum=Math.max(minimum,Math.min(60,Math.floor(Number(model?.maxDurationSeconds??10))));
+ const values:number[]=Array.from({length:maximum-minimum+1},(_,index)=>minimum+index);
+ return values.map((duration,index)=>'<option value="'+duration+'"'+(duration===5||index===0?' selected':'')+'>'+duration+' seconds</option>').join("");
 }
 export function renderVideoModelNote(){
  const luma=state.providers.find(item=>item.provider==="luma");
@@ -470,7 +481,7 @@ export function renderVideoModelNote(){
  }
  const provider=state.providers.find(item=>item.provider==="runway");
  if(!provider)return "The active provider is configured server-side. Verified Runway and Luma models appear only when their worker and governance gates are ready.";
- return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The adapter supports text-to-video and one first-frame image-to-video reference. Multi-frame references, video-to-video and native audio controls are not yet enabled.";
+ return esc(provider.status==="ready"?"Runway is configured. Only exact allowlisted model profiles are selectable; provider billing applies to each approved generation.":provider.reason)+" Seedance 2.5 supports text, first-frame image and private source-video reference/extend/edit. Kling 4 supports text, first-frame image and private source-video editing. Kling 3.0 Standard, Pro and 4K support text/image generation, multi-shot prompt segments and model-gated audio. Unsupported reference collections and keyframe modes remain disabled.";
 }
 export function renderEngineStatus(){
  const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";
@@ -632,6 +643,21 @@ document.addEventListener("submit",event=>{
    .then(async result=>{state.message=result.status==="replayed"?"Existing media batch restored · "+result.total+" jobs.":"Video finishing batch queued · "+result.total+" independent jobs. Originals remain unchanged.";await refresh();paint();})
    .catch(error=>{state.message=error instanceof Error?error.message:"Video finishing batch could not be queued.";paint();})
    .finally(()=>{const current=document.querySelector<HTMLButtonElement>('#ev-media-batch-form button[type="submit"]');if(current){current.disabled=state.status!=="online";current.textContent="Queue selected video batch";}});
+  return;
+ }
+ if(form.id==="ev-audio-master-batch-form"){
+  event.preventDefault();
+  const data=new FormData(form),selected=data.getAll("sourceAssetIds").map(String).filter(Boolean);
+  if(!selected.length){alert("Select at least one original audio asset in the current project.");return;}
+  if(selected.length>50){alert("An audio mastering batch can contain at most 50 source assets.");return;}
+  const targets={targetLufs:Number(data.get("targetLufs")),targetLra:Number(data.get("targetLra")),truePeakDbtp:Number(data.get("truePeakDbtp"))};
+  if(!Object.values(targets).every(Number.isFinite)){alert("Enter valid finite EBU R128 mastering targets.");return;}
+  const button=form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if(button){button.disabled=true;button.textContent="Validating and queueing…";}
+  void apiRequest<{batchId:string;total:number;status:string}>("/api/jobs/media-batch",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({projectId:state.projectId||null,jobType:"media.audio-master",options:targets,items:selected.map(sourceAssetId=>({sourceAssetId}))})})
+   .then(async result=>{state.message=result.status==="replayed"?"Existing audio mastering batch restored · "+result.total+" jobs.":"Audio mastering batch queued · "+result.total+" independent two-pass EBU R128 jobs. Originals remain unchanged.";await refresh();paint();})
+   .catch(error=>{state.message=error instanceof Error?error.message:"Audio mastering batch could not be queued.";paint();})
+   .finally(()=>{const current=document.querySelector<HTMLButtonElement>('#ev-audio-master-batch-form button[type="submit"]');if(current){current.disabled=state.status!=="online";current.textContent="Queue selected audio masters";}});
   return;
  }
  if(form.id==="ev-auth-recover"){event.preventDefault();const email=String(new FormData(form).get("email")||"");void apiRequest<{ok:boolean;message:string}>("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(result=>{state.message=result.message;paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Could not request a recovery email.";paint();});return;}
