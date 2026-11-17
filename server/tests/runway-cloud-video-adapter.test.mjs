@@ -417,7 +417,7 @@ test("Veo preflight refuses paid submission when linked linked-workspace billing
     fetchImpl: async () => { providerCalls += 1; return new Response(JSON.stringify({ id })); }
   });
   await assert.rejects(
-    () => adapter.preflight({ provider: "runway", model: "veo3.1", prompt: "A quiet mountain lake", durationSeconds: 4 }),
+    () => adapter.submit({ provider: "runway", model: "veo3.1", prompt: "A quiet mountain lake", durationSeconds: 4 }),
     error => error.code === "RUNWAY_TASK_BILLING_LINK_REQUIRED"
   );
   assert.equal(providerCalls, 0);
@@ -442,7 +442,7 @@ test("Veo preflight rates are model-specific and do not alter other Runway adapt
   const standard = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1" });
   const fast = createRunwayCloudVideoAdapter({ ...base, model: "veo3.1_fast" });
   const gen = createRunwayCloudVideoAdapter({ ...base, model: "gen4.5" });
-  assert.equal((await standard.preflight({ durationSeconds: 6, audio: false })).estimatedUsd, 1.2);
-  assert.equal((await fast.preflight({ durationSeconds: 6, audio: true })).estimatedUsd, 0.9);
+  assert.equal((await standard.preflight({ provider: "runway", model: "veo3.1", prompt: "A quiet lake", durationSeconds: 6, audio: false })).estimatedUsd, 1.2);
+  assert.equal((await fast.preflight({ provider: "runway", model: "veo3.1_fast", prompt: "A quiet lake", durationSeconds: 6, audio: true })).estimatedUsd, 0.9);
   assert.equal(typeof gen.preflight, "undefined");
 });
