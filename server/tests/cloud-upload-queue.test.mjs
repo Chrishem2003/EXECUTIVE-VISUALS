@@ -42,6 +42,20 @@ test("cloud upload queue never exceeds its configured concurrency and reports ev
   assert.equal(updates.filter(x=>x==="succeeded").length,9);
 });
 
+test("cloud upload queue reports byte-level progress and final completion",async()=>{
+  const updates=[];
+  const results=await runCloudUploadQueue([item("1","progress.mp4")],async(value,_signal,onProgress)=>{
+    onProgress(value.size/2,value.size);
+    onProgress(value.size,value.size);
+  },{signal:new AbortController().signal,onUpdate:value=>updates.push(value)});
+  assert.equal(results[0].status,"succeeded");
+  assert.equal(results[0].progress,100);
+  assert.equal(results[0].uploadedBytes,10);
+  assert.equal(results[0].totalBytes,10);
+  assert.ok(updates.some(value=>value.progress===50));
+  assert.equal(updates.at(-1).progress,100);
+});
+
 test("a failed upload does not prevent other files from completing",async()=>{
   const items=[item("1","good.mp4"),item("2","bad.mp4"),item("3","also-good.mp4")];
   const results=await runCloudUploadQueue(items,async(value)=>{if(value.name==="bad.mp4")throw new Error("signature rejected");},{signal:new AbortController().signal,concurrency:2});
