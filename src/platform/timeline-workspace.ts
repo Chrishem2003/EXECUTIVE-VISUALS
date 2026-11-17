@@ -19,7 +19,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createGeneratedVideoClip, createTimeline, evaluateSpeedCurve, integrateSpeedCurve, moveClip, moveTrack, moveSpeedKeyframe, removeClip, removeTrack, normalizeAudioMasteringSettings, rational, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
-import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues } from "../core/timeline-playback";
+import { clampTimelineFrame, frameToTimelineSeconds, getTimelinePlaybackFrame, timelineDurationSeconds, selectTimelinePreviewAsset, isTimelinePreviewUrlFresh, shouldRetryTimelinePreviewUrl, shouldFallbackToTimelineSourcePreview, timelineClipPreviewFilter, timelineClipPreviewEffectValues, directionalVideoTransitionPreviewStyle } from "../core/timeline-playback";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { createTimelineHistory, createTimelineHistoryOperation, applyTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory, type TimelineHistory } from "../core/timeline-history-operations";
 import { retryTimelineSave } from "../core/timeline-save-retry";
@@ -391,6 +391,30 @@ function syncPreviewAtFrame(frame:number){
   const previewTrack=state.timeline!.tracks.find(track=>track.clips.some(clip=>clip.id===clipId));
   const previewClip=previewTrack?.clips.find(clip=>clip.id===clipId);
   const pictureClip=previewTrack?.kind==="video"&&previewClip?previewClip:null;
+  let directionalTransform="none";
+  element.style.clipPath="none";
+  if(pictureClip&&item&&previewTrack){
+   const ordered=previewTrack.clips.filter(clip=>clip.enabled).slice().sort((a,b)=>a.timelineStart.value/a.timelineStart.rate-b.timelineStart.value/b.timelineStart.rate);
+   const index=ordered.findIndex(clip=>clip.id===pictureClip.id),previous=ordered[index-1];
+   const incoming=previous?.transitionToNext;
+   const outgoing=pictureClip.transitionToNext;
+   const frameRate=state.timeline!.frameRate.numerator/state.timeline!.frameRate.denominator;
+   let transition:typeof incoming=null,role:"incoming"|"outgoing"="incoming",transitionStart=0;
+   if(incoming&&["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(incoming.type)){
+    transition=incoming;role="incoming";transitionStart=pictureClip.timelineStart.value/pictureClip.timelineStart.rate;
+   }else if(outgoing&&["wipeleft","wiperight","wipeup","wipedown","slideleft","slideright","slideup","slidedown"].includes(outgoing.type)){
+    transition=outgoing;role="outgoing";transitionStart=pictureClip.timelineStart.value/pictureClip.timelineStart.rate+pictureClip.duration.value/pictureClip.duration.rate-outgoing.fadeFrames/frameRate;
+   }
+   if(transition){
+    const transitionDuration=transition.fadeFrames/frameRate;
+    const progress=transitionDuration>0?(seconds-transitionStart)/transitionDuration:1;
+    const style=directionalVideoTransitionPreviewStyle(transition.type,progress,role);
+    element.style.clipPath=style.clipPath;directionalTransform=style.transform;
+   }
+   element.style.zIndex=String(item.trackIndex*100000+Math.round(item.timelineStartSeconds*1000));
+  }else if(item){
+   element.style.zIndex=String(item.trackIndex*100000);
+  }
   element.style.filter=pictureClip?timelineClipPreviewFilter(pictureClip):"none";
   element.style.opacity=isAudio?"1":String(item?.opacity??1);
   if(isImage){
@@ -417,7 +441,7 @@ function syncPreviewAtFrame(frame:number){
    media.volume=Math.max(0,Math.min(1,Math.pow(10,item.gainDb/20)));
    if(pictureClip){
     const metadata=pictureClip.metadata||{},duration=pictureClip.duration.value/pictureClip.duration.rate,localTime=Math.max(0,seconds-pictureClip.timelineStart.value/pictureClip.timelineStart.rate),base={x:Number(metadata.x)||0,y:Number(metadata.y)||0,width:Math.max(16,Number(metadata.width)||state.timeline!.width),height:Math.max(16,Number(metadata.height)||state.timeline!.height),opacity:Math.max(0,Math.min(1,Number(metadata.opacity??1))),rotation:Number(metadata.rotation)||0},motion=evaluateMotionKeyframes(metadata.motionKeyframes as MotionKeyframe[]|undefined,localTime,base,duration,(metadata.motionPlaybackMode==="loop"||metadata.motionPlaybackMode==="ping-pong"?metadata.motionPlaybackMode:"none") as MotionPlaybackMode);
-    media.style.left=(motion.x/state.timeline!.width*100)+"%";media.style.top=(motion.y/state.timeline!.height*100)+"%";media.style.right="auto";media.style.bottom="auto";media.style.width=(motion.width/state.timeline!.width*100)+"%";media.style.height=(motion.height/state.timeline!.height*100)+"%";media.style.opacity=String(motion.opacity);media.style.transform="rotate("+motion.rotation+"deg)";media.style.transformOrigin="center center";
+    media.style.left=(motion.x/state.timeline!.width*100)+"%";media.style.top=(motion.y/state.timeline!.height*100)+"%";media.style.right="auto";media.style.bottom="auto";media.style.width=(motion.width/state.timeline!.width*100)+"%";media.style.height=(motion.height/state.timeline!.height*100)+"%";media.style.opacity=String(motion.opacity);media.style.transform=(directionalTransform!=="none"?directionalTransform+" ":"")+"rotate("+motion.rotation+"deg)";media.style.transformOrigin="center center";
    }else{
     media.style.left="0";media.style.top="0";media.style.right="0";media.style.bottom="0";media.style.width="100%";media.style.height="100%";media.style.opacity="1";media.style.transform="none";
    }
