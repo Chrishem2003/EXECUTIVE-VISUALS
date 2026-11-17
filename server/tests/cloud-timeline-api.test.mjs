@@ -32,7 +32,7 @@ test("private media upload returns 507 and a typed error when storage quota is r
  const f=setup({quotaError:"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"});
  const payload=Buffer.from([0,0,0,20,0x66,0x74,0x79,0x70,0,0,0,0]);
  const req=Readable.from([payload]);req.headers={"content-length":String(payload.length)};
- const result=await f.api.uploadAsset({req,ownerId:owner,projectId,originalName:"quota.mp4",mediaType:"video/mp4"});
+ const result=await f.api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"quota.mp4",mediaType:"video/mp4"});
  assert.equal(result.status,507);
  assert.equal(result.body.error.code,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED");
  assert.equal("detail" in result.body.error,false);
