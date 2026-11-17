@@ -160,7 +160,8 @@ test("expired and inactive sessions cannot accept additional part checkpoints",a
 
 test("claims expired active sessions with a lease and transitions them to expired after provider cleanup",async()=>{
  const {store,sessions,calls}=setup();
- const session=await store.create(createInput({expiresAt:"2026-11-17T11:00:00.000Z"}));
+ const session=await store.create(createInput());
+ sessions[0].expires_at="2026-11-17T11:00:00.000Z";
  const claimed=await store.claimExpiredSessions({limit:10});
  assert.equal(claimed.length,1);
  assert.equal(claimed[0].id,session.id);
@@ -174,7 +175,8 @@ test("claims expired active sessions with a lease and transitions them to expire
 
 test("does not reclaim a live completion claim and reclaims only stale cleanup leases",async()=>{
  const {store,sessions,advance}=setup();
- const session=await store.create(createInput({expiresAt:"2026-11-17T11:00:00.000Z"}));
+ const session=await store.create(createInput());
+ sessions[0].expires_at="2026-11-17T11:00:00.000Z";
  sessions[0].status="completing";
  sessions[0].completion_claimed_at="2026-11-17T11:59:00.000Z";
  assert.deepEqual(await store.claimExpiredSessions({limit:10}),[]);
