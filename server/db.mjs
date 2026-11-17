@@ -376,6 +376,8 @@ export function openDatabase(filename) {
     );
     CREATE INDEX IF NOT EXISTS control_remediation_history_action_idx ON control_remediation_history(action_id,id);
   `);
+  const reviewColumns = new Set(db.prepare("PRAGMA table_info(reviews)").all().map(column => column.name));
+  if (!reviewColumns.has("asset_sha256")) db.exec("ALTER TABLE reviews ADD COLUMN asset_sha256 TEXT");
   const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
   for (const [name, definition] of [
     ["available_at", "TEXT"],
