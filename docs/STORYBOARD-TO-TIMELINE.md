@@ -30,3 +30,16 @@ Changes use the existing validated timeline-history operation model. Undo/redo, 
 - No image/video generation, media provider submission, clip insertion, render or publication is performed.
 - Planned shots become actual media clips only after an approved asset exists and is attached through a later, validated operation.
 - Real-time collaborative editing and provider job-to-shot attachment remain later work.
+
+
+## Generated shot attachment status
+
+The model-storyboard generation workflow places completed shots as real video clips on the planned picture track. Each generated clip retains the exact `storyboardShotId`, approval ID, cloud asset ID and checksum in its metadata. The storyboard panel resolves attachment status from that exact shot ID, the planned picture track and the current project's authorized private video assets.
+
+The panel distinguishes:
+- **Asset pending** — no picture-track clip is linked to the shot ID
+- **Asset attached** — exactly one linked clip references an accessible project video asset
+- **Linked clip asset unavailable** — a linked clip exists but its asset is not in the authorized project asset set
+- **Multiple clips reference this shot** — ambiguous linkage requiring review
+
+Unrelated timeline clips and assets from other projects are never counted as storyboard attachments. Status is derived from the live timeline rather than cached plan metadata, so deleting or replacing a linked clip cannot leave a stale "attached" label.
