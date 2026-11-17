@@ -88,6 +88,7 @@ export async function uploadCloudAssetResumable(
   if (!projectId) throw new Error("Select a cloud project before uploading.");
   if (file.size < 5_000_000) throw new Error("B2 multipart uploads require files of at least 5 MB.");
   const digest = await sha256(file);
+  if (signal.aborted) throw new Error("Upload cancelled.");
   const key = resumeKey(file, projectId);
   let record = readResumeRecords().find(item => item.key === key && item.projectId === projectId && item.sha256 === digest);
   let session: UploadSession | null = null;
@@ -134,6 +135,7 @@ export async function uploadCloudAssetResumable(
     const end = Math.min(file.size, start + session.partSize);
     const chunk = file.slice(start, end);
     const chunkHash = await sha256(chunk);
+    if (signal.aborted) throw new Error("Upload cancelled.");
     const saved = completed.get(partNumber);
     if (saved) {
       if (saved.size !== chunk.size || saved.sha256 !== chunkHash) throw new Error("A saved upload part does not match the selected source file.");
