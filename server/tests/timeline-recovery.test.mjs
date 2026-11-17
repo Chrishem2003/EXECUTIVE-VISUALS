@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assessTimelineRecovery,
   checksumTimeline,
+  createRecoveryWriteTransaction,
   isTimelineRecoveryDraft,
   timelineRecoveryKey
 } from "../../src/core/timeline-recovery.ts";
@@ -63,4 +64,39 @@ test("checksum detects modified recovery snapshot", async () => {
   const assessment = await assessTimelineRecovery(value, 4);
   assert.equal(assessment.disposition, "invalid");
   assert.equal(assessment.draft, null);
+});
+
+
+test("recovery writes request strict IndexedDB durability", () => {
+  const calls = [];
+  const transaction = {};
+  const database = {
+    transaction(...args) { calls.push(args); return transaction; }
+  };
+  assert.equal(createRecoveryWriteTransaction(database, ["drafts", "journal"]), transaction);
+  assert.deepEqual(calls, [[["drafts", "journal"], "readwrite", { durability: "strict" }]]);
+});
+
+test("recovery writes fall back only when transaction options are unsupported", () => {
+  const calls = [];
+  const transaction = {};
+  const database = {
+    transaction(...args) {
+      calls.push(args);
+      if (calls.length === 1) throw new TypeError("Transaction options are not supported");
+      return transaction;
+    }
+  };
+  assert.equal(createRecoveryWriteTransaction(database, "drafts"), transaction);
+  assert.deepEqual(calls, [["drafts", "readwrite", { durability: "strict" }], ["drafts", "readwrite"]]);
+});
+
+test("recovery writes do not hide unrelated IndexedDB failures", () => {
+  const failure = new Error("database connection is closed");
+  let calls = 0;
+  const database = {
+    transaction() { calls++; throw failure; }
+  };
+  assert.throws(() => createRecoveryWriteTransaction(database, "drafts"), error => error === failure);
+  assert.equal(calls, 1);
 });

@@ -126,6 +126,29 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+/**
+ * Timeline recovery contains user-authored work, so prefer IndexedDB's strict
+ * durability hint for every write transaction. Older implementations may not
+ * accept transaction options; only that compatibility failure falls back to
+ * the browser default. Other database errors must remain visible to callers.
+ */
+export function createRecoveryWriteTransaction(
+  database: IDBDatabase,
+  storeNames: string | string[]
+): IDBTransaction {
+  try {
+    return database.transaction(storeNames, "readwrite", { durability: "strict" });
+  } catch (error) {
+    const name = error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name)
+      : "";
+    if (error instanceof TypeError || name === "NotSupportedError") {
+      return database.transaction(storeNames, "readwrite");
+    }
+    throw error;
+  }
+}
+
 export class TimelineRecoveryStore {
   private database: Promise<IDBDatabase> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
@@ -172,7 +195,7 @@ export class TimelineRecoveryStore {
     const write = this.writeQueue.then(async () => {
       const draft: TimelineRecoveryDraft = { ...input, checksum: await checksumTimeline(input.snapshot) };
       const db = await this.open();
-      const transaction = db.transaction(["drafts", "journal"], "readwrite");
+      const transaction = createRecoveryWriteTransaction(db, ["drafts", "journal"]);
       const done = transactionDone(transaction);
       transaction.objectStore("drafts").put(draft);
       transaction.objectStore("journal").add({
@@ -214,7 +237,7 @@ export class TimelineRecoveryStore {
       snapshot: structuredClone(draft.snapshot)
     };
     const db = await this.open();
-    const transaction = db.transaction(["checkpoints", "drafts"], "readwrite");
+    const transaction = createRecoveryWriteTransaction(db, ["checkpoints", "drafts"]);
     const done = transactionDone(transaction);
     transaction.objectStore("checkpoints").put(checkpoint);
     const draftStore = transaction.objectStore("drafts");
@@ -239,7 +262,7 @@ export class TimelineRecoveryStore {
 
   async clearDraft(key: string): Promise<void> {
     const db = await this.open();
-    const transaction = db.transaction("drafts", "readwrite");
+    const transaction = createRecoveryWriteTransaction(db, "drafts");
     const done = transactionDone(transaction);
     transaction.objectStore("drafts").delete(key);
     await done;
@@ -259,7 +282,7 @@ export class TimelineRecoveryStore {
     await transactionDone(read);
     const stale = entries.sort((a, b) => b.sequence - a.sequence).slice(TIMELINE_RECOVERY_LIMIT);
     if (!stale.length) return;
-    const write = db.transaction("journal", "readwrite");
+    const write = createRecoveryWriteTransaction(db, "journal");
     const done = transactionDone(write);
     for (const entry of stale) if (entry.id !== undefined) write.objectStore("journal").delete(entry.id);
     await done;
@@ -272,7 +295,7 @@ export class TimelineRecoveryStore {
     await transactionDone(read);
     const stale = checkpoints.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(20);
     if (!stale.length) return;
-    const write = db.transaction("checkpoints", "readwrite");
+    const write = createRecoveryWriteTransaction(db, "checkpoints");
     const done = transactionDone(write);
     for (const checkpoint of stale) write.objectStore("checkpoints").delete(checkpoint.id);
     await done;
