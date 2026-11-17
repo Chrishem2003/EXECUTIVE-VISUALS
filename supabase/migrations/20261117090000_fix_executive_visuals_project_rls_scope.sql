@@ -1,6 +1,6 @@
 -- Fix correlated references in Executive Visuals tenant RLS policies.
 -- In PostgreSQL, an unqualified project_id inside a project_members subquery
--- binds to the inner project_members row, producing m.project_id = m.project_id.
+-- binds to the inner project_members row, creating a tautological comparison against the inner row.
 -- Qualify every outer-row reference so membership is scoped to the target record.
 -- Storage policies must qualify objects.name; otherwise projects.name shadows it.
 
