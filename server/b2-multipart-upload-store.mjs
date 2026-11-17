@@ -65,6 +65,14 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
    for(const key of ["asset_id","project_id","object_path","upload_id","original_name","media_type","source_sha256","byte_size","part_size","part_count","storage_bucket","storage_provider"])if((existing[key]??null)!==(row[key]??null))throw Object.assign(new Error("Multipart idempotency key is already bound to different upload data."),{code:"B2_MULTIPART_IDEMPOTENCY_CONFLICT"});
    return normalizeSession(existing);
   },
+  async findByIdempotencyKey({ownerId,idempotencyKey}={}){
+   ownerId=validUuid(ownerId,"owner ID");
+   const key=String(idempotencyKey||"");
+   if(!key||key.length>200)throw new TypeError("Multipart idempotency key is invalid.");
+   const rows=await request("asset_multipart_upload_sessions?select=*&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+   const row=Array.isArray(rows)?rows[0]||null:null;
+   return row?{...normalizeSession(row),parts:await getParts(row.id)}:null;
+  },
   async get({ownerId,sessionId}={}){
    ownerId=validUuid(ownerId,"owner ID");sessionId=validUuid(sessionId,"session ID");
    const row=await getRaw(ownerId,sessionId);return row?{...normalizeSession(row),parts:await getParts(sessionId)}:null;
