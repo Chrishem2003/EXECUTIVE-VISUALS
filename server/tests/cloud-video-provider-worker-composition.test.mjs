@@ -163,6 +163,64 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
   ]);
 });
 
+test("registers Veo 3.1 standard and Fast through the shared Runway worker without enabling paid execution", () => {
+  const resolveRunwayActualCost = async ({ providerTaskId, model }) => ({
+    amount: 1, currency: "USD", evidenceReference: "test:runway-veo:" + model + ":" + providerTaskId
+  });
+  resolveRunwayActualCost.assertAvailable = async () => true;
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      RUNWAY_VIDEO_MODELS: "veo3.1,veo3.1_fast",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "false"
+    },
+    resolveRunwayActualCost
+  });
+  assert.deepEqual(worker.listSupported(), [
+    "fal:fal-ai/wan/v2.7/text-to-video",
+    "runway:veo3.1",
+    "runway:veo3.1_fast"
+  ]);
+});
+
+test("rejects Veo registration without authoritative task-level billing evidence", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: { ...env, RUNWAY_VIDEO_MODELS: "veo3.1", RUNWAY_API_KEY: "runway-test-key" }
+  }), /authoritative task-level billing resolver/);
+});
+
+test("Veo worker composition creates the exact-task Enterprise billing resolver only behind its opt-in", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      RUNWAY_VIDEO_MODELS: "veo3.1,veo3.1_fast",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "false",
+      RUNWAY_WORKSPACE_USAGE_ENABLED: "true"
+    }
+  });
+  assert.deepEqual(worker.listSupported(), [
+    "fal:fal-ai/wan/v2.7/text-to-video",
+    "runway:veo3.1",
+    "runway:veo3.1_fast"
+  ]);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env, RUNWAY_VIDEO_MODELS: "veo3.1", RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_WORKSPACE_USAGE_ENABLED: "false"
+    }
+  }), /Enterprise workspace usage gate/);
+});
+
 test("refuses Runway worker registration without authoritative task-level cost resolution", () => {
   assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
     ...base,
