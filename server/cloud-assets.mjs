@@ -267,6 +267,49 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
+    async registerVerifiedObject({ownerId,projectId=null,assetId,originalName,mediaType,size,sha256,derivativeOf=null,metadata={}}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
+      assetId=validUuid(assetId,"asset ID");
+      if(derivativeOf!==null&&derivativeOf!==undefined)derivativeOf=validUuid(derivativeOf,"derivative ID");else derivativeOf=null;
+      if(!EXTENSIONS.has(mediaType))throw new Error("Unsupported cloud asset media type.");
+      if(!Number.isSafeInteger(size)||size<1)throw new Error("Verified cloud asset size is invalid.");
+      if(!/^[a-f0-9]{64}$/i.test(String(sha256||"")))throw new Error("Verified cloud asset SHA-256 is invalid.");
+      if(!plainObject(metadata))throw new Error("Cloud asset metadata must be a JSON object.");
+      if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
+      if(typeof storage.verifyObject!=="function")throw new Error("Cloud storage adapter does not support independent object verification.");
+      metadata=JSON.parse(JSON.stringify(metadata));
+      await allowed(ownerId,projectId,"write");
+      const name=safeName(originalName);
+      const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+EXTENSIONS.get(mediaType)});
+      const verified=await storage.verifyObject(objectPath,{expectedSize:size,expectedSha256:String(sha256).toLowerCase(),contentType:mediaType});
+      if(verified?.bucket!=="executive-visuals-media"||verified?.path!==objectPath||verified?.size!==size||verified?.sha256!==String(sha256).toLowerCase()||verified?.contentType!==mediaType){
+        throw Object.assign(new Error("Private storage object verification did not match the reserved asset identity."),{code:"CLOUD_STORAGE_OBJECT_VERIFICATION_MISMATCH"});
+      }
+      const select="id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at";
+      const matches=row=>Boolean(row&&row.id===assetId&&row.owner_id===ownerId&&(row.project_id||null)===projectId&&row.original_name===name&&row.media_type===mediaType&&Number(row.byte_size)===size&&row.sha256===String(sha256).toLowerCase()&&row.storage_bucket==="executive-visuals-media"&&row.object_path===objectPath&&row.derivative_of===(derivativeOf||null)&&!row.deleted_at&&canonicalJson(row.metadata||{})===canonicalJson(metadata));
+      const lookup=async()=>{
+        const rows=await request("assets?select="+select+"&id=eq."+encodeURIComponent(assetId)+"&limit=1");
+        return Array.isArray(rows)?rows[0]||null:null;
+      };
+      let rows;
+      try{
+        rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{
+          id:assetId,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:size,sha256:String(sha256).toLowerCase(),storage_bucket:"executive-visuals-media",object_path:objectPath,derivative_of:derivativeOf,metadata
+        }});
+      }catch(error){
+        if(error.status!==409)throw error;
+        const existing=await lookup();
+        if(matches(existing))return publicAsset(existing);
+        throw Object.assign(new Error("Reserved cloud asset ID is already bound to different metadata."),{code:"CLOUD_ASSET_IDENTITY_CONFLICT"});
+      }
+      if(!Array.isArray(rows)||rows.length!==1||!matches(rows[0])){
+        const existing=await lookup();
+        if(matches(existing))return publicAsset(existing);
+        throw Object.assign(new Error("Verified cloud asset metadata was not persisted with its reserved identity."),{code:"CLOUD_ASSET_REGISTRATION_FAILED"});
+      }
+      return publicAsset(rows[0]);
+    },
     async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
       ownerId=validUuid(ownerId,"owner ID");
       if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
