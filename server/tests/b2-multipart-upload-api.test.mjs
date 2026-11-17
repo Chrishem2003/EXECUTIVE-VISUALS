@@ -7,11 +7,12 @@ const projectId="22222222-2222-4222-8222-222222222222";
 const sha="a".repeat(64);
 const etag1="a".repeat(32),etag2="b".repeat(32);
 
-function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,claim={claimed:true,reason:"claimed"},quota={remainingOwnerBytes:1_000_000_000,remainingTotalBytes:1_000_000_000}}={}){
+function fixture({authorize=async()=>true,existing=null,providerParts=null,verifyInitially=false,claim={claimed:true,reason:"claimed"},quota={remainingOwnerBytes:1_000_000_000,remainingTotalBytes:1_000_000_000},registrationError=null}={}){
  const calls={storage:[],ledger:[],assets:[]};
  let session=null,parts=[];
  const storage={
   async beginMultipartUpload(path,type){calls.storage.push(["begin",path,type]);return{uploadId:"upload_12345678"};},
+  async remove(path){calls.storage.push(["remove",path]);return true;},
   async createMultipartPartSignedUrl(path,id,part,ttl){calls.storage.push(["signed",path,id,part,ttl]);return"https://b2.example/signed?part="+part;},
   async listMultipartParts(path,id){calls.storage.push(["list",path,id]);return{parts:providerParts||[{partNumber:1,etag:etag1,size:5_000_000},{partNumber:2,etag:etag2,size:1_000_000}],truncated:false};},
   async completeMultipartUpload(path,id,items){calls.storage.push(["complete",path,id,items]);return{bucket:"executive-visuals-media",path,parts:items.length};},
@@ -26,9 +27,9 @@ function fixture({authorize=async()=>true,existing=null,providerParts=null,verif
   async listParts(){return{session,parts:[...parts]};},
   async claimCompletion(){calls.ledger.push(["claim"]);return claim;},
   async markCompleted(){session={...session,status:"completed"};calls.ledger.push(["completed"]);return true;},
-  async markAborted(){session={...session,status:"aborted"};return true;}
+  async markAborted(){session={...session,status:"aborted"};calls.ledger.push(["aborted"]);return true;}
  };
- const assets={async getStorageUsage(){return quota;},async registerVerifiedObject(input){calls.assets.push(input);return{id:input.assetId,ownerId,projectId:input.projectId,name:input.originalName,size:input.size,sha256:input.sha256};}};
+ const assets={async getStorageUsage(){return quota;},async registerVerifiedObject(input){calls.assets.push(input);if(registrationError)throw registrationError;return{id:input.assetId,ownerId,projectId:input.projectId,name:input.originalName,size:input.size,sha256:input.sha256};}};
  const api=createB2MultipartUploadApi({storage,store,assets,authorize,maxBytes:100_000_000,partSize:5_000_000});
  return{api,calls,get session(){return session;},get parts(){return parts;}};
 }
@@ -87,6 +88,19 @@ test("reconciles provider parts, verifies the completed object, and only then pu
  assert.equal(f.calls.storage.filter(x=>x[0]==="complete").length,1);
  assert.equal(f.calls.assets.length,1);
  assert.equal(f.calls.ledger.at(-1)[0],"completed");
+});
+
+test("removes a completed object when final Asset Library quota enforcement rejects publication",async()=>{
+ const f=fixture({registrationError:Object.assign(new Error("quota exceeded"),{code:"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED"})});
+ await f.api.start(startInput);
+ const id=f.session.id;
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:1,body:{etag:etag1,sha256:sha,size:5_000_000}});
+ await f.api.recordPart({ownerId,sessionId:id,partNumber:2,body:{etag:etag2,sha256:sha,size:1_000_000}});
+ const result=await f.api.complete({ownerId,sessionId:id});
+ assert.equal(result.status,409);
+ assert.equal(f.calls.storage.filter(x=>x[0]==="remove").length,1);
+ assert.equal(f.calls.ledger.at(-1)[0],"aborted");
+ assert.equal(f.calls.ledger.some(x=>x[0]==="completed"),false);
 });
 
 test("recovers an already completed provider object without completing the multipart upload twice",async()=>{
