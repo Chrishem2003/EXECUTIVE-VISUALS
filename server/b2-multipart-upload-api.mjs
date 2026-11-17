@@ -14,7 +14,7 @@ function safeName(value){return String(value||"upload").normalize("NFKC").replac
 export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBytes=1024*1024*1024,partSize=DEFAULT_PART,clock=()=>new Date(),signedUrlTtlSeconds=300}={}){
  if(!storage||typeof storage.beginMultipartUpload!=="function"||typeof storage.createMultipartPartSignedUrl!=="function"||typeof storage.listMultipartParts!=="function"||typeof storage.completeMultipartUpload!=="function"||typeof storage.abortMultipartUpload!=="function"||typeof storage.verifyObject!=="function")throw new Error("B2 multipart API requires the complete private storage adapter.");
  if(!store||!["create","findByIdempotencyKey","get","recordPart","listParts","claimCompletion","markCompleted","markAborted"].every(k=>typeof store[k]==="function"))throw new Error("B2 multipart API requires the durable session ledger.");
- if(!assets||typeof assets.registerVerifiedObject!=="function")throw new Error("B2 multipart API requires verified Asset Library registration.");
+ if(!assets||typeof assets.registerVerifiedObject!=="function"||typeof assets.getStorageUsage!=="function")throw new Error("B2 multipart API requires verified Asset Library registration and quota checks.");
  if(typeof authorize!=="function")throw new Error("B2 multipart API requires project authorization.");
  if(!Number.isSafeInteger(maxBytes)||maxBytes<MIN_PART||maxBytes>1024*1024*1024)throw new Error("B2 multipart maximum size is invalid.");
  if(!Number.isSafeInteger(partSize)||partSize<MIN_PART||partSize>5*1024*1024*1024)throw new Error("B2 multipart part size is invalid.");
@@ -72,6 +72,9 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
     if(!matches)return fail(409,"B2_MULTIPART_IDEMPOTENCY_CONFLICT","This idempotency key is already bound to different upload data.");
     return {status:200,body:{session:publicSession(existing),idempotentReplay:true}};
    }
+   const usage=await assets.getStorageUsage({ownerId});
+   if(!usage||!Number.isSafeInteger(usage.remainingOwnerBytes)||!Number.isSafeInteger(usage.remainingTotalBytes))throw Object.assign(new Error("Private asset storage quota could not be verified."),{code:"CLOUD_ASSET_STORAGE_QUOTA_UNAVAILABLE"});
+   if(size>usage.remainingOwnerBytes||size>usage.remainingTotalBytes)return fail(409,"CLOUD_ASSET_STORAGE_QUOTA_EXCEEDED","This upload exceeds the remaining private storage quota.");
    const assetId=randomUUID(),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"})[mediaType]});
    const begun=await storage.beginMultipartUpload(objectPath,mediaType);
    try{
