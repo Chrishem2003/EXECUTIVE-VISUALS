@@ -17,7 +17,7 @@ These defaults leave headroom below the Supabase Free storage allowance while th
 
 ## Usage endpoint
 
-Authenticated application users can request `GET /api/cloud/assets/usage`. The server derives the owner from the verified session and returns global and owner usage, limits and remaining capacity. The underlying `get_asset_storage_usage` RPC is executable only by `service_role`; the limits table is not exposed to client roles.
+Authenticated application users can request `GET /api/cloud/assets/usage`. The server derives the owner from the verified session and returns global and owner usage, limits and remaining capacity. The underlying `get_asset_storage_usage` RPC is executable only by `service_role`; the limits table is not exposed to client roles. The public API response contains only the requesting owner's counters; global usage and global quota details remain server-side.
 
 ## Future R2 configuration
 
