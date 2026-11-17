@@ -115,9 +115,9 @@ set row_security = off
 as $$
   select
     coalesce(sum(a.byte_size), 0)::bigint,
-    count(a.id) filter (where a.id is not null)::bigint,
+    (count(a.id) filter (where a.id is not null))::bigint,
     coalesce(sum(a.byte_size) filter (where a.owner_id = p_owner_id), 0)::bigint,
-    count(a.id) filter (where a.owner_id = p_owner_id)::bigint,
+    (count(a.id) filter (where a.owner_id = p_owner_id))::bigint,
     limits.max_total_bytes,
     limits.max_owner_bytes,
     greatest(limits.max_total_bytes - coalesce(sum(a.byte_size), 0), 0)::bigint,
