@@ -67,7 +67,7 @@ export function createBackblazeB2Storage({
   fetchImpl = globalThis.fetch,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024,
-  multipartThresholdBytes = DEFAULT_MULTIPART_THRESHOLD_BYTES,
+  multipartThresholdBytes = Math.min(DEFAULT_MULTIPART_THRESHOLD_BYTES, maxBytes),
   multipartPartBytes = DEFAULT_MULTIPART_PART_BYTES,
   clock = () => new Date()
 } = {}) {
