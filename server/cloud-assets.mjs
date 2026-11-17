@@ -314,7 +314,6 @@ export function createCloudAssetRepository({
       const fields=["global_bytes","global_asset_count","owner_bytes","owner_asset_count","max_total_bytes","max_owner_bytes","remaining_total_bytes","remaining_owner_bytes"];
       const values=Object.fromEntries(fields.map(key=>[key,Number(row[key])]));
       if(fields.some(key=>!Number.isSafeInteger(values[key])||values[key]<0)||
-         values.global_bytes>values.max_total_bytes||values.owner_bytes>values.max_owner_bytes||
          values.remaining_total_bytes!==Math.max(0,values.max_total_bytes-values.global_bytes)||
          values.remaining_owner_bytes!==Math.max(0,values.max_owner_bytes-values.owner_bytes)) {
         throw new Error("Cloud asset storage usage returned an invalid quota record.");
