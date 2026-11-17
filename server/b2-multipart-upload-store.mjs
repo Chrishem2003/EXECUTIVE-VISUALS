@@ -19,11 +19,12 @@ function normalizeSession(row){
  * It stores opaque provider IDs and per-part receipts; callers must perform
  * project authorization before invoking this repository.
  */
-export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timeoutMs=12000,clock=()=>new Date()}={}){
+export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timeoutMs=12000,completionLeaseMs=5*60*1000,clock=()=>new Date()}={}){
  if(!url||!serviceRoleKey)throw new Error("B2 multipart ledger requires Supabase service credentials.");
  if(typeof fetchImpl!=="function")throw new Error("B2 multipart ledger requires fetch.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)throw new Error("B2 multipart ledger timeout is invalid.");
  if(typeof clock!=="function")throw new Error("B2 multipart ledger clock must be a function.");
+ if(!Number.isInteger(completionLeaseMs)||completionLeaseMs<30_000||completionLeaseMs>60*60*1000)throw new Error("B2 multipart completion lease must be between 30 seconds and one hour.");
  let base;try{const parsed=new URL(url);if(parsed.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(parsed.hostname))throw new Error();if(parsed.username||parsed.password||parsed.search||parsed.hash)throw new Error();base=parsed.origin;}catch{throw new Error("B2 multipart ledger URL must be safe HTTPS.");}
  async function request(path,{method="GET",body=null,prefer=null}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -100,11 +101,17 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
   async claimCompletion({ownerId,sessionId}={}){
    ownerId=validUuid(ownerId,"owner ID");sessionId=validUuid(sessionId,"session ID");
    const session=await getRaw(ownerId,sessionId);if(!session)return {claimed:false,reason:"not_found"};
-   if(session.status==="completing")return {claimed:false,reason:"already_completing"};
-   if(session.status!=="active"||new Date(session.expires_at)<=clock())return {claimed:false,reason:"not_active"};
+   const now=clock(),nowIso=now.toISOString();
+   if(session.status==="completing"){
+    const claimedAt=Date.parse(session.completion_claimed_at||"");
+    if(!Number.isFinite(claimedAt)||now.getTime()-claimedAt<completionLeaseMs)return {claimed:false,reason:"already_completing"};
+    const reclaimed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.completing&completion_claimed_at=eq."+encodeURIComponent(session.completion_claimed_at),{method:"PATCH",body:{completion_claimed_at:nowIso,updated_at:nowIso},prefer:"return=representation"});
+    return {claimed:Array.isArray(reclaimed)&&reclaimed.length===1,reason:Array.isArray(reclaimed)&&reclaimed.length===1?"reclaimed_stale_completion":"claim_race"};
+   }
+   if(session.status!=="active"||new Date(session.expires_at)<=now)return {claimed:false,reason:"not_active"};
    const parts=await getParts(sessionId);
    if(parts.length!==Number(session.part_count)||parts.some((part,index)=>part.partNumber!==index+1))return {claimed:false,reason:"parts_incomplete",received:parts.length,expected:Number(session.part_count)};
-   const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.active",{method:"PATCH",body:{status:"completing",completion_claimed_at:clock().toISOString(),updated_at:clock().toISOString()},prefer:"return=representation"});
+   const changed=await request("asset_multipart_upload_sessions?id=eq."+encodeURIComponent(sessionId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&status=eq.active",{method:"PATCH",body:{status:"completing",completion_claimed_at:nowIso,updated_at:nowIso},prefer:"return=representation"});
    return {claimed:Array.isArray(changed)&&changed.length===1,reason:Array.isArray(changed)&&changed.length===1?"claimed":"claim_race"};
   },
   async markCompleted({ownerId,sessionId}={}){
