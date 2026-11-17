@@ -1,4 +1,4 @@
-import { addMarker, addTrack, createTimeline, rational, validateTimeline, type EditorialTimeline, type TimelineMarker } from "./timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, rational, validateTimeline, type EditorialTimeline, type TimelineClip, type TimelineMarker } from "./timeline.ts";
 
 export interface StoryboardShotInput {
   id: string; number: number; durationSeconds: number; shotType: string; framing: string; angle: string;
@@ -199,4 +199,61 @@ export function getStoryboardShotAssetAttachments(
     }
   }
   return result;
+}
+
+
+export interface StoryboardShotAssetInput {
+  clipId:string;
+  assetId:string;
+  name:string;
+  mediaType:string;
+  sourceDurationSeconds:number;
+}
+
+/**
+ * Attach an already-authorized video asset to one planned storyboard shot.
+ * Authorization is checked by the caller/server; this core operation enforces
+ * timeline identity, source duration, exact shot timing and duplicate safety.
+ */
+export function attachStoryboardShotAsset(
+  timeline:EditorialTimeline,
+  plan:StoryboardTimelinePlan,
+  shotId:string,
+  asset:StoryboardShotAssetInput,
+):EditorialTimeline {
+  if(!timeline||!plan||timeline.projectId.trim().length===0)throw fail("An existing project timeline and storyboard plan are required.");
+  if(!validId(shotId)||!validId(asset?.clipId)||!validId(asset?.assetId)||!validText(asset?.name,240))throw fail("A valid shot, clip and project asset are required.");
+  if(typeof asset.mediaType!=="string"||!asset.mediaType.toLowerCase().startsWith("video/"))throw fail("Storyboard shots accept video assets only.");
+  const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
+  if(!Number.isFinite(fps)||fps<=0||Math.abs(fps-plan.frameRate)>0.000001)throw fail("Storyboard and timeline frame rates must match exactly before attaching media.");
+  const savedPlan=timeline.metadata?.storyboardPlan as StoryboardTimelinePlan|undefined;
+  if(!savedPlan||savedPlan.sourceStoryboardId!==plan.sourceStoryboardId||savedPlan.sourceInputHash!==plan.sourceInputHash)throw fail("The storyboard plan does not belong to the current timeline revision.");
+  const shot=plan.scenes.flatMap(scene=>scene.shots).find(item=>item.id===shotId);
+  if(!shot||shot.targetTrackId!==plan.trackIds.picture)throw fail("The selected storyboard shot has invalid picture-track lineage.");
+  const track=timeline.tracks.find(item=>item.id===plan.trackIds.picture&&item.kind==="video");
+  if(!track)throw fail("The storyboard picture track is missing.");
+  if(track.locked||!track.enabled)throw fail("Unlock and enable the storyboard picture track before attaching media.");
+  if(track.clips.some(clip=>clip.metadata?.storyboardShotId===shotId))throw fail("This storyboard shot already has a linked clip. Resolve the existing attachment before replacing it.");
+  if(timeline.tracks.some(item=>item.clips.some(clip=>clip.id===asset.clipId)))throw fail("The new storyboard clip ID already exists in this timeline.");
+  if(!Number.isSafeInteger(shot.startFrame)||shot.startFrame<0||!Number.isSafeInteger(shot.durationFrames)||shot.durationFrames<1)throw fail("The storyboard shot timing is invalid.");
+  const durationSeconds=shot.durationFrames/plan.frameRate;
+  if(!Number.isFinite(asset.sourceDurationSeconds)||asset.sourceDurationSeconds+0.000001<durationSeconds)throw fail("The selected source video is shorter than the planned shot. Probe or choose a longer source.");
+  const clip:TimelineClip={
+    id:asset.clipId,
+    assetId:asset.assetId,
+    name:asset.name,
+    sourceRange:{start:rational(0,fps),duration:rational(shot.durationFrames,fps)},
+    timelineStart:rational(shot.startFrame,fps),
+    duration:rational(shot.durationFrames,fps),
+    enabled:true,
+    metadata:{
+      source:"storyboard-asset-attachment",
+      storyboardId:plan.sourceStoryboardId,
+      storyboardSceneId:shot.sourceSceneId,
+      storyboardShotId:shot.id,
+      storyboardSourceShotId:shot.sourceShotId,
+      storyboardShotNumber:shot.shotNumber,
+    },
+  };
+  return addClip(timeline,track.id,clip);
 }
