@@ -65,7 +65,7 @@ export function createCloudAssetRepository({
   async function request(path,{method="GET",body=null,prefer=null}={}) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
     try {
-      const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};
+      const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
       if(body!==null) headers["content-type"]="application/json";
       if(prefer) headers.prefer=prefer;
       const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
@@ -267,7 +267,7 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
-    async registerVerifiedObject({ownerId,projectId=null,assetId,originalName,mediaType,size,sha256,derivativeOf=null,metadata={}}) {
+    async registerVerifiedObject({ownerId,projectId=null,assetId,originalName,mediaType,size,sha256,derivativeOf=null,metadata={},verifiedReceipt=null}) {
       ownerId=validUuid(ownerId,"owner ID");
       if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
       assetId=validUuid(assetId,"asset ID");
@@ -282,7 +282,7 @@ export function createCloudAssetRepository({
       await allowed(ownerId,projectId,"write");
       const name=safeName(originalName);
       const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+EXTENSIONS.get(mediaType)});
-      const verified=await storage.verifyObject(objectPath,{expectedSize:size,expectedSha256:String(sha256).toLowerCase(),contentType:mediaType});
+      const verified=verifiedReceipt||await storage.verifyObject(objectPath,{expectedSize:size,expectedSha256:String(sha256).toLowerCase(),contentType:mediaType});
       if(verified?.bucket!=="executive-visuals-media"||verified?.path!==objectPath||verified?.size!==size||verified?.sha256!==String(sha256).toLowerCase()||verified?.contentType!==mediaType){
         throw Object.assign(new Error("Private storage object verification did not match the reserved asset identity."),{code:"CLOUD_STORAGE_OBJECT_VERIFICATION_MISMATCH"});
       }

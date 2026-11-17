@@ -304,6 +304,22 @@ test("creates short-lived host-bound presigned URLs", async () => {
   await assert.rejects(() => storage.createSignedUrl(path, 10), /expiry/);
 });
 
+test("creates scoped presigned multipart PUT URLs", async () => {
+  const storage = createBackblazeB2Storage({ ...config, fetchImpl: async () => response(200) });
+  const signed = new URL(await storage.createMultipartPartSignedUrl(path, "upload_12345678", 3, 300));
+  assert.equal(signed.origin, "https://s3.us-west-004.backblazeb2.com");
+  assert.equal(signed.pathname, "/executive-visuals-media/" + path);
+  assert.equal(signed.searchParams.get("partNumber"), "3");
+  assert.equal(signed.searchParams.get("uploadId"), "upload_12345678");
+  assert.equal(signed.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
+  assert.equal(signed.searchParams.get("X-Amz-Expires"), "300");
+  assert.match(signed.searchParams.get("X-Amz-Signature"), /^[a-f0-9]{64}$/);
+  const opaque = new URL(await storage.createMultipartPartSignedUrl(path, "upload+id/12345=", 4, 300));
+  assert.equal(opaque.searchParams.get("uploadId"), "upload+id/12345=");
+  await assert.rejects(() => storage.createMultipartPartSignedUrl(path, "upload_12345678", 0), /invalid/);
+  await assert.rejects(() => storage.createMultipartPartSignedUrl(path, "upload_12345678", 1, 10), /expiry/);
+});
+
 test("checks that the private bucket exists and treats missing objects as idempotent cleanup", async () => {
   const calls = [];
   const storage = createBackblazeB2Storage({

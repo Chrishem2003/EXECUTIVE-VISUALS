@@ -62,6 +62,8 @@ import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror
 import { createGoogleGeminiGcsMirrorUploadService } from "./google-gemini-gcs-mirror-upload-service.mjs";
 import { createGoogleGeminiGcsFilesComposition } from "./google-gemini-gcs-composition.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
+import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
+import { createB2MultipartUploadApi } from "./b2-multipart-upload-api.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
@@ -236,8 +238,31 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
+const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
+const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+if(b2MultipartUploadEnabled&&AUTH_MODE!=="supabase")throw new Error("B2 multipart uploads require verified Supabase authentication.");
+if(b2MultipartUploadEnabled&&!cloudTimelineApiEnabled)throw new Error("B2 multipart uploads require CLOUD_TIMELINE_API_ENABLED=true for Asset Library integration.");
+if(b2MultipartUploadEnabled&&!cloudTimelineReadiness.ready)throw new Error("B2 multipart uploads require a ready Cloud Timeline and Asset Library database.");
+if(b2MultipartUploadEnabled&&String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"").toLowerCase()!=="b2")throw new Error("B2 multipart uploads require CLOUD_MEDIA_STORAGE_PROVIDER=b2.");
+if(b2MultipartUploadEnabled&&(!process.env.SUPABASE_URL||!b2MultipartSupabaseServerKey))throw new Error("B2 multipart uploads require server-side Supabase secret credentials.");
+const b2MultipartAuthorize=b2MultipartUploadEnabled?createCloudAssetAuthorizer({url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch}):null;
+const b2MultipartAssetService=b2MultipartUploadEnabled?createCloudAssetService({
+ url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,
+ storageProvider:"b2",authorize:b2MultipartAuthorize,fetchImpl:globalThis.fetch,
+ maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES
+}):null;
+const b2MultipartStore=b2MultipartUploadEnabled?createB2MultipartUploadStore({
+ url:process.env.SUPABASE_URL,serviceRoleKey:b2MultipartSupabaseServerKey,fetchImpl:globalThis.fetch
+}):null;
+const b2MultipartStoreReadiness=b2MultipartStore?await b2MultipartStore.checkReadiness():{ready:false};
+if(b2MultipartStore&&!b2MultipartStoreReadiness.ready)throw new Error("B2 multipart uploads cannot start until the durable session-ledger migration is applied.");
+const b2MultipartUploadApi=b2MultipartUploadEnabled?createB2MultipartUploadApi({
+ storage:b2MultipartAssetService.storage,store:b2MultipartStore,assets:b2MultipartAssetService.assets,
+ authorize:b2MultipartAuthorize,maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,
+ partSize:Number(process.env.B2_MULTIPART_PART_BYTES||64*1024*1024)
+}):null;
 const cloudPublicationAuditApiEnabled=process.env.CLOUD_PUBLICATION_AUDIT_API_ENABLED==="true";
 if(cloudPublicationAuditApiEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud publication audit API requires verified Supabase authentication.");
 const cloudPublicationAuditAuthorize=cloudPublicationAuditApiEnabled?createCloudAssetAuthorizer():null;
@@ -969,6 +994,44 @@ export function createAppServer() {
           query:Object.fromEntries(url.searchParams.entries())
         });
         if(auditResult){send(res,auditResult.status,auditResult.body,cors);return;}
+      }
+      if(path==="/api/cloud/uploads/status"&&req.method==="GET"){
+        send(res,200,{enabled:Boolean(b2MultipartUploadApi),maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,minimumMultipartBytes:5000000,partSize:Number(process.env.B2_MULTIPART_PART_BYTES||64*1024*1024)},cors);return;
+      }
+      if(b2MultipartUploadApi&&path==="/api/cloud/uploads"&&req.method==="POST"){
+        if(!rateAllowed("b2-upload-start:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload sessions. Try again shortly.");return;}
+        const parsedBody=await readJson(req,32*1024);
+        const body=parsedBody&&typeof parsedBody==="object"&&!Array.isArray(parsedBody)?parsedBody:{};
+        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+        if(result.status<300&&result.body?.session&&!result.body.idempotentReplay)audit(db,user.id,"asset.multipart_upload_started","asset",result.body.session.assetId,{sessionId:result.body.session.id,size:result.body.session.size,mediaType:body.mediaType},body.projectId||null);
+        send(res,result.status,result.body,cors);return;
+      }
+      const b2UploadSessionMatch=path.match(/^\/api\/cloud\/uploads\/([0-9a-f-]{36})(?:\/(?:parts\/([0-9]{1,5})\/(url|receipt)|complete|abort))?$/i);
+      if(b2MultipartUploadApi&&b2UploadSessionMatch){
+        const sessionId=b2UploadSessionMatch[1],partNumber=b2UploadSessionMatch[2]?Number(b2UploadSessionMatch[2]):null,action=b2UploadSessionMatch[3]||path.split("/").at(-1);
+        let result;
+        if(req.method==="GET"&&path==="/api/cloud/uploads/"+sessionId){
+          if(!rateAllowed("b2-upload-session-read:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many upload-session reads. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.getSession({ownerId:user.id,sessionId});
+        }
+        else if(req.method==="POST"&&action==="url"&&partNumber!==null){
+          if(!rateAllowed("b2-upload-part-url:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many part URL requests. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.partUrl({ownerId:user.id,sessionId,partNumber});
+        }
+        else if(req.method==="POST"&&action==="receipt"&&partNumber!==null){
+          if(!rateAllowed("b2-upload-part-receipt:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many part receipts. Try again shortly.");return;}
+          const body=await readJson(req,12*1024);result=await b2MultipartUploadApi.recordPart({ownerId:user.id,sessionId,partNumber,body});
+        }
+        else if(req.method==="POST"&&action==="complete"){
+          if(!rateAllowed("b2-upload-complete:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload completion attempts. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.complete({ownerId:user.id,sessionId});if(result.status<300&&result.body?.asset)audit(db,user.id,"asset.multipart_upload_completed","asset",result.body.asset.id,{sessionId,sha256:result.body.asset.sha256,size:result.body.asset.size},result.body.asset.projectId);
+        }
+        else if(req.method==="POST"&&action==="abort"){
+          if(!rateAllowed("b2-upload-abort:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload cancellation attempts. Try again shortly.");return;}
+          result=await b2MultipartUploadApi.abort({ownerId:user.id,sessionId});
+        }
+        else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
+        send(res,result.status,result.body,cors);return;
       }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({

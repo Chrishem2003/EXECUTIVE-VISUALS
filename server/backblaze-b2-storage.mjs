@@ -250,13 +250,13 @@ export function createBackblazeB2Storage({
       query, contentType, signal
     });
     const uploadId = xmlTag(await response.text(), "UploadId");
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
+    if (!/^[\x21-\x7E]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
     return { bucket: bucketName, path: objectPath, uploadId };
   }
 
   async function listMultipartParts(objectPath, uploadId, { signal = null } = {}) {
     const path = safeObjectPath(objectPath);
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
+    if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
     const parts = [];
     let marker = null;
     for (let page = 0; page < 10; page++) {
@@ -279,7 +279,7 @@ export function createBackblazeB2Storage({
 
   async function uploadMultipartPartFile(objectPath, uploadId, partNumber, filePath, start, end, { signal = null } = {}) {
     const path = safeObjectPath(objectPath);
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
+    if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || "")) || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 ||
         !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
       throw new Error("B2 multipart part request is invalid.");
     }
@@ -305,7 +305,7 @@ export function createBackblazeB2Storage({
 
   async function completeMultipartUpload(objectPath, uploadId, parts, { signal = null } = {}) {
     const path = safeObjectPath(objectPath);
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || "")) || !Array.isArray(parts) || parts.length < 1 || parts.length > 10000) {
+    if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || "")) || !Array.isArray(parts) || parts.length < 1 || parts.length > 10000) {
       throw new Error("B2 multipart completion request is invalid.");
     }
     const ordered = [...parts].sort((a, b) => a.partNumber - b.partNumber);
@@ -329,7 +329,7 @@ export function createBackblazeB2Storage({
 
   async function abortMultipartUpload(objectPath, uploadId, { signal = null } = {}) {
     const path = safeObjectPath(objectPath);
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
+    if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || ""))) throw new Error("B2 multipart upload identifier is invalid.");
     const query = new Map([["uploadId", uploadId]]);
     await request("DELETE", objectUrl(path) + "?" + canonicalQuery(query), { query, signal });
     return true;
@@ -346,7 +346,7 @@ export function createBackblazeB2Storage({
       signal
     });
     const uploadId = xmlTag(await initiated.text(), "UploadId");
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
+    if (!/^[\x21-\x7E]{8,512}$/.test(uploadId)) throw new Error("B2 returned an invalid multipart upload identifier.");
 
     const uploadedParts = [];
     try {
@@ -542,6 +542,33 @@ export function createBackblazeB2Storage({
         throw new Error("B2 media file changed while it was uploaded.");
       }
       return { bucket: bucketName, path: objectPath, size: file.size, sha256: file.sha256, contentType, multipart: false };
+    },
+
+    async createMultipartPartSignedUrl(objectPath, uploadId, partNumber, expiresIn = 300) {
+      const path = safeObjectPath(objectPath);
+      if (!/^[\x21-\x7E]{8,512}$/.test(String(uploadId || "")) ||
+          !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+        throw new Error("B2 multipart signed-part request is invalid.");
+      }
+      if (!Number.isInteger(expiresIn) || expiresIn < 30 || expiresIn > 900) {
+        throw new Error("B2 multipart signed-part expiry must be between 30 and 900 seconds.");
+      }
+      const { amzDate, date } = timestamp();
+      const scope = date + "/" + signingRegion + "/s3/aws4_request";
+      const query = new Map([
+        ["partNumber", String(partNumber)],
+        ["uploadId", String(uploadId)],
+        ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+        ["X-Amz-Credential", keyId + "/" + scope],
+        ["X-Amz-Date", amzDate],
+        ["X-Amz-Expires", String(expiresIn)],
+        ["X-Amz-SignedHeaders", "host"]
+      ]);
+      const canonical = canonicalQuery(query);
+      const canonicalRequest = ["PUT", bucketPath + "/" + path, canonical, "host:" + host + "\n", "host", "UNSIGNED-PAYLOAD"].join("\n");
+      const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, createHash("sha256").update(canonicalRequest).digest("hex")].join("\n");
+      query.set("X-Amz-Signature", hmac(signingKey(secret, date, signingRegion), stringToSign, "hex"));
+      return base + bucketPath + "/" + path + "?" + canonicalQuery(query);
     },
 
     async createSignedUrl(objectPath, expiresIn = 300) {

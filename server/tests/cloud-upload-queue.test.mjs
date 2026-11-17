@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  DEFAULT_CLOUD_UPLOAD_BYTES,
   MAX_CLOUD_UPLOAD_BYTES,
   MAX_CLOUD_UPLOAD_FILES,
   runCloudUploadQueue,
@@ -17,10 +18,17 @@ test("cloud upload preflight accepts supported media and rejects empty, oversize
     file("huge.mp4",MAX_CLOUD_UPLOAD_BYTES+1),
     file("archive.zip",20,"application/zip")
   ]);
-  assert.equal(MAX_CLOUD_UPLOAD_BYTES,50*1024*1024);
+  assert.equal(MAX_CLOUD_UPLOAD_BYTES,250*1024*1024);
+  assert.equal(DEFAULT_CLOUD_UPLOAD_BYTES,50*1024*1024);
   assert.deepEqual(result.accepted.map(x=>x.name),["clip.mp4"]);
   assert.equal(result.rejected.length,3);
   assert.match(result.rejected[1].reason,/50 MiB/);
+});
+
+test("cloud upload preflight expands only when the active provider advertises the larger limit",()=>{
+  const large=file("large.mp4",100*1024*1024);
+  assert.equal(validateCloudUploadFiles([large]).accepted.length,0);
+  assert.equal(validateCloudUploadFiles([large],250*1024*1024).accepted.length,1);
 });
 
 test("cloud upload preflight bounds a selection to 50 files without silently dropping overflow",()=>{

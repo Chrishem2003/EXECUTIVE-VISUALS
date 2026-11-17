@@ -53,7 +53,7 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
   async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
     try{
-      const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
+      const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
       if(body!==null)headers["content-type"]="application/json";
       const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
       const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Cloud timeline service returned invalid JSON.");}}

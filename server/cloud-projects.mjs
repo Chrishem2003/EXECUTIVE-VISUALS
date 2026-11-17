@@ -10,7 +10,7 @@ export function createCloudProjectRepository({url=process.env.SUPABASE_URL,servi
  async function request(path,{method="GET",body=null}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer:"return=representation"};
+   const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer:"return=representation"};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
    if(body!==null)headers["content-type"]="application/json";
    const res=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
    const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud project service returned invalid database data.");}}

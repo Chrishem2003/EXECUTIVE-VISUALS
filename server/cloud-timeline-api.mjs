@@ -142,7 +142,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-  const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
+  const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
   if(body!==null)headers["content-type"]="application/json";
   const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
   const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
@@ -808,7 +808,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }else{
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
    try{
-    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
+    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:(()=>{const value={apikey:serviceRoleKey,accept:"application/json"};if(!String(serviceRoleKey).startsWith("sb_secret_"))value.authorization="Bearer "+serviceRoleKey;return value;})(),signal:controller.signal});
     if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
     const bucket=await result.json();
     if(bucket.public!==false)throw new Error("Cloud timeline API refuses a media bucket that is not confirmed private.");

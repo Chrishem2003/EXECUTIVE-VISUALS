@@ -29,7 +29,7 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
  async function request(path,{method="GET",body=null,prefer=null}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};
+   const headers={apikey:serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals"};if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
    if(body!==null)headers["content-type"]="application/json";if(prefer)headers.prefer=prefer;
    const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
    const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Multipart ledger returned invalid JSON.");}}
@@ -47,13 +47,21 @@ export function createB2MultipartUploadStore({url=process.env.SUPABASE_URL,servi
   return (Array.isArray(rows)?rows:[]).map(row=>({partNumber:Number(row.part_number),etag:row.etag,sha256:row.sha256,size:Number(row.byte_size),recordedAt:row.recorded_at}));
  }
  return Object.freeze({
+  async checkReadiness(){
+   const [sessions,parts]=await Promise.all([
+    request("asset_multipart_upload_sessions?select=id&limit=0"),
+    request("asset_multipart_upload_parts?select=session_id&limit=0")
+   ]);
+   if(!Array.isArray(sessions)||!Array.isArray(parts))throw new Error("B2 multipart session ledger readiness check returned invalid table responses.");
+   return {ready:true,sessionsTable:"asset_multipart_upload_sessions",partsTable:"asset_multipart_upload_parts"};
+  },
   async create(input={}){
    const ownerId=validUuid(input.ownerId,"owner ID"),projectId=input.projectId?validUuid(input.projectId,"project ID"):null,assetId=validUuid(input.assetId,"asset ID");
    const objectPath=validPath(input.objectPath);
    const pathParts=objectPath.split("/");
    if(pathParts[0]!== (projectId||ownerId) || pathParts[1]!==assetId)throw new TypeError("Multipart object path must be bound to the verified owner/project and reserved asset ID.");
    if(!input.idempotencyKey||String(input.idempotencyKey).length>200)throw new TypeError("Multipart idempotency key is invalid.");
-   if(!/^[A-Za-z0-9_-]{8,512}$/.test(String(input.uploadId||"")))throw new TypeError("B2 multipart upload ID is invalid.");
+   if(!/^[\x21-\x7E]{8,512}$/.test(String(input.uploadId||"")))throw new TypeError("B2 multipart upload ID is invalid.");
    if(!SHA256.test(String(input.sha256||"")))throw new TypeError("Multipart source SHA-256 is invalid.");
    if(!Number.isSafeInteger(input.size)||input.size<1||!Number.isSafeInteger(input.partSize)||input.partSize<5000000||input.partSize>5368709120)throw new TypeError("Multipart source or part size is invalid.");
    const partCount=Math.ceil(input.size/input.partSize);if(partCount<1||partCount>10000)throw new TypeError("Multipart part count is invalid.");
