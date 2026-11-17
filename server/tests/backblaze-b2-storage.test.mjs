@@ -97,6 +97,9 @@ test("streams large files through signed multipart upload and completes with ord
         }
         if (options.method === "PUT") {
           const part = Number(parsed.searchParams.get("partNumber"));
+          if (part === 1 && calls.filter(x => x.options.method === "PUT" && new URL(x.url).searchParams.get("partNumber") === "1").length === 1) {
+            return { ok: false, status: 503 };
+          }
           return { ok: true, status: 200, headers: { get: name => name.toLowerCase() === "etag" ? '"' + etags[part - 1] + '"' : null } };
         }
         if (options.method === "POST" && parsed.searchParams.has("uploadId")) {
@@ -110,8 +113,9 @@ test("streams large files through signed multipart upload and completes with ord
     assert.equal(result.parts, 2);
     assert.equal(result.size, bytes.length);
     assert.equal(result.sha256, createHash("sha256").update(bytes).digest("hex"));
-    assert.deepEqual(calls.filter(x => x.options.method === "PUT").map(x => x.body.length), [5 * 1024 * 1024, 123]);
+    assert.deepEqual(calls.filter(x => x.options.method === "PUT").map(x => x.body.length), [5 * 1024 * 1024, 5 * 1024 * 1024, 123]);
     assert.deepEqual(calls.filter(x => x.options.method === "PUT").map(x => x.options.headers["x-amz-content-sha256"]), [
+      createHash("sha256").update(bytes.subarray(0, 5 * 1024 * 1024)).digest("hex"),
       createHash("sha256").update(bytes.subarray(0, 5 * 1024 * 1024)).digest("hex"),
       createHash("sha256").update(bytes.subarray(5 * 1024 * 1024)).digest("hex")
     ]);
@@ -142,12 +146,12 @@ test("aborts a multipart upload after a failed part instead of leaving partial s
         if (options.method === "POST" && parsed.searchParams.has("uploads")) {
           return { ok: true, status: 200, text: async () => "<UploadId>upload_12345678</UploadId>" };
         }
-        if (options.method === "PUT") return { ok: false, status: 503 };
+        if (options.method === "PUT") return { ok: false, status: 403 };
         if (options.method === "DELETE") return { ok: true, status: 204 };
         throw new Error("Unexpected B2 request.");
       }
     });
-    await assert.rejects(() => storage.uploadFile(path, file, "video/mp4"), error => error.code === "B2_STORAGE_HTTP_503");
+    await assert.rejects(() => storage.uploadFile(path, file, "video/mp4"), error => error.code === "B2_STORAGE_HTTP_403");
     assert.deepEqual(methods.map(x => x.method), ["POST", "PUT", "DELETE"]);
     assert.equal(methods[2].query.get("uploadId"), "upload_12345678");
   } finally {
