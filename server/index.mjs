@@ -990,6 +990,9 @@ export function createAppServer() {
         });
         if(auditResult){send(res,auditResult.status,auditResult.body,cors);return;}
       }
+      if(path==="/api/cloud/uploads/status"&&req.method==="GET"){
+        send(res,200,{enabled:Boolean(b2MultipartUploadApi),maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,minimumMultipartBytes:5000000,partSize:Number(process.env.B2_MULTIPART_PART_BYTES||64*1024*1024)},cors);return;
+      }
       if(b2MultipartUploadApi&&path==="/api/cloud/uploads"&&req.method==="POST"){
         if(!rateAllowed("b2-upload-start:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload sessions. Try again shortly.");return;}
         const body=await readJson(req,32*1024);
