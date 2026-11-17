@@ -267,7 +267,7 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
-    async registerVerifiedObject({ownerId,projectId=null,assetId,originalName,mediaType,size,sha256,derivativeOf=null,metadata={}}) {
+    async registerVerifiedObject({ownerId,projectId=null,assetId,originalName,mediaType,size,sha256,derivativeOf=null,metadata={},verifiedReceipt=null}) {
       ownerId=validUuid(ownerId,"owner ID");
       if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
       assetId=validUuid(assetId,"asset ID");
@@ -282,7 +282,7 @@ export function createCloudAssetRepository({
       await allowed(ownerId,projectId,"write");
       const name=safeName(originalName);
       const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"original."+EXTENSIONS.get(mediaType)});
-      const verified=await storage.verifyObject(objectPath,{expectedSize:size,expectedSha256:String(sha256).toLowerCase(),contentType:mediaType});
+      const verified=verifiedReceipt||await storage.verifyObject(objectPath,{expectedSize:size,expectedSha256:String(sha256).toLowerCase(),contentType:mediaType});
       if(verified?.bucket!=="executive-visuals-media"||verified?.path!==objectPath||verified?.size!==size||verified?.sha256!==String(sha256).toLowerCase()||verified?.contentType!==mediaType){
         throw Object.assign(new Error("Private storage object verification did not match the reserved asset identity."),{code:"CLOUD_STORAGE_OBJECT_VERIFICATION_MISMATCH"});
       }
