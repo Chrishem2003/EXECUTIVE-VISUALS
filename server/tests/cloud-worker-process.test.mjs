@@ -96,6 +96,18 @@ test("Google Omni can be the only video provider when every server-side executio
   GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_API_KEY:"server-only"
  }),/paid-tier/);
 });
+
+test("B2 multipart cleanup requires both the B2 provider and the explicitly enabled upload API",()=>{
+ const base={...env,B2_MULTIPART_CLEANUP_WORKER_ENABLED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(base),/upload API and B2 storage provider/);
+ assert.throws(()=>readCloudWorkerConfig({...base,B2_MULTIPART_UPLOAD_API_ENABLED:"true"}),/upload API and B2 storage provider/);
+ const config=readCloudWorkerConfig({...base,B2_MULTIPART_UPLOAD_API_ENABLED:"true",CLOUD_MEDIA_STORAGE_PROVIDER:"b2"});
+ assert.equal(config.b2MultipartCleanup,true);
+ assert.equal(config.b2MultipartCleanupLimit,25);
+ assert.equal(config.b2MultipartCleanupLeaseMs,300000);
+ assert.throws(()=>readCloudWorkerConfig({...base,B2_MULTIPART_UPLOAD_API_ENABLED:"true",CLOUD_MEDIA_STORAGE_PROVIDER:"b2",B2_MULTIPART_CLEANUP_BATCH_LIMIT:"101"}),/batch limit/);
+});
+
 test("cloud worker config validates the storage cleanup sweep interval",()=>{
  const config=readCloudWorkerConfig(env);assert.equal(config.cleanupIntervalMs,300000);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_STORAGE_CLEANUP_INTERVAL_MS:"1000"}),/cleanup interval/);

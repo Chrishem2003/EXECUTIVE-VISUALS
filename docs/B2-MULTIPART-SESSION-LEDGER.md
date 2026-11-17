@@ -34,3 +34,12 @@ Before enabling the flag, apply this additive migration to the isolated Supabase
 - Existing B2 adapter and cloud queue regression suites.
 
 The migration is additive. It is not applied automatically to staging or production by this code change.
+
+
+## Expired multipart cleanup
+
+The opt-in B2 multipart cleanup worker aborts abandoned provider multipart uploads without touching completed media objects. It scans a bounded batch of expired `active` sessions, expired `completing` sessions whose completion lease is stale, and `cleanup_pending` sessions whose cleanup lease has expired. Each candidate is moved to `cleanup_pending` with a compare-and-set lease before the provider abort is attempted. A fresh completion claim is not eligible for cleanup. If the worker crashes after claiming, the cleanup lease can be reclaimed; if B2 already accepted an abort before a crash, a provider 404 is treated as already cleaned and the ledger is finalized as `expired`. Other provider errors remain retryable and do not falsely mark the session expired.
+
+The additive migration `20261117170000_b2_multipart_cleanup_claims.sql` adds the cleanup lease column and `cleanup_pending` state. Apply both the original multipart ledger migration and this cleanup migration to the isolated Supabase project before enabling the maintenance worker. The worker remains disabled by default and requires all three explicit settings: `B2_MULTIPART_CLEANUP_WORKER_ENABLED=true`, `B2_MULTIPART_UPLOAD_API_ENABLED=true`, and `CLOUD_MEDIA_STORAGE_PROVIDER=b2`, along with server-side Supabase and B2 credentials. At startup it checks that the cleanup lease column exists and fails closed otherwise.
+
+Optional tuning: `B2_MULTIPART_CLEANUP_BATCH_LIMIT` defaults to 25 (1–100); `B2_MULTIPART_CLEANUP_LEASE_MS` defaults to 300000 (30 seconds–1 hour). The normal cloud-worker maintenance cadence controls the sweep interval. No production migration, provider activation, or Render environment change is performed by this code change.

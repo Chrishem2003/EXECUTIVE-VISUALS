@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const migrationUrl=new URL("../../supabase/migrations/20261117160000_b2_multipart_upload_sessions.sql",import.meta.url);
 const storeUrl=new URL("../b2-multipart-upload-store.mjs",import.meta.url);
+const cleanupMigrationUrl=new URL("../../supabase/migrations/20261117170000_b2_multipart_cleanup_claims.sql",import.meta.url);
 
 test("B2 multipart session schema is service-role-only and owner scoped",async()=>{
  const sql=await readFile(migrationUrl,"utf8");
@@ -28,4 +29,12 @@ test("multipart ledger implementation never returns provider credentials or publ
  assert.match(source,/B2_MULTIPART_IDEMPOTENCY_CONFLICT/);
  assert.match(source,/B2_MULTIPART_PART_CONFLICT/);
  assert.doesNotMatch(source,/secretAccessKey|secret_access_key|createSignedUrl/);
+});
+
+test("expired multipart cleanup adds a leased claim state without changing completed-object semantics",async()=>{
+ const sql=await readFile(cleanupMigrationUrl,"utf8");
+ assert.match(sql,/add column if not exists cleanup_claimed_at timestamptz/);
+ assert.match(sql,/cleanup_pending/);
+ assert.match(sql,/status = 'cleanup_pending'/);
+ assert.match(sql,/ev_multipart_sessions_cleanup_pending/);
 });
