@@ -798,6 +798,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }
   const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
   if(!Array.isArray(leaseColumns))throw new Error("Cloud timeline API readiness check failed for worker lease and cancellation columns.");
+  const quota=await request("rpc/get_asset_storage_usage",{method:"POST",body:{p_owner_id:"00000000-0000-4000-8000-000000000000"}});
+  const quotaRow=Array.isArray(quota)?quota[0]:null;
+  if(!quotaRow||!Number.isSafeInteger(Number(quotaRow.max_total_bytes))||Number(quotaRow.max_total_bytes)<1||
+     !Number.isSafeInteger(Number(quotaRow.max_owner_bytes))||Number(quotaRow.max_owner_bytes)<1)
+   throw new Error("Cloud timeline API readiness check failed for private asset storage quotas.");
   if(typeof service.storage?.checkReadiness==="function"){
    await service.storage.checkReadiness();
   }else{
