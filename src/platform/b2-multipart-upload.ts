@@ -15,6 +15,7 @@ type PartUrlResponse = { url: string; method: "PUT"; partNumber: number; size: n
 type ResumeRecord = {
   key: string;
   sessionId: string;
+  idempotencyKey: string;
   projectId: string;
   name: string;
   size: number;
@@ -31,7 +32,7 @@ function resumeKey(file: File, projectId: string): string {
 function readResumeRecords(): ResumeRecord[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.key === "string" && typeof item.sessionId === "string") : [];
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.key === "string" && typeof item.idempotencyKey === "string") : [];
   } catch { return []; }
 }
 function saveResumeRecord(record: ResumeRecord): void {
@@ -88,15 +89,16 @@ export async function uploadCloudAssetResumable(
   if (file.size < 5_000_000) throw new Error("B2 multipart uploads require files of at least 5 MB.");
   const digest = await sha256(file);
   const key = resumeKey(file, projectId);
-  const record = readResumeRecords().find(item => item.key === key && item.projectId === projectId && item.sha256 === digest);
+  let record = readResumeRecords().find(item => item.key === key && item.projectId === projectId && item.sha256 === digest);
   let session: UploadSession | null = null;
-  if (record) {
+  if (record?.sessionId) {
     try {
       const existing = await apiRequest<SessionResponse>("/api/cloud/uploads/" + encodeURIComponent(record.sessionId));
       session = existing.session;
     } catch (error) {
       if (!(error instanceof ApiError) || error.code !== "B2_MULTIPART_SESSION_NOT_FOUND") throw error;
       removeResumeRecord(key);
+      record = undefined;
     }
   }
   if (session && ["aborted", "expired", "failed"].includes(session.status)) {
@@ -104,13 +106,15 @@ export async function uploadCloudAssetResumable(
     session = null;
   }
   if (!session) {
+    const idempotencyKey = record?.idempotencyKey || crypto.randomUUID();
+    saveResumeRecord({ key, sessionId: "", idempotencyKey, projectId, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, sha256: digest });
     const started = await apiRequest<SessionResponse>("/api/cloud/uploads", {
       method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+      headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
       body: JSON.stringify({ projectId, originalName: file.name, mediaType: file.type, size: file.size, sha256: digest })
     });
     session = started.session;
-    saveResumeRecord({ key, sessionId: session.id, projectId, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, sha256: digest });
+    saveResumeRecord({ key, sessionId: session.id, idempotencyKey, projectId, name: file.name, size: file.size, type: file.type, lastModified: file.lastModified, sha256: digest });
   }
   if (session.sha256 !== digest || session.size !== file.size) throw new Error("The selected file does not match the saved upload session.");
   if (session.status === "completed") {
