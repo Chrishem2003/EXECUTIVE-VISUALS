@@ -17,6 +17,7 @@ test("cloud upload preflight accepts supported media and rejects empty, oversize
     file("huge.mp4",MAX_CLOUD_UPLOAD_BYTES+1),
     file("archive.zip",20,"application/zip")
   ]);
+  assert.equal(MAX_CLOUD_UPLOAD_BYTES,50*1024*1024);
   assert.deepEqual(result.accepted.map(x=>x.name),["clip.mp4"]);
   assert.equal(result.rejected.length,3);
   assert.match(result.rejected[1].reason,/50 MiB/);
