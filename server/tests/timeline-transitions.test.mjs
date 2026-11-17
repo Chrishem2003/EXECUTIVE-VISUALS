@@ -63,3 +63,28 @@ test("rejects invalid crossfade frame lengths and unsafe labels", () => {
   ], 24), /fit both adjacent clips/);
   assert.throws(() => buildVideoSequenceGraph([{ label: "[bad]", duration: 1 }], 24), /safe labels/);
 });
+
+
+test("compiles each supported directional wipe and slide through FFmpeg xfade", () => {
+  const transitions = ["wipeleft", "wiperight", "wipeup", "wipedown", "slideleft", "slideright", "slideup", "slidedown"];
+  for (const transition of transitions) {
+    const result = buildVideoSequenceGraph([
+      { label: "v0", duration: 5, transitionToNext: { type: transition, fadeFrames: 12 } },
+      { label: "v1", duration: 4 }
+    ], 24);
+    assert.equal(result.duration, 8.5, transition);
+    assert.match(result.filter, new RegExp("xfade=transition=" + transition + ":duration=0\\.500000:offset=4\\.500000"));
+  }
+});
+
+test("preserves crossfade alias and rejects directional transitions that exceed either clip", () => {
+  const result = buildVideoSequenceGraph([
+    { label: "v0", duration: 5, transitionToNext: { type: "crossfade", fadeFrames: 24 } },
+    { label: "v1", duration: 4 }
+  ], 24);
+  assert.match(result.filter, /xfade=transition=fade:/);
+  assert.throws(() => buildVideoSequenceGraph([
+    { label: "v0", duration: 1, transitionToNext: { type: "wipeleft", fadeFrames: 48 } },
+    { label: "v1", duration: 1 }
+  ], 24), /fit both adjacent clips/);
+});
