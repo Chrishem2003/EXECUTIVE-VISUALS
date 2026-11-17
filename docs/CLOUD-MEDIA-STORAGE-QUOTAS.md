@@ -26,3 +26,8 @@ Cloudflare R2's free tier includes 10 GB-month storage, 1 million Class A operat
 ## Limits of this guard
 
 The quota measures non-deleted asset metadata. Orphaned objects are handled by the existing cleanup outbox and storage reconciliation worker. Before production enablement, verify object count/bytes against the provider's own metrics and alert on drift.
+
+
+## Staging verification
+
+Migration `20261117093508_add_cloud_asset_storage_quotas` is applied to the Executive Visuals staging project. The staging asset table was empty before application. A rolled-back SQL acceptance transaction verified 5/5 cases: initial upload within limits, per-owner cap rejection, global cap rejection, accurate usage counters and quota release after soft deletion. The test transaction left no records or modified quota values behind.
