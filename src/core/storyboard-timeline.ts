@@ -227,9 +227,10 @@ export function attachStoryboardShotAsset(
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
   if(!Number.isFinite(fps)||fps<=0||Math.abs(fps-plan.frameRate)>0.000001)throw fail("Storyboard and timeline frame rates must match exactly before attaching media.");
   const savedPlan=timeline.metadata?.storyboardPlan as StoryboardTimelinePlan|undefined;
-  if(!savedPlan||savedPlan.sourceStoryboardId!==plan.sourceStoryboardId||savedPlan.sourceInputHash!==plan.sourceInputHash)throw fail("The storyboard plan does not belong to the current timeline revision.");
+  if(!savedPlan||savedPlan.sourceStoryboardId!==plan.sourceStoryboardId||savedPlan.sourceInputHash!==plan.sourceInputHash||savedPlan.trackIds?.picture!==plan.trackIds.picture||savedPlan.frameRate!==plan.frameRate)throw fail("The storyboard plan does not belong to the current timeline revision.");
   const shot=plan.scenes.flatMap(scene=>scene.shots).find(item=>item.id===shotId);
-  if(!shot||shot.targetTrackId!==plan.trackIds.picture)throw fail("The selected storyboard shot has invalid picture-track lineage.");
+  const savedShot=savedPlan.scenes?.flatMap(scene=>scene.shots||[]).find(item=>item.id===shotId);
+  if(!shot||shot.targetTrackId!==plan.trackIds.picture||!savedShot||savedShot.startFrame!==shot.startFrame||savedShot.durationFrames!==shot.durationFrames||savedShot.sourceShotId!==shot.sourceShotId)throw fail("The selected storyboard shot is stale or has invalid picture-track lineage.");
   const track=timeline.tracks.find(item=>item.id===plan.trackIds.picture&&item.kind==="video");
   if(!track)throw fail("The storyboard picture track is missing.");
   if(track.locked||!track.enabled)throw fail("Unlock and enable the storyboard picture track before attaching media.");
