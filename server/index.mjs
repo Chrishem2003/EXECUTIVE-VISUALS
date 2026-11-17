@@ -62,6 +62,8 @@ import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror
 import { createGoogleGeminiGcsMirrorUploadService } from "./google-gemini-gcs-mirror-upload-service.mjs";
 import { createGoogleGeminiGcsFilesComposition } from "./google-gemini-gcs-composition.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
+import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
+import { createB2MultipartUploadApi } from "./b2-multipart-upload-api.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
@@ -238,6 +240,24 @@ if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud 
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
+const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
+if(b2MultipartUploadEnabled&&AUTH_MODE!=="supabase")throw new Error("B2 multipart uploads require verified Supabase authentication.");
+if(b2MultipartUploadEnabled&&String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"").toLowerCase()!=="b2")throw new Error("B2 multipart uploads require CLOUD_MEDIA_STORAGE_PROVIDER=b2.");
+if(b2MultipartUploadEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("B2 multipart uploads require server-side Supabase credentials.");
+const b2MultipartAuthorize=b2MultipartUploadEnabled?createCloudAssetAuthorizer({url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch}):null;
+const b2MultipartAssetService=b2MultipartUploadEnabled?createCloudAssetService({
+ url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,
+ storageProvider:"b2",authorize:b2MultipartAuthorize,fetchImpl:globalThis.fetch,
+ maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES
+}):null;
+const b2MultipartStore=b2MultipartUploadEnabled?createB2MultipartUploadStore({
+ url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch
+}):null;
+const b2MultipartUploadApi=b2MultipartUploadEnabled?createB2MultipartUploadApi({
+ storage:b2MultipartAssetService.storage,store:b2MultipartStore,assets:b2MultipartAssetService.assets,
+ authorize:b2MultipartAuthorize,maxBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,
+ partSize:Number(process.env.B2_MULTIPART_PART_BYTES||64*1024*1024)
+}):null;
 const cloudPublicationAuditApiEnabled=process.env.CLOUD_PUBLICATION_AUDIT_API_ENABLED==="true";
 if(cloudPublicationAuditApiEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud publication audit API requires verified Supabase authentication.");
 const cloudPublicationAuditAuthorize=cloudPublicationAuditApiEnabled?createCloudAssetAuthorizer():null;
@@ -969,6 +989,25 @@ export function createAppServer() {
           query:Object.fromEntries(url.searchParams.entries())
         });
         if(auditResult){send(res,auditResult.status,auditResult.body,cors);return;}
+      }
+      if(b2MultipartUploadApi&&path==="/api/cloud/uploads"&&req.method==="POST"){
+        if(!rateAllowed("b2-upload-start:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many upload sessions. Try again shortly.");return;}
+        const body=await readJson(req,32*1024);
+        const result=await b2MultipartUploadApi.start({ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+        if(result.status<300&&result.body?.session&&!result.body.idempotentReplay)audit(db,user.id,"asset.multipart_upload_started","asset",result.body.session.assetId,{sessionId:result.body.session.id,size:result.body.session.size,mediaType:body.mediaType},body.projectId||null);
+        send(res,result.status,result.body,cors);return;
+      }
+      const b2UploadSessionMatch=path.match(/^\\/api\\/cloud\\/uploads\\/([0-9a-f-]{36})(?:\\/(?:parts\\/([0-9]{1,5})\\/(url|receipt)|complete|abort))?$/i);
+      if(b2MultipartUploadApi&&b2UploadSessionMatch){
+        const sessionId=b2UploadSessionMatch[1],partNumber=b2UploadSessionMatch[2]?Number(b2UploadSessionMatch[2]):null,action=b2UploadSessionMatch[3]||path.split("/").at(-1);
+        let result;
+        if(req.method==="GET"&&path==="/api/cloud/uploads/"+sessionId)result=await b2MultipartUploadApi.getSession({ownerId:user.id,sessionId});
+        else if(req.method==="POST"&&action==="url"&&partNumber!==null)result=await b2MultipartUploadApi.partUrl({ownerId:user.id,sessionId,partNumber});
+        else if(req.method==="POST"&&action==="receipt"&&partNumber!==null){const body=await readJson(req,12*1024);result=await b2MultipartUploadApi.recordPart({ownerId:user.id,sessionId,partNumber,body});}
+        else if(req.method==="POST"&&action==="complete"){result=await b2MultipartUploadApi.complete({ownerId:user.id,sessionId});if(result.status<300&&result.body?.asset)audit(db,user.id,"asset.multipart_upload_completed","asset",result.body.asset.id,{sessionId,sha256:result.body.asset.sha256,size:result.body.asset.size},result.body.asset.projectId);}
+        else if(req.method==="POST"&&action==="abort")result=await b2MultipartUploadApi.abort({ownerId:user.id,sessionId});
+        else{fail(res,405,"B2_MULTIPART_METHOD_NOT_ALLOWED","This upload session endpoint does not support the requested method.");return;}
+        send(res,result.status,result.body,cors);return;
       }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
