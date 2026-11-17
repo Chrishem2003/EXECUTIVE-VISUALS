@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { createStoryboardTimeline, reflowStoryboardTimelinePlan } from "../src/core/storyboard-timeline.ts";
-import { rational, validateTimeline } from "../src/core/timeline.ts";
+import { createStoryboardTimeline, reflowStoryboardTimelinePlan, getStoryboardShotAssetAttachments } from "../src/core/storyboard-timeline.ts";
+import { addClip, createGeneratedVideoClip, rational, validateTimeline } from "../src/core/timeline.ts";
 import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history-operations.ts";
 
 const shot=(id,durationSeconds,number=1)=>({
@@ -42,6 +42,26 @@ assert.deepEqual(plan.scenes.flatMap(scene=>scene.shots).map(shot=>shot.startFra
 assert.equal(plan.scenes[0].shots[0].visualPrompt,"A provider-neutral still prompt.");
 assert.equal(plan.scenes[0].shots[0].assetId,null);
 assert.equal(plan.scenes[0].shots[0].status,"planned");
+
+const pendingAttachments=getStoryboardShotAssetAttachments(timeline,plan,[]);
+assert.equal(pendingAttachments.get("shot-1").status,"pending");
+const approvedClip=createGeneratedVideoClip({
+ id:"approved-shot-1",assetId:"private-asset-1",name:"Approved shot one.mp4",durationSeconds:10,
+ frameRate:timeline.frameRate,startFrame:plan.scenes[0].shots[0].startFrame,
+ metadata:{storyboardShotId:"shot-1",approvalId:"approval-1",source:"model-storyboard"}
+});
+const attachedTimeline=addClip(timeline,plan.trackIds.picture,approvedClip);
+const attached=getStoryboardShotAssetAttachments(attachedTimeline,plan,["private-asset-1"]);
+assert.deepEqual(attached.get("shot-1"),{status:"attached",clipId:"approved-shot-1",assetId:"private-asset-1",clipName:"Approved shot one.mp4"});
+assert.equal(attached.get("shot-2").status,"pending");
+assert.equal(getStoryboardShotAssetAttachments(attachedTimeline,plan,[]).get("shot-1").status,"unavailable");
+const pictureIndex=attachedTimeline.tracks.findIndex(track=>track.id===plan.trackIds.picture);
+const duplicateClip={...approvedClip,id:"duplicate-shot-1",assetId:"private-asset-2",name:"Duplicate take.mp4"};
+const duplicateTimeline={...attachedTimeline,tracks:attachedTimeline.tracks.map((track,index)=>index===pictureIndex?{...track,clips:[...track.clips,duplicateClip]}:track)};
+assert.equal(getStoryboardShotAssetAttachments(duplicateTimeline,plan,["private-asset-1","private-asset-2"]).get("shot-1").status,"ambiguous");
+const wrongTrackTimeline={...attachedTimeline,tracks:attachedTimeline.tracks.map(track=>track.id===plan.trackIds.picture?{...track,clips:[]}:track)};
+assert.equal(getStoryboardShotAssetAttachments(wrongTrackTimeline,plan,["private-asset-1"]).get("shot-1").status,"pending");
+
 
 const changed={...plan,scenes:plan.scenes.map((scene,index)=>index===0?{...scene,shots:scene.shots.map((item,shotIndex)=>shotIndex===0?{...item,durationFrames:240}:item)}:scene)};
 const reflowed=reflowStoryboardTimelinePlan(changed);
