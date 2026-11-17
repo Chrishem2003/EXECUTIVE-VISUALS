@@ -144,6 +144,21 @@ test("cloud executor defers transient or active status after exactly one check p
   assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
 });
 
+test("cloud executor quarantines failed Veo tasks until potentially billable usage is reconciled", async () => {
+  const f = fixture({ state: "submitted", status: {
+    taskId, status: "failed", failure: "Input moderation rejected the task.",
+    failureCode: "RUNWAY_TASK_FAILED"
+  }});
+  const veoJob = { ...job, input: { ...job.input, model: "veo3.1" } };
+  const veoAdapter = { ...f.adapter, model: "veo3.1" };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: veoJob, adapter: veoAdapter, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cost"), false);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
 test("cloud executor quarantines provider-canceled tasks until cancellation billing is reconciled", async () => {
   const f = fixture({ state: "submitted", status: {
     taskId, status: "canceled", failure: "Runway task was canceled.",
