@@ -1547,3 +1547,9 @@ body{
 .cloud-upload-queue{margin-top:14px;padding:12px;border:1px solid #302a40;border-radius:12px;background:#11101a}.cloud-upload-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid #292536;font-size:12px}.cloud-upload-row>span:first-child{overflow-wrap:anywhere;color:#e6e2ee}.cloud-upload-row .status{font-size:10px;text-transform:capitalize}.cloud-upload-row .error-text{grid-column:1/-1;color:#f0a0a0;font-size:11px}.cloud-upload-queue .section-title{margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
 
 .cloud-upload-progress{grid-column:1/-1;height:5px;overflow:hidden;border-radius:8px;background:#282435}.cloud-upload-progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#8b5cf6,#c4b5fd);transition:width .12s linear}.cloud-upload-bytes{grid-column:1/-1;color:#a8a1b7;font-size:10px}
+
+.review-version-state{display:inline-flex;align-items:center;gap:6px;margin-top:5px;font-size:10px;font-weight:650;letter-spacing:.02em}
+.review-version-state.current{color:#7dd3a8}
+.review-version-state.changed{color:#f6bd70}
+.review-version-state.unavailable{color:#f39a9a}
+.review-version-state.unbound{color:#a9a2b7}

@@ -571,7 +571,7 @@ test("cloud review routes persist frame-anchored comments through verified proje
  };
  const timelineService={
   projects:{async get(){return{id:project,ownerId:owner,name:"Review project"};}},
-  assets:{async get({assetId:id}){return{id,projectId:project,mediaType:"video/mp4",name:"master.mp4"};}},
+  assets:{async get({assetId:id}){return{id,projectId:project,mediaType:"video/mp4",name:"master.mp4",sha256:"a".repeat(64)};}},
   timelines:{async get(){return{id:timelineId,projectId:project,revision:3,timeline:{frameRate:{numerator:24,denominator:1}}};}}
  };
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,timelineService,authorize:async()=>true});
@@ -579,6 +579,8 @@ test("cloud review routes persist frame-anchored comments through verified proje
  assert.equal(created.status,201);
  assert.equal(created.body.review.authorId,editor);
  assert.equal(created.body.review.frameNumber,48);
+ assert.equal(created.body.review.assetSha256,"a".repeat(64));
+ assert.equal(rows[0].asset_sha256,"a".repeat(64));
  assert.equal(rows[0].owner_id,owner);
  assert.equal(rows[0].reviewer_id,editor);
  assert.equal(Number(rows[0].timecode_seconds),2);

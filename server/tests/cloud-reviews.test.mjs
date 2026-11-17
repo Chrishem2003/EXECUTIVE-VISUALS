@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { createCloudReviewRepository } from "../cloud-reviews.mjs";
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",viewer="323e4567-e89b-42d3-a456-426614174000",projectId="423e4567-e89b-42d3-a456-426614174000",assetId="523e4567-e89b-42d3-a456-426614174000",timelineId="623e4567-e89b-42d3-a456-426614174000",reviewId="723e4567-e89b-42d3-a456-426614174000";
 const timeline={id:timelineId,projectId,revision:5,timeline:{frameRate:{numerator:24,denominator:1}}};
+const assetSha256="a".repeat(64);
 function setup({role="editor",existing=[]}={}){
  const calls=[],rows=[...existing],assetOwners=[],timelineOwners=[];
  const projects={async get({ownerId,projectId:id}){return id===projectId?{id,ownerId:owner, name:"Review project"}:null;}};
- const assets={async get({ownerId,assetId:id}){assetOwners.push(ownerId);return{id,projectId,mediaType:"video/mp4"};}};
+ const assets={async get({ownerId,assetId:id}){assetOwners.push(ownerId);return{id,projectId,mediaType:"video/mp4",sha256:assetSha256};}};
  const timelines={async get({ownerId}){timelineOwners.push(ownerId);return timeline;}};
  const fetchImpl=async(url,options)=>{
   const path=url.split("/rest/v1/")[1];
@@ -35,11 +36,11 @@ const input={projectId,assetId,timelineId,timelineRevision:4,frameNumber:240,dur
 test("creates a frame-anchored review as the verified reviewer and keeps project ownership separate",async()=>{
  const f=setup();const result=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
  assert.equal(result.review.projectId,projectId);assert.equal(result.review.authorId,editor);assert.equal(result.review.frameNumber,240);
- assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);assert.equal(f.rows[0].last_actor_id,editor);
+ assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);assert.equal(f.rows[0].last_actor_id,editor);assert.equal(f.rows[0].asset_sha256,assetSha256);assert.equal(result.review.assetSha256,assetSha256);
  assert.equal(Number(f.rows[0].timecode_seconds),10);
 });
 test("replays only an exact reviewer-scoped idempotent create request",async()=>{
- const existing={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,reviewer_id:editor,last_actor_id:editor,timeline_id:timelineId,timeline_revision:4,frame_number:240,duration_frames:24,timecode_seconds:10,body:input.body,decision:"comment",status:"open",visibility:"project",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}],color:"#ffcc00",width:3}]},request_id:"review-request-0001",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
+ const existing={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,asset_sha256:assetSha256,reviewer_id:editor,last_actor_id:editor,timeline_id:timelineId,timeline_revision:4,frame_number:240,duration_frames:24,timecode_seconds:10,body:input.body,decision:"comment",status:"open",visibility:"project",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}],color:"#ffcc00",width:3}]},request_id:"review-request-0001",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
  const f=setup({existing:[existing]});
  const replay=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
  assert.equal(replay.idempotentReplay,true);assert.equal(f.rows.length,1);
@@ -72,3 +73,7 @@ test("reviewer frame anchors resolve project-owned assets and timelines under ow
  assert.deepEqual(f.assetOwners,[owner]);
  assert.deepEqual(f.timelineOwners,[owner]);
 });
+
+test("review updates cannot rewrite the source media fingerprint",async()=>{const row={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,asset_sha256:assetSha256,reviewer_id:editor,last_actor_id:editor,body:"Original note",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};const f=setup({existing:[row]});await assert.rejects(()=>f.repo.update({actorId:editor,reviewId,input:{assetSha256:"b".repeat(64)}}),error=>error.code==="REVIEW_INVALID");assert.equal(f.rows[0].asset_sha256,assetSha256);assert.equal(f.calls.some(call=>call.method==="PATCH"),false);});
+test("rejects a stale review form when the source asset checksum changed",async()=>{const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,assetSha256:"b".repeat(64)}}),error=>error.code==="REVIEW_ASSET_VERSION_STALE");assert.equal(f.rows.length,0);});
+test("rejects malformed client fingerprints before writing a review",async()=>{const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,assetSha256:"not-a-checksum"}}),error=>error.code==="REVIEW_ASSET_VERSION_INVALID");assert.equal(f.rows.length,0);});

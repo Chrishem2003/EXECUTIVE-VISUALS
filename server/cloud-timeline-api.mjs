@@ -773,8 +773,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }catch(error){
    if(error.code==="CLOUD_REVIEW_NOT_FOUND")return response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
    if(error.code==="CLOUD_REVIEW_ACCESS_DENIED")return response(403,{error:{code:"REVIEW_ACCESS_DENIED",message:"Your project role does not permit this review action."}});
-   if(error.code==="CLOUD_REVIEW_INVALID"||error.code==="REVIEW_INVALID"||error.code==="REVIEW_ANNOTATION_INVALID")return response(422,{error:{code:error.code,message:String(error.message||"Review input is invalid.").slice(0,300)}});
-   if(error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
+   if(error.code==="REVIEW_ASSET_VERSION_INVALID"||error.code==="CLOUD_REVIEW_INVALID"||error.code==="REVIEW_INVALID"||error.code==="REVIEW_ANNOTATION_INVALID")return response(422,{error:{code:error.code,message:String(error.message||"Review input is invalid.").slice(0,300)}});
+   if(error.code==="REVIEW_ASSET_VERSION_STALE"||error.code==="REVIEW_ASSET_VERSION_UNAVAILABLE"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
