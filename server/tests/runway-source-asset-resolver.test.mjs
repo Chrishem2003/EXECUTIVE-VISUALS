@@ -136,6 +136,51 @@ test("Runway video edits resolve ordered keyframe images from the same private p
   assert.equal(result.keyframes[0].buffer.length, imageBytes.length);
 });
 
+test("Runway Veo image-to-video resolves both private first and last frame assets", async () => {
+  const firstId = "77777777-7777-4777-8777-777777777777";
+  const lastId = "88888888-8888-4888-8888-888888888888";
+  const imageBytes = Buffer.alloc(2048, 9);
+  const byId = new Map([
+    [firstId, { id: firstId, ownerId: OWNER, projectId: PROJECT, name: "first.png", mediaType: "image/png", size: imageBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + firstId + "/original.png" }],
+    [lastId, { id: lastId, ownerId: OWNER, projectId: PROJECT, name: "last.png", mediaType: "image/png", size: imageBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + lastId + "/original.png" }]
+  ]);
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); return byId.get(assetId); },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(expiresIn, 300);
+        return { asset: byId.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(imageBytes, {
+      status: 200, headers: { "content-type": "image/png", "content-length": String(imageBytes.length) }
+    })
+  });
+  const prepared = await resolver.prepare({
+    operation: "image-to-video", projectId: PROJECT,
+    startFrameAssetId: firstId, endFrameAssetId: lastId
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.firstFrame.filename, "first.png");
+  assert.equal(prepared.lastFrame.filename, "last.png");
+  assert.equal(prepared.firstFrame.mimeType, "image/png");
+  assert.equal(prepared.lastFrame.mimeType, "image/png");
+  assert.equal(prepared.firstFrame.buffer.length, imageBytes.length);
+  assert.equal(prepared.lastFrame.buffer.length, imageBytes.length);
+});
+
+test("Runway image interpolation rejects last-frame-only and duplicate-frame requests", async () => {
+  const { resolver } = fixture({ mediaType: "image/png" });
+  await assert.rejects(
+    () => resolver.prepare({ operation: "image-to-video", endFrameAssetId: ASSET, projectId: PROJECT }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED"
+  );
+  await assert.rejects(
+    () => resolver.prepare({ operation: "image-to-video", startFrameAssetId: ASSET, endFrameAssetId: ASSET, projectId: PROJECT }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_KEYFRAMES_INVALID"
+  );
+});
+
 test("Runway Model Router references are converted only from owner/project-scoped private image and video assets", async () => {
   const imageId = "44444444-4444-4444-8444-444444444444";
   const videoId = "55555555-5555-4555-8555-555555555555";

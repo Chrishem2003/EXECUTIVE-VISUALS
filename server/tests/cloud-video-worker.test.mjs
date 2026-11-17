@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCloudVideoWorkerCycle } from "../cloud-video-worker.mjs";
 
-function fixture(retryAfterSeconds) {
+function fixture(retryAfterSeconds, code = "VIDEO_PROVIDER_POLL_DEFERRED") {
   const calls = [];
   const job = {
     id: "job-1",
@@ -16,18 +16,29 @@ function fixture(retryAfterSeconds) {
   const enqueue = {
     async finish() { return true; },
     async defer(args) { calls.push(args); return true; },
-    async quarantine() { return true; },
+    async quarantine(args) { calls.push({ type: "quarantine", ...args }); return true; },
     async recoverExpiredVideo() { return 0; }
   };
   const execute = async () => {
     const error = Object.assign(new Error("provider is not ready"), {
-      code: "VIDEO_PROVIDER_POLL_DEFERRED"
+      code
     });
     if (retryAfterSeconds !== undefined) error.retryAfterSeconds = retryAfterSeconds;
     throw error;
   };
   return { calls, queue, enqueue, execute };
 }
+
+test("cloud video worker quarantines potentially billable failed Veo tasks", async () => {
+  const f = fixture(undefined, "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED");
+  const result = await runCloudVideoWorkerCycle({
+    ...f, workerId: "worker-1", heartbeatIntervalMs: 1000, execute: f.execute
+  });
+  assert.equal(result.status, "needs_input");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].type, "quarantine");
+  assert.equal(f.calls[0].reasonCode, "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED");
+});
 
 test("cloud video worker honors a bounded provider retry-after delay", async () => {
   const f = fixture(120);

@@ -68,3 +68,7 @@ The provider/model capability declarations are deliberately narrower than the co
 - Current model catalogue: https://docs.dev.runwayml.com/guides/models/
 - Pricing: https://docs.dev.runwayml.com/guides/pricing/
 - Seedance 2.5 API availability and modes: https://docs.dev.runwayml.com/api-details/api_changelog/
+
+## Veo 3.1 execution extension
+
+Veo 3.1 and Veo 3.1 Fast are implemented as gated Runway worker profiles. They remain disabled in the model catalogue until an operator explicitly configures the direct Runway worker, remote-execution approval and Enterprise linked-workspace usage reconciliation. The implementation and exact request constraints are documented in [RUNWAY-VEO-31-EXECUTION.md](./RUNWAY-VEO-31-EXECUTION.md). Failed or canceled Veo tasks remain quarantined until potentially billable usage is reconciled; the system never assumes a failed task cost zero.

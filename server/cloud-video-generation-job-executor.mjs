@@ -158,6 +158,15 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provider task is canceled, but its final billable amount is not yet verified; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
   }
   if (task.status === "failed") {
+    if (input.provider === "runway" && ["veo3.1", "veo3.1_fast"].includes(input.model)) {
+      // Veo moderation failures may still incur provider charges. Do not
+      // release the approved reservation until linked-workspace usage has
+      // been reconciled by the operator.
+      throw fail(
+        "Runway Veo task failed; provider usage may still be billable. Keep the reservation for billing reconciliation.",
+        "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+      );
+    }
     throw fail(task.failure || "Video provider task failed.", task.failureCode || "VIDEO_PROVIDER_FAILED");
   }
   if (task.status !== "succeeded") {
