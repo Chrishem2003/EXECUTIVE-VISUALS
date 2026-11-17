@@ -91,9 +91,10 @@ export function createB2MultipartUploadApi({storage,store,assets,authorize,maxBy
   const {session}=owned;
   if(session.status!=="active"||new Date(session.expiresAt)<=clock())return fail(409,"B2_MULTIPART_SESSION_NOT_ACTIVE","This upload session is no longer active.");
   const expectedSize=Math.min(session.partSize,session.size-(partNumber-1)*session.partSize);
-  if(!Number.isInteger(partNumber)||partNumber<1||partNumber>session.partCount||!Number.isSafeInteger(body.size)||body.size!==expectedSize||!SHA256.test(String(body.sha256||""))||!/^[A-Fa-f0-9-]{8,128}$/.test(String(body.etag||"")))return fail(400,"B2_MULTIPART_PART_RECEIPT_INVALID","Part number, size, checksum or ETag is invalid.");
+  const etag=String(body.etag||"").replace(/^"|"$/g,"");
+  if(!Number.isInteger(partNumber)||partNumber<1||partNumber>session.partCount||!Number.isSafeInteger(body.size)||body.size!==expectedSize||!SHA256.test(String(body.sha256||""))||!/^[A-Fa-f0-9-]{8,128}$/.test(etag))return fail(400,"B2_MULTIPART_PART_RECEIPT_INVALID","Part number, size, checksum or ETag is invalid.");
   try{
-   const receipt=await store.recordPart({ownerId,sessionId,partNumber,etag:String(body.etag).replace(/^"|"$/g,""),sha256:String(body.sha256).toLowerCase(),size:body.size});
+   const receipt=await store.recordPart({ownerId,sessionId,partNumber,etag,sha256:String(body.sha256).toLowerCase(),size:body.size});
    return {status:200,body:{part:receipt}};
   }catch(error){return fail(statusFor(error),error.code||"B2_MULTIPART_PART_RECORD_FAILED","Part receipt could not be recorded.");}
  }
