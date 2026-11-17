@@ -228,7 +228,7 @@ export function createBackblazeB2Storage({
 
   function multipartPartsFromXml(xml) {
     const parts = [];
-    for (const match of String(xml).matchAll(/<Part>([\\s\\S]*?)<\\/Part>/g)) {
+    for (const match of String(xml).matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
       const body = match[1];
       const partNumber = Number(xmlTag(body, "PartNumber"));
       const etag = xmlTag(body, "ETag").replace(/^"|"$/g, "");
@@ -265,7 +265,7 @@ export function createBackblazeB2Storage({
       const response = await request("GET", objectUrl(path) + "?" + canonicalQuery(query), { query, signal });
       const xml = await response.text();
       parts.push(...multipartPartsFromXml(xml));
-      const truncated = /<IsTruncated>\s*true\s*<\\/IsTruncated>/i.test(xml);
+      const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/i.test(xml);
       if (!truncated) return { parts, truncated: false };
       const next = Number(xmlTag(xml, "NextPartNumberMarker"));
       if (!Number.isInteger(next) || next <= (marker || 0) || next > 10000) throw new Error("B2 returned an invalid multipart pagination marker.");
@@ -313,7 +313,7 @@ export function createBackblazeB2Storage({
       contentType: "application/xml", body, contentLength: bytes.length, signal
     });
     const xml = await response.text();
-    if (/<Error(?:\\s|>)/.test(xml)) throw new Error("B2 rejected multipart completion.");
+    if (/<Error(?:\s|>)/.test(xml)) throw new Error("B2 rejected multipart completion.");
     return { bucket: bucketName, path: objectPath, parts: ordered.length };
   }
 
@@ -388,7 +388,7 @@ export function createBackblazeB2Storage({
         signal
       });
       const completeXml = await completed.text();
-      if (/<Error(?:\s|>)/.test(completeXml)) throw new Error("B2 rejected multipart completion.");
+    if (/<Error(?:\s|>)/.test(xml)) throw new Error("B2 rejected multipart completion.");
       const afterComplete = await stat(filePath);
       if (afterComplete.size !== file.size || afterComplete.mtimeMs !== file.mtimeMs) throw new Error("B2 media file changed before multipart receipt was finalized.");
       return {
