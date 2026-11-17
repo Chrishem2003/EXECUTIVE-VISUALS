@@ -1,7 +1,7 @@
 -- Remove mutually-recursive RLS policy lookups between projects and project_members.
 -- These SECURITY DEFINER helpers are owned by the migration role and bypass RLS
 -- only for the narrow membership/ownership lookup. The helpers expose booleans,
--- not rows, and all callers pass an explicit target project and auth.uid().
+-- not rows. They always derive the user identity from auth.uid().
 
 create or replace function executive_visuals.is_project_owner(
   p_project_id uuid
