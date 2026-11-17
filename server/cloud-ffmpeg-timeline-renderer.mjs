@@ -201,7 +201,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  const motionClips=clips.filter(usesOpticalFlow);
  const needsRubberband=audioClips.some(clip=>enabled(clip)&&clip.speedCurve!==undefined);
- if(motionClips.length||needsRubberband){
+ const needsXfade=clips.some(clip=>enabled(clip)&&clip.transitionToNext!==undefined&&clip.transitionToNext.type!=="dip-to-black");
+ if(motionClips.length||needsRubberband||needsXfade){
   const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,jobId,activeProcesses,()=>Boolean(signal?.aborted),262144);
   const filterListing=(capabilities.stdout||"")+"\n"+(capabilities.stderr||"");
   if(needsRubberband&&!/\brubberband\b/.test(filterListing))fail("Variable-speed audio export requires an FFmpeg build with librubberband support; this render worker does not provide that filter.","RUBBERBAND_UNAVAILABLE");
