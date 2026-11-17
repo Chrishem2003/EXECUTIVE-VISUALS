@@ -59,3 +59,8 @@ The estimate converts credits at the published USD 0.01 per credit. The shared e
 - Runway API reference: https://docs.dev.runwayml.com/api/
 - Runway API version 2024-11-06 image keyframe schema: https://docs.dev.runwayml.com/api-details/versions/2024-11-06/
 - linked workspace per-generation usage and task-level credit rows: https://docs.dev.runwayml.com/usage/workspace-reporting/
+
+
+## Failed-task billing safety
+
+Runway's Veo documentation states that input-moderation failures may still be charged. Executive Visuals therefore quarantines failed Veo 3.1 and Veo 3.1 Fast tasks with `VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED` instead of automatically releasing the customer reservation. The task remains held for operator reconciliation; no zero-cost assumption is made. Cancellation remains separately quarantined for the same reason.
