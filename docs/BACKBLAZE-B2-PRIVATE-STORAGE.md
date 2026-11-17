@@ -28,7 +28,14 @@ The S3 endpoint is derived as `https://s3.<B2_REGION>.backblazeb2.com`. Do not s
 
 The B2 adapter automatically uses S3 multipart upload when a file exceeds 100 MiB. It streams 64 MiB parts by default, computes a SHA-256 digest for each part, and retries transient network/server failures up to three attempts per part. The final part may be smaller than 5 MiB; non-final parts must meet B2's 5 MiB minimum. The adapter enforces the 10,000-part maximum, verifies the source file's whole-file SHA-256 before completion, and aborts the multipart upload after permanent part or completion failures.
 
-Smaller files continue to use the existing streamed single-object PUT path. Multipart transfer currently retries within the active upload process; it does not yet persist upload IDs and completed-part checkpoints across process restarts. Do not advertise cross-restart resumability until a durable, tenant-scoped upload-session ledger is implemented and tested.
+Smaller files continue to use the existing streamed single-object PUT path. For browser uploads, the opt-in resumable workflow uses durable server-side sessions and short-lived, part-specific SigV4 PUT URLs. The browser uploads parts directly to B2, reports ETag + SHA-256 + byte count, and can retrieve its session state after a refresh. The API reconciles the recorded receipts against B2 List Parts before completion, then independently reads the assembled private object and verifies its whole-file SHA-256, byte count and media type before publishing the Asset Library record. Provider upload IDs and object paths are never returned to the browser.
+
+Enable only after the additive multipart ledger migration is applied to the isolated Supabase database and the B2 bucket's S3-compatible CORS rule allows the exact app origin to issue PUT requests and exposes ETag. Keep B2_MULTIPART_UPLOAD_API_ENABLED=false until staging tests cover browser preflight, interrupted upload resume, completion, cancellation, authorization boundaries and object verification. Required API settings are documented in .env.example; the feature is not enabled by default.
+
+
+## Browser multipart CORS
+
+Direct browser-to-B2 uploads require a bucket CORS rule in addition to the application's own API CORS configuration. For the S3-compatible API, allow the exact deployed web origin, the PUT method, the headers requested by the browser (using * is supported), and expose the ETag response header. Do not enable public bucket access to solve CORS. Keep staging and production origins explicit and separate. See Backblaze's CORS rules guide (https://www.backblaze.com/docs/cloud-storage-cross-origin-resource-sharing-rules) and S3 Put Bucket CORS API (https://www.backblaze.com/apidocs/s3-put-bucket-cors).
 
 ## Data and safety contract
 
