@@ -210,8 +210,8 @@ async function refreshCloudGenerationJobs(showErrors=false){
   const ids=[...(approval?.jobIds||[])];
   const results=await Promise.all(ids.map(id=>apiRequest<{job:{id:string;status:string;progress:number;error?:unknown;output?:unknown}}>("/api/cloud/jobs/"+encodeURIComponent(id))));
   if(state.videoApproval?.id!==approval?.id||ids.some((id,index)=>results[index]?.job?.id!==id))return;
-  const previous=approval?.jobStatuses||[];
-  const next=results.map((result,index)=>({jobId:result.job.id,shotIndex:previous.find(item=>(item.jobId||item.id)===result.job.id)?.shotIndex??index,status:String(result.job.status||"unknown"),progress:Math.max(0,Math.min(100,Number(result.job.progress)||0))}));
+  const previous=ids.map((id,index)=>approval?.jobStatuses?.find(item=>item.jobId===id)||{jobId:id,shotIndex:index,status:"queued",progress:0});
+  const next=results.map((result,index)=>({jobId:result.job.id,shotIndex:previous.find(item=>item.jobId===result.job.id)?.shotIndex??index,status:String(result.job.status||"unknown"),progress:Math.max(0,Math.min(100,Number(result.job.progress)||0))}));
   const allTerminal=next.length>0&&next.every(item=>isCloudJobTerminal(item.status));
   const allSucceeded=allTerminal&&next.every(item=>["succeeded","completed"].includes(item.status.toLowerCase()));
   const anyFailed=next.some(item=>item.status.toLowerCase()==="failed");
@@ -222,7 +222,7 @@ async function refreshCloudGenerationJobs(showErrors=false){
   if(hasCloudJobFinished(previous,next))await loadCloudWorkspace();
   if(state.tab==="video"||state.tab==="cloud")render();
  }catch(error){
-  if(showErrors){state.cloudMessage=error instanceof Error?error.message:"Could not refresh generation progress. Retry shortly.";render();}
+  if(showErrors){state.videoApproval={...approval!,statusSummary:"Progress refresh failed: "+(error instanceof Error?error.message:"Retry shortly.")};save();render();}
  }finally{cloudJobsRefreshBusy=false;}
 }
 function startCloudJobsAutoRefresh(){
