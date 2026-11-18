@@ -124,6 +124,17 @@ test("Creative Director endpoint requires authentication and never exposes gatew
   assert.deepEqual(body.usage, { promptTokens: 80, completionTokens: 250, totalTokens: 330 });
   assert.match(body.plan.inputHash, /^[a-f0-9]{64}$/);
   assert.ok(body.recordId);
+  assert.equal(body.persistence.saved,true);
+  assert.equal(body.persistence.artifactId,body.recordId);
+  assert.equal(body.persistence.revision,1);
+  assert.match(body.persistence.contentHash,/^[a-f0-9]{64}$/);
+  const saved=await request("/api/projects/"+ownedProjectId+"/creative-artifacts?type=creative_direction",{},cookie);
+  assert.equal(saved.status,200);
+  const savedBody=await saved.json();
+  assert.equal(savedBody.artifacts.length,1);
+  assert.equal(savedBody.artifacts[0].content.title,"Community solar workshop");
+  const fetched=await request("/api/projects/"+ownedProjectId+"/creative-artifacts/"+body.recordId,{},cookie);
+  assert.equal((await fetched.json()).artifact.content.inputHash,body.plan.inputHash);
   assert.equal(JSON.stringify(body).includes("creative-director-test-secret"), false);
   assert.equal(gatewayRequests, 1);
 });
