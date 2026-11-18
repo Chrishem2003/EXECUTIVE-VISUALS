@@ -380,7 +380,7 @@ test("interrupted private output stream is cleaned up and never published as an 
  const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-stream-interrupted-")),prior=process.env.SUPABASE_URL;
  process.env.SUPABASE_URL="https://supabase.example";
  try{
-  const body=new ReadableStream({start(controller){controller.enqueue(video.subarray(0,8));controller.error(new Error("simulated network interruption"));}});
+  const body=new ReadableStream({start(controller){controller.enqueue(video.subarray(0,8));},pull(controller){controller.error(new Error("simulated network interruption"));}},{highWaterMark:0});
   await assert.rejects(()=>executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
