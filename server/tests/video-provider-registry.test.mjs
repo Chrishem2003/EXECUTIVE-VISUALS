@@ -186,9 +186,12 @@ test("Seedance 2.5 catalogue exposes the private source-edit worker and 4K price
   assert.deepEqual(model.capabilities.resolutions, ["480p", "720p", "1080p", "4k"]);
   assert.equal(model.constraints.maxPromptCharacters, 15000);
   assert.equal(model.constraints.durationAutoBilledSeconds, 30);
-  assert.equal(model.capabilities.referenceImages, false);
-  assert.equal(model.capabilities.referenceVideos, false);
-  assert.equal(model.capabilities.referenceAudio, false);
+  assert.equal(model.capabilities.referenceImages, true);
+  assert.equal(model.capabilities.referenceVideos, true);
+  assert.equal(model.capabilities.referenceAudio, true);
+  assert.equal(model.capabilities.maxReferenceImages, 30);
+  assert.equal(model.capabilities.maxReferenceVideos, 10);
+  assert.equal(model.capabilities.maxReferenceAudio, 10);
   assert.deepEqual(model.constraints.outputCreditsPerSecondByResolution, { "480p": 20, "720p": 30, "1080p": 68, "4k": 110 });
   assert.equal(model.constraints.minimumCredits, 80);
   assert.equal(model.constraints.videoEditRequiresAutoDuration, true);

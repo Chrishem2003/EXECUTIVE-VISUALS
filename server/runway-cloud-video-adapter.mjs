@@ -16,12 +16,20 @@ const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 const UPLOAD_TYPES = Object.freeze({
   "video/mp4": ".mp4",
   "video/quicktime": ".mov",
+  "video/webm": ".webm",
+  "video/x-matroska": ".mkv",
+  "video/3gpp": ".3gp",
+  "video/ogg": ".ogv",
+  "video/x-msvideo": ".avi",
+  "video/x-flv": ".flv",
+  "video/mpeg": ".mpg",
   "image/png": ".png",
   "image/jpeg": ".jpg",
   "image/webp": ".webp",
   "audio/mpeg": ".mp3",
   "audio/mp3": ".mp3",
   "audio/mp4": ".m4a",
+  "audio/x-m4a": ".m4a",
   "audio/wav": ".wav",
   "audio/wave": ".wav",
   "audio/x-wav": ".wav",
@@ -266,6 +274,11 @@ export function createRunwayCloudVideoAdapter({
           for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
           return { ...input, promptImageReferences, referenceAudio };
         }
+        if (selectedModel === "seedance2_5" && prepared.firstFrame) {
+          const promptImageKeyframes = [{ uri: await uploadEphemeral(prepared.firstFrame), position: "first" }];
+          if (prepared.lastFrame) promptImageKeyframes.push({ uri: await uploadEphemeral(prepared.lastFrame), position: "last" });
+          return { ...input, promptImageKeyframes };
+        }
         let promptImageUri = prepared.promptImageUri;
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -279,17 +292,20 @@ export function createRunwayCloudVideoAdapter({
         return { ...input, videoUri };
       }
       if (selectedModel === "seedance2_5" && input.operation === "text-to-video" &&
-          (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceAudio))) {
+          (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceVideos) || Array.isArray(prepared.referenceAudio))) {
         const references = [];
+        const referenceVideos = [];
         const referenceAudio = [];
         const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
+        const videos = Array.isArray(prepared.referenceVideos) ? prepared.referenceVideos : [];
         const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
-        if (images.length > 30 || audio.length > 10) {
+        if (images.length > 30 || videos.length > 10 || audio.length > 10) {
           throw fail("Seedance reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
         }
         for (const item of images) references.push({ uri: await uploadEphemeral(item) });
+        for (const item of videos) referenceVideos.push({ uri: await uploadEphemeral(item) });
         for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
-        return { ...input, references, referenceAudio };
+        return { ...input, references, referenceVideos, referenceAudio };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
       if (isVideoUpscale) {
@@ -549,6 +565,7 @@ export function createRunwayCloudVideoAdapter({
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       const hasSeedanceReferences = selectedModel === "seedance2_5" &&
         (Array.isArray(input.references) && input.references.length > 0 ||
+         Array.isArray(input.referenceVideos) && input.referenceVideos.length > 0 ||
          Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0 ||
          Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
       if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
@@ -565,7 +582,9 @@ export function createRunwayCloudVideoAdapter({
       if (imageToVideo) {
         const seedanceReferenceMode = selectedModel === "seedance2_5" &&
           Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0;
-        if (!seedanceReferenceMode && !isRunwayUri(input.promptImageUri)) {
+        const seedanceKeyframeMode = selectedModel === "seedance2_5" &&
+          Array.isArray(input.promptImageKeyframes) && input.promptImageKeyframes.length > 0;
+        if (!seedanceReferenceMode && !seedanceKeyframeMode && !isRunwayUri(input.promptImageUri)) {
           throw fail("Image-to-video requires a prepared Runway first-frame upload or verified Seedance reference collection.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         }
         // Reuse the direct gateway's model-specific validation and ratio mapping;
@@ -574,7 +593,8 @@ export function createRunwayCloudVideoAdapter({
           ...buildRunwayImageToVideoPayload({
             model: selectedModel,
             prompt: typeof input.prompt === "string" ? input.prompt.trim() : "",
-            promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences : "data:image/png;base64,AA==",
+            promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences :
+              Array.isArray(input.promptImageKeyframes) ? input.promptImageKeyframes : "data:image/png;base64,AA==",
             referenceAudio: input.referenceAudio,
             durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
             aspectRatio: input.aspectRatio || "16:9",
@@ -582,7 +602,8 @@ export function createRunwayCloudVideoAdapter({
             multiPrompt: input.multiPrompt,
             shotType: input.shotType || "customize"
           }),
-          promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences : input.promptImageUri,
+          promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences :
+            Array.isArray(input.promptImageKeyframes) ? input.promptImageKeyframes : input.promptImageUri,
           ...(Array.isArray(input.referenceAudio) && input.referenceAudio.length ? { referenceAudio: input.referenceAudio } : {})
         };
       } else {
@@ -595,6 +616,7 @@ export function createRunwayCloudVideoAdapter({
           multiPrompt: input.multiPrompt,
           shotType: input.shotType || "customize",
           references: input.references,
+          referenceVideos: input.referenceVideos,
           referenceAudio: input.referenceAudio
         });
       }

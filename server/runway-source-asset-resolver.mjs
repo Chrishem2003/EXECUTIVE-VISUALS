@@ -3,10 +3,13 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
+const VIDEO_TYPES = new Set([
+  "video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
+  "video/3gpp", "video/ogg", "video/x-msvideo", "video/x-flv", "video/mpeg"
+]);
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/webm", "audio/flac", "audio/x-flac"]);
-const SEEDANCE_AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/flac", "audio/x-flac"]);
+const SEEDANCE_AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/flac", "audio/x-flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function parseRate(value) {
@@ -214,8 +217,9 @@ export function createRunwaySourceAssetResolver({
             imageReferenceMode && imageIds.length === 0) {
           throw fail("Seedance 2.5 reference mode requires 1–30 distinct owner-scoped image references.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
-        if (!Array.isArray(videoIds) || videoIds.length > 0) {
-          throw fail("Seedance video references require a separately priced quote path and are not yet enabled in this workflow.", "VIDEO_REFERENCE_PRICING_REQUIRED");
+        if (!Array.isArray(videoIds) || videoIds.length > 10 || new Set(videoIds).size !== videoIds.length ||
+            videoIds.length > 0 && input.operation !== "text-to-video") {
+          throw fail("Seedance 2.5 accepts up to 10 distinct video references in text-to-video mode only.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         if (!Array.isArray(audioIds) || audioIds.length > 10 || new Set(audioIds).size !== audioIds.length) {
           throw fail("Seedance 2.5 accepts at most 10 distinct owner-scoped audio references.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
@@ -225,6 +229,22 @@ export function createRunwaySourceAssetResolver({
         }
         if (imageReferenceMode && (input.startFrameAssetId || input.endFrameAssetId)) {
           throw fail("Seedance reference images cannot be mixed with first/last keyframes.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+        }
+        let firstFrame = null;
+        let lastFrame = null;
+        if (input.operation === "image-to-video" && !imageReferenceMode) {
+          if (!input.startFrameAssetId || imageIds.length || audioIds.length) {
+            throw fail("Seedance keyframe mode requires a first frame and cannot be mixed with reference images or audio.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+          }
+          if (input.endFrameAssetId && input.endFrameAssetId === input.startFrameAssetId) {
+            throw fail("Seedance first and last keyframes must be distinct assets.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+          }
+          const first = await resolveAsset({ ownerId, projectId, assetId: input.startFrameAssetId, kinds: "image" });
+          firstFrame = { buffer: first.bytes, filename: first.asset.name, mimeType: first.asset.mediaType };
+          if (input.endFrameAssetId) {
+            const last = await resolveAsset({ ownerId, projectId, assetId: input.endFrameAssetId, kinds: "image" });
+            lastFrame = { buffer: last.bytes, filename: last.asset.name, mimeType: last.asset.mediaType };
+          }
         }
         const referenceImages = [];
         for (const assetId of imageIds) {
@@ -243,7 +263,31 @@ export function createRunwaySourceAssetResolver({
         if (input.operation === "text-to-video" && !referenceImages.length && !referenceAudio.length && !String(input.prompt || "").trim()) {
           throw fail("Seedance text-to-video requires a prompt or at least one image/audio reference.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         }
-        return { ...input, referenceImages, referenceAudio, ...(imageReferenceMode ? { imageReferenceMode: true } : {}) };
+        const referenceVideos = [];
+        let referenceVideoSeconds = 0;
+        for (const assetId of videoIds) {
+          const video = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
+          const metadata = await probeVideo(video.bytes);
+          if (metadata.durationSeconds < 2 || Math.min(metadata.width, metadata.height) < 480) {
+            throw fail("Seedance reference videos must be at least 2 seconds long and at least 480p.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+          }
+          const billableDurationSeconds = metadata.durationSeconds < 4 ? 4.25 : metadata.durationSeconds;
+          referenceVideoSeconds += billableDurationSeconds;
+          referenceVideos.push({
+            buffer: video.bytes, filename: video.asset.name, mimeType: video.asset.mediaType,
+            durationSeconds: metadata.durationSeconds, billableDurationSeconds
+          });
+        }
+        if (referenceVideoSeconds > 30) {
+          throw fail("Seedance reference videos exceed the combined 30-second billable input limit.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+        }
+        return {
+          ...input, referenceImages, referenceAudio,
+          ...(referenceVideos.length ? { referenceVideos, referenceVideoSeconds } : {}),
+          ...(imageReferenceMode ? { imageReferenceMode: true } : {}),
+          ...(firstFrame ? { firstFrame } : {}),
+          ...(lastFrame ? { lastFrame } : {})
+        };
       }
       if (input?.model === "model-router") {
         const referenceImages = [];
@@ -355,6 +399,30 @@ export function createRunwaySourceAssetResolver({
         mediaType: resolved.asset.mediaType,
         ...metadata
       };
+    },
+    async resolveReferenceVideoMetadata({ ownerId, projectId = null, assetIds } = {}) {
+      if (!Array.isArray(assetIds) || assetIds.length > 10 || new Set(assetIds).size !== assetIds.length) {
+        throw fail("Seedance accepts up to 10 distinct reference videos.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+      }
+      const videos = [];
+      let totalBillableDurationSeconds = 0;
+      for (const assetId of assetIds) {
+        const resolved = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
+        const metadata = await probeVideo(resolved.bytes);
+        if (metadata.durationSeconds < 2 || Math.min(metadata.width, metadata.height) < 480) {
+          throw fail("Seedance reference videos must be at least 2 seconds long and at least 480p.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+        }
+        const billableDurationSeconds = metadata.durationSeconds < 4 ? 4.25 : metadata.durationSeconds;
+        totalBillableDurationSeconds += billableDurationSeconds;
+        videos.push(Object.freeze({
+          ownerId, projectId, assetId, mediaType: resolved.asset.mediaType,
+          durationSeconds: metadata.durationSeconds, billableDurationSeconds
+        }));
+      }
+      if (totalBillableDurationSeconds > 30) {
+        throw fail("Seedance reference videos exceed the combined 30-second billable input limit.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+      }
+      return Object.freeze({ ownerId, projectId, videos: Object.freeze(videos), totalBillableDurationSeconds });
     }
   });
 }

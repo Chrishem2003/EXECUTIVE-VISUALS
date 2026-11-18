@@ -71,7 +71,9 @@ export function estimateRunwayVideoCredits(options={}) {
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
   const hasImageStartFrame=hasStartFrame||inputType==="image";
   const billableImageReferences=imageCount+(hasImageStartFrame?1:0);
-  if(audioCount>0&&model!=="grok_imagine_1_5")throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(audioCount>0&&!["grok_imagine_1_5","seedance2_5"].includes(model))throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5 and Seedance 2.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(model==="seedance2_5"&&audioCount>10)throw fail("Seedance 2.5 accepts at most 10 reference audio clips.","RUNWAY_PRICE_INVALID_INPUT");
+  if(model==="seedance2_5"&&imageCount>30)throw fail("Seedance 2.5 accepts at most 30 reference images.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="grok_imagine_1_5") {
     if(imageCount>7||audioCount>3||billableImageReferences>7)throw fail("Grok Imagine Video 1.5 accepts at most 7 image and 3 audio references.","RUNWAY_PRICE_INVALID_INPUT");
     if(audioCount>0&&billableImageReferences===0)throw fail("Grok Imagine Video 1.5 audio references require at least one image reference or start frame.","RUNWAY_PRICE_INPUT_REQUIRED");

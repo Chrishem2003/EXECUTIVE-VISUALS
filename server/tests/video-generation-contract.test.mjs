@@ -234,3 +234,48 @@ test("source video counts toward the two-video Runway Router limit", () => {
   assert.equal(request.referenceVideoAssetIds.length + 1, 2);
 });
 
+
+
+test("normalizes Seedance 2.5 text-to-video multimodal reference limits and reference-only prompts", () => {
+  const request = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    referenceImageAssetIds: Array.from({length:30},(_,i)=>"image-"+i),
+    referenceVideoAssetIds: Array.from({length:10},(_,i)=>"video-"+i),
+    referenceAudioAssetIds: Array.from({length:10},(_,i)=>"audio-"+i)
+  });
+  assert.equal(request.referenceAssetIds.length, 30);
+  assert.equal(request.referenceVideoAssetIds.length, 10);
+  assert.equal(request.referenceAudioAssetIds.length, 10);
+  assert.equal(request.prompt, undefined);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video"
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    referenceVideoAssetIds: Array.from({length:11},(_,i)=>"video-"+i)
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "x".repeat(15001), referenceVideoAssetIds: ["video-1"]
+  }), VideoGenerationValidationError);
+});
+
+
+test("normalizes Seedance image-to-video reference and keyframe modes without requiring prompt text", () => {
+  const referenceMode = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    referenceImageAssetIds: ["image-1", "image-2"]
+  });
+  assert.equal(referenceMode.referenceAssetIds.length, 2);
+  assert.equal(referenceMode.prompt, undefined);
+  const keyframeMode = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    startFrameAssetId: "first-frame", endFrameAssetId: "last-frame"
+  });
+  assert.equal(keyframeMode.startFrameAssetId, "first-frame");
+  assert.equal(keyframeMode.endFrameAssetId, "last-frame");
+  assert.equal(keyframeMode.prompt, undefined);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video"
+  }), VideoGenerationValidationError);
+});

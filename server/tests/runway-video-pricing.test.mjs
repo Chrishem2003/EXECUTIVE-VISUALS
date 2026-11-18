@@ -189,3 +189,19 @@ test("Kling 3.0 4K pricing is independent of the optional audio toggle",()=>{
  assert.equal(withAudio.estimatedCredits,215);
  assert.equal(withoutAudio.estimatedCredits,215);
 });
+
+
+test("Seedance 2.5 reference audio and image counts are accepted without per-reference charges", () => {
+ const baseline = estimateRunwayVideoCredits({
+  model: "seedance2_5", durationSeconds: 5, resolution: "720p", pricingDate: date
+ });
+ const withFreeReferences = estimateRunwayVideoCredits({
+  model: "seedance2_5", durationSeconds: 5, resolution: "720p",
+  referenceImageCount: 30, referenceAudioCount: 10, pricingDate: date
+ });
+ assert.equal(withFreeReferences.estimatedCredits, baseline.estimatedCredits);
+ assert.throws(() => estimateRunwayVideoCredits({
+  model: "seedance2_5", durationSeconds: 5, resolution: "720p",
+  referenceAudioCount: 11, pricingDate: date
+ }), e => e.code === "RUNWAY_PRICE_INVALID_INPUT");
+});

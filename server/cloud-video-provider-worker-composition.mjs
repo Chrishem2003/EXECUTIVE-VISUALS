@@ -105,8 +105,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
   });
   const prepareInput = prepareRunwayInput || sourceResolver.prepare;
   const resolveSourceMetadata = resolveRunwaySourceMetadata || sourceResolver.resolveMetadata;
+  const resolveReferenceVideoMetadata = sourceResolver.resolveReferenceVideoMetadata;
   const enqueue = createCloudVideoEnqueue({
-    ...clientOptions, env, resolveRunwaySourceMetadata: resolveSourceMetadata
+    ...clientOptions, env,
+    resolveRunwaySourceMetadata: resolveSourceMetadata,
+    resolveRunwayReferenceVideoMetadata: resolveReferenceVideoMetadata
   });
   const googleEnabled = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
   let googleOmniIntegration = providerDependencies.googleOmniIntegration;

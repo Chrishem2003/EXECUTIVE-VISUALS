@@ -56,7 +56,8 @@ export function createCloudVideoEnqueue({
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000,
   env = process.env,
-  resolveRunwaySourceMetadata
+  resolveRunwaySourceMetadata,
+  resolveRunwayReferenceVideoMetadata
 } = {}) {
   if (!url || !serviceRoleKey) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud video enqueue requires a fetch implementation.");
@@ -203,6 +204,44 @@ export function createCloudVideoEnqueue({
         disabled.code = "GEMINI_OMNI_REMOTE_DISABLED";
         throw disabled;
       }
+      let verifiedReferenceVideoMetadata = null;
+      if (model === "seedance2_5" && input.operation === "text-to-video" &&
+          Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) {
+        if (typeof resolveRunwayReferenceVideoMetadata !== "function") {
+          const unavailable = new Error("Seedance video references require a server-side owner-scoped media probe before quote and budget reservation.");
+          unavailable.code = "VIDEO_REFERENCE_METADATA_UNAVAILABLE";
+          throw unavailable;
+        }
+        if (input.referenceVideoSeconds !== undefined || input.inputVideoSeconds !== undefined) {
+          const invalid = new Error("Seedance reference-video duration must be derived from private asset bytes, never supplied by the client.");
+          invalid.code = "VIDEO_REFERENCE_DURATION_UNTRUSTED";
+          throw invalid;
+        }
+        verifiedReferenceVideoMetadata = await resolveRunwayReferenceVideoMetadata({
+          ownerId, projectId, assetIds: input.referenceVideoAssetIds
+        });
+        if (!verifiedReferenceVideoMetadata || verifiedReferenceVideoMetadata.ownerId !== ownerId ||
+            (verifiedReferenceVideoMetadata.projectId || null) !== projectId ||
+            !Array.isArray(verifiedReferenceVideoMetadata.videos) ||
+            verifiedReferenceVideoMetadata.videos.length !== input.referenceVideoAssetIds.length ||
+            verifiedReferenceVideoMetadata.videos.some((item, index) =>
+              item.ownerId !== ownerId || (item.projectId || null) !== projectId ||
+              item.assetId !== input.referenceVideoAssetIds[index] ||
+              !Number.isFinite(item.durationSeconds) || item.durationSeconds < 2 || item.durationSeconds > 30 ||
+              !Number.isFinite(item.billableDurationSeconds) ||
+              item.billableDurationSeconds !== (item.durationSeconds < 4 ? 4.25 : item.durationSeconds)) ||
+            !Number.isFinite(verifiedReferenceVideoMetadata.totalBillableDurationSeconds) ||
+            verifiedReferenceVideoMetadata.totalBillableDurationSeconds <= 0 ||
+            verifiedReferenceVideoMetadata.totalBillableDurationSeconds > 30) {
+          const invalid = new Error("Seedance reference-video metadata failed owner, project, duration or billing validation.");
+          invalid.code = "VIDEO_REFERENCE_METADATA_INVALID";
+          throw invalid;
+        }
+      } else if (model === "seedance2_5" && (input.referenceVideoSeconds !== undefined || input.inputVideoSeconds !== undefined)) {
+        const invalid = new Error("Seedance input and reference video durations must be derived from authorized private assets.");
+        invalid.code = "VIDEO_REFERENCE_DURATION_UNTRUSTED";
+        throw invalid;
+      }
       let verifiedSourceMetadata = null;
       if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled || runwayDirectVideoEditEnabled) {
         if (typeof resolveRunwaySourceMetadata !== "function") {
@@ -288,8 +327,16 @@ export function createCloudVideoEnqueue({
         : undefined;
       const directUsesSourceDuration = runwayDirectVideoEditEnabled &&
         (model === "kling_4" || model === "seedance2_5" && input.mode === "edit");
-      const pricingInput = verifiedSourceMetadata ? {
+      const pricingInput = {
         ...input,
+        ...(model === "seedance2_5" ? {
+          referenceImageCount: Array.isArray(input.referenceAssetIds ?? input.referenceImageAssetIds)
+            ? (input.referenceAssetIds ?? input.referenceImageAssetIds).length : 0,
+          referenceAudioCount: Array.isArray(input.referenceAudioAssetIds)
+            ? input.referenceAudioAssetIds.length : input.referenceAudioAssetId ? 1 : 0
+        } : {}),
+        ...(verifiedReferenceVideoMetadata ? { referenceVideoSeconds: verifiedReferenceVideoMetadata.totalBillableDurationSeconds } : {}),
+        ...(verifiedSourceMetadata ? {
         ...(directUsesSourceDuration || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled
           ? { durationSeconds: sourceDurationSeconds } : {}),
         inputVideoSeconds: sourceDurationSeconds,
@@ -300,15 +347,16 @@ export function createCloudVideoEnqueue({
         ...(runwayDirectVideoEditEnabled && (model === "kling_4" || input.mode === "edit" || input.mode === "extend")
           ? { resolution: model === "kling_4" ? (directSourceResolution === "480p" ? "720p" : directSourceResolution === "4k" ? "1080p" : directSourceResolution) : (Math.min(verifiedSourceMetadata.width, verifiedSourceMetadata.height) > 720 ? "1080p" : "720p") }
           : {})
-      } : input;
+        } : {})
+      };
       const estimate = runwayRouterEnabled
         ? { amount: reservedAmount, currency: "USD", source: "approved_budget_ceiling_pending_runway_router_preflight" }
         : estimateVideoGenerationCost({
         provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
         durationSeconds: pricingInput.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
-        inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
-        referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
+        inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: pricingInput.referenceVideoSeconds,
+        referenceImageCount: pricingInput.referenceImageCount, referenceAudioCount: pricingInput.referenceAudioCount,
         hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
         sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
         sourceDynamicRange: model === "ruby" ? (pricingInput.sourceDynamicRange ?? input.sourceDynamicRange) : undefined, outputWidth: input.outputWidth,
@@ -334,7 +382,23 @@ export function createCloudVideoEnqueue({
         }
       } else if (runwayDirectEnabled) {
         const promptLimit = model === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(model) ? 26000 : 2500;
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > promptLimit) {
+        const seedanceImageAssetIds = input.referenceImageAssetIds ?? input.referenceAssetIds ?? [];
+        const seedanceAudioAssetIds = input.referenceAudioAssetIds ?? (input.referenceAudioAssetId ? [input.referenceAudioAssetId] : []);
+        if (model === "seedance2_5" && Array.isArray(input.referenceVideoAssetIds) &&
+            input.referenceVideoAssetIds.length > 0 && input.operation !== "text-to-video") {
+          const invalid = new Error("Seedance reference videos are supported only by text-to-video in this worker.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        const hasSeedanceReferenceInputs = model === "seedance2_5" &&
+          (input.operation === "text-to-video" &&
+            ((Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0) ||
+             (Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) ||
+             (Array.isArray(seedanceAudioAssetIds) && seedanceAudioAssetIds.length > 0)) ||
+           input.operation === "image-to-video" &&
+            (Boolean(input.startFrameAssetId) || Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0));
+        if ((!hasSeedanceReferenceInputs && (typeof input.prompt !== "string" || !input.prompt.trim())) ||
+            input.prompt !== undefined && (typeof input.prompt !== "string" || input.prompt.length > promptLimit)) {
           const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
@@ -366,21 +430,54 @@ export function createCloudVideoEnqueue({
             throw new Error("The selected Kling 3.0 profile does not support video-to-video in this worker.");
           }
         } else if (input.operation === "image-to-video") {
-          if (!input.startFrameAssetId) {
-            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped private first-frame asset.");
+          const seedanceReferenceMode = model === "seedance2_5" &&
+            !input.startFrameAssetId && !input.endFrameAssetId &&
+            Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0;
+          if (!input.startFrameAssetId && !seedanceReferenceMode) {
+            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped first frame or Seedance reference-image collection.");
             invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
             throw invalid;
           }
-          buildRunwayImageToVideoPayload({
-            model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
-            durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
-            resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
-          });
+          if (seedanceReferenceMode && (seedanceImageAssetIds.length > 30 || seedanceAudioAssetIds.length > 10)) {
+            const invalid = new Error("Seedance image-to-video accepts at most 30 reference images and 10 reference audio clips.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_FAILED";
+            throw invalid;
+          }
+          if (seedanceReferenceMode) {
+            buildRunwayImageToVideoPayload({
+              model, prompt: input.prompt,
+              promptImage: seedanceImageAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-image-" + index })),
+              referenceAudio: seedanceAudioAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-audio-" + index })),
+              durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+              resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+            });
+          } else {
+            if (model === "seedance2_5" && (seedanceImageAssetIds.length || seedanceAudioAssetIds.length)) {
+              const invalid = new Error("Seedance first/last keyframes cannot be mixed with reference images or reference audio.");
+              invalid.code = "VIDEO_INPUT_KEYFRAMES_INVALID";
+              throw invalid;
+            }
+            buildRunwayImageToVideoPayload({
+              model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
+              durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+              resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+            });
+          }
         } else {
+          if (model === "seedance2_5" &&
+              (!Array.isArray(input.referenceVideoAssetIds) || input.referenceVideoAssetIds.length > 10) &&
+              input.referenceVideoAssetIds !== undefined) {
+            const invalid = new Error("Seedance text-to-video accepts at most 10 private video references.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_FAILED";
+            throw invalid;
+          }
           buildRunwayVideoPayload({
             model, prompt: input.prompt, durationSeconds: input.durationSeconds,
             aspectRatio: input.aspectRatio, resolution: input.resolution,
-            multiPrompt: input.multiPrompt, shotType: input.shotType
+            multiPrompt: input.multiPrompt, shotType: input.shotType,
+            references: seedanceImageAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-image-" + index })),
+            referenceVideos: (input.referenceVideoAssetIds || []).map((_, index) => ({ uri: "runway://preflight/reference-video-" + index })),
+            referenceAudio: seedanceAudioAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-audio-" + index }))
           });
         }
         if (["kling_4", "kling_4_flash"].includes(model) && input.audio !== undefined) {

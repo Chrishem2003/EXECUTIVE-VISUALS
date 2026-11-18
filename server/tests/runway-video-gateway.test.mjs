@@ -396,13 +396,58 @@ test("Seedance image-to-video accepts native reference images and audio without 
   referenceAudio: [{ uri: "runway://ephemeral/ambience" }],
   duration: 8, ratio: "1280:720"
  });
+ const firstFrameOnly = buildRunwayImageToVideoPayload({
+  model: "seedance2_5", prompt: "A shot",
+  promptImage: [{ uri: "runway://ephemeral/subject", position: "first" }],
+  durationSeconds: 5, aspectRatio: "16:9", resolution: "720p"
+ });
+ assert.deepEqual(firstFrameOnly.promptImage, [{ uri: "runway://ephemeral/subject", position: "first" }]);
+ assert.equal(firstFrameOnly.ratio, "1280:720");
  assert.throws(() => buildRunwayImageToVideoPayload({
   model: "seedance2_5", prompt: "A shot",
-  promptImage: [{ uri: "runway://ephemeral/subject", position: "first" }]
+  promptImage: [{ uri: "runway://ephemeral/subject", position: "last" }]
  }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
  assert.throws(() => buildRunwayImageToVideoPayload({
   model: "seedance2_5", prompt: "",
   promptImage: [{ uri: "runway://ephemeral/subject" }],
   referenceAudio: [{ uri: "runway://ephemeral/ambience" }]
+ }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
+});
+
+
+test("Seedance text-to-video accepts up to 10 native video references", () => {
+ const payload = buildRunwayVideoPayload({
+  model: "seedance2_5", prompt: "Follow the motion reference", durationSeconds: 8,
+  aspectRatio: "16:9", resolution: "720p",
+  referenceVideos: [{ uri: "runway://ephemeral/video-reference" }]
+ });
+ assert.deepEqual(payload.referenceVideos, [{ uri: "runway://ephemeral/video-reference" }]);
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "seedance2_5", prompt: "A scene",
+  referenceVideos: Array.from({length:11},()=>({uri:"runway://ephemeral/video-reference"}))
+ }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "gen4.5", prompt: "A scene",
+  referenceVideos: [{uri:"runway://ephemeral/video-reference"}]
+ }), e => e.code === "VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+
+
+test("Seedance image-to-video accepts a first keyframe and optional last keyframe with positions", () => {
+ const payload = buildRunwayImageToVideoPayload({
+  model: "seedance2_5", prompt: "Move naturally between the supplied frames",
+  promptImage: [
+   { uri: "runway://ephemeral/first-frame", position: "first" },
+   { uri: "runway://ephemeral/last-frame", position: "last" }
+  ],
+  durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+ });
+ assert.deepEqual(payload.promptImage, [
+  { uri: "runway://ephemeral/first-frame", position: "first" },
+  { uri: "runway://ephemeral/last-frame", position: "last" }
+ ]);
+ assert.throws(() => buildRunwayImageToVideoPayload({
+  model: "seedance2_5", prompt: "Bad order",
+  promptImage: [{ uri: "runway://ephemeral/last-frame", position: "last" }]
  }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
 });

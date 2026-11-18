@@ -706,3 +706,97 @@ test("Kling 4 video-to-video prices the server-probed source duration and reject
  });
  await assert.rejects(()=>invalid.enqueue(args({provider:"runway",model:"kling_4",input:directInput,reservedAmount:10,currency:"USD"})),error=>error.code==="VIDEO_SOURCE_METADATA_INVALID");
 });
+
+
+test("Seedance quote reservation derives reference-video duration from owner-scoped probes, including short-clip padding", async () => {
+  const videoId = "823e4567-e89b-42d3-a456-426614174000";
+  const env = {
+    CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+    RUNWAYML_API_SECRET: "server-runway-key", RUNWAY_VIDEO_MODELS: "seedance2_5"
+  };
+  const input = {
+    projectId, provider: "runway", model: "seedance2_5", requestHash,
+    operation: "text-to-video", prompt: "A cinematic scene following the supplied motion",
+    durationSeconds: 5, resolution: "720p", referenceVideoAssetIds: [videoId]
+  };
+  let calls = 0;
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    resolveRunwayReferenceVideoMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetIds: [videoId] });
+      return {
+        ownerId, projectId, videos: [{
+          ownerId, projectId, assetId: videoId, durationSeconds: 3.1, billableDurationSeconds: 4.25
+        }],
+        totalBillableDurationSeconds: 4.25
+      };
+    },
+    fetchImpl: async (_url, options) => {
+      calls++;
+      const body = JSON.parse(options.body);
+      assert.equal(body.p_reserved_amount, 2.2);
+      return response([resultRow]);
+    }
+  });
+  const queued = await client.enqueue(args({
+    model: "seedance2_5", input, reservedAmount: 2.2, env
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+  await assert.rejects(() => client.enqueue(args({
+    model: "seedance2_5", input: { ...input, referenceVideoSeconds: 0.1 }, reservedAmount: 2.2
+  })), error => error.code === "VIDEO_REFERENCE_DURATION_UNTRUSTED");
+});
+
+test("Seedance reference-video reservation fails closed without private metadata and when the reserve is short", async () => {
+  const videoId = "923e4567-e89b-42d3-a456-426614174000";
+  const env = {
+    CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+    RUNWAYML_API_SECRET: "server-runway-key", RUNWAY_VIDEO_MODELS: "seedance2_5"
+  };
+  const input = {
+    projectId, provider: "runway", model: "seedance2_5", requestHash,
+    operation: "text-to-video", prompt: "A cinematic scene",
+    durationSeconds: 5, resolution: "720p", referenceVideoAssetIds: [videoId]
+  };
+  const noResolver = createCloudVideoEnqueue({ ...base, env, fetchImpl: async () => response([resultRow]) });
+  await assert.rejects(() => noResolver.enqueue(args({ model: "seedance2_5", input, reservedAmount: 2.2 })),
+    error => error.code === "VIDEO_REFERENCE_METADATA_UNAVAILABLE");
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    resolveRunwayReferenceVideoMetadata: async () => ({
+      ownerId, projectId, videos: [{ ownerId, projectId, assetId: videoId, durationSeconds: 3.1, billableDurationSeconds: 4.25 }],
+      totalBillableDurationSeconds: 4.25
+    }),
+    fetchImpl: async () => response([resultRow])
+  });
+  await assert.rejects(() => client.enqueue(args({
+    model: "seedance2_5", input, reservedAmount: 1.5
+  })), error => error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 2.1375);
+});
+
+
+test("Seedance image-to-video reference mode can enqueue without a first-frame asset or text prompt", async () => {
+  const env = {
+    CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+    RUNWAYML_API_SECRET: "server-runway-key", RUNWAY_VIDEO_MODELS: "seedance2_5"
+  };
+  const input = {
+    projectId, provider: "runway", model: "seedance2_5", requestHash,
+    operation: "image-to-video", referenceAssetIds: ["a23e4567-e89b-42d3-a456-426614174000"],
+    durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  };
+  let calls = 0;
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "seedance2_5", input, reservedAmount: 3.0
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+});

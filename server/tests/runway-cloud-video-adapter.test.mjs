@@ -420,12 +420,12 @@ test("prepares a private first frame and submits Seedance 2.5 image-to-video", a
     durationSeconds: 8, aspectRatio: "9:16", resolution: "720p"
   };
   const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
-  assert.equal(prepared.promptImageUri, "runway://ephemeral/seedance-first-frame");
+  assert.deepEqual(prepared.promptImageKeyframes, [{ uri: "runway://ephemeral/seedance-first-frame", position: "first" }]);
   assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/image_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "seedance2_5", promptText: "Animate the approved product frame",
-    promptImage: "runway://ephemeral/seedance-first-frame",
+    promptImage: [{ uri: "runway://ephemeral/seedance-first-frame", position: "first" }],
     duration: 8, ratio: "720:1280"
   });
 });
@@ -453,7 +453,7 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   }, { job: { owner_id: "owner-1" } });
   await adapter.submit(prepared);
   assert.deepEqual(body, {
-    model: "seedance2_5", promptText: "Animate the approved frame", promptImage: "runway://ephemeral/draft-frame",
+    model: "seedance2_5", promptText: "Animate the approved frame", promptImage: [{ uri: "runway://ephemeral/draft-frame", position: "first" }],
     duration: 6, ratio: "854:480", draft: true
   });
 });
@@ -1075,4 +1075,88 @@ test("uploads Seedance image-to-video references without keyframe positions and 
   assert.deepEqual(submittedBody.promptImage, [{ uri: "runway://ephemeral/seedance-i2v-1" }]);
   assert.deepEqual(submittedBody.referenceAudio, [{ uri: "runway://ephemeral/seedance-i2v-2" }]);
   assert.equal(submittedBody.promptText, "Animate the subject to the supplied ambience");
+});
+
+
+test("uploads private Seedance video references to ephemeral storage and submits the native referenceVideos field", async () => {
+  let submittedBody;
+  const uploads = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({
+      referenceVideos: [{ buffer: Buffer.alloc(512), filename: "motion.mp4", mimeType: "video/mp4", durationSeconds: 6 }]
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) {
+        const index = uploads.length + 1;
+        uploads.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/seedance-video-reference-" + index,
+          fields: { key: "reference-video-" + index },
+          runwayUri: "runway://ephemeral/seedance-video-reference-" + index
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/text_to_video")) {
+        submittedBody = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "Use the supplied motion reference", durationSeconds: 8,
+    aspectRatio: "16:9", resolution: "720p", referenceVideoAssetIds: ["private-video-id"]
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.referenceVideos, [{ uri: "runway://ephemeral/seedance-video-reference-1" }]);
+  const submitted = await adapter.submit(prepared);
+  assert.equal(submitted.taskId, id);
+  assert.equal(uploads.length, 1);
+  assert.deepEqual(submittedBody.referenceVideos, [{ uri: "runway://ephemeral/seedance-video-reference-1" }]);
+  assert.equal(submittedBody.promptText, "Use the supplied motion reference");
+});
+
+
+test("uploads and submits Seedance first and last keyframes as distinct positioned references", async () => {
+  let submittedBody;
+  let uploadCount = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({
+      firstFrame: { buffer: Buffer.alloc(512), filename: "first.png", mimeType: "image/png" },
+      lastFrame: { buffer: Buffer.alloc(512), filename: "last.png", mimeType: "image/png" }
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) {
+        uploadCount++;
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/seedance-keyframe-" + uploadCount,
+          fields: { key: "keyframe-" + uploadCount },
+          runwayUri: "runway://ephemeral/seedance-keyframe-" + uploadCount
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) {
+        submittedBody = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    prompt: "Move between the first and last frames", durationSeconds: 8,
+    aspectRatio: "16:9", resolution: "720p", startFrameAssetId: "first-id", endFrameAssetId: "last-id"
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.promptImageKeyframes, [
+    { uri: "runway://ephemeral/seedance-keyframe-1", position: "first" },
+    { uri: "runway://ephemeral/seedance-keyframe-2", position: "last" }
+  ]);
+  const submitted = await adapter.submit(prepared);
+  assert.equal(submitted.taskId, id);
+  assert.equal(uploadCount, 2);
+  assert.deepEqual(submittedBody.promptImage, prepared.promptImageKeyframes);
 });
