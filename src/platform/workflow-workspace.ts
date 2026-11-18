@@ -85,21 +85,21 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
  const luma=provider==="luma",modelReleaseBlocked=provider==="runway"&&isVideoWorkflowModelReleaseBlocked(model),directRunway=provider==="runway"&&model!=="model-router"&&!modelReleaseBlocked,directVideoEdit=directRunway&&["seedance2_5","kling_4"].includes(model),operation=String(config.operation||"generate");
- const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
+ const resolutions=modelReleaseBlocked?["provider_default"]:luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
   model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
   model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
   model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
- const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default");
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(modelReleaseBlocked?"provider_default":luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"?"720p":"provider_default");
  const modelOptions=getVideoWorkflowModelOptions(provider,model);
  const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
   directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
- const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(model);
+ const supportsVideoMode=model==="seedance2_5";
  const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
  const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
  const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
- const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
- const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model.startsWith("kling3.0_")?3:2;
+ const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
