@@ -7,7 +7,7 @@ if(!baseUrl){
 }else{
  try{
   const target=new URL(baseUrl);
-  if(target.protocol!=="https:"||target.hostname.toLowerCase()!=="executive-visuals-cloud-staging.onrender.com"||
+  if(target.protocol!=="https:"||target.hostname.toLowerCase()!=="executive-visuals-cloud-staging.onrender.com"||target.port!==""||
      target.username||target.password||target.search||target.hash||target.pathname!=="/"){
    throw new Error("Refusing a non-staging or non-HTTPS target. No request was sent.");
   }
