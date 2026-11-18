@@ -142,7 +142,7 @@ test("Postgres bootstrap enforces private access, immutable rows and serialized 
 
 test("backfills legacy SQLite artifact IDs and revisions idempotently",async()=>{
  const f=fixture({artifactRows:[]});
- const legacy={...parentRow,projectId:project,createdBy:owner,type:"storyboard",revision:1};
+ const legacy={...parentRow,projectId:project,createdBy:owner,type:"storyboard",revision:1,inputHash,contentHash:parentRow.content_hash};
  const first=await f.repository.importLegacyArtifacts({projectId:project,ownerId:owner,projectName:"Solar workshop",artifacts:[legacy]});
  assert.deepEqual(first,{imported:1,alreadyPresent:0,total:1});
  assert.equal(f.artifactRows.length,1);
