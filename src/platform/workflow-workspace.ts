@@ -4,6 +4,7 @@ import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkf
 import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 import { isWorkflowQuoteExpired } from "../core/workflow-quote-expiry.mjs";
 import { getVideoWorkflowOperationOptions } from "../core/video-workflow-operations.mjs";
+import { getLatestWorkflowRunId } from "../core/workflow-run-selection.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
@@ -202,6 +203,40 @@ async function loadRun(){
  state.runStatus=response.run.status;state.runNodes=response.nodes;if(state.message.startsWith("Workflow status refresh failed")||state.message.startsWith("Workflow status could not be refreshed"))state.message="";
  if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+runId})}).catch(()=>{});
  scheduleWorkflowRunPoll();
+}
+
+let workflowSelectionEpoch=0;
+async function selectWorkflow(workflowId:string){
+ const epoch=++workflowSelectionEpoch;
+ if(runPollTimer!==null){clearTimeout(runPollTimer);runPollTimer=null;}
+ state.latestRunId="";state.runStatus="";state.runNodes=[];state.assets=[];state.costEstimate=null;state.plan="";
+ state.status="loading";state.message="Loading selected workflow and its latest run…";paint();
+ try{
+  const response=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+encodeURIComponent(workflowId));
+  if(epoch!==workflowSelectionEpoch)return;
+  state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;
+  state.selectedNode=state.graph?.nodes[0]?.id||"";
+  const projectId=String(state.graph?.projectId||"");
+  if(projectId){
+   try{
+    const assets=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(projectId));
+    if(epoch!==workflowSelectionEpoch)return;
+    state.assets=assets.assets.filter(asset=>asset.projectId===projectId);
+   }catch{if(epoch===workflowSelectionEpoch)state.assets=[];}
+  }
+  const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+encodeURIComponent(workflowId)+"/runs");
+  if(epoch!==workflowSelectionEpoch)return;
+  state.latestRunId=getLatestWorkflowRunId(runs.runs);
+  if(state.latestRunId)await loadRun();
+  else{state.runStatus="";state.runNodes=[];}
+  if(epoch!==workflowSelectionEpoch)return;
+  state.status="ready";state.message="";
+ }catch(error){
+  if(epoch!==workflowSelectionEpoch)return;
+  state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";
+  state.message=error instanceof Error?error.message:"The selected workflow could not be loaded.";
+ }
+ if(epoch===workflowSelectionEpoch)paint();
 }
 async function persist(){
  if(!state.graph)return;
@@ -440,7 +475,7 @@ document.addEventListener("change",event=>{
   const manual=form?.querySelector<HTMLInputElement>('[name="'+manualName+'"]');
   if(manual)manual.value="";
  }
- if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;state.assets=[];if(state.graph?.projectId){void apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId)).then(result=>{state.assets=result.assets.filter(asset=>asset.projectId===state.graph?.projectId);paint();}).catch(()=>{state.assets=[];paint();});}paint();}).catch(error=>alert(error.message||error));}
+ if(target.id==="wf-select"){void selectWorkflow(target.value);}
  if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"||target.name==="videoMode"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
   const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
