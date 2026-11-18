@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { openDatabase } from "../db.mjs";
 import {
-  saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact
+  saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact, appendCreativeProjectArtifactRevision
 } from "../creative-project-artifacts.mjs";
 
 async function fixture(t) {
@@ -84,4 +84,38 @@ test("project-scoped lookup never returns an artifact through another project ID
   });
   assert.equal(getCreativeProjectArtifact(db, { projectId: "different-project", artifactId: artifact.id }), null);
   assert.throws(() => listCreativeProjectArtifacts(db, { projectId: "project-1", type: "unknown" }), error => error.code === "CREATIVE_ARTIFACT_TYPE_INVALID");
+});
+
+
+const validStoryboard=(inputHash)=>({
+ schemaVersion:1,source:"model",id:"storyboard-1",model:"test-model",generatedAt:"2026-11-18T10:00:00.000Z",
+ inputHash,title:"Community solar workshop",logline:"A verifiable story.",targetDurationSeconds:30,durationSeconds:30,
+ aspectRatio:"9:16",frameRate:30,globalContinuityRules:["Keep the workshop consistent","Preserve equipment geometry","Maintain screen direction"],
+ characterSuggestions:[],scenes:[1,2].map(number=>({
+  id:"scene-"+number,number,title:"Scene "+number,slugline:"INT. WORKSHOP - DAY",purpose:"Show the real process",storyBeat:"Proof",
+  location:"Workshop",timeOfDay:"Day",durationSeconds:15,shots:[{
+   id:"shot-"+number,number:1,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
+   action:"Show the verified step.",dialogue:"",narration:"",visualPrompt:"Workshop detail.",motionPrompt:"Slow movement.",
+   negativePrompt:"No invented claims.",lighting:"Soft daylight",soundCue:"Room tone",continuityIn:"Match prior scene.",
+   continuityOut:"Hold on the result.",proofReference:"Check source evidence.",transitionOut:"cut",durationSeconds:15,characterRefs:[]
+  }]
+ }))
+});
+
+test("edited storyboard saves as a new immutable revision with parent lineage and validation",async t=>{
+ const db=await fixture(t),inputHash=hash("original-storyboard-input");
+ const parent=saveCreativeProjectArtifact(db,{projectId:"project-1",createdBy:"owner",type:"storyboard",input:{creativeDirection:direction},content:validStoryboard(inputHash),inputHash,model:"test-model",usage:{totalTokens:120}});
+ const edited=validStoryboard(inputHash);edited.scenes[0].shots[0].action="Show the inspected solar controller.";
+ const revision=appendCreativeProjectArtifactRevision(db,{projectId:"project-1",artifactId:parent.id,createdBy:"editor",content:edited});
+ assert.equal(revision.revision,2);
+ assert.equal(revision.type,"storyboard");
+ assert.equal(revision.inputHash,parent.inputHash);
+ assert.equal(revision.content.scenes[0].shots[0].action,"Show the inspected solar controller.");
+ assert.equal(revision.usage.totalTokens,120);
+ assert.equal(getCreativeProjectArtifact(db,{projectId:"project-1",artifactId:parent.id}).content.scenes[0].shots[0].action,"Show the verified step.");
+ assert.deepEqual(listCreativeProjectArtifacts(db,{projectId:"project-1",type:"storyboard"}).map(item=>item.revision),[2,1]);
+ const invalid=validStoryboard(inputHash);invalid.scenes[0].shots[0].durationSeconds=90;
+ assert.throws(()=>appendCreativeProjectArtifactRevision(db,{projectId:"project-1",artifactId:revision.id,createdBy:"editor",content:invalid}),error=>error.code==="CREATIVE_ARTIFACT_REVISION_INVALID");
+ assert.throws(()=>appendCreativeProjectArtifactRevision(db,{projectId:"project-1",artifactId:parent.id,createdBy:"editor",content:{...edited,inputHash:hash("different")}}),error=>error.code==="CREATIVE_ARTIFACT_REVISION_INVALID");
+ assert.throws(()=>appendCreativeProjectArtifactRevision(db,{projectId:"different-project",artifactId:parent.id,createdBy:"editor",content:edited}),error=>error.code==="CREATIVE_ARTIFACT_NOT_FOUND");
 });
