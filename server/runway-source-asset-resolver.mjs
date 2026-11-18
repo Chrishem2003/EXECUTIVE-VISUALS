@@ -227,6 +227,22 @@ export function createRunwaySourceAssetResolver({
         if (imageReferenceMode && (input.startFrameAssetId || input.endFrameAssetId)) {
           throw fail("Seedance reference images cannot be mixed with first/last keyframes.", "VIDEO_INPUT_KEYFRAMES_INVALID");
         }
+        let firstFrame = null;
+        let lastFrame = null;
+        if (input.operation === "image-to-video" && !imageReferenceMode) {
+          if (!input.startFrameAssetId || imageIds.length || audioIds.length) {
+            throw fail("Seedance keyframe mode requires a first frame and cannot be mixed with reference images or audio.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+          }
+          if (input.endFrameAssetId && input.endFrameAssetId === input.startFrameAssetId) {
+            throw fail("Seedance first and last keyframes must be distinct assets.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+          }
+          const first = await resolveAsset({ ownerId, projectId, assetId: input.startFrameAssetId, kinds: "image" });
+          firstFrame = { buffer: first.bytes, filename: first.asset.name, mimeType: first.asset.mediaType };
+          if (input.endFrameAssetId) {
+            const last = await resolveAsset({ ownerId, projectId, assetId: input.endFrameAssetId, kinds: "image" });
+            lastFrame = { buffer: last.bytes, filename: last.asset.name, mimeType: last.asset.mediaType };
+          }
+        }
         const referenceImages = [];
         for (const assetId of imageIds) {
           const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
@@ -265,7 +281,9 @@ export function createRunwaySourceAssetResolver({
         return {
           ...input, referenceImages, referenceAudio,
           ...(referenceVideos.length ? { referenceVideos, referenceVideoSeconds } : {}),
-          ...(imageReferenceMode ? { imageReferenceMode: true } : {})
+          ...(imageReferenceMode ? { imageReferenceMode: true } : {}),
+          ...(firstFrame ? { firstFrame } : {}),
+          ...(lastFrame ? { lastFrame } : {})
         };
       }
       if (input?.model === "model-router") {
