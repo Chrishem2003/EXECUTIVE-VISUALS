@@ -122,13 +122,12 @@ jobs:
             -e PGRST_DB_EXTRA_SEARCH_PATH=public,extensions,auth \
             -e PGRST_DB_POOL=10 \
             -e PGRST_JWT_SECRET="$jwt_secret" \
-            -e PGRST_SERVER_ROOT=/rest/v1 \
             -e PGRST_SERVER_PORT=3000 \
             -e PGRST_LOG_LEVEL=warn \
             postgrest/postgrest:v12.2.3
           ready=0
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3000/rest/v1/ >/dev/null; then ready=1; break; fi
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then ready=1; break; fi
             sleep 1
           done
           if [[ "$ready" != "1" ]]; then
