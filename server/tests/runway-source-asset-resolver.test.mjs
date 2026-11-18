@@ -453,3 +453,32 @@ test("Seedance image-to-video resolves private image references separately from 
   assert.equal(prepared.referenceImages[0].filename, "subject.png");
   assert.equal(prepared.firstFrame, undefined);
 });
+
+
+test("Seedance image-to-video resolves distinct private first and last keyframe assets", async () => {
+  const ids = ["99999999-9999-4999-8999-999999999991", "99999999-9999-4999-8999-999999999992"];
+  const byId = new Map(ids.map((id, index) => [id, {
+    id, projectId: PROJECT, name: index ? "last.png" : "first.png", mediaType: "image/png",
+    size: bytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + id + "/original.png"
+  }]));
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); return byId.get(assetId); },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(expiresIn, 300);
+        return { asset: byId.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=x" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(bytes, { status: 200, headers: {
+      "content-type": "image/png", "content-length": String(bytes.length)
+    }})
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    projectId: PROJECT, startFrameAssetId: ids[0], endFrameAssetId: ids[1]
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.firstFrame.filename, "first.png");
+  assert.equal(prepared.lastFrame.filename, "last.png");
+  assert.equal(prepared.imageReferenceMode, undefined);
+});
