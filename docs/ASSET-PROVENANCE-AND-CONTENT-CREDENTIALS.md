@@ -40,6 +40,14 @@ If no source contains an embedded C2PA manifest, the derivative is left unchange
 
 The signer is dependency-injected as a local or callback signer. No private key, production signer, trust anchor or signing-service credential is configured in this branch. The local and cloud hooks are implementation paths, not production signing enablement. Operators must supply an approved server-side signer before C2PA-bearing transformations can complete.
 
+
+
+## Cloud-generated video verification snapshots
+
+When a governed cloud video job's private output is imported into the local Asset Library, the workflow bridge now runs the official CAI verifier against the exact stored MP4 bytes and persists a bounded `c2paVerification` summary in that asset's metadata. The workflow run output also includes an `assetProvenance` summary, and Video Studio displays the result beside the generated asset link. The import still requires the provider output's independent SHA-256/size receipt and actual-cost evidence before publication; C2PA verification is additional provenance evidence, not a substitute for those checks.
+
+The snapshot distinguishes `trusted`, `valid_untrusted`, `invalid`, `not_present` and `validation_unavailable`. A valid signature without an explicitly configured trusted signer remains untrusted. If the CAI SDK or native verification path is unavailable, the asset import is not discarded: the snapshot records `validation_unavailable` and a bounded error code, while the output remains subject to the existing checksum, tenant/project, private-storage and financial acceptance gates. Previously imported cloud assets without a snapshot are verified on the idempotent import/recovery path before their workflow result is returned. This does not enable production signing or change trust anchors.
+
 ## API examples
 
 ```http
