@@ -37,7 +37,6 @@ async function getJson(name, url, { expectedStatus = 200, retries = 5, cookie } 
 }
 
 const runLabel = process.env.GITHUB_RUN_ID || String(Date.now());
-const runAttempt = process.env.GITHUB_RUN_ATTEMPT || "1";
 
 const staging = await getJson("Staging application health", endpoints.stagingApp);
 assert.equal(staging.body.status, "ok");
