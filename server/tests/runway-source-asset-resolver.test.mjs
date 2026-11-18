@@ -376,3 +376,33 @@ test("Seedance reference video is blocked until its separate billable duration i
     error => error.code === "VIDEO_REFERENCE_PRICING_REQUIRED"
   );
 });
+
+
+test("Seedance image-to-video resolves private image references separately from keyframes", async () => {
+  const imageId = "66666666-6666-4666-8666-666666666666";
+  const imageBytes = Buffer.alloc(1024, 6);
+  const asset = { id: imageId, projectId: PROJECT, name: "subject.png", mediaType: "image/png",
+    size: imageBytes.length, storageBucket: "executive-visuals-media",
+    objectPath: PROJECT + "/" + imageId + "/original.png" };
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); assert.equal(assetId, imageId); return asset; },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(assetId, imageId); assert.equal(expiresIn, 300);
+        return { asset, url: "https://storage.example.com/storage/v1/object/sign/private/" + imageId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(imageBytes, { status: 200, headers: {
+      "content-type": "image/png", "content-length": String(imageBytes.length)
+    }})
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    projectId: PROJECT, referenceImageAssetIds: [imageId], prompt: "Animate the subject"
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.imageReferenceMode, true);
+  assert.equal(prepared.referenceImages.length, 1);
+  assert.equal(prepared.referenceImages[0].filename, "subject.png");
+  assert.equal(prepared.firstFrame, undefined);
+});
