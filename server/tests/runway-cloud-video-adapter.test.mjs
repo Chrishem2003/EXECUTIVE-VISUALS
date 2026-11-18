@@ -1076,3 +1076,44 @@ test("uploads Seedance image-to-video references without keyframe positions and 
   assert.deepEqual(submittedBody.referenceAudio, [{ uri: "runway://ephemeral/seedance-i2v-2" }]);
   assert.equal(submittedBody.promptText, "Animate the subject to the supplied ambience");
 });
+
+
+test("uploads private Seedance video references to ephemeral storage and submits the native referenceVideos field", async () => {
+  let submittedBody;
+  const uploads = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({
+      referenceVideos: [{ buffer: Buffer.alloc(512), filename: "motion.mp4", mimeType: "video/mp4", durationSeconds: 6 }]
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) {
+        const index = uploads.length + 1;
+        uploads.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/seedance-video-reference-" + index,
+          fields: { key: "reference-video-" + index },
+          runwayUri: "runway://ephemeral/seedance-video-reference-" + index
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/text_to_video")) {
+        submittedBody = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "Use the supplied motion reference", durationSeconds: 8,
+    aspectRatio: "16:9", resolution: "720p", referenceVideoAssetIds: ["private-video-id"]
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.referenceVideos, [{ uri: "runway://ephemeral/seedance-video-reference-1" }]);
+  const submitted = await adapter.submit(prepared);
+  assert.equal(submitted.taskId, id);
+  assert.equal(uploads.length, 1);
+  assert.deepEqual(submittedBody.referenceVideos, [{ uri: "runway://ephemeral/seedance-video-reference-1" }]);
+  assert.equal(submittedBody.promptText, "Use the supplied motion reference");
+});
