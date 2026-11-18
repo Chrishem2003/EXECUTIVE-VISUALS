@@ -78,6 +78,28 @@ function replaceAssetReferences(value,mapping){
  if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,replaceAssetReferences(item,mapping)]));
  return value;
 }
+async function resolveSeedanceDraftEnhancementNode({node,ownerId,projectId,cloudTimelineApi}={}){
+ const config=node?.config||{};
+ if(config.operation!=="draft-enhancement")return node;
+ const sourceDraftJobId=String(config.sourceDraftJobId||"");
+ if(!UUID.test(sourceDraftJobId))throw fail("Seedance draft enhancement requires the ID of a completed cloud draft job.","VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID");
+ const response=await cloudTimelineApi.handle({method:"GET",path:"/api/cloud/jobs/"+sourceDraftJobId,ownerId});
+ if(response?.status!==200)throw fail("The source Seedance draft job is unavailable to this owner.","VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN");
+ const source=response.body?.job,input=source?.input||{},output=source?.output||{};
+ const createdAt=Date.parse(String(source?.created_at||source?.createdAt||""));
+ const ageMs=Date.now()-createdAt;
+ if(!source||source.id!==sourceDraftJobId||source.owner_id!==ownerId||source.project_id!==projectId||source.job_type!=="video.generate")
+  throw fail("The source draft must belong to the same owner and project as this workflow.","VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN");
+ if(source.status!=="succeeded"||!Number.isFinite(createdAt)||ageMs<0||ageMs>7*24*60*60*1000)
+  throw fail("Only a successfully completed Seedance draft from the last seven days can be enhanced.","VIDEO_WORKFLOW_DRAFT_SOURCE_NOT_READY");
+ if(input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||input.draftTargetResolution!=="1080p")
+  throw fail("The source cloud job is not a supported 480p Seedance 2.5 draft.","VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID");
+ const providerTaskId=String(output.providerTaskId||"");
+ if(output.provider!=="runway"||output.model!=="seedance2_5"||!UUID.test(providerTaskId)||!Array.isArray(output.assetIds)||output.assetIds.length<1||output.assetIds.some(id=>typeof id!=="string"||!UUID.test(id)))
+  throw fail("The completed draft is missing its verified provider task or private preview asset receipt.","VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID");
+ return{...node,config:{...config,draftTaskId:providerTaskId}};
+}
+
 function cloudResultError(result,fallback){
  const code=result?.body?.error?.code||fallback;
  return fail(result?.body?.error?.message||"Cloud workflow request failed.",code);
@@ -115,7 +137,8 @@ export async function executeCloudVideoWorkflowNode({
   if(!linked||![200,201].includes(linked.status))throw cloudResultError(linked,"VIDEO_WORKFLOW_CLOUD_PROJECT_LINK_FAILED");
  }
 
- const initial=createVideoWorkflowCloudRequest({node,values,projectId,requestId:"workflow-"+createHash("sha256").update(String(run.id)+":"+String(node.id)).digest("hex")});
+ const requestNode=await resolveSeedanceDraftEnhancementNode({node,ownerId:job.owner_id,projectId,cloudTimelineApi});
+ const initial=createVideoWorkflowCloudRequest({node:requestNode,values,projectId,requestId:"workflow-"+createHash("sha256").update(String(run.id)+":"+String(node.id)).digest("hex")});
  const localIds=[...new Set([
   initial.input.sourceVideoAssetId,initial.input.startFrameAssetId,initial.input.endFrameAssetId,
   ...(initial.input.keyframeAssetIds||[]),
@@ -154,7 +177,7 @@ export async function executeCloudVideoWorkflowNode({
   }
   mapping.set(localAssetId,cloudAssetId);
  }
- const cloudNode=replaceAssetReferences(node,mapping);
+ const cloudNode=replaceAssetReferences(requestNode,mapping);
  const cloudValues=replaceAssetReferences(values,mapping);
  const requestId=initial.requestId;
  const cloudRequest=createVideoWorkflowCloudRequest({node:cloudNode,values:cloudValues,projectId,requestId});
