@@ -36,7 +36,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
   async handle(input){
    calls.push(input);
    if(input.method==="GET"&&input.path==="/api/cloud/projects/"+projectId)return{status:200,body:{project:{id:projectId}}};
-   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:request.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,estimatedAmount:1,currency:"USD",expiresAt:"2026-11-11T23:59:00.000Z",billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model"}}};}
+   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:request.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,provider:"runway",model:"seedance2_5",operation:"generate",routedProvider:"runway",estimatedCredits:42,estimatedAmount:1,currency:"USD",pricingSource:"runway_model_router_dry_run",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/",expiresAt:"2026-11-30T23:59:00.000Z",paidExecutionEnabled:true,billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model",configId:"runway-direct-seedance-2-5"}}};}
    if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/approve"){
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
@@ -149,6 +149,14 @@ test("cloud workflow node creates a non-billable quote and pauses without approv
   assert.equal(result.requestHash,f.request.requestHash);
   assert.equal(approvalReceipt.quoteId,quoteId);
   assert.equal(approvalReceipt.requestHash,f.request.requestHash);
+  assert.equal(approvalReceipt.provider,"runway");
+  assert.equal(approvalReceipt.model,"seedance2_5");
+  assert.equal(approvalReceipt.operation,"generate");
+  assert.equal(approvalReceipt.routedProvider,"runway");
+  assert.equal(approvalReceipt.estimatedCredits,42);
+  assert.equal(approvalReceipt.pricingSource,"runway_model_router_dry_run");
+  assert.equal(approvalReceipt.pricingUrl,"https://docs.dev.runwayml.com/guides/pricing/");
+  assert.equal(approvalReceipt.paidExecutionEnabled,true);
   assert.equal(f.calls.filter(call=>call.path==="/api/cloud/workflows/video/quote").length,1);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/jobs/"+cloudJobId),false);
