@@ -12,6 +12,16 @@ import { executableAvailable, run as runMediaProcess, validateMediaOutputProbe }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_VIDEO_BYTES=250*1024*1024;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
+function normalizeC2paVerification(verification){
+ return{
+  status:["trusted","valid_untrusted","invalid","not_present","validation_unavailable"].includes(verification?.status)?verification.status:"validation_unavailable",
+  present:typeof verification?.present==="boolean"?verification.present:null,
+  valid:verification?.valid===true,
+  trusted:verification?.status==="trusted"&&verification?.trusted===true,
+  validationState:typeof verification?.validationState==="string"?verification.validationState:null,
+  findings:Array.isArray(verification?.findings)?verification.findings.filter(item=>typeof item==="string").slice(0,20):[]
+ };
+}
 function safeAssetPath(mediaRoot,asset){
  const root=resolve(mediaRoot),absolute=resolve(root,String(asset.storage_path||""));
  const stored=relative(root,absolute);
@@ -232,14 +242,7 @@ export async function executeCloudVideoWorkflowNode({
     }catch(error){
      verification={status:"validation_unavailable",present:null,valid:false,trusted:false,validationState:null,findings:[String(error?.code||"C2PA_VERIFICATION_ERROR").slice(0,160)]};
     }
-    const summary={
-     status:["trusted","valid_untrusted","invalid","not_present","validation_unavailable"].includes(verification?.status)?verification.status:"validation_unavailable",
-     present:typeof verification?.present==="boolean"?verification.present:null,
-     valid:verification?.valid===true,
-     trusted:verification?.status==="trusted"&&verification?.trusted===true,
-     validationState:typeof verification?.validationState==="string"?verification.validationState:null,
-     findings:Array.isArray(verification?.findings)?verification.findings.filter(item=>typeof item==="string").slice(0,20):[]
-    };
+    const summary=normalizeC2paVerification(verification);
     const metadata={...parseJson(assetRecord.metadata_json,{}),c2paVerification:summary};
     db.prepare("UPDATE assets SET metadata_json=? WHERE id=? AND owner_id=? AND project_id=?")
      .run(json(metadata),assetRecord.id,job.owner_id,projectId);
@@ -249,11 +252,11 @@ export async function executeCloudVideoWorkflowNode({
    for(const cloudAssetId of cloudAssetIds){
     if(!UUID.test(String(cloudAssetId)))throw fail("Cloud video output contains an invalid asset ID.","VIDEO_WORKFLOW_OUTPUT_INVALID");
     const existing=db.prepare("SELECT id,metadata_json,storage_path,byte_size,sha256,media_type FROM assets WHERE owner_id=? AND project_id=? AND deleted_at IS NULL AND metadata_json LIKE ? LIMIT 1")
-     .get(job.owner_id,projectId,"%\\\"cloudWorkspaceAssetId\\\":\\\""+cloudAssetId+"\\\"%");
+     .get(job.owner_id,projectId,"%\"cloudWorkspaceAssetId\":\""+cloudAssetId+"\"%");
     if(existing){
      imported.push(existing.id);
      const metadata=parseJson(existing.metadata_json,{});
-     if(metadata.c2paVerification&&typeof metadata.c2paVerification==="object")assetProvenance.push({assetId:existing.id,...metadata.c2paVerification});
+     if(metadata.c2paVerification&&typeof metadata.c2paVerification==="object")assetProvenance.push({assetId:existing.id,...normalizeC2paVerification(metadata.c2paVerification)});
      else await verifyAndPersistC2pa(existing);
      continue;
     }
