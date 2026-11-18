@@ -144,7 +144,7 @@
     "rollup": "4.67.2"
   },
   "dependencies": {
-    "@contentauth/c2pa-node": "0.10.0",
+    "@contentauth/c2pa-node": "0.12.0",
     "@noble/hashes": "2.4.0",
     "google-auth-library": "11.3.4"
   },
