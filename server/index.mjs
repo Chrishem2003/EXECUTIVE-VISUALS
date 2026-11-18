@@ -1436,7 +1436,12 @@ export function createAppServer() {
           send(res,artifact.unchanged?200:201,{artifact,unchanged:artifact.unchanged===true,persistence:creativeArtifactPersistence()},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_ARTIFACT_REVISION_FAILED";
-          const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"?404:code==="CREATIVE_ARTIFACT_REVISION_INVALID"?400:code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:code==="CREATIVE_ARTIFACT_TYPE_INVALID"?409:500;
+          const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"||code==="CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"?404:
+            code==="CREATIVE_ARTIFACT_REVISION_INVALID"||code==="CREATIVE_ARTIFACT_INVALID"||code==="CREATIVE_ARTIFACT_INPUT_HASH_INVALID"?400:
+            code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:
+            ["CREATIVE_ARTIFACT_TYPE_INVALID","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:
+            code==="CREATIVE_ARTIFACT_EDITOR_REQUIRED"?403:
+            code.startsWith("CREATIVE_ARTIFACT_DATABASE")||code==="CREATIVE_ARTIFACT_PERSISTENCE_FAILED"?503:500;
           fail(res,status,code,error.message||"Storyboard revision could not be saved.");return;
         }
       }
@@ -1453,7 +1458,7 @@ export function createAppServer() {
           const type=url.searchParams.get("type")||null;
           const limit=Number(url.searchParams.get("limit")||20);
           try{const artifacts=creativeArtifactsPostgres?await creativeArtifactsPostgres.list({projectId,type,limit}):listCreativeProjectArtifacts(db,{projectId,type,limit});send(res,200,{projectId,artifacts,persistence:creativeArtifactPersistence()},cors);return;}
-          catch(error){fail(res,400,error.code||"CREATIVE_ARTIFACT_QUERY_INVALID",error.message);return;}
+          catch(error){const code=error.code||"CREATIVE_ARTIFACT_QUERY_INVALID";fail(res,code==="CREATIVE_ARTIFACT_TYPE_INVALID"||code==="CREATIVE_ARTIFACT_QUERY_INVALID"?400:503,code,error.message);return;}
         }
         fail(res,405,"METHOD_NOT_ALLOWED","Creative project artifacts are read-only version records.");return;
       }
