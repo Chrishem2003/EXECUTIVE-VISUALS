@@ -99,6 +99,14 @@ jobs:
           echo "POSTGRES_SERVICE_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
       - name: Bootstrap disposable Supabase-compatible schema
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-bootstrap.sql
+      - name: Prepare disposable creative artifact project and membership fixtures
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/creative-project-artifacts-postgres-fixture.sql
+      - name: Apply immutable creative artifact Postgres schema and append RPC
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/creative-project-artifacts-postgres-bootstrap.sql
+      - name: Verify creative artifact RLS, owner/editor permissions, immutability and revision lineage
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/creative-project-artifacts-postgres-integration.sql
+      - name: Verify concurrent artifact revision allocation is unique and contiguous
+        run: bash scripts/creative-project-artifacts-postgres-concurrency.sh
       - name: Apply durable storage cleanup outbox migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql
       - name: Verify storage cleanup outbox permissions and path constraints
