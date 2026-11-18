@@ -420,12 +420,12 @@ test("prepares a private first frame and submits Seedance 2.5 image-to-video", a
     durationSeconds: 8, aspectRatio: "9:16", resolution: "720p"
   };
   const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
-  assert.equal(prepared.promptImageUri, "runway://ephemeral/seedance-first-frame");
+  assert.deepEqual(prepared.promptImageKeyframes, [{ uri: "runway://ephemeral/seedance-first-frame", position: "first" }]);
   assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
   assert.equal(call.url, "https://api.dev.runwayml.com/v1/image_to_video");
   assert.deepEqual(JSON.parse(call.options.body), {
     model: "seedance2_5", promptText: "Animate the approved product frame",
-    promptImage: "runway://ephemeral/seedance-first-frame",
+    promptImage: [{ uri: "runway://ephemeral/seedance-first-frame", position: "first" }],
     duration: 8, ratio: "720:1280"
   });
 });
@@ -453,7 +453,7 @@ test("Seedance 2.5 image-to-video supports a 480p draft without exposing source 
   }, { job: { owner_id: "owner-1" } });
   await adapter.submit(prepared);
   assert.deepEqual(body, {
-    model: "seedance2_5", promptText: "Animate the approved frame", promptImage: "runway://ephemeral/draft-frame",
+    model: "seedance2_5", promptText: "Animate the approved frame", promptImage: [{ uri: "runway://ephemeral/draft-frame", position: "first" }],
     duration: 6, ratio: "854:480", draft: true
   });
 });
