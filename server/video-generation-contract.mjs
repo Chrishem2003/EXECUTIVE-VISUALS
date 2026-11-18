@@ -67,7 +67,9 @@ export function normalizeVideoGenerationRequest(input) {
   if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr", "generate", "edit", "reframe", "extend"].includes(operation)) {
     throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
   }
-  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-upscale", "video-to-hdr"].includes(operation) });
+  const isSeedanceTextToVideo = input.provider === "runway" && input.model === "seedance2_5" && operation === "text-to-video";
+  const isSeedance = input.provider === "runway" && input.model === "seedance2_5";
+  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !isSeedanceTextToVideo && !["video-upscale", "video-to-hdr"].includes(operation) });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
@@ -97,15 +99,23 @@ export function normalizeVideoGenerationRequest(input) {
     durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
     outputFormat,
     audioMode,
-    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds"),
-    referenceVideoAssetIds: assetIds(input.referenceVideoAssetIds, "referenceVideoAssetIds", 2),
-    referenceAudioAssetIds: assetIds(input.referenceAudioAssetIds, "referenceAudioAssetIds", 1),
+    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds", isSeedance ? 30 : MAX_REFERENCE_ASSETS),
+    referenceVideoAssetIds: assetIds(input.referenceVideoAssetIds, "referenceVideoAssetIds", isSeedanceTextToVideo ? 10 : 2),
+    referenceAudioAssetIds: assetIds(input.referenceAudioAssetIds ?? (input.referenceAudioAssetId ? [input.referenceAudioAssetId] : undefined), "referenceAudioAssetIds", isSeedance ? 10 : 1),
     ...(negativePrompt ? { negativePrompt } : {}),
   };
 
   if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 4294967295, integer: true });
-  if (audioMode === "reference" && request.referenceAudioAssetIds.length !== 1) {
-    throw new VideoGenerationValidationError("Reference audio mode requires exactly one referenceAudioAssetId");
+  if (audioMode === "reference" && (isSeedance
+      ? request.referenceAudioAssetIds.length < 1
+      : request.referenceAudioAssetIds.length !== 1)) {
+    throw new VideoGenerationValidationError(isSeedance
+      ? "Seedance reference audio mode requires at least one referenceAudioAssetId"
+      : "Reference audio mode requires exactly one referenceAudioAssetId");
+  }
+  if (isSeedanceTextToVideo && !request.prompt &&
+      !request.referenceAssetIds.length && !request.referenceVideoAssetIds.length && !request.referenceAudioAssetIds.length) {
+    throw new VideoGenerationValidationError("Seedance text-to-video requires a prompt or at least one reference asset");
   }
   if (input.sourceVideoAssetId != null) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
