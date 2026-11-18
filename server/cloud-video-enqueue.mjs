@@ -376,11 +376,18 @@ export function createCloudVideoEnqueue({
         }
       } else if (runwayDirectEnabled) {
         const promptLimit = model === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(model) ? 26000 : 2500;
+        const seedanceImageAssetIds = input.referenceImageAssetIds ?? input.referenceAssetIds ?? [];
+        const seedanceAudioAssetIds = input.referenceAudioAssetIds ?? (input.referenceAudioAssetId ? [input.referenceAudioAssetId] : []);
+        if (model === "seedance2_5" && Array.isArray(input.referenceVideoAssetIds) &&
+            input.referenceVideoAssetIds.length > 0 && input.operation !== "text-to-video") {
+          const invalid = new Error("Seedance reference videos are supported only by text-to-video in this worker.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
         const hasSeedanceTextReferences = model === "seedance2_5" && input.operation === "text-to-video" &&
-          ((Array.isArray(input.referenceImageAssetIds) && input.referenceImageAssetIds.length > 0) ||
+          ((Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0) ||
            (Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) ||
-           (Array.isArray(input.referenceAudioAssetIds) && input.referenceAudioAssetIds.length > 0) ||
-           Boolean(input.referenceAudioAssetId));
+           (Array.isArray(seedanceAudioAssetIds) && seedanceAudioAssetIds.length > 0));
         if ((!hasSeedanceTextReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) ||
             input.prompt !== undefined && (typeof input.prompt !== "string" || input.prompt.length > promptLimit)) {
           const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
@@ -414,16 +421,39 @@ export function createCloudVideoEnqueue({
             throw new Error("The selected Kling 3.0 profile does not support video-to-video in this worker.");
           }
         } else if (input.operation === "image-to-video") {
-          if (!input.startFrameAssetId) {
-            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped private first-frame asset.");
+          const seedanceReferenceMode = model === "seedance2_5" &&
+            !input.startFrameAssetId && !input.endFrameAssetId &&
+            Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0;
+          if (!input.startFrameAssetId && !seedanceReferenceMode) {
+            const invalid = new Error("Direct Runway image-to-video requires an owner-scoped first frame or Seedance reference-image collection.");
             invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
             throw invalid;
           }
-          buildRunwayImageToVideoPayload({
-            model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
-            durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
-            resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
-          });
+          if (seedanceReferenceMode && (seedanceImageAssetIds.length > 30 || seedanceAudioAssetIds.length > 10)) {
+            const invalid = new Error("Seedance image-to-video accepts at most 30 reference images and 10 reference audio clips.");
+            invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_FAILED";
+            throw invalid;
+          }
+          if (seedanceReferenceMode) {
+            buildRunwayImageToVideoPayload({
+              model, prompt: input.prompt,
+              promptImage: seedanceImageAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-image-" + index })),
+              referenceAudio: seedanceAudioAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-audio-" + index })),
+              durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+              resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+            });
+          } else {
+            if (model === "seedance2_5" && (seedanceImageAssetIds.length || seedanceAudioAssetIds.length)) {
+              const invalid = new Error("Seedance first/last keyframes cannot be mixed with reference images or reference audio.");
+              invalid.code = "VIDEO_INPUT_KEYFRAMES_INVALID";
+              throw invalid;
+            }
+            buildRunwayImageToVideoPayload({
+              model, prompt: input.prompt, promptImage: "data:image/png;base64,AA==",
+              durationSeconds: input.durationSeconds, aspectRatio: input.aspectRatio,
+              resolution: input.resolution, multiPrompt: input.multiPrompt, shotType: input.shotType
+            });
+          }
         } else {
           if (model === "seedance2_5" &&
               (!Array.isArray(input.referenceVideoAssetIds) || input.referenceVideoAssetIds.length > 10) &&
@@ -436,7 +466,9 @@ export function createCloudVideoEnqueue({
             model, prompt: input.prompt, durationSeconds: input.durationSeconds,
             aspectRatio: input.aspectRatio, resolution: input.resolution,
             multiPrompt: input.multiPrompt, shotType: input.shotType,
-            referenceVideos: (input.referenceVideoAssetIds || []).map((_, index) => ({ uri: "runway://preflight/reference-video-" + index }))
+            references: seedanceImageAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-image-" + index })),
+            referenceVideos: (input.referenceVideoAssetIds || []).map((_, index) => ({ uri: "runway://preflight/reference-video-" + index })),
+            referenceAudio: seedanceAudioAssetIds.map((_, index) => ({ uri: "runway://preflight/reference-audio-" + index }))
           });
         }
         if (["kling_4", "kling_4_flash"].includes(model) && input.audio !== undefined) {
