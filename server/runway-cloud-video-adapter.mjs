@@ -16,6 +16,13 @@ const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 const UPLOAD_TYPES = Object.freeze({
   "video/mp4": ".mp4",
   "video/quicktime": ".mov",
+  "video/webm": ".webm",
+  "video/x-matroska": ".mkv",
+  "video/3gpp": ".3gp",
+  "video/ogg": ".ogv",
+  "video/x-msvideo": ".avi",
+  "video/x-flv": ".flv",
+  "video/mpeg": ".mpg",
   "image/png": ".png",
   "image/jpeg": ".jpg",
   "image/webp": ".webp",
