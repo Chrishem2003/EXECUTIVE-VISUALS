@@ -38,6 +38,7 @@ function fixture({projectRows=[projectRow],artifactRows=[parentRow],rpcRows=null
   let rows=[];
   if(path.startsWith("projects?")&&options.method==="GET")rows=projectRows;
   else if(path.startsWith("projects?")&&options.method==="POST")rows=[{...JSON.parse(options.body),archived_at:null}];
+  else if(path.startsWith("project_members?"))rows=[{role:"editor"}];
   else if(path.startsWith("creative_project_artifacts?"))rows=artifactRows.filter(row=>{
    const projectMatch=path.match(/project_id=eq\.([^&]+)/),idMatch=path.match(/id=eq\.([^&]+)/),typeMatch=path.match(/artifact_type=eq\.([^&]+)/);
    return (!projectMatch||row.project_id===decodeURIComponent(projectMatch[1]))&&(!idMatch||row.id===decodeURIComponent(idMatch[1]))&&(!typeMatch||row.artifact_type===decodeURIComponent(typeMatch[1]));
@@ -62,6 +63,13 @@ test("persists a new creative artifact through an atomic Postgres append RPC",as
  assert.equal(rpc.options.headers["content-profile"],"executive_visuals");
  assert.equal(JSON.parse(rpc.options.body).p_content_hash,contentHash(storyboard()));
  assert.equal(f.calls.some(call=>call.options.method==="POST"&&call.url.includes("/projects?")),true);
+});
+
+test("preflights cloud owner and editor authorization before writes",async()=>{
+ const f=fixture();
+ assert.equal(await f.repository.assertWriter({projectId:project,ownerId:owner,createdBy:owner,projectName:"Solar workshop"}),true);
+ assert.equal(await f.repository.assertWriter({projectId:project,ownerId:owner,createdBy:editor,projectName:"Solar workshop"}),true);
+ assert.ok(f.calls.some(call=>call.url.includes("project_members?")&&call.url.includes("member_id=eq."+editor)));
 });
 
 test("reports Postgres artifact storage ready only after a successful table query",async()=>{
