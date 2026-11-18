@@ -61,6 +61,8 @@ The repository's PostgREST requests use the `executive_visuals` profile and a se
 
 The CI pipeline validates the SQL against a disposable PostgreSQL 16 service, not a hosted Supabase project. It exercises the actual append RPC, owner/editor acceptance, reviewer/viewer rejection, service-role-only grants, immutable update/delete triggers, revision lineage and ten concurrent appends. This provides a no-hosted-cost database integration gate; it does not replace the final isolated Supabase staging acceptance or backup/restore test.
 
+The same disposable CI database is also exposed through a local PostgREST 12.2 HTTP service using a temporary HS256 service-role JWT. The repository adapter is exercised over real HTTP for schema-profile routing, service-role authentication, anon/authenticated denial, owner/editor preflight, create/read/list, storyboard revision append and no-op detection. The local adapter accepts a configurable REST path for this harness; hosted Supabase continues to use the default `/rest/v1` path.
+
 ### Remaining acceptance gate
 
 This implementation is not yet enabled in Render. Before enabling it in staging, run the SQL bootstrap/migration on an isolated database and verify: project bootstrap and owner mismatch rejection; owner/editor writes; reviewer/viewer denial; cross-project reads return no records; concurrent append calls receive unique ordered revisions; no UPDATE/DELETE succeeds; restart and deployment recovery; and backup/restore. The app's ordinary audit log remains in the existing SQLite store; this milestone makes creative artifact records durable, not every local audit or project record.
