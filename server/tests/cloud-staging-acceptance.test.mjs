@@ -4,7 +4,8 @@ import { evaluateCloudStagingAcceptance } from "../cloud-staging-acceptance.mjs"
 
 const baseUrl="https://executive-visuals-cloud-staging.onrender.com";
 const healthy={
- status:"ok",authMode:"supabase",authSession:{configurationReady:true},database:"postgres",storage:"object-storage",
+ status:"ok",authMode:"supabase",authSession:{configurationReady:true},database:"sqlite",storage:"local-disk",
+ persistence:{persistentVolumeRequired:true,dataDirectory:"operator-confirmed-volume"},
  cloudMedia:{enabled:true,ready:true,storage:"private",provider:"supabase"},
  cloudMediaJobsApi:{enabled:true},
  cloudVideoWorker:{enabled:true,outputHostAllowlistConfigured:true,supabaseCredentialsConfigured:true,remoteExecutionGates:false}
@@ -33,11 +34,17 @@ test("refuses production, arbitrary hosts, HTTP and URL credentials",()=>{
  }
 });
 
-test("accepts SQLite/local media only when an operator-confirmed persistent volume is configured",()=>{
- const durable={...healthy,database:"sqlite",storage:"local-disk",persistence:{persistentVolumeRequired:true,dataDirectory:"operator-confirmed-volume"}};
+test("accepts the current SQLite/local-media runtime only with an operator-confirmed persistent volume",()=>{
+ const durable=healthy;
  assert.equal(evaluateCloudStagingAcceptance({baseUrl,health:durable,readiness:ready}).checks.find(item=>item.id==="durable-application-state").status,"passed");
  const ephemeral={...durable,persistence:{persistentVolumeRequired:false,dataDirectory:"ephemeral"}};
  const result=evaluateCloudStagingAcceptance({baseUrl,health:ephemeral,readiness:ready});
+ assert.equal(result.passed,false);
+ assert.equal(result.checks.find(item=>item.id==="durable-application-state").status,"blocked");
+});
+
+test("does not accept a PostgreSQL/object-storage label until the application actually supports that runtime",()=>{
+ const result=evaluateCloudStagingAcceptance({baseUrl,health:{...healthy,database:"postgres",storage:"object-storage"},readiness:ready});
  assert.equal(result.passed,false);
  assert.equal(result.checks.find(item=>item.id==="durable-application-state").status,"blocked");
 });
