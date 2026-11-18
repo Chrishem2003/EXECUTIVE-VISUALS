@@ -107,6 +107,11 @@ export function createCloudCreativeProjectArtifactRepository({
  return Object.freeze({
   save:append,
   get,list,
+  async checkReadiness(){
+   const rows=await request("creative_project_artifacts?select=id&limit=0");
+   if(!Array.isArray(rows))throw fail("Creative artifact readiness query returned an invalid result.","CREATIVE_ARTIFACT_DATABASE_INVALID_RESPONSE");
+   return {backend:"supabase-postgres",configured:true,ready:true,durableAcrossDeploys:true};
+  },
   async importLegacyArtifacts({projectId,ownerId,projectName,projectDescription="",artifacts=[]}={}){
    if(!Array.isArray(artifacts)||artifacts.length>10000)throw fail("Legacy artifact batch is invalid or too large.","CREATIVE_ARTIFACT_IMPORT_INVALID");
    await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
