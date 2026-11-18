@@ -44,14 +44,14 @@ test("production defaults to governed cloud execution and fails closed without t
 test("cloud mode accepts explicitly governed direct Runway workers, Model Router and Luma Ray 3.2 adapters", () => {
   const supported = [
     { kind: "video.generate", config: { provider: "runway", model: "model-router" } },
-    ...["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k"].map(model=>({kind:"video.generate",config:{provider:"runway",model}})),
+    ...["gen4.5","seedance2_5","kling_4","kling3.0_standard","kling3.0_pro","kling3.0_4k"].map(model=>({kind:"video.generate",config:{provider:"runway",model}})),
     { kind: "video.generate", config: { provider: "luma", model: "ray-3.2" } }
   ];
   for (const node of supported) assert.equal(assertVideoWorkflowNodeSupport(node, "cloud"), true);
   for (const node of [
     { kind: "video.generate", config: { provider: "fal", model: "fal-ai/video" } },
     { kind: "video.generate", config: { provider: "luma", model: "ray-3.2-fast" } },
-    { kind: "video.generate", config: { provider: "runway", model: "gen4_turbo" } },
+    { kind: "video.generate", config: { provider: "runway", model: "gen4_turbo" } },\n    { kind: "video.generate", config: { provider: "runway", model: "kling_4_flash" } },\n    { kind: "video.generate", config: { provider: "runway", model: "gemini_omni_flash_1.2" } },
     { kind: "image.generate", config: { provider: "runway", model: "model-router" } }
   ]) {
     assert.throws(
