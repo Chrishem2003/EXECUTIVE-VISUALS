@@ -1764,12 +1764,14 @@ document.addEventListener("click",e=>{
  if(state.storyboardAiBusy)return;
  if(!confirm("Send the reviewed creative direction to the configured text model to compile scenes and timed shots? A remote provider may incur usage charges. No media will be generated."))return;
  state.storyboardAiBusy=true;state.storyboardAiMessage="Compiling the storyboard from the reviewed creative direction…";render();
- const channel=String(project.creativeBriefInput.channel||"").toLowerCase();
+ const creativeBriefInput=project.creativeBriefInput;
+ const creativeDirection=project.modelCreativeDirection;
+ const channel=String(creativeBriefInput.channel||"").toLowerCase();
  const aspectRatio=channel.includes("tiktok")||channel.includes("reels")||channel.includes("shorts")?"9:16":"16:9";
  const characters:ModelStoryboardCharacterSuggestion[]=[];
  void ensureApiProject(project).then(apiProjectId=>apiRequest<{storyboard:ModelStoryboard;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string;persistence?:{saved:boolean;artifactId?:string;revision?:number;durableAcrossDeploys?:boolean}}>("/api/creative/storyboard",{
   method:"POST",headers:{"content-type":"application/json"},
-  body:JSON.stringify({projectId:apiProjectId,input:{creativeDirection:project.modelCreativeDirection,targetDurationSeconds:resolveCreativeDurationSeconds(project.creativeBriefInput.duration||"60 seconds"),aspectRatio,frameRate:24,constraints:project.creativeBriefInput.constraints||"",characters}})
+  body:JSON.stringify({projectId:apiProjectId,input:{creativeDirection,targetDurationSeconds:resolveCreativeDurationSeconds(creativeBriefInput.duration||"60 seconds"),aspectRatio,frameRate:24,constraints:creativeBriefInput.constraints||"",characters}})
  })).then(result=>{
   const current=state.projects.find(item=>item.id===project.id);
   if(current){current.modelStoryboard=result.storyboard;current.storyboardArtifactId=result.persistence?.artifactId;current.storyboardRevision=result.persistence?.revision;}
