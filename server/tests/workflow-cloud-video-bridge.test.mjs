@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCloudVideoWorkflowNode } from "../workflow-cloud-video-bridge.mjs";
@@ -346,6 +346,48 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(metadata.cloudWorkspaceAssetId,cloudAssetId);
   assert.equal(metadata.cloudVideoJobId,cloudJobId);
   assert.equal(metadata.cloudSha256,sha256);
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+
+test("cloud output checksum mismatch aborts streamed import and removes the partial file",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-stream-checksum-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async()=>new Response(Buffer.from("0000ftypbad-checksum"),{status:200})
+  }),error=>error.code==="VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+  const files=await readdir(join(mediaRoot,owner,projectId)).catch(()=>[]);
+  assert.deepEqual(files,[]);
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+test("interrupted private output stream is cleaned up and never published as an asset",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-stream-interrupted-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const body=new ReadableStream({start(controller){controller.enqueue(video.subarray(0,8));controller.error(new Error("simulated network interruption"));}});
+  await assert.rejects(()=>executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async()=>new Response(body,{status:200})
+  }));
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+  const files=await readdir(join(mediaRoot,owner,projectId)).catch(()=>[]);
+  assert.deepEqual(files,[]);
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
