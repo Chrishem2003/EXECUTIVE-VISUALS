@@ -112,6 +112,13 @@ export function createCloudCreativeProjectArtifactRepository({
    if(!Array.isArray(rows))throw fail("Creative artifact readiness query returned an invalid result.","CREATIVE_ARTIFACT_DATABASE_INVALID_RESPONSE");
    return {backend:"supabase-postgres",configured:true,ready:true,durableAcrossDeploys:true};
   },
+  async assertWriter({projectId,ownerId,createdBy,projectName,projectDescription=""}={}){
+   await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
+   if(createdBy===ownerId)return true;
+   const rows=await request("project_members?select=role&project_id=eq."+encodeURIComponent(projectId)+"&member_id=eq."+encodeURIComponent(createdBy)+"&limit=1");
+   if(!Array.isArray(rows)||rows.length!==1||rows[0].role!=="editor")throw fail("The cloud project does not grant this user editor access.","CREATIVE_ARTIFACT_EDITOR_REQUIRED");
+   return true;
+  },
   async importLegacyArtifacts({projectId,ownerId,projectName,projectDescription="",artifacts=[]}={}){
    if(!Array.isArray(artifacts)||artifacts.length>10000)throw fail("Legacy artifact batch is invalid or too large.","CREATIVE_ARTIFACT_IMPORT_INVALID");
    await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
