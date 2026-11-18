@@ -256,6 +256,16 @@ export function createRunwayCloudVideoAdapter({
       }
       if (isImageToVideo) {
         if (!["gen4.5", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k", "gemini_omni_flash_1.2"].includes(selectedModel)) throw fail("The selected Runway model does not support the verified first-frame generation path.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        if (selectedModel === "seedance2_5" && prepared.imageReferenceMode === true) {
+          const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
+          const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
+          if (images.length < 1 || images.length > 30 || audio.length > 10) throw fail("Seedance image-to-video reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
+          const promptImageReferences = [];
+          const referenceAudio = [];
+          for (const item of images) promptImageReferences.push({ uri: await uploadEphemeral(item) });
+          for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
+          return { ...input, promptImageReferences, referenceAudio };
+        }
         let promptImageUri = prepared.promptImageUri;
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -538,7 +548,9 @@ export function createRunwayCloudVideoAdapter({
       const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       const hasSeedanceReferences = selectedModel === "seedance2_5" &&
-        (Array.isArray(input.references) && input.references.length > 0 || Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
+        (Array.isArray(input.references) && input.references.length > 0 ||
+         Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0 ||
+         Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
       if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
       }
@@ -559,15 +571,17 @@ export function createRunwayCloudVideoAdapter({
         payload = {
           ...buildRunwayImageToVideoPayload({
             model: selectedModel,
-            prompt: input.prompt.trim(),
+            prompt: typeof input.prompt === "string" ? input.prompt.trim() : "",
             promptImage: "data:image/png;base64,AA==",
+            referenceAudio: input.referenceAudio,
             durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
             aspectRatio: input.aspectRatio || "16:9",
             resolution: input.resolution || "provider_default", draft: input.draft === true,
             multiPrompt: input.multiPrompt,
             shotType: input.shotType || "customize"
           }),
-          promptImage: input.promptImageUri
+          promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences : input.promptImageUri,
+          ...(Array.isArray(input.referenceAudio) && input.referenceAudio.length ? { referenceAudio: input.referenceAudio } : {})
         };
       } else {
         payload = buildRunwayVideoPayload({
