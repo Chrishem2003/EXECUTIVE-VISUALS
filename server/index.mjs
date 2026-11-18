@@ -918,8 +918,8 @@ export function createAppServer() {
             ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
           send(res,200,{...result,recordId,persistence:artifact
-            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash}
-            :{saved:false,reason:"project_required"}},cors);return;
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
+            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
         }catch(error){
           const code=error.code||"STORYBOARD_COMPILER_FAILED";
           const status=["STORYBOARD_INPUT_INVALID","STORYBOARD_DIRECTION_REQUIRED","STORYBOARD_DIRECTION_INVALID"].includes(code)?400:
@@ -1419,7 +1419,7 @@ export function createAppServer() {
           if(artifactId){
             const artifact=getCreativeProjectArtifact(db,{projectId,artifactId});
             if(!artifact){fail(res,404,"CREATIVE_ARTIFACT_NOT_FOUND","Creative project artifact not found.");return;}
-            send(res,200,{artifact},cors);return;
+            send(res,200,{artifact,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
           }
           const type=url.searchParams.get("type")||null;
           const limit=Number(url.searchParams.get("limit")||20);
