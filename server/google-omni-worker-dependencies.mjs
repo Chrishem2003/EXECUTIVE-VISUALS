@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { createGoogleGeminiSignedUrlResolver } from "./google-gemini-signed-url-resolver.mjs";
 
 const MODEL="gemini-omni-1.1-flash";
 const ORIGIN="https://generativelanguage.googleapis.com";
