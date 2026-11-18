@@ -336,7 +336,14 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   const result=await executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
-   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}})
+   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}}),
+   verifyC2paAsset:async input=>{
+    assert.equal(input.mediaType,"video/mp4");
+    assert.equal(input.expectedSha256,sha256);
+    assert.equal(input.expectedSize,video.length);
+    assert.ok(input.filePath.endsWith(".mp4"));
+    return{status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]};
+   }
   });
   assert.equal(result.provider,"runway");
   assert.equal(result.cloudJobId,cloudJobId);
@@ -346,6 +353,10 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(result.costEvidenceReference,"cost:verified");
   assert.equal(result.actualAmount,0.72);
   assert.equal(result.currency,"USD");
+  assert.deepEqual(result.assetProvenance,[{assetId:result.assetId,status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]}]);
+  const metadataUpdate=f.stored.find(item=>item.sql.startsWith("UPDATE assets SET metadata_json"));
+  assert.ok(metadataUpdate,"C2PA verification snapshot must be persisted with the imported private asset");
+  assert.equal(JSON.parse(metadataUpdate.args[0]).c2paVerification.status,"valid_untrusted");
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
   assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,1);
@@ -355,6 +366,29 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(metadata.cloudVideoJobId,cloudJobId);
   assert.equal(metadata.cloudSha256,sha256);
   assert.deepEqual(await readFile(join(mediaRoot,inserted.args[7])),video);
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+test("C2PA verifier errors are recorded as unavailable without losing a checksum-verified cloud output",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-c2pa-unavailable-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}}),
+   verifyC2paAsset:async()=>{throw Object.assign(new Error("SDK unavailable"),{code:"C2PA_SDK_UNAVAILABLE"});}
+  });
+  assert.equal(result.assetIds.length,1);
+  assert.equal(result.assetProvenance[0].status,"validation_unavailable");
+  assert.deepEqual(result.assetProvenance[0].findings,["C2PA_SDK_UNAVAILABLE"]);
+  const metadataUpdate=f.stored.find(item=>item.sql.startsWith("UPDATE assets SET metadata_json"));
+  assert.equal(JSON.parse(metadataUpdate.args[0]).c2paVerification.status,"validation_unavailable");
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
