@@ -1451,7 +1451,8 @@ export function createAppServer() {
           const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"||code==="CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"?404:
             code==="CREATIVE_ARTIFACT_REVISION_INVALID"||code==="CREATIVE_ARTIFACT_INVALID"||code==="CREATIVE_ARTIFACT_INPUT_HASH_INVALID"?400:
             code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:
-            ["CREATIVE_ARTIFACT_TYPE_INVALID","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:
+            ["CREATIVE_ARTIFACT_TYPE_INVALID","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH","CREATIVE_ARTIFACT_IMPORT_CONFLICT"].includes(code)?409:
+            code==="CREATIVE_ARTIFACT_IMPORT_INVALID"?400:
             code==="CREATIVE_ARTIFACT_EDITOR_REQUIRED"?403:
             code.startsWith("CREATIVE_ARTIFACT_DATABASE")||code==="CREATIVE_ARTIFACT_PERSISTENCE_FAILED"?503:500;
           fail(res,status,code,error.message||"Storyboard revision could not be saved.");return;
@@ -1462,7 +1463,10 @@ export function createAppServer() {
         const projectId=creativeArtifactMatch[1],artifactId=creativeArtifactMatch[2]||null;
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         if(req.method==="GET"){
-          await ensureCreativeArtifactBackfill(projectId);
+          try{await ensureCreativeArtifactBackfill(projectId);}catch(error){
+            const code=error.code||"CREATIVE_ARTIFACT_IMPORT_FAILED";
+            fail(res,["CREATIVE_ARTIFACT_IMPORT_CONFLICT","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:code==="CREATIVE_ARTIFACT_IMPORT_INVALID"?400:503,code,error.message||"Creative artifact cloud backfill failed.");return;
+          }
           if(artifactId){
             const artifact=creativeArtifactsPostgres?await creativeArtifactsPostgres.get({projectId,artifactId}):getCreativeProjectArtifact(db,{projectId,artifactId});
             if(!artifact){fail(res,404,"CREATIVE_ARTIFACT_NOT_FOUND","Creative project artifact not found.");return;}
