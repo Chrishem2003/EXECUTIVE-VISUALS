@@ -1,6 +1,7 @@
 import { apiRequest } from "../core/api";
 import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type MediaPortType, type WorkflowEdge, type WorkflowGraph, type WorkflowNode, type WorkflowNodeKind, type WorkflowPort } from "../core/workflow";
 import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
+import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
@@ -83,26 +84,22 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",directRunway=provider==="runway"&&model!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(model),operation=String(config.operation||"generate");
- const resolutions=luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
+ const luma=provider==="luma",modelReleaseBlocked=provider==="runway"&&isVideoWorkflowModelReleaseBlocked(model),directRunway=provider==="runway"&&model!=="model-router"&&!modelReleaseBlocked,directVideoEdit=directRunway&&["seedance2_5","kling_4"].includes(model),operation=String(config.operation||"generate");
+ const resolutions=modelReleaseBlocked?["provider_default"]:luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
   model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
   model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
   model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
- const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"?"720p":"provider_default");
- const modelOptions=luma?[{id:"ray-3.2",label:"Luma Ray 3.2"}]:[
-  {id:"model-router",label:"Runway Model Router"},{id:"gen4.5",label:"Gen-4.5"},{id:"seedance2_5",label:"Seedance 2.5"},
-  {id:"kling_4",label:"Kling 4.0"},{id:"kling_4_flash",label:"Kling 4.0 Flash"},
-  {id:"kling3.0_standard",label:"Kling 3.0 Standard"},{id:"kling3.0_pro",label:"Kling 3.0 Pro"},{id:"kling3.0_4k",label:"Kling 3.0 4K"},{id:"gemini_omni_flash_1.2",label:"Gemini Omni Flash 1.2"}
- ];
+ const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(modelReleaseBlocked?"provider_default":luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"?"720p":"provider_default");
+ const modelOptions=getVideoWorkflowModelOptions(provider,model);
  const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
   directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
- const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(model);
+ const supportsVideoMode=model==="seedance2_5";
  const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
  const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate";
  const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
- const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
- const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
+ const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model.startsWith("kling3.0_")?3:2;
+ const durationMax=luma?10:model==="seedance2_5"||model==="kling_4"?30:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
  const keyframeAssetIds=Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.join(", "):"";
  const keyframeIndexes=Array.isArray(config.keyframeIndexes)?config.keyframeIndexes.join(", "):"";
  const position=(config.sourcePosition&&typeof config.sourcePosition==="object"?config.sourcePosition:{}) as Record<string,number|undefined>;
@@ -110,7 +107,8 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const imageAssets=state.assets.filter(asset=>asset.mediaType.toLowerCase().startsWith("image/"));
  const selectedKeyframes=new Set(Array.isArray(config.keyframeAssetIds)?config.keyframeAssetIds.map(String):[]);
  const selectedSource=String(config.sourceVideoAssetId||"");
- return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
+ return '<div class="wf-video-provider-grid"><label>Provider<select name="videoProvider"><option value="runway" '+(provider==="runway"?"selected":"")+'>Runway</option><option value="luma" '+(luma?"selected":"")+'>Luma</option></select></label><label>Model<select name="videoModel">'+modelOptions.map(value=>'<option value="'+esc(value.id)+'" '+(model===value.id?"selected":"")+(value.disabled?" disabled":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label></div>'+
+ (modelReleaseBlocked?'<p class="wf-release-warning" role="status">This saved model is currently disabled by the cloud execution release gate. Choose an available model before running this workflow. Existing saved settings are preserved; no provider request will be submitted.</p>':"")+
  '<label>Operation<select name="videoOperation" '+(!(luma||directRunway)?"disabled":"")+'>'+operationOptions.map(value=>'<option value="'+esc(value.id)+'" '+(operation===value.id?"selected":"")+'>'+esc(value.label)+'</option>').join("")+'</select></label>'+
  '<label>Source-video mode<select name="videoMode" '+(!supportsVideoMode||operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
