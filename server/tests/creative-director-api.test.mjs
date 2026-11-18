@@ -128,6 +128,8 @@ test("Creative Director endpoint requires authentication and never exposes gatew
   assert.equal(body.persistence.artifactId,body.recordId);
   assert.equal(body.persistence.revision,1);
   assert.match(body.persistence.contentHash,/^[a-f0-9]{64}$/);
+  assert.equal(body.persistence.backend,"sqlite");
+  assert.equal(body.persistence.durableAcrossDeploys,false);
   const saved=await request("/api/projects/"+ownedProjectId+"/creative-artifacts?type=creative_direction",{},cookie);
   assert.equal(saved.status,200);
   const savedBody=await saved.json();
