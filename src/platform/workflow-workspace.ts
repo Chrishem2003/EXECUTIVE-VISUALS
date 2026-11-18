@@ -460,6 +460,7 @@ document.addEventListener("change",event=>{
   const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(modelValue);
   if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
   const operationValues=modelBlocked?[{id:"generate",label:"Generate new video"}]:getVideoWorkflowOperationOptions(provider,modelValue);
+  const directVideoEdit=directRunway&&operationValues.some(value=>value.id==="video-to-video");
   if(operationSelect){
    const selected=operationValues.some(({id})=>id===operation)?operation:"generate";
    operationSelect.innerHTML=operationValues.map(({id,label})=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
