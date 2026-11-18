@@ -27,4 +27,9 @@ jobs:
           node --check scripts/verify-d1-staging-live.mjs
           npm run verify:d1
       - name: Exercise isolated live staging identity, tenant and member-role matrix
+        env:
+          EV_D1_STAGING_TEST_EMAIL: ${{ secrets.EV_D1_STAGING_TEST_EMAIL }}
+          EV_D1_STAGING_TEST_PASSWORD: ${{ secrets.EV_D1_STAGING_TEST_PASSWORD }}
+          EV_D1_STAGING_SECOND_TEST_EMAIL: ${{ secrets.EV_D1_STAGING_SECOND_TEST_EMAIL }}
+          EV_D1_STAGING_SECOND_TEST_PASSWORD: ${{ secrets.EV_D1_STAGING_SECOND_TEST_PASSWORD }}
         run: node scripts/verify-d1-staging-live.mjs
