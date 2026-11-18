@@ -64,6 +64,13 @@ test("persists a new creative artifact through an atomic Postgres append RPC",as
  assert.equal(f.calls.some(call=>call.options.method==="POST"&&call.url.includes("/projects?")),true);
 });
 
+test("reports Postgres artifact storage ready only after a successful table query",async()=>{
+ const f=fixture();
+ const result=await f.repository.checkReadiness();
+ assert.deepEqual(result,{backend:"supabase-postgres",configured:true,ready:true,durableAcrossDeploys:true});
+ assert.ok(f.calls.some(call=>call.url.includes("creative_project_artifacts?select=id&limit=0")));
+});
+
 test("lists and retrieves artifacts scoped to one project",async()=>{
  const f=fixture();
  const item=await f.repository.get({projectId:project,artifactId});
