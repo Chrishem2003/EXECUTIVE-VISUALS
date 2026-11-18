@@ -322,3 +322,87 @@ test("Seedance and Kling video edits receive ffprobe metadata while legacy sourc
  const old=await legacy.resolver.prepare({provider:"runway",model:"aleph2",operation:"video-to-video",projectId:PROJECT,sourceVideoAssetId:ASSET},{job:{owner_id:OWNER}});
  assert.equal("sourceMetadata" in old,false);
 });
+
+
+test("Seedance 2.5 resolves up to 30 private image and 10 private audio references for text-to-video", async () => {
+  const imageId = "44444444-4444-4444-8444-444444444444";
+  const audioId = "55555555-5555-4555-8555-555555555555";
+  const imageBytes = Buffer.alloc(1024, 8);
+  const audioBytes = Buffer.alloc(1024, 9);
+  const byId = new Map([
+    [imageId, { id: imageId, projectId: PROJECT, name: "character.png", mediaType: "image/png", size: imageBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + imageId + "/original.png" }],
+    [audioId, { id: audioId, projectId: PROJECT, name: "ambience.wav", mediaType: "audio/wav", size: audioBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + audioId + "/original.wav" }]
+  ]);
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); return byId.get(assetId); },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(expiresIn, 300);
+        return { asset: byId.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async url => {
+      const isAudio = String(url).includes(audioId);
+      const body = isAudio ? audioBytes : imageBytes;
+      return new Response(body, { status: 200, headers: {
+        "content-type": isAudio ? "audio/wav" : "image/png",
+        "content-length": String(body.length)
+      }});
+    },
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({ format: { duration: "12.5" } }))
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    projectId: PROJECT, prompt: "A product campaign with consistent identity",
+    referenceImageAssetIds: [imageId], referenceAudioAssetIds: [audioId]
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.referenceImages.length, 1);
+  assert.equal(prepared.referenceImages[0].filename, "character.png");
+  assert.equal(prepared.referenceImages[0].mimeType, "image/png");
+  assert.equal(prepared.referenceAudio.length, 1);
+  assert.equal(prepared.referenceAudio[0].filename, "ambience.wav");
+  assert.equal(prepared.referenceAudio[0].mimeType, "audio/wav");
+});
+
+test("Seedance reference video is blocked until its separate billable duration is included in the quote", async () => {
+  const { resolver } = fixture();
+  await assert.rejects(
+    () => resolver.prepare({
+      provider: "runway", model: "seedance2_5", operation: "text-to-video",
+      projectId: PROJECT, prompt: "A reference-driven scene",
+      referenceVideoAssetIds: [ASSET]
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_REFERENCE_PRICING_REQUIRED"
+  );
+});
+
+
+test("Seedance image-to-video resolves private image references separately from keyframes", async () => {
+  const imageId = "66666666-6666-4666-8666-666666666666";
+  const imageBytes = Buffer.alloc(1024, 6);
+  const asset = { id: imageId, projectId: PROJECT, name: "subject.png", mediaType: "image/png",
+    size: imageBytes.length, storageBucket: "executive-visuals-media",
+    objectPath: PROJECT + "/" + imageId + "/original.png" };
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); assert.equal(assetId, imageId); return asset; },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(assetId, imageId); assert.equal(expiresIn, 300);
+        return { asset, url: "https://storage.example.com/storage/v1/object/sign/private/" + imageId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(imageBytes, { status: 200, headers: {
+      "content-type": "image/png", "content-length": String(imageBytes.length)
+    }})
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    projectId: PROJECT, referenceImageAssetIds: [imageId], prompt: "Animate the subject"
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.imageReferenceMode, true);
+  assert.equal(prepared.referenceImages.length, 1);
+  assert.equal(prepared.referenceImages[0].filename, "subject.png");
+  assert.equal(prepared.firstFrame, undefined);
+});

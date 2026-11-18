@@ -986,3 +986,93 @@ test("Veo preflight rates are model-specific and do not alter other Runway adapt
   assert.equal((await fast.preflight({ provider: "runway", model: "veo3.1_fast", prompt: "A quiet lake", durationSeconds: 6, audio: true })).estimatedUsd, 0.9);
   assert.equal(typeof gen.preflight, "undefined");
 });
+
+test("uploads private Seedance image and audio references and supports reference-only generation", async () => {
+  let submittedBody;
+  const uploads = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({
+      referenceImages: [{ buffer: Buffer.alloc(512), filename: "character.png", mimeType: "image/png" }],
+      referenceAudio: [{ buffer: Buffer.alloc(512), filename: "ambience.wav", mimeType: "audio/wav" }]
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) {
+        const index = uploads.length + 1;
+        uploads.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/seedance-reference-" + index,
+          fields: { key: "reference-" + index },
+          runwayUri: "runway://ephemeral/seedance-reference-" + index
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/text_to_video")) {
+        submittedBody = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.references, [{ uri: "runway://ephemeral/seedance-reference-1" }]);
+  assert.deepEqual(prepared.referenceAudio, [{ uri: "runway://ephemeral/seedance-reference-2" }]);
+  const submitted = await adapter.submit(prepared);
+  assert.equal(submitted.taskId, id);
+  assert.equal(uploads.length, 2);
+  assert.deepEqual(submittedBody, {
+    model: "seedance2_5", ratio: "1280:720", duration: 8,
+    references: [{ uri: "runway://ephemeral/seedance-reference-1" }],
+    referenceAudio: [{ uri: "runway://ephemeral/seedance-reference-2" }]
+  });
+});
+
+
+test("uploads Seedance image-to-video references without keyframe positions and submits reference audio", async () => {
+  let submittedBody;
+  const uploads = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "seedance2_5",
+    prepareInput: async () => ({
+      imageReferenceMode: true,
+      referenceImages: [{ buffer: Buffer.alloc(512), filename: "subject.png", mimeType: "image/png" }],
+      referenceAudio: [{ buffer: Buffer.alloc(512), filename: "ambience.wav", mimeType: "audio/wav" }]
+    }),
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      if (target.endsWith("/uploads")) {
+        const index = uploads.length + 1;
+        uploads.push(JSON.parse(options.body));
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/seedance-i2v-" + index,
+          fields: { key: "reference-" + index },
+          runwayUri: "runway://ephemeral/seedance-i2v-" + index
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) {
+        submittedBody = JSON.parse(options.body);
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    prompt: "Animate the subject to the supplied ambience",
+    durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  }, { job: { owner_id: "owner-1" } });
+  assert.deepEqual(prepared.promptImageReferences, [{ uri: "runway://ephemeral/seedance-i2v-1" }]);
+  assert.deepEqual(prepared.referenceAudio, [{ uri: "runway://ephemeral/seedance-i2v-2" }]);
+  const submitted = await adapter.submit(prepared);
+  assert.equal(submitted.taskId, id);
+  assert.equal(uploads.length, 2);
+  assert.equal(submittedBody.model, "seedance2_5");
+  assert.deepEqual(submittedBody.promptImage, [{ uri: "runway://ephemeral/seedance-i2v-1" }]);
+  assert.deepEqual(submittedBody.referenceAudio, [{ uri: "runway://ephemeral/seedance-i2v-2" }]);
+  assert.equal(submittedBody.promptText, "Animate the subject to the supplied ambience");
+});
