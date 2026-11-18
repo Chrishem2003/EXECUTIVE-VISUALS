@@ -83,9 +83,9 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
   const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
   const validUri = value => typeof value === "string" && (/^https:\/\//i.test(value) || /^runway:\/\//i.test(value));
-  if (id !== "seedance2_5" && (references.length || referenceAudio.length)) throw fail("Native image/audio references are enabled only for Seedance 2.5 in this adapter.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if (!Array.isArray(references) || references.length > 30 || references.some(item => !item || !validUri(item.uri))) throw fail("Seedance image references must contain at most 30 valid HTTPS or Runway URIs.","VIDEO_GATEWAY_INVALID_INPUT");
   if (!Array.isArray(referenceAudio) || referenceAudio.length > 10 || referenceAudio.some(item => !item || !validUri(item.uri))) throw fail("Seedance audio references must contain at most 10 valid HTTPS or Runway URIs.","VIDEO_GATEWAY_INVALID_INPUT");
+  if (id !== "seedance2_5" && (references.length || referenceAudio.length)) throw fail("Native image/audio references are enabled only for Seedance 2.5 in this adapter.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if((!text&&!segments&&!references.length&&!referenceAudio.length)||text.length>maxPrompt)throw fail("Runway text-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
   if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
