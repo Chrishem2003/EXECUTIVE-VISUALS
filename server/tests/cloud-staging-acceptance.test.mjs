@@ -111,3 +111,13 @@ test("accepts a separate worker only with a fresh verified heartbeat",()=>{
  const staleResult=evaluateCloudStagingAcceptance({baseUrl,health:stale,readiness:ready});
  assert.equal(staleResult.checks.find(item=>item.id==="cloud-worker-runtime-active").status,"blocked");
 });
+
+test("rejects missing, null, string, negative and non-finite separate-worker heartbeat ages",()=>{
+ for(const ageSeconds of [undefined,null,"30",-1,NaN,Infinity,91]){
+  const heartbeat={ready:true};
+  if(ageSeconds!==undefined)heartbeat.ageSeconds=ageSeconds;
+  const health={...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,runtimeMode:"separate-process",inProcessSupervisorActive:false,separateWorkerHeartbeat:heartbeat}};
+  const result=evaluateCloudStagingAcceptance({baseUrl,health,readiness:ready});
+  assert.equal(result.checks.find(item=>item.id==="cloud-worker-runtime-active").status,"blocked",String(ageSeconds));
+ }
+});

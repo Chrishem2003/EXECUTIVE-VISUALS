@@ -16,9 +16,9 @@ export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
  const worker=health?.cloudVideoWorker||{};
  const embeddedWorkerReady=worker.runtimeMode==="embedded-api-process"&&worker.inProcessSupervisorActive===true;
  const heartbeat=worker.separateWorkerHeartbeat||{};
- const heartbeatAge=Number(heartbeat.ageSeconds);
+ const heartbeatAge=heartbeat.ageSeconds;
  const separateWorkerReady=worker.runtimeMode==="separate-process"&&heartbeat.ready===true&&
-  Number.isFinite(heartbeatAge)&&heartbeatAge>=0&&heartbeatAge<=90;
+  typeof heartbeatAge==="number"&&Number.isFinite(heartbeatAge)&&heartbeatAge>=0&&heartbeatAge<=90;
  const workerRuntimeReady=embeddedWorkerReady||separateWorkerReady;
  const media=health?.cloudMedia||{};
  const persistence=health?.persistence||{};
