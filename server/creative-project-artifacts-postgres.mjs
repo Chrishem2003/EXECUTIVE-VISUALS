@@ -113,8 +113,11 @@ export function createCloudCreativeProjectArtifactRepository({
    return {backend:"supabase-postgres",configured:true,ready:true,durableAcrossDeploys:true};
   },
   async assertWriter({projectId,ownerId,createdBy,projectName,projectDescription=""}={}){
-   await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
-   if(createdBy===ownerId)return true;
+   if(createdBy===ownerId){await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});return true;}
+   const projectRows=await request("projects?select=id,owner_id,archived_at&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+   const project=Array.isArray(projectRows)?projectRows[0]:null;
+   if(!project)throw fail("Cloud project must be created by its owner before an editor can write artifacts.","CREATIVE_ARTIFACT_PROJECT_NOT_FOUND");
+   if(project.owner_id!==ownerId||project.archived_at)throw fail("Cloud project identity does not match the local project owner or is archived.","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH");
    const rows=await request("project_members?select=role&project_id=eq."+encodeURIComponent(projectId)+"&member_id=eq."+encodeURIComponent(createdBy)+"&limit=1");
    if(!Array.isArray(rows)||rows.length!==1||rows[0].role!=="editor")throw fail("The cloud project does not grant this user editor access.","CREATIVE_ARTIFACT_EDITOR_REQUIRED");
    return true;
