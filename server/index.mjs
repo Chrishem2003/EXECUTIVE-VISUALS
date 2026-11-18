@@ -249,6 +249,7 @@ const creativeArtifactPersistence=()=>creativeArtifactsPostgres
 const creativeArtifactBackfillProjects=new Set();
 async function ensureCreativeArtifactBackfill(projectId){
  if(!creativeArtifactsPostgres||creativeArtifactBackfillProjects.has(projectId))return;
+ await creativeArtifactsPostgres.checkReadiness();
  const localProject=db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId);
  if(!localProject)throw Object.assign(new Error("Local project was not found for creative artifact backfill."),{code:"CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"});
  const legacyArtifacts=listCreativeProjectArtifactsForMigration(db,{projectId});
