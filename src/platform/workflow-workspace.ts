@@ -4,14 +4,15 @@ import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkf
 import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 import { isWorkflowQuoteExpired } from "../core/workflow-quote-expiry.mjs";
 import { getVideoWorkflowOperationOptions } from "../core/video-workflow-operations.mjs";
-import { getLatestWorkflowRunId } from "../core/workflow-run-selection.mjs";
+import { getLatestWorkflowRunId, normalizeWorkflowRunHistory } from "../core/workflow-run-selection.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
+type WorkflowRunSummary={id:string;status:string;created_at?:string;updated_at?:string};
 type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null;output?:{videoQuote?:{quoteId:string;requestId:string;requestHash:string;provider?:string;model?:string;operation?:string;routedProvider?:string;routedModel:string;configId?:string;estimatedCredits?:number;estimatedAmount:number;currency:string;pricingSource?:string;pricingUrl?:string;expiresAt:string;paidExecutionEnabled:boolean;cloudNode:WorkflowNode;cloudValues:Record<string,unknown>};cloudJobId?:string;status?:string;quoteId?:string;approvedMaxAmount?:number;actualAmount?:number;currency?:string;assetId?:string;asset?:string;video?:string;assetIds?:string[];provider?:string;model?:string;mimeType?:string;cloudAssetIds?:string[];durationSeconds?:number;transcript?:string;segments?:Array<{start:number;end:number;text:string}>;words?:Array<{start:number;end:number;word:string}>;wordCount?:number;wordLevel?:boolean;language?:string;duration?:number;subtitleAssetId?:string;cueCount?:number;sha256?:string}|null};
 type VideoCostEstimate={available:boolean;estimated:boolean;reason?:string;provider?:string;model?:string;currency?:string;amount?:number;billableSeconds?:number;breakdown?:{video:number;audio:number;references:number;minimumApplied:number};pricing?:{sourceUrl:string;observedAt:string;expiresAt:string};disclaimer?:string};
-const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];costEstimate:VideoCostEstimate|null;assets:WorkflowAsset[]}={
- graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],costEstimate:null,assets:[]
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[];workflowRuns:WorkflowRunSummary[];costEstimate:VideoCostEstimate|null;assets:WorkflowAsset[]}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[],workflowRuns:[],costEstimate:null,assets:[]
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
@@ -149,7 +150,7 @@ export function renderWorkflowWorkspace(){
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
  '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
  '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+(selected.kind==="video.replace-audio"?'<label class="check-label"><input type="checkbox" name="sourceRightsConfirmed" '+(selected.config.sourceRightsConfirmed===true?'checked':'')+'> I confirm I have the necessary rights to use both media assets.</label>':"")+renderUploadAssetField(selected)+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?renderVideoWorkflowConfig(selected):selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model. For saved shot continuity, add a shotId to node configuration.</p>':"")+'<button class="secondary">Apply configuration</button>'+(selected.kind==="video.generate"?'<button type="button" class="secondary" data-wf-action="estimate-cost">Estimate generation cost</button>':"")+'</form>'+(selected.kind==="video.generate"?renderVideoCostEstimate():""):'<div class="empty">Select a node to configure it.</div>')+
- '<div class="wf-run-status">'+(state.latestRunId?'<div><b>Latest run</b> · '+esc(state.runStatus)+' <button data-wf-action="refresh-run">Refresh</button>'+(state.runStatus==="awaiting_approval"&&!state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?'<button data-wf-action="approve">Approve step</button>':'')+'</div>'+state.runNodes.map(n=>{const assetId=String(n.output?.assetId||n.output?.video||n.output?.asset||"");const transcript=String(n.output?.transcript||"");return '<span>'+esc(n.node_id)+' · '+esc(n.status)+(n.error?.message?' · '+esc(n.error.message):'')+(n.output?.cloudJobId?' · cloud job '+esc(n.output.cloudJobId):'')+(n.output?.cloudJobId&&!["completed","succeeded","failed","cancelled","needs_input"].includes(n.status)?' · <button data-wf-action="cancel-cloud-video-job" data-wf-job-id="'+esc(n.output.cloudJobId)+'">Cancel cloud job</button>':'')+(n.output?.quoteId?' · quote '+esc(n.output.quoteId):'')+(typeof n.output?.approvedMaxAmount==="number"?' · approved ceiling '+esc(n.output.approvedMaxAmount.toFixed(6))+' USD':'')+(typeof n.output?.actualAmount==="number"?' · actual cost '+esc(n.output.actualAmount.toFixed(6))+' '+esc(n.output.currency||"USD"):'')+(n.output?.provider?' · provider '+esc(n.output.provider):'')+(n.output?.model?' · model '+esc(n.output.model):'')+(assetId?' · <a href="/api/assets/'+encodeURIComponent(assetId)+'/file" target="_blank" rel="noopener noreferrer">Open generated asset</a>':'')+(transcript?'<details class="wf-transcript-preview"><summary>Transcript · '+esc(n.output?.language||"language not detected")+(Array.isArray(n.output?.segments)?" · "+n.output.segments.length+" segments":"")+(Number.isFinite(Number(n.output?.duration))?" · "+Number(n.output?.duration).toFixed(1)+"s":"")+'</summary><p>'+esc(transcript.slice(0,5000))+(transcript.length>5000?"…":"")+'</p></details>':'')+(n.output?.subtitleAssetId?' · <a href="/api/assets/'+encodeURIComponent(n.output.subtitleAssetId)+'/file" download>Download captions (.vtt) · '+esc(n.output.cueCount||0)+' cues</a>':'')+(n.output?.cloudAssetIds?.[0]&&state.graph?.projectId?' · <button data-wf-action="add-to-timeline" data-wf-node-id="'+esc(n.node_id)+'">Add to cloud timeline</button>':'')+'</span>';}).join("")+(state.runStatus==="awaiting_approval"&&state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?(()=>{const q=state.runNodes.find(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?.output?.videoQuote;return '<section class="wf-cost-estimate"><b>Project owner approval required</b><p>'+esc(q?.provider||"Provider")+' / '+esc(q?.model||q?.routedModel||"Model")+' · '+esc(q?.operation||"generate")+'</p><p>Estimated cost: '+esc(q?.currency||"USD")+' '+esc(Number(q?.estimatedAmount||0).toFixed(6))+(Number.isFinite(Number(q?.estimatedCredits))&&Number(q?.estimatedCredits)>0?' · '+esc(Number(q?.estimatedCredits))+' credits':"")+'</p>'+(q?.routedModel&&q?.routedModel!==q?.model?'<p>Routed model: '+esc(q.routedModel)+'</p>':"")+(q?.pricingSource?'<p>Pricing basis: '+esc(q.pricingSource)+'</p>':"")+'<p>Quote expires '+esc(q?.expiresAt||"")+'. No provider job or credit reservation exists yet.</p>'+(q?.paidExecutionEnabled===true&&!isWorkflowQuoteExpired(q?.expiresAt)?'<label for="wf-approved-max-amount">Maximum approved spend (USD)</label><input id="wf-approved-max-amount" type="number" min="'+esc(Number(q?.estimatedAmount||0))+'" step="0.000001" value="'+esc(Number(q?.estimatedAmount||0).toFixed(6))+'"><label><input id="wf-video-approve-confirm" type="checkbox"> I approve this exact quote and authorize the stated maximum spend.</label><button data-wf-action="approve-video-quote">Approve quote and queue generation</button>':isWorkflowQuoteExpired(q?.expiresAt)?'<p role="status">This quote has expired or has no valid expiry. No approval can be submitted. Refresh the workflow to request a new non-billable quote.</p>':'<p>Paid execution is currently disabled by server-side release gates. This quote is non-billable; no approval or generation can be submitted yet.</p>')+'</section>';})():""):'No workflow runs yet.')+'</div><div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Preview is planning-only. Paid provider nodes pause at human approval; execution requires a configured server-side provider and explicit remote opt-in.</p>')+'</div></aside></div></div>';
+ '<div class="wf-run-status">'+(state.latestRunId?'<div><b>Run history</b> · '+esc(state.runStatus)+' <select id="wf-run-select" aria-label="Select workflow run">'+options(state.workflowRuns.map(run=>({id:run.id,label:workflowRunLabel(run)})),state.latestRunId)+'</select> <button data-wf-action="refresh-run">Refresh</button>'+(state.runStatus==="awaiting_approval"&&!state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?'<button data-wf-action="approve">Approve step</button>':'')+'</div>'+state.runNodes.map(n=>{const assetId=String(n.output?.assetId||n.output?.video||n.output?.asset||"");const transcript=String(n.output?.transcript||"");return '<span>'+esc(n.node_id)+' · '+esc(n.status)+(n.error?.message?' · '+esc(n.error.message):'')+(n.output?.cloudJobId?' · cloud job '+esc(n.output.cloudJobId):'')+(n.output?.cloudJobId&&!["completed","succeeded","failed","cancelled","needs_input"].includes(n.status)?' · <button data-wf-action="cancel-cloud-video-job" data-wf-job-id="'+esc(n.output.cloudJobId)+'">Cancel cloud job</button>':'')+(n.output?.quoteId?' · quote '+esc(n.output.quoteId):'')+(typeof n.output?.approvedMaxAmount==="number"?' · approved ceiling '+esc(n.output.approvedMaxAmount.toFixed(6))+' USD':'')+(typeof n.output?.actualAmount==="number"?' · actual cost '+esc(n.output.actualAmount.toFixed(6))+' '+esc(n.output.currency||"USD"):'')+(n.output?.provider?' · provider '+esc(n.output.provider):'')+(n.output?.model?' · model '+esc(n.output.model):'')+(assetId?' · <a href="/api/assets/'+encodeURIComponent(assetId)+'/file" target="_blank" rel="noopener noreferrer">Open generated asset</a>':'')+(transcript?'<details class="wf-transcript-preview"><summary>Transcript · '+esc(n.output?.language||"language not detected")+(Array.isArray(n.output?.segments)?" · "+n.output.segments.length+" segments":"")+(Number.isFinite(Number(n.output?.duration))?" · "+Number(n.output?.duration).toFixed(1)+"s":"")+'</summary><p>'+esc(transcript.slice(0,5000))+(transcript.length>5000?"…":"")+'</p></details>':'')+(n.output?.subtitleAssetId?' · <a href="/api/assets/'+encodeURIComponent(n.output.subtitleAssetId)+'/file" download>Download captions (.vtt) · '+esc(n.output.cueCount||0)+' cues</a>':'')+(n.output?.cloudAssetIds?.[0]&&state.graph?.projectId?' · <button data-wf-action="add-to-timeline" data-wf-node-id="'+esc(n.node_id)+'">Add to cloud timeline</button>':'')+'</span>';}).join("")+(state.runStatus==="awaiting_approval"&&state.runNodes.some(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?(()=>{const q=state.runNodes.find(n=>n.status==="awaiting_approval"&&n.output?.videoQuote)?.output?.videoQuote;return '<section class="wf-cost-estimate"><b>Project owner approval required</b><p>'+esc(q?.provider||"Provider")+' / '+esc(q?.model||q?.routedModel||"Model")+' · '+esc(q?.operation||"generate")+'</p><p>Estimated cost: '+esc(q?.currency||"USD")+' '+esc(Number(q?.estimatedAmount||0).toFixed(6))+(Number.isFinite(Number(q?.estimatedCredits))&&Number(q?.estimatedCredits)>0?' · '+esc(Number(q?.estimatedCredits))+' credits':"")+'</p>'+(q?.routedModel&&q?.routedModel!==q?.model?'<p>Routed model: '+esc(q.routedModel)+'</p>':"")+(q?.pricingSource?'<p>Pricing basis: '+esc(q.pricingSource)+'</p>':"")+'<p>Quote expires '+esc(q?.expiresAt||"")+'. No provider job or credit reservation exists yet.</p>'+(q?.paidExecutionEnabled===true&&!isWorkflowQuoteExpired(q?.expiresAt)?'<label for="wf-approved-max-amount">Maximum approved spend (USD)</label><input id="wf-approved-max-amount" type="number" min="'+esc(Number(q?.estimatedAmount||0))+'" step="0.000001" value="'+esc(Number(q?.estimatedAmount||0).toFixed(6))+'"><label><input id="wf-video-approve-confirm" type="checkbox"> I approve this exact quote and authorize the stated maximum spend.</label><button data-wf-action="approve-video-quote">Approve quote and queue generation</button>':isWorkflowQuoteExpired(q?.expiresAt)?'<p role="status">This quote has expired or has no valid expiry. No approval can be submitted. Refresh the workflow to request a new non-billable quote.</p>':'<p>Paid execution is currently disabled by server-side release gates. This quote is non-billable; no approval or generation can be submitted yet.</p>')+'</section>';})():""):'No workflow runs yet.')+'</div><div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Preview is planning-only. Paid provider nodes pause at human approval; execution requires a configured server-side provider and explicit remote opt-in.</p>')+'</div></aside></div></div>';
 }
 async function refresh(){
  const list=await apiRequest<{workflows:SavedWorkflow[]}>("/api/workflows");state.workflows=list.workflows;
@@ -170,13 +171,28 @@ async function refresh(){
   try{const assetResponse=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId));state.assets=assetResponse.assets.filter(asset=>asset.projectId===state.graph?.projectId);}
   catch{state.assets=[];}
  }
- const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
- state.latestRunId=runs.runs[0]?.id||"";
+ const runs=await apiRequest<{runs:WorkflowRunSummary[]}>("/api/workflows/"+state.graph!.id+"/runs");
+ state.workflowRuns=normalizeWorkflowRunHistory(runs.runs);state.latestRunId=getLatestWorkflowRunId(state.workflowRuns);
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
  state.status="ready";state.message="";
 }
 let runPollTimer:ReturnType<typeof setTimeout>|null=null;
 let runPollInFlight=false;
+function workflowRunLabel(run:WorkflowRunSummary){
+ const date=run.created_at?new Date(run.created_at):null;
+ const when=date&&Number.isFinite(date.getTime())?date.toLocaleString():run.id.slice(0,8);
+ return run.status+" · "+when+" · "+run.id.slice(0,8);
+}
+async function selectWorkflowRun(runId:string){
+ if(!runId||!state.workflowRuns.some(run=>run.id===runId))return;
+ if(runPollTimer!==null){clearTimeout(runPollTimer);runPollTimer=null;}
+ state.latestRunId=runId;
+ state.runStatus=state.workflowRuns.find(run=>run.id===runId)?.status||"loading";
+ state.runNodes=[];state.message="Loading selected execution history…";paint();
+ try{await loadRun();state.message="";}
+ catch(error){state.message=error instanceof Error?error.message:"The selected workflow run could not be loaded.";}
+ paint();
+}
 function shouldPollWorkflowRun(){
  if(!state.latestRunId)return false;
  if(["queued","running","awaiting_approval"].includes(state.runStatus))return true;
@@ -198,9 +214,9 @@ function scheduleWorkflowRunPoll(delayMs=5000){
 async function loadRun(){
  const runId=state.latestRunId;
  if(!runId){scheduleWorkflowRunPoll();return;}
- const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+runId);
+ const response=await apiRequest<{run:{status:string;updatedAt?:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+runId);
  if(state.latestRunId!==runId)return;
- state.runStatus=response.run.status;state.runNodes=response.nodes;if(state.message.startsWith("Workflow status refresh failed")||state.message.startsWith("Workflow status could not be refreshed"))state.message="";
+ state.runStatus=response.run.status;state.runNodes=response.nodes;state.workflowRuns=state.workflowRuns.map(run=>run.id===runId?{...run,status:response.run.status,updated_at:response.run.updatedAt||run.updated_at}:run);if(state.message.startsWith("Workflow status refresh failed")||state.message.startsWith("Workflow status could not be refreshed"))state.message="";
  if(["completed","succeeded"].includes(response.run.status))void apiRequest("/api/customer-success/events",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({eventType:"workflow_completed",eventKey:"workflow-run:"+runId})}).catch(()=>{});
  scheduleWorkflowRunPoll();
 }
@@ -209,7 +225,7 @@ let workflowSelectionEpoch=0;
 async function selectWorkflow(workflowId:string){
  const epoch=++workflowSelectionEpoch;
  if(runPollTimer!==null){clearTimeout(runPollTimer);runPollTimer=null;}
- state.latestRunId="";state.runStatus="";state.runNodes=[];state.assets=[];state.costEstimate=null;state.plan="";
+ state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];state.assets=[];state.costEstimate=null;state.plan="";
  state.status="loading";state.message="Loading selected workflow and its latest run…";paint();
  try{
   const response=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+encodeURIComponent(workflowId));
@@ -226,7 +242,7 @@ async function selectWorkflow(workflowId:string){
   }
   const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+encodeURIComponent(workflowId)+"/runs");
   if(epoch!==workflowSelectionEpoch)return;
-  state.latestRunId=getLatestWorkflowRunId(runs.runs);
+  state.workflowRuns=normalizeWorkflowRunHistory(runs.runs);state.latestRunId=getLatestWorkflowRunId(state.workflowRuns);
   if(state.latestRunId)await loadRun();
   else{state.runStatus="";state.runNodes=[];}
   if(epoch!==workflowSelectionEpoch)return;
@@ -246,7 +262,7 @@ async function persist(){
 async function createNew(){
  const graph=createEmptyWorkflow("","local-workflow");
  const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
- state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
+ state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];state.message="New workflow created.";paint();
 }
 export async function initWorkflowWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Workflow service unavailable.";}
@@ -265,7 +281,7 @@ async function action(actionName:string,actionElement?:HTMLElement){
   if(!state.graph)return;
   if(state.graph.nodes.length&&!window.confirm("Replace the current workflow graph with the review-first Audio → Captions template? Save or duplicate your current workflow first if you need to keep it."))return;
   state.graph=createTranscriptionCaptionWorkflow({id:state.graph.id,projectId:state.graph.projectId||""});
-  state.selectedNode="source-audio";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
+  state.selectedNode="source-audio";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];
   await persist();
   state.message="Template saved. Select the source-audio node, enter the private audio asset ID, configure the server-side speech gateway, then run and approve the transcription step.";
   paint();return;
@@ -274,7 +290,7 @@ async function action(actionName:string,actionElement?:HTMLElement){
   if(!state.graph)return;
   if(state.graph.nodes.length&&!window.confirm("Replace the current workflow graph with the review-first Video → Localized Captions template? Save or duplicate your current workflow first if you need to keep it."))return;
   state.graph=createVideoCaptionLocalizationWorkflow({id:state.graph.id,projectId:state.graph.projectId||""});
-  state.selectedNode="source-video";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
+  state.selectedNode="source-video";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];
   await persist();
   state.message="Template saved. Select the source-video node and enter a private video asset ID. Configure the speech and translation gateways, review each approval step, and set the target language before running. The workflow creates a separate WebVTT caption asset; it does not alter the source video.";
   paint();return;
@@ -337,7 +353,7 @@ async function action(actionName:string,actionElement?:HTMLElement){
   paint();return;
  }
  if(actionName==="save"){await persist();paint();return;}
- if(actionName==="run"){await persist();const result=await apiRequest<{runId:string;status:string}>("/api/workflows/"+state.graph.id+"/run",{method:"POST"});state.latestRunId=result.runId;state.runStatus=result.status;await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));state.message="Workflow run queued. Paid provider nodes pause at human approval and require configured server-side credentials and remote opt-in.";paint();return;}
+ if(actionName==="run"){await persist();const result=await apiRequest<{runId:string;status:string}>("/api/workflows/"+state.graph.id+"/run",{method:"POST"});state.latestRunId=result.runId;state.runStatus=result.status;state.workflowRuns=[{id:result.runId,status:result.status},...state.workflowRuns.filter(run=>run.id!==result.runId)].slice(0,50);await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));state.message="Workflow run queued. Paid provider nodes pause at human approval and require configured server-side credentials and remote opt-in.";paint();return;}
  if(actionName==="validate"||actionName==="plan"){
   const validation=validateWorkflow(state.graph),plan=planWorkflowExecution(state.graph,{kind:"all"});
   state.plan=validation.valid&&plan.valid
@@ -476,6 +492,7 @@ document.addEventListener("change",event=>{
   if(manual)manual.value="";
  }
  if(target.id==="wf-select"){void selectWorkflow(target.value);}
+ if(target.id==="wf-run-select"){void selectWorkflowRun(target.value);}
  if(target.name==="videoProvider"||target.name==="videoOperation"||target.name==="videoModel"||target.name==="videoMode"){
   const form=target.closest<HTMLFormElement>("#wf-config-form");
   const provider=form?.querySelector<HTMLSelectElement>('[name="videoProvider"]')?.value||"runway";
