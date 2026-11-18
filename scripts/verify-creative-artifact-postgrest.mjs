@@ -33,12 +33,12 @@ const storyboard=()=>({
  }))
 });
 
-const anonymous=await fetch(base+"/rest/v1/creative_project_artifacts?select=id",{headers:{"accept-profile":"executive_visuals"}});
+const anonymous=await fetch(base+"/creative_project_artifacts?select=id",{headers:{"accept-profile":"executive_visuals"}});
 assert.ok(!anonymous.ok,"anon role must not read creative artifact records");
-const authenticated=await fetch(base+"/rest/v1/creative_project_artifacts?select=id",{headers:{"accept-profile":"executive_visuals",authorization:"Bearer "+token("authenticated")}});
+const authenticated=await fetch(base+"/creative_project_artifacts?select=id",{headers:{"accept-profile":"executive_visuals",authorization:"Bearer "+token("authenticated")}});
 assert.ok(!authenticated.ok,"authenticated role must not read creative artifact records");
 
-const repository=createCloudCreativeProjectArtifactRepository({url:base,serviceRoleKey:token("service_role")});
+const repository=createCloudCreativeProjectArtifactRepository({url:base,serviceRoleKey:token("service_role"),restPath:""});
 const ready=await repository.checkReadiness();
 assert.equal(ready.ready,true);
 assert.equal(await repository.assertWriter({projectId,ownerId:owner,createdBy:owner,projectName:"Creative artifact integration"}),true);
