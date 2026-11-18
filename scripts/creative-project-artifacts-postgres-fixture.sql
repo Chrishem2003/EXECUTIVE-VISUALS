@@ -1,3 +1,14 @@
+-- Disposable PostgREST authenticator used only by the local HTTP integration test.
+DO $authenticator$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticator') THEN
+    CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD 'postgres';
+  END IF;
+END
+$authenticator$;
+GRANT anon,authenticated,service_role TO authenticator;
+GRANT USAGE ON SCHEMA executive_visuals TO anon;
+
 -- Add only the missing Supabase project columns to the disposable CI harness.
 ALTER TABLE executive_visuals.projects
   ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '',
