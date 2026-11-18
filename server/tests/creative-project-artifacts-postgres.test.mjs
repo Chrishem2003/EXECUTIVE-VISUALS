@@ -30,7 +30,7 @@ const projectRow={id:project,owner_id:owner,archived_at:null};
 const parentRow={id:artifactId,project_id:project,created_by:owner,artifact_type:"storyboard",revision:1,
  input_hash:inputHash,content_hash:contentHash(storyboard()),input,content:storyboard(),model:"test-model",usage:{totalTokens:80},created_at:"2026-11-19T09:00:00Z"};
 
-function fixture({projectRows=[projectRow],artifactRows=[parentRow],rpcRows=null}={}){
+function fixture({projectRows=[projectRow],artifactRows=[parentRow],membershipRows=[{role:"editor"}],rpcRows=null}={}){
  const calls=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
@@ -38,7 +38,7 @@ function fixture({projectRows=[projectRow],artifactRows=[parentRow],rpcRows=null
   let rows=[];
   if(path.startsWith("projects?")&&options.method==="GET")rows=projectRows;
   else if(path.startsWith("projects?")&&options.method==="POST")rows=[{...JSON.parse(options.body),archived_at:null}];
-  else if(path.startsWith("project_members?"))rows=[{role:"editor"}];
+  else if(path.startsWith("project_members?"))rows=membershipRows;
   else if(path.startsWith("creative_project_artifacts?"))rows=artifactRows.filter(row=>{
    const projectMatch=path.match(/project_id=eq\.([^&]+)/),idMatch=path.match(/id=eq\.([^&]+)/),typeMatch=path.match(/artifact_type=eq\.([^&]+)/);
    return (!projectMatch||row.project_id===decodeURIComponent(projectMatch[1]))&&(!idMatch||row.id===decodeURIComponent(idMatch[1]))&&(!typeMatch||row.artifact_type===decodeURIComponent(typeMatch[1]));
@@ -70,6 +70,12 @@ test("preflights cloud owner and editor authorization before writes",async()=>{
  assert.equal(await f.repository.assertWriter({projectId:project,ownerId:owner,createdBy:owner,projectName:"Solar workshop"}),true);
  assert.equal(await f.repository.assertWriter({projectId:project,ownerId:owner,createdBy:editor,projectName:"Solar workshop"}),true);
  assert.ok(f.calls.some(call=>call.url.includes("project_members?")&&call.url.includes("member_id=eq."+editor)));
+});
+
+test("rejects editor writes when cloud membership is absent",async()=>{
+ const f=fixture({membershipRows:[]});
+ await assert.rejects(()=>f.repository.assertWriter({projectId:project,ownerId:owner,createdBy:editor,projectName:"Solar workshop"}),error=>error.code==="CREATIVE_ARTIFACT_EDITOR_REQUIRED");
+ assert.equal(f.calls.some(call=>call.url.includes("/rpc/append_creative_project_artifact")),false);
 });
 
 test("reports Postgres artifact storage ready only after a successful table query",async()=>{
