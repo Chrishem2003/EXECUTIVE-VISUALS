@@ -461,7 +461,7 @@ document.addEventListener("change",event=>{
   if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
   const operationValues=modelBlocked?[{id:"generate",label:"Generate new video"}]:getVideoWorkflowOperationOptions(provider,modelValue);
   if(operationSelect){
-   const selected=operationValues.some(([id])=>id===operation)?operation:"generate";
+   const selected=operationValues.some(({id})=>id===operation)?operation:"generate";
    operationSelect.innerHTML=operationValues.map(({id,label})=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
    operationSelect.disabled=!(luma||directRunway);
   }
