@@ -51,7 +51,9 @@ test("cloud mode accepts explicitly governed direct Runway workers, Model Router
   for (const node of [
     { kind: "video.generate", config: { provider: "fal", model: "fal-ai/video" } },
     { kind: "video.generate", config: { provider: "luma", model: "ray-3.2-fast" } },
-    { kind: "video.generate", config: { provider: "runway", model: "gen4_turbo" } },\n    { kind: "video.generate", config: { provider: "runway", model: "kling_4_flash" } },\n    { kind: "video.generate", config: { provider: "runway", model: "gemini_omni_flash_1.2" } },
+    { kind: "video.generate", config: { provider: "runway", model: "gen4_turbo" } },
+    { kind: "video.generate", config: { provider: "runway", model: "kling_4_flash" } },
+    { kind: "video.generate", config: { provider: "runway", model: "gemini_omni_flash_1.2" } },
     { kind: "image.generate", config: { provider: "runway", model: "model-router" } }
   ]) {
     assert.throws(
