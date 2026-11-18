@@ -39,3 +39,22 @@ export function assertVideoWorkflowNodeSupport(node, mode) {
   error.code = "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE";
   throw error;
 }
+
+
+const GOVERNED_CLOUD_BLOCKED_CODES = new Set([
+  "CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED",
+  "VIDEO_WORKFLOW_CLOUD_DISABLED",
+  "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE",
+  "VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED",
+  "VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED",
+  "VIDEO_WORKFLOW_CLOUD_PROJECT_NOT_LINKED"
+]);
+
+/**
+ * These errors mean the requested governed cloud execution path is unavailable
+ * or needs an operator/project prerequisite. They are blocked, not failed:
+ * no provider submission has taken place and the user can resolve the gate.
+ */
+export function isGovernedCloudWorkflowBlockedCode(code) {
+  return GOVERNED_CLOUD_BLOCKED_CODES.has(String(code || ""));
+}
