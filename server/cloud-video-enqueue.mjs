@@ -384,11 +384,14 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
         }
-        const hasSeedanceTextReferences = model === "seedance2_5" && input.operation === "text-to-video" &&
-          ((Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0) ||
-           (Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) ||
-           (Array.isArray(seedanceAudioAssetIds) && seedanceAudioAssetIds.length > 0));
-        if ((!hasSeedanceTextReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) ||
+        const hasSeedanceReferenceInputs = model === "seedance2_5" &&
+          (input.operation === "text-to-video" &&
+            ((Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0) ||
+             (Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) ||
+             (Array.isArray(seedanceAudioAssetIds) && seedanceAudioAssetIds.length > 0)) ||
+           input.operation === "image-to-video" &&
+            (Boolean(input.startFrameAssetId) || Array.isArray(seedanceImageAssetIds) && seedanceImageAssetIds.length > 0));
+        if ((!hasSeedanceReferenceInputs && (typeof input.prompt !== "string" || !input.prompt.trim())) ||
             input.prompt !== undefined && (typeof input.prompt !== "string" || input.prompt.length > promptLimit)) {
           const invalid = new Error("Direct Runway prompt is empty or exceeds the selected model limit.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
