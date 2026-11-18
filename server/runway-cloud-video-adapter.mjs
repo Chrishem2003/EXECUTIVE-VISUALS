@@ -572,7 +572,7 @@ export function createRunwayCloudVideoAdapter({
           ...buildRunwayImageToVideoPayload({
             model: selectedModel,
             prompt: typeof input.prompt === "string" ? input.prompt.trim() : "",
-            promptImage: "data:image/png;base64,AA==",
+            promptImage: Array.isArray(input.promptImageReferences) ? input.promptImageReferences : "data:image/png;base64,AA==",
             referenceAudio: input.referenceAudio,
             durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
             aspectRatio: input.aspectRatio || "16:9",
