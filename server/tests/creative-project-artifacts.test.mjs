@@ -73,7 +73,7 @@ test("rejects missing projects, unsupported types, invalid hashes and oversized 
     projectId: "project-1", createdBy: "owner", type: "creative_direction", input, content: direction, inputHash: "not-a-hash"
   }), error => error.code === "CREATIVE_ARTIFACT_INPUT_HASH_INVALID");
   assert.throws(() => saveCreativeProjectArtifact(db, {
-    projectId: "project-1", createdBy: "owner", type: "storyboard", input, content: { text: "x".repeat(520000) }, inputHash: hash("x")
+    projectId: "project-1", createdBy: "owner", type: "storyboard", input, content: { text: "x".repeat(530000) }, inputHash: hash("x")
   }), error => error.code === "CREATIVE_ARTIFACT_TOO_LARGE");
 });
 
