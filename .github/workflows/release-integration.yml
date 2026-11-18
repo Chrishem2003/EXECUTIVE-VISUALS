@@ -43,23 +43,6 @@ jobs:
       - name: Run complete product verification and production build
         run: npm run build
 
-  isolated-d1-live-acceptance:
-    # The single live script covers staging health, auth, D1 round-trip,
-    # tenant isolation and membership roles. Run once per release candidate:
-    # invoking it in three parallel jobs reuses the same GITHUB_RUN_ID account
-    # names and races the same staging fixtures.
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    concurrency:
-      group: executive-visuals-d1-live-acceptance
-      cancel-in-progress: false
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22.23.4
-      - name: Verify isolated staging, auth, tenant isolation and membership
-        run: node scripts/verify-d1-staging-live.mjs
+  # Live D1 acceptance is intentionally kept in the separately confirmed
+  # workflow_dispatch workflow. Pull-request checks must not mutate shared
+  # staging identities, projects, memberships or workspace documents.

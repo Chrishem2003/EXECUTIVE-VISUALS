@@ -1,6 +1,20 @@
 # Cloudflare D1 staging foundation
 
-**Status (13 November 2026):** isolated D1 schema and Worker are deployed. The staging same-origin bridge is enabled only on the dedicated Render staging service. Live authenticated registration/login, project create/list, revisioned workspace save/reload, anonymous-access rejection, and two-account owner-isolation checks have passed. Local Worker/repository tests cover viewer/reviewer read-only behavior, editor writes, owner-only membership administration and revocation. A fresh read-only aggregate audit on 13 November found 5 users, 5 projects and 5 workspace documents; memberships, assets, jobs and audit events were zero. These totals are not attributed to a particular smoke run. The live acceptance script exercises the full member-role matrix and has an explicitly confirmed, manual-only GitHub Actions workflow; its expanded live run remains pending. Production health confirms Supabase auth remains active and the D1 staging bridge remains disabled.
+**Status (18 November 2026):** the isolated D1 schema and Worker are deployed. Historical authenticated project/workspace and two-account isolation checks passed on 13 November against the older Render staging origin. They do not establish that the current dedicated cloud-staging application is connected. The current app's D1 bridge remains disabled pending the staging-only origin and Render environment reconciliation described below. Local Worker/repository tests cover viewer/reviewer read-only behavior, editor writes, owner-only membership administration and revocation. The expanded live member-role matrix remains pending.
+
+## Current origin reconciliation — 18 November 2026
+
+The original D1 live acceptance on 13 November used the older Render application origin `https://executive-visuals-1.onrender.com`. That historical acceptance does not prove the current dedicated cloud-staging application is connected.
+
+The current dedicated application is `https://executive-visuals-cloud-staging.onrender.com`. A read-only Cloudflare Worker settings audit found that the deployed `executive-visuals-d1-staging` Worker still has both `API_ORIGIN` and `APP_ORIGIN` set to the older host. The current dedicated Render application's health has reported `staging.d1WorkspaceEnabled=false`, so its same-origin D1 bridge is not active.
+
+PR #703 prepares the source-controlled correction:
+- The Worker code accepts only the exact dedicated cloud-staging origin for identity proxying and browser CORS.
+- `wrangler.jsonc` targets the current dedicated cloud-staging origin.
+- The manual live acceptance script now uses two pre-provisioned Supabase staging test accounts; credentials are supplied only through protected GitHub Actions secrets and are never printed.
+- The manual acceptance still requires explicit confirmation before creating D1 projects, workspace documents, memberships and audit/job fixtures.
+
+**Deployment remains a separate operator step.** Do not deploy the Worker until the two deployed Worker bindings (`API_ORIGIN` and `APP_ORIGIN`) have been updated together to the dedicated staging origin. Do not enable the Render bridge until `D1_STAGING_WORKER_URL` points to the isolated D1 Worker on the dedicated cloud-staging service. Production remains excluded.
 
 ## Boundary and identity
 

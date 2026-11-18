@@ -44,7 +44,7 @@ function makeD1(apply = true) {
 
 test("D1 Worker requires schema migration before serving staging routes", async () => {
   const DB = makeD1(false);
-  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects"), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects"), { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error.code, "D1_MIGRATION_REQUIRED");
   DB.close();
@@ -55,13 +55,13 @@ test("D1 Worker authenticates through the existing API before creating staging r
   t.mock.method(globalThis, "fetch", async request => {
     assert.equal(new URL(request.url).pathname, "/api/me");
     assert.equal(request.headers.get("authorization"), "Bearer staging-test-token");
-    assert.equal(request.headers.get("origin"), "https://executive-visuals.onrender.com");
+    assert.equal(request.headers.get("origin"), "https://executive-visuals-cloud-staging.onrender.com");
     const headers = new Headers({ "content-type": "application/json" });
     headers.append("set-cookie", "ev_supabase_access=rotated-access; HttpOnly; Secure");
     headers.append("set-cookie", "ev_supabase_refresh=rotated-refresh; HttpOnly; Secure");
     return new Response(JSON.stringify({ user: { id: userId, email: "editor@example.test" }, authMode: "supabase" }), { status: 200, headers });
   });
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const create = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
     method: "POST",
     headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
@@ -109,7 +109,7 @@ test("D1 Worker authenticates through the existing API before creating staging r
 test("D1 Worker never writes an identity when the upstream session is unauthenticated", async t => {
   const DB = makeD1();
   t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ error: { code: "AUTH_REQUIRED" } }), { status: 401 }));
-  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "No identity" }) }), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "No identity" }) }), { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
   assert.equal(response.status, 401);
   assert.equal((await response.json()).error.code, "AUTH_REQUIRED");
   assert.equal(DB.countUsers(), 0);
@@ -122,11 +122,11 @@ test("D1 Worker treats identity redirects as unauthenticated without following t
   t.mock.method(globalThis, "fetch", async request => {
     assert.equal(new URL(request.url).pathname, "/api/me");
     assert.equal(request.redirect, "manual");
-    return new Response(null, { status: 302, headers: { location: "https://executive-visuals.onrender.com/login" } });
+    return new Response(null, { status: 302, headers: { location: "https://executive-visuals-cloud-staging.onrender.com/login" } });
   });
   const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "No identity" })
-  }), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+  }), { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
   assert.equal(response.status, 401);
   assert.equal((await response.json()).error.code, "AUTH_REQUIRED");
   assert.equal(DB.countUsers(), 0);
@@ -144,7 +144,7 @@ test("D1 Worker health reports staging binding without exposing data", async () 
 
 
 test("D1 staging CORS allows only the configured app origin and bearer headers", async () => {
-  const env = { APP_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { APP_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const allowed = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
     method: "OPTIONS",
     headers: { origin: env.APP_ORIGIN, "access-control-request-method": "GET", "access-control-request-headers": "authorization" }
@@ -166,7 +166,7 @@ test("D1 staging CORS allows only the configured app origin and bearer headers",
 test("staging Worker blocks production business APIs instead of proxying them", async t => {
   let upstreamCalls = 0;
   t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response("unexpected"); });
-  const response = await worker.fetch(new Request("https://staging.example/api/projects"), { API_ORIGIN: "https://executive-visuals.onrender.com" });
+  const response = await worker.fetch(new Request("https://staging.example/api/projects"), { API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
   assert.equal(response.status, 404);
   assert.equal((await response.json()).error.code, "STAGING_ROUTE_NOT_FOUND");
   assert.equal(upstreamCalls, 0);
@@ -180,7 +180,7 @@ test("staging Worker proxies only login/logout authentication routes", async t =
   });
   const response = await worker.fetch(new Request("https://staging.example/api/auth/login", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "editor@example.test", password: "not-a-real-password" })
-  }), { API_ORIGIN: "https://executive-visuals.onrender.com" });
+  }), { API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
   assert.equal(response.status, 200);
   assert.match(response.headers.get("set-cookie"), /ev_supabase_access=test/);
 });
@@ -190,7 +190,7 @@ test("D1 Worker exposes authenticated revisioned workspace documents", async t =
   t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
     user: { id: userId, email: "editor@example.test" }, authMode: "supabase"
   }), { status: 200, headers: { "content-type": "application/json" } }));
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const createdResponse = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
     method: "POST", headers: { authorization: "Bearer staging-test-token", "content-type": "application/json" },
     body: JSON.stringify({ name: "Workspace-backed project" })
@@ -231,7 +231,7 @@ test("D1 Worker exposes owner-managed member listing, email add/update, role enf
     if (!user) return new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 });
     return new Response(JSON.stringify({ user, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json" } });
   });
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const ownerHeaders = { authorization: "Bearer owner-token", "content-type": "application/json" };
   const memberHeaders = { authorization: "Bearer member-token", "content-type": "application/json" };
 
@@ -340,7 +340,7 @@ test("D1 asset metadata reads are owner-scoped and never expose private storage 
       authMode: "supabase"
     }), { status: 200, headers: { "content-type": "application/json" } });
   });
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const create = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
     method: "POST",
     headers: { authorization: "Bearer user-a", "content-type": "application/json" },
@@ -411,7 +411,7 @@ test("D1 daily read/write quota errors are surfaced as bounded 503 responses", a
     };
     const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
       headers: { authorization: "Bearer staging-test-token" }
-    }), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+    }), { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" });
     assert.equal(response.status, 503, quota);
     const payload = await response.json();
     assert.equal(payload.error.code, "D1_QUOTA_EXCEEDED", quota);
@@ -437,7 +437,7 @@ test("D1 staging enforces the complete owner/editor/reviewer/viewer capability m
       status: 200, headers: { "content-type": "application/json" }
     });
   });
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const request = (path, token, method = "GET", body) => worker.fetch(new Request(
     "https://staging.example" + path,
     { method, headers: { authorization: "Bearer " + token, ...(body ? { "content-type": "application/json" } : {}) },
@@ -537,7 +537,7 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
     if (!user) return new Response(JSON.stringify({ error: { code: "AUTH_REQUIRED" } }), { status: 401 });
     return new Response(JSON.stringify({ user, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json" } });
   });
-  const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
+  const env = { DB, API_ORIGIN: "https://executive-visuals-cloud-staging.onrender.com" };
   const call = (path, token, method = "GET", body) => worker.fetch(new Request("https://staging.example" + path, {
     method, headers: { authorization: "Bearer " + token, ...(body ? { "content-type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {})
@@ -637,4 +637,36 @@ test("D1 staging job and audit APIs enforce project roles, idempotency and tenan
   const oversized = await call("/api/d1/jobs", "owner", "POST", { jobType: "x", input: { payload: "x".repeat(70 * 1024) } });
   assert.equal(oversized.status, 413);
   DB.close();
+});
+
+
+test("D1 staging Worker refuses to proxy identity to production or an unrelated origin", async t => {
+  const DB = makeD1();
+  let upstreamCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ user: { id: userId }, authMode: "supabase" }), {
+      status: 200, headers: { "content-type": "application/json" }
+    });
+  });
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects"), {
+    DB, API_ORIGIN: "https://executive-visuals.onrender.com"
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "D1_STAGING_ORIGIN_INVALID");
+  assert.equal(upstreamCalls, 0, "A misconfigured staging Worker must not contact production.");
+  DB.close();
+});
+
+test("D1 staging Worker refuses production as its configured browser CORS origin", async () => {
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://executive-visuals.onrender.com",
+      "access-control-request-method": "GET"
+    }
+  }), { APP_ORIGIN: "https://executive-visuals.onrender.com" });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, "CORS_ORIGIN_DENIED");
+  assert.equal(response.headers.get("access-control-allow-origin"), null);
 });
