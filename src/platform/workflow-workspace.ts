@@ -225,7 +225,7 @@ let workflowSelectionEpoch=0;
 async function selectWorkflow(workflowId:string){
  const epoch=++workflowSelectionEpoch;
  if(runPollTimer!==null){clearTimeout(runPollTimer);runPollTimer=null;}
- state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];state.workflowRuns=[];state.assets=[];state.costEstimate=null;state.plan="";
+ state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];state.assets=[];state.costEstimate=null;state.plan="";
  state.status="loading";state.message="Loading selected workflow and its latest run…";paint();
  try{
   const response=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+encodeURIComponent(workflowId));
@@ -290,7 +290,7 @@ async function action(actionName:string,actionElement?:HTMLElement){
   if(!state.graph)return;
   if(state.graph.nodes.length&&!window.confirm("Replace the current workflow graph with the review-first Video → Localized Captions template? Save or duplicate your current workflow first if you need to keep it."))return;
   state.graph=createVideoCaptionLocalizationWorkflow({id:state.graph.id,projectId:state.graph.projectId||""});
-  state.selectedNode="source-video";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
+  state.selectedNode="source-video";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];
   await persist();
   state.message="Template saved. Select the source-video node and enter a private video asset ID. Configure the speech and translation gateways, review each approval step, and set the target language before running. The workflow creates a separate WebVTT caption asset; it does not alter the source video.";
   paint();return;
