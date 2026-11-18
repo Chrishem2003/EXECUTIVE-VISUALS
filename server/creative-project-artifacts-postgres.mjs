@@ -127,7 +127,15 @@ export function createCloudCreativeProjectArtifactRepository({
     const cloud=await list({projectId,type:source.type,limit:100});
     const maxRevision=cloud.reduce((max,item)=>Math.max(max,item.revision),0);
     if(Number(source.revision)!==maxRevision+1)throw fail("Legacy artifact revisions are not contiguous with cloud history; automatic import stopped without overwriting data.","CREATIVE_ARTIFACT_IMPORT_CONFLICT");
-    const saved=await append({id:source.id,projectId,ownerId,createdBy:source.createdBy,projectName,projectDescription,type:source.type,input:source.input,content:source.content,inputHash:source.inputHash,model:source.model,usage:source.usage,skipProjectEnsure:true});
+    let saved;
+    try{
+     saved=await append({id:source.id,projectId,ownerId,createdBy:source.createdBy,projectName,projectDescription,type:source.type,input:source.input,content:source.content,inputHash:source.inputHash,model:source.model,usage:source.usage,skipProjectEnsure:true});
+    }catch(error){
+     // Another app instance may have imported this exact immutable row first.
+     const raced=await get({projectId,artifactId:source.id});
+     if(!raced||raced.type!==source.type||raced.revision!==Number(source.revision)||raced.inputHash!==source.inputHash||raced.contentHash!==source.contentHash)throw error;
+     alreadyPresent++;continue;
+    }
     if(saved.revision!==Number(source.revision)||saved.contentHash!==source.contentHash)throw fail("Imported artifact did not preserve its source revision and content hash.","CREATIVE_ARTIFACT_IMPORT_CONFLICT");
     imported++;
    }
