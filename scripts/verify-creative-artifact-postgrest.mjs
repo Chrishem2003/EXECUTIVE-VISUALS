@@ -8,7 +8,7 @@ assert.ok(secret&&secret.length>=32,"PGRST_JWT_SECRET must contain at least 32 c
 const owner="123e4567-e89b-42d3-a456-426614174000";
 const editor="223e4567-e89b-42d3-a456-426614174000";
 const reviewer="323e4567-e89b-42d3-a456-426614174000";
-const projectId="423e4567-e89b-42d3-a456-426614174000";
+const projectId="423e4567-e89b-42d3-a456-426614174002";
 const encode=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
 function token(role){
  const now=Math.floor(Date.now()/1000),header=encode({alg:"HS256",typ:"JWT"}),payload=encode({role,iss:"supabase",iat:now,exp:now+300});
