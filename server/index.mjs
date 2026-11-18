@@ -1476,7 +1476,7 @@ export function createAppServer() {
         if(req.method==="GET"){
           try{await ensureCreativeArtifactBackfill(projectId);}catch(error){
             const code=error.code||"CREATIVE_ARTIFACT_IMPORT_FAILED";
-            fail(res,["CREATIVE_ARTIFACT_IMPORT_CONFLICT","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:code==="CREATIVE_ARTIFACT_IMPORT_INVALID"?400:503,code,error.message||"Creative artifact cloud backfill failed.");return;
+            fail(res,code==="CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"?404:["CREATIVE_ARTIFACT_IMPORT_CONFLICT","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:code==="CREATIVE_ARTIFACT_IMPORT_INVALID"?400:503,code,error.message||"Creative artifact cloud backfill failed.");return;
           }
           if(artifactId){
             const artifact=creativeArtifactsPostgres?await creativeArtifactsPostgres.get({projectId,artifactId}):getCreativeProjectArtifact(db,{projectId,artifactId});
