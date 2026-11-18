@@ -6,6 +6,7 @@ import { join } from "node:path";
 const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/webm", "audio/flac", "audio/x-flac"]);
+const SEEDANCE_AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/flac", "audio/x-flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function parseRate(value) {
@@ -225,6 +226,9 @@ export function createRunwaySourceAssetResolver({
         let totalAudioSeconds = 0;
         for (const assetId of audioIds) {
           const audio = await resolveAsset({ ownerId, projectId, assetId, kinds: "audio" });
+          if (!SEEDANCE_AUDIO_TYPES.has(audio.asset.mediaType)) {
+            throw fail("Seedance reference audio must use a documented MP3, WAV, M4A, AAC or FLAC media type.", "VIDEO_INPUT_ASSET_TYPE_INVALID");
+          }
           totalAudioSeconds += await probeAudioDuration(audio.bytes);
           if (totalAudioSeconds >= 30) {
             throw fail("Seedance reference audio clips must have a combined duration under 30 seconds.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
