@@ -249,8 +249,8 @@ export function createRunwaySourceAssetResolver({
         for (const assetId of videoIds) {
           const video = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
           const metadata = await probeVideo(video.bytes);
-          if (metadata.durationSeconds < 2) {
-            throw fail("Seedance reference videos must be at least 2 seconds long.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+          if (metadata.durationSeconds < 2 || Math.min(metadata.width, metadata.height) < 480) {
+            throw fail("Seedance reference videos must be at least 2 seconds long and at least 480p.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
           }
           const billableDurationSeconds = metadata.durationSeconds < 4 ? 4.25 : metadata.durationSeconds;
           referenceVideoSeconds += billableDurationSeconds;
@@ -388,8 +388,8 @@ export function createRunwaySourceAssetResolver({
       for (const assetId of assetIds) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
         const metadata = await probeVideo(resolved.bytes);
-        if (metadata.durationSeconds < 2) {
-          throw fail("Seedance reference videos must be at least 2 seconds long.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+        if (metadata.durationSeconds < 2 || Math.min(metadata.width, metadata.height) < 480) {
+          throw fail("Seedance reference videos must be at least 2 seconds long and at least 480p.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
         }
         const billableDurationSeconds = metadata.durationSeconds < 4 ? 4.25 : metadata.durationSeconds;
         totalBillableDurationSeconds += billableDurationSeconds;
