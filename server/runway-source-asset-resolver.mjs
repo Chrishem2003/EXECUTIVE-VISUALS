@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "audio/ogg", "audio/webm", "audio/flac"]);
+const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/webm", "audio/flac", "audio/x-flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function parseRate(value) {
@@ -172,11 +172,70 @@ export function createRunwaySourceAssetResolver({
     }
   }
 
+  async function probeAudioDuration(bytes) {
+    const dir = await mkdtemp(join(tmpdir(), "ev-runway-audio-probe-"));
+    const file = join(dir, "reference-audio");
+    try {
+      await writeFile(file, bytes, { flag: "wx" });
+      const output = await new Promise((resolve, reject) => {
+        execFileImpl(ffprobePath, [
+          "-v", "error", "-show_entries", "format=duration",
+          "-of", "json", file
+        ], { timeout: Math.min(timeoutMs, 20000), maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => {
+          if (error) reject(error); else resolve(stdout);
+        });
+      });
+      const duration = Number(JSON.parse(String(output))?.format?.duration);
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 30) {
+        throw fail("Seedance reference audio duration is invalid.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+      }
+      return duration;
+    } catch (error) {
+      if (error?.code === "VIDEO_INPUT_ASSET_PROBE_INVALID") throw error;
+      throw fail("Seedance reference audio could not be probed by the server.", "VIDEO_INPUT_ASSET_PROBE_FAILED");
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   return Object.freeze({
     async prepare(input, context = {}) {
       const job = context.job || {};
       const ownerId = job.owner_id;
       const projectId = input?.projectId || null;
+      if (input?.model === "seedance2_5" && input?.operation === "text-to-video") {
+        const imageIds = input.referenceImageAssetIds ?? input.referenceAssetIds ?? [];
+        const videoIds = input.referenceVideoAssetIds ?? [];
+        const audioIds = input.referenceAudioAssetIds ?? (input.referenceAudioAssetId ? [input.referenceAudioAssetId] : []);
+        if (!Array.isArray(imageIds) || imageIds.length > 30 || new Set(imageIds).size !== imageIds.length) {
+          throw fail("Seedance 2.5 accepts at most 30 distinct owner-scoped image references.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        if (!Array.isArray(videoIds) || videoIds.length > 0) {
+          throw fail("Seedance video references require a separately priced quote path and are not yet enabled in this workflow.", "VIDEO_REFERENCE_PRICING_REQUIRED");
+        }
+        if (!Array.isArray(audioIds) || audioIds.length > 10 || new Set(audioIds).size !== audioIds.length) {
+          throw fail("Seedance 2.5 accepts at most 10 distinct owner-scoped audio references.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        const referenceImages = [];
+        for (const assetId of imageIds) {
+          const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
+          referenceImages.push({ buffer: image.bytes, filename: image.asset.name, mimeType: image.asset.mediaType });
+        }
+        const referenceAudio = [];
+        let totalAudioSeconds = 0;
+        for (const assetId of audioIds) {
+          const audio = await resolveAsset({ ownerId, projectId, assetId, kinds: "audio" });
+          totalAudioSeconds += await probeAudioDuration(audio.bytes);
+          if (totalAudioSeconds >= 30) {
+            throw fail("Seedance reference audio clips must have a combined duration under 30 seconds.", "VIDEO_INPUT_ASSET_PROBE_INVALID");
+          }
+          referenceAudio.push({ buffer: audio.bytes, filename: audio.asset.name, mimeType: audio.asset.mediaType });
+        }
+        if (!referenceImages.length && !referenceAudio.length && !String(input.prompt || "").trim()) {
+          throw fail("Seedance text-to-video requires a prompt or at least one image/audio reference.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        }
+        return { ...input, referenceImages, referenceAudio };
+      }
       if (input?.model === "model-router") {
         const referenceImages = [];
         const firstFrameId = input.startFrameAssetId || null;
