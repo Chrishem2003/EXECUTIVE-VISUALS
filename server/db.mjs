@@ -213,6 +213,28 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS evidence_record_events_evidence_idx ON evidence_record_events(evidence_id,id);
+
+    CREATE TABLE IF NOT EXISTS creative_project_artifacts (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by TEXT NOT NULL REFERENCES users(id),
+      artifact_type TEXT NOT NULL CHECK(artifact_type IN ('creative_direction','storyboard')),
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      input_hash TEXT NOT NULL CHECK(length(input_hash)=64),
+      content_hash TEXT NOT NULL CHECK(length(content_hash)=64),
+      input_json TEXT NOT NULL,
+      content_json TEXT NOT NULL,
+      model TEXT,
+      usage_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(project_id,artifact_type,revision)
+    );
+    CREATE INDEX IF NOT EXISTS creative_project_artifacts_project_idx ON creative_project_artifacts(project_id,artifact_type,revision DESC);
+    CREATE INDEX IF NOT EXISTS creative_project_artifacts_creator_idx ON creative_project_artifacts(created_by,created_at DESC);
+    CREATE TRIGGER IF NOT EXISTS creative_project_artifacts_no_update
+      BEFORE UPDATE ON creative_project_artifacts BEGIN SELECT RAISE(ABORT,'CREATIVE_PROJECT_ARTIFACTS_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS creative_project_artifacts_no_delete
+      BEFORE DELETE ON creative_project_artifacts BEGIN SELECT RAISE(ABORT,'CREATIVE_PROJECT_ARTIFACTS_IMMUTABLE'); END;
     CREATE TABLE IF NOT EXISTS creative_graph_snapshots (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

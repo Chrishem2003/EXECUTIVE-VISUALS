@@ -67,6 +67,7 @@ import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
 import { createB2MultipartUploadApi } from "./b2-multipart-upload-api.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
+import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact } from "./creative-project-artifacts.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
@@ -871,16 +872,20 @@ export function createAppServer() {
         }
         try{
           const result=await generateCreativeDirection({input:body.input});
-          const recordId=randomUUID();
+          const artifact=projectId?saveCreativeProjectArtifact(db,{
+            projectId,createdBy:user.id,type:"creative_direction",input:body.input,
+            content:result.plan,inputHash:result.plan.inputHash,model:result.model,usage:result.usage
+          }):null;
+          const recordId=artifact?.id||randomUUID();
           audit(db,user.id,"creative.director.generated","creative_plan",recordId,{
-            model:result.model,
-            inputHash:result.plan.inputHash,
-            promptTokens:result.usage?.promptTokens??null,
-            completionTokens:result.usage?.completionTokens??null,
-            totalTokens:result.usage?.totalTokens??null,
-            outputSchemaVersion:result.plan.schemaVersion
+            model:result.model,inputHash:result.plan.inputHash,
+            promptTokens:result.usage?.promptTokens??null,completionTokens:result.usage?.completionTokens??null,
+            totalTokens:result.usage?.totalTokens??null,outputSchemaVersion:result.plan.schemaVersion,
+            ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
-          send(res,200,{...result,recordId},cors);return;
+          send(res,200,{...result,recordId,persistence:artifact
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
+            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_DIRECTOR_FAILED";
           const status=["CREATIVE_DIRECTOR_INPUT_INVALID","CREATIVE_DIRECTOR_BRIEF_REQUIRED"].includes(code)?400:
@@ -898,19 +903,23 @@ export function createAppServer() {
         }
         try{
           const result=await generateStoryboard({input:body.input});
-          const recordId=randomUUID();
+          const artifact=projectId?saveCreativeProjectArtifact(db,{
+            projectId,createdBy:user.id,type:"storyboard",input:body.input,
+            content:result.storyboard,inputHash:result.storyboard.inputHash,model:result.model,usage:result.usage
+          }):null;
+          const recordId=artifact?.id||randomUUID();
           audit(db,user.id,"creative.storyboard.generated","storyboard",recordId,{
-            model:result.model,
-            inputHash:result.storyboard.inputHash,
-            promptTokens:result.usage?.promptTokens??null,
-            completionTokens:result.usage?.completionTokens??null,
-            totalTokens:result.usage?.totalTokens??null,
-            outputSchemaVersion:result.storyboard.schemaVersion,
+            model:result.model,inputHash:result.storyboard.inputHash,
+            promptTokens:result.usage?.promptTokens??null,completionTokens:result.usage?.completionTokens??null,
+            totalTokens:result.usage?.totalTokens??null,outputSchemaVersion:result.storyboard.schemaVersion,
             sceneCount:result.storyboard.scenes.length,
             shotCount:result.storyboard.scenes.reduce((sum,scene)=>sum+scene.shots.length,0),
-            durationSeconds:result.storyboard.durationSeconds
+            durationSeconds:result.storyboard.durationSeconds,
+            ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
-          send(res,200,{...result,recordId},cors);return;
+          send(res,200,{...result,recordId,persistence:artifact
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
+            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
         }catch(error){
           const code=error.code||"STORYBOARD_COMPILER_FAILED";
           const status=["STORYBOARD_INPUT_INVALID","STORYBOARD_DIRECTION_REQUIRED","STORYBOARD_DIRECTION_INVALID"].includes(code)?400:
@@ -1401,6 +1410,23 @@ export function createAppServer() {
         const projectId=url.searchParams.get("projectId")||"";
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         send(res,200,{projectId,records:listEvidenceRecords(db,{projectId})},cors);return;
+      }
+      const creativeArtifactMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-artifacts(?:\/([0-9a-f-]+))?$/i);
+      if(creativeArtifactMatch){
+        const projectId=creativeArtifactMatch[1],artifactId=creativeArtifactMatch[2]||null;
+        if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){
+          if(artifactId){
+            const artifact=getCreativeProjectArtifact(db,{projectId,artifactId});
+            if(!artifact){fail(res,404,"CREATIVE_ARTIFACT_NOT_FOUND","Creative project artifact not found.");return;}
+            send(res,200,{artifact,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+          }
+          const type=url.searchParams.get("type")||null;
+          const limit=Number(url.searchParams.get("limit")||20);
+          try{send(res,200,{projectId,artifacts:listCreativeProjectArtifacts(db,{projectId,type,limit}),persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;}
+          catch(error){fail(res,400,error.code||"CREATIVE_ARTIFACT_QUERY_INVALID",error.message);return;}
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Creative project artifacts are read-only version records.");return;
       }
       const graphSnapshotMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-graph\/snapshots$/i);
       if(graphSnapshotMatch){

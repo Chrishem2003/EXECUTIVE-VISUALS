@@ -23,7 +23,7 @@ function creativeProjects(value){
  return value.slice(0,100).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>{
   const project={
    id:text(item.id,80),name:text(item.name,160),brief:text(item.brief,10000),
-   audience:text(item.audience,2000),style:text(item.style,200),created:text(item.created,40)
+   audience:text(item.audience,2000),style:text(item.style,200),created:text(item.created,40),apiProjectId:text(item.apiProjectId,80),creativeDirectionArtifactId:text(item.creativeDirectionArtifactId,80),creativeDirectionRevision:Math.max(0,Math.trunc(Number(item.creativeDirectionRevision)||0)),storyboardArtifactId:text(item.storyboardArtifactId,80),storyboardRevision:Math.max(0,Math.trunc(Number(item.storyboardRevision)||0))
   };
   for(const key of ["creativeDNA","creativeBriefInput","modelCreativeDirection","storyboard","modelStoryboard"]){
    if(item[key]!==undefined&&item[key]!==null){

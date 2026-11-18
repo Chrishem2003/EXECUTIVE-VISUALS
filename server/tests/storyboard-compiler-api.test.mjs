@@ -115,6 +115,18 @@ test("storyboard endpoint requires authentication and returns a validated editab
   assert.equal(body.storyboard.scenes[1].shots[0].transitionOut, "sound_bridge");
   assert.equal(body.usage.totalTokens, 600);
   assert.ok(body.recordId);
+  assert.equal(body.persistence.saved,true);
+  assert.equal(body.persistence.revision,1);
+  assert.match(body.persistence.contentHash,/^[a-f0-9]{64}$/);
+  assert.equal(body.persistence.backend,"sqlite");
+  assert.equal(body.persistence.durableAcrossDeploys,false);
+  const saved=await request("/api/projects/"+projectId+"/creative-artifacts?type=storyboard",{},cookie);
+  assert.equal(saved.status,200);
+  const savedBody=await saved.json();
+  assert.equal(savedBody.artifacts.length,1);
+  assert.equal(savedBody.artifacts[0].content.scenes.length,2);
+  const fetched=await request("/api/projects/"+projectId+"/creative-artifacts/"+body.recordId,{},cookie);
+  assert.equal((await fetched.json()).artifact.content.durationSeconds,20);
   assert.equal(JSON.stringify(body).includes("storyboard-test-secret"), false);
   assert.equal(gatewayRequests, 1);
 });
