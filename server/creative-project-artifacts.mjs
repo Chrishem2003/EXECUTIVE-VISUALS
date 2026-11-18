@@ -83,8 +83,14 @@ export function getCreativeProjectArtifact(db, { projectId, artifactId } = {}) {
   return row ? mapArtifact(row) : null;
 }
 
+export function listCreativeProjectArtifactsForMigration(db, { projectId } = {}) {
+  if (!projectId) throw new TypeError("A project ID is required.");
+  const rows=db.prepare("SELECT * FROM creative_project_artifacts WHERE project_id=? ORDER BY artifact_type ASC,revision ASC").all(projectId);
+  return rows.map(mapArtifact);
+}
 
-function validateEditedStoryboard(content, expectedInputHash) {
+
+export function validateEditedStoryboard(content, expectedInputHash) {
   const text = (value, max) => typeof value === "string" && value.length <= max;
   const required = (value, max) => text(value, max) && value.trim().length > 0;
   const ratios = new Set(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
