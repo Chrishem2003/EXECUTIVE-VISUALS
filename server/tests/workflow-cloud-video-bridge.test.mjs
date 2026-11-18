@@ -179,7 +179,7 @@ test("Seedance draft enhancement rejects stale, incomplete, failed, cross-owner 
  const base={
   id:sourceDraftJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",status:"succeeded",
   created_at:new Date(Date.now()-60*60*1000).toISOString(),
-  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",draftTargetResolution:"1080p",requestHash:"a".repeat(64)},
+  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",draftTargetResolution:"1080p",durationSeconds:8,aspectRatio:"16:9",audio:true,requestHash:"a".repeat(64)},
   output:{provider:"runway",model:"seedance2_5",providerTaskId:sourceDraftTaskId,assetIds:[cloudAssetId]}
  };
  const cases=[
