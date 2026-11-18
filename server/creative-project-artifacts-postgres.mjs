@@ -72,6 +72,13 @@ export function createCloudCreativeProjectArtifactRepository({
   if(!row||row.id!==projectId||row.owner_id!==ownerId||row.archived_at)throw fail("Cloud project identity does not match the local project owner or is archived.","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH");
   return row;
  }
+ async function verifyProject({projectId,ownerId}={}){
+  const rows=await request("projects?select=id,owner_id,archived_at&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+  const row=Array.isArray(rows)?rows[0]:null;
+  if(!row)throw fail("Cloud project must exist before its creative artifacts can be read or imported.","CREATIVE_ARTIFACT_PROJECT_NOT_FOUND");
+  if(row.owner_id!==ownerId||row.archived_at)throw fail("Cloud project identity does not match the local project owner or is archived.","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH");
+  return row;
+ }
  async function get({projectId,artifactId}={}){
   if(!UUID.test(String(projectId||""))||!UUID.test(String(artifactId||"")))return null;
   const rows=await request("creative_project_artifacts?select=*&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(artifactId)+"&limit=1");
@@ -124,7 +131,7 @@ export function createCloudCreativeProjectArtifactRepository({
   },
   async importLegacyArtifacts({projectId,ownerId,projectName,projectDescription="",artifacts=[]}={}){
    if(!Array.isArray(artifacts)||artifacts.length>10000)throw fail("Legacy artifact batch is invalid or too large.","CREATIVE_ARTIFACT_IMPORT_INVALID");
-   await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
+   await verifyProject({projectId,ownerId});
    const ordered=[...artifacts].sort((a,b)=>String(a.type).localeCompare(String(b.type))||Number(a.revision)-Number(b.revision));
    let imported=0,alreadyPresent=0;
    for(const source of ordered){
