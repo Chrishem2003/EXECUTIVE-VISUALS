@@ -884,8 +884,8 @@ export function createAppServer() {
             ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
           send(res,200,{...result,recordId,persistence:artifact
-            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash}
-            :{saved:false,reason:"project_required"}},cors);return;
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
+            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_DIRECTOR_FAILED";
           const status=["CREATIVE_DIRECTOR_INPUT_INVALID","CREATIVE_DIRECTOR_BRIEF_REQUIRED"].includes(code)?400:
@@ -1423,7 +1423,7 @@ export function createAppServer() {
           }
           const type=url.searchParams.get("type")||null;
           const limit=Number(url.searchParams.get("limit")||20);
-          try{send(res,200,{projectId,artifacts:listCreativeProjectArtifacts(db,{projectId,type,limit})},cors);return;}
+          try{send(res,200,{projectId,artifacts:listCreativeProjectArtifacts(db,{projectId,type,limit}),persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;}
           catch(error){fail(res,400,error.code||"CREATIVE_ARTIFACT_QUERY_INVALID",error.message);return;}
         }
         fail(res,405,"METHOD_NOT_ALLOWED","Creative project artifacts are read-only version records.");return;
