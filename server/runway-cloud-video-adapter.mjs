@@ -18,7 +18,19 @@ const UPLOAD_TYPES = Object.freeze({
   "video/quicktime": ".mov",
   "image/png": ".png",
   "image/jpeg": ".jpg",
-  "image/webp": ".webp"
+  "image/webp": ".webp",
+  "audio/mpeg": ".mp3",
+  "audio/mp3": ".mp3",
+  "audio/mp4": ".m4a",
+  "audio/wav": ".wav",
+  "audio/wave": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/aac": ".aac",
+  "audio/x-aac": ".aac",
+  "audio/ogg": ".ogg",
+  "audio/webm": ".webm",
+  "audio/flac": ".flac",
+  "audio/x-flac": ".flac"
 });
 const isRunwayUri = value => typeof value === "string" && /^runway:\/\/[A-Za-z0-9._~:/?@!const fail = (message, code) => Object.assign(new Error(message), { code });'()*+,;=%-]{1,4980}$/.test(value);
 
@@ -213,7 +225,10 @@ export function createRunwayCloudVideoAdapter({
       const isVeo = selectedModel === "veo3.1" || selectedModel === "veo3.1_fast";
       const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId) || Boolean(input.endFrameAssetId);
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
-        Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
+        (Array.isArray(input.referenceImageAssetIds) && input.referenceImageAssetIds.length > 0) ||
+        (Array.isArray(input.referenceVideoAssetIds) && input.referenceVideoAssetIds.length > 0) ||
+        (Array.isArray(input.referenceAudioAssetIds) && input.referenceAudioAssetIds.length > 0) ||
+        Boolean(input.referenceAudioAssetId) || Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
         Boolean(input.startFrameAssetId) || Boolean(input.endFrameAssetId) ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
       if ((hasReferences || isVideoEdit || isVideoUpscale || isVideoHdr || isImageToVideo) && typeof prepareInput !== "function") {
@@ -252,6 +267,19 @@ export function createRunwayCloudVideoAdapter({
         if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
         if (!isRunwayUri(videoUri)) throw fail("HDR conversion requires a Runway ephemeral URI resolved from the authorized source asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         return { ...input, videoUri };
+      }
+      if (selectedModel === "seedance2_5" && input.operation === "text-to-video" &&
+          (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceAudio))) {
+        const references = [];
+        const referenceAudio = [];
+        const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
+        const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
+        if (images.length > 30 || audio.length > 10) {
+          throw fail("Seedance reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
+        }
+        for (const item of images) references.push({ uri: await uploadEphemeral(item) });
+        for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
+        return { ...input, references, referenceAudio };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
       if (isVideoUpscale) {
@@ -420,7 +448,9 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(selectedModel)) {
         const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
         const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
-      if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
+      const hasSeedanceReferences = selectedModel === "seedance2_5" &&
+        (Array.isArray(input.references) && input.references.length > 0 || Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
+      if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
         }
         if (!isRunwayUri(input.videoUri)) throw fail("Video-to-video requires a prepared private source upload.", "RUNWAY_INPUT_INVALID");
@@ -544,7 +574,9 @@ export function createRunwayCloudVideoAdapter({
           aspectRatio: input.aspectRatio || "16:9",
           resolution: input.resolution || "provider_default", draft: input.draft === true,
           multiPrompt: input.multiPrompt,
-          shotType: input.shotType || "customize"
+          shotType: input.shotType || "customize",
+          references: input.references,
+          referenceAudio: input.referenceAudio
         });
       }
       if (typeof input.audio === "boolean" && ["seedance2_5", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(selectedModel)) {
