@@ -1411,7 +1411,7 @@ export function createAppServer() {
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         send(res,200,{projectId,records:listEvidenceRecords(db,{projectId})},cors);return;
       }
-      const creativeArtifactRevisionMatch=path.match(/^\\/api\\/projects\\/([0-9a-f-]+)\\/creative-artifacts\\/([0-9a-f-]+)\\/revisions$/i);
+      const creativeArtifactRevisionMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-artifacts\/([0-9a-f-]+)\/revisions$/i);
       if(creativeArtifactRevisionMatch&&req.method==="POST"){
         const projectId=creativeArtifactRevisionMatch[1],artifactId=creativeArtifactRevisionMatch[2];
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
