@@ -232,7 +232,10 @@ export async function executeCloudVideoWorkflowNode({
     const response=await fetchImpl(signedUrl,{redirect:"error"});
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     const declaredSize=Number(response.headers?.get?.("content-length")||0);
-    if(declaredSize&&declaredSize!==asset.size)throw fail("Private cloud output Content-Length does not match its verified asset metadata.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
+    if(declaredSize&&declaredSize!==asset.size){
+     await response.body?.cancel?.().catch(()=>{});
+     throw fail("Private cloud output Content-Length does not match its verified asset metadata.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
+    }
     if(!response.body||typeof response.body.getReader!=="function")throw fail("Private cloud output did not provide a readable response stream.","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     if(actualDurationSeconds===null){
      const reportedDuration=Number(asset.metadata?.durationSeconds||asset.metadata?.duration||0);
