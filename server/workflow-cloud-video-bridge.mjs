@@ -92,12 +92,16 @@ async function resolveSeedanceDraftEnhancementNode({node,ownerId,projectId,cloud
   throw fail("The source draft must belong to the same owner and project as this workflow.","VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN");
  if(source.status!=="succeeded"||!Number.isFinite(createdAt)||ageMs<0||ageMs>7*24*60*60*1000)
   throw fail("Only a successfully completed Seedance draft from the last seven days can be enhanced.","VIDEO_WORKFLOW_DRAFT_SOURCE_NOT_READY");
- if(input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||input.draftTargetResolution!=="1080p")
+ if(input.provider!=="runway"||input.model!=="seedance2_5"||input.draft!==true||input.resolution!=="480p"||input.draftTargetResolution!=="1080p"||
+    !["text-to-video","image-to-video","video-to-video"].includes(input.operation)||input.operation==="video-to-video"&&input.mode!=="reference"||
+    !Number.isInteger(input.durationSeconds)||input.durationSeconds<4||input.durationSeconds>30)
   throw fail("The source cloud job is not a supported 480p Seedance 2.5 draft.","VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID");
  const providerTaskId=String(output.providerTaskId||"");
  if(output.provider!=="runway"||output.model!=="seedance2_5"||!UUID.test(providerTaskId)||!Array.isArray(output.assetIds)||output.assetIds.length<1||output.assetIds.some(id=>typeof id!=="string"||!UUID.test(id)))
   throw fail("The completed draft is missing its verified provider task or private preview asset receipt.","VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID");
- return{...node,config:{...config,draftTaskId:providerTaskId}};
+ return{...node,config:{...config,provider:"runway",model:"seedance2_5",durationSeconds:input.durationSeconds,
+  aspectRatio:input.aspectRatio||"16:9",audio:input.audio!==false,resolution:"1080p",draftTaskId:providerTaskId,sourceDraftJobId,
+  ...(UUID.test(String(input.sourceVideoAssetId||""))?{sourceDraftVideoAssetId:input.sourceVideoAssetId}:{})}};
 }
 
 function cloudResultError(result,fallback){
