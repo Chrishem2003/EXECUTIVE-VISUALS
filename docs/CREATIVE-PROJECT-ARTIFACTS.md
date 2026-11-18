@@ -32,3 +32,15 @@ The existing project-access check applies to reads. Generation requires owner/ed
 ## Durability boundary
 
 The current implementation writes to the application's SQLite database. API responses expose the configured runtime storage classification and deliberately report `durableAcrossDeploys=false`. This is versioned persistence within the active application database, not proof of a durable hosted primary database or verified backup/restore. The production SQLite/local-disk and cloud-primary persistence blockers remain open until isolated database configuration and restore acceptance are completed.
+
+## Saving reviewed storyboard edits
+
+Model-generated storyboards are immutable source revisions. After editing scene or shot fields in the Creative Director workspace, an owner or editor can explicitly save the current reviewed storyboard as a new revision using:
+
+`POST /api/projects/:projectId/creative-artifacts/:artifactId/revisions`
+
+The server checks project write access, confirms that the source artifact is a storyboard, preserves the original input hash and model/usage lineage, validates the edited storyboard structure and timing, and appends a new immutable revision in the existing transaction-safe artifact store. It never updates or deletes the source revision. A no-op save returns the existing revision without creating a duplicate. Invalid timing, duplicate IDs, changed input lineage, oversized content, or cross-project artifact IDs are rejected.
+
+The UI exposes **Save edited revision** next to storyboard export and timeline creation. After a successful save it updates the active revision pointer and refreshes version history. Restoring an older revision still retrieves the immutable historical content; saving edits after restore creates another new revision rather than rewriting history.
+
+This feature improves version recovery within the current SQLite runtime. It does not change the storage durability boundary: the API continues to report `durableAcrossDeploys=false` until the hosted primary database and backup/restore path are independently configured and verified.
