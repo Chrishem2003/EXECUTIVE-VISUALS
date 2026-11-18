@@ -40,7 +40,7 @@ function fixture({projectRows=[projectRow],artifactRows=[parentRow],membershipRo
   else if(path.startsWith("projects?")&&options.method==="POST")rows=[{...JSON.parse(options.body),archived_at:null}];
   else if(path.startsWith("project_members?"))rows=membershipRows;
   else if(path.startsWith("creative_project_artifacts?"))rows=artifactRows.filter(row=>{
-   const projectMatch=path.match(/project_id=eq\.([^&]+)/),idMatch=path.match(/id=eq\.([^&]+)/),typeMatch=path.match(/artifact_type=eq\.([^&]+)/);
+   const projectMatch=path.match(/[?&]project_id=eq\.([^&]+)/),idMatch=path.match(/[?&]id=eq\.([^&]+)/),typeMatch=path.match(/[?&]artifact_type=eq\.([^&]+)/);
    return (!projectMatch||row.project_id===decodeURIComponent(projectMatch[1]))&&(!idMatch||row.id===decodeURIComponent(idMatch[1]))&&(!typeMatch||row.artifact_type===decodeURIComponent(typeMatch[1]));
   });
   else if(path==="rpc/append_creative_project_artifact"){
@@ -142,7 +142,7 @@ test("Postgres bootstrap enforces private access, immutable rows and serialized 
 
 test("backfills legacy SQLite artifact IDs and revisions idempotently",async()=>{
  const f=fixture({artifactRows:[]});
- const legacy={...parentRow,projectId:project,type:"storyboard",revision:1};
+ const legacy={...parentRow,projectId:project,createdBy:owner,type:"storyboard",revision:1};
  const first=await f.repository.importLegacyArtifacts({projectId:project,ownerId:owner,projectName:"Solar workshop",artifacts:[legacy]});
  assert.deepEqual(first,{imported:1,alreadyPresent:0,total:1});
  assert.equal(f.artifactRows.length,1);
