@@ -61,13 +61,14 @@ export async function storeGeneratedVideoFromStream({
 }){
  const MAX_BYTES=250*1024*1024;
  if(!stream||typeof stream.pipe!=="function")throw Object.assign(new Error("Generated video import requires a readable stream."),{code:"VIDEO_STREAM_REQUIRED"});
- if(!Number.isSafeInteger(expectedSize)||expectedSize<12||expectedSize>MAX_BYTES||
-    typeof expectedSha256!=="string"||!/^[a-f0-9]{64}$/.test(expectedSha256)||
-    cloudSha256!==expectedSha256||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(cloudWorkspaceAssetId||""))||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(cloudVideoJobId||""))){
-  throw Object.assign(new Error("Cloud video output size, checksum or lineage receipt is invalid."),{code:"VIDEO_CLOUD_ASSET_RECEIPT_INVALID"});
- }
+ const validUuid=value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||""));
+ const invalid=[];
+ if(!Number.isSafeInteger(expectedSize)||expectedSize<12||expectedSize>MAX_BYTES)invalid.push("expectedSize");
+ if(typeof expectedSha256!=="string"||!/^[a-f0-9]{64}$/.test(expectedSha256))invalid.push("expectedSha256");
+ if(cloudSha256!==expectedSha256)invalid.push("cloudSha256");
+ if(!validUuid(cloudWorkspaceAssetId))invalid.push("cloudWorkspaceAssetId");
+ if(!validUuid(cloudVideoJobId))invalid.push("cloudVideoJobId");
+ if(invalid.length)throw Object.assign(new Error("Cloud video output metadata is invalid: "+invalid.join(", ")+ "."),{code:"VIDEO_CLOUD_ASSET_RECEIPT_INVALID"});
  const id=randomUUID(),directory=join(mediaRoot,safeSegment(ownerId),safeSegment(projectId||"personal"));
  const absolute=resolve(directory,id+".mp4"),temporary=resolve(directory,id+".mp4.part");
  const root=resolve(mediaRoot),storagePath=relative(root,absolute).split(sep).join("/");
