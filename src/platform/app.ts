@@ -741,6 +741,8 @@ async function refreshLiveReadiness(){
    ["Database",health.database],
    ["Storage",health.storage],
    ["Data persistence",health.persistence?.dataDirectory==="operator-confirmed-volume"?"Operator-confirmed persistent volume":"Ephemeral or unverified"],
+   ["Creative artifact storage",health.creativeArtifacts?.backend==="supabase-postgres"?(health.creativeArtifacts?.ready===true?"Supabase Postgres ready":"Supabase Postgres configured but not ready"):"SQLite local"],
+   ["Creative artifacts durable across deployments",health.creativeArtifacts?.durableAcrossDeploys===true?"Verified storage backend configured":"No — local SQLite"],
    ["Persistent volume required",health.persistence?.persistentVolumeRequired===true?"Yes":"No"],
    ["Authentication mode",health.authMode],
    ["Hosted sessions",health.authSession?.configurationReady===true?"Configured":"Not configured"],
@@ -1281,11 +1283,11 @@ document.addEventListener("click",e=>{
   const project=state.projects.find(item=>item.id===state.activeProject),board=project?.modelStoryboard;
   if(!project?.apiProjectId||!project.storyboardArtifactId||!board){state.storyboardAiMessage="Generate and save a model storyboard before saving edited revisions.";render();return;}
   saveStoryboardRevision.setAttribute("disabled","true");state.storyboardAiMessage="Validating and saving an immutable storyboard revision…";render();
-  void apiRequest<{artifact:CreativeProjectArtifact;unchanged?:boolean;persistence?:{durableAcrossDeploys:boolean}}>("/api/projects/"+encodeURIComponent(project.apiProjectId)+"/creative-artifacts/"+encodeURIComponent(project.storyboardArtifactId)+"/revisions",{
+  void apiRequest<{artifact:CreativeProjectArtifact;unchanged?:boolean;persistence?:{durableAcrossDeploys:boolean;backend?:string}}>("/api/projects/"+encodeURIComponent(project.apiProjectId)+"/creative-artifacts/"+encodeURIComponent(project.storyboardArtifactId)+"/revisions",{
    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:board})
   }).then(async result=>{
    if(!result.unchanged){project.storyboardArtifactId=result.artifact.id;project.storyboardRevision=result.artifact.revision;}
-   state.storyboardAiMessage=result.unchanged?"No storyboard changes detected; the existing immutable revision remains current.":"Edited storyboard saved as immutable project revision "+result.artifact.revision+"."+(result.persistence?.durableAcrossDeploys===false?" The current runtime uses SQLite; cross-deployment durability is not yet verified.":"");
+   state.storyboardAiMessage=result.unchanged?"No storyboard changes detected; the existing immutable revision remains current.":"Edited storyboard saved as "+(result.persistence?.backend==="supabase-postgres"?"durable cloud":"local")+" immutable project revision "+result.artifact.revision+"."+(result.persistence?.durableAcrossDeploys===false?" The current runtime uses SQLite; cross-deployment durability is not yet verified.":"");
    save();await refreshCreativeArtifactHistory(project,true);render();
   }).catch(error=>{
    state.storyboardAiMessage=error instanceof Error?error.message:"The edited storyboard revision could not be saved.";render();
@@ -1804,13 +1806,13 @@ window.addEventListener("ev:workflow-luma-edit-ready",()=>{state.tab="canvas";re
  if(state.directorAiBusy)return;
  if(!confirm("Send this brief to the configured server-side text model? A remote provider may incur usage charges. No media will be generated."))return;
  state.directorAiBusy=true;state.directorAiMessage="Sending the brief to the configured text gateway…";render();
- void ensureApiProject(project).then(apiProjectId=>apiRequest<{plan:ModelCreativeDirection;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string;persistence?:{saved:boolean;artifactId?:string;revision?:number;durableAcrossDeploys?:boolean}}>("/api/creative/director",{
+ void ensureApiProject(project).then(apiProjectId=>apiRequest<{plan:ModelCreativeDirection;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string;persistence?:{saved:boolean;artifactId?:string;revision?:number;durableAcrossDeploys?:boolean;backend?:string}}>("/api/creative/director",{
   method:"POST",headers:{"content-type":"application/json"},
   body:JSON.stringify({projectId:apiProjectId,input:project.creativeBriefInput})
  })).then(result=>{
   const current=state.projects.find(item=>item.id===project.id);
   if(current){current.modelCreativeDirection=result.plan;current.modelStoryboard=undefined;current.creativeDirectionArtifactId=result.persistence?.artifactId;current.creativeDirectionRevision=result.persistence?.revision;current.storyboardArtifactId=undefined;current.storyboardRevision=undefined;}
-  state.directorAiMessage="Model-backed direction generated and validated."+(result.persistence?.saved?" Saved to project artifact history as revision "+result.persistence.revision+".":"")+(result.persistence?.durableAcrossDeploys===false?" Runtime SQLite storage is not yet verified across deployments.":"")+" Review assumptions, proof checks and risk flags before using it in a storyboard."+(result.usage?" · "+result.usage.totalTokens+" reported tokens":"");
+  state.directorAiMessage="Model-backed direction generated and validated."+(result.persistence?.saved?" Saved to "+(result.persistence.backend==="supabase-postgres"?"durable cloud":"local")+" project artifact history as revision "+result.persistence.revision+".":"")+(result.persistence?.durableAcrossDeploys===false?" Runtime SQLite storage is not yet verified across deployments.":"")+" Review assumptions, proof checks and risk flags before using it in a storyboard."+(result.usage?" · "+result.usage.totalTokens+" reported tokens":"");
   state.directorAiBusy=false;save();render();
   const refreshedProject=state.projects.find(item=>item.id===project.id);
   if(refreshedProject)void refreshCreativeArtifactHistory(refreshedProject,true).then(()=>render()).catch(()=>{});
@@ -1834,14 +1836,14 @@ document.addEventListener("click",e=>{
  const channel=String(creativeBriefInput.channel||"").toLowerCase();
  const aspectRatio=channel.includes("tiktok")||channel.includes("reels")||channel.includes("shorts")?"9:16":"16:9";
  const characters:ModelStoryboardCharacterSuggestion[]=[];
- void ensureApiProject(project).then(apiProjectId=>apiRequest<{storyboard:ModelStoryboard;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string;persistence?:{saved:boolean;artifactId?:string;revision?:number;durableAcrossDeploys?:boolean}}>("/api/creative/storyboard",{
+ void ensureApiProject(project).then(apiProjectId=>apiRequest<{storyboard:ModelStoryboard;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null;recordId:string;persistence?:{saved:boolean;artifactId?:string;revision?:number;durableAcrossDeploys?:boolean;backend?:string}}>("/api/creative/storyboard",{
   method:"POST",headers:{"content-type":"application/json"},
   body:JSON.stringify({projectId:apiProjectId,input:{creativeDirection,targetDurationSeconds:resolveCreativeDurationSeconds(creativeBriefInput.duration||"60 seconds"),aspectRatio,frameRate:24,constraints:creativeBriefInput.constraints||"",characters}})
  })).then(result=>{
   const current=state.projects.find(item=>item.id===project.id);
   if(current){current.modelStoryboard=result.storyboard;current.storyboardArtifactId=result.persistence?.artifactId;current.storyboardRevision=result.persistence?.revision;}
   storyboardPreflightContext=null;
-  state.storyboardAiMessage="Model storyboard generated and schema-validated."+(result.persistence?.saved?" Saved to project artifact history as revision "+result.persistence.revision+".":"")+(result.persistence?.durableAcrossDeploys===false?" Runtime SQLite storage is not yet verified across deployments.":"")+" Edit scene and shot details below; verify proof and rights before production."+(result.usage?" · "+result.usage.totalTokens+" reported tokens":"");
+  state.storyboardAiMessage="Model storyboard generated and schema-validated."+(result.persistence?.saved?" Saved to "+(result.persistence.backend==="supabase-postgres"?"durable cloud":"local")+" project artifact history as revision "+result.persistence.revision+".":"")+(result.persistence?.durableAcrossDeploys===false?" Runtime SQLite storage is not yet verified across deployments.":"")+" Edit scene and shot details below; verify proof and rights before production."+(result.usage?" · "+result.usage.totalTokens+" reported tokens":"");
   state.storyboardAiBusy=false;save();render();
   const refreshedProject=state.projects.find(item=>item.id===project.id);
   if(refreshedProject)void refreshCreativeArtifactHistory(refreshedProject,true).then(()=>render()).catch(()=>{});
