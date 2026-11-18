@@ -89,14 +89,15 @@ export function createCloudCreativeProjectArtifactRepository({
   if(!Array.isArray(rows))throw fail("Creative artifact list returned an invalid result.","CREATIVE_ARTIFACT_DATABASE_INVALID_RESPONSE");
   return rows.map(map);
  }
- async function append({projectId,ownerId,projectName,projectDescription="",createdBy,type,input,content,inputHash,model=null,usage={}}={}){
+ async function append({id=null,projectId,ownerId,projectName,projectDescription="",createdBy,type,input,content,inputHash,model=null,usage={},skipProjectEnsure=false}={}){
   if(!UUID.test(String(projectId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(createdBy||"")))throw fail("Project, owner and creator UUIDs are required.","CREATIVE_ARTIFACT_PROJECT_REQUIRED");
+  if(id!==null&&!UUID.test(String(id)))throw fail("Creative artifact ID must be a UUID.","CREATIVE_ARTIFACT_INVALID");
   if(!TYPES.has(type))throw fail("Unsupported creative project artifact type.","CREATIVE_ARTIFACT_TYPE_INVALID");
   if(!/^[a-f0-9]{64}$/i.test(String(inputHash||"")))throw fail("A verified SHA-256 input hash is required.","CREATIVE_ARTIFACT_INPUT_HASH_INVALID");
   boundedObject(input,"Creative artifact input");boundedObject(content,"Creative artifact content");boundedObject(isObject(usage)?usage:{},"Creative artifact usage");
-  await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
+  if(!skipProjectEnsure)await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
   const rows=await request("rpc/append_creative_project_artifact",{method:"POST",body:{
-   p_id:randomUUID(),p_project_id:projectId,p_created_by:createdBy,p_artifact_type:type,
+   p_id:id||randomUUID(),p_project_id:projectId,p_created_by:createdBy,p_artifact_type:type,
    p_input_hash:inputHash.toLowerCase(),p_content_hash:hash(stable(content)),
    p_input:input,p_content:content,p_model:typeof model==="string"?model.trim().slice(0,200)||null:null,p_usage:isObject(usage)?usage:{}
   }});
@@ -106,6 +107,27 @@ export function createCloudCreativeProjectArtifactRepository({
  return Object.freeze({
   save:append,
   get,list,
+  async importLegacyArtifacts({projectId,ownerId,projectName,projectDescription="",artifacts=[]}={}){
+   if(!Array.isArray(artifacts)||artifacts.length>10000)throw fail("Legacy artifact batch is invalid or too large.","CREATIVE_ARTIFACT_IMPORT_INVALID");
+   await ensureProject({projectId,ownerId,name:projectName,description:projectDescription});
+   const ordered=[...artifacts].sort((a,b)=>String(a.type).localeCompare(String(b.type))||Number(a.revision)-Number(b.revision));
+   let imported=0,alreadyPresent=0;
+   for(const source of ordered){
+    if(!source||!UUID.test(String(source.id||""))||source.projectId!==projectId||!TYPES.has(source.type))throw fail("Legacy artifact identity is invalid.","CREATIVE_ARTIFACT_IMPORT_INVALID");
+    const existing=await get({projectId,artifactId:source.id});
+    if(existing){
+     if(existing.type!==source.type||existing.revision!==Number(source.revision)||existing.inputHash!==source.inputHash||existing.contentHash!==source.contentHash)throw fail("A cloud artifact conflicts with the legacy artifact ID or revision.","CREATIVE_ARTIFACT_IMPORT_CONFLICT");
+     alreadyPresent++;continue;
+    }
+    const cloud=await list({projectId,type:source.type,limit:100});
+    const maxRevision=cloud.reduce((max,item)=>Math.max(max,item.revision),0);
+    if(Number(source.revision)!==maxRevision+1)throw fail("Legacy artifact revisions are not contiguous with cloud history; automatic import stopped without overwriting data.","CREATIVE_ARTIFACT_IMPORT_CONFLICT");
+    const saved=await append({id:source.id,projectId,ownerId,createdBy:source.createdBy,projectName,projectDescription,type:source.type,input:source.input,content:source.content,inputHash:source.inputHash,model:source.model,usage:source.usage,skipProjectEnsure:true});
+    if(saved.revision!==Number(source.revision)||saved.contentHash!==source.contentHash)throw fail("Imported artifact did not preserve its source revision and content hash.","CREATIVE_ARTIFACT_IMPORT_CONFLICT");
+    imported++;
+   }
+   return {imported,alreadyPresent,total:ordered.length};
+  },
   async appendRevision({projectId,ownerId,projectName,projectDescription="",createdBy,artifactId,content}={}){
    const parent=await get({projectId,artifactId});
    if(!parent)throw fail("Source creative artifact not found.","CREATIVE_ARTIFACT_NOT_FOUND");
