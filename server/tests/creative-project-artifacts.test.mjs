@@ -112,6 +112,9 @@ test("edited storyboard saves as a new immutable revision with parent lineage an
  assert.equal(revision.inputHash,parent.inputHash);
  assert.equal(revision.content.scenes[0].shots[0].action,"Show the inspected solar controller.");
  assert.equal(revision.usage.totalTokens,120);
+ const noOp=appendCreativeProjectArtifactRevision(db,{projectId:"project-1",artifactId:revision.id,createdBy:"editor",content:edited});
+ assert.equal(noOp.unchanged,true);
+ assert.equal(noOp.id,revision.id);
  assert.equal(getCreativeProjectArtifact(db,{projectId:"project-1",artifactId:parent.id}).content.scenes[0].shots[0].action,"Show the verified step.");
  assert.deepEqual(listCreativeProjectArtifacts(db,{projectId:"project-1",type:"storyboard"}).map(item=>item.revision),[2,1]);
  const invalid=validStoryboard(inputHash);invalid.scenes[0].shots[0].durationSeconds=90;
