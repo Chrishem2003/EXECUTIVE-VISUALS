@@ -14,6 +14,12 @@ export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
  const targetValid=Boolean(url&&url.protocol==="https:"&&url.hostname.toLowerCase()===STAGING_HOST&&url.port===""&&
   !url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==="/"||url.pathname===""));
  const worker=health?.cloudVideoWorker||{};
+ const embeddedWorkerReady=worker.runtimeMode==="embedded-api-process"&&worker.inProcessSupervisorActive===true;
+ const heartbeat=worker.separateWorkerHeartbeat||{};
+ const heartbeatAge=Number(heartbeat.ageSeconds);
+ const separateWorkerReady=worker.runtimeMode==="separate-process"&&heartbeat.ready===true&&
+  Number.isFinite(heartbeatAge)&&heartbeatAge>=0&&heartbeatAge<=90;
+ const workerRuntimeReady=embeddedWorkerReady||separateWorkerReady;
  const media=health?.cloudMedia||{};
  const persistence=health?.persistence||{};
  const durableApplicationState=health?.database==="sqlite"&&health?.storage==="local-disk"&&
@@ -33,6 +39,8 @@ export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
    "The authenticated cloud media jobs API is not enabled."),
   check("cloud-worker-configured",worker.enabled===true&&worker.outputHostAllowlistConfigured===true,
    "The cloud worker gates or bounded output-host allowlist are not configured."),
+  check("cloud-worker-runtime-active",workerRuntimeReady,
+   "Worker environment flags alone do not prove execution. Require an active embedded supervisor or a separate worker heartbeat no older than 90 seconds."),
   check("paid-provider-execution-disabled",worker.remoteExecutionGates===false,
    "Remote provider execution must be explicitly disabled during no-cost staging acceptance."),
   check("application-readiness",readiness?.ready===true&&readiness?.status==="ready",
