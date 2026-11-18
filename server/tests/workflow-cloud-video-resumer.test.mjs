@@ -11,9 +11,9 @@ const quoteId="723e4567-e89b-42d3-a456-426614174000";
 const requestId="workflow-test-request";
 const requestHash="a".repeat(64);
 
-function fixture(cloudStatus="succeeded",originalJobStatus="blocked",cloudJobOverrides={}){
+function fixture(cloudStatus="succeeded",originalJobStatus="blocked",cloudJobOverrides={},localOutputOverrides={}){
  const run={id:runId,owner_id:owner,project_id:project,status:"blocked",job_id:"old-local-job"};
- const node={status:"blocked",output_json:JSON.stringify({cloudJobId,quoteId,requestId,requestHash,approvedMaxAmount:2}),error_json:JSON.stringify({code:"CLOUD_VIDEO_JOB_PENDING"})};
+ const node={status:"blocked",output_json:JSON.stringify({cloudJobId,quoteId,requestId,requestHash,approvedMaxAmount:2,...localOutputOverrides}),error_json:JSON.stringify({code:"CLOUD_VIDEO_JOB_PENDING"})};
  const parkedJob={status:originalJobStatus};
  const jobs=[],events=[],audits=[];
  const db={
@@ -130,4 +130,19 @@ test("does not requeue while the original local workflow worker still owns its j
  assert.equal(f.run.status,"blocked");
  assert.equal(f.node.status,"blocked");
  assert.equal(f.jobs.length,0);
+});
+
+test("rejects non-numeric or out-of-range saved approval ceilings before workflow recovery",async()=>{
+ for(const approvedMaxAmount of ["2",null,0,-1,1000000.01]){
+  const f=fixture("succeeded","blocked",{input:{workflowQuoteId:quoteId,workflowRequestId:requestId,requestHash,approvedMaxAmount}},{approvedMaxAmount});
+  const errors=[];
+  const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi,onError:error=>errors.push(error)});
+  assert.deepEqual(result,{scanned:1,resumed:0,terminal:0},String(approvedMaxAmount));
+  assert.equal(f.run.status,"blocked");
+  assert.equal(f.node.status,"blocked");
+  assert.equal(f.parkedJob.status,"blocked");
+  assert.equal(f.jobs.length,0);
+  assert.equal(errors.length,1);
+  assert.equal(errors[0].code,"WORKFLOW_CLOUD_JOB_RECEIPT_MISMATCH");
+ }
 });

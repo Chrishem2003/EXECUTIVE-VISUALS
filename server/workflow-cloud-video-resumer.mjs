@@ -89,7 +89,7 @@ export async function resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,li
    const receiptValid=UUID.test(String(output.quoteId||""))&&
     typeof output.requestId==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(output.requestId)&&
     typeof output.requestHash==="string"&&/^[a-f0-9]{64}$/.test(output.requestHash)&&
-    Number.isFinite(Number(output.approvedMaxAmount))&&Number(output.approvedMaxAmount)>0&&
+    typeof output.approvedMaxAmount==="number"&&Number.isFinite(output.approvedMaxAmount)&&output.approvedMaxAmount>0&&output.approvedMaxAmount<=1000000&&
     cloudJob.owner_id===row.owner_id&&cloudJob.project_id===row.project_id&&
     cloudJob.job_type==="video.generate"&&
     cloudJob.input?.workflowQuoteId===output.quoteId&&
