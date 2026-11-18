@@ -66,3 +66,27 @@ test("legacy adapter support remains unchanged outside governed cloud mode", () 
     { kind: "video.generate", config: { provider: "fal", model: "fal-ai/video" } }, "legacy"
   ), true);
 });
+
+
+test("governed cloud bridge and project prerequisites are represented as blocked workflow states", async () => {
+  const { isGovernedCloudWorkflowBlockedCode } = await import("../video-workflow-execution-mode.mjs");
+  for (const code of [
+    "CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED",
+    "VIDEO_WORKFLOW_CLOUD_DISABLED",
+    "VIDEO_WORKFLOW_CLOUD_ADAPTER_UNAVAILABLE",
+    "VIDEO_WORKFLOW_CLOUD_MODE_REQUIRED",
+    "VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED",
+    "VIDEO_WORKFLOW_CLOUD_PROJECT_NOT_LINKED"
+  ]) {
+    assert.equal(isGovernedCloudWorkflowBlockedCode(code), true, code);
+  }
+  for (const code of [
+    "VIDEO_PROVIDER_FAILED",
+    "VIDEO_WORKFLOW_ACTUAL_COST_EVIDENCE_MISSING",
+    "VIDEO_WORKFLOW_OUTPUT_INVALID",
+    "VIDEO_WORKFLOW_EXECUTION_MODE_INVALID",
+    "UNKNOWN_ERROR"
+  ]) {
+    assert.equal(isGovernedCloudWorkflowBlockedCode(code), false, code);
+  }
+});
