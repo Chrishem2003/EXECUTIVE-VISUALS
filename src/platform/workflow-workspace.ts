@@ -281,7 +281,7 @@ async function action(actionName:string,actionElement?:HTMLElement){
   if(!state.graph)return;
   if(state.graph.nodes.length&&!window.confirm("Replace the current workflow graph with the review-first Audio → Captions template? Save or duplicate your current workflow first if you need to keep it."))return;
   state.graph=createTranscriptionCaptionWorkflow({id:state.graph.id,projectId:state.graph.projectId||""});
-  state.selectedNode="source-audio";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];
+  state.selectedNode="source-audio";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.workflowRuns=[];
   await persist();
   state.message="Template saved. Select the source-audio node, enter the private audio asset ID, configure the server-side speech gateway, then run and approve the transcription step.";
   paint();return;
