@@ -776,3 +776,27 @@ test("Seedance reference-video reservation fails closed without private metadata
     model: "seedance2_5", input, reservedAmount: 1.5
   })), error => error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 2.1375);
 });
+
+
+test("Seedance image-to-video reference mode can enqueue without a first-frame asset or text prompt", async () => {
+  const env = {
+    CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+    RUNWAYML_API_SECRET: "server-runway-key", RUNWAY_VIDEO_MODELS: "seedance2_5"
+  };
+  const input = {
+    projectId, provider: "runway", model: "seedance2_5", requestHash,
+    operation: "image-to-video", referenceAssetIds: ["a23e4567-e89b-42d3-a456-426614174000"],
+    durationSeconds: 8, aspectRatio: "16:9", resolution: "720p"
+  };
+  let calls = 0;
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "seedance2_5", input, reservedAmount: 3.0
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+});
