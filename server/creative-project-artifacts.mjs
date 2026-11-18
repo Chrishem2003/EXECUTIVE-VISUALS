@@ -146,6 +146,7 @@ export function appendCreativeProjectArtifactRevision(db, { projectId, artifactI
   if (parent.type!=="storyboard") throw Object.assign(new Error("Only storyboard artifacts support edited revisions through this endpoint."), { code: "CREATIVE_ARTIFACT_TYPE_INVALID" });
   if (typeof createdBy!=="string"||!createdBy) throw Object.assign(new Error("An authenticated editor is required."), { code: "CREATIVE_ARTIFACT_PROJECT_REQUIRED" });
   validateEditedStoryboard(content,parent.inputHash);
+  if(digest(encode(content,"Creative artifact content"))===parent.contentHash)return {...parent,unchanged:true};
   return saveCreativeProjectArtifact(db,{
     projectId,createdBy,type:"storyboard",input:parent.input,content,inputHash:parent.inputHash,
     model:parent.model,usage:parent.usage
