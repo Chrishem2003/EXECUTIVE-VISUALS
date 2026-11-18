@@ -563,8 +563,10 @@ export function createRunwayCloudVideoAdapter({
       const imageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       let payload;
       if (imageToVideo) {
-        if (!isRunwayUri(input.promptImageUri)) {
-          throw fail("Image-to-video requires a prepared Runway first-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        const seedanceReferenceMode = selectedModel === "seedance2_5" &&
+          Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0;
+        if (!seedanceReferenceMode && !isRunwayUri(input.promptImageUri)) {
+          throw fail("Image-to-video requires a prepared Runway first-frame upload or verified Seedance reference collection.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         }
         // Reuse the direct gateway's model-specific validation and ratio mapping;
         // replace its validated placeholder with the private ephemeral upload URI.
