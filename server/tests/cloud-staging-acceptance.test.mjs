@@ -8,7 +8,7 @@ const healthy={
  persistence:{persistentVolumeRequired:true,dataDirectory:"operator-confirmed-volume"},
  cloudMedia:{enabled:true,ready:true,storage:"private",provider:"supabase"},
  cloudMediaJobsApi:{enabled:true},
- cloudVideoWorker:{enabled:true,outputHostAllowlistConfigured:true,supabaseCredentialsConfigured:true,remoteExecutionGates:false}
+ cloudVideoWorker:{enabled:true,outputHostAllowlistConfigured:true,supabaseCredentialsConfigured:true,remoteExecutionGates:false,runtimeMode:"embedded-api-process",inProcessSupervisorActive:true}
 };
 const ready={ready:true,status:"ready",checks:[]};
 
@@ -94,4 +94,20 @@ test("does not echo secrets from health payloads into its result",()=>{
   baseUrl,health:{...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,serviceRoleKey:"super-secret-value"}},readiness:ready
  });
  assert.equal(JSON.stringify(result).includes("super-secret-value"),false);
+});
+
+test("blocks a configured worker when no worker process is proven active",()=>{
+ const inactive={...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,runtimeMode:"separate-process",inProcessSupervisorActive:false}};
+ const result=evaluateCloudStagingAcceptance({baseUrl,health:inactive,readiness:ready});
+ assert.equal(result.passed,false);
+ assert.equal(result.checks.find(item=>item.id==="cloud-worker-runtime-active").status,"blocked");
+});
+
+test("accepts a separate worker only with a fresh verified heartbeat",()=>{
+ const fresh={...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,runtimeMode:"separate-process",inProcessSupervisorActive:false,separateWorkerHeartbeat:{ready:true,ageSeconds:30}}};
+ const result=evaluateCloudStagingAcceptance({baseUrl,health:fresh,readiness:ready});
+ assert.equal(result.checks.find(item=>item.id==="cloud-worker-runtime-active").status,"passed");
+ const stale={...healthy,cloudVideoWorker:{...fresh.cloudVideoWorker,separateWorkerHeartbeat:{ready:true,ageSeconds:91}}};
+ const staleResult=evaluateCloudStagingAcceptance({baseUrl,health:stale,readiness:ready});
+ assert.equal(staleResult.checks.find(item=>item.id==="cloud-worker-runtime-active").status,"blocked");
 });
