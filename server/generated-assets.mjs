@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, writeFile, unlink, rename } from "node:fs/promises";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { join, relative, sep, resolve } from "node:path";
 import { json } from "./db.mjs";
 
@@ -44,6 +47,64 @@ export async function storeGeneratedVideo({db,mediaRoot,ownerId,projectId=null,j
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)").run(id,ownerId,projectId,name,"video/mp4",buffer.length,sha256,storagePath,json(metadata));
   return {id,projectId,name,mediaType:"video/mp4",size:buffer.length,sha256,storagePath,metadata};
  }catch(error){await unlink(absolute).catch(()=>{});throw error;}
+}
+
+
+/**
+ * Import a private cloud video without buffering the complete object in memory.
+ * The stream is size-bounded, SHA-256 checked, MP4-signature checked, and only
+ * published into the Asset Library after every check succeeds.
+ */
+export async function storeGeneratedVideoFromStream({
+ db,mediaRoot,ownerId,projectId=null,jobId,prompt,model,provenance=null,
+ cloudWorkspaceAssetId,cloudVideoJobId,cloudSha256,stream,expectedSize,expectedSha256
+}){
+ const MAX_BYTES=250*1024*1024;
+ if(!stream||typeof stream.pipe!=="function")throw Object.assign(new Error("Generated video import requires a readable stream."),{code:"VIDEO_STREAM_REQUIRED"});
+ if(!Number.isSafeInteger(expectedSize)||expectedSize<12||expectedSize>MAX_BYTES||
+    typeof expectedSha256!=="string"||!/^[a-f0-9]{64}$/.test(expectedSha256)||
+    cloudSha256!==expectedSha256||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(cloudWorkspaceAssetId||""))||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(cloudVideoJobId||""))){
+  throw Object.assign(new Error("Cloud video output size, checksum or lineage receipt is invalid."),{code:"VIDEO_CLOUD_ASSET_RECEIPT_INVALID"});
+ }
+ const id=randomUUID(),directory=join(mediaRoot,safeSegment(ownerId),safeSegment(projectId||"personal"));
+ const absolute=resolve(directory,id+".mp4"),temporary=resolve(directory,id+".mp4.part");
+ const root=resolve(mediaRoot),storagePath=relative(root,absolute).split(sep).join("/");
+ if(storagePath.startsWith("..")||resolve(root,storagePath)!==absolute)throw Object.assign(new Error("Generated video path failed validation."),{code:"ASSET_PATH_INVALID"});
+ await mkdir(directory,{recursive:true});
+ const hash=createHash("sha256"),prefix=Buffer.alloc(12);let prefixLength=0,size=0,sha256="";
+ const verifier=new Transform({
+  transform(chunk,encoding,callback){
+   const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+   size+=bytes.length;
+   if(size>MAX_BYTES||size>expectedSize){callback(Object.assign(new Error("Cloud video output exceeded its verified byte-size limit."),{code:"VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH"}));return;}
+   if(prefixLength<12){const count=Math.min(12-prefixLength,bytes.length);bytes.copy(prefix,prefixLength,0,count);prefixLength+=count;}
+   hash.update(bytes);callback(null,bytes);
+  },
+  flush(callback){
+   sha256=hash.digest("hex");
+   if(size!==expectedSize||sha256!==expectedSha256){callback(Object.assign(new Error("Downloaded cloud output failed byte-size or SHA-256 verification."),{code:"VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH"}));return;}
+   if(prefixLength<12||prefix.toString("ascii",4,8)!=="ftyp"){callback(Object.assign(new Error("Generated video has an unsupported MP4 signature."),{code:"VIDEO_SIGNATURE_INVALID"}));return;}
+   callback();
+  }
+ });
+ try{
+  await pipeline(stream,verifier,createWriteStream(temporary,{flags:"wx"}));
+  await rename(temporary,absolute);
+  const promptHash=createHash("sha256").update(String(prompt||"")).digest("hex");
+  const name="generated-"+id+".mp4";
+  const metadata={generated:true,model,promptHash,jobId,createdAt:new Date().toISOString(),
+   ...(provenance?{generationProvenance:provenance}:{}),
+   cloudWorkspaceAssetId,cloudVideoJobId,cloudSha256};
+  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+   .run(id,ownerId,projectId,name,"video/mp4",size,sha256,storagePath,json(metadata));
+  return {id,projectId,name,mediaType:"video/mp4",size,sha256,storagePath,metadata};
+ }catch(error){
+  await unlink(temporary).catch(()=>{});
+  await unlink(absolute).catch(()=>{});
+  throw error;
+ }
 }
 
 export async function storeGeneratedAudio({db,mediaRoot,ownerId,projectId=null,jobId,prompt,model,buffer,mimeType="audio/mpeg"}){
