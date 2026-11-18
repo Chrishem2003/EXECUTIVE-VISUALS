@@ -396,9 +396,16 @@ test("Seedance image-to-video accepts native reference images and audio without 
   referenceAudio: [{ uri: "runway://ephemeral/ambience" }],
   duration: 8, ratio: "1280:720"
  });
+ const firstFrameOnly = buildRunwayImageToVideoPayload({
+  model: "seedance2_5", prompt: "A shot",
+  promptImage: [{ uri: "runway://ephemeral/subject", position: "first" }],
+  durationSeconds: 5, aspectRatio: "16:9", resolution: "720p"
+ });
+ assert.deepEqual(firstFrameOnly.promptImage, [{ uri: "runway://ephemeral/subject", position: "first" }]);
+ assert.equal(firstFrameOnly.ratio, "1280:720");
  assert.throws(() => buildRunwayImageToVideoPayload({
   model: "seedance2_5", prompt: "A shot",
-  promptImage: [{ uri: "runway://ephemeral/subject", position: "first" }]
+  promptImage: [{ uri: "runway://ephemeral/subject", position: "last" }]
  }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
  assert.throws(() => buildRunwayImageToVideoPayload({
   model: "seedance2_5", prompt: "",
