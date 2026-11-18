@@ -58,6 +58,7 @@ test("rejects signed URLs from other hosts, buckets, paths, or unsafe URL compon
   const unsafe = [
     "https://attacker.example/storage/v1/object/sign/executive-visuals-media/a?token=x",
     origin + "/storage/v1/object/sign/other-bucket/a?token=x",
+    origin + "/storage/v1/object/sign/executive-visuals-media/44444444-4444-4444-8444-444444444444/" + assetId + "/clip.mp4?token=x",
     origin + "/storage/v1/object/public/executive-visuals-media/a?token=x",
     origin + "/storage/v1/object/sign/executive-visuals-media/a?token=x&download=1",
     origin + "/storage/v1/object/sign/executive-visuals-media/a?token=x#fragment"
