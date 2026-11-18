@@ -23,15 +23,21 @@ function withCookies(response, cookies = []) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+const STAGING_APP_ORIGIN = "https://executive-visuals-cloud-staging.onrender.com";
+
+function isAllowedAppOrigin(value) {
+  try {
+    const configured = new URL(String(value || ""));
+    return configured.protocol === "https:" && configured.origin === value && configured.origin === STAGING_APP_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 function withCors(response, request, env) {
   const requestOrigin = request.headers.get("origin");
-  if (!requestOrigin || !env.APP_ORIGIN) return response;
-  let allowedOrigin = "";
-  try {
-    const configured = new URL(env.APP_ORIGIN);
-    if (configured.protocol === "https:" && configured.origin === env.APP_ORIGIN) allowedOrigin = configured.origin;
-  } catch {}
-  if (!allowedOrigin || requestOrigin !== allowedOrigin) return response;
+  if (!requestOrigin || !isAllowedAppOrigin(env.APP_ORIGIN) || requestOrigin !== STAGING_APP_ORIGIN) return response;
+  const allowedOrigin = STAGING_APP_ORIGIN;
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", allowedOrigin);
   headers.set("access-control-allow-methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
@@ -42,9 +48,18 @@ function withCors(response, request, env) {
 }
 
 function safeApiOrigin(value) {
-  const origin = new URL(value);
-  if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
-    throw new Error("API_ORIGIN must be a plain HTTPS origin.");
+  let origin;
+  try {
+    origin = new URL(String(value || ""));
+  } catch {
+    throw Object.assign(new Error("API_ORIGIN must target the dedicated Executive Visuals cloud-staging application."), {
+      status: 503, code: "D1_STAGING_ORIGIN_INVALID"
+    });
+  }
+  if (origin.protocol !== "https:" || origin.origin !== STAGING_APP_ORIGIN || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
+    throw Object.assign(new Error("API_ORIGIN must target the dedicated Executive Visuals cloud-staging application."), {
+      status: 503, code: "D1_STAGING_ORIGIN_INVALID"
+    });
   }
   return origin;
 }
@@ -340,7 +355,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") {
-      if (!url.pathname.startsWith("/api/d1/") || !env.APP_ORIGIN || request.headers.get("origin") !== env.APP_ORIGIN) {
+      if (!url.pathname.startsWith("/api/d1/") || !isAllowedAppOrigin(env.APP_ORIGIN) || request.headers.get("origin") !== STAGING_APP_ORIGIN) {
         return json({ error: { code: "CORS_ORIGIN_DENIED", message: "This origin is not allowed to access staging APIs." } }, 403);
       }
       return withCors(new Response(null, { status: 204, headers: { "cache-control": "no-store" } }), request, env);
