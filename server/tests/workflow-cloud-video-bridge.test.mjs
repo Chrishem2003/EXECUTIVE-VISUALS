@@ -167,7 +167,9 @@ test("Seedance draft enhancement resolves the original task only from a recent s
   assert.equal(quote.body.node.config.aspectRatio,"16:9");
   assert.equal(quote.body.node.config.audio,true);
   assert.equal(quote.body.node.config.draft,undefined);
-  assert.equal(quote.body.node.config.draftEnhancement,true);
+  const enhancementRequest=createVideoWorkflowCloudRequest({node:quote.body.node,values:quote.body.values,projectId,requestId:quote.body.requestId});
+  assert.equal(enhancementRequest.input.draftEnhancement,true);
+  assert.equal(enhancementRequest.input.draftTaskId,sourceDraftTaskId);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
