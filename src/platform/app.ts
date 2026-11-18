@@ -1275,7 +1275,8 @@ document.addEventListener("click",e=>{
  }
 });
 document.addEventListener("click",e=>{
- const restore=tclosest(e,"[data-creative-artifact-restore]");
+ const t=e.target as HTMLElement;
+ const restore=t.closest<HTMLElement>("[data-creative-artifact-restore]");
  if(restore){
   const project=state.projects.find(item=>item.id===state.activeProject);
   const artifactId=restore.dataset.creativeArtifactRestore||"";
@@ -1296,7 +1297,6 @@ document.addEventListener("click",e=>{
   }).catch(error=>{state.directorAiMessage=error instanceof Error?error.message:"The selected project revision could not be restored.";render();});
   return;
  }
- const t=e.target as HTMLElement;
  const resumeProject=t.closest<HTMLElement>("[data-resume-project]");
  if(resumeProject){const project=state.projects.find(item=>item.id===resumeProject.dataset.resumeProject);if(project){storyboardPreflightContext=null;state.activeProject=project.id;state.prompt=project.brief;state.plan=project.creativeDNA?formatCreativeIntent(project.creativeDNA):"";state.tab="director";save();render();void refreshCreativeArtifactHistory(project,true).then(()=>render()).catch(error=>{state.directorAiMessage=error instanceof Error?error.message:"Could not load saved creative versions.";render();});}return;}
  const resumeSeries=t.closest<HTMLElement>("[data-resume-series]");
