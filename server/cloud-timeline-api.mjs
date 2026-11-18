@@ -20,6 +20,8 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
 const DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"]);
+const DISABLED_DIRECT_RUNWAY_WORKFLOW_MODELS=new Set(["kling_4_flash","gemini_omni_flash_1.2"]);
+const isDisabledDirectRunwayWorkflowModel=model=>DISABLED_DIRECT_RUNWAY_WORKFLOW_MODELS.has(String(model||""));
 const directRunwayConfigId=model=>"runway-direct-"+String(model).replace(/[^a-z0-9]+/gi,"-").toLowerCase();
 function directRunwayEnabled(env,model){
  const allowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
@@ -374,6 +376,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const requestId=String(body.requestId||"");
      const quoteNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
      const workflowRequest=createVideoWorkflowCloudRequest({node:quoteNode,values:body.values||{},projectId,requestId});
+     if(workflowRequest.provider==="runway"&&isDisabledDirectRunwayWorkflowModel(workflowRequest.model))return response(422,{error:{code:"VIDEO_WORKFLOW_MODEL_DISABLED",message:"This model is not approved for governed cloud execution. Choose a released model; no quote, reservation or provider task was created."}});
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const quoteAdapter=workflowRequest.provider==="luma"?lumaWorkflowAdapter:directRunway?null:workflowRouterAdapter;
      if(!quoteAdapter&&!directRunway)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"The selected provider's governed quote adapter is not configured. Paid execution remains disabled."}});
@@ -490,6 +493,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
     try{
      const approvalNode=await prepareSeedanceDraftEnhancementNode(body.node,ownerId,projectId);
      const workflowRequest=createVideoWorkflowCloudRequest({node:approvalNode,values:body.values||{},projectId,requestId});
+     if(workflowRequest.provider==="runway"&&isDisabledDirectRunwayWorkflowModel(workflowRequest.model))return response(422,{error:{code:"VIDEO_WORKFLOW_MODEL_DISABLED",message:"This model is not approved for governed cloud execution. No budget reservation or provider task was created."}});
      const isLuma=workflowRequest.provider==="luma";
      const directRunway=workflowRequest.provider==="runway"&&DIRECT_RUNWAY_WORKFLOW_MODELS.has(workflowRequest.model);
      const configId=isLuma?"luma-ray32":directRunway?directRunwayConfigId(workflowRequest.model):String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"");
