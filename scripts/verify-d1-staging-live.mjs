@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 
 const endpoints = {
-  stagingApp: "https://executive-visuals-1.onrender.com/api/health",
+  stagingApp: "https://executive-visuals-cloud-staging.onrender.com/api/health",
   stagingWorker: "https://executive-visuals-d1-staging.chrishem.workers.dev/edge-health",
   stagingD1: "https://executive-visuals-d1-staging.chrishem.workers.dev/api/d1/health",
-  stagingUnauthenticatedProjects: "https://executive-visuals-1.onrender.com/api/d1/projects?limit=1",
+  stagingUnauthenticatedProjects: "https://executive-visuals-cloud-staging.onrender.com/api/d1/projects?limit=1",
   productionApp: "https://executive-visuals.onrender.com/api/health"
 };
 
@@ -43,7 +42,9 @@ const runAttempt = process.env.GITHUB_RUN_ATTEMPT || "1";
 const staging = await getJson("Staging application health", endpoints.stagingApp);
 assert.equal(staging.body.status, "ok");
 assert.equal(staging.body.staging?.d1WorkspaceEnabled, true);
-assert.equal(staging.body.staging?.localAuthEnabled, true);
+assert.equal(staging.body.staging?.localAuthEnabled, false);
+assert.equal(staging.body.authMode, "supabase");
+assert.equal(staging.body.authSession?.configurationReady, true);
 
 const worker = await getJson("Staging Worker health", endpoints.stagingWorker);
 assert.deepEqual(worker.body, {
@@ -71,9 +72,14 @@ assert.equal(production.body.authMode, "supabase");
 console.log("PASS: isolated staging app, Worker, D1 schema and unauthenticated-access gates are healthy.");
 console.log("PASS: production remains on Supabase authentication with the D1 staging bridge disabled.");
 
-const stagingOrigin = "https://executive-visuals-1.onrender.com";
-const smokeEmail = `ev-ci+${runLabel}-${runAttempt}@ev-staging.test`;
-const smokePassword = randomBytes(24).toString("base64url");
+const stagingOrigin = "https://executive-visuals-cloud-staging.onrender.com";
+const smokeEmail = String(process.env.EV_D1_STAGING_TEST_EMAIL || "").trim().toLowerCase();
+const smokePassword = String(process.env.EV_D1_STAGING_TEST_PASSWORD || "");
+const isolationEmail = String(process.env.EV_D1_STAGING_SECOND_TEST_EMAIL || "").trim().toLowerCase();
+const isolationPassword = String(process.env.EV_D1_STAGING_SECOND_TEST_PASSWORD || "");
+if (!smokeEmail || smokePassword.length < 12 || !isolationEmail || isolationPassword.length < 12 || smokeEmail === isolationEmail) {
+  throw new Error("Configure two distinct Supabase staging test accounts using EV_D1_STAGING_TEST_EMAIL/PASSWORD and EV_D1_STAGING_SECOND_TEST_EMAIL/PASSWORD GitHub Actions secrets. Credentials are never printed.");
+}
 const mutationHeaders = {
   "content-type": "application/json",
   origin: stagingOrigin,
@@ -100,12 +106,12 @@ async function postJson(name, url, { body, cookie, expectedStatus }) {
 }
 
 let sessionCookie = "";
-const registration = await postJson("Staging smoke registration", stagingOrigin + "/api/auth/register", {
+const login = await postJson("First Supabase staging test-account login", stagingOrigin + "/api/auth/login", {
   body: { email: smokeEmail, password: smokePassword },
-  expectedStatus: 201
+  expectedStatus: 200
 });
-sessionCookie = registration.cookie;
-assert.ok(sessionCookie, "Staging auth must issue a session cookie.");
+sessionCookie = login.cookie;
+assert.ok(sessionCookie, "Supabase staging login must issue an HttpOnly application session cookie.");
 
 const identityResponse = await fetch(stagingOrigin + "/api/me", {
   headers: { cookie: sessionCookie, accept: "application/json" },
@@ -114,7 +120,7 @@ const identityResponse = await fetch(stagingOrigin + "/api/me", {
 assert.equal(identityResponse.status, 200, "Staging session must authenticate through /api/me.");
 const identity = await identityResponse.json();
 assert.equal(identity.user?.email, smokeEmail);
-assert.equal(identity.authMode, "local");
+assert.equal(identity.authMode, "supabase");
 
 const projectResponse = await postJson("Authenticated D1 project creation", stagingOrigin + "/api/d1/projects", {
   body: { name: `CI D1 round-trip ${runLabel}`, description: "Automated isolated staging acceptance project", settings: { source: "github-actions", runId: runLabel } },
@@ -154,17 +160,15 @@ assert.deepEqual(reloaded.document, document);
 const anonymousRead = await fetch(stagingOrigin + "/api/d1/projects/" + encodeURIComponent(project.id), { headers: { accept: "application/json" } });
 assert.equal(anonymousRead.status, 401, "Anonymous access to a created project must remain denied.");
 
-console.log("PASS: allowlisted staging registration/login and /api/me session verification succeeded.");
+console.log("PASS: Supabase staging login and /api/me session verification succeeded.");
 console.log("PASS: authenticated D1 project create/list and revisioned workspace save/reload succeeded.");
 console.log("PASS: anonymous project access remains rejected.");
 
-const isolationEmail = `ev-ci+${runLabel}-${runAttempt}-member@ev-staging.test`;
-const isolationPassword = randomBytes(24).toString("base64url");
-const isolationAuth = await postJson("Second staging identity registration", stagingOrigin + "/api/auth/register", {
+const isolationAuth = await postJson("Second Supabase staging test-account login", stagingOrigin + "/api/auth/login", {
   body: { email: isolationEmail, password: isolationPassword },
-  expectedStatus: 201
+  expectedStatus: 200
 });
-assert.ok(isolationAuth.cookie, "Second staging identity must receive an independent session cookie.");
+assert.ok(isolationAuth.cookie, "Second Supabase staging identity must receive an independent application session cookie.");
 
 const secondIdentityResponse = await fetch(stagingOrigin + "/api/me", {
   headers: { cookie: isolationAuth.cookie, accept: "application/json" },
