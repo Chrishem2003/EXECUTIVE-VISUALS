@@ -30,18 +30,20 @@ function boundedObject(value,label){
 }
 export function createCloudCreativeProjectArtifactRepository({
  url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
- fetchImpl=globalThis.fetch,timeoutMs=15000
+ fetchImpl=globalThis.fetch,timeoutMs=15000,restPath="/rest/v1"
 }={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function")throw new Error("Cloud creative artifacts require server-side Supabase credentials and fetch.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)throw new Error("Creative artifact repository timeout is invalid.");
  const base=baseUrl(url);
+ if(typeof restPath!=="string"||(restPath!==""&&(!restPath.startsWith("/")||restPath.endsWith("/")||restPath.includes("..")||restPath.includes("?")||restPath.includes("#"))))throw new Error("Creative artifact REST path is invalid.");
+ const apiRoot=base+restPath;
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
    const headers={apikey:serviceRoleKey,"accept-profile":SCHEMA,"content-profile":SCHEMA,accept:"application/json",prefer};
    if(!String(serviceRoleKey).startsWith("sb_secret_"))headers.authorization="Bearer "+serviceRoleKey;
    if(body!==null)headers["content-type"]="application/json";
-   const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
+   const response=await fetchImpl(apiRoot+"/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
    const raw=await response.text();let data=null;
    if(raw){try{data=JSON.parse(raw);}catch{throw fail("Creative artifact database returned invalid JSON.","CREATIVE_ARTIFACT_DATABASE_INVALID_RESPONSE");}}
    if(!response.ok){
