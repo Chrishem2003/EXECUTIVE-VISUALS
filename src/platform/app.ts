@@ -230,6 +230,7 @@ async function restoreCreativeArtifacts(project:Project){
   const storyboard=result.artifacts.filter(item=>item.type==="storyboard").sort((a,b)=>b.revision-a.revision)[0];
   if(direction){project.modelCreativeDirection=direction.content as ModelCreativeDirection;project.creativeDirectionArtifactId=direction.id;project.creativeDirectionRevision=direction.revision;}
   if(storyboard){project.modelStoryboard=storyboard.content as ModelStoryboard;project.storyboardArtifactId=storyboard.id;project.storyboardRevision=storyboard.revision;}
+  if(direction||storyboard)save();
  }catch(error){
   if(error instanceof ApiError&&error.status===404){
    project.apiProjectId=undefined;
