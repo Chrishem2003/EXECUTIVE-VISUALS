@@ -279,17 +279,20 @@ export function createRunwayCloudVideoAdapter({
         return { ...input, videoUri };
       }
       if (selectedModel === "seedance2_5" && input.operation === "text-to-video" &&
-          (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceAudio))) {
+          (Array.isArray(prepared.referenceImages) || Array.isArray(prepared.referenceVideos) || Array.isArray(prepared.referenceAudio))) {
         const references = [];
+        const referenceVideos = [];
         const referenceAudio = [];
         const images = Array.isArray(prepared.referenceImages) ? prepared.referenceImages : [];
+        const videos = Array.isArray(prepared.referenceVideos) ? prepared.referenceVideos : [];
         const audio = Array.isArray(prepared.referenceAudio) ? prepared.referenceAudio : [];
-        if (images.length > 30 || audio.length > 10) {
+        if (images.length > 30 || videos.length > 10 || audio.length > 10) {
           throw fail("Seedance reference collections exceed the documented limits.", "RUNWAY_INPUT_INVALID");
         }
         for (const item of images) references.push({ uri: await uploadEphemeral(item) });
+        for (const item of videos) referenceVideos.push({ uri: await uploadEphemeral(item) });
         for (const item of audio) referenceAudio.push({ uri: await uploadEphemeral(item) });
-        return { ...input, references, referenceAudio };
+        return { ...input, references, referenceVideos, referenceAudio };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
       if (isVideoUpscale) {
@@ -549,6 +552,7 @@ export function createRunwayCloudVideoAdapter({
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       const hasSeedanceReferences = selectedModel === "seedance2_5" &&
         (Array.isArray(input.references) && input.references.length > 0 ||
+         Array.isArray(input.referenceVideos) && input.referenceVideos.length > 0 ||
          Array.isArray(input.promptImageReferences) && input.promptImageReferences.length > 0 ||
          Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
       if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
@@ -595,6 +599,7 @@ export function createRunwayCloudVideoAdapter({
           multiPrompt: input.multiPrompt,
           shotType: input.shotType || "customize",
           references: input.references,
+          referenceVideos: input.referenceVideos,
           referenceAudio: input.referenceAudio
         });
       }
