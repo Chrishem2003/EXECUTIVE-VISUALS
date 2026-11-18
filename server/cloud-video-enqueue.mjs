@@ -329,6 +329,9 @@ export function createCloudVideoEnqueue({
         (model === "kling_4" || model === "seedance2_5" && input.mode === "edit");
       const pricingInput = {
         ...input,
+        ...(model === "seedance2_5" ? {
+          referenceAudioCount: Array.isArray(input.referenceAudioAssetIds) ? input.referenceAudioAssetIds.length : input.referenceAudioAssetId ? 1 : 0
+        } : {}),
         ...(verifiedReferenceVideoMetadata ? { referenceVideoSeconds: verifiedReferenceVideoMetadata.totalBillableDurationSeconds } : {}),
         ...(verifiedSourceMetadata ? {
         ...(directUsesSourceDuration || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled
@@ -350,7 +353,7 @@ export function createCloudVideoEnqueue({
         durationSeconds: pricingInput.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
         inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: pricingInput.referenceVideoSeconds,
-        referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
+        referenceImageCount: pricingInput.referenceImageCount, referenceAudioCount: pricingInput.referenceAudioCount,
         hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
         sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
         sourceDynamicRange: model === "ruby" ? (pricingInput.sourceDynamicRange ?? input.sourceDynamicRange) : undefined, outputWidth: input.outputWidth,
