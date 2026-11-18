@@ -132,7 +132,8 @@
     "verify:cloud-upload-queue": "node --experimental-strip-types --test server/tests/cloud-upload-queue.test.mjs",
     "verify:workflow-templates": "node --experimental-strip-types --test server/tests/workflow-templates.test.mjs",
     "verify:b2-upload-client": "node --experimental-strip-types --test server/tests/b2-upload-client-hash.test.mjs server/tests/b2-part-retry.test.mjs",
-    "verify:timeline-transitions": "node --experimental-strip-types --test server/tests/timeline-transitions.test.mjs server/tests/timeline-transition-validation.test.mjs server/tests/cloud-video-transitions.test.mjs"
+    "verify:timeline-transitions": "node --experimental-strip-types --test server/tests/timeline-transitions.test.mjs server/tests/timeline-transition-validation.test.mjs server/tests/cloud-video-transitions.test.mjs",
+    "verify:cloud-staging-runtime": "node scripts/verify-cloud-staging-runtime.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
