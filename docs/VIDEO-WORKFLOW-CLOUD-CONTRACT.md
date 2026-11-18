@@ -14,6 +14,15 @@ This document describes the current server-side contract and the boundaries betw
 - The Workflow Canvas node inspector exposes a project-scoped private source-video asset picker plus private first/last frame asset IDs, indexed keyframe asset IDs, edit strength and normalized reframe crop controls; the workflow bridge transfers each private source into the linked cloud project before quote creation. Direct Video Studio now exposes source edit/reframe, edit strength, target aspect ratio and project-scoped source selection; the visual multi-keyframe editor remains in Workflow Canvas.
 - Luma source-video edit and reframe are now connected in the Workflow Canvas through private source metadata, operation-specific quotes, explicit owner approval and durable worker file resolution. Video extension remains disabled until ownership of the original Luma generation can be proven.
 
+
+## Seedance 2.5 draft-to-enhancement handoff
+
+The Workflow Canvas supports a two-step Seedance 2.5 path: a separately quoted 480p draft preview, followed by a separately quoted 1080p enhancement after the user selects the completed draft job. The enhancement API request contains only `model: seedance2_5` and the original provider `draftTaskId`; the provider reuses the original prompt and references. The preview and enhancement are separate paid tasks and must each pass their own non-billable quote and explicit approval boundary.
+
+The local workflow bridge resolves the selected source job through the authenticated cloud job endpoint before computing the immutable enhancement request hash. It verifies owner, project, `video.generate` job type, succeeded state, seven-day age, Runway/Seedance 2.5 identity, 480p draft tier, 1080p enhancement target, duration/aspect/audio settings, provider task ID and private output asset receipt. It copies the original duration, aspect ratio and audio choice into the enhancement node. The browser supplies only the source cloud job ID; the provider task ID is read from the owner-authorized job receipt and is never trusted from client input. Failed, stale, cross-owner, cross-project, non-draft or incomplete source receipts fail before quote creation.
+
+This handoff does not submit provider work itself. The enhancement still requires a fresh quote and explicit approval, and provider task submission remains behind the durable cloud worker, approved spending ceiling and actual-cost settlement checks.
+
 ## Private source resolution
 
 - The authenticated cloud API revalidates every Luma start/end/keyframe asset at quote and approval time.
