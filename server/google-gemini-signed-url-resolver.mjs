@@ -14,7 +14,7 @@ function safeOrigin(value) {
   try { parsed = new URL(value); } catch { throw new Error("Google signed-URL resolver requires a valid Supabase URL."); }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
   if ((parsed.protocol !== "https:" && !(local && parsed.protocol === "http:")) ||
-      parsed.username || parsed.password || parsed.search || parsed.hash) {
+      parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== "/") {
     throw new Error("Google signed-URL resolver requires a safe HTTPS Supabase origin.");
   }
   return parsed.origin;
@@ -58,6 +58,10 @@ export function createGoogleGeminiSignedUrlResolver({
       maxBytes
     });
 
+  if (!cloudAssets.assets || typeof cloudAssets.assets.createSignedUrl !== "function") {
+    throw new Error("Google signed-URL resolver requires the private Cloud Asset Service signed-URL method.");
+  }
+
   return Object.freeze({
     async resolveAsset({ assetId, ownerId, projectId = null, mediaType } = {}) {
       if (typeof assetId !== "string" || !UUID.test(assetId) ||
@@ -88,10 +92,11 @@ export function createGoogleGeminiSignedUrlResolver({
         throw fail("Private storage returned an invalid signed URL.", "GEMINI_SIGNED_URL_RESPONSE_INVALID");
       }
       const prefix = "/storage/v1/object/sign/" + BUCKET + "/";
+      const scopedObjectPrefix = prefix + (projectId || ownerId) + "/" + assetId + "/";
       const keys = [...parsed.searchParams.keys()];
       if (parsed.origin !== origin || parsed.protocol !== "https:" ||
           parsed.username || parsed.password || parsed.hash ||
-          !parsed.pathname.startsWith(prefix) || !parsed.searchParams.has("token") ||
+          !parsed.pathname.startsWith(scopedObjectPrefix) || !parsed.searchParams.has("token") ||
           keys.some(key => key !== "token")) {
         throw fail("Private storage returned a signed URL outside the approved bucket and origin.",
           "GEMINI_SIGNED_URL_RESPONSE_INVALID");
