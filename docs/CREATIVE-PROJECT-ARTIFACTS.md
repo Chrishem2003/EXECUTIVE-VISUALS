@@ -63,6 +63,8 @@ The CI pipeline validates the SQL against a disposable PostgreSQL 16 service, no
 
 The same disposable CI database is also exposed through a local PostgREST 12.2 HTTP service using a temporary HS256 service-role JWT. The repository adapter is exercised over real HTTP for schema-profile routing, service-role authentication, anon/authenticated denial, owner/editor preflight, create/read/list, storyboard revision append and no-op detection. The local adapter accepts a configurable REST path for this harness; hosted Supabase continues to use the default `/rest/v1` path.
 
+A final CI backup/restore gate performs a full custom-format `pg_dump`, restores into a separate disposable database, then compares every creative artifact ID, type, revision and content hash. It also verifies the restored RLS flag, immutability trigger and append RPC. This validates the database backup path in CI, but hosted Supabase point-in-time recovery and an operator-run restore drill remain separate release requirements.
+
 ### Remaining acceptance gate
 
 This implementation is not yet enabled in Render. Before enabling it in staging, run the SQL bootstrap/migration on an isolated database and verify: project bootstrap and owner mismatch rejection; owner/editor writes; reviewer/viewer denial; cross-project reads return no records; concurrent append calls receive unique ordered revisions; no UPDATE/DELETE succeeds; restart and deployment recovery; and backup/restore. The app's ordinary audit log remains in the existing SQLite store; this milestone makes creative artifact records durable, not every local audit or project record.
