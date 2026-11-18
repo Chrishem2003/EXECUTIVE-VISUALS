@@ -259,3 +259,23 @@ test("normalizes Seedance 2.5 text-to-video multimodal reference limits and refe
     prompt: "x".repeat(15001), referenceVideoAssetIds: ["video-1"]
   }), VideoGenerationValidationError);
 });
+
+
+test("normalizes Seedance image-to-video reference and keyframe modes without requiring prompt text", () => {
+  const referenceMode = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    referenceImageAssetIds: ["image-1", "image-2"]
+  });
+  assert.equal(referenceMode.referenceAssetIds.length, 2);
+  assert.equal(referenceMode.prompt, undefined);
+  const keyframeMode = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video",
+    startFrameAssetId: "first-frame", endFrameAssetId: "last-frame"
+  });
+  assert.equal(keyframeMode.startFrameAssetId, "first-frame");
+  assert.equal(keyframeMode.endFrameAssetId, "last-frame");
+  assert.equal(keyframeMode.prompt, undefined);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "image-to-video"
+  }), VideoGenerationValidationError);
+});
