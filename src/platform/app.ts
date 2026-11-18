@@ -1281,11 +1281,11 @@ document.addEventListener("click",e=>{
   const project=state.projects.find(item=>item.id===state.activeProject),board=project?.modelStoryboard;
   if(!project?.apiProjectId||!project.storyboardArtifactId||!board){state.storyboardAiMessage="Generate and save a model storyboard before saving edited revisions.";render();return;}
   saveStoryboardRevision.setAttribute("disabled","true");state.storyboardAiMessage="Validating and saving an immutable storyboard revision…";render();
-  void apiRequest<{artifact:CreativeProjectArtifact;unchanged?:boolean}>("/api/projects/"+encodeURIComponent(project.apiProjectId)+"/creative-artifacts/"+encodeURIComponent(project.storyboardArtifactId)+"/revisions",{
+  void apiRequest<{artifact:CreativeProjectArtifact;unchanged?:boolean;persistence?:{durableAcrossDeploys:boolean}}>("/api/projects/"+encodeURIComponent(project.apiProjectId)+"/creative-artifacts/"+encodeURIComponent(project.storyboardArtifactId)+"/revisions",{
    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:board})
   }).then(async result=>{
    if(!result.unchanged){project.storyboardArtifactId=result.artifact.id;project.storyboardRevision=result.artifact.revision;}
-   state.storyboardAiMessage=result.unchanged?"No storyboard changes detected; the existing immutable revision remains current.":"Edited storyboard saved as immutable project revision "+result.artifact.revision+".";
+   state.storyboardAiMessage=result.unchanged?"No storyboard changes detected; the existing immutable revision remains current.":"Edited storyboard saved as immutable project revision "+result.artifact.revision+"."+(result.persistence?.durableAcrossDeploys===false?" The current runtime uses SQLite; cross-deployment durability is not yet verified.":"");
    save();await refreshCreativeArtifactHistory(project,true);render();
   }).catch(error=>{
    state.storyboardAiMessage=error instanceof Error?error.message:"The edited storyboard revision could not be saved.";render();
