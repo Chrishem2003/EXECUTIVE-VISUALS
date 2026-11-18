@@ -190,11 +190,12 @@ test("Seedance draft enhancement rejects stale, incomplete, failed, cross-owner 
   ["cross-project", {...base,project_id:"c23e4567-e89b-42d3-a456-426614174000"},"VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN"],
   ["stale", {...base,created_at:new Date(Date.now()-8*24*60*60*1000).toISOString()},"VIDEO_WORKFLOW_DRAFT_SOURCE_NOT_READY"],
   ["not-a-draft", {...base,input:{...base.input,draft:false}},"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID"],
-  ["missing-task", {...base,output:{...base.output,providerTaskId:null}},"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID"]
+  ["missing-task", {...base,output:{...base.output,providerTaskId:null}},"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID"],
+  ["mismatched-task", base,"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID","c23e4567-e89b-42d3-a456-426614174000"]
  ];
- for(const [label,sourceDraftJob,expectedCode] of cases){
+ for(const [label,sourceDraftJob,expectedCode,requestedDraftTaskId] of cases){
   const f=fixture({sourceDraftJob}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-seedance-reject-")),prior=process.env.SUPABASE_URL;
-  f.node.config={provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p"};
+  f.node.config={provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p",...(requestedDraftTaskId?{draftTaskId:requestedDraftTaskId}:{})};
   process.env.SUPABASE_URL="https://supabase.example";
   try{
    await assert.rejects(()=>executeCloudVideoWorkflowNode({
