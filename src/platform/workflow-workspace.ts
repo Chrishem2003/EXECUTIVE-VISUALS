@@ -3,6 +3,7 @@ import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type Medi
 import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
 import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 import { isWorkflowQuoteExpired } from "../core/workflow-quote-expiry.mjs";
+import { getVideoWorkflowOperationOptions } from "../core/video-workflow-operations.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowAsset={id:string;name:string;mediaType:string;size:number;projectId?:string|null};
@@ -85,15 +86,16 @@ function renderUploadAssetField(selected:WorkflowNode){
 function renderVideoWorkflowConfig(selected:WorkflowNode){
  const config=selected.config||{};
  const provider=String(config.provider||"runway"),model=String(config.model||"model-router");
- const luma=provider==="luma",modelReleaseBlocked=provider==="runway"&&isVideoWorkflowModelReleaseBlocked(model),directRunway=provider==="runway"&&model!=="model-router"&&!modelReleaseBlocked,directVideoEdit=directRunway&&["seedance2_5","kling_4"].includes(model),operation=String(config.operation||"generate");
+ const luma=provider==="luma",modelReleaseBlocked=provider==="runway"&&isVideoWorkflowModelReleaseBlocked(model),directRunway=provider==="runway"&&model!=="model-router"&&!modelReleaseBlocked,operation=String(config.operation||"generate");
+ const operationOptions=modelReleaseBlocked?[{id:"generate",label:"Generate new video"}]:getVideoWorkflowOperationOptions(provider,model);
+ const directVideoEdit=directRunway&&operationOptions.some(value=>value.id==="video-to-video");
  const resolutions=modelReleaseBlocked?["provider_default"]:luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
   model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
   model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
   model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
  const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(modelReleaseBlocked?"provider_default":luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"?"720p":"provider_default");
  const modelOptions=getVideoWorkflowModelOptions(provider,model);
- const operationOptions=luma?[{id:"generate",label:"Generate new video"},{id:"edit",label:"Edit existing video"},{id:"reframe",label:"Reframe existing video"}]:
-  directVideoEdit?[{id:"generate",label:"Generate (text or first frame)"},{id:"video-to-video",label:"Transform source video"},...(model==="seedance2_5"?[{id:"draft-enhancement",label:"Enhance completed draft to 1080p"}]:[])]:[{id:"generate",label:"Generate new video"}];
+
  const supportsVideoMode=model==="seedance2_5";
  const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
  const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
@@ -114,7 +116,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  '<label>Source-video mode<select name="videoMode" '+(!supportsVideoMode||operation!=="video-to-video"?"disabled ":"")+'>'+[{id:"reference",label:"Use as creative reference"},{id:"extend",label:"Extend existing footage"},{id:"edit",label:"Edit existing footage in place"}].map(value=>'<option value="'+value.id+'" '+(String(config.mode||"reference")===value.id?"selected":"")+'>'+value.label+'</option>').join("")+'</select></label>'+
  '<div class="wf-video-provider-grid"><label>Duration / output duration · seconds<input name="videoDuration" type="number" min="'+durationMin+'" max="'+durationMax+'" step="1" value="'+esc(config.durationSeconds??5)+'"></label><label>Aspect ratio<select name="videoAspectRatio">'+["16:9","9:16","1:1","4:3","3:4","21:9"].map(value=>'<option value="'+value+'" '+(String(config.aspectRatio||"16:9")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label></div>'+
  '<label>Output resolution<select name="videoResolution">'+resolutions.map(value=>'<option value="'+value+'" '+(selectedResolution===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
- (draftEnhancement?'<label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p>':'')+
+ (provider==="runway"&&model==="seedance2_5"&&!modelReleaseBlocked?'<div data-wf-draft-enhancement '+(draftEnhancement?"":"hidden")+'><label>Completed Seedance draft cloud job ID<input name="sourceDraftJobId" value="'+esc(config.sourceDraftJobId||"")+'" maxlength="160" '+(draftEnhancement?"":"disabled ")+'placeholder="Cloud job ID shown on the succeeded draft node"></label><p>Only a succeeded 480p Seedance draft from this project, owned by you and less than seven days old, can be enhanced. Executive Visuals retrieves its original provider task ID securely and the provider reuses the prompt, references, duration, seed and audio.</p></div>':"")+
  '<label>Choose source video from this project<select name="sourceVideoAssetPicker" '+(!sourceVideoEnabled?"disabled ":"")+'><option value="">Select a private video asset…</option>'+videoAssets.map(asset=>'<option value="'+esc(asset.id)+'" '+(selectedSource===asset.id?"selected":"")+' >'+esc(asset.name)+' · '+esc(asset.mediaType)+'</option>').join("")+'</select></label>'+
  '<label>Or enter private source-video asset ID<input name="sourceVideoAssetId" '+(!sourceVideoEnabled?"disabled ":"")+'value="'+esc(selectedSource)+'" maxlength="160" placeholder="Private project video asset ID"></label>'+
  '<label>Edit strength<select name="editStrength" '+(!luma||operation!=="edit"?"disabled ":"")+'>'+["adhere_1","adhere_2","adhere_3","flex_1","flex_2","flex_3","reimagine_1","reimagine_2","reimagine_3"].map(value=>'<option value="'+value+'" '+(String(config.editStrength||"flex_2")===value?"selected":"")+'>'+value+'</option>').join("")+'</select></label>'+
@@ -453,18 +455,19 @@ document.addEventListener("change",event=>{
    if(operationSelect)operationSelect.value="generate";
   }
   const modelValue=model?.value||"model-router";
-  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",directVideoEdit=directRunway&&["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"].includes(modelValue);
+  const luma=provider==="luma",directRunway=provider==="runway"&&modelValue!=="model-router",modelBlocked=provider==="runway"&&isVideoWorkflowModelReleaseBlocked(modelValue);
   const operation=luma||directRunway?(operationSelect?.value||"generate"):"generate";
   const supportsVideoMode=["seedance2_5","gemini_omni_flash_1.2"].includes(modelValue);
   if(videoMode)videoMode.disabled=!supportsVideoMode||(operationSelect?.value||"generate")!=="video-to-video";
-  const operationValues=luma?[["generate","Generate new video"],["edit","Edit existing video"],["reframe","Reframe existing video"]]:
-   directVideoEdit?[["generate","Generate (text or first frame)"],["video-to-video","Transform source video"]]:[["generate","Generate new video"]];
+  const operationValues=modelBlocked?[{id:"generate",label:"Generate new video"}]:getVideoWorkflowOperationOptions(provider,modelValue);
   if(operationSelect){
    const selected=operationValues.some(([id])=>id===operation)?operation:"generate";
-   operationSelect.innerHTML=operationValues.map(([id,label])=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
+   operationSelect.innerHTML=operationValues.map(({id,label})=>'<option value="'+id+'" '+(id===selected?"selected":"")+'>'+label+'</option>').join("");
    operationSelect.disabled=!(luma||directRunway);
   }
-  const activeOperation=operationValues.some(([id])=>id===operation)?operation:"generate";
+  const activeOperation=operationValues.some(({id})=>id===operation)?operation:"generate";
+  const draftPanel=form?.querySelector<HTMLElement>("[data-wf-draft-enhancement]");
+  if(draftPanel){draftPanel.hidden=activeOperation!=="draft-enhancement";const draftInput=draftPanel.querySelector<HTMLInputElement>('[name="sourceDraftJobId"]');if(draftInput)draftInput.disabled=activeOperation!=="draft-enhancement";}
   if(videoMode)videoMode.disabled=!supportsVideoMode||activeOperation!=="video-to-video";
   const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
   const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate";
