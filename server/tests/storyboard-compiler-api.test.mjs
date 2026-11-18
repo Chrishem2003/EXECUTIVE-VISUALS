@@ -118,6 +118,8 @@ test("storyboard endpoint requires authentication and returns a validated editab
   assert.equal(body.persistence.saved,true);
   assert.equal(body.persistence.revision,1);
   assert.match(body.persistence.contentHash,/^[a-f0-9]{64}$/);
+  assert.equal(body.persistence.backend,"sqlite");
+  assert.equal(body.persistence.durableAcrossDeploys,false);
   const saved=await request("/api/projects/"+projectId+"/creative-artifacts?type=storyboard",{},cookie);
   assert.equal(saved.status,200);
   const savedBody=await saved.json();
