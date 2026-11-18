@@ -67,9 +67,14 @@ export function normalizeVideoGenerationRequest(input) {
   if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr", "generate", "edit", "reframe", "extend"].includes(operation)) {
     throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
   }
-  const isSeedanceTextToVideo = input.provider === "runway" && input.model === "seedance2_5" && operation === "text-to-video";
   const isSeedance = input.provider === "runway" && input.model === "seedance2_5";
-  const prompt = boundedString(input.prompt, "prompt", isSeedance ? 15000 : MAX_PROMPT_LENGTH, { required: !isSeedanceTextToVideo && !["video-upscale", "video-to-hdr"].includes(operation) });
+  const isSeedanceTextToVideo = isSeedance && operation === "text-to-video";
+  const seedanceImageRefs = input.referenceAssetIds ?? input.referenceImageAssetIds;
+  const isSeedanceImageToVideo = isSeedance && operation === "image-to-video" &&
+    (input.startFrameAssetId != null || input.endFrameAssetId != null || Array.isArray(seedanceImageRefs) && seedanceImageRefs.length > 0);
+  const prompt = boundedString(input.prompt, "prompt", isSeedance ? 15000 : MAX_PROMPT_LENGTH, {
+    required: !isSeedanceTextToVideo && !isSeedanceImageToVideo && !["video-upscale", "video-to-hdr"].includes(operation)
+  });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
@@ -116,6 +121,13 @@ export function normalizeVideoGenerationRequest(input) {
   if (isSeedanceTextToVideo && !request.prompt &&
       !request.referenceAssetIds.length && !request.referenceVideoAssetIds.length && !request.referenceAudioAssetIds.length) {
     throw new VideoGenerationValidationError("Seedance text-to-video requires a prompt or at least one reference asset");
+  }
+  if (isSeedanceImageToVideo && !request.prompt &&
+      !request.startFrameAssetId && !request.referenceAssetIds.length) {
+    throw new VideoGenerationValidationError("Seedance image-to-video requires a first frame or at least one reference image");
+  }
+  if (isSeedanceImageToVideo && request.referenceVideoAssetIds.length) {
+    throw new VideoGenerationValidationError("Seedance image-to-video reference mode does not accept reference videos");
   }
   if (input.sourceVideoAssetId != null) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
