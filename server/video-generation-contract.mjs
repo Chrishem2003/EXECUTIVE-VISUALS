@@ -69,7 +69,7 @@ export function normalizeVideoGenerationRequest(input) {
   }
   const isSeedanceTextToVideo = input.provider === "runway" && input.model === "seedance2_5" && operation === "text-to-video";
   const isSeedance = input.provider === "runway" && input.model === "seedance2_5";
-  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !isSeedanceTextToVideo && !["video-upscale", "video-to-hdr"].includes(operation) });
+  const prompt = boundedString(input.prompt, "prompt", isSeedance ? 15000 : MAX_PROMPT_LENGTH, { required: !isSeedanceTextToVideo && !["video-upscale", "video-to-hdr"].includes(operation) });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
