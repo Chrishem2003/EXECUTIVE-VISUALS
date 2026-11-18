@@ -161,8 +161,9 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           videoEdit: true, videoExtend: true, videoReframe: false,
           nativeAudio: true, negativePrompt: false, seed: false,
           startFrame: true, endFrame: false, motionReference: false,
-          referenceImages: false, referenceVideos: false, referenceAudio: false,
-          audioModes: ["generated", "none"],
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          maxReferenceImages: 30, maxReferenceVideos: 10, maxReferenceAudio: 10,
+          audioModes: ["generated", "none", "reference"],
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
           resolutions: ["480p", "720p", "1080p", "4k"],
           minDurationSeconds: 4, maxDurationSeconds: 30
