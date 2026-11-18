@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, mkdir, writeFile, readdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCloudVideoWorkflowNode } from "../workflow-cloud-video-bridge.mjs";
@@ -346,6 +346,7 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(metadata.cloudWorkspaceAssetId,cloudAssetId);
   assert.equal(metadata.cloudVideoJobId,cloudJobId);
   assert.equal(metadata.cloudSha256,sha256);
+  assert.deepEqual(await readFile(join(mediaRoot,inserted.args[7])),video);
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
