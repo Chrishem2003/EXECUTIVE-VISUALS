@@ -6,7 +6,7 @@ import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24},quotaError=null}={}){
+function setup({canWrite=true,projectId=project,existing=[],assetMediaType="video/mp4",timelineCreditsPerSecond=0,timelineDocument=timelineDoc,reserveResponse={reservation_id:"923e4567-e89b-42d3-a456-426614174000",status:"reserved",credit_units:24},quotaError=null,env={}}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocument,otio:null};
  const timelines={
@@ -16,7 +16,7 @@ function setup({canWrite=true,projectId=project,existing=[],assetMediaType="vide
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.endsWith("/rpc/reserve_credit_units"))return{ok:true,status:200,async text(){return JSON.stringify(reserveResponse);}};if(url.endsWith("/rpc/release_credit_reservation"))return{ok:true,status:200,async text(){return"true";}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){const posted=JSON.parse(options.body);return JSON.stringify([{...posted,progress:0,created_at:"2026-11-11T00:00:00.000Z",updated_at:"2026-11-11T00:00:00.000Z"}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const route=new URL(url).searchParams,id=route.get("id")?.slice(3),expected=route.get("status")?.slice(3),row=existing.find(item=>item.id===id&&item.status===expected);if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};},async getStorageUsage(input){calls.push(["asset-usage",input]);return{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908};},async createFromFile(input){calls.push(["asset-create-from-file",input]);if(quotaError)throw Object.assign(new Error(quotaError),{code:quotaError});return{id:"asset-uploaded",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,size:4};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return{id:input.assetId,ownerId:input.ownerId,projectId,name:"clip.mp4",mediaType:assetMediaType};},async getStorageUsage(input){calls.push(["asset-usage",input]);return{globalBytes:4,globalAssetCount:1,ownerBytes:4,ownerAssetCount:1,maxTotalBytes:786432000,maxOwnerBytes:536870912,remainingTotalBytes:786431996,remainingOwnerBytes:536870908};},async createFromFile(input){calls.push(["asset-create-from-file",input]);if(quotaError)throw Object.assign(new Error(quotaError),{code:quotaError});return{id:"asset-uploaded",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,size:4};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite),timelineCreditsPerSecond,env});
  return{api,calls,created};
 }
 test("cloud asset usage endpoint returns only the verified owner's quota snapshot",async()=>{
@@ -1109,4 +1109,50 @@ test("direct Runway approval uses the exact worker allowlist and stable model co
  assert.equal(approvalArgs.p_input.model,"seedance2_5");
  assert.equal(approvalArgs.p_input.draft,true);
  assert.equal(approvalArgs.p_input.resolution,"480p");
+});
+
+
+test("unreleased direct Runway models are rejected by quote and approval APIs even when environment flags attempt to enable them", async () => {
+  for (const model of ["kling_4_flash", "gemini_omni_flash_1.2"]) {
+    const env = {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-secret",
+      CLOUD_WORKER_ENABLED: "true",
+      CLOUD_VIDEO_WORKER_ENABLED: "true",
+      CLOUD_VIDEO_OUTPUT_HOSTS: "cdn.example.com",
+      VIDEO_GATEWAY_ENABLED: "true",
+      VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+      RUNWAY_VIDEO_MODELS: model,
+      RUNWAY_API_KEY: "test-key",
+      RUNWAY_MODEL_ROUTER_ENABLED: "true",
+      RUNWAY_VIDEO_ROUTER_CONFIG: "studio-video"
+    };
+    const f = setup({ env });
+    const node = { id: "video-node", kind: "video.generate", config: {
+      provider: "runway", model, durationSeconds: 8, aspectRatio: "16:9",
+      resolution: "provider_default", audioMode: "generated"
+    }, inputs: [], outputs: [] };
+    const quote = await f.api.handle({
+      method: "POST", path: "/api/cloud/workflows/video/quote", ownerId: owner,
+      body: { projectId: project, requestId: "blocked-quote-" + model, node, values: { prompt: "A cinematic product launch" } }
+    });
+    assert.equal(quote.status, 422, model);
+    assert.equal(quote.body.error.code, "VIDEO_WORKFLOW_MODEL_DISABLED", model);
+    assert.equal(f.calls.some(call => call[0] === "fetch" && call[1].includes("record_video_workflow_quote")), false, model);
+
+    const approval = await f.api.handle({
+      method: "POST", path: "/api/cloud/workflows/video/approve", ownerId: owner,
+      body: {
+        confirmed: true, projectId: project,
+        quoteId: "723e4567-e89b-42d3-a456-426614174000",
+        requestId: "blocked-approval-" + model, node,
+        values: { prompt: "A cinematic product launch" },
+        approvedMaxAmount: 2.75, approvalNote: "Test release gate"
+      }
+    });
+    assert.equal(approval.status, 422, model);
+    assert.equal(approval.body.error.code, "VIDEO_WORKFLOW_MODEL_DISABLED", model);
+    assert.equal(f.calls.some(call => call[0] === "fetch" && call[1].includes("approve_and_enqueue_video_workflow")), false, model);
+  }
 });
