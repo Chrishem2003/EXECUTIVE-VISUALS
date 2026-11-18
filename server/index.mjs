@@ -67,7 +67,7 @@ import { createB2MultipartUploadStore } from "./b2-multipart-upload-store.mjs";
 import { createB2MultipartUploadApi } from "./b2-multipart-upload-api.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
-import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact } from "./creative-project-artifacts.mjs";
+import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact, appendCreativeProjectArtifactRevision } from "./creative-project-artifacts.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
@@ -1410,6 +1410,22 @@ export function createAppServer() {
         const projectId=url.searchParams.get("projectId")||"";
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         send(res,200,{projectId,records:listEvidenceRecords(db,{projectId})},cors);return;
+      }
+      const creativeArtifactRevisionMatch=path.match(/^\\/api\\/projects\\/([0-9a-f-]+)\\/creative-artifacts\\/([0-9a-f-]+)\\/revisions$/i);
+      if(creativeArtifactRevisionMatch&&req.method==="POST"){
+        const projectId=creativeArtifactRevisionMatch[1],artifactId=creativeArtifactRevisionMatch[2];
+        if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to save a storyboard revision.");return;}
+        try{
+          const body=await readJson(req,1024*1024);
+          const artifact=appendCreativeProjectArtifactRevision(db,{projectId,artifactId,createdBy:user.id,content:body.content});
+          audit(db,user.id,"creative.storyboard.revision_saved","storyboard",artifact.id,{revision:artifact.revision,parentArtifactId:artifactId,inputHash:artifact.inputHash,contentHash:artifact.contentHash},projectId);
+          send(res,201,{artifact,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+        }catch(error){
+          const code=error.code||"CREATIVE_ARTIFACT_REVISION_FAILED";
+          const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"?404:code==="CREATIVE_ARTIFACT_REVISION_INVALID"?400:code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:code==="CREATIVE_ARTIFACT_TYPE_INVALID"?409:500;
+          fail(res,status,code,error.message||"Storyboard revision could not be saved.");return;
+        }
       }
       const creativeArtifactMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-artifacts(?:\/([0-9a-f-]+))?$/i);
       if(creativeArtifactMatch){
