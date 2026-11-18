@@ -365,15 +365,62 @@ test("Seedance 2.5 resolves up to 30 private image and 10 private audio referenc
   assert.equal(prepared.referenceAudio[0].mimeType, "audio/wav");
 });
 
-test("Seedance reference video is blocked until its separate billable duration is included in the quote", async () => {
-  const { resolver } = fixture();
+test("Seedance text-to-video resolves private reference video bytes and applies the 2-to-under-4-second billing pad", async () => {
+  const videoId = "77777777-7777-4777-8777-777777777777";
+  const videoBytes = Buffer.alloc(1024, 4);
+  const asset = { id: videoId, projectId: PROJECT, name: "motion.mp4", mediaType: "video/mp4",
+    size: videoBytes.length, storageBucket: "executive-visuals-media",
+    objectPath: PROJECT + "/" + videoId + "/original.mp4" };
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); assert.equal(assetId, videoId); return asset; },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(assetId, videoId); assert.equal(expiresIn, 300);
+        return { asset, url: "https://storage.example.com/storage/v1/object/sign/private/" + videoId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(videoBytes, { status: 200, headers: {
+      "content-type": "video/mp4", "content-length": String(videoBytes.length)
+    }}),
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({
+      format: { duration: "3.1" },
+      streams: [{ codec_type: "video", width: 1920, height: 1080, nb_read_frames: "93", avg_frame_rate: "30/1", r_frame_rate: "30/1", color_transfer: "bt709" }]
+    }))
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    projectId: PROJECT, prompt: "A reference-driven scene", referenceVideoAssetIds: [videoId]
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.referenceVideos.length, 1);
+  assert.equal(prepared.referenceVideos[0].filename, "motion.mp4");
+  assert.equal(prepared.referenceVideos[0].durationSeconds, 3.1);
+  assert.equal(prepared.referenceVideos[0].billableDurationSeconds, 4.25);
+  assert.equal(prepared.referenceVideoSeconds, 4.25);
+  const quote = await resolver.resolveReferenceVideoMetadata({ ownerId: OWNER, projectId: PROJECT, assetIds: [videoId] });
+  assert.equal(quote.totalBillableDurationSeconds, 4.25);
+  assert.equal(quote.videos[0].assetId, videoId);
+});
+
+test("Seedance reference video metadata enforces the combined billable 30-second ceiling", async () => {
+  const ids = ["77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"];
+  const byId = new Map(ids.map(id => [id, { id, projectId: PROJECT, name: "motion.mp4", mediaType: "video/mp4",
+    size: bytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + id + "/original.mp4" }]));
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); return byId.get(assetId); },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) { assert.equal(ownerId, OWNER); assert.equal(expiresIn, 300); return { asset: byId.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=x" }; }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(bytes, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(bytes.length) } }),
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({
+      format: { duration: "16.0" },
+      streams: [{ codec_type: "video", width: 1920, height: 1080, nb_read_frames: "480", avg_frame_rate: "30/1", r_frame_rate: "30/1" }]
+    }))
+  });
   await assert.rejects(
-    () => resolver.prepare({
-      provider: "runway", model: "seedance2_5", operation: "text-to-video",
-      projectId: PROJECT, prompt: "A reference-driven scene",
-      referenceVideoAssetIds: [ASSET]
-    }, { job: { owner_id: OWNER } }),
-    error => error.code === "VIDEO_REFERENCE_PRICING_REQUIRED"
+    () => resolver.resolveReferenceVideoMetadata({ ownerId: OWNER, projectId: PROJECT, assetIds: ids }),
+    error => error.code === "VIDEO_INPUT_ASSET_PROBE_INVALID"
   );
 });
 
