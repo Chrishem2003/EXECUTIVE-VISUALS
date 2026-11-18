@@ -142,7 +142,7 @@ test("Seedance draft enhancement resolves the original task only from a recent s
  const sourceDraftJob={
   id:sourceDraftJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",status:"succeeded",
   created_at:new Date(Date.now()-60*60*1000).toISOString(),
-  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",draftTargetResolution:"1080p",requestHash:"a".repeat(64)},
+  input:{provider:"runway",model:"seedance2_5",operation:"text-to-video",draft:true,resolution:"480p",draftTargetResolution:"1080p",durationSeconds:8,aspectRatio:"16:9",audio:true,requestHash:"a".repeat(64)},
   output:{provider:"runway",model:"seedance2_5",providerTaskId:sourceDraftTaskId,assetIds:[cloudAssetId]}
  };
  const f=fixture({sourceDraftJob}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-seedance-enhance-")),prior=process.env.SUPABASE_URL;
@@ -163,6 +163,9 @@ test("Seedance draft enhancement resolves the original task only from a recent s
   assert.equal(quote.body.node.config.draftTaskId,sourceDraftTaskId);
   assert.equal(quote.body.node.config.operation,"draft-enhancement");
   assert.equal(quote.body.node.config.resolution,"1080p");
+  assert.equal(quote.body.node.config.durationSeconds,8);
+  assert.equal(quote.body.node.config.aspectRatio,"16:9");
+  assert.equal(quote.body.node.config.audio,true);
   assert.equal(quote.body.node.config.draft,undefined);
   assert.equal(quote.body.node.config.draftEnhancement,true);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
