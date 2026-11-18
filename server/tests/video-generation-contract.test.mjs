@@ -234,3 +234,28 @@ test("source video counts toward the two-video Runway Router limit", () => {
   assert.equal(request.referenceVideoAssetIds.length + 1, 2);
 });
 
+
+
+test("normalizes Seedance 2.5 text-to-video multimodal reference limits and reference-only prompts", () => {
+  const request = normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    referenceImageAssetIds: Array.from({length:30},(_,i)=>"image-"+i),
+    referenceVideoAssetIds: Array.from({length:10},(_,i)=>"video-"+i),
+    referenceAudioAssetIds: Array.from({length:10},(_,i)=>"audio-"+i)
+  });
+  assert.equal(request.referenceAssetIds.length, 30);
+  assert.equal(request.referenceVideoAssetIds.length, 10);
+  assert.equal(request.referenceAudioAssetIds.length, 10);
+  assert.equal(request.prompt, undefined);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video"
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    referenceVideoAssetIds: Array.from({length:11},(_,i)=>"video-"+i)
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    projectId: "project-1", provider: "runway", model: "seedance2_5", operation: "text-to-video",
+    prompt: "x".repeat(15001), referenceVideoAssetIds: ["video-1"]
+  }), VideoGenerationValidationError);
+});
