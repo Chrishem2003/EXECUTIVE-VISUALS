@@ -23,6 +23,7 @@ export function createGoogleOmniWorkerDependencies({
  interactions,
  assets,
  filesGateway,
+ signedUrlResolver=null,
  now=()=>Date.now(),
  connectionCacheMs=60000
 }={}){
@@ -31,6 +32,7 @@ export function createGoogleOmniWorkerDependencies({
  if(!ledger||typeof ledger.get!=="function")throw new TypeError("Google Omni worker policy requires the durable submission ledger.");
  if(!interactions||typeof interactions.findInteraction!=="function")throw new TypeError("Google Omni worker policy requires the durable interaction repository.");
  if(!assets||typeof assets.get!=="function"||!filesGateway||typeof filesGateway.resolveAsset!=="function")throw new TypeError("Google Omni worker policy requires owner-scoped private assets and the Gemini Files gateway.");
+ if(signedUrlResolver!==null&&typeof signedUrlResolver.resolveAsset!=="function")throw new TypeError("Google Omni signed-URL resolver must expose resolveAsset.");
  if(!Number.isInteger(connectionCacheMs)||connectionCacheMs<0||connectionCacheMs>300000)throw new Error("Google Omni connection verification cache is invalid.");
  const base=safeOrigin(url);
  let connectionCache=null;
@@ -149,6 +151,18 @@ export function createGoogleOmniWorkerDependencies({
    if((asset.projectId||null)!==projectId)throw fail("Gemini Omni reference asset belongs to another project.","GEMINI_OMNI_ASSET_FORBIDDEN");
    if(kind==="image"&&!String(asset.mediaType||"").startsWith("image/"))throw fail("Gemini Omni image reference must be an image asset.","GEMINI_OMNI_ASSET_INVALID");
    if(kind==="video"&&!String(asset.mediaType||"").startsWith("video/"))throw fail("Gemini Omni video reference must be a video asset.","GEMINI_OMNI_ASSET_INVALID");
+   const signedUrlEligible = signedUrlResolver &&
+    ["image/jpeg","image/png","image/webp","video/mp4","video/webm","video/quicktime"].includes(asset.mediaType) &&
+    Number.isSafeInteger(asset.size) && asset.size > 0 && asset.size <= 100 * 1024 * 1024;
+   if(signedUrlEligible){
+    const file=await signedUrlResolver.resolveAsset({assetId,ownerId,projectId,mediaType:asset.mediaType});
+    if(!file||file.sourceType!=="signed_url"||typeof file.uri!=="string"||
+       file.mediaType!==asset.mediaType||file.sizeBytes!==asset.size||file.sha256!==asset.sha256||
+       !Number.isFinite(Date.parse(text(file.expiresAt)))||Date.parse(file.expiresAt)<=now()+30000){
+     throw fail("Gemini private signed URL did not match the authorized asset or expiry contract.","GEMINI_OMNI_FILE_PREPARATION_FAILED");
+    }
+    return{type:kind,uri:file.uri};
+   }
    const file=await filesGateway.resolveAsset({assetId,ownerId,projectId,mediaType:asset.mediaType});
    if(!file||!FILE_URI.test(text(file.uri))||file.mediaType!==asset.mediaType||
       !Number.isFinite(Date.parse(text(file.expiresAt)))||Date.parse(file.expiresAt)<=now())throw fail("Gemini Files did not return a valid active private media reference.","GEMINI_OMNI_FILE_PREPARATION_FAILED");

@@ -12,6 +12,7 @@ import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs"
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
 import { createGoogleOmniWorkerDependencies } from "./google-omni-worker-dependencies.mjs";
+import { createGoogleGeminiSignedUrlResolver } from "./google-gemini-signed-url-resolver.mjs";
 import { createCloudAssetRepository } from "./cloud-assets.mjs";
 import { createCloudStorage } from "./cloud-storage.mjs";
 import { createCloudPublicationCleanupWorker } from "./cloud-publication-cleanup-worker.mjs";
@@ -184,12 +185,18 @@ export async function startCloudWorkerProcess(env=process.env){
   if(config.googleOmni){
    const googleAssets=createCloudAssetService({...cloudCredentials,maxBytes:config.maxBytes});
    const googleFiles=createGoogleGeminiFilesComposition({...cloudCredentials,env,fetchImpl:globalThis.fetch,maxBytes:config.maxBytes});
+   const googleSignedUrls=createGoogleGeminiSignedUrlResolver({
+    ...cloudCredentials,assets:googleAssets.assets,
+    expiresIn:integer(env.GEMINI_SIGNED_URL_EXPIRES_SECONDS,600,60,3600,"Gemini signed URL expiry"),
+    maxBytes:100*1024*1024
+   });
    const googleQueue=createCloudQueue(cloudCredentials);
    const googleLedger=createCloudVideoSubmissionLedger(cloudCredentials);
    const googleInteractions=createGoogleVideoInteractionRepository({...cloudCredentials,timeoutMs:30000});
    const googlePolicy=createGoogleOmniWorkerDependencies({
     ...cloudCredentials,env,fetchImpl:globalThis.fetch,queue:googleQueue,ledger:googleLedger,
-    interactions:googleInteractions,assets:googleAssets.assets,filesGateway:googleFiles
+    interactions:googleInteractions,assets:googleAssets.assets,filesGateway:googleFiles,
+    signedUrlResolver:googleSignedUrls
    });
    providerDependencies={
     googleOmniAssertApprovedSubmission:googlePolicy.assertApprovedSubmission,

@@ -24,7 +24,7 @@ const approval={
  id:approvalId,owner_id:ownerId,project_id:projectId,provider:"google",model:"gemini-omni-1.1-flash",
  request_hash:requestHash,currency:"USD",approved_max_amount:"3.000000",consumed_at:"2026-11-15T00:00:00.000Z"
 };
-function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledgerState="submitting"}={}){
+function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledgerState="submitting",signedUrlResolver=null,assetSize=100}={}){
  const calls=[];
  const fetchImpl=async(url,options={})=>{
   const parsed=new URL(url);calls.push({url:parsed.toString(),method:options.method||"GET",headers:options.headers||{}});
@@ -41,12 +41,12 @@ function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledge
   provider:"google",model:"gemini-omni-1.1-flash",interactionId:scope.interactionId,
   jobId:scope.jobId,ownerId:scope.ownerId,projectId:scope.projectId,state:"succeeded",requestHash
  };}};
- const assets={async get({ownerId:requestedOwner,assetId:requestedAsset}){assert.equal(requestedOwner,ownerId);assert.equal(requestedAsset,assetId);return{id:assetId,ownerId,projectId,mediaType:"image/png",size:100,sha256:"b".repeat(64)};}};
+ const assets={async get({ownerId:requestedOwner,assetId:requestedAsset}){assert.equal(requestedOwner,ownerId);assert.equal(requestedAsset,assetId);return{id:assetId,ownerId,projectId,mediaType:"image/png",size:assetSize,sha256:"b".repeat(64)};}};
  const filesGateway={async resolveAsset(args){assert.deepEqual(args,{assetId,ownerId,projectId,mediaType:"image/png"});return{uri:"https://generativelanguage.googleapis.com/v1beta/files/Abc123",mediaType:"image/png",expiresAt:"2026-11-16T00:00:00.000Z"};}};
  const env={GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_API_KEY:key};
  const deps=createGoogleOmniWorkerDependencies({
   url:"https://example.supabase.co",serviceRoleKey:"service-role-secret",env,fetchImpl,
-  queue,ledger,interactions,assets,filesGateway,now:()=>Date.parse("2026-11-15T00:00:00.000Z")
+  queue,ledger,interactions,assets,filesGateway,signedUrlResolver,now:()=>Date.parse("2026-11-15T00:00:00.000Z")
  });
  return{deps,calls,fetchImpl};
 }
@@ -89,6 +89,25 @@ test("Gemini Omni private image references are resolved through the owner-scoped
  assert.equal(plan.payload.input[0].type,"image");
  assert.equal(plan.payload.input[0].uri,"https://generativelanguage.googleapis.com/v1beta/files/Abc123");
  assert.equal(plan.payload.generation_config.video_config.task,"image_to_video");
+});
+test("Gemini Omni eligible private media uses a short-lived owner-scoped signed URL",async()=>{
+ const signedUrlResolver={async resolveAsset(args){
+  assert.deepEqual(args,{assetId,ownerId,projectId,mediaType:"image/png"});
+  return{uri:"https://example.supabase.co/storage/v1/object/sign/executive-visuals-media/"+projectId+"/"+assetId+"/ref.png?token=short-lived",
+   sourceType:"signed_url",mediaType:"image/png",sizeBytes:100,sha256:"b".repeat(64),
+   expiresAt:new Date(Date.parse("2026-11-15T00:00:00.000Z")+600000).toISOString()};
+ }};
+ const {deps}=setup({ledgerState:"prepared",signedUrlResolver});
+ const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Animate this private image.",operation:"generate",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
+ assert.match(plan.payload.input[0].uri,/token=short-lived/);
+});
+test("Gemini Omni oversized private media falls back to the resumable Files gateway",async()=>{
+ let signedCalls=0;
+ const signedUrlResolver={async resolveAsset(){signedCalls++;throw new Error("Oversized media must not use signed URLs.");}};
+ const {deps}=setup({ledgerState:"prepared",signedUrlResolver,assetSize:100*1024*1024+1});
+ const plan=await deps.preparePlan({provider:"google",model:"gemini-omni-1.1-flash",requestHash,prompt:"Use this large private image.",operation:"generate",durationSeconds:5,firstFrameAssetId:assetId},{job:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"video.generate",lease_owner:"video-worker-1",lease_token:leaseToken,approved_by:ownerId,approved_at:"2026-11-15T00:00:00.000Z",estimated_cost:{amount:2.586464,currency:"USD"}}});
+ assert.equal(signedCalls,0);
+ assert.equal(plan.payload.input[0].uri,"https://generativelanguage.googleapis.com/v1beta/files/Abc123");
 });
 test("Gemini Omni reference images use the reference-to-video task and prior interactions remain project scoped",async()=>{
  const {deps}=setup({ledgerState:"prepared"});
