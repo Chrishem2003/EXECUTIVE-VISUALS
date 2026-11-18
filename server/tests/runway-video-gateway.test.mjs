@@ -406,3 +406,21 @@ test("Seedance image-to-video accepts native reference images and audio without 
   referenceAudio: [{ uri: "runway://ephemeral/ambience" }]
  }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
 });
+
+
+test("Seedance text-to-video accepts up to 10 native video references", () => {
+ const payload = buildRunwayVideoPayload({
+  model: "seedance2_5", prompt: "Follow the motion reference", durationSeconds: 8,
+  aspectRatio: "16:9", resolution: "720p",
+  referenceVideos: [{ uri: "runway://ephemeral/video-reference" }]
+ });
+ assert.deepEqual(payload.referenceVideos, [{ uri: "runway://ephemeral/video-reference" }]);
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "seedance2_5", prompt: "A scene",
+  referenceVideos: Array.from({length:11},()=>({uri:"runway://ephemeral/video-reference"}))
+ }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "gen4.5", prompt: "A scene",
+  referenceVideos: [{uri:"runway://ephemeral/video-reference"}]
+ }), e => e.code === "VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
