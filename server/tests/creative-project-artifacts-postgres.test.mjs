@@ -38,11 +38,18 @@ function fixture({projectRows=[projectRow],artifactRows=[parentRow],rpcRows=null
   let rows=[];
   if(path.startsWith("projects?")&&options.method==="GET")rows=projectRows;
   else if(path.startsWith("projects?")&&options.method==="POST")rows=[{...JSON.parse(options.body),archived_at:null}];
-  else if(path.startsWith("creative_project_artifacts?"))rows=artifactRows;
-  else if(path==="rpc/append_creative_project_artifact")rows=rpcRows||[{...parentRow,id:"623e4567-e89b-42d3-a456-426614174000",revision:2,content:JSON.parse(options.body).p_content,content_hash:JSON.parse(options.body).p_content_hash,created_by:editor}];
+  else if(path.startsWith("creative_project_artifacts?"))rows=artifactRows.filter(row=>{
+   const projectMatch=path.match(/project_id=eq\.([^&]+)/),idMatch=path.match(/id=eq\.([^&]+)/),typeMatch=path.match(/artifact_type=eq\.([^&]+)/);
+   return (!projectMatch||row.project_id===decodeURIComponent(projectMatch[1]))&&(!idMatch||row.id===decodeURIComponent(idMatch[1]))&&(!typeMatch||row.artifact_type===decodeURIComponent(typeMatch[1]));
+  });
+  else if(path==="rpc/append_creative_project_artifact"){
+   const body=JSON.parse(options.body),revision=artifactRows.filter(row=>row.project_id===body.p_project_id&&row.artifact_type===body.p_artifact_type).reduce((max,row)=>Math.max(max,Number(row.revision)),0)+1;
+   const row={id:body.p_id,project_id:body.p_project_id,created_by:body.p_created_by,artifact_type:body.p_artifact_type,revision,input_hash:body.p_input_hash,content_hash:body.p_content_hash,input:body.p_input,content:body.p_content,model:body.p_model,usage:body.p_usage,created_at:"2026-11-19T10:00:00Z"};
+   artifactRows.push(row);rows=rpcRows||[row];
+  }
   return {ok:true,status:200,async text(){return JSON.stringify(rows);}};
  };
- return {calls,repository:createCloudCreativeProjectArtifactRepository({url:"https://example.supabase.co",serviceRoleKey:"test-secret",fetchImpl})};
+ return {calls,artifactRows,repository:createCloudCreativeProjectArtifactRepository({url:"https://example.supabase.co",serviceRoleKey:"test-secret",fetchImpl})};
 }
 
 test("persists a new creative artifact through an atomic Postgres append RPC",async()=>{
@@ -109,4 +116,18 @@ test("Postgres bootstrap enforces private access, immutable rows and serialized 
  assert.match(sql,/unique\(project_id,artifact_type,revision\)/i);
  assert.match(sql,/security invoker/i);
  assert.match(sql,/revoke all on function executive_visuals\.append_creative_project_artifact/i);
+});
+
+
+test("backfills legacy SQLite artifact IDs and revisions idempotently",async()=>{
+ const f=fixture({artifactRows:[]});
+ const legacy={...parentRow,projectId:project,type:"storyboard",revision:1};
+ const first=await f.repository.importLegacyArtifacts({projectId:project,ownerId:owner,projectName:"Solar workshop",artifacts:[legacy]});
+ assert.deepEqual(first,{imported:1,alreadyPresent:0,total:1});
+ assert.equal(f.artifactRows.length,1);
+ assert.equal(f.artifactRows[0].id,artifactId);
+ assert.equal(f.artifactRows[0].revision,1);
+ const second=await f.repository.importLegacyArtifacts({projectId:project,ownerId:owner,projectName:"Solar workshop",artifacts:[legacy]});
+ assert.deepEqual(second,{imported:0,alreadyPresent:1,total:1});
+ assert.equal(f.calls.filter(call=>call.url.includes("/rpc/append_creative_project_artifact")).length,1);
 });
