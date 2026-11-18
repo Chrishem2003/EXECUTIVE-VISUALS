@@ -63,6 +63,9 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Configure PostgreSQL client from the existing service container
         shell: bash
         run: |
@@ -107,6 +110,34 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/creative-project-artifacts-postgres-integration.sql
       - name: Verify concurrent artifact revision allocation is unique and contiguous
         run: bash scripts/creative-project-artifacts-postgres-concurrency.sh
+      - name: Start disposable PostgREST API and verify the real HTTP repository adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          jwt_secret="$(openssl rand -hex 32)"
+          docker run -d --rm --network host --name ev-postgrest \
+            -e PGRST_DB_URI="postgres://authenticator:postgres@127.0.0.1:5432/executive_visuals_test" \
+            -e PGRST_DB_SCHEMAS=executive_visuals \
+            -e PGRST_DB_ANON_ROLE=anon \
+            -e PGRST_DB_EXTRA_SEARCH_PATH=public,extensions,auth \
+            -e PGRST_DB_POOL=10 \
+            -e PGRST_JWT_SECRET="$jwt_secret" \
+            -e PGRST_SERVER_ROOT=/rest/v1 \
+            -e PGRST_SERVER_PORT=3000 \
+            -e PGRST_LOG_LEVEL=warn \
+            postgrest/postgrest:v12.2.3
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/rest/v1/ >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [[ "$ready" != "1" ]]; then
+            docker logs ev-postgrest
+            exit 1
+          fi
+          POSTGREST_URL=http://127.0.0.1:3000 PGRST_JWT_SECRET="$jwt_secret" node scripts/verify-creative-artifact-postgrest.mjs
+          docker logs ev-postgrest
+          docker rm -f ev-postgrest >/dev/null
       - name: Apply durable storage cleanup outbox migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql
       - name: Verify storage cleanup outbox permissions and path constraints
