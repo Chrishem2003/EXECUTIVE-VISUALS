@@ -330,7 +330,10 @@ export function createCloudVideoEnqueue({
       const pricingInput = {
         ...input,
         ...(model === "seedance2_5" ? {
-          referenceAudioCount: Array.isArray(input.referenceAudioAssetIds) ? input.referenceAudioAssetIds.length : input.referenceAudioAssetId ? 1 : 0
+          referenceImageCount: Array.isArray(input.referenceAssetIds ?? input.referenceImageAssetIds)
+            ? (input.referenceAssetIds ?? input.referenceImageAssetIds).length : 0,
+          referenceAudioCount: Array.isArray(input.referenceAudioAssetIds)
+            ? input.referenceAudioAssetIds.length : input.referenceAudioAssetId ? 1 : 0
         } : {}),
         ...(verifiedReferenceVideoMetadata ? { referenceVideoSeconds: verifiedReferenceVideoMetadata.totalBillableDurationSeconds } : {}),
         ...(verifiedSourceMetadata ? {
