@@ -119,7 +119,6 @@ jobs:
             -e PGRST_DB_URI="postgres://authenticator:postgres@127.0.0.1:5432/executive_visuals_test" \
             -e PGRST_DB_SCHEMAS=executive_visuals \
             -e PGRST_DB_ANON_ROLE=anon \
-            -e PGRST_DB_EXTRA_SEARCH_PATH=public,extensions,auth \
             -e PGRST_DB_POOL=10 \
             -e PGRST_JWT_SECRET="$jwt_secret" \
             -e PGRST_SERVER_PORT=3000 \
