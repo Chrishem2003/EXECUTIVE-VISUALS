@@ -68,6 +68,7 @@ import { createB2MultipartUploadApi } from "./b2-multipart-upload-api.mjs";
 import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents, evidencePersistenceReady } from "./evidence-ledger.mjs";
 import { getLatestCreativeGraphSnapshot, saveCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 import { saveCreativeProjectArtifact, listCreativeProjectArtifacts, getCreativeProjectArtifact, appendCreativeProjectArtifactRevision } from "./creative-project-artifacts.mjs";
+import { createCloudCreativeProjectArtifactRepository } from "./creative-project-artifacts-postgres.mjs";
 import { startEmbeddedCloudWorker } from "./embedded-cloud-worker-runtime.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
@@ -236,6 +237,15 @@ const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCL
   },subscriptionLifecycleIntervalMinutes*60_000)
   :null;
 subscriptionLifecycleTimer?.unref();
+const creativeArtifactsPostgresEnabled=process.env.CREATIVE_ARTIFACTS_POSTGRES_ENABLED==="true";
+if(creativeArtifactsPostgresEnabled&&AUTH_MODE!=="supabase")throw new Error("Durable creative artifact persistence requires verified Supabase authentication.");
+if(creativeArtifactsPostgresEnabled&&(!process.env.SUPABASE_URL||!(process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY)))throw new Error("Durable creative artifact persistence requires server-side Supabase credentials.");
+const creativeArtifactsPostgres=creativeArtifactsPostgresEnabled?createCloudCreativeProjectArtifactRepository({
+ url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch
+}):null;
+const creativeArtifactPersistence=()=>creativeArtifactsPostgres
+ ?{backend:"supabase-postgres",runtimeStorage:"supabase-postgres",durableAcrossDeploys:true}
+ :{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false};
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -645,7 +655,7 @@ export function createAppServer() {
       }
       if(path==="/api/health"&&req.method==="GET"){
         const localAssetUploadPolicy=evaluateLocalAssetUploadPolicy({nodeEnv:process.env.NODE_ENV,dataDirPersistence:DATA_DIR_PERSISTENCE,requirePersistentDataDir:REQUIRE_PERSISTENT_DATA_DIR});
-        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},creativeArtifacts:creativeArtifactPersistence(),media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}const publicAppUrl=String(process.env.PUBLIC_APP_URL||"").trim();if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}let redirect;try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}const localRedirect=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1","::1"].includes(redirect.hostname);if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;}const body=await readJson(req);await requestSupabasePasswordRecovery({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email:String(body.email||""),redirectTo:redirect.origin+"/"});send(res,200,{ok:true,message:"If an account exists for that address, a password recovery email has been sent."},cors);return;
@@ -872,10 +882,10 @@ export function createAppServer() {
         }
         try{
           const result=await generateCreativeDirection({input:body.input});
-          const artifact=projectId?saveCreativeProjectArtifact(db,{
-            projectId,createdBy:user.id,type:"creative_direction",input:body.input,
-            content:result.plan,inputHash:result.plan.inputHash,model:result.model,usage:result.usage
-          }):null;
+          const localProject=projectId?db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId):null;
+          const artifact=projectId?(creativeArtifactsPostgres
+            ?await creativeArtifactsPostgres.save({projectId,ownerId:localProject?.owner_id,projectName:localProject?.name,projectDescription:localProject?.description,createdBy:user.id,type:"creative_direction",input:body.input,content:result.plan,inputHash:result.plan.inputHash,model:result.model,usage:result.usage})
+            :saveCreativeProjectArtifact(db,{projectId,createdBy:user.id,type:"creative_direction",input:body.input,content:result.plan,inputHash:result.plan.inputHash,model:result.model,usage:result.usage})):null;
           const recordId=artifact?.id||randomUUID();
           audit(db,user.id,"creative.director.generated","creative_plan",recordId,{
             model:result.model,inputHash:result.plan.inputHash,
@@ -884,8 +894,8 @@ export function createAppServer() {
             ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
           send(res,200,{...result,recordId,persistence:artifact
-            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
-            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,...creativeArtifactPersistence()}
+            :{saved:false,reason:"project_required",...creativeArtifactPersistence()}},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_DIRECTOR_FAILED";
           const status=["CREATIVE_DIRECTOR_INPUT_INVALID","CREATIVE_DIRECTOR_BRIEF_REQUIRED"].includes(code)?400:
@@ -903,10 +913,10 @@ export function createAppServer() {
         }
         try{
           const result=await generateStoryboard({input:body.input});
-          const artifact=projectId?saveCreativeProjectArtifact(db,{
-            projectId,createdBy:user.id,type:"storyboard",input:body.input,
-            content:result.storyboard,inputHash:result.storyboard.inputHash,model:result.model,usage:result.usage
-          }):null;
+          const localProject=projectId?db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId):null;
+          const artifact=projectId?(creativeArtifactsPostgres
+            ?await creativeArtifactsPostgres.save({projectId,ownerId:localProject?.owner_id,projectName:localProject?.name,projectDescription:localProject?.description,createdBy:user.id,type:"storyboard",input:body.input,content:result.storyboard,inputHash:result.storyboard.inputHash,model:result.model,usage:result.usage})
+            :saveCreativeProjectArtifact(db,{projectId,createdBy:user.id,type:"storyboard",input:body.input,content:result.storyboard,inputHash:result.storyboard.inputHash,model:result.model,usage:result.usage})):null;
           const recordId=artifact?.id||randomUUID();
           audit(db,user.id,"creative.storyboard.generated","storyboard",recordId,{
             model:result.model,inputHash:result.storyboard.inputHash,
@@ -918,8 +928,8 @@ export function createAppServer() {
             ...(artifact?{artifactRevision:artifact.revision,contentHash:artifact.contentHash}:{})
           },projectId);
           send(res,200,{...result,recordId,persistence:artifact
-            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}
-            :{saved:false,reason:"project_required",backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+            ?{saved:true,artifactId:artifact.id,revision:artifact.revision,contentHash:artifact.contentHash,...creativeArtifactPersistence()}
+            :{saved:false,reason:"project_required",...creativeArtifactPersistence()}},cors);return;
         }catch(error){
           const code=error.code||"STORYBOARD_COMPILER_FAILED";
           const status=["STORYBOARD_INPUT_INVALID","STORYBOARD_DIRECTION_REQUIRED","STORYBOARD_DIRECTION_INVALID"].includes(code)?400:
@@ -1418,12 +1428,20 @@ export function createAppServer() {
         if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to save a storyboard revision.");return;}
         try{
           const body=await readJson(req,1024*1024);
-          const artifact=appendCreativeProjectArtifactRevision(db,{projectId,artifactId,createdBy:user.id,content:body.content});
+          const localProject=db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId);
+          const artifact=creativeArtifactsPostgres
+            ?await creativeArtifactsPostgres.appendRevision({projectId,ownerId:localProject?.owner_id,projectName:localProject?.name,projectDescription:localProject?.description,artifactId,createdBy:user.id,content:body.content})
+            :appendCreativeProjectArtifactRevision(db,{projectId,artifactId,createdBy:user.id,content:body.content});
           audit(db,user.id,"creative.storyboard.revision_saved","storyboard",artifact.id,{revision:artifact.revision,parentArtifactId:artifactId,inputHash:artifact.inputHash,contentHash:artifact.contentHash},projectId);
-          send(res,artifact.unchanged?200:201,{artifact,unchanged:artifact.unchanged===true,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+          send(res,artifact.unchanged?200:201,{artifact,unchanged:artifact.unchanged===true,persistence:creativeArtifactPersistence()},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_ARTIFACT_REVISION_FAILED";
-          const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"?404:code==="CREATIVE_ARTIFACT_REVISION_INVALID"?400:code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:code==="CREATIVE_ARTIFACT_TYPE_INVALID"?409:500;
+          const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"||code==="CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"?404:
+            code==="CREATIVE_ARTIFACT_REVISION_INVALID"||code==="CREATIVE_ARTIFACT_INVALID"||code==="CREATIVE_ARTIFACT_INPUT_HASH_INVALID"?400:
+            code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:
+            ["CREATIVE_ARTIFACT_TYPE_INVALID","CREATIVE_ARTIFACT_PROJECT_SCOPE_MISMATCH"].includes(code)?409:
+            code==="CREATIVE_ARTIFACT_EDITOR_REQUIRED"?403:
+            code.startsWith("CREATIVE_ARTIFACT_DATABASE")||code==="CREATIVE_ARTIFACT_PERSISTENCE_FAILED"?503:500;
           fail(res,status,code,error.message||"Storyboard revision could not be saved.");return;
         }
       }
@@ -1433,14 +1451,14 @@ export function createAppServer() {
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         if(req.method==="GET"){
           if(artifactId){
-            const artifact=getCreativeProjectArtifact(db,{projectId,artifactId});
+            const artifact=creativeArtifactsPostgres?await creativeArtifactsPostgres.get({projectId,artifactId}):getCreativeProjectArtifact(db,{projectId,artifactId});
             if(!artifact){fail(res,404,"CREATIVE_ARTIFACT_NOT_FOUND","Creative project artifact not found.");return;}
-            send(res,200,{artifact,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+            send(res,200,{artifact,persistence:creativeArtifactPersistence()},cors);return;
           }
           const type=url.searchParams.get("type")||null;
           const limit=Number(url.searchParams.get("limit")||20);
-          try{send(res,200,{projectId,artifacts:listCreativeProjectArtifacts(db,{projectId,type,limit}),persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;}
-          catch(error){fail(res,400,error.code||"CREATIVE_ARTIFACT_QUERY_INVALID",error.message);return;}
+          try{const artifacts=creativeArtifactsPostgres?await creativeArtifactsPostgres.list({projectId,type,limit}):listCreativeProjectArtifacts(db,{projectId,type,limit});send(res,200,{projectId,artifacts,persistence:creativeArtifactPersistence()},cors);return;}
+          catch(error){const code=error.code||"CREATIVE_ARTIFACT_QUERY_INVALID";fail(res,code==="CREATIVE_ARTIFACT_TYPE_INVALID"||code==="CREATIVE_ARTIFACT_QUERY_INVALID"?400:503,code,error.message);return;}
         }
         fail(res,405,"METHOD_NOT_ALLOWED","Creative project artifacts are read-only version records.");return;
       }
