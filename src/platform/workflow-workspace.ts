@@ -4,7 +4,7 @@ import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkf
 import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 import { isWorkflowQuoteExpired } from "../core/workflow-quote-expiry.mjs";
 import { getVideoWorkflowOperationOptions } from "../core/video-workflow-operations.mjs";
-import { getLatestWorkflowRunId } from "../core/workflow-run-selection.mjs";
+import { getLatestWorkflowRunId, normalizeWorkflowRunHistory } from "../core/workflow-run-selection.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowRunSummary={id:string;status:string;created_at?:string;updated_at?:string};
@@ -178,11 +178,6 @@ async function refresh(){
 }
 let runPollTimer:ReturnType<typeof setTimeout>|null=null;
 let runPollInFlight=false;
-function normalizeWorkflowRunHistory(runs:unknown):WorkflowRunSummary[]{
- if(!Array.isArray(runs))return[];
- return runs.filter((run):run is WorkflowRunSummary=>Boolean(run&&typeof run==="object"&&typeof (run as WorkflowRunSummary).id==="string"&&(run as WorkflowRunSummary).id.trim()))
-  .slice(0,50).map(run=>({id:run.id.trim(),status:typeof run.status==="string"?run.status:"unknown",created_at:typeof run.created_at==="string"?run.created_at:undefined,updated_at:typeof run.updated_at==="string"?run.updated_at:undefined}));
-}
 function workflowRunLabel(run:WorkflowRunSummary){
  const date=run.created_at?new Date(run.created_at):null;
  const when=date&&Number.isFinite(date.getTime())?date.toLocaleString():run.id.slice(0,8);
