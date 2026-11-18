@@ -171,7 +171,7 @@ async function refresh(){
   try{const assetResponse=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(state.graph.projectId));state.assets=assetResponse.assets.filter(asset=>asset.projectId===state.graph?.projectId);}
   catch{state.assets=[];}
  }
- const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
+ const runs=await apiRequest<{runs:WorkflowRunSummary[]}>("/api/workflows/"+state.graph!.id+"/runs");
  state.workflowRuns=normalizeWorkflowRunHistory(runs.runs);state.latestRunId=getLatestWorkflowRunId(state.workflowRuns);
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
  state.status="ready";state.message="";
