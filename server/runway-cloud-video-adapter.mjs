@@ -572,7 +572,7 @@ export function createRunwayCloudVideoAdapter({
       } else {
         payload = buildRunwayVideoPayload({
           model: selectedModel,
-          prompt: input.prompt.trim(),
+          prompt: typeof input.prompt === "string" ? input.prompt.trim() : "",
           durationSeconds: input.durationSeconds === undefined ? 5 : input.durationSeconds,
           aspectRatio: input.aspectRatio || "16:9",
           resolution: input.resolution || "provider_default", draft: input.draft === true,
