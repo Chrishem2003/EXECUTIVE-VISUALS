@@ -9,7 +9,7 @@ const VIDEO_TYPES = new Set([
 ]);
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/webm", "audio/flac", "audio/x-flac"]);
-const SEEDANCE_AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/flac", "audio/x-flac"]);
+const SEEDANCE_AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/wave", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/flac", "audio/x-flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function parseRate(value) {
