@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { Transform } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { resolve, relative, sep } from "node:path";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
-import { storeGeneratedVideo } from "./generated-assets.mjs";
+import { storeGeneratedVideoFromStream } from "./generated-assets.mjs";
 import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
 import { createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { executableAvailable, run as runMediaProcess, validateMediaOutputProbe } from "./media.mjs";
@@ -75,25 +75,6 @@ async function probeLocalMedia(filePath){
  if(!executableAvailable("ffprobe"))throw fail("FFprobe is required to validate cloud video workflow source media.","MEDIA_ENGINE_MISSING");
  const result=await runMediaProcess("ffprobe",["-v","error","-show_format","-show_streams","-of","json",filePath],15000);
  try{return JSON.parse(result.stdout);}catch{throw fail("Workflow source media probe returned invalid metadata.","VIDEO_WORKFLOW_INPUT_MEDIA_INVALID");}
-}
-async function readBounded(response,maximum){
- const declared=Number(response.headers?.get?.("content-length")||0);
- if(declared>maximum)throw fail("Cloud video output exceeds the local import limit.","VIDEO_OUTPUT_TOO_LARGE");
- if(!response.body?.getReader){
-  const buffer=Buffer.from(await response.arrayBuffer());
-  if(buffer.length>maximum)throw fail("Cloud video output exceeds the local import limit.","VIDEO_OUTPUT_TOO_LARGE");
-  return buffer;
- }
- const reader=response.body.getReader(),chunks=[];let total=0;
- try{
-  while(true){
-   const {done,value}=await reader.read();if(done)break;
-   total+=value.byteLength;
-   if(total>maximum){await reader.cancel().catch(()=>{});throw fail("Cloud video output exceeds the local import limit.","VIDEO_OUTPUT_TOO_LARGE");}
-   chunks.push(Buffer.from(value));
-  }
- }finally{reader.releaseLock();}
- return Buffer.concat(chunks,total);
 }
 
 /**
@@ -250,14 +231,15 @@ export async function executeCloudVideoWorkflowNode({
     if(signedUrl.protocol!=="https:"||signedUrl.origin!==trustedOrigin)throw fail("Cloud output signed URL is outside the configured Supabase origin.","VIDEO_WORKFLOW_OUTPUT_URL_REJECTED");
     const response=await fetchImpl(signedUrl,{redirect:"error"});
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
-    const buffer=await readBounded(response,MAX_VIDEO_BYTES);
-    if(buffer.length!==asset.size||createHash("sha256").update(buffer).digest("hex")!==asset.sha256)throw fail("Downloaded cloud output failed byte-size or SHA-256 verification.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
+    const declaredSize=Number(response.headers?.get?.("content-length")||0);
+    if(declaredSize&&declaredSize!==asset.size)throw fail("Private cloud output Content-Length does not match its verified asset metadata.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
+    if(!response.body||typeof response.body.getReader!=="function")throw fail("Private cloud output did not provide a readable response stream.","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     if(actualDurationSeconds===null){
      const reportedDuration=Number(asset.metadata?.durationSeconds||asset.metadata?.duration||0);
      if(Number.isFinite(reportedDuration)&&reportedDuration>0)actualDurationSeconds=reportedDuration;
     }
     const provenance=createVideoRequestProvenance(initial.input,{provider,model,adapterVersion});
-    const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model,provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,buffer});
+    const local=await storeGeneratedVideoFromStream({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model,provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,stream:Readable.fromWeb(response.body),expectedSize:asset.size,expectedSha256:asset.sha256});
     imported.push(local.id);
    }
    const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],
