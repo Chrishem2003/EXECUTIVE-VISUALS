@@ -1420,7 +1420,7 @@ export function createAppServer() {
           const body=await readJson(req,1024*1024);
           const artifact=appendCreativeProjectArtifactRevision(db,{projectId,artifactId,createdBy:user.id,content:body.content});
           audit(db,user.id,"creative.storyboard.revision_saved","storyboard",artifact.id,{revision:artifact.revision,parentArtifactId:artifactId,inputHash:artifact.inputHash,contentHash:artifact.contentHash},projectId);
-          send(res,201,{artifact,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
+          send(res,artifact.unchanged?200:201,{artifact,unchanged:artifact.unchanged===true,persistence:{backend:"sqlite",runtimeStorage:DATA_DIR_PERSISTENCE,durableAcrossDeploys:false}},cors);return;
         }catch(error){
           const code=error.code||"CREATIVE_ARTIFACT_REVISION_FAILED";
           const status=code==="CREATIVE_ARTIFACT_NOT_FOUND"?404:code==="CREATIVE_ARTIFACT_REVISION_INVALID"?400:code==="CREATIVE_ARTIFACT_TOO_LARGE"?413:code==="CREATIVE_ARTIFACT_TYPE_INVALID"?409:500;
