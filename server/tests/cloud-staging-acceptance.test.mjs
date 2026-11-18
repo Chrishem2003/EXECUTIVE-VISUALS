@@ -24,7 +24,8 @@ test("refuses production, arbitrary hosts, HTTP and URL credentials",()=>{
   "https://example.com",
   "http://executive-visuals-cloud-staging.onrender.com",
   "https://user:secret@executive-visuals-cloud-staging.onrender.com",
-  "https://executive-visuals-cloud-staging.onrender.com/?token=secret"
+  "https://executive-visuals-cloud-staging.onrender.com/?token=secret",
+  "https://executive-visuals-cloud-staging.onrender.com:8443"
  ]){
   const result=evaluateCloudStagingAcceptance({baseUrl:value,health:healthy,readiness:ready});
   assert.equal(result.passed,false,value);
@@ -49,12 +50,15 @@ test("blocks when cloud worker configuration is incomplete",()=>{
  assert.equal(result.checks.find(item=>item.id==="cloud-worker-configured").status,"blocked");
 });
 
-test("never accepts paid remote execution during no-cost staging acceptance",()=>{
+test("requires an explicit false remote-execution gate during no-cost staging acceptance",()=>{
  const result=evaluateCloudStagingAcceptance({
   baseUrl,health:{...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,remoteExecutionGates:true}},readiness:ready
  });
  assert.equal(result.passed,false);
  assert.equal(result.checks.find(item=>item.id==="paid-provider-execution-disabled").status,"blocked");
+ const missing=evaluateCloudStagingAcceptance({baseUrl,health:{...healthy,cloudVideoWorker:{...healthy.cloudVideoWorker,remoteExecutionGates:undefined}},readiness:ready});
+ assert.equal(missing.passed,false);
+ assert.equal(missing.checks.find(item=>item.id==="paid-provider-execution-disabled").status,"blocked");
 });
 
 test("requires the deployment readiness endpoint to pass",()=>{
