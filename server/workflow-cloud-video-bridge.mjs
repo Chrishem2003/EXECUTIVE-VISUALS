@@ -170,8 +170,16 @@ export async function executeCloudVideoWorkflowNode({
    throw fail("Cloud quote does not match the immutable workflow node request.","VIDEO_WORKFLOW_QUOTE_INVALID");
   }
   const receipt={
-   quoteId,requestId,requestHash:cloudRequest.requestHash,routedModel,
+   quoteId,requestId,requestHash:cloudRequest.requestHash,
+   provider:String(quote.body.quote.provider||cloudRequest.provider),
+   model:String(quote.body.quote.model||cloudRequest.model),
+   operation:String(quote.body.quote.operation||cloudRequest.operation),
+   routedProvider:String(quote.body.quote.routedProvider||""),
+   routedModel,configId:String(quote.body.quote.configId||""),
+   estimatedCredits:Number(quote.body.quote.estimatedCredits||0),
    estimatedAmount:Number(quote.body.quote.estimatedAmount),currency:String(quote.body.quote.currency||"USD"),
+   pricingSource:String(quote.body.quote.pricingSource||""),
+   pricingUrl:String(quote.body.quote.pricingUrl||""),
    expiresAt:String(quote.body.quote.expiresAt||""),paidExecutionEnabled:quote.body.quote.paidExecutionEnabled===true,
    cloudNode,cloudValues
   };
