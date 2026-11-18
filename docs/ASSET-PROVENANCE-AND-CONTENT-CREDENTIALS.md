@@ -84,3 +84,12 @@ A 96 MiB streaming preservation stress test now exercises file-backed copy, stre
 
 
 The Asset Library only offers direct C2PA inspection for media types covered by the current app/CAI overlap (JPEG, PNG, WebP, GIF, MP3, WAV, M4A, MP4, MOV and PDF). PDF verification is supported by the CAI Node SDK and uses the server-stored `.pdf` extension together with the registered `application/pdf` media type. For app-ingestible WebM, MKV and OGG assets, the UI explicitly says C2PA inspection is unsupported by the current format matrix instead of presenting a misleading inspection action. The API independently enforces the same supported MIME-type matrix and returns `validation_unavailable` with `C2PA_FORMAT_UNSUPPORTED` for unsupported media, rather than invoking the native reader or misclassifying an unsupported format as invalid credentials. These ingest formats remain outside the C2PA signing/preservation claim until a supported SDK path is tested.
+
+
+## SDK-supported media coverage
+
+The server-side verifier routes the following media families to the pinned CAI Node SDK: JPEG, PNG, WebP, GIF, AVIF, DNG, HEIC/HEIF, JPEG XL, SVG and TIFF images; MP3, WAV, M4A and FLAC audio; MP4, QuickTime MOV and AVI video; and PDF documents. AVI MIME aliases are normalized only by the SDK's format handling; the application passes the stored media type through unchanged after stripping MIME parameters.
+
+The official SDK's format matrix does not list WebM, Matroska/MKV or Ogg audio. Those formats remain explicitly reported as `validation_unavailable` rather than being mislabeled as invalid or as having no Content Credentials. Support in the SDK does not itself imply that every format is accepted by every application upload route or transformation pipeline.
+
+Reference: https://opensource.contentauthenticity.org/docs/sdk-repos/c2patool/docs/supported-formats/

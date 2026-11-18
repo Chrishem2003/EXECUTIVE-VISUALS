@@ -253,3 +253,46 @@ test("normalizes MIME parameters before supported-format verification", async ()
     assert.equal(receivedType, "video/mp4");
   } finally { await f.cleanup(); }
 });
+
+test("routes every additional official CAI SDK media format to cryptographic verification", async () => {
+  const formats = [
+    ["image/avif", ".avif"],
+    ["image/x-adobe-dng", ".dng"],
+    ["image/heic", ".heic"],
+    ["image/heif", ".heif"],
+    ["image/jxl", ".jxl"],
+    ["image/svg+xml", ".svg"],
+    ["image/tiff", ".tiff"],
+    ["audio/flac", ".flac"],
+    ["video/msvideo", ".avi"],
+    ["video/x-msvideo", ".avi"],
+    ["video/avi", ".avi"],
+    ["application/x-troff-msvideo", ".avi"]
+  ];
+  for (const [mediaType, extension] of formats) {
+    const f = await fixture(Buffer.from("verified-format-fixture:" + mediaType), extension);
+    try {
+      let receivedMime = null;
+      let sdkLoaded = false;
+      class Context { constructor(settings) { this.settings = settings; } }
+      const Reader = {
+        async fromAsset(asset, context) {
+          receivedMime = asset.mimeType;
+          assert.ok(context instanceof Context);
+          assert.equal(context.settings.verify.remoteManifestFetch, false);
+          return { isEmbedded: () => false, json: () => ({}) };
+        }
+      };
+      const result = await createC2paVerifier({
+        sdkLoader: async () => { sdkLoaded = true; return { Reader, Context }; },
+        maxBytes: 1024
+      })({ filePath: f.filePath, mediaType, expectedSha256: f.sha256, expectedSize: f.size });
+      assert.equal(sdkLoaded, true, mediaType);
+      assert.equal(receivedMime, mediaType, mediaType);
+      assert.equal(result.status, "not_present", mediaType);
+      assert.deepEqual(result.findings, ["C2PA_MANIFEST_NOT_PRESENT"], mediaType);
+    } finally {
+      await f.cleanup();
+    }
+  }
+});

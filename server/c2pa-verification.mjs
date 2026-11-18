@@ -5,7 +5,12 @@ import { readFile, stat } from "node:fs/promises";
 const SHA256=/^[a-f0-9]{64}$/i;
 const DEFAULT_MAX_BYTES=250*1024*1024;
 const MAX_VALIDATION_ITEMS=100;
-const SUPPORTED_C2PA_MEDIA_TYPES=new Set(["image/jpeg","image/png","image/webp","image/gif","audio/mpeg","audio/wav","audio/x-wav","audio/mp4","video/mp4","video/quicktime","application/pdf"]);
+const SUPPORTED_C2PA_MEDIA_TYPES=new Set([
+ "image/jpeg","image/png","image/webp","image/gif","image/avif","image/x-adobe-dng","image/heic","image/heif","image/jxl","image/svg+xml","image/tiff",
+ "audio/mpeg","audio/wav","audio/x-wav","audio/mp4","audio/flac",
+ "video/mp4","video/quicktime","video/msvideo","video/x-msvideo","video/avi","application/x-troff-msvideo",
+ "application/pdf"
+]);
 
 function fail(code,message,status=422){
  const error=new Error(message);error.code=code;error.status=status;return error;
