@@ -222,7 +222,7 @@ async function selectWorkflow(workflowId:string){
     const assets=await apiRequest<{assets:WorkflowAsset[]}>("/api/assets?projectId="+encodeURIComponent(projectId));
     if(epoch!==workflowSelectionEpoch)return;
     state.assets=assets.assets.filter(asset=>asset.projectId===projectId);
-   }catch{state.assets=[];}
+   }catch{if(epoch===workflowSelectionEpoch)state.assets=[];}
   }
   const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+encodeURIComponent(workflowId)+"/runs");
   if(epoch!==workflowSelectionEpoch)return;
