@@ -136,6 +136,8 @@ jobs:
           POSTGREST_URL=http://127.0.0.1:3000 PGRST_JWT_SECRET="$jwt_secret" node scripts/verify-creative-artifact-postgrest.mjs
           docker logs ev-postgrest
           docker rm -f ev-postgrest >/dev/null
+      - name: Verify creative artifact backup and restore preserves history and security
+        run: bash scripts/creative-project-artifacts-postgres-backup-restore.sh
       - name: Apply durable storage cleanup outbox migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql
       - name: Verify storage cleanup outbox permissions and path constraints
