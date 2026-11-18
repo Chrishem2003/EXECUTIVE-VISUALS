@@ -15,11 +15,16 @@ export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
   !url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==="/"||url.pathname===""));
  const worker=health?.cloudVideoWorker||{};
  const media=health?.cloudMedia||{};
+ const persistence=health?.persistence||{};
+ const durableApplicationState=(health?.database==="postgres"&&health?.storage==="object-storage")||
+  (health?.database==="sqlite"&&health?.storage==="local-disk"&&persistence.persistentVolumeRequired===true&&persistence.dataDirectory==="operator-confirmed-volume");
  const checks=[
   check("staging-target",targetValid,"Target must be the dedicated HTTPS cloud-staging Render service; production and arbitrary hosts are refused."),
   check("health-endpoint",health?.status==="ok","The staging health endpoint did not report status=ok."),
   check("supabase-auth",health?.authMode==="supabase"&&health?.authSession?.configurationReady===true,
    "Supabase authentication and server-managed session configuration must be ready."),
+  check("durable-application-state",durableApplicationState,
+   "Application data must use a durable PostgreSQL/object-storage backend or SQLite/local storage on an explicitly operator-confirmed persistent volume."),
   check("supabase-service-credentials",worker.supabaseCredentialsConfigured===true,
    "The hosted runtime does not report its server-side Supabase credentials as configured."),
   check("private-cloud-media",media.enabled===true&&media.ready===true&&media.storage==="private"&&media.provider==="supabase",
