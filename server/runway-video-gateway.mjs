@@ -115,13 +115,20 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  const kling3=id.startsWith("kling3.0_");
  const maxPrompt=id==="seedance2_5"?15000:["kling_4","kling_4_flash"].includes(id)?26000:id==="gemini_omni_flash_1.2"?4000:kling3?2500:1000;
  const segments=validateKlingMultiPrompt(id,multiPrompt,shotType,text);
- const referenceMode=id==="seedance2_5"&&Array.isArray(promptImage);
+ const seedanceImageList=id==="seedance2_5"&&Array.isArray(promptImage);
+ const referenceMode=seedanceImageList&&promptImage.every(item=>item&&!("position" in item));
+ const keyframeMode=seedanceImageList&&promptImage.length>=1&&promptImage.length<=2&&
+  promptImage[0]?.position==="first"&&(promptImage.length===1||promptImage[1]?.position==="last");
+ const validImageUri=value=>typeof value==="string"&&(/^(https:\/\/|runway:\/\/)/i.test(value));
  if(!Array.isArray(referenceAudio)||referenceAudio.length>10||referenceAudio.some(item=>!item||typeof item.uri!=="string"||!(/^(https:\/\/|runway:\/\/)/i.test(item.uri))))throw fail("Seedance image-to-video accepts at most 10 valid audio references.","VIDEO_GATEWAY_INVALID_INPUT");
- if((!text&&!segments&&!referenceMode)||text.length>maxPrompt)throw fail("Runway image-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
- if(referenceAudio.length&&!text)throw fail("Seedance image-to-video reference audio requires promptText.","VIDEO_GATEWAY_INVALID_INPUT");
+ if((!text&&!segments&&!referenceMode&&!keyframeMode)||text.length>maxPrompt)throw fail("Runway image-to-video prompt is empty or exceeds the selected model limit of "+maxPrompt+" characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(referenceAudio.length&&(!text||!referenceMode))throw fail("Seedance reference audio requires promptText and reference-image mode.","VIDEO_GATEWAY_INVALID_INPUT");
  if(kling3&&text&&text.length<2)throw fail("Kling 3.0 prompts require at least two characters.","VIDEO_GATEWAY_INVALID_INPUT");
  if(referenceMode){
-  if(promptImage.length<1||promptImage.length>30||promptImage.some(item=>!item||typeof item.uri!=="string"||!(/^(https:\/\/|runway:\/\/)/i.test(item.uri))||"position" in item))throw fail("Seedance reference mode accepts 1–30 image URIs without first/last keyframe positions.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(promptImage.length<1||promptImage.length>30||promptImage.some(item=>!item||!validImageUri(item.uri)||"position" in item))throw fail("Seedance reference mode accepts 1–30 image URIs without first/last keyframe positions.","VIDEO_GATEWAY_INVALID_INPUT");
+ }else if(keyframeMode){
+  if(promptImage.some(item=>!item||!validImageUri(item.uri)||!["first","last"].includes(item.position))||
+     promptImage[0].position!=="first"||promptImage.length===2&&promptImage[1].position!=="last")throw fail("Seedance keyframe mode requires a first frame and an optional last frame.","VIDEO_GATEWAY_INVALID_INPUT");
  }else if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!segments&&(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds))throw fail("Duration is outside the selected model documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
