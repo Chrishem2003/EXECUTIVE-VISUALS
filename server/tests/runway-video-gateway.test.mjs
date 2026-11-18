@@ -361,3 +361,22 @@ test("Kling 3.0 4K maps only its documented 4K aspect ratios",()=>{
   model:"kling3.0_4k",promptText:"A cinematic shot",ratio:"3840:2160",duration:8
  });
 });
+
+test("Seedance text-to-video accepts validated native image/audio references without a text prompt", () => {
+ const payload = buildRunwayVideoPayload({
+  model: "seedance2_5", durationSeconds: 8, aspectRatio: "16:9", resolution: "720p",
+  references: [{ uri: "runway://ephemeral/reference-image" }],
+  referenceAudio: [{ uri: "runway://ephemeral/reference-audio" }]
+ });
+ assert.deepEqual(payload, {
+  model: "seedance2_5", ratio: "1280:720", duration: 8,
+  references: [{ uri: "runway://ephemeral/reference-image" }],
+  referenceAudio: [{ uri: "runway://ephemeral/reference-audio" }]
+ });
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "seedance2_5", references: Array.from({length:31},()=>({uri:"runway://ephemeral/ref"}))
+ }), e => e.code === "VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(() => buildRunwayVideoPayload({
+  model: "gen4.5", prompt: "A scene", references: [{uri:"runway://ephemeral/ref"}]
+ }), e => e.code === "VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
