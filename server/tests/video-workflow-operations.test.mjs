@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getVideoWorkflowOperationOptions } from "../../src/core/video-workflow-operations.mjs";
@@ -30,4 +31,13 @@ test("operation option objects are fresh so UI mutation cannot alter future menu
   first[2].label = "mutated";
   const second = getVideoWorkflowOperationOptions("runway", "seedance2_5");
   assert.equal(second[2].label, "Enhance completed draft to 1080p");
+});
+
+test("workflow editor uses the shared operation policy and reveals the draft source field dynamically", () => {
+  const ui = readFileSync(new URL("../../src/platform/workflow-workspace.ts", import.meta.url), "utf8");
+  assert.match(ui, /getVideoWorkflowOperationOptions\(provider,model\)/);
+  assert.match(ui, /getVideoWorkflowOperationOptions\(provider,modelValue\)/);
+  assert.match(ui, /data-wf-draft-enhancement/);
+  assert.match(ui, /draftPanel\.hidden=activeOperation!=="draft-enhancement"/);
+  assert.match(ui, /draftInput\.disabled=activeOperation!=="draft-enhancement"/);
 });
