@@ -256,6 +256,12 @@ async function ensureCreativeArtifactBackfill(projectId){
  await creativeArtifactsPostgres.importLegacyArtifacts({projectId,ownerId:localProject.owner_id,projectName:localProject.name,projectDescription:localProject.description,artifacts:legacyArtifacts});
  creativeArtifactBackfillProjects.add(projectId);
 }
+async function ensureCreativeArtifactWriter(projectId,createdBy){
+ if(!creativeArtifactsPostgres)return;
+ const localProject=db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId);
+ if(!localProject)throw Object.assign(new Error("Local project was not found for creative artifact persistence."),{code:"CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"});
+ await creativeArtifactsPostgres.assertWriter({projectId,ownerId:localProject.owner_id,createdBy,projectName:localProject.name,projectDescription:localProject.description});
+}
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -894,7 +900,7 @@ export function createAppServer() {
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request project creative direction.");return;}
         }
         try{
-          if(projectId)await ensureCreativeArtifactBackfill(projectId);
+          if(projectId){await ensureCreativeArtifactWriter(projectId,user.id);await ensureCreativeArtifactBackfill(projectId);}
           const result=await generateCreativeDirection({input:body.input});
           const localProject=projectId?db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId):null;
           const artifact=projectId?(creativeArtifactsPostgres
@@ -926,7 +932,7 @@ export function createAppServer() {
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request a project storyboard.");return;}
         }
         try{
-          if(projectId)await ensureCreativeArtifactBackfill(projectId);
+          if(projectId){await ensureCreativeArtifactWriter(projectId,user.id);await ensureCreativeArtifactBackfill(projectId);}
           const result=await generateStoryboard({input:body.input});
           const localProject=projectId?db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId):null;
           const artifact=projectId?(creativeArtifactsPostgres
@@ -1442,6 +1448,7 @@ export function createAppServer() {
         if(!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to save a storyboard revision.");return;}
         try{
+          await ensureCreativeArtifactWriter(projectId,user.id);
           await ensureCreativeArtifactBackfill(projectId);
           const body=await readJson(req,1024*1024);
           const localProject=db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId);
