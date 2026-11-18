@@ -12,7 +12,14 @@ for i in $(seq 1 10); do
   pids+=("$!")
 done
 for pid in "${pids[@]}"; do wait "$pid"; done
-actual="$(cat "$tmp"/* | sort -n | paste -sd, -)"
+actual="$(cat "$tmp"/* | grep -E '^[0-9]+
+expected="$(seq 1 10 | paste -sd, -)"
+if [[ "$actual" != "$expected" ]]; then
+  echo "Concurrent append revisions were not unique and contiguous: expected $expected, received $actual" >&2
+  exit 1
+fi
+echo "Concurrent append allocation passed: $actual"
+ | sort -n | paste -sd, -)"
 expected="$(seq 1 10 | paste -sd, -)"
 if [[ "$actual" != "$expected" ]]; then
   echo "Concurrent append revisions were not unique and contiguous: expected $expected, received $actual" >&2
