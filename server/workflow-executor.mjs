@@ -19,7 +19,7 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
-import { assertVideoWorkflowExecutionMode, assertVideoWorkflowNodeSupport } from "./video-workflow-execution-mode.mjs";
+import { assertVideoWorkflowExecutionMode, assertVideoWorkflowNodeSupport, isGovernedCloudWorkflowBlockedCode } from "./video-workflow-execution-mode.mjs";
 import { executeCloudVideoWorkflowNode } from "./workflow-cloud-video-bridge.mjs";
 
 const now=()=>new Date().toISOString();
@@ -456,7 +456,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
    const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","RUNWAY_AUDIO_DISABLED","RUNWAY_AUDIO_REMOTE_DISABLED","RUNWAY_AUDIO_CONFIG_INVALID","RUNWAY_AUDIO_UNAVAILABLE","RUNWAY_AUDIO_RATE_LIMITED","RUNWAY_AUDIO_SERVER_ERROR","RUNWAY_AUDIO_REQUEST_REJECTED","RUNWAY_AUDIO_INVALID_RESPONSE","RUNWAY_AUDIO_INVALID_INPUT","VOICE_CONSENT_REQUIRED","SOURCE_RIGHTS_REQUIRED","RUNWAY_AUDIO_JOB_FAILED","RUNWAY_AUDIO_TIMEOUT","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
-   const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
+   const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_")||isGovernedCloudWorkflowBlockedCode(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
    db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
