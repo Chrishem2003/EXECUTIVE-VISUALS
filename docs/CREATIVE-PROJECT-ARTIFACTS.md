@@ -44,3 +44,21 @@ The server checks project write access, confirms that the source artifact is a s
 The UI exposes **Save edited revision** next to storyboard export and timeline creation. After a successful save it updates the active revision pointer and refreshes version history. Restoring an older revision still retrieves the immutable historical content; saving edits after restore creates another new revision rather than rewriting history.
 
 This feature improves version recovery within the current SQLite runtime. It does not change the storage durability boundary: the API continues to report `durableAcrossDeploys=false` until the hosted primary database and backup/restore path are independently configured and verified.
+
+## Durable Supabase Postgres storage (staging-gated)
+
+The optional Postgres repository is selected only when `CREATIVE_ARTIFACTS_POSTGRES_ENABLED=true`, `AUTH_MODE=supabase`, and server-side Supabase credentials are present. The default remains SQLite. No production environment variable is changed by this code.
+
+The repository uses the existing `executive_visuals` schema and the same UUID as the local project. Before writing an artifact it verifies or creates the matching cloud project row using the local project's owner ID, name and description. An existing cloud project owned by another user or an archived project is rejected. The Postgres append RPC serializes revision allocation by locking the project row, checks owner/editor membership, and writes the immutable artifact in one transaction. The table has RLS enabled, is not granted to `public`, `anon`, or `authenticated`, and only the server-side `service_role` may read or append. An immutable trigger rejects updates and deletes.
+
+The API reports `backend: "supabase-postgres"` and `durableAcrossDeploys: true` only when this repository is enabled. The feature flag remains off by default. Local SQLite remains the fallback and continues to report `durableAcrossDeploys: false`.
+
+### Staging bootstrap
+
+`scripts/creative-project-artifacts-postgres-bootstrap.sql` is a bootstrap/integration fixture for a dedicated Executive Visuals development database. It is not permission to apply schema changes to either shared Supabase project. Generate the canonical migration with the locally installed Supabase CLI (`supabase migration new creative_project_artifacts`), transfer the reviewed SQL into that generated migration, run it against a disposable/local database first, and verify the migration list and security/performance advisors. Supabase CLI v3 now targets the local stack by default; hosted database changes require explicit `--remote` and confirmation. Do not run a hosted migration until a separately isolated Executive Visuals staging project has been approved and verified.
+
+The repository's PostgREST requests use the `executive_visuals` profile and a server-only secret/service-role key. The key is never returned to the browser. The Data API must expose the existing `executive_visuals` schema; table privileges remain limited to `service_role`, with RLS enabled as defense in depth.
+
+### Remaining acceptance gate
+
+This implementation is not yet enabled in Render. Before enabling it in staging, run the SQL bootstrap/migration on an isolated database and verify: project bootstrap and owner mismatch rejection; owner/editor writes; reviewer/viewer denial; cross-project reads return no records; concurrent append calls receive unique ordered revisions; no UPDATE/DELETE succeeds; restart and deployment recovery; and backup/restore. The app's ordinary audit log remains in the existing SQLite store; this milestone makes creative artifact records durable, not every local audit or project record.
