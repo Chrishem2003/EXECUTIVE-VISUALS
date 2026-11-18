@@ -448,9 +448,7 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation === "video-to-video" && ["aleph2", "seedance2_5", "kling_4", "kling_4_flash", "gemini_omni_flash_1.2"].includes(selectedModel)) {
         const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
         const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
-      const hasSeedanceReferences = selectedModel === "seedance2_5" &&
-        (Array.isArray(input.references) && input.references.length > 0 || Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
-      if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
+        if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
           throw fail("Video-edit prompt is empty or exceeds the selected model's limit.", "RUNWAY_INPUT_INVALID");
         }
         if (!isRunwayUri(input.videoUri)) throw fail("Video-to-video requires a prepared private source upload.", "RUNWAY_INPUT_INVALID");
@@ -539,11 +537,16 @@ export function createRunwayCloudVideoAdapter({
       }
       const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
-      if ((!hasMultiPrompt && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
+      const hasSeedanceReferences = selectedModel === "seedance2_5" &&
+        (Array.isArray(input.references) && input.references.length > 0 || Array.isArray(input.referenceAudio) && input.referenceAudio.length > 0);
+      if ((!hasMultiPrompt && !hasSeedanceReferences && (typeof input.prompt !== "string" || !input.prompt.trim())) || typeof input.prompt === "string" && input.prompt.length > promptLimit) {
         throw fail("Runway prompt is empty or exceeds the selected model's limit.", "VIDEO_JOB_INPUT_MISMATCH");
       }
-      if (input.referenceAssetIds?.length || input.referenceImageDataUrl) {
-        throw fail("Reference collections require the dedicated Runway Model Router adapter.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+      if (selectedModel !== "seedance2_5" && (
+        input.referenceAssetIds?.length || input.referenceImageAssetIds?.length ||
+        input.referenceAudioAssetIds?.length || input.referenceVideoAssetIds?.length || input.referenceImageDataUrl
+      )) {
+        throw fail("Reference collections require a model-specific verified adapter.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       const imageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       let payload;
