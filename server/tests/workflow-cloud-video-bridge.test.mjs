@@ -46,7 +46,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
    if(input.method==="POST"&&input.path==="/api/cloud/jobs/"+cloudJobId+"/cancel")return{status:202,body:{}};
    throw new Error("Unexpected cloud API call: "+input.method+" "+input.path);
   },
-  async uploadAsset({req,ownerId:uploadOwner,projectId:uploadProject,originalName,mediaType}){const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks);calls.push({method:"UPLOAD",ownerId:uploadOwner,projectId:uploadProject,originalName,mediaType,bytes});return{status:201,body:{asset:{id:"a23e4567-e89b-42d3-a456-426614174000",ownerId:uploadOwner,projectId:uploadProject,name:originalName,mediaType,size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")}}};}
+  async uploadAsset({req,ownerId:uploadOwner,projectId:uploadProject,originalName,mediaType}){const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks);calls.push({method:"UPLOAD",ownerId:uploadOwner,projectId:uploadProject,originalName,mediaType,bytes,streaming:!Buffer.isBuffer(req),declaredLength:req.headers?.["content-length"]||""});return{status:201,body:{asset:{id:"a23e4567-e89b-42d3-a456-426614174000",ownerId:uploadOwner,projectId:uploadProject,name:originalName,mediaType,size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")}}};}
  };
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",prompt:"A cinematic sunrise over a quiet lake.",durationSeconds:5,approvedMaxAmount:budget},outputs:[{id:"video",type:"video"}]};
  const requestId="workflow-"+createHash("sha256").update(runId+":"+node.id).digest("hex");
@@ -191,6 +191,8 @@ test("cloud workflow uploads a checksum-verified local source into the same priv
   assert.equal(upload.projectId,projectId);
   assert.equal(upload.originalName,"source.mp4");
   assert.equal(upload.mediaType,"video/mp4");
+  assert.equal(upload.streaming,true);
+  assert.equal(upload.declaredLength,String(video.length));
   assert.deepEqual(upload.bytes,video);
   const quote=f.calls.find(call=>call.path==="/api/cloud/workflows/video/quote");
   assert.equal(quote.body.values.sourceVideoAssetId,"a23e4567-e89b-42d3-a456-426614174000");

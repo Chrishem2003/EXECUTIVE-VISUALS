@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { Readable } from "node:stream";
+import { createReadStream } from "node:fs";
+import { Transform } from "node:stream";
 import { resolve, relative, sep } from "node:path";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { storeGeneratedVideo } from "./generated-assets.mjs";
@@ -17,6 +17,50 @@ function safeAssetPath(mediaRoot,asset){
  if(!stored||stored===".."||stored.startsWith(".."+sep)||absolute===root)throw fail("Workflow source asset path failed validation.","ASSET_PATH_INVALID");
  return absolute;
 }
+
+async function verifyLocalAssetFile(filePath,asset){
+ const expectedSize=Number(asset.byte_size),expectedHash=String(asset.sha256||"");
+ if(!Number.isSafeInteger(expectedSize)||expectedSize<1||expectedSize>MAX_VIDEO_BYTES||!/^[a-f0-9]{64}$/.test(expectedHash)){
+  throw fail("Workflow source asset size or checksum metadata is invalid.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
+ }
+ const hash=createHash("sha256");let size=0;
+ try{
+  for await(const chunk of createReadStream(filePath)){
+   size+=chunk.length;
+   if(size>MAX_VIDEO_BYTES||size>expectedSize)throw fail("Workflow source asset changed or exceeded its recorded size.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
+   hash.update(chunk);
+  }
+ }catch(error){
+  if(String(error?.code||"").startsWith("VIDEO_WORKFLOW_"))throw error;
+  throw fail("Workflow source asset could not be read for integrity verification.","VIDEO_WORKFLOW_INPUT_ASSET_UNAVAILABLE");
+ }
+ if(size!==expectedSize||hash.digest("hex")!==expectedHash){
+  throw fail("A workflow input asset changed or failed checksum verification.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
+ }
+ return expectedSize;
+}
+function createVerifiedAssetUploadStream(filePath,asset){
+ const expectedSize=Number(asset.byte_size),expectedHash=String(asset.sha256||"");
+ const hash=createHash("sha256");let size=0;
+ const source=createReadStream(filePath);
+ const verifier=new Transform({
+  transform(chunk,encoding,callback){
+   size+=chunk.length;
+   if(size>MAX_VIDEO_BYTES||size>expectedSize){callback(fail("Workflow source asset changed or exceeded its recorded size.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH"));return;}
+   hash.update(chunk);callback(null,chunk);
+  },
+  flush(callback){
+   if(size!==expectedSize||hash.digest("hex")!==expectedHash){callback(fail("Workflow source asset changed during private cloud upload.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH"));return;}
+   callback();
+  }
+ });
+ source.on("error",error=>verifier.destroy(error));
+ verifier.on("error",()=>source.destroy());
+ source.pipe(verifier);
+ verifier.headers={"content-length":String(expectedSize)};
+ return verifier;
+}
+
 function replaceAssetReferences(value,mapping){
  if(typeof value==="string")return mapping.get(value)||value;
  if(Array.isArray(value))return value.map(item=>replaceAssetReferences(item,mapping));
@@ -92,11 +136,8 @@ export async function executeCloudVideoWorkflowNode({
   const local=getAccessibleAsset(db,job.owner_id,localAssetId,false);
   if(!local||local.project_id&&local.project_id!==projectId)throw fail("A workflow reference asset is missing, inaccessible or belongs to another project.","VIDEO_WORKFLOW_INPUT_ASSET_FORBIDDEN");
   if(!["image/","video/","audio/"].some(prefix=>String(local.media_type||"").startsWith(prefix)))throw fail("Cloud video workflow inputs must be image, video or audio assets.","VIDEO_WORKFLOW_INPUT_ASSET_UNSUPPORTED");
-  const absolute=safeAssetPath(mediaRoot,local),buffer=await readFile(absolute);
-  if(buffer.length<1||buffer.length>MAX_VIDEO_BYTES||buffer.length!==Number(local.byte_size)||
-     createHash("sha256").update(buffer).digest("hex")!==local.sha256){
-   throw fail("A workflow input asset changed or failed checksum verification.","VIDEO_WORKFLOW_INPUT_ASSET_CHECKSUM_MISMATCH");
-  }
+  const absolute=safeAssetPath(mediaRoot,local);
+  await verifyLocalAssetFile(absolute,local);
   if(String(local.media_type||"").startsWith("video/")){
    let mediaProbe;
    try{mediaProbe=await probeMedia(absolute);validateMediaOutputProbe(mediaProbe,local.media_type);}
@@ -109,7 +150,7 @@ export async function executeCloudVideoWorkflowNode({
    if(existing?.status!==200||existing.body?.asset?.sha256!==local.sha256||existing.body?.asset?.projectId!==projectId)cloudAssetId="";
   }
   if(!cloudAssetId){
-   const stream=Readable.from([buffer]);stream.headers={"content-length":String(buffer.length)};
+   const stream=createVerifiedAssetUploadStream(absolute,local);
    const uploaded=await cloudTimelineApi.uploadAsset({req:stream,ownerId:job.owner_id,projectId,originalName:local.original_name,mediaType:local.media_type});
    if(uploaded?.status!==201||!UUID.test(String(uploaded.body?.asset?.id||""))||
       uploaded.body.asset.sha256!==local.sha256||uploaded.body.asset.projectId!==projectId){
