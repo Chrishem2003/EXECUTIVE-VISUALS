@@ -4,6 +4,7 @@ import { Readable, Transform } from "node:stream";
 import { resolve, relative, sep } from "node:path";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { storeGeneratedVideoFromStream } from "./generated-assets.mjs";
+import { verifyC2paAsset as verifyC2paAssetDefault } from "./c2pa-verification.mjs";
 import { createVideoWorkflowCloudRequest } from "./video-workflow-cloud-contract.mjs";
 import { createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { executableAvailable, run as runMediaProcess, validateMediaOutputProbe } from "./media.mjs";
@@ -11,6 +12,16 @@ import { executableAvailable, run as runMediaProcess, validateMediaOutputProbe }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_VIDEO_BYTES=250*1024*1024;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
+function normalizeC2paVerification(verification){
+ return{
+  status:["trusted","valid_untrusted","invalid","not_present","validation_unavailable"].includes(verification?.status)?verification.status:"validation_unavailable",
+  present:typeof verification?.present==="boolean"?verification.present:null,
+  valid:verification?.valid===true,
+  trusted:verification?.status==="trusted"&&verification?.trusted===true,
+  validationState:typeof verification?.validationState==="string"?verification.validationState:null,
+  findings:Array.isArray(verification?.findings)?verification.findings.filter(item=>typeof item==="string").slice(0,20):[]
+ };
+}
 function safeAssetPath(mediaRoot,asset){
  const root=resolve(mediaRoot),absolute=resolve(root,String(asset.storage_path||""));
  const stored=relative(root,absolute);
@@ -84,7 +95,7 @@ async function probeLocalMedia(filePath){
  */
 export async function executeCloudVideoWorkflowNode({
  db,job,run,node,values={},mediaRoot,cloudTimelineApi,
- onProgress=()=>{},onJobEnqueued=()=>{},onApprovalRequired=()=>{},fetchImpl=globalThis.fetch,probeMedia=probeLocalMedia,
+ onProgress=()=>{},onJobEnqueued=()=>{},onApprovalRequired=()=>{},fetchImpl=globalThis.fetch,probeMedia=probeLocalMedia,verifyC2paAsset=verifyC2paAssetDefault,
  pollIntervalMs=5000,waitForCompletion=false
 }={}){
  if(!cloudTimelineApi||typeof cloudTimelineApi.handle!=="function"||typeof cloudTimelineApi.uploadAsset!=="function"){
@@ -222,11 +233,33 @@ export async function executeCloudVideoWorkflowNode({
    const adapterVersion=provider==="google"?"google-gemini-omni-cloud-worker-v1":"runway-model-router-cloud-worker-v1";
    let actualDurationSeconds=null;
    const imported=[];
+   const assetProvenance=[];
+   async function verifyAndPersistC2pa(assetRecord){
+    let verification;
+    try{
+     const filePath=safeAssetPath(mediaRoot,{storage_path:assetRecord.storage_path});
+     verification=await verifyC2paAsset({filePath,mediaType:assetRecord.media_type||"video/mp4",expectedSha256:String(assetRecord.sha256||""),expectedSize:Number(assetRecord.byte_size)});
+    }catch(error){
+     verification={status:"validation_unavailable",present:null,valid:false,trusted:false,validationState:null,findings:[String(error?.code||"C2PA_VERIFICATION_ERROR").slice(0,160)]};
+    }
+    const summary=normalizeC2paVerification(verification);
+    const metadata={...parseJson(assetRecord.metadata_json,{}),c2paVerification:summary};
+    db.prepare("UPDATE assets SET metadata_json=? WHERE id=? AND owner_id=? AND project_id=?")
+     .run(json(metadata),assetRecord.id,job.owner_id,projectId);
+    assetProvenance.push({assetId:assetRecord.id,...summary});
+    return summary;
+   }
    for(const cloudAssetId of cloudAssetIds){
     if(!UUID.test(String(cloudAssetId)))throw fail("Cloud video output contains an invalid asset ID.","VIDEO_WORKFLOW_OUTPUT_INVALID");
-    const existing=db.prepare("SELECT id,metadata_json FROM assets WHERE owner_id=? AND project_id=? AND deleted_at IS NULL AND metadata_json LIKE ? LIMIT 1")
+    const existing=db.prepare("SELECT id,metadata_json,storage_path,byte_size,sha256,media_type FROM assets WHERE owner_id=? AND project_id=? AND deleted_at IS NULL AND metadata_json LIKE ? LIMIT 1")
      .get(job.owner_id,projectId,"%\"cloudWorkspaceAssetId\":\""+cloudAssetId+"\"%");
-    if(existing){imported.push(existing.id);continue;}
+    if(existing){
+     imported.push(existing.id);
+     const metadata=parseJson(existing.metadata_json,{});
+     if(metadata.c2paVerification&&typeof metadata.c2paVerification==="object")assetProvenance.push({assetId:existing.id,...normalizeC2paVerification(metadata.c2paVerification)});
+     else await verifyAndPersistC2pa(existing);
+     continue;
+    }
     const signed=await cloudTimelineApi.handle({method:"GET",path:"/api/cloud/assets/"+cloudAssetId,ownerId:job.owner_id});
     if(signed?.status!==200)throw cloudResultError(signed,"VIDEO_WORKFLOW_OUTPUT_ASSET_UNAVAILABLE");
     const asset=signed.body?.asset,url=signed.body?.url;
@@ -252,8 +285,9 @@ export async function executeCloudVideoWorkflowNode({
     const provenance=createVideoRequestProvenance(initial.input,{provider,model,adapterVersion});
     const local=await storeGeneratedVideoFromStream({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model,provenance,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256,stream:Readable.fromWeb(response.body),expectedSize:asset.size,expectedSha256:asset.sha256});
     imported.push(local.id);
+    await verifyAndPersistC2pa({id:local.id,metadata_json:json(local.metadata),storage_path:local.storagePath,byte_size:local.size,sha256:local.sha256,media_type:local.mediaType});
    }
-   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,cloudAssetIds:[...cloudAssetIds],
+   const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,assetProvenance,cloudAssetIds:[...cloudAssetIds],
     durationSeconds:provider==="google"?actualDurationSeconds:Number(initial.input.durationSeconds),
     provider,model,
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,

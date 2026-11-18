@@ -17,7 +17,7 @@ const quoteId="923e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4"}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
@@ -27,7 +27,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
   if(sql.startsWith("SELECT role FROM project_members"))return{get:()=>null};
   if(sql.startsWith("SELECT status,lease_owner,lease_expires_at,lease_token FROM jobs"))return{get:()=>localJob};
   if(sql.startsWith("SELECT output_json FROM workflow_node_runs"))return{get:()=>priorOutput?{output_json:JSON.stringify(priorOutput)}:null};
-  if(sql.startsWith("SELECT id,metadata_json FROM assets"))return{get:()=>null};
+  if(sql.startsWith("SELECT id,metadata_json,storage_path,byte_size,sha256,media_type FROM assets"))return{get:()=>existingAsset};
   if(sql.startsWith("INSERT INTO assets"))return{run(...args){stored.push({sql,args});}};
   if(sql.startsWith("UPDATE assets SET metadata_json"))return{run(...args){stored.push({sql,args});}};
   throw new Error("Unexpected SQL in workflow bridge test: "+sql);
@@ -336,7 +336,14 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   const result=await executeCloudVideoWorkflowNode({
    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
-   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}})
+   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}}),
+   verifyC2paAsset:async input=>{
+    assert.equal(input.mediaType,"video/mp4");
+    assert.equal(input.expectedSha256,sha256);
+    assert.equal(input.expectedSize,video.length);
+    assert.ok(input.filePath.endsWith(".mp4"));
+    return{status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]};
+   }
   });
   assert.equal(result.provider,"runway");
   assert.equal(result.cloudJobId,cloudJobId);
@@ -346,6 +353,10 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   assert.equal(result.costEvidenceReference,"cost:verified");
   assert.equal(result.actualAmount,0.72);
   assert.equal(result.currency,"USD");
+  assert.deepEqual(result.assetProvenance,[{assetId:result.assetId,status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]}]);
+  const metadataUpdate=f.stored.find(item=>item.sql.startsWith("UPDATE assets SET metadata_json"));
+  assert.ok(metadataUpdate,"C2PA verification snapshot must be persisted with the imported private asset");
+  assert.equal(JSON.parse(metadataUpdate.args[0]).c2paVerification.status,"valid_untrusted");
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false);
   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
   assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,1);
@@ -359,6 +370,61 @@ test("approved cloud receipt resumes polling and imports checksum-verified priva
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
  }
+});
+
+test("C2PA verifier errors are recorded as unavailable without losing a checksum-verified cloud output",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-c2pa-unavailable-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}}),
+   verifyC2paAsset:async()=>{throw Object.assign(new Error("SDK unavailable"),{code:"C2PA_SDK_UNAVAILABLE"});}
+  });
+  assert.equal(result.assetIds.length,1);
+  assert.equal(result.assetProvenance[0].status,"validation_unavailable");
+  assert.deepEqual(result.assetProvenance[0].findings,["C2PA_SDK_UNAVAILABLE"]);
+  const metadataUpdate=f.stored.find(item=>item.sql.startsWith("UPDATE assets SET metadata_json"));
+  assert.equal(JSON.parse(metadataUpdate.args[0]).c2paVerification.status,"validation_unavailable");
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+
+test("idempotent recovery verifies an existing cloud import that has no C2PA snapshot",async()=>{
+ const seed=fixture();
+ const existingAsset={id:"a23e4567-e89b-42d3-a456-426614174000",metadata_json:JSON.stringify({cloudWorkspaceAssetId:cloudAssetId}),
+  storage_path:owner+"/"+projectId+"/existing.mp4",byte_size:video.length,sha256,media_type:"video/mp4"};
+ const f=fixture({priorOutput:{cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"},existingAsset});
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-c2pa-recovery-"));
+ try{
+  await mkdir(join(mediaRoot,owner,projectId),{recursive:true});
+  await writeFile(join(mediaRoot,existingAsset.storage_path),video);
+  let verificationCalls=0;
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   verifyC2paAsset:async input=>{
+    verificationCalls++;
+    assert.equal(input.expectedSha256,sha256);
+    assert.equal(input.expectedSize,video.length);
+    return{status:"not_present",present:false,valid:false,trusted:false,findings:["C2PA_MANIFEST_NOT_PRESENT"]};
+   }
+  });
+  assert.equal(verificationCalls,1);
+  assert.deepEqual(result.assetIds,[existingAsset.id]);
+  assert.equal(result.assetProvenance[0].status,"not_present");
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,0);
+  const update=f.stored.find(item=>item.sql.startsWith("UPDATE assets SET metadata_json"));
+  assert.ok(update);
+  assert.equal(JSON.parse(update.args[0]).c2paVerification.status,"not_present");
+ }finally{await rm(mediaRoot,{recursive:true,force:true});}
 });
 
 
