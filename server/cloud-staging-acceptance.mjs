@@ -11,7 +11,7 @@ function check(id,passed,reason){
 export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
  let url=null;
  try{url=new URL(String(baseUrl||""));}catch{}
- const targetValid=Boolean(url&&url.protocol==="https:"&&url.hostname.toLowerCase()===STAGING_HOST&&
+ const targetValid=Boolean(url&&url.protocol==="https:"&&url.hostname.toLowerCase()===STAGING_HOST&&url.port===""&&
   !url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==="/"||url.pathname===""));
  const worker=health?.cloudVideoWorker||{};
  const media=health?.cloudMedia||{};
@@ -28,8 +28,8 @@ export function evaluateCloudStagingAcceptance({baseUrl,health,readiness}={}){
    "The authenticated cloud media jobs API is not enabled."),
   check("cloud-worker-configured",worker.enabled===true&&worker.outputHostAllowlistConfigured===true,
    "The cloud worker gates or bounded output-host allowlist are not configured."),
-  check("paid-provider-execution-disabled",worker.remoteExecutionGates!==true,
-   "Remote provider execution must remain disabled during no-cost staging acceptance."),
+  check("paid-provider-execution-disabled",worker.remoteExecutionGates===false,
+   "Remote provider execution must be explicitly disabled during no-cost staging acceptance."),
   check("application-readiness",readiness?.ready===true&&readiness?.status==="ready",
    "The application readiness endpoint reports one or more blocked deployment checks.")
  ];
