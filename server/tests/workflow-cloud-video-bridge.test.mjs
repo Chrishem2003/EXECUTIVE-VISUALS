@@ -14,10 +14,12 @@ const jobId="623e4567-e89b-42d3-a456-426614174000";
 const cloudJobId="723e4567-e89b-42d3-a456-426614174000";
 const cloudAssetId="823e4567-e89b-42d3-a456-426614174000";
 const quoteId="923e4567-e89b-42d3-a456-426614174000";
+const sourceDraftJobId="a23e4567-e89b-42d3-a456-426614174000";
+const sourceDraftTaskId="b23e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null,sourceDraftJob=null}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
@@ -36,11 +38,12 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
   async handle(input){
    calls.push(input);
    if(input.method==="GET"&&input.path==="/api/cloud/projects/"+projectId)return{status:200,body:{project:{id:projectId}}};
-   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:request.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,provider:"runway",model:"seedance2_5",operation:"generate",routedProvider:"runway",estimatedCredits:42,estimatedAmount:1,currency:"USD",pricingSource:"runway_model_router_dry_run",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/",expiresAt:"2026-11-30T23:59:00.000Z",paidExecutionEnabled:true,billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model",configId:"runway-direct-seedance-2-5"}}};}
+   if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/quote"){const quotedRequest=createVideoWorkflowCloudRequest({node:input.body.node,values:input.body.values,projectId,requestId:input.body.requestId});return{status:200,body:{quote:{id:quoteId,requestId:quotedRequest.requestId,requestHash:quotedRequest.requestHash,provider:"runway",model:"seedance2_5",operation:input.body.node.config?.operation==="draft-enhancement"?"draft-enhancement":"generate",routedProvider:"runway",estimatedCredits:42,estimatedAmount:1,currency:"USD",pricingSource:"runway_model_router_dry_run",pricingUrl:"https://docs.dev.runwayml.com/guides/pricing/",expiresAt:"2026-11-30T23:59:00.000Z",paidExecutionEnabled:true,billable:false,requiresExplicitApproval:true,routedModel:"routed-video-model",configId:"runway-direct-seedance-2-5"}}};}
    if(input.method==="POST"&&input.path==="/api/cloud/workflows/video/approve"){
     if(input.body.approvedMaxAmount<1)return{status:409,body:{error:{code:"VIDEO_WORKFLOW_BUDGET_BELOW_QUOTE",message:"Budget below quote"}}};
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
    }
+   if(input.method==="GET"&&sourceDraftJob&&input.path==="/api/cloud/jobs/"+sourceDraftJob.id)return{status:200,body:{job:sourceDraftJob}};
    if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:request.requestId,requestHash:request.requestHash,approvedMaxAmount:2},status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},actualAmount:0.72,currency:"USD",costEvidenceReference:"cost:verified"}:null}}};
    if(input.method==="GET"&&input.path==="/api/cloud/assets/"+cloudAssetId)return{status:200,body:{asset:{id:cloudAssetId,projectId,mediaType:"video/mp4",size:video.length,sha256},url:"https://supabase.example/storage/v1/object/sign/video"}};
    if(input.method==="POST"&&input.path==="/api/cloud/jobs/"+cloudJobId+"/cancel")return{status:202,body:{}};
@@ -50,7 +53,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
  };
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",prompt:"A cinematic sunrise over a quiet lake.",durationSeconds:5,approvedMaxAmount:budget},outputs:[{id:"video",type:"video"}]};
  const requestId="workflow-"+createHash("sha256").update(runId+":"+node.id).digest("hex");
- const request=createVideoWorkflowCloudRequest({node,values,projectId,requestId});
+ const request=node.config.operation==="draft-enhancement"?null:createVideoWorkflowCloudRequest({node,values,projectId,requestId});
  return{db,stored,calls,localJob,cloudTimelineApi,node,request,values};
 }
 
@@ -134,6 +137,73 @@ test("Luma source-video edit privately transfers the project video before quotin
   await rm(mediaRoot,{recursive:true,force:true});
  }
 });
+
+test("Seedance draft enhancement resolves the original task only from a recent succeeded same-project private cloud job",async()=>{
+ const sourceDraftJob={
+  id:sourceDraftJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",status:"succeeded",
+  created_at:new Date(Date.now()-60*60*1000).toISOString(),
+  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",draftTargetResolution:"1080p",requestHash:"a".repeat(64)},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:sourceDraftTaskId,assetIds:[cloudAssetId]}
+ };
+ const f=fixture({sourceDraftJob}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-seedance-enhance-")),prior=process.env.SUPABASE_URL;
+ f.node.config={provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p"};
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+  });
+  assert.equal(result.awaitingApproval,true);
+  const lookup=f.calls.find(call=>call.method==="GET"&&call.path==="/api/cloud/jobs/"+sourceDraftJobId);
+  assert.ok(lookup,"source draft must be resolved through the owner-authorized cloud job API");
+  assert.equal(lookup.ownerId,owner);
+  const quote=f.calls.find(call=>call.path==="/api/cloud/workflows/video/quote");
+  assert.ok(quote);
+  assert.equal(quote.body.node.config.sourceDraftJobId,sourceDraftJobId);
+  assert.equal(quote.body.node.config.draftTaskId,sourceDraftTaskId);
+  assert.equal(quote.body.node.config.operation,"draft-enhancement");
+  assert.equal(quote.body.node.config.resolution,"1080p");
+  assert.equal(quote.body.node.config.draft,undefined);
+  assert.equal(quote.body.node.config.draftEnhancement,true);
+  assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/approve"),false);
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+test("Seedance draft enhancement rejects stale, incomplete, failed, cross-owner and cross-project source jobs before quoting",async()=>{
+ const base={
+  id:sourceDraftJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",status:"succeeded",
+  created_at:new Date(Date.now()-60*60*1000).toISOString(),
+  input:{provider:"runway",model:"seedance2_5",draft:true,resolution:"480p",draftTargetResolution:"1080p",requestHash:"a".repeat(64)},
+  output:{provider:"runway",model:"seedance2_5",providerTaskId:sourceDraftTaskId,assetIds:[cloudAssetId]}
+ };
+ const cases=[
+  ["failed", {...base,status:"failed"},"VIDEO_WORKFLOW_DRAFT_SOURCE_NOT_READY"],
+  ["cross-owner", {...base,owner_id:"c23e4567-e89b-42d3-a456-426614174000"},"VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN"],
+  ["cross-project", {...base,project_id:"c23e4567-e89b-42d3-a456-426614174000"},"VIDEO_WORKFLOW_DRAFT_SOURCE_FORBIDDEN"],
+  ["stale", {...base,created_at:new Date(Date.now()-8*24*60*60*1000).toISOString()},"VIDEO_WORKFLOW_DRAFT_SOURCE_NOT_READY"],
+  ["not-a-draft", {...base,input:{...base.input,draft:false}},"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID"],
+  ["missing-task", {...base,output:{...base.output,providerTaskId:null}},"VIDEO_WORKFLOW_DRAFT_SOURCE_INVALID"]
+ ];
+ for(const [label,sourceDraftJob,expectedCode] of cases){
+  const f=fixture({sourceDraftJob}),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-seedance-reject-")),prior=process.env.SUPABASE_URL;
+  f.node.config={provider:"runway",model:"seedance2_5",operation:"draft-enhancement",sourceDraftJobId,durationSeconds:8,aspectRatio:"16:9",resolution:"1080p"};
+  process.env.SUPABASE_URL="https://supabase.example";
+  try{
+   await assert.rejects(()=>executeCloudVideoWorkflowNode({
+    db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+    run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi
+   }),error=>error.code===expectedCode,label);
+   assert.equal(f.calls.some(call=>call.path==="/api/cloud/workflows/video/quote"),false,label+" must fail before quoting");
+  }finally{
+   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+   await rm(mediaRoot,{recursive:true,force:true});
+  }
+ }
+});
+
 test("cloud workflow node creates a non-billable quote and pauses without approving or enqueueing",async()=>{
  const f=fixture(),mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-quote-test-")),prior=process.env.SUPABASE_URL;
  process.env.SUPABASE_URL="https://supabase.example";
