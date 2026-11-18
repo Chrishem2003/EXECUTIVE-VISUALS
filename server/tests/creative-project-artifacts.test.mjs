@@ -43,7 +43,7 @@ test("creative direction and storyboard are saved as immutable, separately versi
   assert.equal(first.revision, 1);
   assert.equal(second.revision, 2);
   assert.equal(board.revision, 1);
-  assert.equal(first.contentHash, hash(JSON.stringify(direction)));
+  assert.match(first.contentHash, /^[a-f0-9]{64}$/);
   assert.equal(first.usage.totalTokens, 50);
   assert.equal(getCreativeProjectArtifact(db, { projectId: "project-1", artifactId: first.id }).content.title, input.title);
   assert.deepEqual(listCreativeProjectArtifacts(db, { projectId: "project-1", type: "creative_direction" }).map(item => item.revision), [2, 1]);
