@@ -123,7 +123,7 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("Seedance text-to-video requires a prompt or at least one reference asset");
   }
   if (isSeedanceImageToVideo && !request.prompt &&
-      !request.startFrameAssetId && !request.referenceAssetIds.length) {
+      !input.startFrameAssetId && !request.referenceAssetIds.length) {
     throw new VideoGenerationValidationError("Seedance image-to-video requires a first frame or at least one reference image");
   }
   if (isSeedanceImageToVideo && request.referenceVideoAssetIds.length) {
