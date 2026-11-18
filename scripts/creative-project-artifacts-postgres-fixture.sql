@@ -7,6 +7,7 @@ BEGIN
 END
 $authenticator$;
 GRANT anon,authenticated,service_role TO authenticator;
+GRANT USAGE ON SCHEMA executive_visuals,auth TO authenticator;
 GRANT USAGE ON SCHEMA executive_visuals TO anon;
 
 -- Add only the missing Supabase project columns to the disposable CI harness.
