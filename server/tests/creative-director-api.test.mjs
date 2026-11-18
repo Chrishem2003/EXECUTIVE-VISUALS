@@ -148,6 +148,8 @@ test("Creative Director project access is owner-scoped and blocks another user's
   }, other);
   assert.equal(response.status, 404);
   assert.equal((await response.json()).error.code, "PROJECT_NOT_FOUND");
+  const hidden=await request("/api/projects/"+ownedProjectId+"/creative-artifacts",{},other);
+  assert.equal(hidden.status,404);
   assert.equal(gatewayRequests, before);
 });
 
