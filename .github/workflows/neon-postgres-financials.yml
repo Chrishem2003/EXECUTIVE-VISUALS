@@ -54,6 +54,7 @@ on:
       - "scripts/verify-neon-video-enqueue-postgres.sql"
       - "scripts/verify-neon-video-approval-bridge-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
+      - "scripts/verify-neon-worker-concurrency.mjs"
       - ".github/workflows/neon-postgres-financials.yml"
   workflow_dispatch:
 permissions:
