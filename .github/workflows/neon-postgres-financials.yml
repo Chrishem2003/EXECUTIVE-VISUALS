@@ -1,0 +1,52 @@
+name: Neon PostgreSQL financial integration
+on:
+  pull_request:
+    paths:
+      - "database/neon/migrations/**"
+      - "server/neon-postgres-video-financials.mjs"
+      - "server/tests/neon-postgres-video-financials.test.mjs"
+      - "scripts/verify-neon-financials-postgres.sql"
+      - ".github/workflows/neon-postgres-financials.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: neon-postgres-financials-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  neon-financials:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: neon_ci
+          POSTGRES_PASSWORD: neon_ci_only
+          POSTGRES_DB: executive_visuals_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neon_ci -d executive_visuals_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://neon_ci:neon_ci_only@localhost:5432/executive_visuals_ci
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Wait for disposable PostgreSQL
+        run: |
+          for attempt in $(seq 1 30); do
+            pg_isready -d "$DATABASE_URL" && exit 0
+            sleep 2
+          done
+          exit 1
+      - name: Apply Neon queue, submission and financial migrations to disposable PostgreSQL
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0001_worker_queue.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0002_video_submission_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0003_video_financial_controls.sql
+      - name: Verify real PostgreSQL reservation, idempotency, settlement and verified release
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
