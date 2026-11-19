@@ -75,7 +75,19 @@ The asset service now includes a dedicated `neon-object-storage.mjs` adapter and
 
 The existing canonical bucket contract also expects `executive-visuals-media`. Any Neon bucket adapter must preserve that logical bucket contract or introduce a reviewed migration for configurable bucket identifiers. No existing storage provider should be switched automatically.
 
-## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Required acceptance before connecting Render staging
+## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Pre-ingestion customer-credit settlement — migration 0005
+
+The existing video executor settles customer credits after provider usage is authoritatively measured but before generated outputs are ingested into private storage. Migration `0005_pre_ingestion_credit_settlement.sql` now gives the Neon adapter the same explicit `settleJob` contract:
+
+- `settle_video_generation_customer_credits_v1` validates the owner/job/provider scope, requires a durable submitted provider task matching the evidence ID, and checks the active budget and credit reservations.
+- Customer-credit settlement is idempotent: replaying the same measured usage evidence returns the original settlement; a different amount or evidence tuple is rejected.
+- The final financial closeout accepts an already-settled customer-credit reservation, but still requires the provider budget reservation to be active and settles provider cost exactly once.
+- A settled customer-credit reservation cannot be released as a failed/no-charge job. Only a still-reserved credit reservation can be released, and only with verified no-charge/no-submission evidence.
+- The adapter method is named `settleJob` to match the current worker's customer-credit interface.
+
+The disposable PostgreSQL integration now exercises pre-ingestion settlement, exact replay and subsequent worker finalization. This resolves one known accounting contract mismatch; it does **not** complete worker composition, tenant authorization, provider reconciliation, or private asset publication. The migration remains source-controlled and has not been applied to the real Neon branch.
+
+## Required acceptance before connecting Render staging
 
 - [ ] Confirm the Neon project is dedicated to staging and its region/Free entitlement.
 - [ ] Confirm the `staging-base` branch is empty or contains only synthetic test fixtures.
