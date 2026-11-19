@@ -22,7 +22,6 @@ test("composes Neon queue, submission and financial adapters without network act
       if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
       if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
       if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
-      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
       throw new Error("Unexpected query");
     },
     async end() { ended++; }
@@ -55,6 +54,7 @@ test("readiness includes private storage when an adapter is explicitly supplied"
     async query(sql) {
       if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
       if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
+      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
       throw new Error("Unexpected query");
     },
     async end() {}
