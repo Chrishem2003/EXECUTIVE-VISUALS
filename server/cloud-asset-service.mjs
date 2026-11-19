@@ -3,6 +3,7 @@ import { createCloudAssetRepository } from "./cloud-assets.mjs";
 import { createCloudStorage } from "./cloud-storage.mjs";
 import { createCloudflareR2Storage } from "./cloudflare-r2-storage.mjs";
 import { createBackblazeB2Storage } from "./backblaze-b2-storage.mjs";
+import { createNeonObjectStorage } from "./neon-object-storage.mjs";
 
 /**
  * Compose the production cloud asset boundary with the private storage and
@@ -15,10 +16,14 @@ export function createCloudAssetService(options={}) {
  let storage=options.storage||null;
  // The current asset metadata schema, publication RPCs and cleanup ledger intentionally
  // pin all objects to this bucket. Reject a custom R2 bucket before any upload can occur.
- if(!storage&&["r2","b2"].includes(storageProvider)&&String((storageProvider==="r2"?options.r2?.bucket??process.env.R2_BUCKET:options.b2?.bucket??process.env.B2_BUCKET)||"executive-visuals-media")!=="executive-visuals-media"){
-  throw new Error("R2_BUCKET must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.");
+ if(!storage&&["r2","b2","neon"].includes(storageProvider)&&String((storageProvider==="r2"?options.r2?.bucket??process.env.R2_BUCKET:storageProvider==="b2"?options.b2?.bucket??process.env.B2_BUCKET:options.neon?.bucket??process.env.NEON_STORAGE_BUCKET)||"executive-visuals-media")!=="executive-visuals-media"){
+  throw new Error("The selected storage bucket must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.");
  }
- if(!storage&&storageProvider==="b2")storage=createBackblazeB2Storage({
+ if(!storage&&storageProvider==="neon")storage=createNeonObjectStorage({
+  ...(options.neon||{}),fetchImpl:options.storageFetchImpl||options.fetchImpl||globalThis.fetch,
+  timeoutMs:options.storageTimeoutMs??30000,maxBytes:options.maxBytes??250*1024*1024
+ });
+ else if(!storage&&storageProvider==="b2")storage=createBackblazeB2Storage({
   ...(options.b2||{}),fetchImpl:options.storageFetchImpl||options.fetchImpl||globalThis.fetch,
   timeoutMs:options.storageTimeoutMs??30000,maxBytes:options.maxBytes??250*1024*1024
  });
@@ -29,7 +34,7 @@ export function createCloudAssetService(options={}) {
  else if(!storage&&storageProvider==="supabase")storage=createCloudStorage({
   ...shared,timeoutMs:options.storageTimeoutMs??30000,maxBytes:options.maxBytes??250*1024*1024
  });
- else if(!storage)throw new Error("CLOUD_MEDIA_STORAGE_PROVIDER must be supabase, r2 or b2.");
+ else if(!storage)throw new Error("CLOUD_MEDIA_STORAGE_PROVIDER must be supabase, r2, b2 or neon.");
  const authorize=options.authorize||createCloudAssetAuthorizer({
   ...shared,
   timeoutMs:options.authorizationTimeoutMs??8000
