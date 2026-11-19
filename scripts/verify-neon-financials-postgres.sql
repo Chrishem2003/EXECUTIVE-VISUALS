@@ -67,9 +67,19 @@ begin
  if not replay_result.replayed or replay_result.balance<>925 or replay_result.adjustment<>25 then
   raise exception 'customer credit settlement replay mismatch';
  end if;
-end $$;
+ begin
+  perform * from executive_visuals.finalize_video_generation_financials_v1(
+   '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+   'failed',null,null,
+   '{"provider":"runway","evidenceType":"verified_no_submission","evidenceId":"wrong-release","evidenceReference":"not-billable"}'::jsonb
+  );
+  raise exception 'settled customer credits were released as a failure';
+ exception when others then
+  if sqlerrm<>'VIDEO_SETTLED_CREDITS_CANNOT_BE_RELEASED' then raise; end if;
+ end;
+end $;
 
-do $$
+do $
 declare ok boolean; lease_value uuid;
 begin
  select lease_token into lease_value from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
