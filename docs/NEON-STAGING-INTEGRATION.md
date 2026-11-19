@@ -123,3 +123,51 @@ Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries.
 - [ ] Connect a separate staging worker only after all preceding gates pass.
 
 No branch, database, schema, credential, bucket, Render setting, or production resource was changed by this repository implementation.
+
+
+## Neon financial controls — migration 0003
+
+The isolated PostgreSQL foundation now includes `database/neon/migrations/0003_video_financial_controls.sql` and `server/neon-postgres-video-financials.mjs`.
+
+### What it implements
+
+- A server-owned, append-only customer credit ledger and reservation records, with account suspension support.
+- Provider/model/project-scoped spend policies: total spend ceiling, per-job ceiling, rolling 24-hour request ceiling, currency and enable/disable state.
+- Short-lived, one-use budget approvals bound to the exact owner, project, provider, model and SHA-256 request hash.
+- Atomic reservation of provider budget and customer credits in one PostgreSQL transaction. The function locks the job, approval, customer account and budget policy; validates the exact request; checks available credits, policy headroom and request-rate limits; then consumes the approval.
+- Provider-evidence-backed settlement or release. Successful/partial completion requires measured actual amount, measured customer-credit units, provider task receipt/invoice/usage evidence and a matching provider/model/task/reference in the output.
+- A single lease-fenced `finish_video_generation_job_v1` function that finalizes financial reservations, writes the immutable provider-cost record, updates the job terminal state and emits the job event in the same database transaction.
+- Idempotent reservation replay even after the one-use approval has been consumed. Replays must match the original reservation owner, approval, budget and credit quantities.
+- A read-only financial schema readiness function and adapter tests.
+
+### Important safeguards and limitations
+
+- Neon has no assumed Supabase `auth.users` table. Owner IDs are opaque UUIDs supplied only after the application's server-side identity verification; no browser database credential is supported.
+- All financial functions are revoked from PostgreSQL `PUBLIC`. The staging plan must create/review a least-privilege login role and grant only the required RPC execution privileges. Do not use the Neon project owner role as the application role.
+- Customer-credit grants and budget policy/approval issuance are privileged server-side operations; this migration does not provide browser-facing routes or self-service admin UI.
+- The financial adapter is a database boundary, not yet wired into the existing Supabase cloud-worker composition. The Neon worker cutover still requires the complete auth/session strategy, provider gateway, private asset publication, approval UX and a staged integration test.
+- Successful provider work is deliberately blocked without a budget reservation, credit reservation and matching provider cost evidence. Actual charges greater than the reserved cap are quarantined for review rather than silently overdrawn.
+- The SQL remains source-controlled only. It has not been executed against Neon.
+
+### Required grants before any staging worker can connect
+
+After separately approving the isolated branch and creating a dedicated non-owner login role, review and grant only:
+- `EXECUTE` on `configure_video_budget_policy_v1`, `issue_video_budget_approval_v1`, `reserve_video_generation_financials_v1`, `finish_video_generation_job_v1`, `get_video_financial_readiness_v1` to the server worker/service role as appropriate.
+- `EXECUTE` on `grant_generation_credits_v1` only to the billing administration service identity, never the ordinary worker or browser role.
+- The worker queue and submission RPCs only to the dedicated worker identity.
+
+No table grants to browser roles are needed. Recheck function ownership, SECURITY DEFINER search paths and role membership during the migration review.
+
+### Neon pooling compatibility
+
+The financial functions use transaction-scoped row locks and `pg_advisory_xact_lock`, not session-scoped advisory locks or session `SET search_path`. Queries fully qualify schema objects. This is intentional for Neon's PgBouncer transaction pooling. Application traffic must use the pooled `-pooler` endpoint; migrations and administrative work use the direct endpoint. See the official [Neon connection-pooling guide](https://neon.com/docs/connect/connection-pooling) and [PostgreSQL explicit-locking guide](https://www.postgresql.org/docs/16/explicit-locking.html).
+
+### Remaining release gates
+
+- [ ] Install and lock the `pg` runtime dependency after reviewing the existing lockfile.
+- [ ] Add the Neon database pool and financial adapter to a separate, opt-in worker composition; keep Supabase default unchanged.
+- [ ] Port the existing budget quote/preflight and approval API into the Neon identity model.
+- [ ] Add authenticated owner/project authorization before issuing approvals or grants.
+- [ ] Integrate real provider cost resolvers and map cost evidence to the financial finalization contract.
+- [ ] Add live Neon tests for concurrent reservations, approval replay, insufficient balance, spend caps, worker lease loss, process restart and exactly-once settlement.
+- [ ] Review and apply migrations only on the separately approved isolated Neon staging branch.
