@@ -1,5 +1,6 @@
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function requireFunction(value, name) {
@@ -31,7 +32,21 @@ export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
     async claim(id, leaseSeconds, jobTypes) {
       if (id !== workerId) throw new Error("Neon worker claim identity mismatch.");
       const job = await durableQueue.claim(id, leaseSeconds, jobTypes);
-      if (job) activeJobs.set(job.id, job);
+      if (!job) return null;
+      if (!UUID.test(String(job.owner_id || "")) || !UUID.test(String(job.project_id || ""))) {
+        if (!UUID.test(String(job.lease_token || ""))) {
+          throw fail("Neon claimed a job with invalid tenant scope and no usable fencing token; it cannot be safely quarantined.", "VIDEO_JOB_SCOPE_INVALID");
+        }
+        await durableQueue.quarantine(job.id, id, job.lease_token, {
+          code: "VIDEO_JOB_SCOPE_INVALID",
+          message: "Video generation requires valid authenticated owner and project identifiers."
+        });
+        return null;
+      }
+      if (!UUID.test(String(job.id || "")) || !UUID.test(String(job.lease_token || ""))) {
+        throw fail("Neon claimed a job without valid job and fencing identifiers.", "VIDEO_JOB_CLAIM_INVALID");
+      }
+      activeJobs.set(job.id, job);
       return job;
     },
     renew: (...args) => durableQueue.renew(...args),
