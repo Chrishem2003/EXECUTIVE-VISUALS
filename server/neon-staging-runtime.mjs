@@ -3,6 +3,7 @@ import { createNeonPostgresQueue } from "./neon-postgres-queue.mjs";
 import { createNeonVideoSubmissionLedger } from "./neon-postgres-video-submissions.mjs";
 import { createNeonVideoFinancials } from "./neon-postgres-video-financials.mjs";
 import { createNeonVideoEnqueue } from "./neon-postgres-video-enqueue.mjs";
+import { createNeonVideoGenerationRepositories } from "./neon-postgres-video-approvals.mjs";
 import { createNeonObjectStorage } from "./neon-object-storage.mjs";
 
 /**
@@ -16,7 +17,8 @@ export async function createNeonStagingRuntime({
   pool: suppliedPool,
   storage: suppliedStorage = null,
   storageOptions = {},
-  includeStorage = false
+  includeStorage = false,
+  quoteCustomerCredits = null
 } = {}) {
   if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
     throw new Error("Neon staging runtime is disabled; set NEON_STAGING_RUNTIME_ENABLED=true only for the isolated staging worker.");
@@ -41,6 +43,9 @@ export async function createNeonStagingRuntime({
     const submissions = createNeonVideoSubmissionLedger({ pool });
     const financials = createNeonVideoFinancials({ pool });
     const videoEnqueue = createNeonVideoEnqueue({ pool });
+    const videoApprovals = typeof quoteCustomerCredits === "function"
+      ? createNeonVideoGenerationRepositories({ pool, videoEnqueue, quoteCustomerCredits })
+      : null;
     let closed = false;
 
     return Object.freeze({
@@ -50,14 +55,16 @@ export async function createNeonStagingRuntime({
       submissions,
       financials,
       videoEnqueue,
+      videoApprovals,
       customerCredits: financials,
       storage,
       async checkReadiness() {
         if (closed) throw new Error("Neon staging runtime is closed.");
-        const [queueStatus, financialStatus, enqueueStatus, storageStatus] = await Promise.all([
+        const [queueStatus, financialStatus, enqueueStatus, approvalStatus, storageStatus] = await Promise.all([
           queue.checkReadiness(),
           financials.checkReadiness(),
           videoEnqueue.checkReadiness(),
+          videoApprovals ? videoApprovals.approvals.checkReadiness() : Promise.resolve(null),
           storage?.checkReadiness ? storage.checkReadiness() : Promise.resolve(null)
         ]);
         return Object.freeze({
@@ -65,9 +72,12 @@ export async function createNeonStagingRuntime({
           branch: "executive-visuals-staging",
           ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
             (!storage || storageStatus?.ready === true),
+          applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true && approvalStatus?.ready === true &&
+            (!storage || storageStatus?.ready === true),
           queue: queueStatus,
           financials: financialStatus,
           videoEnqueue: enqueueStatus,
+          videoApprovals: approvalStatus || { configured: false, ready: false },
           storage: storageStatus
         });
       },
