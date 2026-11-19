@@ -2,6 +2,7 @@ import { createNeonPostgresPool } from "./neon-postgres-pool.mjs";
 import { createNeonPostgresQueue } from "./neon-postgres-queue.mjs";
 import { createNeonVideoSubmissionLedger } from "./neon-postgres-video-submissions.mjs";
 import { createNeonVideoFinancials } from "./neon-postgres-video-financials.mjs";
+import { createNeonVideoEnqueue } from "./neon-postgres-video-enqueue.mjs";
 import { createNeonObjectStorage } from "./neon-object-storage.mjs";
 
 /**
@@ -39,6 +40,7 @@ export async function createNeonStagingRuntime({
     const queue = createNeonPostgresQueue({ pool });
     const submissions = createNeonVideoSubmissionLedger({ pool });
     const financials = createNeonVideoFinancials({ pool });
+    const videoEnqueue = createNeonVideoEnqueue({ pool });
     let closed = false;
 
     return Object.freeze({
@@ -47,22 +49,25 @@ export async function createNeonStagingRuntime({
       queue,
       submissions,
       financials,
+      videoEnqueue,
       customerCredits: financials,
       storage,
       async checkReadiness() {
         if (closed) throw new Error("Neon staging runtime is closed.");
-        const [queueStatus, financialStatus, storageStatus] = await Promise.all([
+        const [queueStatus, financialStatus, enqueueStatus, storageStatus] = await Promise.all([
           queue.checkReadiness(),
           financials.checkReadiness(),
+          videoEnqueue.checkReadiness(),
           storage?.checkReadiness ? storage.checkReadiness() : Promise.resolve(null)
         ]);
         return Object.freeze({
           backend: "neon-postgres",
           branch: "executive-visuals-staging",
-          ready: queueStatus.ready === true && financialStatus.ready === true &&
+          ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
             (!storage || storageStatus?.ready === true),
           queue: queueStatus,
           financials: financialStatus,
+          videoEnqueue: enqueueStatus,
           storage: storageStatus
         });
       },
