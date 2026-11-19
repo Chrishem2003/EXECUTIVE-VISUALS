@@ -18,6 +18,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/verify-neon-financials-postgres.sql"
+      - "scripts/verify-neon-queue-postgres.sql"
       - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
     paths:
@@ -35,6 +36,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/verify-neon-financials-postgres.sql"
+      - "scripts/verify-neon-queue-postgres.sql"
       - ".github/workflows/neon-postgres-financials.yml"
   workflow_dispatch:
 permissions:
@@ -85,5 +87,8 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0001_worker_queue.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0002_video_submission_ledger.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0003_video_financial_controls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0004_queue_admission_and_recovery.sql
       - name: Verify real PostgreSQL reservation, idempotency, settlement and verified release
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
+      - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
