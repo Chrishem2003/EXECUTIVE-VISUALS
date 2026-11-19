@@ -25,6 +25,7 @@ on:
       - "package-lock.json"
       - "scripts/verify-neon-financials-postgres.sql"
       - "scripts/verify-neon-video-enqueue-postgres.sql"
+      - "scripts/verify-neon-video-approval-bridge-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
       - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
@@ -50,6 +51,7 @@ on:
       - "package-lock.json"
       - "scripts/verify-neon-financials-postgres.sql"
       - "scripts/verify-neon-video-enqueue-postgres.sql"
+      - "scripts/verify-neon-video-approval-bridge-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
       - ".github/workflows/neon-postgres-financials.yml"
   workflow_dispatch:
@@ -111,3 +113,5 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
       - name: Verify atomic video enqueue, reservation, replay and rollback
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
+      - name: Verify multi-shot approval bridge schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-approval-bridge-postgres.sql
