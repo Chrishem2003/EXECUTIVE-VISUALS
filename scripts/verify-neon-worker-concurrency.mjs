@@ -61,7 +61,7 @@ try {
     throw new Error("Reclaimed job did not receive a fresh fencing token.");
   }
   const staleDefer = await pool.query(
-    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,5,'{"code":"STALE_CALLBACK"}'::jsonb) as accepted",
+    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,3600,'{"code":"STALE_CALLBACK"}'::jsonb) as accepted",
     [fencedJobId, "ci-neon-fencing-worker", first.lease_token]
   );
   const staleQuarantine = await pool.query(
