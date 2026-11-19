@@ -43,6 +43,12 @@ export function createCloudVideoWorkerProcess({
   let cycles = 0;
   let failures = 0;
   let nextRecoveryAt = 0;
+  let recovered = 0;
+  let claimed = 0;
+  let finished = 0;
+  let lastCycleAt = null;
+  let lastRecoveryAt = null;
+  let lastErrorCode = null;
 
   function emit(type, details = {}) {
     try { onEvent(Object.freeze({ type, at: new Date(now()).toISOString(), ...details })); } catch {}
@@ -68,9 +74,12 @@ export function createCloudVideoWorkerProcess({
     while (running) {
       if (now() >= nextRecoveryAt) {
         try {
-          const recovered = await worker.recoverExpired(recoveryLimit);
+          const recoveredCount = await worker.recoverExpired(recoveryLimit);
+          recovered += Number.isSafeInteger(recoveredCount) && recoveredCount > 0 ? recoveredCount : 0;
+          lastRecoveryAt = new Date(now()).toISOString();
+          lastErrorCode = null;
           nextRecoveryAt = now() + recoveryIntervalMs;
-          emit("video.worker.recovery_completed", { recovered: Number(recovered) || 0 });
+          emit("video.worker.recovery_completed", { recovered: Number(recoveredCount) || 0 });
         } catch (error) {
           failures += 1;
           emit("video.worker.recovery_failed", {
@@ -86,7 +95,11 @@ export function createCloudVideoWorkerProcess({
       try {
         const result = await worker.runCycle();
         cycles += 1;
+        lastCycleAt = new Date(now()).toISOString();
+        if (result?.claimed === true) claimed += 1;
+        if (result?.finished === true) finished += 1;
         failures = 0;
+        lastErrorCode = null;
         backoff = initialErrorBackoffMs;
         emit("video.worker.cycle_completed", {
           claimed: result?.claimed === true,
@@ -130,6 +143,9 @@ export function createCloudVideoWorkerProcess({
   return Object.freeze({
     start,
     stop,
-    status: () => Object.freeze({ running, cycles, failures, stopRequested })
+    status: () => Object.freeze({
+      running, cycles, claimed, finished, recovered, failures, stopRequested,
+      lastCycleAt, lastRecoveryAt, lastErrorCode
+    })
   });
 }
