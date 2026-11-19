@@ -57,14 +57,16 @@ export function createCloudVideoEnqueue({
   timeoutMs = 15000,
   env = process.env,
   resolveRunwaySourceMetadata,
-  resolveRunwayReferenceVideoMetadata
+  resolveRunwayReferenceVideoMetadata,
+  videoEnqueueAdapter = null
 } = {}) {
-  if (!url || !serviceRoleKey) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  if (!videoEnqueueAdapter && (!url || !serviceRoleKey)) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud video enqueue requires a fetch implementation.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Cloud video enqueue timeout must be between 1000 and 120000 milliseconds.");
-  const base = endpoint(url);
+  const base = url && serviceRoleKey ? endpoint(url) : null;
 
   async function call(name, args) {
+    if (!base || !serviceRoleKey) throw Object.assign(new Error("This Neon-backed enqueue instance exposes admission only; worker lifecycle operations belong to the Neon worker contracts."), { code: "NEON_VIDEO_WORKER_CONTRACT_REQUIRED" });
     if (!Object.values(RPC).includes(name)) throw new Error("Unsupported cloud video enqueue operation.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -114,7 +116,7 @@ export function createCloudVideoEnqueue({
   return Object.freeze({
     async enqueue({
       ownerId, projectId = null, idempotencyKey, provider, model, requestHash,
-      input, budgetApprovalId, reservedAmount, currency
+      input, budgetApprovalId, reservedAmount, currency, reservedCredits
     } = {}) {
       required(ownerId, "Owner ID");
       if (projectId !== null) required(projectId, "Project ID");
@@ -634,6 +636,29 @@ export function createCloudVideoEnqueue({
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");
         unavailable.code = "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED";
         throw unavailable;
+      }
+
+      if (videoEnqueueAdapter) {
+        if (!Number.isSafeInteger(reservedCredits) || reservedCredits < 1 || reservedCredits > 100000000) {
+          throw new Error("Neon video admission requires server-quoted customer credits as a positive bounded integer.");
+        }
+        const receipt = await videoEnqueueAdapter.enqueueVideoGenerationJob({
+          ownerId, projectId, idempotencyKey, input, approvalId: budgetApprovalId,
+          reservedAmount, reservedCredits, maxAttempts: 2
+        });
+        if (!receipt || typeof receipt.jobId !== "string" ||
+            !["queued","processing","reviewing","succeeded","partial","failed","cancelled","blocked","needs_input"].includes(receipt.status) ||
+            typeof receipt.idempotentReplay !== "boolean" || typeof receipt.budgetReservationId !== "string" ||
+            typeof receipt.creditReservationId !== "string" || !Number.isSafeInteger(receipt.availableCredits)) {
+          throw new Error("Neon video enqueue returned an invalid job/reservation result.");
+        }
+        return Object.freeze({
+          jobId: receipt.jobId, status: receipt.status,
+          idempotentReplay: receipt.idempotentReplay,
+          budgetReservationId: receipt.budgetReservationId,
+          creditReservationId: receipt.creditReservationId,
+          availableCredits: receipt.availableCredits
+        });
       }
 
       const rows = await call(RPC.enqueue, {
