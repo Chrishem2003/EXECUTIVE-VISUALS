@@ -21,6 +21,10 @@ test("worker process runs recovery before polling and prevents duplicate starts"
   await tick();
   assert.deepEqual(calls.slice(0, 2), [["recover", 100], ["cycle"]]);
   assert.equal(process.status().running, true);
+  assert.equal(process.status().recovered, 3);
+  assert.equal(process.status().cycles, 1);
+  assert.equal(process.status().lastRecoveryAt !== null, true);
+  assert.equal(process.status().lastCycleAt !== null, true);
   const stopping = process.stop();
   await stopping;
   assert.equal(process.status().running, false);
@@ -76,6 +80,8 @@ test("worker process backs off after a cycle error and sanitizes event codes", a
   assert.equal(attempts, 1);
   assert.deepEqual(waits, [10]);
   assert.equal(events.find(event => event.type === "video.worker.cycle_failed").code, "PROVIDER_TIMEOUT");
+  assert.equal(process.status().lastErrorCode, "PROVIDER_TIMEOUT");
+  assert.equal(process.status().failures, 1);
   assert.equal(JSON.stringify(events).includes("secret details"), false);
   const stopping = process.stop();
   await stopping;
