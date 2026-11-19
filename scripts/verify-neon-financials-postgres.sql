@@ -52,7 +52,7 @@ insert into executive_visuals.video_generation_submissions(
  'submitted','ci-task-success',clock_timestamp()
 );
 
-do $$
+do $neon_credit_settle$
 declare first_result record; replay_result record;
 begin
  select * into first_result from executive_visuals.settle_video_generation_customer_credits_v1(
@@ -77,9 +77,9 @@ begin
  exception when others then
   if sqlerrm<>'VIDEO_SETTLED_CREDITS_CANNOT_BE_RELEASED' then raise; end if;
  end;
-end $;
+end $neon_credit_settle$;
 
-do $
+do $neon_video_finish$
 declare ok boolean; lease_value uuid;
 begin
  select lease_token into lease_value from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
@@ -91,9 +91,9 @@ begin
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
  ) into ok;
  if not ok then raise exception 'valid success finalization rejected'; end if;
-end $;
+end $neon_video_finish$;
 
-do $
+do $neon_financial_replay$
 declare r record;
 begin
  select * into r from executive_visuals.finalize_video_generation_financials_v1(
@@ -104,9 +104,9 @@ begin
  if not r.replayed or r.balance<>925 or r.credit_adjustment<>25 then
   raise exception 'final financial settlement replay mismatch';
  end if;
-end $;
+end $neon_financial_replay$;
 
-do $
+do $neon_accounting$
 declare balance_now bigint; spent numeric; reserved numeric; cost_count integer; job_status text;
 begin
  select sum(amount) into balance_now from executive_visuals.billing_credit_ledger where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -116,7 +116,7 @@ begin
  if balance_now<>925 or spent<>3 or reserved<>0 or cost_count<>1 or job_status<>'succeeded' then
   raise exception 'success accounting mismatch: balance %, spent %, reserved %, costs %, status %',balance_now,spent,reserved,cost_count,job_status;
  end if;
-end $$;
+end $neon_accounting$;
 
 select executive_visuals.issue_video_budget_approval_v1(
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',null,'runway','gen4.5',
@@ -170,7 +170,7 @@ begin
  end if;
 end $$;
 
-do $
+do $neon_readiness_check$
 declare ready record;
 begin
  select * into ready from executive_visuals.get_video_financial_readiness_v1();
@@ -178,6 +178,6 @@ begin
   or not ready.cost_ledger_ready or not ready.customer_credit_settlement_ready then
   raise exception 'financial readiness did not include the pre-ingestion settlement contract';
  end if;
-end $;
+end $neon_readiness_check$;
 
 select 'NEON_FINANCIAL_POSTGRES_INTEGRATION_OK' as result;
