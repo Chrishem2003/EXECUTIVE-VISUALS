@@ -27,6 +27,7 @@ on:
       - "scripts/verify-neon-video-enqueue-postgres.sql"
       - "scripts/verify-neon-video-approval-bridge-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
+      - "scripts/verify-neon-worker-concurrency.mjs"
       - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
     paths:
@@ -111,6 +112,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
+      - name: Verify concurrent workers, lease fencing, stale callbacks and retry ceilings
+        run: node scripts/verify-neon-worker-concurrency.mjs
       - name: Verify atomic video enqueue, reservation, replay and rollback
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
       - name: Verify multi-shot approval bridge schema
