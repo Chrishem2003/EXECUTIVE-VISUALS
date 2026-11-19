@@ -21,6 +21,8 @@ test("composes Neon queue, submission and financial adapters without network act
       calls.push(sql);
       if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
       if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
+      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
+      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
       throw new Error("Unexpected query");
     },
     async end() { ended++; }
@@ -32,13 +34,15 @@ test("composes Neon queue, submission and financial adapters without network act
   assert.equal(typeof runtime.submissions.prepare, "function");
   assert.equal(typeof runtime.financials.reserve, "function");
   assert.equal(typeof runtime.customerCredits.settleJob, "function");
+  assert.equal(typeof runtime.videoEnqueue.enqueueVideoGenerationJob, "function");
   assert.equal(calls.length, 0, "composition must not perform I/O");
 
   const status = await runtime.checkReadiness();
   assert.equal(status.ready, true);
   assert.equal(status.queue.ready, true);
   assert.equal(status.financials.ready, true);
-  assert.equal(calls.length, 2);
+  assert.equal(status.videoEnqueue.ready, true);
+  assert.equal(calls.length, 3);
 
   await runtime.close();
   await runtime.close();
