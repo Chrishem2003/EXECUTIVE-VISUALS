@@ -30,3 +30,20 @@ test("R2 asset composition rejects a custom bucket while metadata and cleanup co
  assert.equal(createCloudAssetService({...base,r2:{...base.r2,bucket:""}}).storage.bucket,"executive-visuals-media");
  assert.throws(()=>createCloudAssetService({...base,r2:{...base.r2,bucket:"custom-media-bucket"}}),/R2_BUCKET must be executive-visuals-media/);
 });
+
+test("composes Neon Object Storage without provisioning or changing the configured bucket",()=>{
+ const base={
+  url:"https://example.supabase.co",serviceRoleKey:"private",
+  storageProvider:"neon",
+  neon:{
+   endpoint:"https://br-staging.storage.c-9.us-east-2.aws.neon.tech",
+   region:"us-east-2",accessKeyId:"neon_test_key_123",
+   secretAccessKey:"s".repeat(40),bucket:"executive-visuals-media"
+  },
+  fetchImpl:async()=>{throw new Error("metadata network must not run during composition");}
+ };
+ const service=createCloudAssetService(base);
+ assert.equal(service.storage.bucket,"executive-visuals-media");
+ assert.equal(service.storage.endpoint,base.neon.endpoint);
+ assert.throws(()=>createCloudAssetService({...base,neon:{...base.neon,bucket:"custom-media"} }),/selected storage bucket/);
+});
