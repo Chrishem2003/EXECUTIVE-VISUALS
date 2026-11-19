@@ -52,8 +52,9 @@ test("submits only a project-authorized immutable approval to Neon and marks it 
 test("replays consumed approvals idempotently without reopening local approval state",async()=>{
  const f=fixture({status:"consumed"});const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
  assert.equal(result.status,200);assert.equal(result.body.idempotentReplay,true);
- assert.equal(f.calls.some(x=>x[0]==="run"),false);
+ assert.equal(f.calls.some(x=>x[0]==="audit"),false);
  assert.equal(f.calls.filter(x=>x[0]==="enqueue").length,1);
+ assert.equal(f.row.status,"consumed");
 });
 
 test("rejects missing project authorization without contacting Neon",async()=>{
