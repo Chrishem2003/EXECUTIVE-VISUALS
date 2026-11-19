@@ -26,7 +26,7 @@ test("creates a bounded pg pool with TLS verification and pooled endpoint only",
  assert.equal(options.max,2);
  assert.deepEqual(options.ssl,{rejectUnauthorized:true});
  assert.equal(options.keepAlive,true);
- assert.throws(()=>createNeonPostgresPool({connectionString:"postgres://ev:secret@ep-example.us-east-2.aws.neon.tech/neondb",Pool:FakePool}),/pooled endpoint/);
+ await assert.rejects(()=>createNeonPostgresPool({connectionString:"postgres://ev:secret@ep-example.us-east-2.aws.neon.tech/neondb",Pool:FakePool}),/pooled endpoint/);
 });
 
 test("claim uses atomic SQL function and validates the fencing token",async()=>{
