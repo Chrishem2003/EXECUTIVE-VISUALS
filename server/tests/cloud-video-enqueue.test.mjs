@@ -814,7 +814,8 @@ test("validated cloud generation requests can be admitted through the Neon atomi
       };
     }
   };
-  const client = createCloudVideoEnqueue({ videoEnqueueAdapter: neon });
+  let supabaseCalls = 0;
+  const client = createCloudVideoEnqueue({ ...base, videoEnqueueAdapter: neon, fetchImpl: async () => { supabaseCalls++; throw new Error("Supabase fallback must not run"); } });
   const result = await client.enqueue(args({ reservedCredits: 100 }));
   assert.deepEqual(result, {
     jobId: resultRow.job_id, status: "queued", idempotentReplay: false,
@@ -828,7 +829,9 @@ test("validated cloud generation requests can be admitted through the Neon atomi
   assert.equal(admitted.reservedAmount, 1.25);
   assert.equal(admitted.reservedCredits, 100);
   assert.equal(admitted.input.requestHash, requestHash);
+  assert.equal(supabaseCalls, 0);
   await assert.rejects(() => client.enqueue(args()), /server-quoted customer credits/);
   await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", leaseToken, status: "failed" }),
     error => error.code === "NEON_VIDEO_WORKER_CONTRACT_REQUIRED");
+  assert.equal(supabaseCalls, 0, "Neon mode must never fall back to Supabase lifecycle RPCs");
 });
