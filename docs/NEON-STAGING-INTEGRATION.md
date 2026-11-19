@@ -75,6 +75,20 @@ The asset service now includes a dedicated `neon-object-storage.mjs` adapter and
 
 The existing canonical bucket contract also expects `executive-visuals-media`. Any Neon bucket adapter must preserve that logical bucket contract or introduce a reviewed migration for configurable bucket identifiers. No existing storage provider should be switched automatically.
 
+## Connected Neon account — read-only verification (19 November 2026)
+
+The connected Neon account was inspected without changing resources:
+
+- Project: `Executive-Visuals Pro` (`dawn-credit-96457353`), Free plan.
+- Branch chain: `production` → `staging-base` → `executive-visuals-staging`.
+- The application staging branch is currently `br-cool-meadow-befe3yf4`; its parent is `staging-base`, and its initialization source is `parent-data`.
+- The staging branch is **not data-isolated or sanitized yet**. It inherits its parent's data lineage; do not connect application traffic or run migrations until a reviewed sanitization/empty-staging plan is approved.
+- The branch record is `ready`, but read-only database structure inspection returned `endpoint not found`; no usable database endpoint was confirmed.
+- Neon Object Storage reports enabled on the branch, but the branch currently has **no buckets**.
+- No database migrations, buckets, credentials, endpoints, compute resources or application settings were created or changed during this inspection.
+
+This evidence supersedes any assumption that a ready branch record means the application database is reachable or safe for staging. The staging release gate remains blocked until database connectivity, data isolation, private bucket configuration and worker execution are independently verified.
+
 ## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Atomic video enqueue — migration 0006
 
 Migration `0006_atomic_video_enqueue.sql` adds `enqueue_video_generation_job_v1`, a single transaction boundary for application admission:
