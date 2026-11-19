@@ -103,7 +103,15 @@ Migration `0007_video_approval_bridge.sql` adds durable Neon-side mirrors for th
 - The quote policy is intentionally injected and must be deterministic, synchronous and server-owned. No customer-credit conversion rate is guessed or accepted from a browser request. A production/staging host must explicitly define its conversion policy before dispatch can be enabled.
 - The disposable PostgreSQL workflow applies migration 0007 and verifies the approval/shot tables, indexes, foreign keys and required enqueue/financial functions.
 
-This is a repository-side bridge implementation with mocked adapter tests and disposable PostgreSQL schema verification. The main `server/index.mjs` route has **not** yet been switched to this Neon repository, the hosted worker has not been started against Neon, and no migration has been applied to the connected Neon project. The staging approval route, customer-credit policy configuration, provider worker process, authenticated job-status API and private asset publication bridge remain release blockers.
+The authenticated approval route is now wired through an explicitly gated staging composition:
+- `server/neon-staging-application-runtime.mjs` creates the Neon runtime only when `NEON_STAGING_APPLICATION_DISPATCH_ENABLED=true`, `NEON_STAGING_RUNTIME_ENABLED=true`, and the exact branch name is `executive-visuals-staging`.
+- The composition requires the existing Supabase authentication boundary and the application's project-write authorization callback. It does not replace Supabase identity or enable provider execution.
+- Startup performs a read-only readiness check and refuses to start this route unless migrations, queue, financial controls and approval tables all pass `applicationDispatchReady`.
+- The server-owned customer-credit conversion must be explicitly configured with `NEON_CUSTOMER_CREDITS_PER_USD` as an integer. The current policy accepts USD quotes only, uses integer arithmetic, and rejects missing or out-of-bounds rates; it never trusts browser-supplied credit quantities.
+- `server/index.mjs` routes the existing `POST /api/video-production-approvals/:id/submit` endpoint through the Neon bridge when the feature flag is enabled. The legacy Supabase dispatch remains the default when it is disabled. The runtime pool is closed during graceful shutdown.
+- The bridge only admits jobs to the durable Neon staging queue. It does not call providers or start a worker. Provider execution, authenticated job-status/progress, private asset publication, actual-cost reconciliation and live Neon branch verification remain separate release gates.
+
+This is now application-route integration with unit coverage and disposable PostgreSQL CI, not a live Neon deployment. No migration has been applied to the connected Neon project, no storage bucket or credentials have been provisioned, and the Render environment has not been changed.
 
 ## Pre-ingestion customer-credit settlement — migration 0005
 
