@@ -138,7 +138,8 @@ The isolated PostgreSQL foundation now includes `database/neon/migrations/0003_v
 - Provider-evidence-backed settlement or release. Successful/partial completion requires measured actual amount, measured customer-credit units, provider task receipt/invoice/usage evidence and a matching provider/model/task/reference in the output. Failed/cancelled jobs with reservations are refunded only with explicit verified-no-submission or verified-no-charge-cancellation evidence; ambiguous provider charges remain quarantined.
 - A single lease-fenced `finish_video_generation_job_v1` function that finalizes financial reservations, writes the immutable provider-cost record, updates the job terminal state and emits the job event in the same database transaction.
 - Idempotent reservation replay even after the one-use approval has been consumed. Replays must match the original reservation owner, approval, budget and credit quantities.
-- A read-only financial schema readiness function and adapter tests.\n- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0003, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection and failure release. This CI database is ephemeral and is not the connected Neon project.
+- A read-only financial schema readiness function and adapter tests.
+- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0003, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection and failure release. This CI database is ephemeral and is not the connected Neon project.
 
 ### Important safeguards and limitations
 
