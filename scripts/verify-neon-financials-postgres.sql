@@ -51,7 +51,7 @@ begin
  select executive_visuals.finish_video_generation_job_v1(
   '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'ci-worker', lease_value,'succeeded',
-  '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","costEvidenceReference":"ci-receipt-success"}'::jsonb,
+  '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","costEvidenceReference":"ci-receipt-success","actualAmount":3,"currency":"USD"}'::jsonb,
   null,3,75,
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-event-success","evidenceReference":"ci-receipt-success"}'::jsonb
  ) into ok;
