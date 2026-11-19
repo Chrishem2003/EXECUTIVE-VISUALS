@@ -83,6 +83,30 @@ test("cancellation lookup is fenced to current attempt",async()=>{
  assert.deepEqual(values,[id,"worker-a",token]);
 });
 
+test("job status and event reads are owner-scoped and expose no lease credentials", async () => {
+ const calls=[];
+ const queue=createNeonPostgresQueue({pool:{query:async(text,values)=>{
+  calls.push({text,values});
+  if(text.includes("inner join executive_visuals.jobs"))return{rows:[{id:1,event_type:"job.queued",event_data:{status:"queued"},created_at:"2026-11-19T12:00:00Z"}]};
+  return{rows:[{id,owner_id:id,project_id:id,job_type:"video.generate",status:"queued",progress:"0",attempt_count:0,max_attempts:2,created_at:"2026-11-19T12:00:00Z",updated_at:"2026-11-19T12:00:00Z",completed_at:null,output:null,error:null}]};
+ }}});
+ const job=await queue.getOwnedJob(id,id);
+ assert.equal(job.id,id);assert.equal(job.status,"queued");assert.equal(job.progress,0);
+ assert.equal(Object.hasOwn(job,"leaseToken"),false);
+ assert.deepEqual(calls[0].values,[id,id]);
+ const events=await queue.listOwnedJobEvents(id,id);
+ assert.deepEqual(events,[{id:1,type:"job.queued",data:{status:"queued"},createdAt:"2026-11-19T12:00:00Z"}]);
+ assert.match(calls[1].text,/j.owner_id=\$2::uuid/);
+ assert.deepEqual(calls[1].values,[id,id,100]);
+ await assert.rejects(()=>queue.getOwnedJob("bad",id),/UUIDs/);
+ await assert.rejects(()=>queue.listOwnedJobEvents(id,"bad"),/UUIDs/);
+ await assert.rejects(()=>queue.listOwnedJobEvents(id,id,201),/limit/);
+});
+test("job status lookup returns null for a job outside the authenticated owner scope",async()=>{
+ const queue=createNeonPostgresQueue({pool:{query:async()=>({rows:[]})}});
+ assert.equal(await queue.getOwnedJob(id,token),null);
+ assert.deepEqual(await queue.listOwnedJobEvents(id,token),[]);
+});
 test("recovery and finish validate result and require the fencing token",async()=>{
  const calls=[];
  const queue=createNeonPostgresQueue({pool:{query:async(text,values)=>{calls.push({text,values});return {rows:[text.includes("recover_expired_jobs")?{recovered:3}:{finished:true}]};}}});
