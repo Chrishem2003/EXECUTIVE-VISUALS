@@ -83,7 +83,7 @@ export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
         message: "Video generation is held for operator reconciliation."
       });
       if (result) activeJobs.delete(jobId);
-      return result;
+      return result ? Object.freeze({ finished: true, status: "blocked" }) : false;
     },
     async recoverExpiredVideo(limit = 100) { return durableQueue.recover(limit); }
   });
