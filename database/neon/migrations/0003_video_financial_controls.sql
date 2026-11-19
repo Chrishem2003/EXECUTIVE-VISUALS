@@ -145,7 +145,7 @@ begin
  select * into budget_row from executive_visuals.video_generation_budget_reservations where job_id=p_job_id for update;
  select * into credit_row from executive_visuals.billing_credit_reservations where job_id=p_job_id for update;
  if budget_row.id is not null or credit_row.id is not null then
-  if budget_row.id is null or credit_row.id is null or budget_row.owner_id<>p_owner_id or credit_row.owner_id<>p_owner_id or budget_row.reserved_amount<>p_reserved_amount or credit_row.reserved_credits<>p_reserved_credits then raise exception 'VIDEO_FINANCIAL_RESERVATION_CONFLICT'; end if;
+  if budget_row.id is null or credit_row.id is null or budget_row.owner_id<>p_owner_id or credit_row.owner_id<>p_owner_id or budget_row.approval_id<>p_approval_id or budget_row.reserved_amount<>p_reserved_amount or credit_row.reserved_credits<>p_reserved_credits then raise exception 'VIDEO_FINANCIAL_RESERVATION_CONFLICT'; end if;
   select coalesce(sum(amount),0) into balance_now from executive_visuals.billing_credit_ledger where owner_id=p_owner_id;
   select coalesce(sum(reserved_credits),0) into reserved_now from executive_visuals.billing_credit_reservations where owner_id=p_owner_id and state='reserved';
   return query select budget_row.id,credit_row.id,balance_now-reserved_now,true; return;
@@ -265,7 +265,10 @@ language sql security definer set search_path=pg_catalog,executive_visuals as $$
 $$;
 
 -- Explicitly server-only. Browser roles receive no table or function privileges.
-revoke all on all tables in schema executive_visuals from public;
+revoke all on executive_visuals.billing_credit_accounts,executive_visuals.billing_credit_ledger,executive_visuals.billing_credit_reservations,
+ executive_visuals.video_generation_budget_policies,executive_visuals.video_generation_budget_approvals,
+ executive_visuals.video_generation_budget_reservations,executive_visuals.video_generation_usage_reservations,
+ executive_visuals.video_generation_cost_ledger from public;
 revoke all on function executive_visuals.reject_financial_ledger_mutation_v1() from public;
 revoke all on function executive_visuals.grant_generation_credits_v1(uuid,bigint,text,jsonb) from public;
 revoke all on function executive_visuals.configure_video_budget_policy_v1(uuid,uuid,text,text,text,numeric,numeric,integer,boolean) from public;
