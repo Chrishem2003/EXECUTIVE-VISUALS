@@ -88,3 +88,38 @@ The existing canonical bucket contract also expects `executive-visuals-media`. A
 - [ ] Only then prepare a separate Render staging environment-variable change for review and approval.
 
 No production database, shared Supabase project, production Render service, customer data, or paid provider configuration is part of this plan.
+
+
+## Neon PostgreSQL worker foundation — repository implementation
+
+The next isolated implementation milestone adds a PostgreSQL-backed queue without changing the running Supabase queue:
+
+- `server/neon-postgres-pool.mjs` validates a pooled Neon URL (requires `-pooler`) for application traffic and a separate direct URL for migrations. It uses a small, bounded pool (default maximum 3), TLS certificate verification, and no connection-string logging.
+- `server/neon-postgres-queue.mjs` implements the worker queue contract: atomic claim, lease renewal, lease assertion, cancellation lookup, expired-lease recovery, terminal finish, and a read-only readiness check. All values are parameterized.
+- `database/neon/migrations/0001_worker_queue.sql` defines an isolated queue schema and functions. Claims use `FOR UPDATE SKIP LOCKED`; each claim receives a fresh database-generated UUID fencing token; renew/finish require the current unexpired token; recovery clears the token before a retry.
+- `server/tests/neon-postgres-queue.test.mjs` verifies URL safety, pool bounds/TLS, parameterized calls, fencing checks, cancellation lookup, recovery, finish, readiness, and migration invariants.
+- `npm run verify:neon-postgres` is included in product verification batch 01.
+
+### Important limitations — not yet a complete Neon worker cutover
+
+This is a **queue foundation**, not a claim that the complete video-generation backend is already Neon-compatible. The existing worker also depends on the video submission ledger, provider idempotency, budget approvals, customer-credit reservations/settlement, asset publication, and user/project identity. Those contracts must be ported and verified as separate transactional migrations before a Neon queue can safely run production video work.
+
+The migration is source code only and has **not** been executed. The pool factory dynamically loads the Node `pg` package; that runtime dependency and lockfile update must be completed before enabling the Neon backend. No `NEON_DATABASE_URL` is configured by this PR. The Supabase queue remains the active path.
+
+### Connection policy
+
+Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries. Use a separate direct `NEON_DATABASE_DIRECT_URL` only for migration tooling. Do not run schema migrations over PgBouncer transaction pooling. The pool is deliberately capped at 3 connections per process to avoid exhausting a small Free compute. See Neon's [pooling guidance](https://neon.com/docs/connect/connection-pooling) and [serverless connection guidance](https://neon.com/docs/guides/serverless-connection-pooling).
+
+### Remaining gates
+
+- [ ] Add the reviewed `pg` runtime dependency and update lockfile.
+- [ ] Port submission ledger and provider-task reconciliation, retaining all lease-fencing wrappers.
+- [ ] Port enqueue + approval/budget + customer-credit reserve/settle transactions as atomic functions.
+- [ ] Port asset publication metadata and cleanup outbox, preserving private storage path lineage.
+- [ ] Define staging identity strategy; do not assume Supabase `auth.users` exists in Neon.
+- [ ] Add database-owner and least-privilege worker roles with explicit grants; no browser credentials.
+- [ ] Run migration on the isolated Neon staging branch only after separate approval.
+- [ ] Add real integration/concurrency/restart tests against Neon.
+- [ ] Connect a separate staging worker only after all preceding gates pass.
+
+No branch, database, schema, credential, bucket, Render setting, or production resource was changed by this repository implementation.
