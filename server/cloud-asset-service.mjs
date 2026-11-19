@@ -17,7 +17,7 @@ export function createCloudAssetService(options={}) {
  // The current asset metadata schema, publication RPCs and cleanup ledger intentionally
  // pin all objects to this bucket. Reject a custom R2 bucket before any upload can occur.
  if(!storage&&["r2","b2","neon"].includes(storageProvider)&&String((storageProvider==="r2"?options.r2?.bucket??process.env.R2_BUCKET:storageProvider==="b2"?options.b2?.bucket??process.env.B2_BUCKET:options.neon?.bucket??process.env.NEON_STORAGE_BUCKET)||"executive-visuals-media")!=="executive-visuals-media"){
-  throw new Error("The selected storage bucket must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.");
+  throw new Error(storageProvider==="neon"?"NEON_STORAGE_BUCKET must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.":"R2_BUCKET must be executive-visuals-media until the asset metadata and cleanup contracts support configurable buckets.");
  }
  if(!storage&&storageProvider==="neon")storage=createNeonObjectStorage({
   ...(options.neon||{}),fetchImpl:options.storageFetchImpl||options.fetchImpl||globalThis.fetch,
