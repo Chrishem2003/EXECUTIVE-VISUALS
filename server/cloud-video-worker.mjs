@@ -96,7 +96,7 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      actualAmount: output.actualAmount, currency: output.currency,
+      actualAmount: output.actualAmount, actualCredits: output.actualCredits, currency: output.currency,
       costEvidenceReference: output.costEvidenceReference,
       customerCreditSettlement: output.customerCreditSettlement || null
     };
@@ -127,13 +127,15 @@ export async function runCloudVideoWorkerCycle({
       return { claimed: true, finished: true, status: "needs_input", jobId: job.id, reason: code };
     }
     await assertLease();
-    const failed = await enqueue.finish({
+    const failureOutcome = await enqueue.finish({
       jobId: job.id, workerId, leaseToken: job.lease_token, status: "failed",
       error: { code, message }
     });
+    const failed = failureOutcome === true || failureOutcome?.finished === true;
     if (!failed) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-    onEvent({ type: "video.job.failed", jobId: job.id, workerId, error: { code, message } });
-    return { claimed: true, finished: true, status: "failed", jobId: job.id, error: { code, message } };
+    const persistedStatus = failureOutcome?.status || "failed";
+    onEvent({ type: persistedStatus === "blocked" ? "video.job.blocked" : "video.job.failed", jobId: job.id, workerId, error: { code, message } });
+    return { claimed: true, finished: true, status: persistedStatus, jobId: job.id, error: { code, message } };
   } finally {
     clearInterval(heartbeat);
     if (heartbeatError) onEvent({ type: "video.job.heartbeat_error", jobId: job.id, workerId });
