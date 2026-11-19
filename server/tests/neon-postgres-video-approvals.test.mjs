@@ -10,7 +10,7 @@ const job="523e4567-e89b-42d3-a456-426614174000";
 const credit="623e4567-e89b-42d3-a456-426614174000";
 const snapshot={shots:[{id:"shot-1",provider:"runway",model:"gen4.5",prompt:"Sunrise",estimatedCostMicros:1250000}]};
 const base={id:approval,ownerId:owner,projectId:project,idempotencyKey:"approval-key-001",requestHash:"a".repeat(64),snapshotJson:snapshot,currency:"USD",quotedAmountMicros:1250000,budgetCeilingMicros:2000000};
-function fixture({failAt=null}={}){
+function fixture({failAt=null,quoteCustomerCredits=()=>150}={}){
  const calls=[];let released=false;
  const client={
   async query(sql,values=[]){
@@ -31,7 +31,7 @@ function fixture({failAt=null}={}){
  };
  const pool={async connect(){return client;},async query(){return{rows:[]};}};
  const videoEnqueue={async enqueueVideoGenerationJob(){throw new Error("bridge must use the transaction client");}};
- const repos=createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCustomerCredits:()=>150});
+ const repos=createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCustomerCredits});
  return{repos,calls,get released(){return released;}};
 }
 
@@ -61,10 +61,10 @@ test("failed shot reservation rolls back the entire multi-shot transaction",asyn
 });
 
 test("credit quote must be server-side, deterministic and bounded",async()=>{
- const f=fixture();
- const noQuote=createNeonVideoGenerationRepositories({pool:{connect:async()=>({query:async(sql)=>sql==="begin"||sql==="rollback"||sql==="commit"?{rows:[]}:sql.includes("select * from executive_visuals.video_generation_approvals")?{rows:[{id:approval,owner_id:owner,project_id:project,snapshot_json:snapshot}]}:sql.includes("select * from executive_visuals.video_generation_approval_shots")?{rows:[{approval_id:approval,shot_index:0,owner_id:owner,project_id:project,provider:"runway",model:"gen4.5",request_hash:"b".repeat(64),estimated_cost_micros:"1250000",reserved_credits:null,budget_approval_id:null}]}:{rows:[]},release(){}})},videoEnqueue:{enqueueVideoGenerationJob(){}},quoteCustomerCredits:()=>0});
- await assert.rejects(()=>noQuote.approvals.enqueue(approval,owner),e=>e.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
- assert.throws(()=>createNeonVideoGenerationRepositories({pool:{connect(){}},videoEnqueue:{enqueueVideoGenerationJob(){}},quoteCustomerCredits:()=>Promise.resolve(10)}),/server-side customer-credit quote policy/);
+ const f=fixture({quoteCustomerCredits:()=>0});
+ await assert.rejects(()=>f.repos.approvals.enqueue(approval,owner),e=>e.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
+ const asyncQuote=fixture({quoteCustomerCredits:()=>Promise.resolve(10)});
+ await assert.rejects(()=>asyncQuote.repos.approvals.enqueue(approval,owner),/must be synchronous and deterministic/);
  assert.ok(f.released);
 });
 
