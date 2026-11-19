@@ -94,7 +94,7 @@ begin
   );
   raise exception 'unverified failure release unexpectedly succeeded';
  exception when others then
-  if sqlerrm='unverified failure release unexpectedly succeeded' then raise; end if;
+  if sqlerrm<>'VIDEO_FAILURE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE' then raise; end if;
  end;
 end $$;
 
