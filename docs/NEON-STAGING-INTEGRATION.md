@@ -87,6 +87,20 @@ The existing video executor settles customer credits after provider usage is aut
 
 The disposable PostgreSQL integration now exercises pre-ingestion settlement, exact replay and subsequent worker finalization. This resolves one known accounting contract mismatch; it does **not** complete worker composition, tenant authorization, provider reconciliation, or private asset publication. The migration remains source-controlled and has not been applied to the real Neon branch.
 
+## Neon-backed provider worker composition
+
+The next integration layer is source-controlled in `server/neon-cloud-video-worker.mjs`.
+
+- `createNeonVideoWorkerContracts()` maps the existing object-shaped worker API onto the Neon queue, submission ledger and financial finalizer.
+- Successful jobs pass the provider task receipt, measured actual spend and measured customer credits to the lease-fenced `finish_video_generation_job_v1` transaction.
+- The generation executor now carries measured `actualCredits` through to finalization; the worker persists this field with the output evidence.
+- Failed jobs without verified no-charge evidence are quarantined into `blocked`; they are not automatically refunded. The generic worker now preserves this backend's structured `blocked` outcome instead of reporting a false terminal failure.
+- Deferral and expired-lease recovery use the Neon queue's fenced RPCs.
+- `createNeonCloudVideoWorker()` requires explicit staging and remote-execution flags, exact provider/model adapters, and an application-supplied owner/project authorization callback. Every prepare, submit, poll, cost-reconciliation and private-publication operation is gated by that callback.
+- Added focused tests and included them in `npm run verify:neon-postgres`.
+
+This composes the worker contracts but does not yet switch the application's live enqueue route or hosted worker process to Neon. A Neon enqueue API that atomically creates the job and its financial reservation, plus an application identity/authorization implementation and storage adapter, are still required. The new worker factory has not yet been verified by CI on the latest commit and has not been connected to Render or the real Neon branch.
+
 ## Required acceptance before connecting Render staging
 
 - [ ] Confirm the Neon project is dedicated to staging and its region/Free entitlement.
