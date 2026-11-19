@@ -91,7 +91,11 @@ export async function createNeonStagingRuntime({
         videoEnqueue: enqueueStatus,
         videoApprovals: approvalStatus || { configured: false, ready: false },
         storage: storageStatus,
-        videoWorker: Object.freeze({ configured: Boolean(videoWorker), running: workerProcess?.status().running === true })
+        videoWorker: Object.freeze({
+          configured: Boolean(videoWorker),
+          supportedAdapters: videoWorker?.listSupported() || [],
+          ...(workerProcess?.status() || { running: false, cycles: 0, claimed: 0, finished: 0, recovered: 0, failures: 0, stopRequested: false, lastCycleAt: null, lastRecoveryAt: null, lastErrorCode: null })
+        })
       });
     }
 
