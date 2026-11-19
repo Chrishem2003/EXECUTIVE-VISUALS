@@ -40,6 +40,15 @@ test("Neon worker quarantines a claimed job without an authenticated owner/proje
   assert.equal(f.calls[0][4].code, "VIDEO_JOB_SCOPE_INVALID");
 });
  
+test("Neon worker quarantines a claimed job with a malformed owner identifier", async () => {
+  const f = fixture();
+  f.job.owner_id = "not-a-uuid";
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  assert.equal(await contracts.queue.claim(workerId, 90, ["video.generate"]), null);
+  assert.equal(f.calls[0][0], "quarantine");
+  assert.equal(f.calls[0][4].code, "VIDEO_JOB_SCOPE_INVALID");
+});
+
 test("Neon worker contracts finalize success with measured credits and provider receipt evidence", async () => {
   const f = fixture();
   const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
