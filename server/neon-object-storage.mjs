@@ -81,7 +81,7 @@ export function createNeonObjectStorage({
   const keyId = String(accessKeyId || "").trim();
   const secret = String(secretAccessKey || "");
   const bucketName = safeBucket(bucket);
-  if (!/^[a-z0-9]+-[a-z0-9]+-\d$/.test(signingRegion)) throw new Error("NEON_STORAGE_REGION must be a Neon Object Storage region such as us-east-2.");
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+){2,3}$/.test(signingRegion)) throw new Error("NEON_STORAGE_REGION must be a Neon Object Storage region such as us-east-2.");
   if (!/^[A-Za-z0-9_-]{8,256}$/.test(keyId) || secret.length < 16 || secret.length > 512) {
     throw new Error("Neon Object Storage credentials are missing or invalid.");
   }
