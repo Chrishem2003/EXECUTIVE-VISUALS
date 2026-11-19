@@ -110,6 +110,19 @@ The migration is source code only and has **not** been executed. The pool factor
 
 Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries. Use a separate direct `NEON_DATABASE_DIRECT_URL` only for migration tooling. Do not run schema migrations over PgBouncer transaction pooling. The pool is deliberately capped at 3 connections per process to avoid exhausting a small Free compute. See Neon's [pooling guidance](https://neon.com/docs/connect/connection-pooling) and [serverless connection guidance](https://neon.com/docs/guides/serverless-connection-pooling).
 
+### Queue admission and recovery lifecycle
+
+`database/neon/migrations/0004_queue_admission_and_recovery.sql` adds Neon-native queue admission and fenced recovery operations:
+
+- `enqueue_job_v1` creates durable jobs and the initial event atomically; owner-scoped idempotency keys serialize concurrent submissions and reject payload/project/type mismatches rather than silently reusing a job.
+- `defer_job_v1` releases only the currently valid worker lease and schedules bounded retry availability.
+- `quarantine_job_v1` moves only the currently leased job to the non-runnable `blocked` state, records structured error evidence and appends an event.
+- All three SECURITY DEFINER functions pin `search_path` and revoke default PUBLIC execution.
+- `createNeonPostgresQueue` exposes parameterized `enqueue`, `defer` and `quarantine` methods with bounded input validation and strict result checks.
+- The disposable PostgreSQL CI workflow applies migration 0004 and runs `scripts/verify-neon-queue-postgres.sql` to exercise duplicate admission, idempotency conflict, deferral, lease release, quarantine and event history.
+
+These are queue primitives, not yet a production worker cutover. The live video worker still needs its complete orchestration adapted to call these Neon operations together with verified identity, provider submission reconciliation, atomic financial reservations/finalization and asset publication. Do not enable remote paid generation on this path until that end-to-end contract is implemented and tested.
+
 ### Opt-in Neon staging runtime composition
 
 `server/neon-staging-runtime.mjs` now composes the existing PostgreSQL queue, provider-submission ledger and financial controls behind an explicit staging-only factory.
