@@ -7,11 +7,15 @@ test("HTTP submit route is mounted behind verified account authentication and a 
  assert.ok(source.includes('cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled'));
  assert.ok(source.includes('cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase"'));
  assert.ok(source.includes('path.match(/^\\/api\\/video-production-approvals\\/([0-9a-f-]{36})\\/submit$/i)'));
- assert.ok(source.includes('cloudVideoGenerationDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id})'));
+ assert.ok(source.includes("const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled"));
+ assert.ok(source.includes("videoApprovalSubmitDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id})"));
+ assert.ok(source.includes("neonStagingApprovalRuntime.dispatch"));
 });
 test("disabled dispatch returns 503 and never creates a provider request",()=>{
- assert.ok(source.includes("CLOUD_VIDEO_DISPATCH_DISABLED"));
- assert.ok(source.includes("Cloud generation dispatch is disabled. No cloud jobs or provider requests were created."));
+ assert.ok(source.includes("VIDEO_GENERATION_DISPATCH_DISABLED"));
+ assert.ok(source.includes("Video generation dispatch is disabled. No jobs or provider requests were created."));
+ assert.ok(source.includes("const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled"));
+ assert.ok(source.includes(":cloudVideoGenerationDispatch;"));
 });
 test("HTTP submission route is rate limited and does not invoke a model adapter",()=>{
  const route=source.slice(source.indexOf("const videoSubmitMatch="),source.indexOf("const videoApprovalMatch="));
