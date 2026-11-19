@@ -100,6 +100,7 @@ test("Neon worker is composed but cannot start before approval, financial and pr
       if (sql.includes("video_generation_approvals")) return { rows: [{ approvals_ready: true, shots_ready: true }] };
       throw new Error("Unexpected query");
     },
+    async connect() { return { async query() { return { rows: [] }; }, release() {} }; },
     async end() { ended++; }
   };
   const storage = { async checkReadiness() { return { ready: storageReady, provider: "private-test-storage" }; } };
