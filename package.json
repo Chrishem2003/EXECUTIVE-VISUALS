@@ -136,7 +136,7 @@
     "verify:cloud-staging-runtime": "node scripts/verify-cloud-staging-runtime.mjs",
     "verify:creative-artifacts": "node --test server/tests/creative-project-artifacts.test.mjs server/tests/creative-project-artifacts-postgres.test.mjs server/tests/creative-director-api.test.mjs server/tests/storyboard-compiler-api.test.mjs",
     "verify:neon-storage": "node --test server/tests/neon-object-storage.test.mjs server/tests/cloud-asset-service.test.mjs",
-    "verify:neon-postgres": "node --test server/tests/neon-postgres-queue.test.mjs server/tests/neon-postgres-video-submissions.test.mjs server/tests/neon-postgres-video-financials.test.mjs server/tests/neon-staging-runtime.test.mjs",
+    "verify:neon-postgres": "node --test server/tests/neon-postgres-queue.test.mjs server/tests/neon-postgres-video-submissions.test.mjs server/tests/neon-postgres-video-financials.test.mjs server/tests/neon-staging-runtime.test.mjs server/tests/neon-postgres-pool-runtime.test.mjs",
     "verify:neon-runtime": "node --test server/tests/neon-staging-runtime.test.mjs"
   },
   "devDependencies": {
