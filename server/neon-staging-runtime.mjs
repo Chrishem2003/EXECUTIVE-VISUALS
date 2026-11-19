@@ -5,6 +5,8 @@ import { createNeonVideoFinancials } from "./neon-postgres-video-financials.mjs"
 import { createNeonVideoEnqueue } from "./neon-postgres-video-enqueue.mjs";
 import { createNeonVideoGenerationRepositories } from "./neon-postgres-video-approvals.mjs";
 import { createNeonObjectStorage } from "./neon-object-storage.mjs";
+import { createNeonCloudVideoWorker } from "./neon-cloud-video-worker.mjs";
+import { createCloudVideoWorkerProcess } from "./cloud-video-worker-process.mjs";
 
 /**
  * Compose the isolated Neon adapters without changing the active Supabase
@@ -18,7 +20,11 @@ export async function createNeonStagingRuntime({
   storage: suppliedStorage = null,
   storageOptions = {},
   includeStorage = false,
-  quoteCustomerCredits = null
+  quoteCustomerCredits = null,
+  workerAdapters = null,
+  workerAuthorizeJob = null,
+  workerId = null,
+  workerProcessOptions = {}
 } = {}) {
   if (env.NEON_STAGING_RUNTIME_ENABLED !== "true") {
     throw new Error("Neon staging runtime is disabled; set NEON_STAGING_RUNTIME_ENABLED=true only for the isolated staging worker.");
@@ -45,6 +51,23 @@ export async function createNeonStagingRuntime({
     const videoEnqueue = createNeonVideoEnqueue({ pool });
     const videoApprovals = typeof quoteCustomerCredits === "function"
       ? createNeonVideoGenerationRepositories({ pool, videoEnqueue, quoteCustomerCredits })
+      : null;
+    const workerRequested = workerAdapters !== null || workerAuthorizeJob !== null || workerId !== null;
+    if (workerRequested && (!Array.isArray(workerAdapters) || workerAdapters.length < 1 ||
+        typeof workerAuthorizeJob !== "function" || typeof workerId !== "string" || !workerId.trim())) {
+      throw new Error("Neon video worker composition requires adapters, an authorization callback and a worker ID together.");
+    }
+    if (workerRequested && (!includeStorage || typeof storage?.checkReadiness !== "function")) {
+      throw new Error("Neon video worker composition requires explicitly configured private object storage with a readiness probe.");
+    }
+    const workerRuntime = { backend: "neon-postgres", branch: "executive-visuals-staging",
+      queue, submissions, financials, customerCredits: financials };
+    const videoWorker = workerRequested
+      ? createNeonCloudVideoWorker({ runtime: workerRuntime, workerId, adapters: workerAdapters,
+          authorizeJob: workerAuthorizeJob, env })
+      : null;
+    const workerProcess = videoWorker
+      ? createCloudVideoWorkerProcess({ worker: videoWorker, ...workerProcessOptions })
       : null;
     let closed = false;
 
