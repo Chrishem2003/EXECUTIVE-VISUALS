@@ -110,6 +110,20 @@ The migration is source code only and has **not** been executed. The pool factor
 
 Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries. Use a separate direct `NEON_DATABASE_DIRECT_URL` only for migration tooling. Do not run schema migrations over PgBouncer transaction pooling. The pool is deliberately capped at 3 connections per process to avoid exhausting a small Free compute. See Neon's [pooling guidance](https://neon.com/docs/connect/connection-pooling) and [serverless connection guidance](https://neon.com/docs/guides/serverless-connection-pooling).
 
+### Opt-in Neon staging runtime composition
+
+`server/neon-staging-runtime.mjs` now composes the existing PostgreSQL queue, provider-submission ledger and financial controls behind an explicit staging-only factory.
+
+- Requires `NEON_STAGING_RUNTIME_ENABLED=true` and the exact branch label `NEON_STAGING_BRANCH_NAME=executive-visuals-staging`.
+- Accepts an injected pool for deterministic tests; otherwise creates the bounded, TLS-verifying PostgreSQL pool from `NEON_DATABASE_URL`.
+- Constructs queue, submission and financial adapters without making network calls during composition.
+- Exposes a read-only readiness probe across queue schema, financial schema and optional explicitly supplied private object storage.
+- Closes the shared pool exactly once and rejects readiness checks after shutdown.
+- Does not change the existing Supabase worker, register a production route, apply migrations, create buckets or enable a deployed worker.
+- `server/tests/neon-staging-runtime.test.mjs` covers opt-in gating, no-I/O construction, readiness aggregation, optional storage failure and idempotent shutdown. It is included in `npm run verify:neon-postgres`.
+
+This is a composition boundary and staging diagnostic foundation; it does **not** yet execute video jobs. The real `pg` dependency/lockfile, full video enqueue/defer/quarantine contracts, Neon identity authorization, and media metadata/publication transaction still block worker cutover.
+
 ### Remaining gates
 
 - [ ] Add the reviewed `pg` runtime dependency and update lockfile.
