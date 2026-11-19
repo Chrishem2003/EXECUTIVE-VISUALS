@@ -88,6 +88,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0002_video_submission_ledger.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0003_video_financial_controls.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0004_queue_admission_and_recovery.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0005_pre_ingestion_credit_settlement.sql
       - name: Verify real PostgreSQL reservation, idempotency, settlement and verified release
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
