@@ -30,7 +30,7 @@ export function assertNeonDirectDatabaseUrl(value) {
 export async function createNeonPostgresPool({
   connectionString = process.env.NEON_DATABASE_URL,
   Pool: PoolOverride,
-  max = 3,
+  max = Number(process.env.NEON_POSTGRES_POOL_MAX || 3),
   connectionTimeoutMillis = 10000,
   idleTimeoutMillis = 30000,
   applicationName = "executive-visuals-staging"
