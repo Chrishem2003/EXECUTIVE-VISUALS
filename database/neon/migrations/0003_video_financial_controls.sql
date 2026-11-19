@@ -142,17 +142,6 @@ begin
  if j.id is null then raise exception 'VIDEO_FINANCIAL_JOB_OWNER_MISMATCH'; end if;
  provider_name:=lower(coalesce(j.input->>'provider','')); model_name:=coalesce(j.input->>'model',''); hash_value:=coalesce(j.input->>'requestHash','');
  if provider_name='' or model_name='' or hash_value !~ '^[a-f0-9]{64}$' then raise exception 'VIDEO_FINANCIAL_JOB_INPUT_INVALID'; end if;
- select * into approval_row from executive_visuals.video_generation_budget_approvals where id=p_approval_id and owner_id=p_owner_id for update;
- if approval_row.id is null or approval_row.consumed_at is not null or approval_row.expires_at<=clock_timestamp() then raise exception 'VIDEO_BUDGET_APPROVAL_INVALID_OR_EXPIRED'; end if;
- if approval_row.project_id is distinct from j.project_id or approval_row.provider<>provider_name or approval_row.model<>model_name or approval_row.request_hash<>hash_value or p_reserved_amount>approval_row.approved_max_amount then raise exception 'VIDEO_BUDGET_APPROVAL_SCOPE_MISMATCH'; end if;
- currency_value:=approval_row.currency;
- select * into policy_row from executive_visuals.video_generation_budget_policies where owner_id=p_owner_id and project_id is not distinct from j.project_id and provider=provider_name and model=model_name for update;
- if policy_row.id is null or not policy_row.enabled or policy_row.currency<>currency_value then raise exception 'VIDEO_BUDGET_POLICY_DISABLED_OR_MISSING'; end if;
- if p_reserved_amount>policy_row.max_per_job_amount or policy_row.reserved_amount+policy_row.spent_amount+p_reserved_amount>policy_row.spend_limit_amount then raise exception 'VIDEO_BUDGET_LIMIT_EXCEEDED'; end if;
- if policy_row.rolling_24h_request_limit>0 and (select count(*) from executive_visuals.video_generation_usage_reservations u where u.owner_id=p_owner_id and u.provider=provider_name and u.model=model_name and u.created_at>clock_timestamp()-interval '24 hours')>=policy_row.rolling_24h_request_limit then raise exception 'VIDEO_BUDGET_ROLLING_REQUEST_LIMIT'; end if;
- insert into executive_visuals.billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
- perform 1 from executive_visuals.billing_credit_accounts where owner_id=p_owner_id and status='active' for update;
- if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
  select * into budget_row from executive_visuals.video_generation_budget_reservations where job_id=p_job_id for update;
  select * into credit_row from executive_visuals.billing_credit_reservations where job_id=p_job_id for update;
  if budget_row.id is not null or credit_row.id is not null then
@@ -161,6 +150,17 @@ begin
   select coalesce(sum(reserved_credits),0) into reserved_now from executive_visuals.billing_credit_reservations where owner_id=p_owner_id and state='reserved';
   return query select budget_row.id,credit_row.id,balance_now-reserved_now,true; return;
  end if;
+ select * into approval_row from executive_visuals.video_generation_budget_approvals where id=p_approval_id and owner_id=p_owner_id for update;
+ if approval_row.id is null or approval_row.consumed_at is not null or approval_row.expires_at<=clock_timestamp() then raise exception 'VIDEO_BUDGET_APPROVAL_INVALID_OR_EXPIRED'; end if;
+ if approval_row.project_id is distinct from j.project_id or approval_row.provider<>provider_name or approval_row.model<>model_name or approval_row.request_hash<>hash_value or p_reserved_amount>approval_row.approved_max_amount then raise exception 'VIDEO_BUDGET_APPROVAL_SCOPE_MISMATCH'; end if;
+ currency_value:=approval_row.currency;
+ insert into executive_visuals.billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
+ perform 1 from executive_visuals.billing_credit_accounts where owner_id=p_owner_id and status='active' for update;
+ if not found then raise exception 'BILLING_ACCOUNT_NOT_ACTIVE'; end if;
+ select * into policy_row from executive_visuals.video_generation_budget_policies where owner_id=p_owner_id and project_id is not distinct from j.project_id and provider=provider_name and model=model_name for update;
+ if policy_row.id is null or not policy_row.enabled or policy_row.currency<>currency_value then raise exception 'VIDEO_BUDGET_POLICY_DISABLED_OR_MISSING'; end if;
+ if p_reserved_amount>policy_row.max_per_job_amount or policy_row.reserved_amount+policy_row.spent_amount+p_reserved_amount>policy_row.spend_limit_amount then raise exception 'VIDEO_BUDGET_LIMIT_EXCEEDED'; end if;
+ if policy_row.rolling_24h_request_limit>0 and (select count(*) from executive_visuals.video_generation_usage_reservations u where u.owner_id=p_owner_id and u.provider=provider_name and u.model=model_name and u.created_at>clock_timestamp()-interval '24 hours')>=policy_row.rolling_24h_request_limit then raise exception 'VIDEO_BUDGET_ROLLING_REQUEST_LIMIT'; end if;
  select coalesce(sum(amount),0) into balance_now from executive_visuals.billing_credit_ledger where owner_id=p_owner_id;
  select coalesce(sum(reserved_credits),0) into reserved_now from executive_visuals.billing_credit_reservations where owner_id=p_owner_id and state='reserved';
  if balance_now-reserved_now<p_reserved_credits then raise exception 'BILLING_INSUFFICIENT_CREDITS'; end if;
@@ -223,6 +223,30 @@ begin
  return query select current_balance,case when p_terminal_status in ('succeeded','partial') then delta else credit_row.reserved_credits end,false;
 end $$;
 
+
+create or replace function executive_visuals.finish_video_generation_job_v1(
+ p_job_id uuid,p_owner_id uuid,p_worker_id text,p_lease_token uuid,p_status text,
+ p_output jsonb default null,p_error jsonb default null,p_actual_amount numeric default null,
+ p_actual_credits bigint default null,p_financial_evidence jsonb default '{}'::jsonb
+) returns boolean language plpgsql security definer set search_path=pg_catalog,executive_visuals as $
+declare job_row executive_visuals.jobs; financial_receipt record;
+begin
+ if p_job_id is null or p_owner_id is null or p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 or p_lease_token is null or p_status not in ('succeeded','partial','failed','cancelled') or (p_output is not null and jsonb_typeof(p_output)<>'object') or (p_error is not null and jsonb_typeof(p_error)<>'object') then raise exception 'VIDEO_JOB_FINALIZATION_ARGUMENTS_INVALID'; end if;
+ select * into job_row from executive_visuals.jobs where id=p_job_id and owner_id=p_owner_id and job_type='video.generate' and status='processing' and lease_owner=p_worker_id and lease_token=p_lease_token and lease_expires_at>clock_timestamp() for update;
+ if job_row.id is null then return false; end if;
+ if p_status in ('succeeded','partial') then
+  if p_output is null or coalesce(p_output->>'provider','')='' or coalesce(p_output->>'model','')='' or coalesce(p_output->>'providerTaskId','')='' or coalesce(p_output->>'costEvidenceReference','')='' or p_actual_amount is null or p_actual_credits is null then raise exception 'VIDEO_JOB_SUCCESS_REQUIRES_COST_EVIDENCE'; end if;
+ end if;
+ select * into financial_receipt from executive_visuals.finalize_video_generation_financials_v1(p_job_id,p_owner_id,p_status,p_actual_amount,p_actual_credits,p_financial_evidence);
+ update executive_visuals.jobs set status=p_status,progress=case when p_status in ('succeeded','partial') then 100 else progress end,
+ output=p_output,error=p_error,completed_at=clock_timestamp(),updated_at=clock_timestamp(),
+ lease_owner=null,lease_token=null,lease_expires_at=null,lease_heartbeat_at=null
+ where id=p_job_id;
+ insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+ values(p_job_id,p_owner_id,'job.'||p_status,jsonb_build_object('status',p_status,'financialFinalized',true,'creditAdjustment',coalesce(financial_receipt.credit_adjustment,0)));
+ return true;
+end $;
+
 create or replace function executive_visuals.get_video_financial_readiness_v1()
 returns table(schema_ready boolean,credit_ledger_ready boolean,budget_ready boolean,cost_ledger_ready boolean)
 language sql security definer set search_path=pg_catalog,executive_visuals as $$
@@ -240,5 +264,5 @@ revoke all on function executive_visuals.configure_video_budget_policy_v1(uuid,u
 revoke all on function executive_visuals.issue_video_budget_approval_v1(uuid,uuid,text,text,text,text,numeric,text,integer) from public;
 revoke all on function executive_visuals.reserve_video_generation_financials_v1(uuid,uuid,uuid,numeric,bigint,text) from public;
 revoke all on function executive_visuals.finalize_video_generation_financials_v1(uuid,uuid,text,numeric,bigint,jsonb) from public;
-revoke all on function executive_visuals.get_video_financial_readiness_v1() from public;
+revoke all on function executive_visuals.finish_video_generation_job_v1(uuid,uuid,text,uuid,text,jsonb,jsonb,numeric,bigint,jsonb) from public;\nrevoke all on function executive_visuals.get_video_financial_readiness_v1() from public;
 commit;
