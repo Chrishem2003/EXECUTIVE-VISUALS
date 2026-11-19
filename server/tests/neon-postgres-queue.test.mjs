@@ -29,6 +29,32 @@ test("creates a bounded pg pool with TLS verification and pooled endpoint only",
  await assert.rejects(()=>createNeonPostgresPool({connectionString:"postgres://ev:secret@ep-example.us-east-2.aws.neon.tech/neondb",Pool:FakePool}),/pooled endpoint/);
 });
 
+test("enqueue is idempotent, bounded and parameterized", async () => {
+ const calls=[];
+ const pool={query:async(text,values)=>{calls.push({text,values});return {rows:[{job_id:id,status:"queued",replayed:true}]};}};
+ const queue=createNeonPostgresQueue({pool});
+ const result=await queue.enqueue({ownerId:id,projectId:id,jobType:"video.generate",input:{provider:"runway"},idempotencyKey:"request-1",maxAttempts:3});
+ assert.deepEqual(result,{jobId:id,status:"queued",replayed:true});
+ assert.match(calls[0].text,/enqueue_job_v1/);
+ assert.deepEqual(calls[0].values,[id,id,"video.generate",JSON.stringify({provider:"runway"}),"request-1",3]);
+ await assert.rejects(()=>queue.enqueue({ownerId:"bad",jobType:"video.generate",input:{}}),/UUIDs/);
+ await assert.rejects(()=>queue.enqueue({ownerId:id,jobType:"video.generate",input:[]}),/object/);
+ await assert.rejects(()=>queue.enqueue({ownerId:id,jobType:"video.generate",input:{},maxAttempts:0}),/attempts/);
+});
+
+test("defer and quarantine release only the current fenced lease", async () => {
+ const calls=[];
+ const queue=createNeonPostgresQueue({pool:{query:async(text,values)=>{calls.push({text,values});return {rows:[{deferred:text.includes("defer_job_v1"),quarantined:text.includes("quarantine_job_v1")}]};}}});
+ assert.equal(await queue.defer(id,"worker-a",token,30,{code:"RATE_LIMITED"}),true);
+ assert.equal(await queue.quarantine(id,"worker-a",token,{code:"INVALID_PAYLOAD"}),true);
+ assert.match(calls[0].text,/defer_job_v1/);
+ assert.deepEqual(calls[0].values,[id,"worker-a",token,30,JSON.stringify({code:"RATE_LIMITED"})]);
+ assert.match(calls[1].text,/quarantine_job_v1/);
+ assert.deepEqual(calls[1].values,[id,"worker-a",token,JSON.stringify({code:"INVALID_PAYLOAD"})]);
+ await assert.rejects(()=>queue.defer(id,"worker-a","bad",30),/UUIDs/);
+ await assert.rejects(()=>queue.quarantine(id,"worker-a",token,null),/structured error/);
+});
+
 test("claim uses atomic SQL function and validates the fencing token",async()=>{
  const calls=[];
  const pool={query:async(text,values)=>{calls.push({text,values});return {rows:[row]};}};
