@@ -66,7 +66,8 @@ export function createCloudVideoEnqueue({
   const base = url && serviceRoleKey ? endpoint(url) : null;
 
   async function call(name, args) {
-    if (!base || !serviceRoleKey) throw Object.assign(new Error("This Neon-backed enqueue instance exposes admission only; worker lifecycle operations belong to the Neon worker contracts."), { code: "NEON_VIDEO_WORKER_CONTRACT_REQUIRED" });
+    if (videoEnqueueAdapter) throw Object.assign(new Error("This Neon-backed enqueue instance exposes admission only; worker lifecycle operations belong to the Neon worker contracts."), { code: "NEON_VIDEO_WORKER_CONTRACT_REQUIRED" });
+    if (!base || !serviceRoleKey) throw new Error("Cloud video repository credentials are unavailable.");
     if (!Object.values(RPC).includes(name)) throw new Error("Unsupported cloud video enqueue operation.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
