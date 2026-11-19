@@ -5,9 +5,10 @@ import { createNeonVideoWorkerContracts, createNeonCloudVideoWorker } from "../n
 const jobId = "123e4567-e89b-42d3-a456-426614174000";
 const lease = "223e4567-e89b-42d3-a456-426614174000";
 const workerId = "neon-worker";
+const projectId = "323e4567-e89b-42d3-a456-426614174000";
 function fixture() {
   const calls = [];
-  const job = { id: jobId, owner_id: jobId, project_id: null, job_type: "video.generate", lease_token: lease };
+  const job = { id: jobId, owner_id: jobId, project_id: projectId, job_type: "video.generate", lease_token: lease };
   const runtime = {
     backend: "neon-postgres",
     queue: {
@@ -27,6 +28,18 @@ function fixture() {
   return { calls, job, runtime };
 }
 
+test("Neon worker quarantines a claimed job without an authenticated owner/project UUID scope", async () => {
+  const f = fixture();
+  f.job.project_id = null;
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  assert.equal(await contracts.queue.claim(workerId, 90, ["video.generate"]), null);
+  assert.equal(f.calls[0][0], "quarantine");
+  assert.equal(f.calls[0][1], jobId);
+  assert.equal(f.calls[0][2], workerId);
+  assert.equal(f.calls[0][3], lease);
+  assert.equal(f.calls[0][4].code, "VIDEO_JOB_SCOPE_INVALID");
+});
+ 
 test("Neon worker contracts finalize success with measured credits and provider receipt evidence", async () => {
   const f = fixture();
   const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
