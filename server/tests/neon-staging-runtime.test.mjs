@@ -88,3 +88,48 @@ test("Neon runtime exposes the multi-shot approval bridge only with an explicit 
   assert.equal(status.applicationDispatchReady, true);
   await runtime.close();
 });
+
+test("Neon worker is composed but cannot start before approval, financial and private-storage readiness", async () => {
+  let ended = 0;
+  let storageReady = false;
+  const pool = {
+    async query(sql) {
+      if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
+      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
+      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
+      if (sql.includes("video_generation_approvals")) return { rows: [{ approvals_ready: true, shots_ready: true }] };
+      throw new Error("Unexpected query");
+    },
+    async end() { ended++; }
+  };
+  const storage = { async checkReadiness() { return { ready: storageReady, provider: "private-test-storage" }; } };
+  const workerEnv = { ...env, NEON_STAGING_APPLICATION_DISPATCH_ENABLED: "true",
+    CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" };
+  const adapter = { provider: "runway", model: "gen4.5",
+    async submit() {}, async getStatus() {}, async ingestOutputs() { return { assetIds: [] }; },
+    async resolveActualCost() { return { amount: 1, actualCredits: 1, currency: "USD", evidenceReference: "receipt" }; } };
+  const runtime = await createNeonStagingRuntime({
+    env: workerEnv, pool, storage, includeStorage: true,
+    quoteCustomerCredits: () => 100,
+    workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "neon-staging-worker"
+  });
+  assert.deepEqual(runtime.videoWorker.listSupported(), ["runway:gen4.5"]);
+  const blocked = await runtime.checkReadiness();
+  assert.equal(blocked.videoWorker.configured, true);
+  assert.equal(blocked.videoWorker.running, false);
+  assert.equal(blocked.applicationDispatchReady, false);
+  await assert.rejects(runtime.startVideoWorker(), /private-storage readiness/);
+  assert.equal(runtime.videoWorker !== null, true);
+  await runtime.close();
+  assert.equal(ended, 1);
+});
+
+test("Neon worker composition requires private storage and a complete authorization contract", async () => {
+  const pool = { async query() { return { rows: [] }; }, async end() {} };
+  const adapter = { provider: "runway", model: "gen4.5",
+    async submit() {}, async getStatus() {}, async ingestOutputs() {}, async resolveActualCost() {} };
+  await assert.rejects(createNeonStagingRuntime({
+    env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
+    pool, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
+  }), /private object storage/);
+});
