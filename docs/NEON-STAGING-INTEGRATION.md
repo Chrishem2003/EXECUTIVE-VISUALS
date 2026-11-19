@@ -228,11 +228,21 @@ These are queue primitives, not yet a production worker cutover. The live video 
 - Does not change the existing Supabase worker, register a production route, apply migrations, create buckets or enable a deployed worker.
 - `server/tests/neon-staging-runtime.test.mjs` covers opt-in gating, no-I/O construction, readiness aggregation, optional storage failure and idempotent shutdown. It is included in `npm run verify:neon-postgres`.
 
-This is a composition boundary and staging diagnostic foundation; it does **not** yet execute video jobs. The real `pg` dependency/lockfile, full video enqueue/defer/quarantine contracts, Neon identity authorization, and media metadata/publication transaction still block worker cutover.
+The runtime now optionally composes the provider-aware Neon video worker and a single-flight long-lived process controller. It remains **explicit-start only**: construction never starts polling, and `startVideoWorker()` first requires application/financial readiness plus ready private storage. The controller runs expired-lease recovery, polls asynchronously, backs off after failures, prevents overlapping cycles, and drains in-flight work during shutdown. The worker still requires injected provider adapters and an owner/project authorization callback; this does not claim a live provider execution against the connected Neon account.
+
+### Neon video worker lifecycle — repository implementation
+
+- `server/neon-cloud-video-worker.mjs` adapts Neon queue, submission and financial contracts to the existing provider-aware executor. Provider operations require an injected owner/project authorization callback.
+- `server/cloud-video-worker-process.mjs` provides a single-flight polling loop, expired-lease recovery, bounded error backoff, sanitized lifecycle events and graceful drain.
+- `createNeonStagingRuntime({ workerAdapters, workerAuthorizeJob, workerId, includeStorage: true })` composes the worker only when all inputs and private storage are explicitly supplied.
+- The runtime exposes `startVideoWorker()` and `stopVideoWorker()`; it never starts the worker automatically. Start checks the approval/financial/database readiness and private storage readiness first. Runtime shutdown drains the worker before closing the PostgreSQL pool.
+- `server/tests/cloud-video-worker-process.test.mjs` covers recovery ordering, duplicate-start prevention, graceful shutdown, error backoff and bounded settings. `server/tests/neon-staging-runtime.test.mjs` covers fail-closed worker composition and the private-storage start gate. These tests run through `npm run verify:neon-postgres`.
+
+This is a tested process/lifecycle composition, not proof of successful remote generation or asset publication. No worker was started against the connected Neon project.
 
 ### Remaining gates
 
-- [ ] Add the reviewed `pg` runtime dependency and update lockfile.
+- [x] Add the `pg` runtime dependency and lockfile entry.
 - [x] Port the provider submission ledger and evidence-backed provider-task reconciliation, retaining lease-fencing wrappers.
 - [ ] Port enqueue + approval/budget + customer-credit reserve/settle transactions as atomic functions.
 - [ ] Port asset publication metadata and cleanup outbox, preserving private storage path lineage.
@@ -240,7 +250,7 @@ This is a composition boundary and staging diagnostic foundation; it does **not*
 - [ ] Add database-owner and least-privilege worker roles with explicit grants; no browser credentials.
 - [ ] Run migration on the isolated Neon staging branch only after separate approval.
 - [ ] Add real integration/concurrency/restart tests against Neon.
-- [ ] Connect a separate staging worker only after all preceding gates pass.
+- [x] Add an explicit-start worker lifecycle composition; actual staging start remains blocked until all preceding gates pass.
 
 No branch, database, schema, credential, bucket, Render setting, or production resource was changed by this repository implementation.
 
