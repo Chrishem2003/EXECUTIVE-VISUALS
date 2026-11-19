@@ -63,7 +63,7 @@ begin
   v_owner_id,v_project_id,'runway','gen4.5',v_failed_hash,'USD',4,
   'Atomic rollback integration test',300
  );
- select count(*) into v_jobs_before from executive_visuals.jobs where v_owner_id=v_owner_id and idempotency_key='ci-video-request-insufficient-credits';
+ select count(*) into v_jobs_before from executive_visuals.jobs where owner_id=v_owner_id and idempotency_key='ci-video-request-insufficient-credits';
  begin
   perform * from executive_visuals.enqueue_video_generation_job_v1(
    v_owner_id,v_project_id,'ci-video-request-insufficient-credits',
@@ -74,7 +74,7 @@ begin
  exception when others then
   if sqlerrm<>'BILLING_INSUFFICIENT_CREDITS' then raise; end if;
  end;
- select count(*) into v_jobs_after from executive_visuals.jobs j where j.v_owner_id=v_owner_id and j.idempotency_key='ci-video-request-insufficient-credits';
+ select count(*) into v_jobs_after from executive_visuals.jobs j where j.owner_id=v_owner_id and j.idempotency_key='ci-video-request-insufficient-credits';
  if v_jobs_before<>v_jobs_after or v_jobs_after<>0 then raise exception 'failed financial reservation left a queue job behind'; end if;
 end $atomic_video_enqueue$;
 select 'NEON_ATOMIC_VIDEO_ENQUEUE_POSTGRES_INTEGRATION_OK' as result;
