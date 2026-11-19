@@ -90,6 +90,30 @@ export function createNeonPostgresQueue({ pool, schema = SCHEMA } = {}) {
       if (!result.rows?.length) return false;
       return result.rows[0].cancel_requested_at !== null && result.rows[0].cancel_requested_at !== undefined;
     },
+    async getOwnedJob(jobId, ownerId) {
+      if (!UUID.test(String(jobId || "")) || !UUID.test(String(ownerId || ""))) throw new Error("Job and owner IDs must be UUIDs.");
+      const result = await query("select id,owner_id,project_id,job_type,status,progress,attempt_count,max_attempts,created_at,updated_at,completed_at,output,error from executive_visuals.jobs where id=$1::uuid and owner_id=$2::uuid limit 1", [jobId, ownerId]);
+      const row = result.rows?.[0];
+      if (!row) return null;
+      return Object.freeze({
+        id: row.id, ownerId: row.owner_id, projectId: row.project_id,
+        jobType: row.job_type, status: row.status, progress: Number(row.progress || 0),
+        attemptCount: Number(row.attempt_count || 0), maxAttempts: Number(row.max_attempts || 0),
+        createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at,
+        output: row.output && typeof row.output === "object" && !Array.isArray(row.output) ? row.output : null,
+        error: row.error && typeof row.error === "object" && !Array.isArray(row.error) ? row.error : null
+      });
+    },
+    async listOwnedJobEvents(jobId, ownerId, limit = 100) {
+      if (!UUID.test(String(jobId || "")) || !UUID.test(String(ownerId || ""))) throw new Error("Job and owner IDs must be UUIDs.");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("Job event limit must be between 1 and 200.");
+      const result = await query("select e.id,e.event_type,e.event_data,e.created_at from executive_visuals.job_events e inner join executive_visuals.jobs j on j.id=e.job_id where e.job_id=$1::uuid and j.owner_id=$2::uuid and e.owner_id=$2::uuid order by e.id asc limit $3", [jobId, ownerId, limit]);
+      return Object.freeze((result.rows || []).map(row => Object.freeze({
+        id: Number(row.id), type: row.event_type,
+        data: row.event_data && typeof row.event_data === "object" && !Array.isArray(row.event_data) ? row.event_data : {},
+        createdAt: row.created_at
+      })));
+    },
     async recover(limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Recovery limit must be between 1 and 1000.");
       const result = await query("select executive_visuals.recover_expired_jobs($1) as recovered", [limit]);
