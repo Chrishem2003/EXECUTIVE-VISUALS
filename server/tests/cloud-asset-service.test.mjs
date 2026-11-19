@@ -45,5 +45,5 @@ test("composes Neon Object Storage without provisioning or changing the configur
  const service=createCloudAssetService(base);
  assert.equal(service.storage.bucket,"executive-visuals-media");
  assert.equal(service.storage.endpoint,base.neon.endpoint);
- assert.throws(()=>createCloudAssetService({...base,neon:{...base.neon,bucket:"custom-media"} }),/selected storage bucket/);
+ assert.throws(()=>createCloudAssetService({...base,neon:{...base.neon,bucket:"custom-media"} }),/NEON_STORAGE_BUCKET/);
 });
