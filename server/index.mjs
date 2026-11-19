@@ -39,6 +39,7 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
+import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -304,6 +305,13 @@ const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createClo
  db,queue:createCloudQueue(),repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(ownerId,...args)=>audit(db,ownerId,...args)
 }):null;
+const neonStagingApprovalRuntime=await createNeonStagingApprovalDispatch({
+ env:process.env,db,canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+ audit:(ownerId,...args)=>audit(db,ownerId,...args)
+});
+const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled
+ ?neonStagingApprovalRuntime.dispatch
+ :cloudVideoGenerationDispatch;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -1210,9 +1218,9 @@ export function createAppServer() {
       }
       const videoSubmitMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/submit$/i);
       if(videoSubmitMatch&&req.method==="POST"){
-        if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud generation dispatch is disabled. No cloud jobs or provider requests were created.");return;}
+        if(!videoApprovalSubmitDispatch){fail(res,503,"VIDEO_GENERATION_DISPATCH_DISABLED","Video generation dispatch is disabled. No jobs or provider requests were created.");return;}
         if(!rateAllowed("video-production-submit:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many generation submissions. Try again shortly.");return;}
-        const result=await cloudVideoGenerationDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
+        const result=await videoApprovalSubmitDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
       }
       const cloudVideoJobCancelMatch=path.match(/^\/api\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
@@ -2119,6 +2127,6 @@ if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
   let shuttingDown=false;
-  const shutdown=async()=>{if(shuttingDown)return;shuttingDown=true;if(workerTimer)clearInterval(workerTimer);if(cloudWorkflowResumeTimer)clearInterval(cloudWorkflowResumeTimer);if(embeddedCloudWorkerSupervisor){try{await embeddedCloudWorkerSupervisor.stop();}catch(error){process.stderr.write("Embedded cloud worker shutdown failed: "+String(error?.message||error)+"\\n");}}for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  const shutdown=async()=>{if(shuttingDown)return;shuttingDown=true;if(workerTimer)clearInterval(workerTimer);if(cloudWorkflowResumeTimer)clearInterval(cloudWorkflowResumeTimer);if(embeddedCloudWorkerSupervisor){try{await embeddedCloudWorkerSupervisor.stop();}catch(error){process.stderr.write("Embedded cloud worker shutdown failed: "+String(error?.message||error)+"\\n");}}for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(async()=>{try{await neonStagingApprovalRuntime.close();}catch(error){process.stderr.write("Neon staging shutdown failed: "+String(error?.message||error)+"\\n");}db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }
