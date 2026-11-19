@@ -91,9 +91,22 @@ begin
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
  ) into ok;
  if not ok then raise exception 'valid success finalization rejected'; end if;
-end $$;
+end $;
 
-do $$
+do $
+declare r record;
+begin
+ select * into r from executive_visuals.finalize_video_generation_financials_v1(
+  '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'succeeded',3,75,
+  '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
+ );
+ if not r.replayed or r.balance<>925 or r.credit_adjustment<>25 then
+  raise exception 'final financial settlement replay mismatch';
+ end if;
+end $;
+
+do $
 declare balance_now bigint; spent numeric; reserved numeric; cost_count integer; job_status text;
 begin
  select sum(amount) into balance_now from executive_visuals.billing_credit_ledger where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
