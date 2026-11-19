@@ -61,12 +61,12 @@ try {
     throw new Error("Reclaimed job did not receive a fresh fencing token.");
   }
   const staleDefer = await pool.query(
-    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,3600,'{"code":"STALE_CALLBACK"}'::jsonb) as accepted",
-    [fencedJobId, "ci-neon-fencing-worker", first.lease_token]
+    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,3600,$4::jsonb) as accepted",
+    [fencedJobId, "ci-neon-fencing-worker", first.lease_token, JSON.stringify({ code: "STALE_CALLBACK" })]
   );
   const staleQuarantine = await pool.query(
-    "select executive_visuals.quarantine_job_v1($1::uuid,$2,$3::uuid,'{"code":"STALE_CALLBACK"}'::jsonb) as accepted",
-    [fencedJobId, "ci-neon-fencing-worker", first.lease_token]
+    "select executive_visuals.quarantine_job_v1($1::uuid,$2,$3::uuid,$4::jsonb) as accepted",
+    [fencedJobId, "ci-neon-fencing-worker", first.lease_token, JSON.stringify({ code: "STALE_CALLBACK" })]
   );
   if (staleDefer.rows[0]?.accepted !== false || staleQuarantine.rows[0]?.accepted !== false) {
     throw new Error("A stale worker callback changed a reclaimed job.");
