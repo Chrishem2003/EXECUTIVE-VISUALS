@@ -81,7 +81,7 @@ export function createNeonObjectStorage({
   const keyId = String(accessKeyId || "").trim();
   const secret = String(secretAccessKey || "");
   const bucketName = safeBucket(bucket);
-  if (!/^[a-z0-9]+-[a-z0-9]+-\\d$/.test(signingRegion)) throw new Error("NEON_STORAGE_REGION must be a Neon Object Storage region such as us-east-2.");
+  if (!/^[a-z0-9]+-[a-z0-9]+-\d$/.test(signingRegion)) throw new Error("NEON_STORAGE_REGION must be a Neon Object Storage region such as us-east-2.");
   if (!/^[A-Za-z0-9_-]{8,256}$/.test(keyId) || secret.length < 16 || secret.length > 512) {
     throw new Error("Neon Object Storage credentials are missing or invalid.");
   }
@@ -96,7 +96,7 @@ export function createNeonObjectStorage({
   function timestamp() {
     const now = clock();
     if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("Neon signing clock returned an invalid date.");
-    const iso = now.toISOString().replace(/[:-]|\\.\\d{3}/g, "");
+    const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
     return { amzDate: iso, date: iso.slice(0, 8) };
   }
 
@@ -112,16 +112,16 @@ export function createNeonObjectStorage({
       "x-amz-date": amzDate
     };
     if (contentType) headers["content-type"] = contentType;
-    const canonicalHeaders = Object.keys(headers).sort().map(name => name + ":" + headers[name].trim() + "\\n").join("");
+    const canonicalHeaders = Object.keys(headers).sort().map(name => name + ":" + headers[name].trim() + "\n").join("");
     const signedHeaderNames = Object.keys(headers).sort().join(";");
     const canonicalRequest = [
       method, path, canonicalQuery(query), canonicalHeaders, signedHeaderNames, payloadHash
-    ].join("\\n");
+    ].join("\n");
     const scope = date + "/" + signingRegion + "/s3/aws4_request";
     const stringToSign = [
       "AWS4-HMAC-SHA256", amzDate, scope,
       createHash("sha256").update(canonicalRequest).digest("hex")
-    ].join("\\n");
+    ].join("\n");
     const signature = hmac(signingKey(secret, date, signingRegion), stringToSign, "hex");
     return {
       amzDate,
@@ -251,12 +251,12 @@ export function createNeonObjectStorage({
         ["X-Amz-SignedHeaders", "host"]
       ]);
       const canonicalRequest = [
-        "GET", safePath, canonicalQuery(query), "host:" + host + "\\n", "host", "UNSIGNED-PAYLOAD"
-      ].join("\\n");
+        "GET", safePath, canonicalQuery(query), "host:" + host + "\n", "host", "UNSIGNED-PAYLOAD"
+      ].join("\n");
       const stringToSign = [
         "AWS4-HMAC-SHA256", amzDate, scope,
         createHash("sha256").update(canonicalRequest).digest("hex")
-      ].join("\\n");
+      ].join("\n");
       query.set("X-Amz-Signature", hmac(signingKey(secret, date, signingRegion), stringToSign, "hex"));
       return base + safePath + "?" + canonicalQuery(query);
     },
