@@ -85,7 +85,9 @@ test("Neon runtime exposes the multi-shot approval bridge only with an explicit 
   assert.equal(typeof runtime.videoApprovals.approvals.enqueue, "function");
   const status = await runtime.checkReadiness();
   assert.equal(status.videoApprovals.ready, true);
-  assert.equal(status.applicationDispatchReady, true);
+  assert.equal(status.applicationDispatchReady, false, "approval dispatch must remain blocked until a worker and private storage are configured");
+  assert.equal(status.videoWorker.configured, false);
+  assert.equal(status.storage, null);
   await runtime.close();
 });
 
@@ -133,4 +135,26 @@ test("Neon worker composition requires private storage and a complete authorizat
     env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
     pool, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
   }), /private object storage/);
+});
+
+test("Neon approval dispatch readiness fails closed when the worker or private storage is absent", async () => {
+  const pool = {
+    async query(sql) {
+      if (sql.includes("video_generation_approvals")) return { rows: [{ approvals_ready: true, shots_ready: true }] };
+      if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
+      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
+      if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
+      throw new Error("Unexpected query");
+    },
+    async end() {}
+  };
+  const runtime = await createNeonStagingRuntime({ env, pool,
+    quoteCustomerCredits: () => 100 });
+  const status = await runtime.checkReadiness();
+  assert.equal(status.ready, true);
+  assert.equal(status.videoApprovals.ready, true);
+  assert.equal(status.applicationDispatchReady, false);
+  assert.equal(status.videoWorker.configured, false);
+  await assert.rejects(runtime.startVideoWorker(), /not configured/);
+  await runtime.close();
 });
