@@ -54,7 +54,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
   async register(raw){
    const a=validateApproval(raw);
    return transaction(async client=>{
-    await client.query("insert into executive_visuals.video_generation_approvals(id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::jsonb,$7,$8::bigint,$9::bigint) on conflict(id) do nothing",[
+    await client.query("insert into executive_visuals.video_generation_approvals(id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::jsonb,$7,$8::bigint,$9::bigint) on conflict do nothing",[
      a.id,a.ownerId,a.projectId,a.idempotencyKey,a.requestHash,JSON.stringify(a.snapshotJson),a.currency,a.quotedAmountMicros,a.budgetCeilingMicros
     ]);
     const found=await client.query("select * from executive_visuals.video_generation_approvals where id=$1::uuid for update",[a.id]);
