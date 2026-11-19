@@ -30,7 +30,7 @@ select * from executive_visuals.reserve_video_generation_financials_v1(
 );
 
 -- Replaying after the one-use approval was consumed must return the same reservation.
-do $
+do $$
 declare r record; approval_id uuid;
 begin
  select id into approval_id from executive_visuals.video_generation_budget_approvals where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and request_hash='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' order by created_at desc limit 1;
@@ -44,12 +44,13 @@ end $$;
 select lease_token as success_lease from executive_visuals.claim_next_job_v2('ci-worker',90,array['video.generate'])
 where id='11111111-1111-4111-8111-111111111111' \gset
 
-do $$
-declare ok boolean;
+do $
+declare ok boolean; lease_value uuid;
 begin
+ select lease_token into lease_value from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
  select executive_visuals.finish_video_generation_job_v1(
   '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'ci-worker', :'success_lease','succeeded',
+  'ci-worker', lease_value,'succeeded',
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","costEvidenceReference":"ci-receipt-success"}'::jsonb,
   null,3,75,
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-event-success","evidenceReference":"ci-receipt-success"}'::jsonb
@@ -82,7 +83,7 @@ select lease_token as failure_lease from executive_visuals.claim_next_job_v2('ci
 where id='22222222-2222-4222-8222-222222222222' \gset
 
 -- A failure without proof that the provider did not charge must not release credits.
-do $
+do $$
 declare lease_value uuid;
 begin
  select lease_token into lease_value from executive_visuals.jobs where id='22222222-2222-4222-8222-222222222222';
@@ -97,7 +98,7 @@ begin
  end;
 end $$;
 
-do $
+do $$
 declare ok boolean; lease_value uuid;
 begin
  select lease_token into lease_value from executive_visuals.jobs where id='22222222-2222-4222-8222-222222222222';
