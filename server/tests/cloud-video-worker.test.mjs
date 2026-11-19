@@ -67,8 +67,21 @@ test("cloud video worker preserves the default delay when no provider hint is su
 });
 
 test("cloud video worker preserves a durable blocked outcome from an accounting-aware backend", async () => {
-  const f = fixture(undefined, "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+  const f = fixture(undefined, "CLOUD_VIDEO_JOB_FAILED");
   f.enqueue.finish = async () => ({ finished: true, status: "blocked" });
+  const events = [];
+  const result = await runCloudVideoWorkerCycle({
+    ...f, workerId: "worker-1", heartbeatIntervalMs: 1000,
+    execute: f.execute, onEvent: event => events.push(event)
+  });
+  assert.equal(result.finished, true);
+  assert.equal(result.status, "blocked");
+  assert.equal(events.at(-1).type, "video.job.blocked");
+});
+
+test("cloud video worker preserves blocked status from backend-specific quarantine", async () => {
+  const f = fixture(undefined, "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+  f.enqueue.quarantine = async () => ({ finished: true, status: "blocked" });
   const events = [];
   const result = await runCloudVideoWorkerCycle({
     ...f, workerId: "worker-1", heartbeatIntervalMs: 1000,
