@@ -72,8 +72,8 @@ try {
     throw new Error("A stale worker callback changed a reclaimed job.");
   }
   const validDefer = await pool.query(
-    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,5,'{"code":"CI_VALID_DEFER"}'::jsonb) as accepted",
-    [fencedJobId, "ci-neon-fencing-worker", second.lease_token]
+    "select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,3600,$4::jsonb) as accepted",
+    [fencedJobId, "ci-neon-fencing-worker", second.lease_token, JSON.stringify({ code: "CI_VALID_DEFER" })]
   );
   if (validDefer.rows[0]?.accepted !== true) throw new Error("Current lease could not defer its own job.");
 
