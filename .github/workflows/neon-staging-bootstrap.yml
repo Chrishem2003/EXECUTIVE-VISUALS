@@ -79,12 +79,3 @@ jobs:
             echo "The database connection URI is intentionally not printed or uploaded as an artifact."
           } >> "${GITHUB_STEP_SUMMARY}"
 
-  require-explicit-confirmation:
-    name: Require explicit provisioning confirmation
-    if: inputs.confirm_create_staging_branch != true
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Stop without provisioning
-        run: |
-          echo "No Neon resources were created. Re-run manually only after verifying the project and staging-base parent."
-          exit 1
