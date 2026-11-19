@@ -285,5 +285,6 @@ revoke all on function executive_visuals.configure_video_budget_policy_v1(uuid,u
 revoke all on function executive_visuals.issue_video_budget_approval_v1(uuid,uuid,text,text,text,text,numeric,text,integer) from public;
 revoke all on function executive_visuals.reserve_video_generation_financials_v1(uuid,uuid,uuid,numeric,bigint,text) from public;
 revoke all on function executive_visuals.finalize_video_generation_financials_v1(uuid,uuid,text,numeric,bigint,jsonb) from public;
-revoke all on function executive_visuals.finish_video_generation_job_v1(uuid,uuid,text,uuid,text,jsonb,jsonb,numeric,bigint,jsonb) from public;\nrevoke all on function executive_visuals.get_video_financial_readiness_v1() from public;
+revoke all on function executive_visuals.finish_video_generation_job_v1(uuid,uuid,text,uuid,text,jsonb,jsonb,numeric,bigint,jsonb) from public;
+revoke all on function executive_visuals.get_video_financial_readiness_v1() from public;
 commit;
