@@ -236,6 +236,14 @@ begin
  if job_row.id is null then return false; end if;
  if p_status in ('succeeded','partial') then
   if p_output is null or coalesce(p_output->>'provider','')='' or coalesce(p_output->>'model','')='' or coalesce(p_output->>'providerTaskId','')='' or coalesce(p_output->>'costEvidenceReference','')='' or p_actual_amount is null or p_actual_credits is null then raise exception 'VIDEO_JOB_SUCCESS_REQUIRES_COST_EVIDENCE'; end if;
+  if coalesce(p_financial_evidence->>'provider','')<>p_output->>'provider'
+     or coalesce(p_financial_evidence->>'model','')<>p_output->>'model'
+     or coalesce(p_financial_evidence->>'providerTaskId','')<>p_output->>'providerTaskId'
+     or coalesce(p_financial_evidence->>'evidenceReference','')<>p_output->>'costEvidenceReference'
+     or not exists(select 1 from executive_visuals.video_generation_budget_reservations where job_id=p_job_id)
+     or not exists(select 1 from executive_visuals.billing_credit_reservations where job_id=p_job_id) then
+    raise exception 'VIDEO_JOB_FINANCIAL_SCOPE_MISMATCH';
+  end if;
  end if;
  select * into financial_receipt from executive_visuals.finalize_video_generation_financials_v1(p_job_id,p_owner_id,p_status,p_actual_amount,p_actual_credits,p_financial_evidence);
  update executive_visuals.jobs set status=p_status,progress=case when p_status in ('succeeded','partial') then 100 else progress end,
