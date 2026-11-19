@@ -67,9 +67,33 @@ export async function createNeonStagingRuntime({
           authorizeJob: workerAuthorizeJob, env })
       : null;
     const workerProcess = videoWorker
-      ? createCloudVideoWorkerProcess({ worker: videoWorker, ...workerProcessOptions })
+      ? createCloudVideoWorkerProcess({ ...workerProcessOptions, worker: videoWorker })
       : null;
     let closed = false;
+    async function checkReadiness() {
+      if (closed) throw new Error("Neon staging runtime is closed.");
+      const [queueStatus, financialStatus, enqueueStatus, approvalStatus, storageStatus] = await Promise.all([
+        queue.checkReadiness(),
+        financials.checkReadiness(),
+        videoEnqueue.checkReadiness(),
+        videoApprovals ? videoApprovals.approvals.checkReadiness() : Promise.resolve(null),
+        storage?.checkReadiness ? storage.checkReadiness() : Promise.resolve(null)
+      ]);
+      return Object.freeze({
+        backend: "neon-postgres",
+        branch: "executive-visuals-staging",
+        ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
+          (!storage || storageStatus?.ready === true),
+        applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
+          approvalStatus?.ready === true && (!storage || storageStatus?.ready === true),
+        queue: queueStatus,
+        financials: financialStatus,
+        videoEnqueue: enqueueStatus,
+        videoApprovals: approvalStatus || { configured: false, ready: false },
+        storage: storageStatus,
+        videoWorker: Object.freeze({ configured: Boolean(videoWorker), running: workerProcess?.status().running === true })
+      });
+    }
 
     return Object.freeze({
       backend: "neon-postgres",
@@ -81,32 +105,25 @@ export async function createNeonStagingRuntime({
       videoApprovals,
       customerCredits: financials,
       storage,
-      async checkReadiness() {
+      videoWorker,
+      checkReadiness,
+      async startVideoWorker() {
         if (closed) throw new Error("Neon staging runtime is closed.");
-        const [queueStatus, financialStatus, enqueueStatus, approvalStatus, storageStatus] = await Promise.all([
-          queue.checkReadiness(),
-          financials.checkReadiness(),
-          videoEnqueue.checkReadiness(),
-          videoApprovals ? videoApprovals.approvals.checkReadiness() : Promise.resolve(null),
-          storage?.checkReadiness ? storage.checkReadiness() : Promise.resolve(null)
-        ]);
-        return Object.freeze({
-          backend: "neon-postgres",
-          branch: "executive-visuals-staging",
-          ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
-            (!storage || storageStatus?.ready === true),
-          applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true && approvalStatus?.ready === true &&
-            (!storage || storageStatus?.ready === true),
-          queue: queueStatus,
-          financials: financialStatus,
-          videoEnqueue: enqueueStatus,
-          videoApprovals: approvalStatus || { configured: false, ready: false },
-          storage: storageStatus
-        });
+        if (!videoWorker || !workerProcess) throw new Error("Neon video worker is not configured.");
+        const readiness = await checkReadiness();
+        if (readiness.applicationDispatchReady !== true || readiness.storage?.ready !== true) {
+          throw new Error("Neon video worker cannot start until application, financial and private-storage readiness all pass.");
+        }
+        return workerProcess.start();
+      },
+      async stopVideoWorker() {
+        if (!workerProcess) return Object.freeze({ stopped: true, configured: false });
+        return workerProcess.stop();
       },
       async close() {
         if (closed) return;
         closed = true;
+        if (workerProcess) await workerProcess.stop();
         if (typeof pool.end === "function") await pool.end();
       }
     });
