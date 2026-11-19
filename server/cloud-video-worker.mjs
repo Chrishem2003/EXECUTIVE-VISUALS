@@ -121,10 +121,12 @@ export async function runCloudVideoWorkerCycle({
       return { claimed: true, finished: true, status: "queued", jobId: job.id, reason: code };
     }
     if (QUARANTINE_CODES.has(code)) {
-      const quarantined = await enqueue.quarantine({ jobId: job.id, workerId, leaseToken: job.lease_token, reasonCode: code });
+      const quarantineOutcome = await enqueue.quarantine({ jobId: job.id, workerId, leaseToken: job.lease_token, reasonCode: code });
+      const quarantined = quarantineOutcome === true || quarantineOutcome?.finished === true;
       if (!quarantined) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-      onEvent({ type: "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
-      return { claimed: true, finished: true, status: "needs_input", jobId: job.id, reason: code };
+      const persistedStatus = quarantineOutcome?.status || "needs_input";
+      onEvent({ type: persistedStatus === "blocked" ? "video.job.blocked" : "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
+      return { claimed: true, finished: true, status: persistedStatus, jobId: job.id, reason: code };
     }
     await assertLease();
     const failureOutcome = await enqueue.finish({
