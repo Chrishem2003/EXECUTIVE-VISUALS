@@ -44,7 +44,7 @@ end $$;
 select lease_token as success_lease from executive_visuals.claim_next_job_v2('ci-worker',90,array['video.generate'])
 where id='11111111-1111-4111-8111-111111111111' \gset
 
-do $
+do $$
 declare ok boolean; lease_value uuid;
 begin
  select lease_token into lease_value from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
