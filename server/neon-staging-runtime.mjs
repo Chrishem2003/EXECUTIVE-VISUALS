@@ -47,6 +47,7 @@ export async function createNeonStagingRuntime({
       queue,
       submissions,
       financials,
+      customerCredits: financials,
       storage,
       async checkReadiness() {
         if (closed) throw new Error("Neon staging runtime is closed.");
