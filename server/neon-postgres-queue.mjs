@@ -24,6 +24,42 @@ export function createNeonPostgresQueue({ pool, schema = SCHEMA } = {}) {
     return value;
   }
   return Object.freeze({
+    async enqueue({ ownerId, projectId = null, jobType, input, idempotencyKey = null, maxAttempts = 2 } = {}) {
+      if (!UUID.test(String(ownerId || "")) || (projectId !== null && !UUID.test(String(projectId)))) throw new Error("Queue owner and optional project IDs must be UUIDs.");
+      required(jobType, "Job type", 128);
+      objectOrNull(input, "Job input");
+      if (!input || Buffer.byteLength(JSON.stringify(input), "utf8") > 1024 * 1024) throw new Error("Job input must be an object no larger than 1 MiB.");
+      if (idempotencyKey !== null) required(idempotencyKey, "Idempotency key", 200);
+      if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) throw new Error("Maximum job attempts must be between 1 and 10.");
+      const result = await query("select * from executive_visuals.enqueue_job_v1($1::uuid,$2::uuid,$3,$4::jsonb,$5,$6)", [
+        ownerId, projectId, jobType, JSON.stringify(input), idempotencyKey, maxAttempts
+      ]);
+      const row = result.rows?.[0];
+      if (!row || !UUID.test(String(row.job_id || "")) || typeof row.status !== "string" || typeof row.replayed !== "boolean") {
+        throw fail("Neon queue enqueue returned an invalid receipt.", "NEON_QUEUE_INVALID_RESULT");
+      }
+      return Object.freeze({ jobId: row.job_id, status: row.status, replayed: row.replayed });
+    },
+    async defer(jobId, workerId, leaseToken, delaySeconds = 5, error = null) {
+      if (!UUID.test(String(jobId || "")) || !UUID.test(String(leaseToken || ""))) throw new Error("Job ID and lease token must be UUIDs.");
+      required(workerId, "Worker ID", 128);
+      if (!Number.isInteger(delaySeconds) || delaySeconds < 1 || delaySeconds > 86400) throw new Error("Deferral delay must be between 1 and 86400 seconds.");
+      objectOrNull(error, "Job error");
+      const result = await query("select executive_visuals.defer_job_v1($1::uuid,$2,$3::uuid,$4,$5::jsonb) as deferred", [
+        jobId, workerId, leaseToken, delaySeconds, error === null ? null : JSON.stringify(error)
+      ]);
+      return result.rows?.[0]?.deferred === true;
+    },
+    async quarantine(jobId, workerId, leaseToken, error) {
+      if (!UUID.test(String(jobId || "")) || !UUID.test(String(leaseToken || ""))) throw new Error("Job ID and lease token must be UUIDs.");
+      required(workerId, "Worker ID", 128);
+      if (!error || typeof error !== "object" || Array.isArray(error)) throw new Error("Quarantine requires a structured error object.");
+      objectOrNull(error, "Quarantine error");
+      const result = await query("select executive_visuals.quarantine_job_v1($1::uuid,$2,$3::uuid,$4::jsonb) as quarantined", [
+        jobId, workerId, leaseToken, JSON.stringify(error)
+      ]);
+      return result.rows?.[0]?.quarantined === true;
+    },
     async claim(workerId, leaseSeconds = 90, jobTypes = null) {
       required(workerId, "Worker ID", 128);
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error("Lease duration must be between 15 and 900 seconds.");
