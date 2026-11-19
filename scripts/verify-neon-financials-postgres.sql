@@ -30,12 +30,13 @@ select * from executive_visuals.reserve_video_generation_financials_v1(
 );
 
 -- Replaying after the one-use approval was consumed must return the same reservation.
-do $$
-declare r record;
+do $
+declare r record; approval_id uuid;
 begin
+ select id into approval_id from executive_visuals.video_generation_budget_approvals where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and request_hash='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' order by created_at desc limit 1;
  select * into r from executive_visuals.reserve_video_generation_financials_v1(
   '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  :'success_approval',4,100,'ci-success-reservation'
+  approval_id,4,100,'ci-success-reservation'
  );
  if not r.replayed then raise exception 'reservation replay was not idempotent'; end if;
 end $$;
@@ -60,7 +61,7 @@ do $$
 declare balance_now bigint; spent numeric; reserved numeric; cost_count integer; job_status text;
 begin
  select sum(amount) into balance_now from executive_visuals.billing_credit_ledger where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
- select spent_amount,reserved_amount into spent,reserved from executive_visuals.video_generation_budget_policies where id=:'policy_id';
+ select spent_amount,reserved_amount into spent,reserved from executive_visuals.video_generation_budget_policies where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and project_id is null and provider='runway' and model='gen4.5';
  select count(*) into cost_count from executive_visuals.video_generation_cost_ledger where job_id='11111111-1111-4111-8111-111111111111';
  select status into job_status from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
  if balance_now<>975 or spent<>3 or reserved<>0 or cost_count<>1 or job_status<>'succeeded' then
@@ -81,12 +82,14 @@ select lease_token as failure_lease from executive_visuals.claim_next_job_v2('ci
 where id='22222222-2222-4222-8222-222222222222' \gset
 
 -- A failure without proof that the provider did not charge must not release credits.
-do $$
+do $
+declare lease_value uuid;
 begin
+ select lease_token into lease_value from executive_visuals.jobs where id='22222222-2222-4222-8222-222222222222';
  begin
   perform executive_visuals.finish_video_generation_job_v1(
    '22222222-2222-4222-8222-222222222222','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-   'ci-worker', :'failure_lease','failed',null,'{"code":"PROVIDER_ERROR"}'::jsonb,null,null,'{}'::jsonb
+   'ci-worker', lease_value,'failed',null,'{"code":"PROVIDER_ERROR"}'::jsonb,null,null,'{}'::jsonb
   );
   raise exception 'unverified failure release unexpectedly succeeded';
  exception when others then
@@ -94,12 +97,13 @@ begin
  end;
 end $$;
 
-do $$
-declare ok boolean;
+do $
+declare ok boolean; lease_value uuid;
 begin
+ select lease_token into lease_value from executive_visuals.jobs where id='22222222-2222-4222-8222-222222222222';
  select executive_visuals.finish_video_generation_job_v1(
   '22222222-2222-4222-8222-222222222222','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'ci-worker', :'failure_lease','failed',null,'{"code":"VERIFIED_NO_SUBMISSION"}'::jsonb,null,null,
+  'ci-worker', lease_value,'failed',null,'{"code":"VERIFIED_NO_SUBMISSION"}'::jsonb,null,null,
   '{"provider":"runway","evidenceType":"verified_no_submission","evidenceId":"ci-no-submit","evidenceReference":"ci-provider-lookup"}'::jsonb
  ) into ok;
  if not ok then raise exception 'verified non-billable failure finalization rejected'; end if;
