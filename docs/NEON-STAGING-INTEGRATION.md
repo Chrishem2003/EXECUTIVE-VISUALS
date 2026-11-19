@@ -75,7 +75,22 @@ The asset service now includes a dedicated `neon-object-storage.mjs` adapter and
 
 The existing canonical bucket contract also expects `executive-visuals-media`. Any Neon bucket adapter must preserve that logical bucket contract or introduce a reviewed migration for configurable bucket identifiers. No existing storage provider should be switched automatically.
 
-## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Pre-ingestion customer-credit settlement — migration 0005
+## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Atomic video enqueue — migration 0006
+
+Migration `0006_atomic_video_enqueue.sql` adds `enqueue_video_generation_job_v1`, a single transaction boundary for application admission:
+
+- It creates/replays the `video.generate` job through the owner-scoped idempotent queue admission function.
+- It reserves the approved provider budget and customer credits before the transaction can commit.
+- The durable input must include the exact provider, model and SHA-256 request hash used by the approval.
+- Credit reservation idempotency is derived from the durable job UUID, so a replay cannot create a second charge.
+- A reservation conflict, expired/invalid approval, disabled policy or insufficient credit balance aborts the entire transaction, including the new job and enqueue event.
+- The new `server/neon-postgres-video-enqueue.mjs` adapter validates identifiers, request evidence and reservation bounds before calling the RPC.
+- `createNeonStagingRuntime()` exposes this as `runtime.videoEnqueue` and includes its read-only readiness probe in the overall staging gate.
+- `server/tests/neon-postgres-video-enqueue.test.mjs` covers adapter validation and receipts. `scripts/verify-neon-video-enqueue-postgres.sql` exercises real PostgreSQL admission, exact replay, changed-reservation rejection and rollback on insufficient credits.
+
+The GitHub Actions disposable PostgreSQL workflow now applies migration 0006 and runs the new integration script. This does not apply the migration to the connected Neon project and does not switch the live Supabase enqueue route. The application still needs its verified identity/authorization boundary and an explicit staging cutover plan before the Neon adapter can receive user traffic.
+
+## Pre-ingestion customer-credit settlement — migration 0005
 
 The existing video executor settles customer credits after provider usage is authoritatively measured but before generated outputs are ingested into private storage. Migration `0005_pre_ingestion_credit_settlement.sql` now gives the Neon adapter the same explicit `settleJob` contract:
 
@@ -204,7 +219,7 @@ The isolated PostgreSQL foundation now includes `database/neon/migrations/0003_v
 - A single lease-fenced `finish_video_generation_job_v1` function that finalizes financial reservations, writes the immutable provider-cost record, updates the job terminal state and emits the job event in the same database transaction.
 - Idempotent reservation replay even after the one-use approval has been consumed. Replays must match the original reservation owner, approval, budget and credit quantities.
 - A read-only financial schema readiness function and adapter tests.
-- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0003, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection and failure release. This CI database is ephemeral and is not the connected Neon project.
+- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0006, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection, failure release and atomic video admission. This CI database is ephemeral and is not the connected Neon project.
 
 ### Important safeguards and limitations
 
@@ -231,7 +246,7 @@ The financial functions use transaction-scoped row locks and `pg_advisory_xact_l
 ### Remaining release gates
 
 - [ ] Install and lock the `pg` runtime dependency after reviewing the existing lockfile.
-- [ ] Add the Neon database pool and financial adapter to a separate, opt-in worker composition; keep Supabase default unchanged.
+- [x] Add the Neon database pool, queue, submission ledger, financial adapter, provider worker composition and atomic video enqueue adapter to a separate, opt-in staging runtime; keep Supabase default unchanged.
 - [ ] Port the existing budget quote/preflight and approval API into the Neon identity model.
 - [ ] Add authenticated owner/project authorization before issuing approvals or grants.
 - [ ] Integrate real provider cost resolvers and map cost evidence to the financial finalization contract.
