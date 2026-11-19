@@ -272,8 +272,9 @@ export function createNeonObjectStorage({
       if (contentType !== undefined && !MIME_TYPES.has(contentType)) throw new Error("Neon object verification content type is invalid.");
       const response = await request("GET", safePath);
       const actualType = response.headers?.get?.("content-type")?.split(";")[0]?.trim().toLowerCase() || null;
-      const actualLength = Number(response.headers?.get?.("content-length"));
-      if (Number.isFinite(actualLength) && actualLength !== expectedSize) {
+      const lengthHeader = response.headers?.get?.("content-length");
+      const actualLength = lengthHeader === null || lengthHeader === undefined || lengthHeader === "" ? null : Number(lengthHeader);
+      if (actualLength !== null && Number.isFinite(actualLength) && actualLength !== expectedSize) {
         throw Object.assign(new Error("Neon object size does not match the upload receipt."), { code: "NEON_OBJECT_SIZE_MISMATCH" });
       }
       if (contentType && actualType !== contentType) {
