@@ -44,6 +44,31 @@ end $$;
 select lease_token as success_lease from executive_visuals.claim_next_job_v2('ci-worker',90,array['video.generate'])
 where id='11111111-1111-4111-8111-111111111111' \gset
 
+insert into executive_visuals.video_generation_submissions(
+ job_id,owner_id,provider,model,request_hash,state,provider_task_id,submitted_at
+) values(
+ '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'runway','gen4.5','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+ 'submitted','ci-task-success',clock_timestamp()
+);
+
+do $$
+declare first_result record; replay_result record;
+begin
+ select * into first_result from executive_visuals.settle_video_generation_customer_credits_v1(
+  '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','runway',75,
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
+ );
+ if first_result.replayed then raise exception 'first customer credit settlement unexpectedly replayed'; end if;
+ select * into replay_result from executive_visuals.settle_video_generation_customer_credits_v1(
+  '11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','runway',75,
+  '{"provider":"runway","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
+ );
+ if not replay_result.replayed or replay_result.balance<>925 or replay_result.adjustment<>25 then
+  raise exception 'customer credit settlement replay mismatch';
+ end if;
+end $$;
+
 do $$
 declare ok boolean; lease_value uuid;
 begin
