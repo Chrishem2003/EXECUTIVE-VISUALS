@@ -106,3 +106,14 @@ test("migration contains atomic claim, skip-locked, lease fencing and no data-co
  assert.match(sql,/begin;[\s\S]*commit;/i);
  assert.doesNotMatch(sql,/auth\.users|drop table|truncate|delete from/i);
 });
+
+test("queue lifecycle migration uses atomic idempotency and fenced state transitions", async () => {
+ const sql=await readFile(new URL("../../database/neon/migrations/0004_queue_admission_and_recovery.sql",import.meta.url),"utf8");
+ assert.match(sql,/pg_advisory_xact_lock/i);
+ assert.match(sql,/QUEUE_IDEMPOTENCY_CONFLICT/);
+ assert.match(sql,/lease_owner=p_worker_id and lease_token=p_lease_token/i);
+ assert.match(sql,/status='blocked'/i);
+ assert.match(sql,/revoke all on function[\s\S]*from public/i);
+ assert.match(sql,/begin;[\s\S]*commit;/i);
+ assert.doesNotMatch(sql,/auth\.users|drop table|truncate|delete from/i);
+});
