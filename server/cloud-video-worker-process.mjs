@@ -82,9 +82,8 @@ export function createCloudVideoWorkerProcess({
           emit("video.worker.recovery_completed", { recovered: Number(recoveredCount) || 0 });
         } catch (error) {
           failures += 1;
-          emit("video.worker.recovery_failed", {
-            code: typeof error?.code === "string" ? error.code.slice(0, 80) : "WORKER_RECOVERY_FAILED"
-          });
+          lastErrorCode = typeof error?.code === "string" ? error.code.slice(0, 80) : "WORKER_RECOVERY_FAILED";
+          emit("video.worker.recovery_failed", { code: lastErrorCode, failures });
           nextRecoveryAt = now() + Math.min(backoff, recoveryIntervalMs);
           await wait(backoff);
           backoff = Math.min(backoff * 2, maxErrorBackoffMs);
@@ -109,10 +108,8 @@ export function createCloudVideoWorkerProcess({
         await wait(result?.claimed === true ? activePollMs : idlePollMs);
       } catch (error) {
         failures += 1;
-        emit("video.worker.cycle_failed", {
-          code: typeof error?.code === "string" ? error.code.slice(0, 80) : "WORKER_CYCLE_FAILED",
-          failures
-        });
+        lastErrorCode = typeof error?.code === "string" ? error.code.slice(0, 80) : "WORKER_CYCLE_FAILED";
+        emit("video.worker.cycle_failed", { code: lastErrorCode, failures });
         await wait(backoff);
         backoff = Math.min(backoff * 2, maxErrorBackoffMs);
       }
