@@ -27,3 +27,16 @@ test("cloud video cancellation route is authenticated and delegates owner identi
  assert.ok(source.includes('path.match(/^\\/api\\/video-generation-jobs\\/([0-9a-f-]{36})\\/cancel$/i)'));
  assert.ok(source.includes('cloudVideoGenerationDispatch.cancelJob({jobId:cloudVideoJobCancelMatch[1],ownerId:user.id})'));
 });
+
+test("Neon staging job status is authenticated, owner-scoped, rate-limited and returns a bounded projection",()=>{
+ const routeStart=source.indexOf("const neonVideoJobStatusMatch=");
+ const routeEnd=source.indexOf("const cloudVideoJobCancelMatch=",routeStart);
+ const route=source.slice(routeStart,routeEnd);
+ assert.ok(routeStart>=0&&routeEnd>routeStart);
+ assert.ok(route.includes('rateAllowed("neon-video-job-status:"+user.id'));
+ assert.ok(route.includes('getOwnedJob(neonVideoJobStatusMatch[1],user.id)'));
+ assert.ok(route.includes('listOwnedJobEvents(job.id,user.id,100)'));
+ assert.ok(route.includes('job.status==="succeeded"'));
+ assert.ok(route.includes('message:typeof error.message==="string"?error.message.slice(0,300)'));
+ assert.doesNotMatch(route,/leaseToken|lease_token|providerTaskId|rawInput|job\.input/);
+});
