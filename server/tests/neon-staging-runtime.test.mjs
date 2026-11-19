@@ -146,6 +146,9 @@ test("Neon approval dispatch readiness fails closed when the worker or private s
       if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
       throw new Error("Unexpected query");
     },
+    async connect() {
+      return { async query() { return { rows: [] }; }, release() {} };
+    },
     async end() {}
   };
   const runtime = await createNeonStagingRuntime({ env, pool,
