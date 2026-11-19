@@ -78,7 +78,7 @@ begin
   'ci-worker', lease_value,'succeeded',
   '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","costEvidenceReference":"ci-receipt-success","actualAmount":3,"currency":"USD"}'::jsonb,
   null,3,75,
-  '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-event-success","evidenceReference":"ci-receipt-success"}'::jsonb
+  '{"provider":"runway","model":"gen4.5","providerTaskId":"ci-task-success","evidenceType":"provider_task_receipt","evidenceId":"ci-task-success","evidenceReference":"ci-receipt-success"}'::jsonb
  ) into ok;
  if not ok then raise exception 'valid success finalization rejected'; end if;
 end $$;
