@@ -96,9 +96,9 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0004_queue_admission_and_recovery.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0005_pre_ingestion_credit_settlement.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0006_atomic_video_enqueue.sql
-      - name: Verify atomic video enqueue, reservation, replay and rollback
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
       - name: Verify real PostgreSQL reservation, idempotency, settlement and verified release
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
+      - name: Verify atomic video enqueue, reservation, replay and rollback
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
