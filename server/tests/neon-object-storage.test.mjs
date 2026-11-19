@@ -27,7 +27,7 @@ test("Neon adapter requires valid HTTPS endpoint, region, credentials and limits
   assert.throws(() => createNeonObjectStorage({ ...config, endpoint: "http://storage.example.test" }), /HTTPS origin/);
   assert.throws(() => createNeonObjectStorage({ ...config, region: "auto" }), /NEON_STORAGE_REGION/);
   assert.throws(() => createNeonObjectStorage({ ...config, accessKeyId: "" }), /credentials/);
-  assert.throws(() => createNeonObjectStorage({ ...config, bucket: "bad bucket" }), /bucket/);
+  assert.throws(() => createNeonObjectStorage({ ...config, bucket: "bad bucket" }), /BUCKET/i);
   assert.throws(() => createNeonObjectStorage({ ...config, maxBytes: 0 }), /size limit/);
   assert.doesNotThrow(() => createNeonObjectStorage({ ...config, region: "aws-ap-southeast-1" }));
 });
