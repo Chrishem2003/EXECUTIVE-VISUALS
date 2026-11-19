@@ -144,6 +144,30 @@ test("cloud executor defers transient or active status after exactly one check p
   assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
 });
 
+test("cloud executor enforces provider minimum polling intervals and honors longer provider retry hints", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running", retryAfterSeconds: 7 } });
+  f.adapter.minimumPollIntervalMs = 15000;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 15
+  );
+  const unavailable = fixture({ state: "submitted", status: new Error("temporary provider outage") });
+  unavailable.adapter.minimumPollIntervalMs = 12000;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...unavailable }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 12
+  );
+});
+
+test("cloud executor rejects unsafe provider polling intervals", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running" } });
+  f.adapter.minimumPollIntervalMs = 4999;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_ADAPTER_CONFIGURATION_INVALID"
+  );
+});
+
 test("cloud executor quarantines failed Veo tasks until potentially billable usage is reconciled", async () => {
   const f = fixture({ state: "submitted", status: {
     taskId, status: "failed", failure: "Input moderation rejected the task.",
