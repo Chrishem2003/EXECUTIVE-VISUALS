@@ -232,6 +232,8 @@ These are queue primitives, not yet a production worker cutover. The live video 
 
 The runtime now optionally composes the provider-aware Neon video worker and a single-flight long-lived process controller. It remains **explicit-start only**: construction never starts polling, and `startVideoWorker()` first requires application/financial readiness plus ready private storage. The controller runs expired-lease recovery, polls asynchronously, backs off after failures, prevents overlapping cycles, and drains in-flight work during shutdown. The worker still requires injected provider adapters and an owner/project authorization callback; this does not claim a live provider execution against the connected Neon account.
 
+Provider task polling is rate-limited by the adapter contract: adapters default to a 5-second minimum, may declare a longer interval (up to 15 minutes), and provider retry hints can only lengthen that delay. Transient status-read failures use the same minimum. This prevents worker retry configuration from accidentally polling a provider more frequently than its documented cadence.
+
 Worker readiness diagnostics now also report the exact registered provider/model adapters, cycle/claim/finish/recovery counters, last successful cycle and recovery timestamps, current failure count, and the last sanitized error code. These counters are process-local operational telemetry, not durable business records; queue and financial ledgers remain the source of truth.
 
 ### Neon video worker lifecycle — repository implementation
