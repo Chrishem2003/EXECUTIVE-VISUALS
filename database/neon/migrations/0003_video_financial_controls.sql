@@ -1,6 +1,6 @@
 -- Executive Visuals: isolated Neon financial controls for video generation.
 -- Source-controlled only. Requires 0001_worker_queue.sql and 0002_video_submission_ledger.sql.
--- No auth.users dependency: owner UUIDs are issued by the application's verified identity layer.
+-- Owner UUIDs are issued by the application's verified identity layer; this migration does not create an identity store.
 -- Apply only to the separately approved, disposable Neon staging branch.
 begin;
 
