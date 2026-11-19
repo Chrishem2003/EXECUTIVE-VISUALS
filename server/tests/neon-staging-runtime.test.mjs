@@ -20,7 +20,7 @@ test("composes Neon queue, submission and financial adapters without network act
     async query(sql) {
       calls.push(sql);
       if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
-      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true }] };
+      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
       throw new Error("Unexpected query");
     },
     async end() { ended++; }
@@ -31,6 +31,7 @@ test("composes Neon queue, submission and financial adapters without network act
   assert.equal(typeof runtime.queue.claim, "function");
   assert.equal(typeof runtime.submissions.prepare, "function");
   assert.equal(typeof runtime.financials.reserve, "function");
+  assert.equal(typeof runtime.customerCredits.settleJob, "function");
   assert.equal(calls.length, 0, "composition must not perform I/O");
 
   const status = await runtime.checkReadiness();
@@ -49,7 +50,7 @@ test("readiness includes private storage when an adapter is explicitly supplied"
   const pool = {
     async query(sql) {
       if (sql.includes("to_regclass")) return { rows: [{ database_name: "neondb", jobs_ready: true, events_ready: true }] };
-      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true }] };
+      if (sql.includes("get_video_financial_readiness_v1")) return { rows: [{ schema_ready: true, credit_ledger_ready: true, budget_ready: true, cost_ledger_ready: true, customer_credit_settlement_ready: true }] };
       throw new Error("Unexpected query");
     },
     async end() {}
