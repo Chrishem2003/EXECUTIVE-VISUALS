@@ -1,5 +1,5 @@
 -- Disposable PostgreSQL integration test for Neon-native financial migrations.
--- Run only against a throwaway CI database after migrations 0001-0003.
+-- Run only against a throwaway CI database after migrations 0001-0005.
 \set ON_ERROR_STOP on
 
 insert into executive_visuals.jobs(id,owner_id,job_type,status,input,idempotency_key)
@@ -169,5 +169,15 @@ begin
   raise exception 'failure release mismatch: balance %, reserved %, released %, status %',balance_now,reserved,released_count,job_status;
  end if;
 end $$;
+
+do $
+declare ready record;
+begin
+ select * into ready from executive_visuals.get_video_financial_readiness_v1();
+ if not ready.schema_ready or not ready.credit_ledger_ready or not ready.budget_ready
+  or not ready.cost_ledger_ready or not ready.customer_credit_settlement_ready then
+  raise exception 'financial readiness did not include the pre-ingestion settlement contract';
+ end if;
+end $;
 
 select 'NEON_FINANCIAL_POSTGRES_INTEGRATION_OK' as result;
