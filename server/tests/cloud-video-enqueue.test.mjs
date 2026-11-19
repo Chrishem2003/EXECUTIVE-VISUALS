@@ -800,3 +800,35 @@ test("Seedance image-to-video reference mode can enqueue without a first-frame a
   assert.equal(queued.status, "queued");
   assert.equal(calls, 1);
 });
+
+test("validated cloud generation requests can be admitted through the Neon atomic enqueue adapter without Supabase credentials", async () => {
+  let admitted;
+  const neon = {
+    async enqueueVideoGenerationJob(args) {
+      admitted = args;
+      return {
+        jobId: resultRow.job_id, status: "queued", idempotentReplay: false,
+        budgetReservationId: resultRow.budget_reservation_id,
+        creditReservationId: "823e4567-e89b-42d3-a456-426614174000",
+        availableCredits: 900
+      };
+    }
+  };
+  const client = createCloudVideoEnqueue({ videoEnqueueAdapter: neon });
+  const result = await client.enqueue(args({ reservedCredits: 100 }));
+  assert.deepEqual(result, {
+    jobId: resultRow.job_id, status: "queued", idempotentReplay: false,
+    budgetReservationId: resultRow.budget_reservation_id,
+    creditReservationId: "823e4567-e89b-42d3-a456-426614174000",
+    availableCredits: 900
+  });
+  assert.equal(admitted.ownerId, ownerId);
+  assert.equal(admitted.projectId, projectId);
+  assert.equal(admitted.approvalId, approvalId);
+  assert.equal(admitted.reservedAmount, 1.25);
+  assert.equal(admitted.reservedCredits, 100);
+  assert.equal(admitted.input.requestHash, requestHash);
+  await assert.rejects(() => client.enqueue(args()), /server-quoted customer credits/);
+  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", leaseToken, status: "failed" }),
+    error => error.code === "NEON_VIDEO_WORKER_CONTRACT_REQUIRED");
+});
