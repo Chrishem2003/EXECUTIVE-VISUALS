@@ -236,6 +236,10 @@ Provider task polling is rate-limited by the adapter contract: adapters default 
 
 Worker readiness diagnostics now also report the exact registered provider/model adapters, cycle/claim/finish/recovery counters, last successful cycle and recovery timestamps, current failure count, and the last sanitized error code. These counters are process-local operational telemetry, not durable business records; queue and financial ledgers remain the source of truth.
 
+### Real PostgreSQL worker concurrency and fencing verification
+
+The disposable PostgreSQL CI workflow now opens independent pooled-driver sessions and verifies that concurrent workers claim distinct queued jobs. It also expires and recovers a lease, confirms that a reclaimed job receives a new fencing token, rejects stale defer/quarantine callbacks, accepts the current lease callback, and enforces the configured retry ceiling. The script is CI-only and uses a generated owner UUID against the throwaway PostgreSQL service; it does not connect to the user's Neon branch or production database.
+
 ### Neon video worker lifecycle — repository implementation
 
 - `server/neon-cloud-video-worker.mjs` adapts Neon queue, submission and financial contracts to the existing provider-aware executor. Provider operations require an injected owner/project authorization callback.
