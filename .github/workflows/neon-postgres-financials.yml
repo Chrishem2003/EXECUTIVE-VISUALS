@@ -1,5 +1,14 @@
 name: Neon PostgreSQL financial integration
 on:
+  push:
+    branches:
+      - feat/neon-postgres-worker-20261119
+    paths:
+      - "database/neon/migrations/**"
+      - "server/neon-postgres-video-financials.mjs"
+      - "server/tests/neon-postgres-video-financials.test.mjs"
+      - "scripts/verify-neon-financials-postgres.sql"
+      - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
     paths:
       - "database/neon/migrations/**"
