@@ -27,6 +27,8 @@ on:
     paths:
       - "database/neon/migrations/**"
       - "server/neon-postgres-video-financials.mjs"
+      - "server/neon-postgres-video-enqueue.mjs"
+      - "server/tests/neon-postgres-video-enqueue.test.mjs"
       - "server/tests/neon-postgres-video-financials.test.mjs"
       - "server/neon-postgres-pool.mjs"
       - "server/neon-postgres-queue.mjs"
@@ -39,6 +41,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/verify-neon-financials-postgres.sql"
+      - "scripts/verify-neon-video-enqueue-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
       - ".github/workflows/neon-postgres-financials.yml"
   workflow_dispatch:
