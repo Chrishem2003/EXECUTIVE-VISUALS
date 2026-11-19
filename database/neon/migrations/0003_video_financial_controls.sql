@@ -246,6 +246,9 @@ begin
      or coalesce(p_financial_evidence->>'model','')<>p_output->>'model'
      or coalesce(p_financial_evidence->>'providerTaskId','')<>p_output->>'providerTaskId'
      or coalesce(p_financial_evidence->>'evidenceReference','')<>p_output->>'costEvidenceReference'
+     or coalesce(p_financial_evidence->>'evidenceId','')=''
+     or coalesce(p_output->>'currency','')<>(select currency from executive_visuals.video_generation_budget_reservations where job_id=p_job_id)
+     or coalesce((p_output->>'actualAmount')::numeric,-1)<>p_actual_amount
      or not exists(select 1 from executive_visuals.video_generation_budget_reservations where job_id=p_job_id)
      or not exists(select 1 from executive_visuals.billing_credit_reservations where job_id=p_job_id) then
     raise exception 'VIDEO_JOB_FINANCIAL_SCOPE_MISMATCH';
