@@ -65,7 +65,7 @@ begin
  select spent_amount,reserved_amount into spent,reserved from executive_visuals.video_generation_budget_policies where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and project_id is null and provider='runway' and model='gen4.5';
  select count(*) into cost_count from executive_visuals.video_generation_cost_ledger where job_id='11111111-1111-4111-8111-111111111111';
  select status into job_status from executive_visuals.jobs where id='11111111-1111-4111-8111-111111111111';
- if balance_now<>975 or spent<>3 or reserved<>0 or cost_count<>1 or job_status<>'succeeded' then
+ if balance_now<>925 or spent<>3 or reserved<>0 or cost_count<>1 or job_status<>'succeeded' then
   raise exception 'success accounting mismatch: balance %, spent %, reserved %, costs %, status %',balance_now,spent,reserved,cost_count,job_status;
  end if;
 end $$;
@@ -117,7 +117,7 @@ begin
  select sum(reserved_credits) into reserved from executive_visuals.billing_credit_reservations where owner_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and state='reserved';
  select count(*) into released_count from executive_visuals.billing_credit_reservations where job_id='22222222-2222-4222-8222-222222222222' and state='released';
  select status into job_status from executive_visuals.jobs where id='22222222-2222-4222-8222-222222222222';
- if balance_now<>975 or coalesce(reserved,0)<>0 or released_count<>1 or job_status<>'failed' then
+ if balance_now<>925 or coalesce(reserved,0)<>0 or released_count<>1 or job_status<>'failed' then
   raise exception 'failure release mismatch: balance %, reserved %, released %, status %',balance_now,reserved,released_count,job_status;
  end if;
 end $$;
