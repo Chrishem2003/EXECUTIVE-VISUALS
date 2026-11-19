@@ -7,6 +7,8 @@ on:
       - "database/neon/migrations/**"
       - "server/neon-postgres-video-financials.mjs"
       - "server/neon-postgres-video-enqueue.mjs"
+      - "server/neon-postgres-video-approvals.mjs"
+      - "server/tests/neon-postgres-video-approvals.test.mjs"
       - "server/cloud-video-enqueue.mjs"
       - "server/tests/cloud-video-enqueue.test.mjs"
       - "server/tests/neon-postgres-video-enqueue.test.mjs"
@@ -30,6 +32,8 @@ on:
       - "database/neon/migrations/**"
       - "server/neon-postgres-video-financials.mjs"
       - "server/neon-postgres-video-enqueue.mjs"
+      - "server/neon-postgres-video-approvals.mjs"
+      - "server/tests/neon-postgres-video-approvals.test.mjs"
       - "server/cloud-video-enqueue.mjs"
       - "server/tests/cloud-video-enqueue.test.mjs"
       - "server/tests/neon-postgres-video-enqueue.test.mjs"
@@ -100,6 +104,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0004_queue_admission_and_recovery.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0005_pre_ingestion_credit_settlement.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0006_atomic_video_enqueue.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0007_video_approval_bridge.sql
       - name: Verify real PostgreSQL reservation, idempotency, settlement and verified release
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
