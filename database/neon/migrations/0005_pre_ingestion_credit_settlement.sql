@@ -178,6 +178,17 @@ begin
   case when p_terminal_status in ('succeeded','partial') then credit_row.reserved_credits-p_actual_credits else delta end,false;
 end $$;
 
+create or replace function executive_visuals.get_video_financial_readiness_v1()
+returns table(schema_ready boolean,credit_ledger_ready boolean,budget_ready boolean,cost_ledger_ready boolean,customer_credit_settlement_ready boolean)
+language sql security definer set search_path=pg_catalog,executive_visuals as $
+ select to_regclass('executive_visuals.jobs') is not null,
+ to_regclass('executive_visuals.billing_credit_ledger') is not null and to_regclass('executive_visuals.billing_credit_reservations') is not null,
+ to_regclass('executive_visuals.video_generation_budget_policies') is not null and to_regclass('executive_visuals.video_generation_budget_approvals') is not null and to_regclass('executive_visuals.video_generation_budget_reservations') is not null,
+ to_regclass('executive_visuals.video_generation_cost_ledger') is not null,
+ to_regprocedure('executive_visuals.settle_video_generation_customer_credits_v1(uuid,uuid,text,bigint,jsonb)') is not null;
+$;
+
+revoke all on function executive_visuals.get_video_financial_readiness_v1() from public;
 revoke all on function executive_visuals.settle_video_generation_customer_credits_v1(uuid,uuid,text,bigint,jsonb) from public;
 revoke all on function executive_visuals.finalize_video_generation_financials_v1(uuid,uuid,text,numeric,bigint,jsonb) from public;
 commit;
