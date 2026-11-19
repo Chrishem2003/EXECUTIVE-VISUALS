@@ -121,6 +121,18 @@ Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries.
 - `createNeonPostgresQueue` exposes parameterized `enqueue`, `defer` and `quarantine` methods with bounded input validation and strict result checks.
 - The disposable PostgreSQL CI workflow applies migration 0004 and runs `scripts/verify-neon-queue-postgres.sql` to exercise duplicate admission, idempotency conflict, deferral, lease release, quarantine and event history.
 
+### Worker compatibility gap discovered during orchestration review
+
+The existing provider-aware worker is not a drop-in consumer of the Neon adapters yet:
+
+- Its queue contract expects `claim/renew/assertLease` plus an enqueue facade with object-shaped `finish/defer/quarantine/recoverExpiredVideo` calls. The Neon queue now has the underlying queue primitives, but the facade and recovery/reconciliation semantics are not wired.
+- Its provider executor calls the customer-credit `settleJob` contract after provider cost reconciliation and before private output ingestion.
+- The current Neon financial finalizer combines customer-credit settlement, provider-budget settlement and terminal job update in one transaction. It expects both reservations to remain `reserved`, so calling it after a separate pre-ingestion credit settlement would conflict.
+- A safe Neon worker therefore needs a dedicated idempotent customer-credit settlement RPC and a finalizer that accepts a previously settled credit reservation while settling the provider budget and job exactly once. Failure paths must continue to require verified no-charge evidence.
+- The worker composition also requires an owner/project-scoped asset repository and authoritative provider-cost evidence; do not replace those with an unverified owner UUID or client-supplied estimate.
+
+This incompatibility is intentional release-blocking evidence, not a reason to bypass the accounting or ingestion stages. The next adapter milestone must add real PostgreSQL integration tests for success, pre-ingestion credit settlement, output-ingestion failure, ambiguous provider submission, and exactly-once terminal finalization before the existing worker can be composed against Neon.
+
 These are queue primitives, not yet a production worker cutover. The live video worker still needs its complete orchestration adapted to call these Neon operations together with verified identity, provider submission reconciliation, atomic financial reservations/finalization and asset publication. Do not enable remote paid generation on this path until that end-to-end contract is implemented and tested.
 
 ### Opt-in Neon staging runtime composition
