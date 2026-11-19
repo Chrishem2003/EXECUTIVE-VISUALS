@@ -1223,7 +1223,7 @@ export function createAppServer() {
         const result=await videoApprovalSubmitDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
       }
-      const neonVideoJobStatusMatch=path.match(/^\\/api\\/neon-staging\\/video-generation-jobs\\/([0-9a-f-]{36})$/i);
+      const neonVideoJobStatusMatch=path.match(/^\/api\/neon-staging\/video-generation-jobs\/([0-9a-f-]{36})$/i);
       if(neonVideoJobStatusMatch&&req.method==="GET"){
         if(!neonStagingApprovalRuntime.enabled){fail(res,503,"NEON_STAGING_STATUS_DISABLED","Neon staging job status is not enabled.");return;}
         if(!rateAllowed("neon-video-job-status:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many job status requests. Try again shortly.");return;}
