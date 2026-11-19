@@ -213,9 +213,15 @@ begin
   update executive_visuals.video_generation_budget_reservations set actual_amount=p_actual_amount,state='settled',updated_at=clock_timestamp() where id=budget_row.id;
   update executive_visuals.video_generation_budget_policies set reserved_amount=reserved_amount-budget_row.reserved_amount,spent_amount=spent_amount+p_actual_amount,updated_at=clock_timestamp() where id=budget_row.policy_id;
  else
+  if coalesce(p_evidence->>'provider','')<>budget_row.provider
+     or coalesce(p_evidence->>'evidenceType','') not in ('verified_no_charge_cancellation','verified_no_submission')
+     or coalesce(p_evidence->>'evidenceId','')=''
+     or coalesce(p_evidence->>'evidenceReference','')='' then
+    raise exception 'VIDEO_FAILURE_REQUIRES_VERIFIED_NO_CHARGE_EVIDENCE';
+  end if;
   insert into executive_visuals.billing_credit_ledger(owner_id,amount,event_type,reference_id,idempotency_key,description,evidence)
-  values(p_owner_id,credit_row.reserved_credits,'generation_refund',p_job_id,'credit-release:'||credit_row.id::text,'Video generation reservation released after non-billable failure',jsonb_build_object('terminalStatus',p_terminal_status));
-  update executive_visuals.billing_credit_reservations set state='released',actual_credits=0,evidence=jsonb_build_object('terminalStatus',p_terminal_status),settled_at=clock_timestamp() where id=credit_row.id;
+  values(p_owner_id,credit_row.reserved_credits,'generation_refund',p_job_id,'credit-release:'||credit_row.id::text,'Video generation reservation released after verified non-billable failure',p_evidence);
+  update executive_visuals.billing_credit_reservations set state='released',actual_credits=0,evidence=p_evidence||jsonb_build_object('terminalStatus',p_terminal_status),settled_at=clock_timestamp() where id=credit_row.id;
   update executive_visuals.video_generation_budget_reservations set state='released',actual_amount=0,updated_at=clock_timestamp() where id=budget_row.id;
   update executive_visuals.video_generation_budget_policies set reserved_amount=reserved_amount-budget_row.reserved_amount,updated_at=clock_timestamp() where id=budget_row.policy_id;
  end if;
@@ -231,7 +237,7 @@ create or replace function executive_visuals.finish_video_generation_job_v1(
 ) returns boolean language plpgsql security definer set search_path=pg_catalog,executive_visuals as $finish_video_generation_job_v1$
 declare job_row executive_visuals.jobs; financial_receipt record;
 begin
- if p_job_id is null or p_owner_id is null or p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 or p_lease_token is null or p_status not in ('succeeded','partial','failed','cancelled') or (p_output is not null and jsonb_typeof(p_output)<>'object') or (p_error is not null and jsonb_typeof(p_error)<>'object') then raise exception 'VIDEO_JOB_FINALIZATION_ARGUMENTS_INVALID'; end if;
+ if p_job_id is null or p_owner_id is null or p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 or p_lease_token is null or p_status is null or p_status not in ('succeeded','partial','failed','cancelled') or (p_output is not null and jsonb_typeof(p_output)<>'object') or (p_error is not null and jsonb_typeof(p_error)<>'object') then raise exception 'VIDEO_JOB_FINALIZATION_ARGUMENTS_INVALID'; end if;
  select * into job_row from executive_visuals.jobs where id=p_job_id and owner_id=p_owner_id and job_type='video.generate' and status='processing' and lease_owner=p_worker_id and lease_token=p_lease_token and lease_expires_at>clock_timestamp() for update;
  if job_row.id is null then return false; end if;
  if p_status in ('succeeded','partial') then
