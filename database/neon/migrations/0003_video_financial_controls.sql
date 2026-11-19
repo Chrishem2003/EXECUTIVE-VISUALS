@@ -228,7 +228,7 @@ create or replace function executive_visuals.finish_video_generation_job_v1(
  p_job_id uuid,p_owner_id uuid,p_worker_id text,p_lease_token uuid,p_status text,
  p_output jsonb default null,p_error jsonb default null,p_actual_amount numeric default null,
  p_actual_credits bigint default null,p_financial_evidence jsonb default '{}'::jsonb
-) returns boolean language plpgsql security definer set search_path=pg_catalog,executive_visuals as $
+) returns boolean language plpgsql security definer set search_path=pg_catalog,executive_visuals as $finish_video_generation_job_v1$
 declare job_row executive_visuals.jobs; financial_receipt record;
 begin
  if p_job_id is null or p_owner_id is null or p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 or p_lease_token is null or p_status not in ('succeeded','partial','failed','cancelled') or (p_output is not null and jsonb_typeof(p_output)<>'object') or (p_error is not null and jsonb_typeof(p_error)<>'object') then raise exception 'VIDEO_JOB_FINALIZATION_ARGUMENTS_INVALID'; end if;
@@ -253,7 +253,8 @@ begin
  insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
  values(p_job_id,p_owner_id,'job.'||p_status,jsonb_build_object('status',p_status,'financialFinalized',true,'creditAdjustment',coalesce(financial_receipt.credit_adjustment,0)));
  return true;
-end $;
+end;
+$finish_video_generation_job_v1$;
 
 create or replace function executive_visuals.get_video_financial_readiness_v1()
 returns table(schema_ready boolean,credit_ledger_ready boolean,budget_ready boolean,cost_ledger_ready boolean)
