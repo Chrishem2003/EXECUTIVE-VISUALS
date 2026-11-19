@@ -85,7 +85,8 @@ export async function createNeonStagingRuntime({
         ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
           (!storage || storageStatus?.ready === true),
         applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
-          approvalStatus?.ready === true && (!storage || storageStatus?.ready === true),
+          approvalStatus?.ready === true && Boolean(videoWorker && workerProcess) &&
+          storage?.checkReadiness && storageStatus?.ready === true,
         queue: queueStatus,
         financials: financialStatus,
         videoEnqueue: enqueueStatus,
