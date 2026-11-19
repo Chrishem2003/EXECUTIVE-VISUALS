@@ -90,6 +90,21 @@ Migration `0006_atomic_video_enqueue.sql` adds `enqueue_video_generation_job_v1`
 
 The GitHub Actions disposable PostgreSQL workflow now applies migration 0006 and runs the new integration script. `createCloudVideoEnqueue()` also accepts an explicitly supplied `videoEnqueueAdapter`; in that mode the existing provider/model/capability, request-hash, quote and budget-ceiling validation remains in place, then admission is sent to the Neon atomic RPC without requiring Supabase REST credentials. The caller must supply server-quoted `reservedCredits`; client-supplied credit quantities are not trusted. The current `server/index.mjs` approval-dispatch route is still wired to the legacy Supabase approval/job repositories and does not instantiate this Neon adapter yet. This does not switch the live Supabase enqueue route. A staging-specific approval/repository bridge, verified identity/authorization integration and explicit cutover plan remain necessary before Neon can receive user traffic.
 
+## Multi-shot approval bridge — migration 0007
+
+Migration `0007_video_approval_bridge.sql` adds durable Neon-side mirrors for the existing server-approved production snapshot and its individual shots. It does not replace the local approval record or the verified Supabase identity boundary.
+
+- `server/neon-postgres-video-approvals.mjs` implements owner/project-scoped approval registration, immutable replay checks and durable per-shot enqueue.
+- Each shot receives a deterministic SHA-256 request hash and stable idempotency key derived from the approval ID and shot index.
+- Each shot's server-quoted customer-credit amount and budget-approval ID are persisted before admission. Retries reuse those exact values instead of issuing a new approval or changing the credit quote.
+- The bridge runs the entire multi-shot admission batch in one PostgreSQL transaction. If any shot fails budget or customer-credit reservation, all newly admitted jobs and reservations in that batch roll back.
+- Each shot is admitted through `enqueue_video_generation_job_v1`, preserving the existing atomic job + provider-budget + customer-credit reservation boundary.
+- `createNeonStagingRuntime()` exposes `runtime.videoApprovals` only when the host supplies a server-side `quoteCustomerCredits` policy. Readiness reports `applicationDispatchReady` separately from base database/worker readiness.
+- The quote policy is intentionally injected and must be deterministic, synchronous and server-owned. No customer-credit conversion rate is guessed or accepted from a browser request. A production/staging host must explicitly define its conversion policy before dispatch can be enabled.
+- The disposable PostgreSQL workflow applies migration 0007 and verifies the approval/shot tables, indexes, foreign keys and required enqueue/financial functions.
+
+This is a repository-side bridge implementation with mocked adapter tests and disposable PostgreSQL schema verification. The main `server/index.mjs` route has **not** yet been switched to this Neon repository, the hosted worker has not been started against Neon, and no migration has been applied to the connected Neon project. The staging approval route, customer-credit policy configuration, provider worker process, authenticated job-status API and private asset publication bridge remain release blockers.
+
 ## Pre-ingestion customer-credit settlement — migration 0005
 
 The existing video executor settles customer credits after provider usage is authoritatively measured but before generated outputs are ingested into private storage. Migration `0005_pre_ingestion_credit_settlement.sql` now gives the Neon adapter the same explicit `settleJob` contract:
@@ -219,7 +234,7 @@ The isolated PostgreSQL foundation now includes `database/neon/migrations/0003_v
 - A single lease-fenced `finish_video_generation_job_v1` function that finalizes financial reservations, writes the immutable provider-cost record, updates the job terminal state and emits the job event in the same database transaction.
 - Idempotent reservation replay even after the one-use approval has been consumed. Replays must match the original reservation owner, approval, budget and credit quantities.
 - A read-only financial schema readiness function and adapter tests.
-- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0006, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection, failure release and atomic video admission. This CI database is ephemeral and is not the connected Neon project.
+- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0007, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection, failure release, atomic video admission and approval-bridge schema. This CI database is ephemeral and is not the connected Neon project.
 
 ### Important safeguards and limitations
 
