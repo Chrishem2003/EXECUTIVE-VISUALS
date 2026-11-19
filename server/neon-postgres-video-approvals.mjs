@@ -74,6 +74,11 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
    const result=await pool.query("select * from executive_visuals.video_generation_approvals where id=$1::uuid and owner_id=$2::uuid and project_id=$3::uuid limit 1",[id,ownerId,projectId]);
    return approvalRow(result.rows?.[0]||null);
   },
+  async checkReadiness(){
+   const result=await pool.query("select to_regclass('executive_visuals.video_generation_approvals') is not null as approvals_ready,to_regclass('executive_visuals.video_generation_approval_shots') is not null as shots_ready");
+   const row=result.rows?.[0];
+   return Object.freeze({configured:true,ready:row?.approvals_ready===true&&row?.shots_ready===true,approvalsReady:row?.approvals_ready===true,shotsReady:row?.shots_ready===true});
+  },
   async enqueue(id,ownerId){
    if(!UUID.test(String(id||""))||!UUID.test(String(ownerId||"")))throw fail("Neon approval enqueue requires scoped UUIDs.","VIDEO_APPROVAL_SCOPE_INVALID");
    return transaction(async client=>{
