@@ -1223,6 +1223,26 @@ export function createAppServer() {
         const result=await videoApprovalSubmitDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
       }
+      const neonVideoJobStatusMatch=path.match(/^\\/api\\/neon-staging\\/video-generation-jobs\\/([0-9a-f-]{36})$/i);
+      if(neonVideoJobStatusMatch&&req.method==="GET"){
+        if(!neonStagingApprovalRuntime.enabled){fail(res,503,"NEON_STAGING_STATUS_DISABLED","Neon staging job status is not enabled.");return;}
+        if(!rateAllowed("neon-video-job-status:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many job status requests. Try again shortly.");return;}
+        const job=await neonStagingApprovalRuntime.runtime.queue.getOwnedJob(neonVideoJobStatusMatch[1],user.id);
+        if(!job){fail(res,404,"VIDEO_JOB_NOT_FOUND","Video job not found.");return;}
+        const events=await neonStagingApprovalRuntime.runtime.queue.listOwnedJobEvents(job.id,user.id,100);
+        const output=job.output||{},error=job.error||{};
+        send(res,200,{job:{
+          id:job.id,projectId:job.projectId,jobType:job.jobType,status:job.status,progress:job.progress,
+          attemptCount:job.attemptCount,maxAttempts:job.maxAttempts,createdAt:job.createdAt,
+          updatedAt:job.updatedAt,completedAt:job.completedAt,
+          output:job.status==="succeeded"?{assetIds:Array.isArray(output.assetIds)?output.assetIds:[],provider:output.provider||null,model:output.model||null,actualAmount:output.actualAmount??null,currency:output.currency||null}:null,
+          error:error&&typeof error.code==="string"?{code:error.code,message:typeof error.message==="string"?error.message.slice(0,300):"Generation requires attention."}:null
+        },events:events.map(event=>({id:event.id,type:event.type,createdAt:event.createdAt,data:{
+          status:event.data?.status||null,code:event.data?.code||null,
+          retryable:event.data?.retryable===true,
+          retryDelaySeconds:Number.isSafeInteger(event.data?.retryDelaySeconds)?event.data.retryDelaySeconds:null
+        }}))},cors);return;
+      }
       const cloudVideoJobCancelMatch=path.match(/^\/api\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
       if(cloudVideoJobCancelMatch&&req.method==="POST"){
         if(!rateAllowed("video-job-cancel:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many video cancellation requests. Try again shortly.");return;}
