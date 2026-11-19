@@ -33,8 +33,8 @@ test("remains inert unless the explicit application dispatch gate is enabled",as
 test("requires isolated branch, existing Supabase identity boundary and an explicit credit policy",async()=>{
   await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,NEON_STAGING_BRANCH_NAME:"main"}}),/explicitly enabled/);
   await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,AUTH_MODE:"local"}}),/Supabase authentication/);
-  await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,NEON_CUSTOMER_CREDITS_PER_USD:""}}),/positive integer/);
-  await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,NEON_CUSTOMER_CREDITS_PER_USD:"1.5"}}),/positive integer/);
+  await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,NEON_CUSTOMER_CREDITS_PER_USD:""},db:{prepare(){}},canWriteProject:()=>true}),/positive integer/);
+  await assert.rejects(createNeonStagingApprovalDispatch({env:{...baseEnv,NEON_CUSTOMER_CREDITS_PER_USD:"1.5"},db:{prepare(){}},canWriteProject:()=>true}),/positive integer/);
 });
 test("builds a deterministic server-side USD credit quote using integer arithmetic",async()=>{
   const runtime=readyRuntime();
@@ -43,7 +43,7 @@ test("builds a deterministic server-side USD credit quote using integer arithmet
   assert.equal(runtime.state.quote({currency:"USD",amountMicros:1_250_000}),125);
   assert.equal(runtime.state.quote({currency:"USD",amountMicros:1}),1);
   assert.throws(()=>runtime.state.quote({currency:"EUR",amountMicros:1_000_000}),/requires a verified USD quote/);
-  assert.throws(()=>runtime.state.quote({currency:"USD",amountMicros:1_000_000_000_000}),/exceeds/);
+  assert.throws(()=>runtime.state.quote({currency:"USD",amountMicros:1_000_000_000_001}),/exceeds/);
   await result.close();assert.equal(runtime.state.closed,true);
 });
 test("fails closed and closes the pool if Neon schema readiness is incomplete",async()=>{
