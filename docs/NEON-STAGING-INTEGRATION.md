@@ -95,14 +95,14 @@ No production database, shared Supabase project, production Render service, cust
 The next isolated implementation milestone adds a PostgreSQL-backed queue without changing the running Supabase queue:
 
 - `server/neon-postgres-pool.mjs` validates a pooled Neon URL (requires `-pooler`) for application traffic and a separate direct URL for migrations. It uses a small, bounded pool (default maximum 3), TLS certificate verification, and no connection-string logging.
-- `server/neon-postgres-queue.mjs` implements the worker queue contract: atomic claim, lease renewal, lease assertion, cancellation lookup, expired-lease recovery, terminal finish, and a read-only readiness check. All values are parameterized.
-- `database/neon/migrations/0001_worker_queue.sql` defines an isolated queue schema and functions. Claims use `FOR UPDATE SKIP LOCKED`; each claim receives a fresh database-generated UUID fencing token; renew/finish require the current unexpired token; recovery clears the token before a retry.
-- `server/tests/neon-postgres-queue.test.mjs` verifies URL safety, pool bounds/TLS, parameterized calls, fencing checks, cancellation lookup, recovery, finish, readiness, and migration invariants.
+- `server/neon-postgres-queue.mjs` implements the worker queue contract: atomic claim, lease renewal, lease assertion, cancellation lookup, expired-lease recovery, terminal finish, and a read-only readiness check.\n- `server/neon-postgres-video-submissions.mjs` implements the fenced provider-submission ledger: prepare, begin, record task ID, mark ambiguous submission, reconcile with evidence, terminal finish and lookup. All values are parameterized.
+- `database/neon/migrations/0001_worker_queue.sql` defines an isolated queue schema and functions.\n- `database/neon/migrations/0002_video_submission_ledger.sql` adds the provider submission ledger and locks the job row while checking the current worker fencing token. Claims use `FOR UPDATE SKIP LOCKED`; each claim receives a fresh database-generated UUID fencing token; renew/finish require the current unexpired token; recovery clears the token before a retry.
+- `server/tests/neon-postgres-queue.test.mjs` verifies URL safety, pool bounds/TLS, parameterized calls, fencing checks, cancellation lookup, recovery, finish, readiness, and migration invariants.\n- `server/tests/neon-postgres-video-submissions.test.mjs` verifies provider submission idempotency contracts, fencing tokens, ambiguity reconciliation evidence and metadata bounds.
 - `npm run verify:neon-postgres` is included in product verification batch 01.
 
 ### Important limitations — not yet a complete Neon worker cutover
 
-This is a **queue foundation**, not a claim that the complete video-generation backend is already Neon-compatible. The existing worker also depends on the video submission ledger, provider idempotency, budget approvals, customer-credit reservations/settlement, asset publication, and user/project identity. Those contracts must be ported and verified as separate transactional migrations before a Neon queue can safely run production video work.
+This is a **queue + provider-submission foundation**, not a claim that the complete video-generation backend is already Neon-compatible. The existing worker also depends on budget approvals, customer-credit reservations/settlement, asset publication, and user/project identity. Those contracts must be ported and verified as separate transactional migrations before a Neon queue can safely run real video work.
 
 The migration is source code only and has **not** been executed. The pool factory dynamically loads the Node `pg` package; that runtime dependency and lockfile update must be completed before enabling the Neon backend. No `NEON_DATABASE_URL` is configured by this PR. The Supabase queue remains the active path.
 
@@ -113,7 +113,7 @@ Use the pooled `NEON_DATABASE_URL` (`-pooler` hostname) for application queries.
 ### Remaining gates
 
 - [ ] Add the reviewed `pg` runtime dependency and update lockfile.
-- [ ] Port submission ledger and provider-task reconciliation, retaining all lease-fencing wrappers.
+- [x] Port the provider submission ledger and evidence-backed provider-task reconciliation, retaining lease-fencing wrappers.
 - [ ] Port enqueue + approval/budget + customer-credit reserve/settle transactions as atomic functions.
 - [ ] Port asset publication metadata and cleanup outbox, preserving private storage path lineage.
 - [ ] Define staging identity strategy; do not assume Supabase `auth.users` exists in Neon.
