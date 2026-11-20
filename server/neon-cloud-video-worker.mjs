@@ -149,7 +149,8 @@ export function createNeonCloudVideoWorker({
   adapters,
   authorizeJob,
   env = process.env,
-  deferSeconds = 30
+  deferSeconds = 30,
+  quoteCustomerCredits
 } = {}) {
   if (env.NEON_STAGING_RUNTIME_ENABLED !== "true" ||
       env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
@@ -165,7 +166,7 @@ export function createNeonCloudVideoWorker({
     throw new Error("Neon video worker requires between 1 and 100 provider adapters.");
   }
 
-  const contracts = createNeonVideoWorkerContracts({ runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime, workerId, quoteCustomerCredits });
   const guardedAdapters = adapters.map(adapter => {
     if (!adapter || typeof adapter !== "object" ||
         typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function" ||
