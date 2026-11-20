@@ -32,7 +32,8 @@ export async function createNeonStagingApprovalDispatch({
     runtime=await createRuntime({
       ...runtimeOptions,
       env,
-      quoteCustomerCredits
+      quoteCustomerCredits,
+      enableVideoApprovals: true
     });
     if(runtime?.backend!=="neon-postgres"||runtime?.branch!=="executive-visuals-staging"){
       throw new Error("Neon runtime identity does not match the approved staging branch.");
