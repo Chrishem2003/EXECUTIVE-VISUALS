@@ -41,16 +41,23 @@ export function createNeonStagingProviderAdapters({
   if (typeof fetchImpl !== "function") throw new Error("Neon staging provider adapters require fetch.");
 
   const serviceRoleKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+  const bucket = env.NEON_STORAGE_BUCKET || "executive-visuals-media";
+  if (bucket !== "executive-visuals-media") {
+    throw new Error("Neon staging assets must use the canonical executive-visuals-media bucket until metadata and cleanup contracts support configurable buckets.");
+  }
   const neonStorage = storage || createNeonObjectStorage({
     endpoint: env.NEON_STORAGE_ENDPOINT,
     region: env.NEON_STORAGE_REGION,
     accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
     secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
-    bucket: env.NEON_STORAGE_BUCKET || "executive-visuals-media",
+    bucket,
     fetchImpl,
     timeoutMs,
     maxBytes: maxTotalBytes
   });
+  if (neonStorage.bucket && neonStorage.bucket !== bucket) {
+    throw new Error("Injected Neon storage bucket does not match the canonical asset metadata bucket.");
+  }
   const authorizeAsset = createCloudAssetAuthorizer({
     url: env.SUPABASE_URL, serviceRoleKey, fetchImpl,
     timeoutMs: Math.min(timeoutMs, 8000)
@@ -62,7 +69,7 @@ export function createNeonStagingProviderAdapters({
       region: env.NEON_STORAGE_REGION,
       accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
       secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
-      bucket: env.NEON_STORAGE_BUCKET || "executive-visuals-media"
+      bucket
     },
     storage: neonStorage, authorize: authorizeAsset,
     storageTimeoutMs: Math.min(timeoutMs, 30000),
