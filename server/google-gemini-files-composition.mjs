@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createCloudMediaAssetIO } from "./cloud-media-io.mjs";
 import { createGoogleGeminiFilesGateway } from "./google-gemini-files-gateway.mjs";
@@ -9,7 +10,7 @@ import { createGoogleGeminiFilesRepository } from "./google-gemini-files-reposit
  */
 export function createGoogleGeminiFilesComposition({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   env = process.env,
   fetchImpl = globalThis.fetch,
   loadPrivateAsset,
