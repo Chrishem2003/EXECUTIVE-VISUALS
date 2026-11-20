@@ -1188,7 +1188,7 @@ test("preserves documented retryable Runway load-shedding responses", async () =
     provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
     durationSeconds: 5, aspectRatio: "16:9"
   };
-  for (const status of [500, 502, 503, 504]) {
+  for (const status of [502, 503, 504]) {
     const adapter = createRunwayCloudVideoAdapter({
       ...base,
       fetchImpl: async () => new Response("temporary", { status })
@@ -1208,6 +1208,21 @@ test("quarantines undocumented Runway server responses during task creation", as
   const adapter = createRunwayCloudVideoAdapter({
     ...base,
     fetchImpl: async () => new Response("unknown upstream failure", { status: 520 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+  );
+});
+
+test("quarantines undocumented HTTP 500 task-creation responses", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("internal error", { status: 500 })
   });
   await assert.rejects(
     () => adapter.submit(input),
