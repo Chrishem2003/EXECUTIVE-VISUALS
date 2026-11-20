@@ -1391,7 +1391,7 @@ if(storyboardSubmitButton){void (async()=>{
  panel.hidden=false;panel.textContent="Submitting approved shots to the durable cloud queue…";
  storyboardSubmitButton.setAttribute("disabled","true");
  try{
-  const result=await apiRequest<{approval:{id:string;status:string;shotCount:number};jobs:Array<{jobId:string;shotIndex:number;status:string}>;idempotentReplay:boolean;providerRequestsSubmitted:boolean;backend?:"cloud"|"neon-postgres";message:string}>("/api/video-production-approvals/+encodeURIComponent(approval.id)+"/submit",{method:"POST"});
+  const result=await apiRequest<{approval:{id:string;status:string;shotCount:number};jobs:Array<{jobId:string;shotIndex:number;status:string}>;idempotentReplay:boolean;providerRequestsSubmitted:boolean;backend?:"cloud"|"neon-postgres";message:string}>("/api/video-production-approvals/"+encodeURIComponent(approval.id)+"/submit",{method:"POST"});
   if(result.approval.id!==approval.id||!Array.isArray(result.jobs)||result.jobs.length!==result.approval.shotCount||result.providerRequestsSubmitted!==false)throw new Error("The cloud queue receipt did not match the approved production. Retry the same approval to reconcile safely.");
   state.videoApproval={...approval,status:result.approval.status,backend:result.backend||"cloud",submitted:true,jobCount:result.jobs.length,jobIds:result.jobs.map(job=>job.jobId),jobStatuses:result.jobs.map(job=>({jobId:job.jobId,shotIndex:job.shotIndex,status:job.status,progress:0})),statusSummary:"Queued "+result.jobs.length+" approved shot job(s). Refresh to inspect worker progress."};save();
   panel.textContent="Cloud queue confirmed · "+result.jobs.length+" shot job(s) · "+(result.idempotentReplay?"idempotent replay":"new submission")+". "+result.message;
