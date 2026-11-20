@@ -48,3 +48,15 @@ test("Runway Model Router exposes its exact text, first-frame and source-video o
     "text-to-video","image-to-video","video-to-video"
   ]);
 });
+
+
+test("workflow editor enables first-frame and source-video inputs for the matching Runway Model Router operation",()=>{
+  const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
+  assert.match(ui,/routerRunway&&operation==="video-to-video"/);
+  assert.match(ui,/routerRunway&&operation==="image-to-video"/);
+  assert.match(ui,/routerRunway&&activeOperation==="video-to-video"/);
+  assert.match(ui,/routerRunway&&activeOperation==="image-to-video"/);
+  assert.match(ui,/Choose a private source-video asset from this project/);
+  assert.match(ui,/Choose a private first-frame image from this project/);
+  assert.doesNotMatch(ui,/Runway Model Router workflow mode uses its separately governed input contract; direct source assets require a direct Runway model/);
+});
