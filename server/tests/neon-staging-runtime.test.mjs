@@ -175,6 +175,7 @@ test("application dispatch can be ready without an embedded worker process", asy
       if (sql.includes("to_regprocedure")) return { rows: [{ atomic_video_enqueue_ready: true }] };
       throw new Error("Unexpected query");
     },
+    async connect() { return { async query() { return { rows: [] }; }, release() {} }; },
     async end() {}
   };
   const storage = { async checkReadiness() { return { ready: true, provider: "private-test-storage" }; } };
