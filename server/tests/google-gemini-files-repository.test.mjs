@@ -23,6 +23,14 @@ function response(status, data) {
   return new Response(data === null ? null : JSON.stringify(data), { status });
 }
 
+test("modern Supabase secret key is sent in apikey without a Bearer header",async()=>{
+ const calls=[];
+ const repository=createGoogleGeminiFilesRepository({url:base,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response(200,[]);}});
+ assert.equal(await repository.findProviderFile({assetId:row.asset_id,ownerId:row.owner_id,projectId:row.project_id,mimeType:row.mime_type}),null);
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("finds only the exact provider, asset, owner, project and MIME mapping", async () => {
   const calls = [];
   const repository = createGoogleGeminiFilesRepository({
