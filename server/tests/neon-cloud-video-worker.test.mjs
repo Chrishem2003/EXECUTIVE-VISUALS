@@ -25,13 +25,14 @@ function fixture() {
       async finishVideoJob(args) { calls.push(["finishVideoJob", args]); return true; }
     }
   };
-  return { calls, job, runtime };
+  const quoteCustomerCredits = ({ amountMicros }) => Math.ceil(amountMicros / 10000);
+  return { calls, job, runtime, quoteCustomerCredits };
 }
 
 test("Neon worker quarantines a claimed job without an authenticated owner/project UUID scope", async () => {
   const f = fixture();
   f.job.project_id = null;
-  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId, quoteCustomerCredits: f.quoteCustomerCredits });
   assert.equal(await contracts.queue.claim(workerId, 90, ["video.generate"]), null);
   assert.equal(f.calls[0][0], "quarantine");
   assert.equal(f.calls[0][1], jobId);
@@ -43,7 +44,7 @@ test("Neon worker quarantines a claimed job without an authenticated owner/proje
 test("Neon worker quarantines a claimed job with a malformed owner identifier", async () => {
   const f = fixture();
   f.job.owner_id = "not-a-uuid";
-  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId, quoteCustomerCredits: f.quoteCustomerCredits });
   assert.equal(await contracts.queue.claim(workerId, 90, ["video.generate"]), null);
   assert.equal(f.calls[0][0], "quarantine");
   assert.equal(f.calls[0][4].code, "VIDEO_JOB_SCOPE_INVALID");
@@ -51,7 +52,7 @@ test("Neon worker quarantines a claimed job with a malformed owner identifier", 
 
 test("Neon worker contracts finalize success with measured credits and provider receipt evidence", async () => {
   const f = fixture();
-  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId, quoteCustomerCredits: f.quoteCustomerCredits });
   const claimed = await contracts.queue.claim(workerId, 90, ["video.generate"]);
   assert.equal(claimed.id, jobId);
   const output = {
@@ -64,14 +65,15 @@ test("Neon worker contracts finalize success with measured credits and provider 
   }), true);
   const [, args] = f.calls[0];
   assert.equal(args.ownerId, jobId);
-  assert.equal(args.actualCredits, 40);
+  assert.equal(args.actualCredits, 250, "customer credits must be derived from the verified USD charge, not provider credits supplied by the adapter");
+  assert.equal(args.output.actualCredits, 250, "the settled customer-credit amount must be persisted with the job output");
   assert.equal(args.financialEvidence.evidenceId, "task-1");
   assert.equal(args.financialEvidence.evidenceReference, "provider-receipt-1");
 });
 
 test("Neon worker quarantines unverified failures rather than releasing customer credits", async () => {
   const f = fixture();
-  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId, quoteCustomerCredits: f.quoteCustomerCredits });
   await contracts.queue.claim(workerId, 90, ["video.generate"]);
   const result = await contracts.enqueue.finish({
     jobId, workerId, leaseToken: lease, status: "failed",
@@ -84,7 +86,7 @@ test("Neon worker quarantines unverified failures rather than releasing customer
 
 test("Neon worker maps provider polling, recovery and fenced lease operations", async () => {
   const f = fixture();
-  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime: f.runtime, workerId, quoteCustomerCredits: f.quoteCustomerCredits });
   await contracts.queue.claim(workerId, 90, ["video.generate"]);
   assert.equal(await contracts.enqueue.defer({
     jobId, workerId, leaseToken: lease, delaySeconds: 30, reasonCode: "VIDEO_PROVIDER_POLL_DEFERRED"
@@ -100,9 +102,23 @@ test("Neon worker composition fails closed without staging, remote and authoriza
     async submit(){}, async getStatus(){}, async ingestOutputs(){ return { assetIds: ["asset-1"] }; },
     async resolveActualCost(){ return { amount: 1, actualCredits: 10, currency: "USD", evidenceReference: "receipt" }; }
   };
-  assert.throws(() => createNeonCloudVideoWorker({ runtime: f.runtime, workerId, adapters: [adapter], authorizeJob: async()=>true, env: {} }), /staging runtime/);
+  assert.throws(() => createNeonCloudVideoWorker({ runtime: f.runtime, workerId, adapters: [adapter], authorizeJob: async()=>true, quoteCustomerCredits: f.quoteCustomerCredits, env: {} }), /staging runtime/);
   const env = { NEON_STAGING_RUNTIME_ENABLED: "true", NEON_STAGING_BRANCH_NAME: "executive-visuals-staging", CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" };
   assert.throws(() => createNeonCloudVideoWorker({ runtime: f.runtime, workerId, adapters: [adapter], env }), /authorization callback/);
-  const worker = createNeonCloudVideoWorker({ runtime: f.runtime, workerId, adapters: [adapter], authorizeJob: async()=>true, env });
+  const worker = createNeonCloudVideoWorker({ runtime: f.runtime, workerId, adapters: [adapter], authorizeJob: async()=>true, quoteCustomerCredits: f.quoteCustomerCredits, env });
   assert.deepEqual(worker.listSupported(), ["runway:gen4.5"]);
+});
+
+test("Neon worker fails closed when the deterministic customer-credit quote is asynchronous or invalid", async () => {
+  const f = fixture();
+  const contracts = createNeonVideoWorkerContracts({
+    runtime: f.runtime, workerId, quoteCustomerCredits: async () => 25
+  });
+  await contracts.queue.claim(workerId, 90, ["video.generate"]);
+  await assert.rejects(contracts.enqueue.finish({
+    jobId, workerId, leaseToken: lease, status: "succeeded",
+    output: { provider: "runway", model: "model-router", providerTaskId: "task-2",
+      assetIds: ["asset-1"], actualAmount: 1.25, actualCredits: 1,
+      currency: "USD", costEvidenceReference: "receipt-2" }, actualAmount: 1.25
+  }), error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
 });

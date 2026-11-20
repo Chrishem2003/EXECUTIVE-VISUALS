@@ -302,11 +302,18 @@ export function createRunwayModelRouterVideoAdapter({
         throw fail("Runway completed task omitted valid realized cost or exceeded its task estimate.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       const modelUsed = metadata.routing.model;
+      if (typeof modelUsed !== "string" || !/^[a-zA-Z0-9._:-]{1,128}$/.test(modelUsed)) {
+        throw fail("Runway routing metadata omitted a bounded actual model identifier.", "VIDEO_BUDGET_COST_UNRESOLVED");
+      }
       return {
         amount: Math.round(credits * 0.01 * 10000) / 10000,
         currency: "USD",
-        model: modelUsed,
-        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId + ":task-cost-credits:" + credits
+        // Financial reservations are keyed to the approved adapter identity
+        // ("model-router"). The exact routed model remains durable in the
+        // submission routing metadata and is repeated in the cost evidence.
+        model,
+        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId +
+          ":actual-model:" + encodeURIComponent(modelUsed) + ":task-cost-credits:" + credits
       };
     }
   });

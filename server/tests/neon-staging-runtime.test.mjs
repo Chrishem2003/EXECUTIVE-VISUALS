@@ -80,7 +80,7 @@ test("Neon runtime exposes the multi-shot approval bridge only with an explicit 
     async connect() { throw new Error("No transaction should be opened during composition or readiness."); },
     async end() {}
   };
-  const runtime = await createNeonStagingRuntime({ env, pool, quoteCustomerCredits: ({ amountMicros }) => Math.ceil(amountMicros / 10000) });
+  const runtime = await createNeonStagingRuntime({ env, pool, enableVideoApprovals: true, quoteCustomerCredits: ({ amountMicros }) => Math.ceil(amountMicros / 10000) });
   assert.equal(typeof runtime.videoApprovals.approvals.register, "function");
   assert.equal(typeof runtime.videoApprovals.approvals.enqueue, "function");
   const status = await runtime.checkReadiness();
@@ -114,6 +114,7 @@ test("Neon worker and application dispatch have independent readiness gates", as
     async resolveActualCost() { return { amount: 1, actualCredits: 1, currency: "USD", evidenceReference: "receipt" }; } };
   const runtime = await createNeonStagingRuntime({
     env: workerEnv, pool, storage, includeStorage: true,
+    enableVideoApprovals: true,
     quoteCustomerCredits: () => 100,
     workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "neon-staging-worker"
   });
@@ -135,7 +136,7 @@ test("Neon worker composition requires private storage and a complete authorizat
     async submit() {}, async getStatus() {}, async ingestOutputs() {}, async resolveActualCost() {} };
   await assert.rejects(createNeonStagingRuntime({
     env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
-    pool, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
+    pool, quoteCustomerCredits: () => 100, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
   }), /private object storage/);
 });
 
@@ -154,7 +155,7 @@ test("Neon approval dispatch readiness fails closed when the worker or private s
     async end() {}
   };
   const runtime = await createNeonStagingRuntime({ env, pool,
-    quoteCustomerCredits: () => 100 });
+    enableVideoApprovals: true, quoteCustomerCredits: () => 100 });
   const status = await runtime.checkReadiness();
   assert.equal(status.ready, true);
   assert.equal(status.videoApprovals.ready, true);
@@ -181,6 +182,7 @@ test("application dispatch can be ready without an embedded worker process", asy
   const storage = { async checkReadiness() { return { ready: true, provider: "private-test-storage" }; } };
   const runtime = await createNeonStagingRuntime({
     env, pool, storage, includeStorage: true,
+    enableVideoApprovals: true,
     quoteCustomerCredits: () => 100
   });
   const status = await runtime.checkReadiness();
@@ -211,6 +213,7 @@ test("dedicated worker can start without the web process approval bridge", async
   const runtime = await createNeonStagingRuntime({
     env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
     pool, storage, includeStorage: true,
+    quoteCustomerCredits: () => 100,
     workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker-test"
   });
   const status = await runtime.checkReadiness();

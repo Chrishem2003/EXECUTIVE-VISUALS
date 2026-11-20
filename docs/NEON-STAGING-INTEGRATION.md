@@ -381,3 +381,31 @@ Verification:
 - `scripts/verify-neon-queued-cancellation-postgres.sql` against disposable PostgreSQL after migrations 0001–0009.
 
 This migration is source-controlled only. It has not been applied to the connected Neon branch or any deployed database. Hosted cancellation remains unavailable until the isolated staging schema is reviewed and migrated.
+
+
+## Runway Model Router and actual customer-credit settlement
+
+The Neon provider registry can optionally register the existing Runway Model Router adapter alongside FAL. The router is a single approved billing identity (`runway:model-router`) that can select supported Runway models, including Seedance and Kling families, according to the account's Runway router configuration.
+
+Required worker-only environment:
+- `RUNWAY_MODEL_ROUTER_ENABLED=true`
+- `RUNWAY_VIDEO_ALLOW_REMOTE=true`
+- `RUNWAY_VIDEO_ROUTER_CONFIG` — exact Runway router configuration ID
+- `RUNWAY_API_KEY` (or `RUNWAYML_API_SECRET`)
+- `RUNWAY_OUTPUT_HOSTS` — comma-separated, explicitly reviewed HTTPS output-host allowlist
+
+These are additional to the existing Neon staging, private-storage, Supabase metadata authorization, worker, and remote execution gates. The router is not registered unless its explicit opt-in is true and all required settings are present. No provider credentials or flags are added by this source change.
+
+Runway task-cost settlement uses the completed task's `cost.credits` receipt, verifies it does not exceed `estimatedCost.credits`, converts provider credits to USD at the documented Runway API credit rate, and preserves the actual routed model in durable submission metadata and the cost-evidence reference. The approved budget key remains `model-router`, matching the immutable reservation identity.
+
+Customer credits are a separate platform currency. The same deterministic server-side `NEON_CUSTOMER_CREDITS_PER_USD` conversion is now shared by the approval API and the dedicated worker process. At completion, the worker converts the verified actual USD charge into customer credits; it never trusts provider-supplied customer-credit quantities. If the quote policy is absent, asynchronous, invalid, or outside bounds, settlement fails closed and the job remains held for reconciliation.
+
+The Model Router output host allowlist is mandatory; the code does not assume that every Runway CDN hostname is trusted. The private ingestor still performs URL/host validation, bounded download, FFprobe validation and private Neon storage publication.
+
+Verification:
+- `server/tests/neon-customer-credit-policy.test.mjs`
+- `server/tests/neon-cloud-video-worker.test.mjs`
+- `server/tests/neon-staging-provider-adapters.test.mjs`
+- `server/tests/runway-model-router-video-adapter.test.mjs`
+
+This is opt-in source code only. It does not enable Runway execution, provision a Runway configuration, change credentials, or start a paid generation.

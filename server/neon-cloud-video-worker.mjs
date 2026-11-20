@@ -12,7 +12,7 @@ function requireFunction(value, name) {
  * video worker. Failed jobs are quarantined, not refunded: only authoritative
  * provider evidence may release a customer reservation.
  */
-export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
+export function createNeonVideoWorkerContracts({ runtime, workerId, quoteCustomerCredits } = {}) {
   if (!runtime || runtime.backend !== "neon-postgres" ||
       !runtime.queue || !runtime.submissions || !runtime.financials) {
     throw new Error("Neon video worker requires a composed Neon staging runtime.");
@@ -21,6 +21,9 @@ export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
     throw new Error("Neon video worker ID is invalid.");
   }
   const { queue: durableQueue, submissions, financials } = runtime;
+  if (typeof quoteCustomerCredits !== "function") {
+    throw new Error("Neon video worker requires the server-side customer-credit quote policy for actual-cost settlement.");
+  }
   for (const [service, methods] of [
     [durableQueue, ["claim", "renew", "assertLease", "defer", "quarantine", "recover"]],
     [submissions, ["prepare", "begin", "record", "markUnknown"]],
@@ -66,9 +69,33 @@ export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
         return quarantined ? Object.freeze({ finished: true, status: "blocked" }) : false;
       }
       if (!output || typeof output !== "object" || typeof actualAmount !== "number" ||
-          !Number.isFinite(actualAmount) || !Number.isSafeInteger(output.actualCredits) ||
-          output.actualCredits < 0 || output.actualCredits > 1000000000) {
-        throw fail("Neon finalization requires provider cost and measured customer credits.", "NEON_VIDEO_FINALIZATION_EVIDENCE_REQUIRED");
+          !Number.isFinite(actualAmount) || actualAmount <= 0 || actualAmount > 1000000 ||
+          typeof output.currency !== "string" || !output.currency.trim()) {
+        throw fail("Neon finalization requires a verified provider cost and currency.", "NEON_VIDEO_FINALIZATION_EVIDENCE_REQUIRED");
+      }
+      const amountMicros = Math.round(actualAmount * 1000000);
+      if (!Number.isSafeInteger(amountMicros) || amountMicros < 1) {
+        throw fail("Verified provider cost cannot be represented in customer-credit micros.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+      }
+      let actualCredits;
+      try {
+        actualCredits = quoteCustomerCredits({
+          ownerId: job.owner_id,
+          projectId: job.project_id,
+          provider: output.provider,
+          model: output.model,
+          currency: output.currency,
+          amountMicros,
+          shot: job.input && typeof job.input === "object" ? job.input : {},
+          approvalId: job.input?.approvalId,
+          shotIndex: job.input?.shotIndex
+        });
+      } catch {
+        throw fail("Verified provider cost could not be converted using the approved server-side customer-credit policy.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+      }
+      if ((actualCredits && typeof actualCredits.then === "function") ||
+          !Number.isSafeInteger(actualCredits) || actualCredits < 1 || actualCredits > 100000000) {
+        throw fail("Server-side customer-credit settlement quote is invalid.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
       }
       const evidence = {
         provider: output.provider,
@@ -78,9 +105,10 @@ export function createNeonVideoWorkerContracts({ runtime, workerId } = {}) {
         evidenceId: output.providerTaskId,
         evidenceReference: output.costEvidenceReference
       };
+      const settledOutput = Object.freeze({ ...output, actualCredits });
       const finished = await financials.finishVideoJob({
         jobId, ownerId: job.owner_id, workerId, leaseToken, status: "succeeded",
-        output, actualAmount, actualCredits: output.actualCredits, financialEvidence: evidence
+        output: settledOutput, actualAmount, actualCredits, financialEvidence: evidence
       });
       if (finished) activeJobs.delete(jobId);
       return finished;
@@ -122,7 +150,8 @@ export function createNeonCloudVideoWorker({
   adapters,
   authorizeJob,
   env = process.env,
-  deferSeconds = 30
+  deferSeconds = 30,
+  quoteCustomerCredits
 } = {}) {
   if (env.NEON_STAGING_RUNTIME_ENABLED !== "true" ||
       env.NEON_STAGING_BRANCH_NAME !== "executive-visuals-staging") {
@@ -138,7 +167,7 @@ export function createNeonCloudVideoWorker({
     throw new Error("Neon video worker requires between 1 and 100 provider adapters.");
   }
 
-  const contracts = createNeonVideoWorkerContracts({ runtime, workerId });
+  const contracts = createNeonVideoWorkerContracts({ runtime, workerId, quoteCustomerCredits });
   const guardedAdapters = adapters.map(adapter => {
     if (!adapter || typeof adapter !== "object" ||
         typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function" ||

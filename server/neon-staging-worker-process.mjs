@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNeonStagingRuntime } from "./neon-staging-runtime.mjs";
+import { createNeonCustomerCreditQuotePolicy } from "./neon-customer-credit-policy.mjs";
 import { createNeonStagingProviderAdapters } from "./neon-staging-provider-adapters.mjs";
 
 function boundedInteger(value, fallback, min, max, label) {
@@ -47,6 +48,7 @@ export async function startNeonStagingWorkerProcess({
   try {
     runtime = await createRuntime({
       env, Pool, storage: provider.storage, includeStorage: true,
+      quoteCustomerCredits: createNeonCustomerCreditQuotePolicy({ env }),
       workerAdapters: provider.adapters,
       workerAuthorizeJob: provider.authorizeJob,
       workerId,
