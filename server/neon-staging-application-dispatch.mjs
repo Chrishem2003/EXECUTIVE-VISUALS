@@ -117,5 +117,47 @@ export function createNeonStagingApplicationDispatch({
     }
   }
 
-  return Object.freeze({submit});
+  async function cancelJob({jobId,ownerId}={}){
+    if(!UUID.test(String(jobId||""))||!UUID.test(String(ownerId||""))){
+      return {status:400,body:{error:{code:"VIDEO_JOB_ID_INVALID",message:"A valid job and authenticated account are required."}}};
+    }
+    if(typeof runtime?.queue?.getOwnedJob!=="function"||typeof runtime?.queue?.cancelQueuedVideoJob!=="function"){
+      return {status:503,body:{error:{code:"VIDEO_JOB_CANCELLATION_UNAVAILABLE",message:"Safe queued cancellation is not available in this Neon runtime."}}};
+    }
+    let job;
+    try{job=await runtime.queue.getOwnedJob(jobId,ownerId);}
+    catch{return {status:503,body:{error:{code:"VIDEO_JOB_LOOKUP_FAILED",message:"The owned job could not be verified. No cancellation was attempted."}}};}
+    if(!job)return {status:404,body:{error:{code:"VIDEO_JOB_NOT_FOUND",message:"Video job not found."}}};
+    if(job.jobType!=="video.generate"||!job.projectId){
+      return {status:409,body:{error:{code:"VIDEO_JOB_NOT_CANCELLABLE",message:"Only project-scoped video generation jobs can be cancelled here."}}};
+    }
+    let allowed=false;
+    try{allowed=await canWriteProject(ownerId,job.projectId)===true;}catch{}
+    if(!allowed)return {status:404,body:{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}}};
+    let receipt;
+    try{receipt=await runtime.queue.cancelQueuedVideoJob(jobId,ownerId);}
+    catch{return {status:503,body:{error:{code:"VIDEO_JOB_CANCELLATION_UNCONFIRMED",message:"Cancellation could not be confirmed. Refresh the job before retrying."}}};}
+    if(!receipt.cancelled){
+      const conflicts=new Set(["provider_submission_possible","submission_record_exists","financial_reservation_not_active","terminal_job"]);
+      const status=receipt.reason==="not_found"?404:409;
+      const messages={
+        provider_submission_possible:"This job is no longer queued. Provider submission or execution may have started, so no refund or cancellation is being claimed.",
+        submission_record_exists:"A provider submission record exists. The job is held for provider reconciliation; credits will not be released automatically.",
+        financial_reservation_not_active:"The financial reservation is not in an active state. No cancellation or refund was applied.",
+        terminal_job:"This job is already terminal and cannot be cancelled again."
+      };
+      return {status,body:{error:{code:conflicts.has(receipt.reason)?"VIDEO_JOB_CANCELLATION_CONFLICT":"VIDEO_JOB_NOT_FOUND",message:messages[receipt.reason]||"The job could not be safely cancelled."},job:{id:jobId,status:receipt.status||job.status}}};
+    }
+    if(!receipt.replayed){
+      audit(ownerId,"video_generation.neon_job_cancelled_before_submission","video_generation_job",jobId,
+        {creditAdjustment:receipt.creditAdjustment,balance:receipt.balance,evidenceType:"verified_no_submission"},job.projectId);
+    }
+    return {status:200,body:{
+      job:{id:jobId,status:"cancelled"},
+      cancellation:{creditAdjustment:receipt.creditAdjustment,balance:receipt.balance,replayed:receipt.replayed},
+      providerCancellation:"not_required_no_submission"
+    }};
+  }
+
+  return Object.freeze({submit,cancelJob});
 }
