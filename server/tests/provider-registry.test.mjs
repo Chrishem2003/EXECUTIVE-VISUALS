@@ -340,6 +340,7 @@ test("Runway Model Router takes precedence over a direct model when explicitly c
  assert.equal(video.model,"model-router");
  assert.equal(findProviderForCapability(catalog,"video.generate",{allowRemote:true}).model,"model-router");
  assert.equal(video.availableModels.find(model=>model.id==="seedance2_5").available,false);
+ assert.equal(video.availableModels.find(model=>model.id==="seedance2_5").readiness,"router_active");
  assert.equal(video.availableModels.find(model=>model.id==="model-router").available,true);
  assert.equal(video.modelCapabilities.videoToVideo,false);
  assert.equal(video.modelCapabilities.referenceVideos,false);
