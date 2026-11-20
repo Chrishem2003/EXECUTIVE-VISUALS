@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { executableAvailable } from "./media.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
 import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-provider-worker-composition.mjs";
@@ -64,7 +65,7 @@ export function readCloudWorkerConfig(env=process.env){
   if(!falConfigured&&!runwayRouterConfigured&&!googleOmni&&!luma&&!directRunwayConfigured)throw new Error("Cloud video worker requires a fully configured FAL adapter, an explicitly enabled Runway Model Router with a saved config, gated Google Omni, configured Luma, or verified direct Veo task billing.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
  }
- if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
+ if(!env.SUPABASE_URL||!resolveSupabaseServerKey(env))throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
@@ -175,7 +176,7 @@ export async function createGoogleGeminiGcsMirrorRecoveryMaintenanceTask({
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")) )throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
- const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
+ const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:resolveSupabaseServerKey(env)};
  if(config.media||config.timeline||config.video){const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes,env});await readiness.checkReadiness();}
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
