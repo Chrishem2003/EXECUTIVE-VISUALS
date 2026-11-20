@@ -85,13 +85,14 @@ test("Neon runtime exposes the multi-shot approval bridge only with an explicit 
   assert.equal(typeof runtime.videoApprovals.approvals.enqueue, "function");
   const status = await runtime.checkReadiness();
   assert.equal(status.videoApprovals.ready, true);
-  assert.equal(status.applicationDispatchReady, false, "approval dispatch must remain blocked until a worker and private storage are configured");
+  assert.equal(status.applicationDispatchReady, false, "approval dispatch must remain blocked until private storage is ready");
+  assert.equal(status.workerReady, false);
   assert.equal(status.videoWorker.configured, false);
   assert.equal(status.storage, null);
   await runtime.close();
 });
 
-test("Neon worker is composed but cannot start before approval, financial and private-storage readiness", async () => {
+test("Neon worker and application dispatch have independent readiness gates", async () => {
   let ended = 0;
   let storageReady = false;
   const pool = {
@@ -121,7 +122,8 @@ test("Neon worker is composed but cannot start before approval, financial and pr
   assert.equal(blocked.videoWorker.configured, true);
   assert.equal(blocked.videoWorker.running, false);
   assert.equal(blocked.applicationDispatchReady, false);
-  await assert.rejects(runtime.startVideoWorker(), /private-storage readiness/);
+  assert.equal(blocked.workerReady, false);
+  await assert.rejects(runtime.startVideoWorker(), /worker, financial and private-storage readiness/);
   assert.equal(runtime.videoWorker !== null, true);
   await runtime.close();
   assert.equal(ended, 1);
@@ -157,6 +159,7 @@ test("Neon approval dispatch readiness fails closed when the worker or private s
   assert.equal(status.ready, true);
   assert.equal(status.videoApprovals.ready, true);
   assert.equal(status.applicationDispatchReady, false);
+  assert.equal(status.workerReady, false);
   assert.equal(status.videoWorker.configured, false);
   await assert.rejects(runtime.startVideoWorker(), /not configured/);
   await runtime.close();
