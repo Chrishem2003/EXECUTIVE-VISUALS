@@ -360,3 +360,24 @@ The API and background worker are separate processes:
 - The process handles SIGINT/SIGTERM with graceful worker drain and closes the Neon pool. It does not provision resources, apply migrations, create buckets, or modify Render services.
 
 Suggested future Render background-worker start command: `npm run start:neon-staging-worker`. Do not create a new Render service or change production configuration as part of this repository-only implementation. Configure and verify a separate staging worker service only after the Neon branch, bucket, role-scoped credentials and cost controls have been reviewed and explicitly approved.
+
+
+## Safe queued-job cancellation — migration 0009
+
+Migration `0009_safe_queued_video_cancellation.sql` adds an owner-scoped, atomic cancellation boundary for Neon `video.generate` jobs. It is deliberately narrower than provider cancellation:
+
+- The job row is locked and must still be `queued`; this serializes cancellation against worker claim.
+- Any provider-submission ledger row (`prepared`, `submitting`, `submitted` or `unknown`) blocks cancellation. A missing provider task ID is not treated as proof that no charge occurred.
+- Both customer-credit and provider-budget reservations must still be active and match the job's provider.
+- The database creates its own `verified_no_submission` evidence and calls the existing financial finalizer in the same transaction that marks the job cancelled and appends its event.
+- Replays return the original cancellation result only when the immutable credit-reservation evidence matches this cancellation path.
+- Processing, submitted, ambiguous and terminal jobs are not refunded by this operation. They require provider-specific cancellation or reconciliation evidence.
+
+The authenticated application dispatch verifies job ownership and project write access before calling the queue RPC. Studio exposes cancellation only for Neon jobs still reported as queued. The existing cloud cancellation route is unchanged.
+
+Verification:
+- `server/tests/neon-queued-cancellation.test.mjs`
+- `server/tests/neon-staging-application-dispatch.test.mjs`
+- `scripts/verify-neon-queued-cancellation-postgres.sql` against disposable PostgreSQL after migrations 0001–0009.
+
+This migration is source-controlled only. It has not been applied to the connected Neon branch or any deployed database. Hosted cancellation remains unavailable until the isolated staging schema is reviewed and migrated.
