@@ -660,9 +660,7 @@ test("paid workflow quotes require the complete provider-aware worker launch con
   assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_WORKER_ENABLED: "false" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_VIDEO_OUTPUT_HOSTS: "" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, RUNWAY_VIDEO_MODELS: "gen4.5" }), false);
-  assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_WORKER_ENABLED: "false" }), false);
-  assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_VIDEO_OUTPUT_HOSTS: "" }), false);
-  assert.equal(await quotePaidExecutionEnabled({ ...complete, RUNWAY_VIDEO_MODELS: "gen4.5" }), false);
+
 });
 
 test("cloud transformation API rejects unknown, coerced and oversized inputs before writes",async()=>{
