@@ -7,10 +7,37 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const HASH = /^[a-f0-9]{64}$/;
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
-function boundedText(value, maxBytes, code) {
-  const raw = String(value ?? "");
-  if (Buffer.byteLength(raw) > maxBytes) throw fail("Google Vertex Interactions response exceeded its size limit.", code);
-  return raw;
+async function readBoundedResponseText(response, maxBytes) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel?.(); } catch {}
+    throw fail("Google Vertex Interactions response exceeded its size limit.", "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > maxBytes) {
+      throw fail("Google Vertex Interactions response exceeded its size limit.", "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+    }
+    return raw;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        throw fail("Google Vertex Interactions response exceeded its size limit.", "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  return Buffer.concat(chunks, total).toString("utf8");
 }
 function normalizeProjectId(value) {
   const valueText = String(value || "").trim();
@@ -116,7 +143,7 @@ export function createGoogleOmniVertexClient({
         signal: controller.signal,
         redirect: "error"
       });
-      const raw = boundedText(await response.text(), maxResponseBytes, "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+      const raw = await readBoundedResponseText(response, maxResponseBytes);
       if (!response.ok) {
         const error = fail("Google Vertex Interactions request failed with HTTP " + response.status + ".", "GOOGLE_VERTEX_REQUEST_FAILED");
         error.status = response.status;
