@@ -297,3 +297,32 @@ test("cloud executor preserves bounded provider retry-after hints for later work
     error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 120
   );
 });
+
+test("documented retryable provider rejection resets the Neon submission ledger and defers safely", async () => {
+  const f = fixture({ submitError: Object.assign(new Error("Runway is shedding load"), {
+    code: "RUNWAY_SERVER_ERROR", retryable: true, retryAfterSeconds: 45
+  }) });
+  f.ledger.retry = async (id, worker, token, code) => {
+    f.calls.push(["retry", id, worker, token, code]);
+    return true;
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE" && error.retryAfterSeconds === 45
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "retry"]);
+  assert.equal(f.calls.some(call => call[0] === "unknown"), false);
+});
+
+test("ambiguous provider timeout is never reset to a retryable prepared submission", async () => {
+  const f = fixture({ submitError: Object.assign(new Error("socket timeout"), {
+    code: "RUNWAY_TIMEOUT", retryable: true, retryAfterSeconds: 30
+  }) });
+  f.ledger.retry = async (...args) => { f.calls.push(["retry", ...args]); return true; };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION"
+  );
+  assert.equal(f.calls.some(call => call[0] === "retry"), false);
+  assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
+});
