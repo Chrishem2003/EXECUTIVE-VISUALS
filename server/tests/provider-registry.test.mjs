@@ -342,9 +342,14 @@ test("Runway Model Router takes precedence over a direct model when explicitly c
  assert.equal(video.availableModels.find(model=>model.id==="seedance2_5").available,false);
  assert.equal(video.availableModels.find(model=>model.id==="seedance2_5").readiness,"router_active");
  assert.equal(video.availableModels.find(model=>model.id==="model-router").available,true);
- assert.equal(video.modelCapabilities.videoToVideo,false);
- assert.equal(video.modelCapabilities.referenceVideos,false);
- assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
+ assert.equal(video.modelCapabilities.videoToVideo,true);
+ assert.equal(video.modelCapabilities.referenceVideos,true);
+ assert.equal(video.modelCapabilities.referenceAudio,true);
+ assert.equal(video.modelCapabilities.seed,true);
+ assert.equal(video.modelCapabilities.startFrame,true);
+ assert.equal(video.modelCapabilities.endFrame,true);
+ assert.deepEqual(video.modelCapabilities.audioModes,["generated","none","reference"]);
+ assert.deepEqual(video.modelCapabilities.resolutions,["provider_default","480p","720p","1080p","4k"]);
  assert.equal(JSON.stringify(catalog).includes("server-only"),false);
 });
 
