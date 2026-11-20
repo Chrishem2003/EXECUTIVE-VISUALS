@@ -328,3 +328,34 @@ test("Runway direct adapter accepts the current RUNWAY_API_KEY variable as well 
  assert.equal(video.model,"seedance2_5");
  assert.equal(JSON.stringify(catalog).includes("server-only"),false);
 });
+
+test("Runway Model Router takes precedence over a direct model when explicitly configured",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",
+  RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.model,"model-router");
+ assert.equal(findProviderForCapability(catalog,"video.generate",{allowRemote:true}).model,"model-router");
+ assert.equal(video.availableModels.find(model=>model.id==="seedance2_5").available,false);
+ assert.equal(video.availableModels.find(model=>model.id==="model-router").available,true);
+ assert.equal(video.modelCapabilities.videoToVideo,false);
+ assert.equal(video.modelCapabilities.referenceVideos,false);
+ assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
+ assert.equal(JSON.stringify(catalog).includes("server-only"),false);
+});
+
+test("Runway Model Router never appears ready with an invalid saved router slug",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"Invalid Router",
+  RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"needs_configuration");
+ assert.equal(video.availableModels.find(model=>model.id==="model-router").available,false);
+ assert.equal(findProviderForCapability(catalog,"video.generate",{allowRemote:true}),null);
+});
