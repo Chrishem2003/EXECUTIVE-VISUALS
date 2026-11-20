@@ -247,7 +247,15 @@ export function createRunwayModelRouterVideoAdapter({
           routeType: "runway-model-router",
           configId: slug,
           routing,
-          estimatedCredits: routing.estimatedCost?.credits
+          estimatedCredits: Number.isFinite(input.estimatedProviderCredits)&&input.estimatedProviderCredits>0
+            ? input.estimatedProviderCredits : routing.estimatedCost?.credits,
+          estimatedAmount: Number.isSafeInteger(input.estimatedCostMicros)&&input.estimatedCostMicros>0
+            ? input.estimatedCostMicros/1000000 : Number(input.estimated_cost?.amount||0)||
+              Number(routing.estimatedCost?.credits||0)*0.01,
+          approvedMaxAmount: Number.isFinite(input.approvedMaxAmount)&&input.approvedMaxAmount>0
+            ? input.approvedMaxAmount : Number.isSafeInteger(input.estimatedCostMicros)&&input.estimatedCostMicros>0
+              ? input.estimatedCostMicros/1000000 : Number(input.estimated_cost?.amount||0)||
+                Number(routing.estimatedCost?.credits||0)*0.01
         }
       };
     },
@@ -295,18 +303,22 @@ export function createRunwayModelRouterVideoAdapter({
         throw fail("Durable Runway route and completed task evidence are required; budget remains reserved.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       const credits = task.cost?.credits;
-      const estimatedCredits = task.estimatedCost?.credits;
+      const estimatedCredits = Number.isFinite(metadata.estimatedCredits)
+        ? metadata.estimatedCredits : Number(metadata.routing.estimatedCost?.credits);
+      const approvedMaxAmount = Number(metadata.approvedMaxAmount||metadata.estimatedAmount||0);
+      const actualAmount = Number(credits)*0.01;
       if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0 ||
-          typeof estimatedCredits !== "number" || !Number.isFinite(estimatedCredits) ||
-          estimatedCredits < 0 || credits > estimatedCredits) {
-        throw fail("Runway completed task omitted valid realized cost or exceeded its task estimate.", "VIDEO_BUDGET_COST_UNRESOLVED");
+          !Number.isFinite(estimatedCredits) || estimatedCredits < 0 ||
+          !Number.isFinite(approvedMaxAmount) || approvedMaxAmount <= 0 ||
+          !Number.isFinite(actualAmount) || actualAmount > approvedMaxAmount + 0.000001) {
+        throw fail("Runway completed task omitted valid realized cost or exceeded the approved USD spending ceiling.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       const modelUsed = metadata.routing.model;
       if (typeof modelUsed !== "string" || !/^[a-zA-Z0-9._:-]{1,128}$/.test(modelUsed)) {
         throw fail("Runway routing metadata omitted a bounded actual model identifier.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       return {
-        amount: Math.round(credits * 0.01 * 10000) / 10000,
+        amount: Math.round(actualAmount * 1000000) / 1000000,
         currency: "USD",
         // Financial reservations are keyed to the approved adapter identity
         // ("model-router"). The exact routed model remains durable in the
