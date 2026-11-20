@@ -56,7 +56,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
       ?"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and a valid RUNWAY_VIDEO_ROUTER_CONFIG for the enabled Model Router."
       :"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."
   })
-  :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
+  :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
  if(videoProvider==="runway"&&video.status==="ready"&&
     (env.CLOUD_WORKER_ENABLED!=="true"||env.CLOUD_VIDEO_WORKER_ENABLED!=="true")){
