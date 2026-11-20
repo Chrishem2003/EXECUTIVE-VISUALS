@@ -41,7 +41,6 @@ export function createCloudVideoEnqueue({
       const response = await fetchImpl(base + "/rest/v1/rpc/" + name, {
         method: "POST",
         headers: {
-          apikey: serviceRoleKey,
           ...supabaseServerAuthHeaders(serviceRoleKey),
           "content-type": "application/json",
           "accept-profile": SCHEMA,
