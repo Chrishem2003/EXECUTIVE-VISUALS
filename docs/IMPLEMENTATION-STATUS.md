@@ -1,8 +1,18 @@
 # Executive Visuals — implementation status
 
-**Updated:** 16 November 2026  
-**Branch:** `main` (PR #649, #650 and #651 merged; latest commit `a4872af9264c67eb6bbabec63f08dd1b67efa9c8`; Render auto-deployment `dep-dbt9et6q1p3s73fl9v70` is building; previous live commit `8a4bf008a2e610feabc6f96a7ea94435c6270cca` remains active until verification; isolated D1 staging remains separate from production)
+**Updated:** 20 November 2026  
+**Branch:** `main` (latest commit `9e3a2ffa104958930093518f64c1ef300237521e`; PR #741 merged; production Render deploy `dep-dc02f5m7bikc739r6n0g` and isolated cloud-staging deploy `dep-dc02f5m7bikc739r6na0` both report `live`; all activation flags for the Neon Workflow Canvas bridge remain disabled)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
+
+
+## Mainline delta — 20 November 2026
+
+- **Governed Workflow Canvas → Neon staging execution bridge — PR #741 merged:** main commit `9e3a2ffa104958930093518f64c1ef300237521e`. The authenticated Cloud Timeline API revalidates the persisted quote against owner, project, request ID/hash, provider/model/operation, router config, pricing source, routed model, estimate, currency and quote state before dispatch. One approved `video.generate` node maps to one durable Neon job using the existing approval, queue, provider-submission, budget-reservation and settlement ledgers; no parallel queue or billing ledger was introduced.
+- The bridge routes job status, output receipts and safe queued cancellation through the same owner-scoped Neon job. It preserves the original Workflow Canvas request hash separately from per-shot financial-ledger hashes, validates private output URLs against the configured storage origin/bucket, and uses the approved USD ceiling for provider and customer-credit reservations. Above-ceiling realized charges are held for reconciliation.
+- Exact-head CI on `776a30676116e9c5ba844c429e4ff187070c79d8` passed all seven workflows: Quality, Neon PostgreSQL financial integration, Financial intelligence, Billing self-service, Google Drive export recovery, Release integration and Remediation workbench. The PR was marked ready and squash-merged as `9e3a2ffa104958930093518f64c1ef300237521e`.
+- Render's existing `EXECUTIVE-VISUALS` production service and `executive-visuals-cloud-staging` service both report the merged commit's deployment as `live`. This confirms deployment status, not authenticated browser acceptance or a live provider generation.
+- **Activation boundary:** `NEON_STAGING_WORKFLOW_NODE_DISPATCH_ENABLED`, `NEON_STAGING_WORKER_RELEASE_READY`, the existing Neon runtime/application gates and the separate worker-process gate remain operator-controlled and default-off. No Render environment variables, secrets, Neon migrations/branches, object-storage buckets, or paid provider requests were changed or created by this merge.
+- **Release posture remains NOT APPROVED:** Render Free still has ephemeral local SQLite/media storage; no durable production object store or production metadata data plane is active; hosted identity, restart recovery, backup/restore and full authenticated customer-journey acceptance remain release blockers.
 
 ## Mainline delta — 16 November 2026
 
