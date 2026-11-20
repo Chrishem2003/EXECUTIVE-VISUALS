@@ -93,6 +93,8 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
  });
  assert.equal(result.backend,"neon-postgres");
  assert.equal(result.jobId,job);
+ const approvalInsert=f.calls.find(x=>x.sql.includes("insert into executive_visuals.video_generation_approvals"));
+ assert.equal(approvalInsert.values[3],"workflow-approval-001:"+approval,"a fresh quote gets its own idempotency key while retries reuse that quote");
  assert.equal(result.providerRequestsSubmitted,false);
  assert.equal(quotes.length,1);
  assert.equal(quotes[0].amountMicros,2500000,"customer credits must reserve against the approved ceiling, not the estimate");
