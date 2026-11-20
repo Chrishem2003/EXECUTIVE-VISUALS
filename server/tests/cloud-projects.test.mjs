@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCloudProjectRepository } from "../cloud-projects.mjs";
 
+test("cloud project repository uses modern Supabase secret without Bearer authorization",async()=>{
+ const calls=[];
+ const repo=createCloudProjectRepository({url:"https://project.supabase.co",serviceRoleKey:"sb_secret_modern",authorize:async()=>true,fetchImpl:async(url,options)=>{calls.push(options);return new Response(JSON.stringify([]),{status:200});}});
+ await repo.list({ownerId});
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 const owner="123e4567-e89b-42d3-a456-426614174000";
 const editor="223e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
