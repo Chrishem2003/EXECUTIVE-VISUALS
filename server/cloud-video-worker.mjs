@@ -32,7 +32,8 @@ export async function runCloudVideoWorkerCycle({
   leaseSeconds = 90,
   heartbeatIntervalMs = 15000,
   deferSeconds = 30,
-  onEvent = () => {}
+  onEvent = () => {},
+  random = Math.random
 } = {}) {
   if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.assertLease !== "function") {
     throw new Error("Cloud video worker requires a lease-aware cloud queue.");
@@ -48,6 +49,7 @@ export async function runCloudVideoWorkerCycle({
     throw new Error("Cloud video worker lease and heartbeat settings are invalid.");
   }
   if (!Number.isInteger(deferSeconds) || deferSeconds < 5 || deferSeconds > 900) throw new Error("Cloud video worker defer interval is invalid.");
+  if (typeof random !== "function") throw new Error("Cloud video worker retry jitter source is invalid.");
 
   const job = await queue.claim(workerId, leaseSeconds, ["video.generate"]);
   if (!job) return { claimed: false };
@@ -113,8 +115,16 @@ export async function runCloudVideoWorkerCycle({
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
     if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
-      const delaySeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
+      const retryBaseSeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
         ? error.retryAfterSeconds : deferSeconds;
+      let delaySeconds = retryBaseSeconds;
+      if (code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
+        const attempt = Number.isSafeInteger(job.attempt_count) && job.attempt_count > 0 ? job.attempt_count : 1;
+        const jitter = random();
+        if (!Number.isFinite(jitter) || jitter < 0 || jitter >= 1) throw new Error("Cloud video worker retry jitter source returned an invalid value.");
+        const exponential = retryBaseSeconds * (2 ** Math.min(4, attempt - 1));
+        delaySeconds = Math.min(900, Math.ceil(exponential * (1 + jitter * 0.5)));
+      }
       const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds, reasonCode: code });
       if (!deferred) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "video.job.deferred", jobId: job.id, workerId, reasonCode: code });
