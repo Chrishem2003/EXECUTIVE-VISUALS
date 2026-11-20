@@ -34,7 +34,7 @@ export function createCloudQueue({
         method: "POST",
         headers: {
           apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...(String(serviceRoleKey).startsWith("sb_secret_") ? {} : { authorization: "Bearer " + serviceRoleKey }),
           "content-type": "application/json",
           "accept-profile": SCHEMA,
           "content-profile": SCHEMA,
@@ -115,7 +115,7 @@ export function createCloudQueue({
           method: "GET",
           headers: {
             apikey: serviceRoleKey,
-            authorization: "Bearer " + serviceRoleKey,
+            ...(String(serviceRoleKey).startsWith("sb_secret_") ? {} : { authorization: "Bearer " + serviceRoleKey }),
             "accept-profile": SCHEMA,
             accept: "application/json"
           },
