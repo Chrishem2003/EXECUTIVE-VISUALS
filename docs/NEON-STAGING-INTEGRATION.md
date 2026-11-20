@@ -279,7 +279,7 @@ The isolated PostgreSQL foundation now includes `database/neon/migrations/0003_v
 - A single lease-fenced `finish_video_generation_job_v1` function that finalizes financial reservations, writes the immutable provider-cost record, updates the job terminal state and emits the job event in the same database transaction.
 - Idempotent reservation replay even after the one-use approval has been consumed. Replays must match the original reservation owner, approval, budget and credit quantities.
 - A read-only financial schema readiness function and adapter tests.
-- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0007, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection, failure release, atomic video admission and approval-bridge schema. This CI database is ephemeral and is not the connected Neon project.
+- A new GitHub Actions workflow starts a disposable PostgreSQL 17 service, applies migrations 0001–0008, and exercises real SQL reservation replay, success settlement, provider cost ledger insertion, no-charge evidence rejection, failure release, atomic video admission and approval-bridge schema. This CI database is ephemeral and is not the connected Neon project.
 
 ### Important safeguards and limitations
 
@@ -312,3 +312,19 @@ The financial functions use transaction-scoped row locks and `pg_advisory_xact_l
 - [ ] Integrate real provider cost resolvers and map cost evidence to the financial finalization contract.
 - [ ] Add live Neon tests for concurrent reservations, approval replay, insufficient balance, spend caps, worker lease loss, process restart and exactly-once settlement.
 - [ ] Review and apply migrations only on the separately approved isolated Neon staging branch.
+
+
+## Safe provider submission retry — migration 0008
+
+Migration `0008_retryable_submission_recovery.sql` adds a lease-fenced transition from `submitting` back to `prepared` for an explicit provider response that the provider documents as safe to retry. The transition requires the active job ID, worker ID and per-attempt lease token, and only applies when no provider task ID has been recorded.
+
+The shared executor enables this path only when all of the following are true:
+- The adapter marks the error `retryable: true`.
+- The error code is in the explicit allowlist for documented Runway Dev responses (`RUNWAY_RATE_LIMITED`, `RUNWAY_SERVER_ERROR`).
+- The Neon ledger exposes the migration-0008 retry RPC and confirms the state transition.
+
+After the ledger reset, the worker defers the queue job using a bounded retry delay. If queue deferral fails, the existing lease-expiry recovery can safely reclaim the job because the ledger is already back in `prepared`. If the ledger transition cannot be confirmed, the executor retains the previous fail-closed unknown/reconciliation behavior.
+
+Network timeouts, malformed success responses, missing task IDs, HTTP 500 and undocumented 5xx responses are not eligible for this path. They remain quarantined because task creation may have occurred.
+
+The Neon PostgreSQL CI workflow applies migration 0008 and verifies the transition, lease fencing, and one-shot state change against disposable PostgreSQL. No connected Neon branch is migrated by CI.
