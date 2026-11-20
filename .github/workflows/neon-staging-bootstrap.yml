@@ -1,0 +1,81 @@
+name: Neon staging branch bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_create_staging_branch:
+        description: "I have verified this Neon project is dedicated to Executive Visuals staging and the parent branch is staging-only."
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-staging-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  create-staging-branch:
+    name: Create isolated staging database branch
+    if: inputs.confirm_create_staging_branch == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate Neon GitHub integration and safe parent
+        shell: bash
+        env:
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NEON_PROJECT_ID}" ]]; then
+            echo "::error::NEON_PROJECT_ID repository variable is missing. Confirm the Neon GitHub integration is connected to this repository."
+            exit 1
+          fi
+          if [[ -z "${NEON_API_KEY}" ]]; then
+            echo "::error::NEON_API_KEY repository secret is missing. Do not paste an API key into workflow inputs or source files."
+            exit 1
+          fi
+          echo "Neon integration variables are present; secret value is not displayed."
+          echo "The workflow uses only the explicitly named staging-base parent."
+
+      - name: Create the isolated staging branch
+        id: neon
+        uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch_name: executive-visuals-staging
+          parent_branch: staging-base
+          role: neondb_owner
+
+      - name: Require a newly created branch
+        shell: bash
+        env:
+          CREATED: ${{ steps.neon.outputs.created }}
+          BRANCH_ID: ${{ steps.neon.outputs.branch_id }}
+        run: |
+          set -euo pipefail
+          if [[ "${CREATED}" != "true" ]]; then
+            echo "::error::A branch named executive-visuals-staging already exists. It was not reused; inspect it manually before proceeding."
+            exit 1
+          fi
+          if [[ -z "${BRANCH_ID}" ]]; then
+            echo "::error::Neon did not return a branch ID."
+            exit 1
+          fi
+          {
+            echo "## Neon staging branch created"
+            echo
+            echo "- Branch: `executive-visuals-staging`"
+            echo "- Branch ID: `${BRANCH_ID}`"
+            echo "- Parent: `staging-base`"
+            echo "- No SQL migrations were applied."
+            echo "- No Render variables or application secrets were changed."
+            echo "- No object-storage bucket was created or modified."
+            echo
+            echo "The database connection URI is intentionally not printed or uploaded as an artifact."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
