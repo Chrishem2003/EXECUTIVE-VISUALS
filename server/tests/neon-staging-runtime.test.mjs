@@ -219,3 +219,12 @@ test("dedicated worker can start without the web process approval bridge", async
   assert.equal((await runtime.startVideoWorker()).started, true);
   await runtime.close();
 });
+
+
+test("Neon staging runtime rejects an injected noncanonical object bucket", async () => {
+  const pool = { async query() { return { rows: [] }; }, async end() {} };
+  await assert.rejects(createNeonStagingRuntime({
+    env, pool, includeStorage: true,
+    storage: { bucket: "custom-media", async checkReadiness() { return { ready: true }; } }
+  }), /canonical executive-visuals-media bucket/);
+});
