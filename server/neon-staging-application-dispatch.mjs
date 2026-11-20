@@ -110,6 +110,7 @@ export function createNeonStagingApplicationDispatch({
       return {status:replay?200:202,body:{
         approval:{id:local.id,status:"processing",requestHash:local.request_hash,shotCount:snapshot.shots.length},
         jobs,idempotentReplay:replay||changed.changes===0,providerRequestsSubmitted:false,
+        queuedForWorker:true,providerCallMadeByApi:false,
         backend:"neon-postgres",message:"Approved shots are durably queued in isolated Neon staging. Provider execution remains controlled by the separately gated staging worker."
       }};
     }catch(error){
@@ -184,7 +185,7 @@ export function createNeonStagingApplicationDispatch({
         {projectId,jobId:receipt.jobId,requestHash:input.requestHash,providerRequestsSubmitted:false},projectId);
       return {status:receipt.idempotentReplay?200:202,body:{
         job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,currency:"USD"},
-        backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,queuedForWorker:true,providerCallMadeByApi:false
+        backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,queuedForWorker:true,providerCallMadeByApi:false,providerRequestsSubmitted:false
       }};
     }catch(error){
       const detail=safeError(error);
