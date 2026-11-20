@@ -37,7 +37,10 @@ function fixture({status=local.status,allowed=true,registerError=null,jobs=null,
       currency:input.currency,quotedAmountMicros:input.quotedAmountMicros,
       budgetCeilingMicros:input.budgetCeilingMicros,status:"approved_pending_submission"
     };},
-    async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);return receipts;}
+    async enqueue(id,ownerId){calls.push(["enqueue",id,ownerId]);return receipts;},
+    async enqueueWorkflowNode(input){calls.push(["enqueueWorkflowNode",input]);return{
+      backend:"neon-postgres",approvalId:input.quoteId,jobId:job,status:"queued",idempotentReplay:false,providerRequestsSubmitted:false
+    };}
   }}};
   const dispatch=createNeonStagingApplicationDispatch({db,runtime,canWriteProject:()=>allowed,audit:(...args)=>calls.push(["audit",...args])});
   return{dispatch,calls,row};
@@ -133,4 +136,27 @@ test("returns a conflict when a submission record exists even without a provider
  assert.equal(result.status,409);
  assert.match(result.body.error.message,/provider reconciliation/);
  assert.equal(f.calls.some(x=>x[0]==="audit"),false);
+});
+
+
+test("submits one quote-bound workflow node through the Neon ledger after project authorization",async()=>{
+ const f=fixture();
+ const quote={quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-request-001",
+  requestHash:"f".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
+  input:{prompt:"A cinematic sunrise"},estimatedAmount:1.25,approvedMaxAmount:2.5,
+  expiresAt:new Date(Date.now()+60000).toISOString()};
+ const result=await f.dispatch.submitWorkflowNode(quote);
+ assert.equal(result.status,202);
+ assert.equal(result.body.backend,"neon-postgres");
+ assert.equal(result.body.job.id,job);
+ assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.ok(f.calls.some(x=>x[0]==="enqueueWorkflowNode"&&x[1].requestHash===quote.requestHash));
+ assert.ok(f.calls.some(x=>x[0]==="audit"&&x[1]==="workflow.video_generation.neon_job_enqueued"));
+});
+
+test("workflow-node dispatch rejects unauthorized projects before contacting the Neon queue",async()=>{
+ const f=fixture({allowed:false});
+ const result=await f.dispatch.submitWorkflowNode({quoteId:approval,ownerId:owner,projectId:project});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(x=>x[0]==="enqueueWorkflowNode"),false);
 });
