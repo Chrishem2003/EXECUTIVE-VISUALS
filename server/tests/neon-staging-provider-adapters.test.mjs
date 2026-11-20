@@ -89,3 +89,79 @@ test("Neon worker registry refuses a noncanonical bucket even when storage is in
     env: { ...env, NEON_STORAGE_BUCKET: "custom-media" }, storage
   }), /canonical executive-visuals-media bucket/);
 });
+
+
+test("composes Runway Model Router on Neon with private source preparation and task-cost settlement", () => {
+  const runwayEnv = {
+    ...env,
+    RUNWAY_MODEL_ROUTER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_VIDEO_ROUTER_CONFIG: "executive-visuals-staging",
+    RUNWAY_API_KEY: "runway-test-key",
+    RUNWAY_OUTPUT_HOSTS: "*.cloudfront.net"
+  };
+  delete runwayEnv.FAL_VIDEO_MODEL;
+  delete runwayEnv.FAL_KEY;
+  delete runwayEnv.FAL_BILLING_KEY;
+  let networkCalls = 0;
+  const fetchImpl = async () => {
+    networkCalls += 1;
+    throw new Error("network must not run during provider composition");
+  };
+  const storage = createNeonObjectStorage({
+    endpoint: env.NEON_STORAGE_ENDPOINT, region: env.NEON_STORAGE_REGION,
+    accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
+    bucket: env.NEON_STORAGE_BUCKET, fetchImpl
+  });
+  const result = createNeonStagingProviderAdapters({ env: runwayEnv, fetchImpl, storage });
+  assert.deepEqual(result.adapters.map(adapter => adapter.provider + ":" + adapter.model), [
+    "runway:model-router"
+  ]);
+  assert.equal(result.readiness.provider, "runway");
+  assert.equal(result.readiness.billing, "runway-model-router-task-cost");
+  assert.deepEqual(result.readiness.providers, [{
+    provider: "runway", model: "model-router", billing: "runway-model-router-task-cost"
+  }]);
+  assert.equal(networkCalls, 0);
+});
+
+test("Runway Neon registration fails closed without explicit output hosts or remote execution opt-in", () => {
+  const runwayEnv = {
+    ...env,
+    RUNWAY_MODEL_ROUTER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_VIDEO_ROUTER_CONFIG: "executive-visuals-staging",
+    RUNWAY_API_KEY: "runway-test-key"
+  };
+  delete runwayEnv.FAL_VIDEO_MODEL;
+  delete runwayEnv.FAL_KEY;
+  delete runwayEnv.FAL_BILLING_KEY;
+  const storage = createNeonObjectStorage({
+    endpoint: env.NEON_STORAGE_ENDPOINT, region: env.NEON_STORAGE_REGION,
+    accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
+    bucket: env.NEON_STORAGE_BUCKET,
+    fetchImpl: async () => { throw new Error("not called"); }
+  });
+  assert.throws(() => createNeonStagingProviderAdapters({ env: runwayEnv, storage }), /RUNWAY_OUTPUT_HOSTS/);
+  assert.throws(() => createNeonStagingProviderAdapters({
+    env: { ...runwayEnv, RUNWAY_OUTPUT_HOSTS: "*.cloudfront.net", RUNWAY_VIDEO_ALLOW_REMOTE: "false" },
+    storage
+  }), /Runway Model Router requires its explicit remote gate/);
+});
+
+test("Neon provider registry refuses to start without any explicitly configured provider", () => {
+  const noProviderEnv = { ...env };
+  delete noProviderEnv.FAL_VIDEO_MODEL;
+  delete noProviderEnv.FAL_KEY;
+  delete noProviderEnv.FAL_BILLING_KEY;
+  const storage = createNeonObjectStorage({
+    endpoint: env.NEON_STORAGE_ENDPOINT, region: env.NEON_STORAGE_REGION,
+    accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
+    bucket: env.NEON_STORAGE_BUCKET,
+    fetchImpl: async () => { throw new Error("not called"); }
+  });
+  assert.throws(() => createNeonStagingProviderAdapters({ env: noProviderEnv, storage }), /at least one explicitly configured/);
+});
