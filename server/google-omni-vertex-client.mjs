@@ -12,14 +12,14 @@ function boundedText(value, maxBytes, code) {
   if (Buffer.byteLength(raw) > maxBytes) throw fail("Google Vertex Interactions response exceeded its size limit.", code);
   return raw;
 }
-function projectId(value) {
+function normalizeProjectId(value) {
   const valueText = String(value || "").trim();
   if (!/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(valueText)) {
     throw new TypeError("Google Vertex video worker requires a valid Google Cloud project ID.");
   }
   return valueText;
 }
-function bucketName(value) {
+function normalizeBucketName(value) {
   const valueText = String(value || "").trim();
   if (valueText.length < 3 || valueText.length > 222 ||
       !/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(valueText) ||
@@ -64,8 +64,8 @@ export function createGoogleOmniVertexClient({
   maxResponseBytes = 2 * 1024 * 1024,
   now = () => Date.now()
 } = {}) {
-  const project = projectId(projectInput);
-  const bucket = bucketName(bucketInput);
+  const project = normalizeProjectId(projectInput);
+  const bucket = normalizeBucketName(bucketInput);
   const prefix = String(outputPrefix || "").replace(/^\/+|\/+$/g, "");
   if (!/^[a-zA-Z0-9/_-]{1,180}$/.test(prefix) || prefix.split("/").some(part => !part || part === "." || part === "..")) {
     throw new TypeError("Google Vertex output prefix is invalid.");
