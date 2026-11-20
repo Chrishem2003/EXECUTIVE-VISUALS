@@ -310,7 +310,6 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   assert.equal(model.capabilities.imageToVideo, true);
   assert.equal(model.capabilities.videoToVideo, true);
   assert.equal(model.capabilities.videoEdit, true);
-  assert.equal(model.capabilities.videoExtend, false);
   assert.equal(model.capabilities.videoExtend, true);
   assert.equal(model.capabilities.nativeAudio, true);
   assert.equal(model.capabilities.negativePrompt, false);
