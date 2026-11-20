@@ -127,17 +127,22 @@ export function createNeonPostgresQueue({ pool, schema = SCHEMA } = {}) {
         "not_found", "already_cancelled", "terminal_job", "provider_submission_possible",
         "submission_record_exists", "financial_reservation_not_active", "cancelled_before_submission"
       ]);
+      const balance = Number(row?.balance ?? 0);
+      const creditAdjustment = Number(row?.credit_adjustment ?? 0);
       if (!row || typeof row.cancelled !== "boolean" ||
           !reasons.has(row.reason) ||
-          (row.job_status !== null && typeof row.job_status !== "string")) {
+          (row.job_status !== null && typeof row.job_status !== "string") ||
+          typeof row.replayed !== "boolean" ||
+          !Number.isSafeInteger(balance) || balance < 0 ||
+          !Number.isSafeInteger(creditAdjustment) || creditAdjustment < 0) {
         throw fail("Neon queued-video cancellation returned an invalid receipt.", "NEON_QUEUE_INVALID_RESULT");
       }
       return Object.freeze({
         cancelled: row.cancelled,
         status: row.job_status,
-        balance: Number(row.balance || 0),
-        creditAdjustment: Number(row.credit_adjustment || 0),
-        replayed: row.replayed === true,
+        balance,
+        creditAdjustment,
+        replayed: row.replayed,
         reason: row.reason
       });
     },
