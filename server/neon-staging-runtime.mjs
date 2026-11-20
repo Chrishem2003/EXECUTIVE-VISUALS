@@ -45,6 +45,9 @@ export async function createNeonStagingRuntime({
   let storage = suppliedStorage;
   try {
     if (includeStorage && !storage) storage = createNeonObjectStorage(storageOptions);
+    if (storage && typeof storage.bucket === "string" && storage.bucket !== "executive-visuals-media") {
+      throw new Error("Neon staging runtime requires the canonical executive-visuals-media bucket until asset metadata and cleanup contracts support configurable buckets.");
+    }
     const queue = createNeonPostgresQueue({ pool });
     const submissions = createNeonVideoSubmissionLedger({ pool });
     const financials = createNeonVideoFinancials({ pool });
