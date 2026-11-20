@@ -111,12 +111,12 @@ export function createRunwayCloudVideoAdapter({
           error?.name === "AbortError" ? "RUNWAY_TIMEOUT" : "RUNWAY_UNAVAILABLE"
         );
       }
-      if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
+      if (response.status === 429) throw Object.assign(fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED"), { retryable: true, retryAfterSeconds: 60 });
       if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
       if ([502, 503, 504].includes(response.status)) {
         // Runway Dev documents these load-shedding responses as retryable.
         // The durable queue owns bounded backoff and jitter.
-        throw fail("Runway returned a retryable server error.", "RUNWAY_SERVER_ERROR");
+        throw Object.assign(fail("Runway returned a retryable server error.", "RUNWAY_SERVER_ERROR"), { retryable: true, retryAfterSeconds: 30 });
       }
       if (response.status === 500) {
         // HTTP 500 is not listed in the Runway Dev retry matrix. A submission
