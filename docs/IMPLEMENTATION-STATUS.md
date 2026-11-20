@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
 **Updated:** 20 November 2026  
-**Branch:** `main` (latest commit `9e3a2ffa104958930093518f64c1ef300237521e`; PR #741 merged; production Render deploy `dep-dc02f5m7bikc739r6n0g` and isolated cloud-staging deploy `dep-dc02f5m7bikc739r6na0` both report `live`; all activation flags for the Neon Workflow Canvas bridge remain disabled)
+**Branch:** `main` (latest feature commit `9e3a2ffa104958930093518f64c1ef300237521e`; documentation follow-up `322ed8a8fc0d7db4cad342abdb3668aa735a5e4e`; PR #741 merged; latest production Render deploy `dep-dc02g03kmems73dsqie0` and isolated cloud-staging deploy `dep-dc02g06qo8tc73fgt3i0` both report `live`; all activation flags for the Neon Workflow Canvas bridge remain disabled)
 **Delivery posture:** current mainline is live on Render; public release remains not approved pending durable hosted storage, isolated identity configuration and authenticated staging acceptance, backup/restore evidence, and end-to-end customer-journey verification.
 
 
