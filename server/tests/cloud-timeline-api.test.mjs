@@ -1203,7 +1203,7 @@ test("Neon workflow approval validates the persisted exact quote before durable 
  assert.ok(calls.some(call=>call.options.method==="PATCH"&&call.url.includes("video_workflow_quotes")));
 });
 
-test("Neon workflow approval rejects a mismatched or expired stored quote before enqueue",async()=>{
+test("Neon workflow approval rejects a mismatched quote and delegates expiry replay rules to the durable ledger",async()=>{
  const quoteId="723e4567-e89b-42d3-a456-426614174000",requestId="workflow-neon-node-002";
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8},inputs:[],outputs:[]};
  const values={prompt:"A cinematic product launch"};
@@ -1217,7 +1217,7 @@ test("Neon workflow approval rejects a mismatched or expired stored quote before
    url:"https://example.supabase.co",serviceRoleKey:"service-secret",
    fetchImpl:async(url)=>({ok:true,status:200,async text(){return JSON.stringify(url.includes("video_workflow_quotes")?[quote]:[]);}}),
    timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
-   authorize:async()=>true,workflowNodeDispatch:async()=>{dispatched++;return{status:202,body:{}};},
+   authorize:async()=>true,workflowNodeDispatch:async input=>{dispatched++;return Date.parse(input.expiresAt)<=Date.now()?{status:422,body:{error:{code:"VIDEO_WORKFLOW_QUOTE_EXPIRED"}}}:{status:202,body:{}};},
    runwayRouterAdapter:{async prepareInput(input){return input;}},
    env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",
     CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",RUNWAY_MODEL_ROUTER_ENABLED:"true",
@@ -1227,8 +1227,14 @@ test("Neon workflow approval rejects a mismatched or expired stored quote before
   const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
    confirmed:true,projectId:project,quoteId,requestId,node,values,approvedMaxAmount:1.5
   }});
-  assert.equal(result.status,409);
-  assert.equal(dispatched,0);
+  if(quote.request_hash==="f".repeat(64)){
+   assert.equal(result.status,409);
+   assert.equal(dispatched,0);
+  }else{
+   assert.equal(result.status,422);
+   assert.equal(result.body.error.code,"VIDEO_WORKFLOW_QUOTE_EXPIRED");
+   assert.equal(dispatched,1);
+  }
  }
 });
 
