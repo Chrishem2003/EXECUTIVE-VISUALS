@@ -28,7 +28,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         gateway: "runway",
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: true,
-          videoEdit: true, videoExtend: true, videoReframe: false,
+          videoEdit: true, videoExtend: false, videoReframe: false,
           nativeAudio: true, negativePrompt: true, seed: true,
           startFrame: true, endFrame: false, motionReference: false,
           referenceImages: true, referenceVideos: true, referenceAudio: true,
