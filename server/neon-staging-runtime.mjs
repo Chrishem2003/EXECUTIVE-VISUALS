@@ -85,8 +85,9 @@ export async function createNeonStagingRuntime({
         ready: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
           (!storage || storageStatus?.ready === true),
         applicationDispatchReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
-          approvalStatus?.ready === true && Boolean(videoWorker && workerProcess) &&
-          storage?.checkReadiness && storageStatus?.ready === true,
+          approvalStatus?.ready === true && Boolean(storage?.checkReadiness) && storageStatus?.ready === true,
+        workerReady: queueStatus.ready === true && financialStatus.ready === true && enqueueStatus.ready === true &&
+          Boolean(videoWorker && workerProcess && storage?.checkReadiness) && storageStatus?.ready === true,
         queue: queueStatus,
         financials: financialStatus,
         videoEnqueue: enqueueStatus,
@@ -116,8 +117,8 @@ export async function createNeonStagingRuntime({
         if (closed) throw new Error("Neon staging runtime is closed.");
         if (!videoWorker || !workerProcess) throw new Error("Neon video worker is not configured.");
         const readiness = await checkReadiness();
-        if (readiness.applicationDispatchReady !== true || readiness.storage?.ready !== true) {
-          throw new Error("Neon video worker cannot start until application, financial and private-storage readiness all pass.");
+        if (readiness.workerReady !== true || readiness.storage?.ready !== true) {
+          throw new Error("Neon video worker cannot start until worker, financial and private-storage readiness all pass.");
         }
         return workerProcess.start();
       },
