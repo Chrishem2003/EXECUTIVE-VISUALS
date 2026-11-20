@@ -75,7 +75,10 @@ test("submits a live routed task and durably returns the complete routing decisi
     input: { promptText: "A cinematic sunrise", duration: 5, aspectRatio: "16:9" }
   });
   assert.equal(result.taskId, id);
-  assert.deepEqual(result.metadata, { routeType: "runway-model-router", configId: "production-video", routing, estimatedCredits: 50 });
+  assert.deepEqual(result.metadata, {
+    routeType: "runway-model-router", configId: "production-video", routing,
+    estimatedCredits: 50, estimatedAmount: 0.5, approvedMaxAmount: 0.5
+  });
 });
 
 test("never treats dry-run estimates as actual customer/provider settlement", async () => {
@@ -244,4 +247,26 @@ test("keeps model-router budget identity while preserving routed Seedance and Kl
     assert.equal(cost.amount, 0.48);
     assert.ok(cost.evidenceReference.includes("actual-model:" + actualModel + ":"));
   }
+});
+
+
+test("settles realized router cost above estimate when it remains within the user's approved USD ceiling",async()=>{
+ const adapter=createRunwayModelRouterVideoAdapter({
+  ...base,
+  fetchImpl:async()=>new Response(JSON.stringify({id,routing}))
+ });
+ const submitted=await adapter.submit({
+  provider:"runway",model:"model-router",prompt:"A cinematic sunrise",
+  estimatedProviderCredits:50,estimatedCostMicros:500000,approvedMaxAmount:0.75
+ });
+ const cost=await adapter.resolveActualCost({
+  submissionMetadata:submitted.metadata,providerTaskId:id,
+  task:{taskId:id,status:"succeeded",estimatedCost:{credits:50},cost:{credits:60}}
+ });
+ assert.equal(cost.amount,0.6);
+ assert.equal(cost.currency,"USD");
+ await assert.rejects(()=>adapter.resolveActualCost({
+  submissionMetadata:submitted.metadata,providerTaskId:id,
+  task:{taskId:id,status:"succeeded",estimatedCost:{credits:50},cost:{credits:80}}
+ }),error=>error.code==="VIDEO_BUDGET_COST_UNRESOLVED");
 });

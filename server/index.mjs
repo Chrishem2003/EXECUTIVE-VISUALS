@@ -263,11 +263,21 @@ async function ensureCreativeArtifactWriter(projectId,createdBy){
  if(!localProject)throw Object.assign(new Error("Local project was not found for creative artifact persistence."),{code:"CREATIVE_ARTIFACT_PROJECT_NOT_FOUND"});
  await creativeArtifactsPostgres.assertWriter({projectId,ownerId:localProject.owner_id,createdBy,projectName:localProject.name,projectDescription:localProject.description});
 }
+let neonWorkflowNodeDispatch=null;
+let neonWorkflowJobLookup=null;
+let neonWorkflowJobCancel=null;
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
+ url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,
+ fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled,
+ workflowNodeDispatch:input=>neonWorkflowNodeDispatch?neonWorkflowNodeDispatch(input):null,
+ workflowNodeDispatchEnabled:()=>typeof neonWorkflowNodeDispatch==="function",
+ workflowJobLookup:input=>neonWorkflowJobLookup?neonWorkflowJobLookup(input):null,
+ workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null
+}) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
 const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -319,6 +329,24 @@ const neonStagingApprovalRuntime=await createNeonStagingApprovalDispatch({
   }
  }
 });
+const neonWorkflowBridgeEnabled=neonStagingApprovalRuntime.enabled&&
+ process.env.NEON_STAGING_WORKFLOW_NODE_DISPATCH_ENABLED==="true"&&
+ process.env.NEON_STAGING_WORKER_RELEASE_READY==="true";
+if(neonWorkflowBridgeEnabled){
+ neonWorkflowNodeDispatch=input=>neonStagingApprovalRuntime.dispatch.submitWorkflowNode(input);
+ neonWorkflowJobCancel=input=>neonStagingApprovalRuntime.dispatch.cancelJob(input);
+ neonWorkflowJobLookup=async({jobId,ownerId}={})=>{
+  const job=await neonStagingApprovalRuntime.runtime.queue.getOwnedJob(jobId,ownerId);
+  if(!job||job.jobType!=="video.generate"||!job.input?.workflowQuoteId)return null;
+  const status=job.status==="processing"?"running":
+   ["blocked","partial"].includes(job.status)?"needs_input":job.status;
+  return{
+   id:job.id,owner_id:job.ownerId,project_id:job.projectId,job_type:job.jobType,status,
+   progress:job.progress,input:job.input,output:job.output,error:job.error,
+   created_at:job.createdAt,updated_at:job.updatedAt,completed_at:job.completedAt
+  };
+ };
+}
 const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled
  ?neonStagingApprovalRuntime.dispatch
  :cloudVideoGenerationDispatch;

@@ -19,7 +19,7 @@ const sourceDraftTaskId="b23e4567-e89b-42d3-a456-426614174000";
 const video=Buffer.from("0000ftypisom0000");
 const sha256=createHash("sha256").update(video).digest("hex");
 
-function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null,sourceDraftJob=null}={}){
+function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutput=null,values={},assetProjectId=projectId,assetMediaType="video/mp4",existingAsset=null,sourceDraftJob=null,neonReceipt=false}={}){
  const stored=[],calls=[];
  const localJob={status:jobStatus,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000",lease_expires_at:new Date(Date.now()+60000).toISOString(),lease_token:"a23e4567-e89b-42d3-a456-426614174000"};
  const db={prepare(sql){
@@ -44,8 +44,8 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded",priorOutp
     return{status:202,body:{job:{id:cloudJobId,status:"queued"}}};
    }
    if(input.method==="GET"&&sourceDraftJob&&input.path==="/api/cloud/jobs/"+sourceDraftJob.id)return{status:200,body:{job:sourceDraftJob}};
-   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:request.requestId,requestHash:request.requestHash,approvedMaxAmount:2},status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},actualAmount:0.72,currency:"USD",costEvidenceReference:"cost:verified"}:null}}};
-   if(input.method==="GET"&&input.path==="/api/cloud/assets/"+cloudAssetId)return{status:200,body:{asset:{id:cloudAssetId,projectId,mediaType:"video/mp4",size:video.length,sha256},url:"https://supabase.example/storage/v1/object/sign/video"}};
+   if(input.method==="GET"&&input.path==="/api/cloud/jobs/"+cloudJobId)return{status:200,body:{job:{id:cloudJobId,owner_id:owner,project_id:projectId,job_type:"video.generate",input:{workflowQuoteId:quoteId,workflowRequestId:request.requestId,...(neonReceipt?{workflowRequestHash:request.requestHash,requestHash:"c".repeat(64)}:{requestHash:request.requestHash}),approvedMaxAmount:2},status:cloudStatus,output:cloudStatus==="succeeded"?{assetIds:[cloudAssetId],model:"routed-video-model",usage:{seconds:5},actualAmount:0.72,currency:"USD",costEvidenceReference:"cost:verified"}:null}}};
+   if(input.method==="GET"&&input.path==="/api/cloud/assets/"+cloudAssetId)return{status:200,body:{asset:{id:cloudAssetId,projectId,mediaType:"video/mp4",size:video.length,sha256},url:process.env.CLOUD_MEDIA_STORAGE_PROVIDER==="neon"?"https://storage.example.net/executive-visuals-media/project/video.mp4?X-Amz-Signature=test":"https://supabase.example/storage/v1/object/sign/video"}};
    if(input.method==="POST"&&input.path==="/api/cloud/jobs/"+cloudJobId+"/cancel")return{status:202,body:{}};
    throw new Error("Unexpected cloud API call: "+input.method+" "+input.path);
   },
@@ -541,6 +541,59 @@ test("interrupted private output stream is cleaned up and never published as an 
   assert.deepEqual(files,[]);
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+
+test("Neon workflow receipts verify the original request hash separately from the per-shot ledger hash",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput,neonReceipt:true});
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-neon-receipt-")),prior=process.env.SUPABASE_URL;
+ process.env.SUPABASE_URL="https://supabase.example";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async()=>new Response(video,{status:200,headers:{"content-length":String(video.length)}}),
+   verifyC2paAsset:async()=>({status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]})
+  });
+  assert.equal(result.provider,"runway");
+  assert.equal(result.cloudJobId,cloudJobId);
+  assert.equal(result.actualAmount,0.72);
+  assert.equal(result.costEvidenceReference,"cost:verified");
+ }finally{
+  if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
+  await rm(mediaRoot,{recursive:true,force:true});
+ }
+});
+
+
+test("Neon workflow output imports accept only the configured private bucket origin",async()=>{
+ const seed=fixture(),priorOutput={cloudJobId,quoteId,requestId:seed.request.requestId,requestHash:seed.request.requestHash,
+  routedModel:"routed-video-model",approvedMaxAmount:2,status:"queued"};
+ const f=fixture({priorOutput,neonReceipt:true});
+ const mediaRoot=await mkdtemp(join(tmpdir(),"ev-cloud-workflow-neon-storage-"));
+ const previous={supabase:process.env.SUPABASE_URL,provider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER,
+  endpoint:process.env.NEON_STORAGE_ENDPOINT,bucket:process.env.NEON_STORAGE_BUCKET};
+ process.env.SUPABASE_URL="https://supabase.example";
+ process.env.CLOUD_MEDIA_STORAGE_PROVIDER="neon";
+ process.env.NEON_STORAGE_ENDPOINT="https://storage.example.net";
+ process.env.NEON_STORAGE_BUCKET="executive-visuals-media";
+ try{
+  const result=await executeCloudVideoWorkflowNode({
+   db:f.db,job:{id:jobId,owner_id:owner,project_id:projectId,lease_owner:"worker-1",lease_token:"a23e4567-e89b-42d3-a456-426614174000"},
+   run:{id:runId,project_id:projectId},node:f.node,values:{},mediaRoot,cloudTimelineApi:f.cloudTimelineApi,
+   fetchImpl:async(url)=>{assert.equal(new URL(url).origin,"https://storage.example.net");return new Response(video,{status:200,headers:{"content-length":String(video.length)}});},
+   verifyC2paAsset:async()=>({status:"valid_untrusted",present:true,valid:true,trusted:false,validationState:"Valid",findings:[]})
+  });
+  assert.equal(result.assetIds.length,1);
+  assert.equal(result.actualAmount,0.72);
+ }finally{
+  for(const [key,value] of Object.entries({SUPABASE_URL:previous.supabase,CLOUD_MEDIA_STORAGE_PROVIDER:previous.provider,NEON_STORAGE_ENDPOINT:previous.endpoint,NEON_STORAGE_BUCKET:previous.bucket})){
+   if(value===undefined)delete process.env[key];else process.env[key]=value;
+  }
   await rm(mediaRoot,{recursive:true,force:true});
  }
 });

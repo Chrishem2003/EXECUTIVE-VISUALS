@@ -87,7 +87,7 @@ function timelineDurationSeconds(timeline){
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false,workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -532,6 +532,41 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
+     if(typeof workflowNodeDispatch==="function"&&workflowNodeDispatchEnabled()===true){
+      const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
+      const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
+      if(!storedQuote||storedQuote.id!==quoteId||storedQuote.owner_id!==ownerId||storedQuote.project_id!==projectId||
+         storedQuote.request_id!==requestId||storedQuote.request_hash!==workflowRequest.requestHash||
+         storedQuote.provider!==workflowRequest.provider||storedQuote.model!==workflowRequest.model||
+         storedQuote.operation!==workflowRequest.operation||storedQuote.currency!=="USD"||
+         storedQuote.config_id!==configId||storedQuote.pricing_source!=="runway_model_router_dry_run"||
+         storedQuote.routed_provider!=="runway"||
+         typeof storedQuote.routed_model!=="string"||!storedQuote.routed_model.trim()||
+         !Number.isSafeInteger(Number(storedQuote.estimated_credits))||Number(storedQuote.estimated_credits)<1||
+         !Number.isFinite(Number(storedQuote.estimated_amount))||Number(storedQuote.estimated_amount)<=0||
+         !["quoted","consumed"].includes(String(storedQuote.state||""))){
+       return response(409,{error:{code:"VIDEO_WORKFLOW_QUOTE_MISMATCH",message:"The stored quote no longer matches this exact owner, project, model, operation and request. Request a fresh quote."}});
+      }
+      const alreadyConsumed=storedQuote.state==="consumed";
+      // The Neon approval repository checks expiry against its durable
+      // idempotency record: expired first-time approvals fail, while a retry
+      // of an approval already registered before expiry returns the same job.
+      const neonResult=await workflowNodeDispatch({
+       quoteId,ownerId,projectId,requestId,requestHash:workflowRequest.requestHash,
+       provider:workflowRequest.provider,model:workflowRequest.model,operation:workflowRequest.operation,
+       input:workflowRequest.input,estimatedAmount:Number(storedQuote.estimated_amount),
+       approvedMaxAmount,expiresAt:storedQuote.expires_at,
+       estimatedCredits:Number(storedQuote.estimated_credits),
+       routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,
+       quoteState:storedQuote.state,approvalNote
+      });
+      if(neonResult){
+       if(neonResult.status>=200&&neonResult.status<300&&!alreadyConsumed){
+        try{await request("video_workflow_quotes?id=eq."+encodeURIComponent(quoteId)+"&state=eq.quoted",{method:"PATCH",body:{state:"consumed"}});}catch{}
+       }
+       return response(neonResult.status,neonResult.body);
+      }
+     }
      const rows=await request("rpc/approve_and_enqueue_video_workflow",{method:"POST",body:{
       p_quote_id:quoteId,p_approval_id:randomUUID(),p_owner_id:ownerId,p_project_id:projectId,
       p_request_hash:workflowRequest.requestHash,p_config_id:configId,p_idempotency_key:requestId,
@@ -656,6 +691,14 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events|cancel))?$/i);
    if(jobMatch&&safeId(jobMatch[1])){
+    if(jobMatch[2]==="cancel"&&method==="POST"&&typeof workflowJobCancel==="function"){
+     const cancelled=await workflowJobCancel({jobId:jobMatch[1],ownerId});
+     if(cancelled)return response(cancelled.status,cancelled.body);
+    }
+    if(!jobMatch[2]&&method==="GET"&&typeof workflowJobLookup==="function"){
+     const workflowJob=await workflowJobLookup({jobId:jobMatch[1],ownerId});
+     if(workflowJob)return response(200,{job:workflowJob});
+    }
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});

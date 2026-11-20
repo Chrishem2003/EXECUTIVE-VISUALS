@@ -396,7 +396,7 @@ Required worker-only environment:
 
 These are additional to the existing Neon staging, private-storage, Supabase metadata authorization, worker, and remote execution gates. The router is not registered unless its explicit opt-in is true and all required settings are present. No provider credentials or flags are added by this source change.
 
-Runway task-cost settlement uses the completed task's `cost.credits` receipt, verifies it does not exceed `estimatedCost.credits`, converts provider credits to USD at the documented Runway API credit rate, and preserves the actual routed model in durable submission metadata and the cost-evidence reference. The approved budget key remains `model-router`, matching the immutable reservation identity.
+Runway task-cost settlement uses the completed task's `cost.credits` receipt, converts provider credits to USD at the documented Runway API credit rate, and preserves the actual routed model in durable submission metadata and the cost-evidence reference. The realized charge may exceed the dry-run estimate only when it remains within the immutable user-approved USD ceiling; an over-ceiling charge is held for reconciliation. The approved budget key remains `model-router`, matching the immutable reservation identity.
 
 Customer credits are a separate platform currency. The same deterministic server-side `NEON_CUSTOMER_CREDITS_PER_USD` conversion is now shared by the approval API and the dedicated worker process. At completion, the worker converts the verified actual USD charge into customer credits; it never trusts provider-supplied customer-credit quantities. If the quote policy is absent, asynchronous, invalid, or outside bounds, settlement fails closed and the job remains held for reconciliation.
 
@@ -409,3 +409,46 @@ Verification:
 - `server/tests/runway-model-router-video-adapter.test.mjs`
 
 This is opt-in source code only. It does not enable Runway execution, provision a Runway configuration, change credentials, or start a paid generation.
+
+
+## Governed Workflow Canvas video-node bridge (staging-only)
+
+The isolated Neon execution lane can now serve the existing Workflow Canvas `video.generate` approval lifecycle without introducing another queue or ledger.
+
+### Execution boundary
+
+- The existing Cloud Timeline API remains the authenticated project/asset boundary and the source of the non-billable quote record in `executive_visuals.video_workflow_quotes`.
+- On approval, the API re-reads the stored quote and verifies its owner, project, request ID/hash, provider, model, operation, currency, amount and state. The browser cannot provide a provider task ID or override the stored quote.
+- When the explicit Neon workflow release gates are enabled, only the registered `runway/model-router` workflow contract is dispatched to the existing Neon approval repository. Unsupported direct-model and Luma requests fail closed; they are not silently routed to another provider or queue.
+- The quote ID becomes the immutable Neon approval ID. The request hash and full normalized input are preserved in the approval snapshot. One workflow node creates exactly one durable `video.generate` job.
+- The existing Neon approval, job, provider-submission, budget-reservation, customer-credit-reservation and settlement tables/functions are reused. No parallel queue, approval ledger or billing system is introduced.
+- The user's approved USD ceiling is persisted per shot. Provider budget reservation and customer-credit reservation use that ceiling, not merely the lower estimate. The worker settles the realized provider cost above estimate when it remains inside that ceiling; above-ceiling costs are held for reconciliation. Existing multi-shot approvals without per-shot ceilings retain their estimate-as-ceiling behavior.
+- The worker's scoped job-status read returns the original workflow request hash separately from the per-shot financial-ledger hash. The Workflow Canvas bridge verifies both the quote identity and the original request before importing output.
+- Job polling, private output asset lookup and safe queued cancellation are routed to the same Neon job. Processing or ambiguous submissions are not falsely marked cancelled or refunded.
+
+### Explicit activation gates
+
+All settings below are server-side and default to disabled:
+- `NEON_STAGING_RUNTIME_ENABLED=true`
+- `NEON_STAGING_APPLICATION_DISPATCH_ENABLED=true`
+- `NEON_STAGING_WORKFLOW_NODE_DISPATCH_ENABLED=true`
+- `NEON_STAGING_WORKER_RELEASE_READY=true` — operator attestation only after the dedicated worker is live and lease/recovery smoke tests pass
+- `NEON_STAGING_WORKER_PROCESS_ENABLED=true` on the separate worker service
+- `CLOUD_TIMELINE_API_ENABLED=true` with verified Supabase authentication and the existing private project/asset authorization
+- `CLOUD_MEDIA_STORAGE_PROVIDER=neon` and the existing server-only `NEON_STORAGE_*` credentials on the isolated staging runtime
+
+The workflow-node bridge is not enabled by adding credentials alone. The dedicated worker must be healthy and the operator must deliberately set both workflow release gates. Keep the flags false until private storage, tenant isolation, worker lease recovery, and quote-to-settlement reconciliation have passed live staging acceptance.
+
+### Accounting and replay behavior
+
+The Supabase quote row is marked `consumed` after a successful Neon enqueue. The Neon approval ID and request hash make retries idempotent. If the quote expires after its first durable Neon approval registration, a retry may return that same job; a first-time approval of an expired quote is rejected. If the quote-state update fails after enqueue, retrying the same request still resolves to the same Neon job and cannot create a second provider submission.
+
+### Verification added
+
+- `server/tests/neon-postgres-video-approvals.test.mjs` — one-shot workflow snapshot, per-shot ceiling, server-derived customer-credit reservation and fail-closed model/expiry checks
+- `server/tests/neon-staging-application-dispatch.test.mjs` — project-authorized workflow dispatch and audit
+- `server/tests/cloud-timeline-api.test.mjs` — persisted quote revalidation, Neon dispatch, quote consumption, status and cancellation routing
+- `server/tests/neon-postgres-queue.test.mjs` — owner-scoped job input receipt
+- `server/tests/workflow-cloud-video-bridge.test.mjs` — original workflow request hash validation when the Neon ledger also stores a per-shot hash
+
+This is code-only staging integration. It does not set any Render environment variable, start a worker, apply a database migration, provision storage, or submit a paid provider request.

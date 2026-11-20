@@ -104,6 +104,44 @@ async function resolveSeedanceDraftEnhancementNode({node,ownerId,projectId,cloud
   ...(UUID.test(String(input.sourceVideoAssetId||""))?{sourceDraftVideoAssetId:input.sourceVideoAssetId}:{})}};
 }
 
+function trustedPrivateStorageTarget(env=process.env){
+ const provider=String(env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").toLowerCase();
+ try{
+  if(provider==="neon"){
+   const endpoint=new URL(String(env.NEON_STORAGE_ENDPOINT||""));
+   const bucket=String(env.NEON_STORAGE_BUCKET||"executive-visuals-media");
+   if(endpoint.protocol!=="https:"||endpoint.username||endpoint.password||endpoint.search||endpoint.hash||endpoint.pathname!=="/"||
+      !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)||bucket.includes(".."))return null;
+   return{origin:endpoint.origin,pathPrefix:"/"+encodeURIComponent(bucket)+"/"};
+  }
+  if(provider==="r2"){
+   const account=String(env.R2_ACCOUNT_ID||""),bucket=String(env.R2_BUCKET||"executive-visuals-media");
+   if(!/^[a-f0-9]{32}$/i.test(account)||!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket))return null;
+   return{origin:"https://"+account+".r2.cloudflarestorage.com",pathPrefix:"/"+encodeURIComponent(bucket)+"/"};
+  }
+  if(provider==="b2"){
+   const region=String(env.B2_REGION||""),bucket=String(env.B2_BUCKET||"executive-visuals-media");
+   if(!/^[a-z0-9]+-[a-z0-9]+-\d{3}$/.test(region)||!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket))return null;
+   return{origin:"https://s3."+region+".backblazeb2.com",pathPrefix:"/"+encodeURIComponent(bucket)+"/"};
+  }
+  if(provider==="supabase"){
+   const endpoint=new URL(String(env.SUPABASE_URL||""));
+   if(endpoint.protocol!=="https:"||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)return null;
+   return{origin:endpoint.origin,pathPrefix:"/storage/v1/object/sign/"};
+  }
+ }catch{}
+ return null;
+}
+function isTrustedPrivateStorageUrl(value,env=process.env){
+ const target=trustedPrivateStorageTarget(env);
+ if(!target)return false;
+ try{
+  const url=new URL(value);
+  return url.protocol==="https:"&&url.origin===target.origin&&url.pathname.startsWith(target.pathPrefix)&&
+   !url.username&&!url.password&&!url.hash;
+ }catch{return false;}
+}
+
 function cloudResultError(result,fallback){
  const code=result?.body?.error?.code||fallback;
  return fail(result?.body?.error?.message||"Cloud workflow request failed.",code);
@@ -242,7 +280,7 @@ export async function executeCloudVideoWorkflowNode({
   const approvedInput=cloudJob.input||{};
   if(cloudJob.owner_id!==job.owner_id||cloudJob.project_id!==projectId||cloudJob.job_type!=="video.generate"||
      approvedInput.workflowQuoteId!==quoteId||approvedInput.workflowRequestId!==requestId||
-     approvedInput.requestHash!==cloudRequest.requestHash||
+     (approvedInput.workflowRequestHash||approvedInput.approvalRequestHash||approvedInput.requestHash)!==cloudRequest.requestHash||
      approvedInput.approvedMaxAmount!==approvedMaxAmount){
    throw fail("Cloud job receipt does not match the owner, project and exact approved workflow quote.","VIDEO_WORKFLOW_JOB_RECEIPT_MISMATCH");
   }
@@ -295,8 +333,8 @@ export async function executeCloudVideoWorkflowNode({
        typeof asset.sha256!=="string"||!/^[a-f0-9]{64}$/.test(asset.sha256)||typeof url!=="string"){
      throw fail("Cloud output asset metadata failed scope, type or checksum validation.","VIDEO_WORKFLOW_OUTPUT_ASSET_INVALID");
     }
-    const signedUrl=new URL(url),trustedOrigin=new URL(process.env.SUPABASE_URL||"").origin;
-    if(signedUrl.protocol!=="https:"||signedUrl.origin!==trustedOrigin)throw fail("Cloud output signed URL is outside the configured Supabase origin.","VIDEO_WORKFLOW_OUTPUT_URL_REJECTED");
+    if(!isTrustedPrivateStorageUrl(url))throw fail("Private cloud output signed URL is outside the configured private-storage origin or bucket.","VIDEO_WORKFLOW_OUTPUT_URL_REJECTED");
+    const signedUrl=new URL(url);
     const response=await fetchImpl(signedUrl,{redirect:"error"});
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     const declaredSize=Number(response.headers?.get?.("content-length")||0);
