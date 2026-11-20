@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 const PROVIDER = "google-gemini-files";
 const TABLE = "google_provider_files";
 
@@ -15,7 +16,7 @@ function safeOrigin(value) {
 /** Service-role-only PostgREST repository for Gemini's temporary file references. */
 export function createGoogleGeminiFilesRepository({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
@@ -35,7 +36,7 @@ export function createGoogleGeminiFilesRepository({
         method,
         headers: {
           apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           "accept-profile": "executive_visuals",
           "content-profile": "executive_visuals",
           ...(body === undefined ? {} : { "content-type": "application/json" }),
