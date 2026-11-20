@@ -644,9 +644,23 @@ test("paid workflow quotes require the complete provider-aware worker launch con
   }
 
   assert.equal(await quotePaidExecutionEnabled(complete), true);
+  const neon = {
+    ...complete,
+    CLOUD_MEDIA_STORAGE_PROVIDER: "neon",
+    NEON_STORAGE_ENDPOINT: "https://br-staging.storage.c-9.us-east-2.aws.neon.tech",
+    NEON_STORAGE_REGION: "us-east-2",
+    NEON_STORAGE_ACCESS_KEY_ID: "neon_test_key_123",
+    NEON_STORAGE_SECRET_ACCESS_KEY: "s".repeat(40),
+    NEON_STORAGE_BUCKET: "executive-visuals-media"
+  };
+  assert.equal(await quotePaidExecutionEnabled(neon), true, "Neon private storage must satisfy the same paid-worker launch gate");
+  assert.equal(await quotePaidExecutionEnabled({ ...neon, NEON_STORAGE_SECRET_ACCESS_KEY: "" }), false);
+  assert.equal(await quotePaidExecutionEnabled({ ...neon, NEON_STORAGE_ENDPOINT: "http://storage.example.test" }), false);
+  assert.equal(await quotePaidExecutionEnabled({ ...neon, NEON_STORAGE_BUCKET: "public-media" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_WORKER_ENABLED: "false" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, CLOUD_VIDEO_OUTPUT_HOSTS: "" }), false);
   assert.equal(await quotePaidExecutionEnabled({ ...complete, RUNWAY_VIDEO_MODELS: "gen4.5" }), false);
+
 });
 
 test("cloud transformation API rejects unknown, coerced and oversized inputs before writes",async()=>{

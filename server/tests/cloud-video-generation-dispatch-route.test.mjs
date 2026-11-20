@@ -28,6 +28,13 @@ test("cloud video cancellation route is authenticated and delegates owner identi
  assert.ok(source.includes('cloudVideoGenerationDispatch.cancelJob({jobId:cloudVideoJobCancelMatch[1],ownerId:user.id})'));
 });
 
+test("Neon object storage origin is included in the media CSP without trusting arbitrary hosts",()=>{
+ assert.ok(source.includes('if(provider==="neon")'));
+ assert.ok(source.includes("process.env.NEON_STORAGE_ENDPOINT"));
+ assert.ok(source.includes('value.pathname==="/"'));
+ assert.ok(source.includes("aws\\.neon\\.tech"));
+});
+
 test("Neon staging job status is authenticated, owner-scoped, rate-limited and returns a bounded projection",()=>{
  const routeStart=source.indexOf("const neonVideoJobStatusMatch=");
  const routeEnd=source.indexOf("const cloudVideoJobCancelMatch=",routeStart);

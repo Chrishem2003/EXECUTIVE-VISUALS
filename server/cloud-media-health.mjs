@@ -1,4 +1,4 @@
-const STORAGE_PROVIDERS = new Set(["supabase", "r2", "b2"]);
+const STORAGE_PROVIDERS = new Set(["supabase", "r2", "b2", "neon"]);
 
 /**
  * Produce a safe, operator-facing cloud-media health summary.
