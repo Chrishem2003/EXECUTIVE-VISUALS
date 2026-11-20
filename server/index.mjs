@@ -33,6 +33,7 @@ import { preflightVideoProduction } from "./video-shot-preflight.mjs";
 import { buildVideoGenerationApproval } from "./video-generation-approval.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { resolveCloudMediaMaxUploadBytes } from "./cloud-upload-limits.mjs";
 import { buildCloudMediaHealth } from "./cloud-media-health.mjs";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
@@ -110,11 +111,12 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.video-ai-upscale","timeline.render"]);
 const RETRYABLE_MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.audio-master","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
+const SUPABASE_SERVER_KEY=resolveSupabaseServerKey(process.env);
 const db = openDatabase(DB_FILE);
 const supabaseSessionStore = process.env.SUPABASE_SESSION_ENCRYPTION_KEY ? createSupabaseSessionStore({ db, encryptionKey: process.env.SUPABASE_SESSION_ENCRYPTION_KEY }) : null;
 const supabaseSessionRefresh = supabaseSessionStore ? createSupabaseSessionRefreshCoordinator({store:supabaseSessionStore,refreshSession:refreshSupabaseSession,getUser:getSupabaseUser}) : null;
 const googleGeminiFilesEnabled=process.env.GOOGLE_GEMINI_FILES_ENABLED==="true";
-if(googleGeminiFilesEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)){
+if(googleGeminiFilesEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY)){
  throw new Error("Gemini Files uploads require verified Supabase sessions and server-side Supabase credentials.");
 }
 if(googleGeminiFilesEnabled&&!String(process.env.GEMINI_API_KEY||process.env.GOOGLE_GEMINI_API_KEY||"").trim()){
@@ -130,7 +132,7 @@ const googleGeminiFilesUpload=googleGeminiFilesGateway?createGoogleGeminiFilesUp
  audit:(...args)=>audit(db,...args)
 }):null;
 const googleGeminiGcsMirrorEnabled=process.env.GEMINI_GCS_MIRROR_ENABLED==="true";
-if(googleGeminiGcsMirrorEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)){
+if(googleGeminiGcsMirrorEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY)){
  throw new Error("Private GCS mirroring requires verified Supabase sessions and server-side Supabase credentials.");
 }
 let googleGeminiGcsMirrorUpload=null;
@@ -140,7 +142,7 @@ if(googleGeminiGcsMirrorEnabled){
  if(identity?.ready!==true)throw new Error("Private GCS mirroring requires a verified Google workload identity.");
  const mirrorService=bootstrap.createService();
  const gcsPrivateAssets=createCloudAssetService({
-  url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY,
+  url:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY,
   fetchImpl:globalThis.fetch,
   maxBytes:Number(process.env.GEMINI_GCS_MAX_BYTES||process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)
  });
@@ -163,7 +165,7 @@ if(googleGeminiGcsMirrorEnabled){
  });
 }
 const googleDriveOAuthEnabled=process.env.GOOGLE_DRIVE_OAUTH_ENABLED==="true";
-if(googleDriveOAuthEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY||!process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY||String(process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY).length<32||process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY===process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY)){
+if(googleDriveOAuthEnabled&&(AUTH_MODE!=="supabase"||!supabaseSessionStore||!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY||!process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY||String(process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY).length<32||process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY===process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY)){
  throw new Error("Google Drive OAuth requires verified Supabase sessions and server-side Supabase credentials.");
 }
 const googleDriveConnectionStore=googleDriveOAuthEnabled?createGoogleDriveConnectionStore():null;
@@ -240,9 +242,9 @@ const subscriptionLifecycleTimer=financialApi&&process.env.SUBSCRIPTION_LIFECYCL
 subscriptionLifecycleTimer?.unref();
 const creativeArtifactsPostgresEnabled=process.env.CREATIVE_ARTIFACTS_POSTGRES_ENABLED==="true";
 if(creativeArtifactsPostgresEnabled&&AUTH_MODE!=="supabase")throw new Error("Durable creative artifact persistence requires verified Supabase authentication.");
-if(creativeArtifactsPostgresEnabled&&(!process.env.SUPABASE_URL||!(process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY)))throw new Error("Durable creative artifact persistence requires server-side Supabase credentials.");
+if(creativeArtifactsPostgresEnabled&&(!process.env.SUPABASE_URL||!(SUPABASE_SERVER_KEY)))throw new Error("Durable creative artifact persistence requires server-side Supabase credentials.");
 const creativeArtifactsPostgres=creativeArtifactsPostgresEnabled?createCloudCreativeProjectArtifactRepository({
- url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl:globalThis.fetch
+ url:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY,fetchImpl:globalThis.fetch
 }):null;
 const creativeArtifactPersistence=()=>creativeArtifactsPostgres
  ?{backend:"supabase-postgres",runtimeStorage:"supabase-postgres",durableAcrossDeploys:true}
@@ -271,7 +273,7 @@ const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "t
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
- url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,
+ url:process.env.SUPABASE_URL,serviceRoleKey:SUPABASE_SERVER_KEY,
  fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled,
  workflowNodeDispatch:input=>neonWorkflowNodeDispatch?neonWorkflowNodeDispatch(input):null,
  workflowNodeDispatchEnabled:()=>typeof neonWorkflowNodeDispatch==="function",
@@ -280,7 +282,7 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
 }) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const b2MultipartUploadEnabled=process.env.B2_MULTIPART_UPLOAD_API_ENABLED==="true";
-const b2MultipartSupabaseServerKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+const b2MultipartSupabaseServerKey=SUPABASE_SERVER_KEY;
 if(b2MultipartUploadEnabled&&AUTH_MODE!=="supabase")throw new Error("B2 multipart uploads require verified Supabase authentication.");
 if(b2MultipartUploadEnabled&&!cloudTimelineApiEnabled)throw new Error("B2 multipart uploads require CLOUD_TIMELINE_API_ENABLED=true for Asset Library integration.");
 if(b2MultipartUploadEnabled&&!cloudTimelineReadiness.ready)throw new Error("B2 multipart uploads require a ready Cloud Timeline and Asset Library database.");
@@ -310,7 +312,7 @@ if(cloudPublicationAuditApi)await cloudPublicationAuditApi.checkReadiness();
 const cloudVideoGenerationDispatchEnabled=process.env.CLOUD_VIDEO_GENERATION_DISPATCH_ENABLED==="true";
 if(cloudVideoGenerationDispatchEnabled&&!cloudTimelineApiEnabled)throw new Error("Cloud video generation dispatch requires CLOUD_TIMELINE_API_ENABLED=true for authenticated job progress and asset access.");
 if(cloudVideoGenerationDispatchEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud video generation dispatch requires verified Supabase authentication.");
-if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
+if(cloudVideoGenerationDispatchEnabled&&(!process.env.SUPABASE_URL||!SUPABASE_SERVER_KEY))throw new Error("Cloud video generation dispatch requires server-side Supabase credentials.");
 const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createCloudVideoGenerationDispatch({
  db,queue:createCloudQueue(),repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(ownerId,...args)=>audit(db,ownerId,...args)
@@ -707,7 +709,7 @@ export function createAppServer() {
           serverManagedSessionsReady:Boolean(supabaseSessionStore&&supabaseSessionRefresh),
           supabaseUrl:process.env.SUPABASE_URL||"",
           supabasePublishableKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",
-          supabaseServiceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY||"",
+          supabaseServiceRoleKey:SUPABASE_SERVER_KEY||"",
           imageGatewayEnabled:process.env.IMAGE_GATEWAY_ENABLED==="true",
           imageGatewayConfigured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})(),
           textGatewayEnabled:process.env.AI_GATEWAY_ENABLED==="true",
@@ -720,7 +722,7 @@ export function createAppServer() {
         const creativeArtifactsHealth=creativeArtifactsPostgres
           ?await creativeArtifactsPostgres.checkReadiness().catch(error=>({backend:"supabase-postgres",configured:true,ready:false,durableAcrossDeploys:false,errorCode:error.code||"CREATIVE_ARTIFACT_DATABASE_UNAVAILABLE"}))
           :{...creativeArtifactPersistence(),configured:true,ready:true};
-        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},creativeArtifacts:creativeArtifactsHealth,media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",localAssetUploads:{enabled:localAssetUploadPolicy.allowed,code:localAssetUploadPolicy.code,message:localAssetUploadPolicy.message},staging:{d1WorkspaceEnabled:Boolean(String(process.env.D1_STAGING_WORKER_URL||"").trim()),localAuthEnabled:stagingLocalAuthPolicy.enabled},storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},creativeArtifacts:creativeArtifactsHealth,media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,authSession:{opaqueCookie:true,encryptedServerTokens:Boolean(supabaseSessionStore),configurationReady:AUTH_MODE!=="supabase"||Boolean(supabaseSessionStore)},googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth),exportRecoveryConfigured:Boolean(googleDriveExportAttemptStore)},cloudMedia:buildCloudMediaHealth({enabled:Boolean(cloudTimelineApi),readiness:cloudTimelineReadiness,storageProvider:process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",uploadLimitBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES}),cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&Boolean(cloudTimelineApi)},billing:{enabled:financialApiEnabled,refundsEnabled:financialApiEnabled&&process.env.FLW_REFUNDS_ENABLED==="true",provider:process.env.FLW_API_BASE_URL==="https://f4bexperience.flutterwave.com"?"live":"sandbox",providerKeyConfigured:Boolean(process.env.FLW_CLIENT_ID&&process.env.FLW_CLIENT_SECRET),webhookSecretConfigured:Boolean(process.env.FLW_SECRET_HASH),paddlePesapal:providerSubscriptionBillingReadiness},cloudVideoWorker:{enabled:process.env.CLOUD_WORKER_ENABLED==="true"&&process.env.CLOUD_VIDEO_WORKER_ENABLED==="true",remoteExecutionGates:process.env.VIDEO_GATEWAY_ENABLED==="true"&&process.env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",falAdapterConfigured:Boolean(process.env.FAL_VIDEO_MODEL&&process.env.FAL_KEY&&process.env.FAL_BILLING_KEY),lumaAdapterConfigured:process.env.LUMA_VIDEO_ENABLED==="true"&&process.env.LUMA_VIDEO_ALLOW_REMOTE==="true"&&Boolean(process.env.LUMA_AGENTS_API_KEY)&&Number.isFinite(Number(process.env.LUMA_USD_PER_CREDIT))&&Number(process.env.LUMA_USD_PER_CREDIT)>0&&Number(process.env.LUMA_USD_PER_CREDIT)<=1000,modelRouterEnabled:process.env.RUNWAY_MODEL_ROUTER_ENABLED==="true",modelRouterRemoteEnabled:process.env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",modelRouterConfigPresent:/^[a-z][a-z0-9_-]{0,63}$/.test(String(process.env.RUNWAY_VIDEO_ROUTER_CONFIG||"")),providerCredentialConfigured:Boolean(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET),outputHostAllowlistConfigured:(()=>{const hosts=String(process.env.CLOUD_VIDEO_OUTPUT_HOSTS||"").split(",").map(value=>value.trim()).filter(Boolean);return hosts.length>0&&hosts.length<=100&&hosts.every(host=>/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host));})(),supabaseCredentialsConfigured:Boolean(process.env.SUPABASE_URL&&SUPABASE_SERVER_KEY),directRunwayModelsRequested:Boolean(String(process.env.RUNWAY_VIDEO_MODELS||"").trim()),runtimeMode:embeddedCloudWorkerSupervisor?"embedded-api-process":"separate-process",inProcessSupervisorActive:Boolean(embeddedCloudWorkerSupervisor)},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}const publicAppUrl=String(process.env.PUBLIC_APP_URL||"").trim();if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}let redirect;try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}const localRedirect=process.env.NODE_ENV!=="production"&&["localhost","127.0.0.1","::1"].includes(redirect.hostname);if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;}const body=await readJson(req);await requestSupabasePasswordRecovery({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email:String(body.email||""),redirectTo:redirect.origin+"/"});send(res,200,{ok:true,message:"If an account exists for that address, a password recovery email has been sent."},cors);return;
