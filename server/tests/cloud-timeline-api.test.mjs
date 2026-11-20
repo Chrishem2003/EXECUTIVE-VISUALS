@@ -1210,14 +1210,14 @@ test("Neon workflow approval rejects a mismatched quote and delegates expiry rep
  const contract=createVideoWorkflowCloudRequest({node,values,projectId,requestId});
  for(const quote of [
   {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
-  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
+  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
  ]){
   let dispatched=0;
   const api=createCloudTimelineApi({
    url:"https://example.supabase.co",serviceRoleKey:"service-secret",
    fetchImpl:async(url)=>({ok:true,status:200,async text(){return JSON.stringify(url.includes("video_workflow_quotes")?[quote]:[]);}}),
    timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
-   authorize:async()=>true,workflowNodeDispatch:async input=>{dispatched++;return Date.parse(input.expiresAt)<=Date.now()?{status:422,body:{error:{code:"VIDEO_WORKFLOW_QUOTE_EXPIRED"}}}:{status:202,body:{}};},
+   authorize:async()=>true,workflowNodeDispatchEnabled:()=>true,workflowNodeDispatch:async input=>{dispatched++;return Date.parse(input.expiresAt)<=Date.now()?{status:422,body:{error:{code:"VIDEO_WORKFLOW_QUOTE_EXPIRED"}}}:{status:202,body:{}};},
    runwayRouterAdapter:{async prepareInput(input){return input;}},
    env:{SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret",CLOUD_WORKER_ENABLED:"true",
     CLOUD_VIDEO_WORKER_ENABLED:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.example.com",RUNWAY_MODEL_ROUTER_ENABLED:"true",
