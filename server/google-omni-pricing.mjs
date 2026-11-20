@@ -54,7 +54,7 @@ export function estimateGoogleOmniVideoCost({
     videoOutputUsdPerMillionTokens: VIDEO_OUTPUT_USD_PER_MILLION,
     outputTokensPerSecond: VIDEO_OUTPUT_TOKENS_PER_SECOND_720P,
     pricingSource: PRICING_SOURCE,
-    pricingDate: "2026-11-05",
+    pricingDate: "2026-11-20",
     billable: false,
     settlementEligible: false
   });
