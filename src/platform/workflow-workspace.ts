@@ -100,7 +100,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
 
  const supportsVideoMode=model==="seedance2_5";
  const draftEnhancement=provider==="runway"&&model==="seedance2_5"&&operation==="draft-enhancement";
- const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video";
+ const sourceVideoEnabled=luma&&operation!=="generate"||directVideoEdit&&operation==="video-to-video"||routerRunway&&operation==="video-to-video";
  const startFrameEnabled=luma&&operation==="generate"||directRunway&&operation==="generate"||routerRunway&&operation==="image-to-video";
  const draftEnabled=provider==="runway"&&model==="seedance2_5"&&operation==="generate";
  const durationMin=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model.startsWith("kling3.0_")?3:2;
@@ -484,7 +484,7 @@ document.addEventListener("submit",event=>{
   }else if(operation==="text-to-video"){
    if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Clear source and reference assets when generating from text.");
    delete config.sourceVideoAssetId;delete config.startFrameAssetId;
-  }else throw new Error("Runway Model Router video-to-video is not available until the saved route capability is verified.");
+  }else throw new Error("Runway Model Router source-video input is validated against the saved route before approval.");
   delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;delete config.draft;delete config.draftTargetResolution;
  }else{
   if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("This provider/model does not accept these source asset roles.");
@@ -533,7 +533,7 @@ document.addEventListener("change",event=>{
   const draftPanel=form?.querySelector<HTMLElement>("[data-wf-draft-enhancement]");
   if(draftPanel){draftPanel.hidden=activeOperation!=="draft-enhancement";const draftInput=draftPanel.querySelector<HTMLInputElement>('[name="sourceDraftJobId"]');if(draftInput)draftInput.disabled=activeOperation!=="draft-enhancement";}
   if(videoMode)videoMode.disabled=!supportsVideoMode||activeOperation!=="video-to-video";
-  const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video";
+  const sourceVideoEnabled=luma&&activeOperation!=="generate"||directVideoEdit&&activeOperation==="video-to-video"||routerRunway&&activeOperation==="video-to-video";
   const startFrameEnabled=luma&&activeOperation==="generate"||directRunway&&activeOperation==="generate"||routerRunway&&activeOperation==="image-to-video";
   if(!sourceVideoEnabled){
    const picker=form?.querySelector<HTMLSelectElement>('[name="sourceVideoAssetPicker"]');if(picker)picker.value="";
