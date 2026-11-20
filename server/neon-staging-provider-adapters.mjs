@@ -57,7 +57,7 @@ export function createNeonStagingProviderAdapters({
     }
     runwayOutputHosts = String(env.RUNWAY_OUTPUT_HOSTS || "").split(",").map(value => value.trim()).filter(Boolean);
     if (runwayOutputHosts.length < 1 || runwayOutputHosts.length > 100 ||
-        runwayOutputHosts.some(host => !/^(?:\\*\\.)?[a-z0-9.-]{1,253}$/i.test(host))) {
+        runwayOutputHosts.some(host => !/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host))) {
       throw new Error("Runway output ingestion requires an explicit bounded RUNWAY_OUTPUT_HOSTS allowlist.");
     }
   }
