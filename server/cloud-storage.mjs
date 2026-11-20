@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -51,7 +52,7 @@ function safeObjectPath(value) {
 
 export function createCloudStorage({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024
@@ -70,7 +71,7 @@ export function createCloudStorage({
         method,
         headers: {
           apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           ...headers
         },
         ...(body === null ? {} : { body }),
@@ -131,7 +132,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          headers:{apikey:serviceRoleKey,...supabaseServerAuthHeaders(serviceRoleKey),"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
