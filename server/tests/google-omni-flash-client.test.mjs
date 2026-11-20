@@ -183,3 +183,44 @@ test("allows authorized retention cleanup after generation has been disabled", a
   assert.equal(result.deleted, true);
   assert.equal(h.calls.length, 1);
 });
+
+test("accepts only short-lived private Supabase signed media URLs from the configured asset bucket", async () => {
+  const supabaseUrl = "https://private-project.supabase.co";
+  const mediaUrl = supabaseUrl + "/storage/v1/object/sign/executive-visuals-media/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333/clip.mp4?token=short-lived-secret";
+  const privatePlan = await buildGeminiOmniFlashInteractionRequest({
+    prompt: "Animate the private clip",
+    projectId: "22222222-2222-4222-8222-222222222222",
+    sourceVideoAssetId: "33333333-3333-4333-8333-333333333333",
+    operation: "edit",
+    getAuthorizedAssetContext: async () => ({ownerId:"11111111-1111-4111-8111-111111111111",projectId:"22222222-2222-4222-8222-222222222222"}),
+    resolveGoogleFileAsset: async () => ({uri:mediaUrl,sourceType:"signed_url",mediaType:"video",sizeBytes:1024,expiresAt:new Date(Date.now()+600000).toISOString(),durationSeconds:5})
+  });
+  const h = harness({overrides:{SUPABASE_URL:supabaseUrl}});
+  const result = await h.client.createInteraction(privatePlan);
+  assert.equal(result.status,"running");
+  const payload=JSON.parse(h.calls[0].options.body);
+  assert.equal(payload.input[0].uri,mediaUrl);
+});
+
+test("rejects external media URLs from other origins, buckets and with extra query parameters", async () => {
+  const supabaseUrl = "https://private-project.supabase.co";
+  const base = supabaseUrl + "/storage/v1/object/sign/executive-visuals-media/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333/clip.mp4";
+  const unsafe = [
+    "https://attacker.example" + base.slice(supabaseUrl.length) + "?token=x",
+    supabaseUrl + "/storage/v1/object/sign/other-bucket/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333/clip.mp4?token=x",
+    base + "?token=x&download=1",
+    base + "?token=x#fragment",
+    "http://" + base.slice("https://".length) + "?token=x"
+  ];
+  for (const uri of unsafe) {
+    const forged = {
+      endpoint:"https://generativelanguage.googleapis.com/v1beta/interactions",
+      method:"POST",auth:{headerName:"x-goog-api-key",credentialSource:"server-only"},
+      policy:{provider:"google",model:"gemini-omni-1.1-flash",requiresApproval:true},
+      payload:{model:"gemini-omni-1.1-flash",input:[{type:"video",uri}],response_format:{type:"video",aspect_ratio:"16:9",resolution:"720p",delivery:"uri"}}
+    };
+    const h = harness({overrides:{SUPABASE_URL:supabaseUrl}});
+    await assert.rejects(()=>h.client.createInteraction(forged),error=>error.code==="GEMINI_OMNI_PLAN_INVALID");
+    assert.equal(h.calls.length,0);
+  }
+});

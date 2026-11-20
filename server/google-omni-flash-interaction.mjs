@@ -134,7 +134,21 @@ export async function buildGeminiOmniFlashInteractionRequest({
     } catch {
       throw fail("A private " + mediaType + " asset could not be resolved.", "GEMINI_OMNI_ASSET_UNAVAILABLE");
     }
-    if (!plain(asset) || typeof asset.uri !== "string" || !GOOGLE_FILE_URI.test(asset.uri)) {
+    if (!plain(asset) || typeof asset.uri !== "string") {
+      throw fail("The media resolver returned an invalid media URI.", "GEMINI_OMNI_ASSET_INVALID");
+    }
+    if (asset.sourceType === "signed_url") {
+      let signed;
+      try { signed = new URL(asset.uri); } catch { throw fail("The private media resolver returned an invalid signed URL.", "GEMINI_OMNI_ASSET_INVALID"); }
+      const expiresAt = Date.parse(asset.expiresAt);
+      if (signed.protocol !== "https:" || signed.username || signed.password || signed.hash ||
+          !signed.searchParams.has("token") || !Number.isSafeInteger(asset.sizeBytes) ||
+          asset.sizeBytes < 1 || asset.sizeBytes > 100 * 1024 * 1024 ||
+          !Number.isFinite(expiresAt) || expiresAt <= Date.now() + 30000) {
+        throw fail("The private signed URL is unsafe, expired, or exceeds Gemini's 100 MB external URL limit.",
+          "GEMINI_OMNI_SIGNED_URL_INVALID");
+      }
+    } else if (!GOOGLE_FILE_URI.test(asset.uri)) {
       throw fail("The media resolver returned a non-Google or invalid Files API URI.", "GEMINI_OMNI_ASSET_INVALID");
     }
     if (asset.mediaType !== mediaType) {

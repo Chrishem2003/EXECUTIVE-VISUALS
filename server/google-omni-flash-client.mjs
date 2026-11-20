@@ -13,7 +13,25 @@ function interactionId(value) {
   return value;
 }
 
-function safePlan(plan) {
+function safeExternalMediaUri(value, supabaseUrl) {
+  if (typeof supabaseUrl !== "string" || !supabaseUrl.trim()) return false;
+  let storage, uri;
+  try { storage = new URL(supabaseUrl); uri = new URL(value); } catch { return false; }
+  if (storage.protocol !== "https:" || storage.username || storage.password ||
+      storage.search || storage.hash || storage.pathname !== "/" ||
+      uri.protocol !== "https:" || uri.origin !== storage.origin ||
+      uri.username || uri.password || uri.hash || (uri.port && uri.port !== "443")) return false;
+  const prefix = "/storage/v1/object/sign/executive-visuals-media/";
+  if (!uri.pathname.startsWith(prefix)) return false;
+  let objectPath;
+  try { objectPath = decodeURIComponent(uri.pathname.slice(prefix.length)); } catch { return false; }
+  const segments = objectPath.split("/");
+  if (segments.length < 3 || segments.some(part => !part || part === "." || part === ".." || part.includes("\\"))) return false;
+  const params = [...uri.searchParams.entries()];
+  return params.length === 1 && params[0][0] === "token" && Boolean(params[0][1]);
+}
+
+function safePlan(plan, { supabaseUrl } = {}) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan) ||
       plan.endpoint !== BASE + "/interactions" || plan.method !== "POST" ||
       plan.auth?.headerName !== "x-goog-api-key" ||
@@ -41,7 +59,7 @@ function safePlan(plan) {
           throw fail("Gemini interaction text part is invalid.", "GEMINI_OMNI_PLAN_INVALID");
         }
       } else if (typeof item.uri !== "string" ||
-          !/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+$/.test(item.uri)) {
+          !( /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+$/.test(item.uri) || safeExternalMediaUri(item.uri, supabaseUrl) )) {
         throw fail("Gemini interaction media must reference an authorized Google Files URI.", "GEMINI_OMNI_PLAN_INVALID");
       }
     }
@@ -183,7 +201,7 @@ export function createGeminiOmniFlashClient({
     minimumPollIntervalMs: 5000,
 
     async createInteraction(plan, context = {}) {
-      const payload = safePlan(plan);
+      const payload = safePlan(plan, { supabaseUrl: env.SUPABASE_URL });
       let approved = false;
       try { approved = await assertApprovedSubmission({ plan, context }); }
       catch {}
