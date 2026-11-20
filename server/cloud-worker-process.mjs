@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -14,7 +15,7 @@ export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
  if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
- if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
+ if(!env.SUPABASE_URL||!resolveSupabaseServerKey(env))throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
@@ -81,7 +82,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
- const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
+ const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:resolveSupabaseServerKey(env)};
  const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
  const workers=[];
