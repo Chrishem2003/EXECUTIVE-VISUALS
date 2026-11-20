@@ -114,6 +114,33 @@ export function createNeonPostgresQueue({ pool, schema = SCHEMA } = {}) {
         createdAt: row.created_at
       })));
     },
+    async cancelQueuedVideoJob(jobId, ownerId) {
+      if (!UUID.test(String(jobId || "")) || !UUID.test(String(ownerId || ""))) {
+        throw new Error("Video cancellation job and owner IDs must be UUIDs.");
+      }
+      const result = await query(
+        "select * from executive_visuals.cancel_queued_video_generation_job_v1($1::uuid,$2::uuid)",
+        [jobId, ownerId]
+      );
+      const row = result.rows?.[0];
+      const reasons = new Set([
+        "not_found", "already_cancelled", "terminal_job", "provider_submission_possible",
+        "submission_record_exists", "financial_reservation_not_active", "cancelled_before_submission"
+      ]);
+      if (!row || typeof row.cancelled !== "boolean" ||
+          !reasons.has(row.reason) ||
+          (row.job_status !== null && typeof row.job_status !== "string")) {
+        throw fail("Neon queued-video cancellation returned an invalid receipt.", "NEON_QUEUE_INVALID_RESULT");
+      }
+      return Object.freeze({
+        cancelled: row.cancelled,
+        status: row.job_status,
+        balance: Number(row.balance || 0),
+        creditAdjustment: Number(row.credit_adjustment || 0),
+        replayed: row.replayed === true,
+        reason: row.reason
+      });
+    },
     async recover(limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Recovery limit must be between 1 and 1000.");
       const result = await query("select executive_visuals.recover_expired_jobs($1) as recovered", [limit]);
