@@ -203,3 +203,29 @@ test("Runway Model Router catalogue profile passes the real shot preflight contr
  assert.equal(result.pricing.quote.amount,0.8);
  assert.ok(result.shots[0].checks.every(check=>check.status==="passed"));
 });
+
+
+test("Runway Model Router supports first-frame image preflight and blocks unsupported source-video mode",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"server-only"
+ });
+ const routerPricing=[{
+  provider:"runway",model:"model-router",currency:"USD",sourceUrl:"https://docs.dev.runwayml.com/pricing/",
+  observedAt:"2026-11-11T00:00:00.000Z",expiresAt:"2026-12-11T00:00:00.000Z",
+  ratesPerSecond:{"provider_default":0.1},billingIncrementSeconds:1
+ }];
+ const imageShot={...shot,model:"model-router",operation:"image-to-video",durationSeconds:8,resolution:"provider_default",referenceImageCount:1,audioMode:"none"};
+ const imageResult=preflightVideoProduction({shots:[imageShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(imageResult.status,"ready_for_approval");
+ assert.equal(imageResult.requestsSubmitted,false);
+ assert.ok(imageResult.shots[0].checks.every(check=>check.status==="passed"));
+ const missingFrame=preflightVideoProduction({shots:[{...imageShot,referenceImageCount:0}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(missingFrame.status,"blocked");
+ assert.equal(missingFrame.shots[0].checks.find(check=>check.id==="references").status,"failed");
+ const unsupported=preflightVideoProduction({shots:[{...imageShot,operation:"video-to-video"}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(unsupported.status,"blocked");
+ assert.equal(unsupported.shots[0].checks.find(check=>check.id==="operation").status,"failed");
+});
