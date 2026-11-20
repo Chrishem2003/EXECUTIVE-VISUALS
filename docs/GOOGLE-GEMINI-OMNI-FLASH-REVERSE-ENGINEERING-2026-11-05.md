@@ -92,3 +92,20 @@ The registrar requires:
 - A durable mapping repository. The registration cache expires after 29 days, below Google's maximum 30-day access window.
 
 Current Executive Visuals Supabase Storage assets are not silently treated as GCS objects. A GCS-backed asset adapter and explicit bucket IAM provisioning are required before this path can be used.
+
+## November 20, 2026 API and pricing re-verification
+
+The current Gemini Developer API pricing page lists `gemini-omni-1.1-flash` as generally available on the paid tier. The standard tier lists $1.50 per million input tokens and $17.50 per million video output tokens. At the documented 5,792 video tokens per second for 720p, the output component is approximately $0.10136 per second. This is a token-derived estimate, not a fixed per-second invoice rate; settle only against returned interaction usage.
+
+The current pricing snapshot is recorded in `server/google-omni-pricing.mjs` as checked on 2026-11-20. The preflight deliberately reserves the maximum configured 10-second video output and the maximum input context, so its reservation is a ceiling rather than an expected user charge.
+
+Google's current Gemini API key migration guidance also requires that opaque `sb_secret_` keys be sent in the `apikey` header only, not `Authorization: Bearer`. The server adapters now share the same credential resolver and preserve Bearer only for legacy JWT service-role keys.
+
+External signed-URL file input is documented for Gemini API file input. Do not infer that every media URL form is accepted by every Interactions API model/task combination: retain strict origin, bucket, expiry and size checks, and keep the signed-URL adapter disabled until the exact Omni Interactions request is verified against current official model documentation or an explicitly approved integration test.
+
+Official references:
+- https://ai.google.dev/gemini-api/docs/pricing
+- https://ai.google.dev/gemini-api/docs/omni
+- https://ai.google.dev/gemini-api/docs/video
+- https://ai.google.dev/gemini-api/docs/file-input-methods
+- https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
