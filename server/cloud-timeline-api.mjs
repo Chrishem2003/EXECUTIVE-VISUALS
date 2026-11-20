@@ -853,9 +853,11 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
   }
  }
  async function checkReadiness(){
-  const required=["projects","project_members","assets","timelines","jobs","job_events"];
-  for(const table of required){
-   const rows=await request(table+"?select=id&limit=0");
+  // project_members deliberately uses a composite (project_id, member_id) key;
+  // unlike the other cloud timeline tables, it has no synthetic id column.
+  const required=[["projects","id"],["project_members","project_id"],["assets","id"],["timelines","id"],["jobs","id"],["job_events","id"]];
+  for(const [table,probeColumn] of required){
+   const rows=await request(table+"?select="+probeColumn+"&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
   }
   const leaseColumns=await request("jobs?select=id,lease_token,cancel_requested_at&limit=0");
