@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
@@ -34,7 +35,7 @@ import { createLumaProviderFileService } from "./luma-provider-file-service.mjs"
 export function createProviderAwareCloudVideoWorkerComposition({
   workerId,
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   env = process.env,
   fetchImpl = globalThis.fetch,
   createAdapters,
