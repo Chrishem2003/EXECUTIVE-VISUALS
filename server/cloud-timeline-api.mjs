@@ -540,7 +540,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
          storedQuote.provider!==workflowRequest.provider||storedQuote.model!==workflowRequest.model||
          storedQuote.operation!==workflowRequest.operation||storedQuote.currency!=="USD"||
          storedQuote.config_id!==configId||storedQuote.pricing_source!=="runway_model_router_dry_run"||
-         typeof storedQuote.routed_provider!=="string"||!storedQuote.routed_provider.trim()||
+         storedQuote.routed_provider!=="runway"||
          typeof storedQuote.routed_model!=="string"||!storedQuote.routed_model.trim()||
          !Number.isSafeInteger(Number(storedQuote.estimated_credits))||Number(storedQuote.estimated_credits)<1||
          !Number.isFinite(Number(storedQuote.estimated_amount))||Number(storedQuote.estimated_amount)<=0||
