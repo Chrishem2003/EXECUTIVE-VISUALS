@@ -305,8 +305,12 @@ export function createRunwayModelRouterVideoAdapter({
       return {
         amount: Math.round(credits * 0.01 * 10000) / 10000,
         currency: "USD",
-        model: modelUsed,
-        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId + ":task-cost-credits:" + credits
+        // Financial reservations are keyed to the approved adapter identity
+        // ("model-router"). The exact routed model remains durable in the
+        // submission routing metadata and is repeated in the cost evidence.
+        model,
+        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId +
+          ":actual-model:" + encodeURIComponent(modelUsed) + ":task-cost-credits:" + credits
       };
     }
   });
