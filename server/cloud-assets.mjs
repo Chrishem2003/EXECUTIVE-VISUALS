@@ -51,7 +51,7 @@ export function createCloudAssetRepository({
   async function request(path,{method="GET",body=null,prefer=null}={}) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
     try {
-      const headers={apikey:serviceRoleKey,...supabaseServerAuthHeaders(serviceRoleKey),"accept-profile":"executive_visuals","content-profile":"executive_visuals"};
+      const headers={...supabaseServerAuthHeaders(serviceRoleKey),"accept-profile":"executive_visuals","content-profile":"executive_visuals"};
       if(body!==null) headers["content-type"]="application/json";
       if(prefer) headers.prefer=prefer;
       const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
