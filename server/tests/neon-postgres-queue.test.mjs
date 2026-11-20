@@ -88,10 +88,10 @@ test("job status and event reads are owner-scoped and expose no lease credential
  const queue=createNeonPostgresQueue({pool:{query:async(text,values)=>{
   calls.push({text,values});
   if(text.includes("inner join executive_visuals.jobs"))return{rows:[{id:1,event_type:"job.queued",event_data:{status:"queued"},created_at:"2026-11-19T12:00:00Z"}]};
-  return{rows:[{id,owner_id:id,project_id:id,job_type:"video.generate",status:"queued",progress:"0",attempt_count:0,max_attempts:2,created_at:"2026-11-19T12:00:00Z",updated_at:"2026-11-19T12:00:00Z",completed_at:null,output:null,error:null}]};
+  return{rows:[{id,owner_id:id,project_id:id,job_type:"video.generate",status:"queued",progress:"0",attempt_count:0,max_attempts:2,input:{workflowQuoteId:"723e4567-e89b-42d3-a456-426614174000"},created_at:"2026-11-19T12:00:00Z",updated_at:"2026-11-19T12:00:00Z",completed_at:null,output:null,error:null}]};
  }}});
  const job=await queue.getOwnedJob(id,id);
- assert.equal(job.id,id);assert.equal(job.status,"queued");assert.equal(job.progress,0);
+ assert.equal(job.id,id);assert.equal(job.status,"queued");assert.equal(job.progress,0);assert.equal(job.input.workflowQuoteId,"723e4567-e89b-42d3-a456-426614174000");
  assert.equal(Object.hasOwn(job,"leaseToken"),false);
  assert.deepEqual(calls[0].values,[id,id]);
  const events=await queue.listOwnedJobEvents(id,id);
