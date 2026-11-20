@@ -49,7 +49,7 @@ function fixture({status=local.status,allowed=true,registerError=null,jobs=null,
 test("submits only a project-authorized immutable approval to Neon and marks it consumed after every shot is queued",async()=>{
  const f=fixture();const result=await f.dispatch.submit({approvalId:approval,ownerId:owner});
  assert.equal(result.status,202);assert.equal(result.body.backend,"neon-postgres");
- assert.equal(result.body.jobs.length,2);assert.equal(result.body.providerRequestsSubmitted,false);
+ assert.equal(result.body.jobs.length,2);assert.equal(result.body.queuedForWorker,true);assert.equal(result.body.providerCallMadeByApi,false);
  assert.equal(f.row.status,"consumed");
  const registered=f.calls.find(x=>x[0]==="register")[1];
  assert.equal(registered.id,approval);assert.equal(registered.projectId,project);
