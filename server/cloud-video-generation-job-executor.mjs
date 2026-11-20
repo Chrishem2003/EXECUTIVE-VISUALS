@@ -1,4 +1,5 @@
 const fail = (message, code) => Object.assign(new Error(message), { code });
+const RETRYABLE_SUBMISSION_CODES = new Set(["RUNWAY_RATE_LIMITED", "RUNWAY_SERVER_ERROR"]);
 function jobInput(job) {
   const value = job?.input;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -52,6 +53,12 @@ export async function executeCloudVideoGenerationJob({
       typeof selectedAdapter.submit !== "function" || typeof selectedAdapter.getStatus !== "function") {
     throw fail("A supported, model-bound remote video adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
   }
+  const minimumPollIntervalMs = selectedAdapter.minimumPollIntervalMs === undefined
+    ? 5000 : selectedAdapter.minimumPollIntervalMs;
+  if (!Number.isSafeInteger(minimumPollIntervalMs) || minimumPollIntervalMs < 5000 || minimumPollIntervalMs > 900000) {
+    throw fail("Provider polling interval must be an integer between 5 seconds and 15 minutes.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
+  }
+  const minimumPollSeconds = Math.ceil(minimumPollIntervalMs / 1000);
   if (input.provider !== selectedAdapter.provider || input.model !== selectedAdapter.model ||
       typeof input.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(input.requestHash)) {
     throw fail("Cloud video job provider, model or request hash is inconsistent.", "VIDEO_JOB_INPUT_MISMATCH");
@@ -106,6 +113,21 @@ export async function executeCloudVideoGenerationJob({
       await ensureLease();
       submitted = await selectedAdapter.submit(providerInput, { job, preflightQuote, signal });
     } catch (error) {
+      // Only explicit provider responses documented as safe to retry may reset
+      // the Neon ledger from submitting to prepared. A timeout, malformed
+      // success, missing task ID, or undocumented response stays quarantined.
+      if (error?.retryable === true && RETRYABLE_SUBMISSION_CODES.has(error?.code) &&
+          typeof ledger.retry === "function") {
+        await ensureLease();
+        let reset = false;
+        try { reset = await ledger.retry(job.id, workerId, job.lease_token, error.code); } catch {}
+        if (reset === true) {
+          const deferred = fail("Provider explicitly rejected the submission as retryable; the durable submission has been reset for a bounded retry.", "VIDEO_PROVIDER_SUBMISSION_RETRYABLE");
+          deferred.retryAfterSeconds = Number.isSafeInteger(error.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
+            ? error.retryAfterSeconds : 30;
+          throw deferred;
+        }
+      }
       try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN", job.lease_token); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
@@ -148,7 +170,9 @@ export async function executeCloudVideoGenerationJob({
   try {
     task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
   } catch {
-    throw fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+    const deferred = fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+    deferred.retryAfterSeconds = minimumPollSeconds;
+    throw deferred;
   }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
   if (task.status === "canceled") {
@@ -174,9 +198,9 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider returned an unsupported task state.", "VIDEO_PROVIDER_STATUS_INVALID");
     }
     const deferred = fail("Video generation is still running; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
-    if (Number.isSafeInteger(task.retryAfterSeconds) && task.retryAfterSeconds >= 5 && task.retryAfterSeconds <= 900) {
-      deferred.retryAfterSeconds = task.retryAfterSeconds;
-    }
+    const providerRetrySeconds = Number.isSafeInteger(task.retryAfterSeconds) && task.retryAfterSeconds >= 5 && task.retryAfterSeconds <= 900
+      ? task.retryAfterSeconds : 0;
+    deferred.retryAfterSeconds = Math.max(minimumPollSeconds, providerRetrySeconds);
     throw deferred;
   }
   if (!Array.isArray(task.outputUrls) || task.outputUrls.length < 1 || task.outputUrls.length > 10) {
@@ -244,6 +268,7 @@ export async function executeCloudVideoGenerationJob({
     assetIds: Object.freeze([...ingested.assetIds]),
     usage: ingested.usage || null,
     actualAmount: cost.amount,
+    actualCredits: Number.isSafeInteger(cost.actualCredits) ? cost.actualCredits : null,
     currency: cost.currency,
     costEvidenceReference: cost.evidenceReference,
     customerCreditSettlement

@@ -1,0 +1,130 @@
+name: Neon PostgreSQL financial integration
+on:
+  push:
+    branches:
+      - feat/neon-postgres-worker-20261119
+    paths:
+      - "database/neon/migrations/**"
+      - "server/neon-postgres-video-financials.mjs"
+      - "server/neon-postgres-video-enqueue.mjs"
+      - "server/neon-postgres-video-approvals.mjs"
+      - "server/tests/neon-postgres-video-approvals.test.mjs"
+      - "server/cloud-video-enqueue.mjs"
+      - "server/tests/cloud-video-enqueue.test.mjs"
+      - "server/tests/neon-postgres-video-enqueue.test.mjs"
+      - "server/tests/neon-postgres-video-financials.test.mjs"
+      - "server/neon-postgres-pool.mjs"
+      - "server/neon-postgres-queue.mjs"
+      - "server/neon-postgres-video-submissions.mjs"
+      - "server/neon-staging-runtime.mjs"
+      - "server/neon-staging-provider-adapters.mjs"
+      - "server/neon-staging-worker-process.mjs"
+      - "server/tests/neon-staging-provider-adapters.test.mjs"
+      - "server/tests/neon-staging-worker-process.test.mjs"
+      - "server/tests/neon-postgres-queue.test.mjs"
+      - "server/tests/neon-postgres-video-submissions.test.mjs"
+      - "server/tests/neon-staging-runtime.test.mjs"
+      - "server/tests/neon-postgres-pool-runtime.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/verify-neon-financials-postgres.sql"
+      - "scripts/verify-neon-video-enqueue-postgres.sql"
+      - "scripts/verify-neon-video-approval-bridge-postgres.sql"
+      - "scripts/verify-neon-queue-postgres.sql"
+      - "scripts/verify-neon-worker-concurrency.mjs"
+      - ".github/workflows/neon-postgres-financials.yml"
+  pull_request:
+    paths:
+      - "database/neon/migrations/**"
+      - "server/neon-postgres-video-financials.mjs"
+      - "server/neon-postgres-video-enqueue.mjs"
+      - "server/neon-postgres-video-approvals.mjs"
+      - "server/tests/neon-postgres-video-approvals.test.mjs"
+      - "server/cloud-video-enqueue.mjs"
+      - "server/tests/cloud-video-enqueue.test.mjs"
+      - "server/tests/neon-postgres-video-enqueue.test.mjs"
+      - "server/tests/neon-postgres-video-financials.test.mjs"
+      - "server/neon-postgres-pool.mjs"
+      - "server/neon-postgres-queue.mjs"
+      - "server/neon-postgres-video-submissions.mjs"
+      - "server/neon-staging-runtime.mjs"
+      - "server/neon-staging-provider-adapters.mjs"
+      - "server/neon-staging-worker-process.mjs"
+      - "server/tests/neon-staging-provider-adapters.test.mjs"
+      - "server/tests/neon-staging-worker-process.test.mjs"
+      - "server/tests/neon-postgres-queue.test.mjs"
+      - "server/tests/neon-postgres-video-submissions.test.mjs"
+      - "server/tests/neon-staging-runtime.test.mjs"
+      - "server/tests/neon-postgres-pool-runtime.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/verify-neon-financials-postgres.sql"
+      - "scripts/verify-neon-video-enqueue-postgres.sql"
+      - "scripts/verify-neon-video-approval-bridge-postgres.sql"
+      - "scripts/verify-neon-queue-postgres.sql"
+      - "scripts/verify-neon-worker-concurrency.mjs"
+      - ".github/workflows/neon-postgres-financials.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: neon-postgres-financials-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  neon-financials:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: neon_ci
+          POSTGRES_PASSWORD: neon_ci_only
+          POSTGRES_DB: executive_visuals_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neon_ci -d executive_visuals_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://neon_ci:neon_ci_only@localhost:5432/executive_visuals_ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.4"
+          cache: npm
+      - name: Install locked Node dependencies
+        run: npm ci
+      - name: Verify Neon PostgreSQL adapters and real pg driver
+        run: npm run verify:neon-postgres
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Wait for disposable PostgreSQL
+        run: |
+          for attempt in $(seq 1 30); do
+            pg_isready -d "$DATABASE_URL" && exit 0
+            sleep 2
+          done
+          exit 1
+      - name: Apply Neon queue, submission and financial migrations to disposable PostgreSQL
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0001_worker_queue.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0002_video_submission_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0003_video_financial_controls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0004_queue_admission_and_recovery.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0005_pre_ingestion_credit_settlement.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0006_atomic_video_enqueue.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0007_video_approval_bridge.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0008_retryable_submission_recovery.sql
+      - name: Verify PostgreSQL reservation, settlement, verified release and lease-fenced safe retry
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
+      - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
+      - name: Verify concurrent workers, lease fencing, stale callbacks and retry ceilings
+        run: node scripts/verify-neon-worker-concurrency.mjs
+      - name: Verify atomic video enqueue, reservation, replay and rollback
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-enqueue-postgres.sql
+      - name: Verify multi-shot approval bridge schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-video-approval-bridge-postgres.sql

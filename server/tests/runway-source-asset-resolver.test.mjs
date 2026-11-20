@@ -482,3 +482,80 @@ test("Seedance image-to-video resolves distinct private first and last keyframe 
   assert.equal(prepared.lastFrame.filename, "last.png");
   assert.equal(prepared.imageReferenceMode, undefined);
 });
+
+
+test("Runway source resolver accepts only path-style signed Neon private object URLs", async () => {
+  const neonEndpoint = "https://br-staging.storage.c-9.us-east-2.aws.neon.tech";
+  const objectUrl = neonEndpoint + "/executive-visuals-media/" + PROJECT + "/" + ASSET + "/original.mp4?X-Amz-Signature=private";
+  const asset = {
+    id: ASSET, ownerId: OWNER, projectId: PROJECT, name: "source.mp4",
+    mediaType: "video/mp4", size: bytes.length,
+    storageBucket: "executive-visuals-media",
+    objectPath: PROJECT + "/" + ASSET + "/original.mp4"
+  };
+  let fetched = null;
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) {
+        assert.equal(ownerId, OWNER);
+        assert.equal(assetId, ASSET);
+        return asset;
+      },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER);
+        assert.equal(assetId, ASSET);
+        assert.equal(expiresIn, 300);
+        return { asset, url: objectUrl };
+      }
+    },
+    storageProvider: "neon",
+    neonEndpoint,
+    neonBucket: "executive-visuals-media",
+    fetchImpl: async url => {
+      fetched = new URL(url);
+      return new Response(bytes, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(bytes.length) }
+      });
+    },
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({
+      format: { duration: "11.2" },
+      streams: [{ codec_type: "video", width: 1920, height: 1080 }]
+    }))
+  });
+  const prepared = await resolver.prepare({
+    operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.sourceVideo.buffer.length, bytes.length);
+  assert.equal(fetched.origin, neonEndpoint);
+  assert.ok(fetched.pathname.startsWith("/executive-visuals-media/" + PROJECT + "/" + ASSET + "/"));
+});
+
+test("Runway source resolver rejects Neon URLs outside the configured branch endpoint and bucket", async () => {
+  let fetched = false;
+  const asset = {
+    id: ASSET, ownerId: OWNER, projectId: PROJECT, name: "source.mp4",
+    mediaType: "video/mp4", size: bytes.length,
+    storageBucket: "executive-visuals-media",
+    objectPath: PROJECT + "/" + ASSET + "/original.mp4"
+  };
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get() { return asset; },
+      async createSignedUrl() {
+        return { asset, url: "https://attacker.example/executive-visuals-media/" + asset.objectPath };
+      }
+    },
+    storageProvider: "neon",
+    neonEndpoint: "https://br-staging.storage.c-9.us-east-2.aws.neon.tech",
+    neonBucket: "executive-visuals-media",
+    fetchImpl: async () => { fetched = true; return new Response(bytes); }
+  });
+  await assert.rejects(
+    () => resolver.prepare({
+      operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(fetched, false);
+});

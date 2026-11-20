@@ -208,3 +208,49 @@ test("private source downloads require matching content type and bounded streami
  await assert.rejects(service.prepareAsset({ownerId,projectId,assetId}),error=>error.code==="LUMA_FILE_ASSET_CHECKSUM_MISMATCH");
  assert.equal(f.calls.create,0);
 });
+
+
+test("Luma source resolver accepts path-style signed Neon private object URLs", async () => {
+ const f=fixture();
+ const endpoint="https://br-staging.storage.c-9.us-east-2.aws.neon.tech";
+ f.assets.createSignedUrl=async()=>({
+  asset:{id:assetId,ownerId,projectId},
+  url:endpoint+"/executive-visuals-media/"+projectId+"/"+assetId+"/original.mp4?X-Amz-Signature=private"
+ });
+ let fetched=null;
+ const service=createLumaProviderFileService({
+  assets:f.assets,adapter:f.adapter,repository:f.repository,
+  storageProvider:"neon",neonEndpoint:endpoint,neonBucket:"executive-visuals-media",
+  fetchImpl:async url=>{
+   fetched=new URL(url);
+   return new Response(bytes,{status:200,headers:{"content-type":"video/mp4","content-length":String(bytes.length)}});
+  },
+  now:()=>Date.parse("2026-11-15T12:00:00.000Z")
+ });
+ const result=await service.prepareAsset({ownerId,projectId,assetId,purpose:"input"});
+ assert.equal(result.state,"ready");
+ assert.equal(fetched.origin,endpoint);
+ assert.ok(fetched.pathname.startsWith("/executive-visuals-media/"+projectId+"/"+assetId+"/"));
+});
+
+test("Luma source resolver rejects signed Neon URLs outside the configured branch and bucket", async () => {
+ const f=fixture();
+ f.assets.createSignedUrl=async()=>({
+  asset:{id:assetId,ownerId,projectId},
+  url:"https://attacker.example/executive-visuals-media/"+projectId+"/"+assetId+"/original.mp4"
+ });
+ let fetched=false;
+ const endpoint="https://br-staging.storage.c-9.us-east-2.aws.neon.tech";
+ const service=createLumaProviderFileService({
+  assets:f.assets,adapter:f.adapter,repository:f.repository,
+  storageProvider:"neon",neonEndpoint:endpoint,neonBucket:"executive-visuals-media",
+  fetchImpl:async()=>{fetched=true;return new Response(bytes);},
+  now:()=>Date.parse("2026-11-15T12:00:00.000Z")
+ });
+ await assert.rejects(
+  service.prepareAsset({ownerId,projectId,assetId,purpose:"input"}),
+  error=>error.code==="LUMA_FILE_SIGNED_URL_INVALID"
+ );
+ assert.equal(fetched,false);
+ assert.equal(f.calls.create,0);
+});

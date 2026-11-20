@@ -32,7 +32,8 @@ export async function runCloudVideoWorkerCycle({
   leaseSeconds = 90,
   heartbeatIntervalMs = 15000,
   deferSeconds = 30,
-  onEvent = () => {}
+  onEvent = () => {},
+  random = Math.random
 } = {}) {
   if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.assertLease !== "function") {
     throw new Error("Cloud video worker requires a lease-aware cloud queue.");
@@ -48,6 +49,7 @@ export async function runCloudVideoWorkerCycle({
     throw new Error("Cloud video worker lease and heartbeat settings are invalid.");
   }
   if (!Number.isInteger(deferSeconds) || deferSeconds < 5 || deferSeconds > 900) throw new Error("Cloud video worker defer interval is invalid.");
+  if (typeof random !== "function") throw new Error("Cloud video worker retry jitter source is invalid.");
 
   const job = await queue.claim(workerId, leaseSeconds, ["video.generate"]);
   if (!job) return { claimed: false };
@@ -96,7 +98,7 @@ export async function runCloudVideoWorkerCycle({
     const persistedOutput = {
       provider: output.provider, model: output.model, providerTaskId: output.providerTaskId,
       assetIds: output.assetIds, usage: output.usage || null,
-      actualAmount: output.actualAmount, currency: output.currency,
+      actualAmount: output.actualAmount, actualCredits: output.actualCredits, currency: output.currency,
       costEvidenceReference: output.costEvidenceReference,
       customerCreditSettlement: output.customerCreditSettlement || null
     };
@@ -112,28 +114,40 @@ export async function runCloudVideoWorkerCycle({
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
-    if (code === "VIDEO_PROVIDER_POLL_DEFERRED") {
-      const delaySeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
+    if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
+      const retryBaseSeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
         ? error.retryAfterSeconds : deferSeconds;
+      let delaySeconds = retryBaseSeconds;
+      if (code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
+        const attempt = Number.isSafeInteger(job.attempt_count) && job.attempt_count > 0 ? job.attempt_count : 1;
+        const jitter = random();
+        if (!Number.isFinite(jitter) || jitter < 0 || jitter >= 1) throw new Error("Cloud video worker retry jitter source returned an invalid value.");
+        const exponential = retryBaseSeconds * (2 ** Math.min(4, attempt - 1));
+        delaySeconds = Math.min(900, Math.ceil(exponential * (1 + jitter * 0.5)));
+      }
       const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds, reasonCode: code });
       if (!deferred) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "video.job.deferred", jobId: job.id, workerId, reasonCode: code });
       return { claimed: true, finished: true, status: "queued", jobId: job.id, reason: code };
     }
     if (QUARANTINE_CODES.has(code)) {
-      const quarantined = await enqueue.quarantine({ jobId: job.id, workerId, leaseToken: job.lease_token, reasonCode: code });
+      const quarantineOutcome = await enqueue.quarantine({ jobId: job.id, workerId, leaseToken: job.lease_token, reasonCode: code });
+      const quarantined = quarantineOutcome === true || quarantineOutcome?.finished === true;
       if (!quarantined) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-      onEvent({ type: "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
-      return { claimed: true, finished: true, status: "needs_input", jobId: job.id, reason: code };
+      const persistedStatus = quarantineOutcome?.status || "needs_input";
+      onEvent({ type: persistedStatus === "blocked" ? "video.job.blocked" : "video.job.needs_input", jobId: job.id, workerId, reasonCode: code });
+      return { claimed: true, finished: true, status: persistedStatus, jobId: job.id, reason: code };
     }
     await assertLease();
-    const failed = await enqueue.finish({
+    const failureOutcome = await enqueue.finish({
       jobId: job.id, workerId, leaseToken: job.lease_token, status: "failed",
       error: { code, message }
     });
+    const failed = failureOutcome === true || failureOutcome?.finished === true;
     if (!failed) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-    onEvent({ type: "video.job.failed", jobId: job.id, workerId, error: { code, message } });
-    return { claimed: true, finished: true, status: "failed", jobId: job.id, error: { code, message } };
+    const persistedStatus = failureOutcome?.status || "failed";
+    onEvent({ type: persistedStatus === "blocked" ? "video.job.blocked" : "video.job.failed", jobId: job.id, workerId, error: { code, message } });
+    return { claimed: true, finished: true, status: persistedStatus, jobId: job.id, error: { code, message } };
   } finally {
     clearInterval(heartbeat);
     if (heartbeatError) onEvent({ type: "video.job.heartbeat_error", jobId: job.id, workerId });
