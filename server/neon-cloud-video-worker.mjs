@@ -105,9 +105,10 @@ export function createNeonVideoWorkerContracts({ runtime, workerId, quoteCustome
         evidenceId: output.providerTaskId,
         evidenceReference: output.costEvidenceReference
       };
+      const settledOutput = Object.freeze({ ...output, actualCredits });
       const finished = await financials.finishVideoJob({
         jobId, ownerId: job.owner_id, workerId, leaseToken, status: "succeeded",
-        output, actualAmount, actualCredits, financialEvidence: evidence
+        output: settledOutput, actualAmount, actualCredits, financialEvidence: evidence
       });
       if (finished) activeJobs.delete(jobId);
       return finished;
