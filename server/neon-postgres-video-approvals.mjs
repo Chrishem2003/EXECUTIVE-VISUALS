@@ -130,13 +130,16 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
   },
   async enqueueWorkflowNode(raw){
    if(!raw||typeof raw!=="object"||Array.isArray(raw))throw fail("Neon workflow dispatch requires a quote-bound approval object.","VIDEO_WORKFLOW_APPROVAL_INVALID");
-   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,expiresAt}=raw;
+   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,expiresAt,quoteState}=raw;
    if(!UUID.test(String(quoteId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(projectId||"")))throw fail("Neon workflow dispatch requires valid quote, owner and project IDs.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(typeof requestId!=="string"||requestId.length<8||requestId.length>200||!/^[A-Za-z0-9._:-]+$/.test(requestId)||!HASH.test(String(requestHash||"")))throw fail("Neon workflow request identity is invalid.","VIDEO_WORKFLOW_APPROVAL_INVALID");
    if(provider!=="runway"||model!=="model-router"||!["text-to-video","image-to-video","video-to-video"].includes(operation))throw fail("This Neon workflow adapter only admits the explicitly registered Runway Model Router contract.","VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
    if(!input||typeof input!=="object"||Array.isArray(input)||Buffer.byteLength(JSON.stringify(input),"utf8")>1024*1024)throw fail("Neon workflow input must be a bounded JSON object.","VIDEO_WORKFLOW_INPUT_INVALID");
    const expiry=Date.parse(String(expiresAt||""));
    const existing=await approvals.get(quoteId,{ownerId,projectId});
+   if(quoteState==="consumed"&&(!existing||existing.requestHash!==requestHash)){
+    throw fail("A consumed workflow quote has no matching Neon approval receipt; refusing to create a second queue entry.","VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID");
+   }
    if((!existing||existing.requestHash!==requestHash)&&(!Number.isFinite(expiry)||expiry<=Date.now())){
     throw fail("The approved workflow quote has expired.","VIDEO_WORKFLOW_QUOTE_EXPIRED");
    }
