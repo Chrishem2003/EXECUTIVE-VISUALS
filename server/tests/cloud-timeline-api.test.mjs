@@ -1174,7 +1174,7 @@ test("Neon workflow approval validates the persisted exact quote before durable 
     id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,
     provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",
     routed_model:"seedance2_5",estimated_credits:275,estimated_amount:"2.750000",currency:"USD",
-    state:"quoted",expires_at:expiresAt
+    config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:expiresAt
    }]);}};
    if(url.includes("/video_workflow_quotes?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return"[]";}};
    return{ok:true,status:200,async text(){return"[]";}};
@@ -1209,7 +1209,7 @@ test("Neon workflow approval rejects a mismatched or expired stored quote before
  const values={prompt:"A cinematic product launch"};
  const contract=createVideoWorkflowCloudRequest({node,values,projectId,requestId});
  for(const quote of [
-  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
+  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
   {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
  ]){
   let dispatched=0;
