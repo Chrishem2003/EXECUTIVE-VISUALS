@@ -21,6 +21,7 @@ export async function createNeonStagingRuntime({
   storageOptions = {},
   includeStorage = false,
   quoteCustomerCredits = null,
+  enableVideoApprovals = false,
   workerAdapters = null,
   workerAuthorizeJob = null,
   workerId = null,
@@ -52,10 +53,16 @@ export async function createNeonStagingRuntime({
     const submissions = createNeonVideoSubmissionLedger({ pool });
     const financials = createNeonVideoFinancials({ pool });
     const videoEnqueue = createNeonVideoEnqueue({ pool });
-    const videoApprovals = typeof quoteCustomerCredits === "function"
+    const workerRequested = workerAdapters !== null || workerAuthorizeJob !== null || workerId !== null;
+    if (enableVideoApprovals !== true && enableVideoApprovals !== false) {
+      throw new Error("Neon video approval composition flag must be boolean.");
+    }
+    const videoApprovals = enableVideoApprovals === true && typeof quoteCustomerCredits === "function"
       ? createNeonVideoGenerationRepositories({ pool, videoEnqueue, quoteCustomerCredits })
       : null;
-    const workerRequested = workerAdapters !== null || workerAuthorizeJob !== null || workerId !== null;
+    if (enableVideoApprovals === true && typeof quoteCustomerCredits !== "function") {
+      throw new Error("Neon video approvals require the server-side customer-credit quote policy.");
+    }
     if (workerRequested && (!Array.isArray(workerAdapters) || workerAdapters.length < 1 ||
         typeof workerAuthorizeJob !== "function" || typeof workerId !== "string" || !workerId.trim() ||
         typeof quoteCustomerCredits !== "function")) {
