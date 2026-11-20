@@ -13,7 +13,8 @@ test("cloud media remains disabled until its API is enabled", () => {
     ready: false,
     storage: "disabled",
     provider: "b2",
-    uploadLimitBytes: 600 * 1024 * 1024
+    uploadLimitBytes: 600 * 1024 * 1024,
+    blockers: []
   });
 });
 
@@ -54,7 +55,8 @@ test("Neon is a recognized private storage provider in safe health output", () =
     uploadLimitBytes: 250 * 1024 * 1024
   }), {
     enabled: true, ready: true, storage: "private", provider: "neon",
-    uploadLimitBytes: 250 * 1024 * 1024
+    uploadLimitBytes: 250 * 1024 * 1024,
+    blockers: []
   });
 });
 
@@ -68,6 +70,13 @@ test("health output never exposes credentials or accepts invalid provider and up
   assert.equal(health.ready, true);
   assert.equal(health.provider, "unknown");
   assert.equal(health.uploadLimitBytes, null);
+  assert.deepEqual(health.blockers, []);
   assert.equal(JSON.stringify(health).includes("must-not-leak"), false);
   assert.equal(JSON.stringify(health).includes("secret"), false);
+});
+
+test("cloud media health exposes only allowlisted blocker names and never secret values",()=>{
+ const health=buildCloudMediaHealth({enabled:false,blockers:["SUPABASE_URL","NEON_STORAGE_ENDPOINT","SUPABASE_SECRET_KEY=sb_secret_do_not_leak","DROP_TABLE"]});
+ assert.deepEqual(health.blockers,["SUPABASE_URL","NEON_STORAGE_ENDPOINT"]);
+ assert.equal(JSON.stringify(health).includes("sb_secret_do_not_leak"),false);
 });
