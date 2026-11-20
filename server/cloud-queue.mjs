@@ -20,7 +20,7 @@ export function createCloudQueue({
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
-  if (!url || !serviceRoleKey) throw new Error("Cloud queue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  if (!url || !serviceRoleKey) throw new Error("Cloud queue requires SUPABASE_URL and a server-side Supabase secret key.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud queue requires a fetch implementation.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Cloud queue timeout must be between 1000 and 120000 milliseconds.");
   const base = endpoint(url);
