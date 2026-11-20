@@ -338,3 +338,16 @@ The Neon storage path is now recognized by both the Runway source-asset resolver
 - Luma verifies the stored SHA-256 and byte size before transferring the selected private asset to the Luma Files API; durable provider-file recovery remains in place.
 - The provider-aware Supabase worker composition now passes the Neon endpoint/bucket settings into those source resolvers when Neon storage is explicitly selected.
 - This is a storage/source compatibility improvement, not proof that the Neon PostgreSQL worker is wired into the live application process. The separate application-side Neon worker adapter registry and lifecycle integration still require completion and end-to-end staging verification.
+
+
+## Application dispatch and dedicated worker process
+
+The API and background worker are separate processes:
+
+- The web application creates the Neon approval/queue runtime only when `NEON_STAGING_APPLICATION_DISPATCH_ENABLED=true`. It requires the isolated branch, server-owned USD credit policy, approval/financial migrations and a ready private storage bucket. The application process can durably enqueue approved shots without embedding a long-running provider worker.
+- The dedicated background process is `server/neon-staging-worker-process.mjs`, started with `npm run start:neon-staging-worker`. It requires `NEON_STAGING_WORKER_PROCESS_ENABLED=true`, `NEON_STAGING_RUNTIME_ENABLED=true`, `NEON_STAGING_BRANCH_NAME=executive-visuals-staging`, all worker/gateway/remote gates, private Neon storage credentials, Supabase server-side asset metadata credentials, and a configured FAL model plus billing credential.
+- The first registry is deliberately narrow: one exact FAL model selected by `FAL_VIDEO_MODEL`. It uses FAL's task-level billing resolver, the existing private-output ingestion pipeline (DNS pinning, host allowlist, FFprobe validation, idempotent asset registration), Neon private object storage, and Supabase project/asset authorization. Other providers are not silently enabled.
+- Worker readiness is independent of application-dispatch readiness. The API can queue jobs while a separately deployed staging worker is stopped; the worker can start without opening the web process's approval bridge. Both require the Neon queue, financial ledger and private storage readiness checks.
+- The process handles SIGINT/SIGTERM with graceful worker drain and closes the Neon pool. It does not provision resources, apply migrations, create buckets, or modify Render services.
+
+Suggested future Render background-worker start command: `npm run start:neon-staging-worker`. Do not create a new Render service or change production configuration as part of this repository-only implementation. Configure and verify a separate staging worker service only after the Neon branch, bucket, role-scoped credentials and cost controls have been reviewed and explicitly approved.
