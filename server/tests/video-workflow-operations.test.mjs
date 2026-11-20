@@ -41,3 +41,10 @@ test("workflow editor uses the shared operation policy and reveals the draft sou
   assert.match(ui, /draftPanel\.hidden=activeOperation!=="draft-enhancement"/);
   assert.match(ui, /draftInput\.disabled=activeOperation!=="draft-enhancement"/);
 });
+
+
+test("Runway Model Router exposes its exact text, first-frame and source-video operations",()=>{
+  assert.deepEqual(getVideoWorkflowOperationOptions("runway","model-router").map(option=>option.id),[
+    "text-to-video","image-to-video","video-to-video"
+  ]);
+});
