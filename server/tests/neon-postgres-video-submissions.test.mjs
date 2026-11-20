@@ -7,3 +7,13 @@ test("begin, record, unknown and finish use parameterized lease-fenced RPCs",asy
 test("unknown reconciliation requires auditable evidence and supports idempotent confirmation",async()=>{let values;const l=createNeonVideoSubmissionLedger({pool:{query:async(_t,v)=>{values=v;return {rows:[{result:true}]};}}});assert.equal(await l.reconcileUnknown(id,"task-1","ticket-123",{verified:true}),true);assert.equal(values[2],"ticket-123");await assert.rejects(()=>l.reconcileUnknown(id,"task-1","",{}),/Evidence reference/);});
 test("get validates identity and returns null when absent",async()=>{const l=createNeonVideoSubmissionLedger({pool:{query:async()=>({rows:[]})}});assert.equal(await l.get(id),null);await assert.rejects(()=>l.get("bad"),/UUID/);});
 test("rejects missing or malformed fencing tokens and oversized metadata",async()=>{const l=createNeonVideoSubmissionLedger({pool:{query:async()=>({rows:[{result:true}]})}});await assert.rejects(()=>l.begin(id,"worker","bad"),/lease token/);await assert.rejects(()=>l.record(id,"worker","task",{payload:"x".repeat(9000)},token),/8000-byte/);await assert.rejects(()=>l.finish(id,"worker","unknown",{},token),/terminal state/);});
+
+test("retry resets only through the dedicated lease-fenced Neon RPC",async()=>{
+ let call;
+ const l=createNeonVideoSubmissionLedger({pool:{query:async(text,values)=>{call={text,values};return{rows:[{result:true}]};}}});
+ assert.equal(await l.retry(id,"worker",token,"RUNWAY_SERVER_ERROR"),true);
+ assert.match(call.text,/retry_video_generation_submission_v1/);
+ assert.deepEqual(call.values,[id,"worker",token,"RUNWAY_SERVER_ERROR"]);
+ await assert.rejects(()=>l.retry(id,"worker","bad","RUNWAY_SERVER_ERROR"),/lease token/);
+ await assert.rejects(()=>l.retry(id,"worker",token,"bad code"),/Error code/);
+});
