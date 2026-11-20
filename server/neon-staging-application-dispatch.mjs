@@ -173,8 +173,10 @@ export function createNeonStagingApplicationDispatch({
     if(typeof runtime?.videoApprovals?.approvals?.enqueueWorkflowNode!=="function"){
       return {status:503,body:{error:{code:"VIDEO_WORKFLOW_DISPATCH_UNAVAILABLE",message:"The Neon workflow-node adapter is not configured."},providerRequestsSubmitted:false}};
     }
+    let queueState="not-queued";
     try{
       const receipt=await runtime.videoApprovals.approvals.enqueueWorkflowNode(input);
+      queueState="queued";
       if(!receipt||receipt.backend!=="neon-postgres"||receipt.approvalId!==quoteId||!UUID.test(String(receipt.jobId||""))){
         throw fail("Neon workflow dispatch returned an invalid durable job receipt.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
       }
@@ -182,7 +184,7 @@ export function createNeonStagingApplicationDispatch({
         {projectId,jobId:receipt.jobId,requestHash:input.requestHash,providerRequestsSubmitted:false},projectId);
       return {status:receipt.idempotentReplay?200:202,body:{
         job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,currency:"USD"},
-        backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,providerRequestsSubmitted:false
+        backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,queuedForWorker:true,providerCallMadeByApi:false
       }};
     }catch(error){
       const detail=safeError(error);
@@ -191,7 +193,7 @@ export function createNeonStagingApplicationDispatch({
         detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
         detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"?422:
         detail.code==="VIDEO_REPOSITORY_TIMEOUT"?503:502;
-      return {status,body:{error:detail,backend:"neon-postgres",providerRequestsSubmitted:false}};
+      return {status,body:{error:detail,backend:"neon-postgres",queueState,providerCallMadeByApi:false}};
     }
   }
 
