@@ -115,7 +115,7 @@ test("Vertex output ingestion enforces MP4 content type and configured bucket", 
     assert.throws(() => createGoogleOmniVertexOutputIngestor({
       assets: { async createFromFileIdempotent() {} },
       interactions: { async findInteraction() {} },
-      outputBucket: "other-bucket"
+      outputBucket: "Bad Bucket"
     }), /dedicated GCS output bucket/);
     const ingestor = createGoogleOmniVertexOutputIngestor({
       assets: { async createFromFileIdempotent() { throw new Error("must not publish"); } },
