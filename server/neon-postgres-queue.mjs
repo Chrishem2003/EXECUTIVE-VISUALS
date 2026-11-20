@@ -92,13 +92,14 @@ export function createNeonPostgresQueue({ pool, schema = SCHEMA } = {}) {
     },
     async getOwnedJob(jobId, ownerId) {
       if (!UUID.test(String(jobId || "")) || !UUID.test(String(ownerId || ""))) throw new Error("Job and owner IDs must be UUIDs.");
-      const result = await query("select id,owner_id,project_id,job_type,status,progress,attempt_count,max_attempts,created_at,updated_at,completed_at,output,error from executive_visuals.jobs where id=$1::uuid and owner_id=$2::uuid limit 1", [jobId, ownerId]);
+      const result = await query("select id,owner_id,project_id,job_type,status,progress,attempt_count,max_attempts,input,output,error,created_at,updated_at,completed_at from executive_visuals.jobs where id=$1::uuid and owner_id=$2::uuid limit 1", [jobId, ownerId]);
       const row = result.rows?.[0];
       if (!row) return null;
       return Object.freeze({
         id: row.id, ownerId: row.owner_id, projectId: row.project_id,
         jobType: row.job_type, status: row.status, progress: Number(row.progress || 0),
         attemptCount: Number(row.attempt_count || 0), maxAttempts: Number(row.max_attempts || 0),
+        input: row.input && typeof row.input === "object" && !Array.isArray(row.input) ? row.input : null,
         createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at,
         output: row.output && typeof row.output === "object" && !Array.isArray(row.output) ? row.output : null,
         error: row.error && typeof row.error === "object" && !Array.isArray(row.error) ? row.error : null
