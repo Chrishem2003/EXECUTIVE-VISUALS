@@ -57,8 +57,9 @@ export async function createNeonStagingRuntime({
       : null;
     const workerRequested = workerAdapters !== null || workerAuthorizeJob !== null || workerId !== null;
     if (workerRequested && (!Array.isArray(workerAdapters) || workerAdapters.length < 1 ||
-        typeof workerAuthorizeJob !== "function" || typeof workerId !== "string" || !workerId.trim())) {
-      throw new Error("Neon video worker composition requires adapters, an authorization callback and a worker ID together.");
+        typeof workerAuthorizeJob !== "function" || typeof workerId !== "string" || !workerId.trim() ||
+        typeof quoteCustomerCredits !== "function")) {
+      throw new Error("Neon video worker composition requires adapters, authorization, worker identity and the server-side customer-credit quote policy together.");
     }
     if (workerRequested && (!includeStorage || typeof storage?.checkReadiness !== "function")) {
       throw new Error("Neon video worker composition requires explicitly configured private object storage with a readiness probe.");
@@ -67,7 +68,7 @@ export async function createNeonStagingRuntime({
       queue, submissions, financials, customerCredits: financials };
     const videoWorker = workerRequested
       ? createNeonCloudVideoWorker({ runtime: workerRuntime, workerId, adapters: workerAdapters,
-          authorizeJob: workerAuthorizeJob, env })
+          authorizeJob: workerAuthorizeJob, quoteCustomerCredits, env })
       : null;
     const workerProcess = videoWorker
       ? createCloudVideoWorkerProcess({ ...workerProcessOptions, worker: videoWorker })
