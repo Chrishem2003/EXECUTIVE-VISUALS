@@ -140,6 +140,9 @@ export function createRunwayCloudVideoAdapter({
         if (submission) throw fail("Runway submission response was invalid; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
         throw fail("Runway returned an invalid response object.", "RUNWAY_INVALID_RESPONSE");
       }
+      if (submission && (path === "/uploads" ? !isRunwayUri(data.runwayUri) : typeof data.id !== "string" || !data.id.trim())) {
+        throw fail("Runway submission response did not include its required task or upload identifier; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+      }
       return data;
     } finally {
       clearTimeout(timer);
