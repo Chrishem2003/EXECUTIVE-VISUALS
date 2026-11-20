@@ -242,7 +242,7 @@ export async function executeCloudVideoWorkflowNode({
   const approvedInput=cloudJob.input||{};
   if(cloudJob.owner_id!==job.owner_id||cloudJob.project_id!==projectId||cloudJob.job_type!=="video.generate"||
      approvedInput.workflowQuoteId!==quoteId||approvedInput.workflowRequestId!==requestId||
-     approvedInput.requestHash!==cloudRequest.requestHash||
+     (approvedInput.workflowRequestHash||approvedInput.approvalRequestHash||approvedInput.requestHash)!==cloudRequest.requestHash||
      approvedInput.approvedMaxAmount!==approvedMaxAmount){
    throw fail("Cloud job receipt does not match the owner, project and exact approved workflow quote.","VIDEO_WORKFLOW_JOB_RECEIPT_MISMATCH");
   }
