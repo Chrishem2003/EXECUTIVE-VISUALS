@@ -15,7 +15,7 @@ const local={
   request_hash:"a".repeat(64),snapshot_json:JSON.stringify(snapshot),currency:"USD",
   quoted_amount_micros:2000000,budget_ceiling_micros:2500000,status:"approved_pending_submission"
 };
-function fixture({status=local.status,allowed=true,registerError=null,jobs=null}={}){
+function fixture({status=local.status,allowed=true,registerError=null,jobs=null,cancelReceipt={cancelled:true,status:"cancelled",balance:900,creditAdjustment:100,replayed:false,reason:"cancelled_before_submission"},jobStatus="queued"}={}){
   const calls=[];
   const row={...local,status};
   const db={prepare(sql){return{
@@ -26,7 +26,12 @@ function fixture({status=local.status,allowed=true,registerError=null,jobs=null}
     {jobId:job,shotIndex:0,status:"queued"},
     {jobId:"523e4567-e89b-42d3-a456-426614174000",shotIndex:1,status:"queued"}
   ];
-  const runtime={backend:"neon-postgres",branch:"executive-visuals-staging",videoApprovals:{approvals:{
+  const runtime={backend:"neon-postgres",branch:"executive-visuals-staging",
+   queue:{
+    async getOwnedJob(id,ownerId){calls.push(["getOwnedJob",id,ownerId]);return id===job&&ownerId===owner?{id,ownerId,projectId:project,jobType:"video.generate",status:jobStatus}:null;},
+    async cancelQueuedVideoJob(id,ownerId){calls.push(["cancelQueuedVideoJob",id,ownerId]);return cancelReceipt;}
+   },
+   videoApprovals:{approvals:{
     async register(input){calls.push(["register",input]);if(registerError)throw registerError;return{
       id:input.id,ownerId:input.ownerId,projectId:input.projectId,requestHash:input.requestHash,
       currency:input.currency,quotedAmountMicros:input.quotedAmountMicros,
@@ -85,4 +90,47 @@ test("does not consume a local approval unless every approved shot has a durable
 
 test("fails closed on invalid Neon runtime composition",()=>{
  assert.throws(()=>createNeonStagingApplicationDispatch({db:{prepare(){}},runtime:{backend:"supabase"}}),/Neon staging dispatch requires/);
+});
+
+test("cancels only an owned project-authorized Neon job after the database proves no provider submission",async()=>{
+ const f=fixture();
+ const result=await f.dispatch.cancelJob({jobId:job,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.job,{id:job,status:"cancelled"});
+ assert.deepEqual(result.body.cancellation,{creditAdjustment:100,balance:900,replayed:false});
+ assert.equal(result.body.providerCancellation,"not_required_no_submission");
+ assert.ok(f.calls.some(x=>x[0]==="getOwnedJob"));
+ assert.ok(f.calls.some(x=>x[0]==="cancelQueuedVideoJob"));
+ assert.ok(f.calls.some(x=>x[0]==="audit"));
+});
+
+test("does not contact Neon cancellation when project write authorization is denied",async()=>{
+ const f=fixture({allowed:false});
+ const result=await f.dispatch.cancelJob({jobId:job,ownerId:owner});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(x=>x[0]==="cancelQueuedVideoJob"),false);
+});
+
+test("refuses processing jobs and never claims provider termination or a refund",async()=>{
+ const f=fixture({jobStatus:"processing",cancelReceipt:{cancelled:false,status:"processing",balance:0,creditAdjustment:0,replayed:false,reason:"provider_submission_possible"}});
+ const result=await f.dispatch.cancelJob({jobId:job,ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.job.status,"processing");
+ assert.match(result.body.error.message,/may have started/);
+ assert.equal(f.calls.some(x=>x[0]==="audit"),false);
+});
+
+test("rejects malformed and unowned cancellation requests",async()=>{
+ const f=fixture();
+ assert.equal((await f.dispatch.cancelJob({jobId:"bad",ownerId:owner})).status,400);
+ assert.equal((await f.dispatch.cancelJob({jobId:"523e4567-e89b-42d3-a456-426614174000",ownerId:owner})).status,404);
+ assert.equal(f.calls.some(x=>x[0]==="cancelQueuedVideoJob"),false);
+});
+
+test("returns a conflict when a submission record exists even without a provider task ID",async()=>{
+ const f=fixture({cancelReceipt:{cancelled:false,status:"queued",balance:0,creditAdjustment:0,replayed:false,reason:"submission_record_exists"}});
+ const result=await f.dispatch.cancelJob({jobId:job,ownerId:owner});
+ assert.equal(result.status,409);
+ assert.match(result.body.error.message,/provider reconciliation/);
+ assert.equal(f.calls.some(x=>x[0]==="audit"),false);
 });
