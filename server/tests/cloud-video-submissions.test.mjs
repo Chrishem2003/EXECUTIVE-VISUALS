@@ -9,6 +9,14 @@ function response(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, async text() { return JSON.stringify(body); } };
 }
 
+test("cloud submission ledger sends modern Supabase secret without Bearer",async()=>{
+ const calls=[];
+ const ledger=createCloudVideoSubmissionLedger({url:base.url,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response([row]);}});
+ await ledger.prepare({jobId:"job-1",ownerId:"owner-1",workerId:"worker-1",leaseToken,provider:"runway",model:"gen4.5",requestHash:"a".repeat(64)});
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("cloud submission ledger uses service credentials and the private schema", async () => {
   const requests = [];
   const ledger = createCloudVideoSubmissionLedger({ ...base, fetchImpl: async (url, options) => { requests.push({ url, options }); return response([row]); } });
