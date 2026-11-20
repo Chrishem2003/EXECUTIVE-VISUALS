@@ -170,17 +170,28 @@ export function createGoogleOmniVertexClient({
       throw fail("Google Omni 1.2 submission requires an approved, scoped worker plan.", "GOOGLE_VERTEX_PLAN_INVALID");
     }
     const gcsUri = outputUri(context);
+    const configuredFormats = Array.isArray(plan.payload.response_format)
+      ? plan.payload.response_format
+      : plan.payload.response_format ? [plan.payload.response_format] : [];
+    const videoFormats = configuredFormats.filter(item => item?.type === "video");
+    if (videoFormats.length > 1) {
+      throw fail("Google Omni 1.2 requests may define only one video output destination.", "GOOGLE_VERTEX_PLAN_INVALID");
+    }
+    const responseFormat = [
+      ...configuredFormats.filter(item => item?.type !== "video"),
+      {
+        ...(videoFormats[0] || {}),
+        type: "video",
+        delivery: "uri",
+        gcs_uri: gcsUri
+      }
+    ];
     const payload = {
       ...plan.payload,
       model: MODEL,
       store: true,
       background: true,
-      response_format: {
-        ...(plan.payload.response_format || {}),
-        type: "video",
-        delivery: "uri",
-        gcs_uri: gcsUri
-      }
+      response_format: responseFormat
     };
     const raw = await request(base, { method: "POST", body: payload, signal });
     const interaction = parseInteraction(raw, null, MODEL);
