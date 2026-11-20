@@ -1,16 +1,17 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { randomUUID } from "node:crypto";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const validId=(value,label)=>{if(typeof value!=="string"||!UUID.test(value))throw new Error(label+" must be a UUID.");return value;};
 const map=row=>({id:row.id,ownerId:row.owner_id,name:row.name,description:row.description||"",settings:row.settings||{},revision:Number(row.revision),createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at||null});
 
-export function createCloudProjectRepository({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,authorize,timeoutMs=12000}={}){
+export function createCloudProjectRepository({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,authorize,timeoutMs=12000}={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function"||typeof authorize!=="function")throw new Error("Cloud project repository requires credentials, fetch and authorization.");
  const base=new URL(url).origin;
  async function request(path,{method="GET",body=null}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer:"return=representation"};
+   const headers={...supabaseServerAuthHeaders(serviceRoleKey),"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer:"return=representation"};
    if(body!==null)headers["content-type"]="application/json";
    const res=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
    const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud project service returned invalid database data.");}}
