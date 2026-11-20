@@ -302,6 +302,9 @@ export function createRunwayModelRouterVideoAdapter({
         throw fail("Runway completed task omitted valid realized cost or exceeded its task estimate.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       const modelUsed = metadata.routing.model;
+      if (typeof modelUsed !== "string" || !/^[a-zA-Z0-9._:-]{1,128}$/.test(modelUsed)) {
+        throw fail("Runway routing metadata omitted a bounded actual model identifier.", "VIDEO_BUDGET_COST_UNRESOLVED");
+      }
       return {
         amount: Math.round(credits * 0.01 * 10000) / 10000,
         currency: "USD",
