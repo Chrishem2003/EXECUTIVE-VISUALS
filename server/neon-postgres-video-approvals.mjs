@@ -20,9 +20,13 @@ function validateApproval(input){
  if(Buffer.byteLength(JSON.stringify(snapshot),"utf8")>1024*1024)throw new Error("Neon approval snapshot exceeds 1 MiB.");
  const shots=snapshot.shots.map((shot,index)=>{
   if(!shot||typeof shot!=="object"||Array.isArray(shot)||typeof shot.provider!=="string"||!shot.provider.trim()||typeof shot.model!=="string"||!shot.model.trim()||!Number.isSafeInteger(shot.estimatedCostMicros)||shot.estimatedCostMicros<1)throw new Error("Neon approval shot "+index+" is missing its provider, model or verified price.");
+  const approvedMax=shot.approvedMaxAmountMicros===undefined?shot.estimatedCostMicros:shot.approvedMaxAmountMicros;
+  if(!Number.isSafeInteger(approvedMax)||approvedMax<shot.estimatedCostMicros)throw new Error("Neon approval shot "+index+" has an invalid approved spending ceiling.");
   return shot;
  });
  if(shots.reduce((sum,shot)=>sum+shot.estimatedCostMicros,0)!==input.quotedAmountMicros)throw new Error("Neon approval shot prices do not sum to the approved quote.");
+ const approvedTotal=shots.reduce((sum,shot)=>sum+(shot.approvedMaxAmountMicros===undefined?shot.estimatedCostMicros:shot.approvedMaxAmountMicros),0);
+ if(!Number.isSafeInteger(approvedTotal)||approvedTotal>input.budgetCeilingMicros)throw new Error("Per-shot approved spending ceilings exceed the production budget ceiling.");
  return {...input,snapshotJson:snapshot};
 }
 
@@ -93,15 +97,16 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
     for(const row of shots){
      const shot=snapshot.shots[Number(row.shot_index)];
      if(!shot||shot.provider!==row.provider||shot.model!==row.model||shot.estimatedCostMicros!==Number(row.estimated_cost_micros)||!HASH.test(row.request_hash))throw fail("Neon shot ledger does not match the immutable approval.","VIDEO_APPROVAL_SNAPSHOT_MISMATCH");
+     const approvedMaxAmountMicros=Number.isSafeInteger(shot.approvedMaxAmountMicros)?shot.approvedMaxAmountMicros:Number(row.estimated_cost_micros);
      let reservedCredits=row.reserved_credits===null?null:Number(row.reserved_credits);
      let budgetApprovalId=row.budget_approval_id||null;
      if(reservedCredits===null){
-      const quote=quoteCustomerCredits({ownerId,projectId:approval.project_id,provider:row.provider,model:row.model,currency:approval.currency,amountMicros:Number(row.estimated_cost_micros),shot,approvalId:id,shotIndex:Number(row.shot_index)});
+      const quote=quoteCustomerCredits({ownerId,projectId:approval.project_id,provider:row.provider,model:row.model,currency:approval.currency,amountMicros:approvedMaxAmountMicros,shot,approvalId:id,shotIndex:Number(row.shot_index)});
       if(quote&&typeof quote.then==="function")throw new Error("Customer-credit quote policy must be synchronous and deterministic.");
       if(!Number.isSafeInteger(quote)||quote<1||quote>100000000)throw fail("Server-side customer-credit quote is unavailable or outside the supported bounds.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
       reservedCredits=quote;budgetApprovalId=randomUUID();
       await client.query("insert into executive_visuals.video_generation_budget_approvals(id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::numeric,$9,clock_timestamp()+make_interval(secs=>$10))",[
-       budgetApprovalId,ownerId,approval.project_id,row.provider,row.model,row.request_hash,approval.currency,amountFromMicros(row.estimated_cost_micros),"Approved production "+id+" shot "+row.shot_index,approvalTtlSeconds
+       budgetApprovalId,ownerId,approval.project_id,row.provider,row.model,row.request_hash,approval.currency,amountFromMicros(approvedMaxAmountMicros),"Approved production "+id+" shot "+row.shot_index,approvalTtlSeconds
       ]);
       await client.query("update executive_visuals.video_generation_approval_shots set reserved_credits=$3::bigint,budget_approval_id=$4::uuid,updated_at=clock_timestamp() where approval_id=$1::uuid and shot_index=$2",[
        id,row.shot_index,reservedCredits,budgetApprovalId
@@ -110,7 +115,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
      const idempotencyKey="video-shot:"+id+":"+row.shot_index;
      const input={...shot,provider:row.provider,model:row.model,requestHash:row.request_hash,approvalId:id,approvalRequestHash:approval.request_hash,shotIndex:Number(row.shot_index),estimated_cost:{amount:amountFromMicros(row.estimated_cost_micros),currency:approval.currency}};
      const enqueued=await client.query("select * from executive_visuals.enqueue_video_generation_job_v1($1::uuid,$2::uuid,$3,$4::jsonb,$5::uuid,$6::numeric,$7::bigint,$8)",[
-      ownerId,approval.project_id,idempotencyKey,JSON.stringify(input),budgetApprovalId,amountFromMicros(row.estimated_cost_micros),reservedCredits,2
+      ownerId,approval.project_id,idempotencyKey,JSON.stringify(input),budgetApprovalId,amountFromMicros(approvedMaxAmountMicros),reservedCredits,2
      ]);
      const receipt=enqueued.rows?.[0];
      if(!receipt||!UUID.test(String(receipt.job_id||""))||!UUID.test(String(receipt.budget_reservation_id||""))||!UUID.test(String(receipt.credit_reservation_id||""))||typeof receipt.idempotent_replay!=="boolean")throw fail("Neon atomic enqueue returned an invalid per-shot receipt.","NEON_VIDEO_ENQUEUE_INVALID_RECEIPT");
@@ -122,6 +127,38 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
     await client.query("update executive_visuals.video_generation_approvals set status='processing',updated_at=clock_timestamp() where id=$1::uuid",[id]);
     return receipts;
    });
+  },
+  async enqueueWorkflowNode(raw){
+   if(!raw||typeof raw!=="object"||Array.isArray(raw))throw fail("Neon workflow dispatch requires a quote-bound approval object.","VIDEO_WORKFLOW_APPROVAL_INVALID");
+   const {quoteId,ownerId,projectId,requestId,requestHash,provider,model,operation,input,estimatedAmount,approvedMaxAmount,expiresAt}=raw;
+   if(!UUID.test(String(quoteId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(projectId||"")))throw fail("Neon workflow dispatch requires valid quote, owner and project IDs.","VIDEO_WORKFLOW_APPROVAL_INVALID");
+   if(typeof requestId!=="string"||requestId.length<8||requestId.length>200||!/^[A-Za-z0-9._:-]+$/.test(requestId)||!HASH.test(String(requestHash||"")))throw fail("Neon workflow request identity is invalid.","VIDEO_WORKFLOW_APPROVAL_INVALID");
+   if(provider!=="runway"||model!=="model-router"||!["text-to-video","image-to-video","video-to-video"].includes(operation))throw fail("This Neon workflow adapter only admits the explicitly registered Runway Model Router contract.","VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
+   if(!input||typeof input!=="object"||Array.isArray(input)||Buffer.byteLength(JSON.stringify(input),"utf8")>1024*1024)throw fail("Neon workflow input must be a bounded JSON object.","VIDEO_WORKFLOW_INPUT_INVALID");
+   const expiry=Date.parse(String(expiresAt||""));
+   if(!Number.isFinite(expiry)||expiry<=Date.now())throw fail("The approved workflow quote has expired.","VIDEO_WORKFLOW_QUOTE_EXPIRED");
+   const quotedAmountMicros=Math.round(Number(estimatedAmount)*1000000);
+   const budgetCeilingMicros=Math.round(Number(approvedMaxAmount)*1000000);
+   if(!Number.isSafeInteger(quotedAmountMicros)||quotedAmountMicros<1||Math.abs(quotedAmountMicros/1000000-Number(estimatedAmount))>0.0000001||
+      !Number.isSafeInteger(budgetCeilingMicros)||budgetCeilingMicros<quotedAmountMicros||budgetCeilingMicros>1000000000000||
+      Math.abs(budgetCeilingMicros/1000000-Number(approvedMaxAmount))>0.0000001)throw fail("The workflow quote and approved USD ceiling must use bounded six-decimal amounts.","VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
+   const shot={...input,provider,model,operation,estimatedCostMicros:quotedAmountMicros,
+    approvedMaxAmountMicros:budgetCeilingMicros,workflowQuoteId:quoteId,workflowRequestId:requestId,
+    workflowRequestHash:requestHash,quoteExpiresAt:new Date(expiry).toISOString(),
+    routedProvider:typeof raw.routedProvider==="string"?raw.routedProvider.slice(0,100):"runway",
+    routedModel:typeof raw.routedModel==="string"?raw.routedModel.slice(0,160):"model-router",
+    estimatedProviderCredits:Number.isSafeInteger(raw.estimatedCredits)&&raw.estimatedCredits>0?raw.estimatedCredits:null,
+    approvalNote:typeof raw.approvalNote==="string"?raw.approvalNote.slice(0,1000):"Approved in Video Studio"};
+   const snapshotJson={shots:[shot],workflow:{kind:"video.generate",quoteId,requestId,requestHash,operation}};
+   const registered=await approvals.register({id:quoteId,ownerId,projectId,idempotencyKey:requestId,requestHash,
+    snapshotJson,currency:"USD",quotedAmountMicros,budgetCeilingMicros});
+   if(!registered||registered.id!==quoteId||registered.ownerId!==ownerId||registered.projectId!==projectId||
+      registered.requestHash!==requestHash||registered.quotedAmountMicros!==quotedAmountMicros||
+      registered.budgetCeilingMicros!==budgetCeilingMicros)throw fail("Neon workflow approval registration did not match the exact approved quote.","VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID");
+   const jobs=await approvals.enqueue(quoteId,ownerId);
+   if(!Array.isArray(jobs)||jobs.length!==1||!UUID.test(String(jobs[0]?.jobId||"")))throw fail("Neon workflow enqueue did not return one durable job receipt.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
+   return Object.freeze({backend:"neon-postgres",approvalId:quoteId,jobId:jobs[0].jobId,status:jobs[0].status,
+    idempotentReplay:jobs[0].idempotentReplay===true,providerRequestsSubmitted:false});
   }
  });
  return Object.freeze({approvals});
