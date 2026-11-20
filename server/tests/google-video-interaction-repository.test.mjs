@@ -37,6 +37,14 @@ function response(status, body) {
 }
 const scope = { interactionId, ownerId, projectId, jobId };
 
+test("Google interaction repository sends modern Supabase secret without Bearer",async()=>{
+ const calls=[];
+ const repository=createGoogleVideoInteractionRepository({url:"https://project.supabase.co",serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response(200,[]);}});
+ assert.equal(await repository.findInteraction({interactionId,ownerId,projectId,jobId}),null);
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("records a durable owner/project/job scoped interaction without storing media bytes", async () => {
   const h = harness(async (url, options) => {
     const body = JSON.parse(options.body);

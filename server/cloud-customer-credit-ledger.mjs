@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 const SCHEMA = "executive_visuals";
 const RPC = "settle_generation_credits_for_job";
 
@@ -14,7 +15,7 @@ function endpoint(value) {
 
 export function createCloudCustomerCreditLedger({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
@@ -44,8 +45,7 @@ export function createCloudCustomerCreditLedger({
         const response = await fetchImpl(base + "/rest/v1/rpc/" + RPC, {
           method: "POST",
           headers: {
-            apikey: serviceRoleKey,
-            authorization: "Bearer " + serviceRoleKey,
+            ...supabaseServerAuthHeaders(serviceRoleKey),
             "content-type": "application/json",
             "accept-profile": SCHEMA,
             "content-profile": SCHEMA,

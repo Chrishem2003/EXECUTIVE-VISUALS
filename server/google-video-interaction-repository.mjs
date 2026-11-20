@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 const TABLE = "google_video_interactions";
 const MODEL = "gemini-omni-1.1-flash";
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
@@ -51,7 +52,7 @@ function mapRow(row) {
 /** Service-role-only repository. It stores ownership and lifecycle metadata, never video bytes. */
 export function createGoogleVideoInteractionRepository({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
@@ -71,8 +72,7 @@ export function createGoogleVideoInteractionRepository({
       const response = await fetchImpl(base + "/rest/v1/" + TABLE + query, {
         method,
         headers: {
-          apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           "accept-profile": "executive_visuals",
           "content-profile": "executive_visuals",
           accept: "application/json",

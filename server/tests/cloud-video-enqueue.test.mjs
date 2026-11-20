@@ -26,6 +26,14 @@ function args(overrides = {}) {
   };
 }
 
+test("cloud enqueue sends modern Supabase secret in apikey without Bearer",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({...base,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response([resultRow]);}});
+ await client.enqueue(args());
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("cloud enqueue cancels oversized RPC response streams before buffering unbounded data", async () => {
   let cancelled = false;
   const client = createCloudVideoEnqueue({

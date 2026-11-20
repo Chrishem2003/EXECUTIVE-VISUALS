@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { createHash } from "node:crypto";
 
 const MODEL="gemini-omni-1.1-flash";
@@ -15,8 +16,8 @@ function safeOrigin(value){
 
 export function createGoogleOmniWorkerDependencies({
  url=process.env.SUPABASE_URL,
- serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
  env=process.env,
+ serviceRoleKey=resolveSupabaseServerKey(env),
  fetchImpl=globalThis.fetch,
  queue,
  ledger,
@@ -44,7 +45,7 @@ export function createGoogleOmniWorkerDependencies({
   try{
    const response=await fetchImpl(base+"/rest/v1/"+table+"?"+query.toString(),{
     method:"GET",
-    headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json","accept-profile":"executive_visuals"},
+    headers:{...supabaseServerAuthHeaders(serviceRoleKey),accept:"application/json","accept-profile":"executive_visuals"},
     signal:controller.signal,redirect:"error"
    });
    const raw=await response.text();
