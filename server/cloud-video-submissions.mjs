@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   prepare: "prepare_video_generation_submission",
@@ -21,7 +22,7 @@ function endpoint(value) {
 
 export function createCloudVideoSubmissionLedger({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
@@ -39,7 +40,7 @@ export function createCloudVideoSubmissionLedger({
         method: "POST",
         headers: {
           apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           "content-type": "application/json",
           "accept-profile": SCHEMA,
           "content-profile": SCHEMA,
