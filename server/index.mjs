@@ -1253,7 +1253,7 @@ export function createAppServer() {
           retryDelaySeconds:Number.isSafeInteger(event.data?.retryDelaySeconds)?event.data.retryDelaySeconds:null
         }}))},cors);return;
       }
-      const neonVideoJobCancelMatch=path.match(/^\\/api\\/neon-staging\\/video-generation-jobs\\/([0-9a-f-]{36})\\/cancel$/i);
+      const neonVideoJobCancelMatch=path.match(/^\/api\/neon-staging\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
       if(neonVideoJobCancelMatch&&req.method==="POST"){
         if(!neonStagingApprovalRuntime.enabled){fail(res,503,"NEON_STAGING_CANCELLATION_DISABLED","Neon staging cancellation is not enabled.");return;}
         if(!rateAllowed("neon-video-job-cancel:"+user.id,20,60000)){fail(res,429,"RATE_LIMITED","Too many video cancellation requests. Try again shortly.");return;}
