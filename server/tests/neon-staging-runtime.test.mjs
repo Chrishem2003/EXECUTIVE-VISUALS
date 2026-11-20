@@ -215,6 +215,6 @@ test("dedicated worker can start without the web process approval bridge", async
   const status = await runtime.checkReadiness();
   assert.equal(status.applicationDispatchReady, false);
   assert.equal(status.workerReady, true);
-  assert.equal(runtime.startVideoWorker().started, true);
+  assert.equal((await runtime.startVideoWorker()).started, true);
   await runtime.close();
 });
