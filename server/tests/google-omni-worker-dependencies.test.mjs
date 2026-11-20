@@ -24,7 +24,7 @@ const approval={
  id:approvalId,owner_id:ownerId,project_id:projectId,provider:"google",model:"gemini-omni-1.1-flash",
  request_hash:requestHash,currency:"USD",approved_max_amount:"3.000000",consumed_at:"2026-11-15T00:00:00.000Z"
 };
-function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledgerState="submitting",signedUrlResolver=null,assetSize=100}={}){
+function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledgerState="submitting",signedUrlResolver=null,assetSize=100,serviceRoleKey="service-role-secret"}={}){
  const calls=[];
  const fetchImpl=async(url,options={})=>{
   const parsed=new URL(url);calls.push({url:parsed.toString(),method:options.method||"GET",headers:options.headers||{}});
@@ -45,11 +45,18 @@ function setup({lease=true,reservationRow=reservation,approvalRow=approval,ledge
  const filesGateway={async resolveAsset(args){assert.deepEqual(args,{assetId,ownerId,projectId,mediaType:"image/png"});return{uri:"https://generativelanguage.googleapis.com/v1beta/files/Abc123",mediaType:"image/png",expiresAt:"2026-11-16T00:00:00.000Z"};}};
  const env={GOOGLE_OMNI_CONNECTION_STATUS:"connected",GEMINI_API_KEY:key};
  const deps=createGoogleOmniWorkerDependencies({
-  url:"https://example.supabase.co",serviceRoleKey:"service-role-secret",env,fetchImpl,
+  url:"https://example.supabase.co",serviceRoleKey,env,fetchImpl,
   queue,ledger,interactions,assets,filesGateway,signedUrlResolver,now:()=>Date.parse("2026-11-15T00:00:00.000Z")
  });
  return{deps,calls,fetchImpl};
 }
+test("Gemini Omni approval queries use modern Supabase secret in apikey without Bearer",async()=>{
+ const {deps,calls}=setup({serviceRoleKey:"sb_secret_modern"});
+ assert.equal(await deps.assertApprovedSubmission({plan:{policy:{provider:"google",model:"gemini-omni-1.1-flash",requiresApproval:true}},context:baseContext}),true);
+ assert.ok(calls.every(call=>call.headers.apikey==="sb_secret_modern"));
+ assert.ok(calls.every(call=>!("authorization" in call.headers)));
+});
+
 test("Gemini Omni approval requires a current lease, submitting ledger and consumed matching budget reservation",async()=>{
  const {deps,calls}=setup();
  assert.equal(await deps.assertApprovedSubmission({
