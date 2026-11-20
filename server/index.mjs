@@ -288,7 +288,7 @@ if(!process.env.SUPABASE_URL)cloudMediaReadinessBlockers.push("SUPABASE_URL");
 if(!SUPABASE_SERVER_KEY)cloudMediaReadinessBlockers.push("SUPABASE_SECRET_KEY");
 const cloudMediaStorageProvider=String(process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase").trim().toLowerCase();
 if(cloudMediaStorageProvider==="neon"){
- for(const key of ["NEON_STORAGE_ENDPOINT","NEON_STORAGE_REGION","NEON_STORAGE_ACCESS_KEY_ID","NEON_STORAGE_SECRET_ACCESS_KEY","NEON_STORAGE_BUCKET"])
+ for(const key of ["NEON_STORAGE_ENDPOINT","NEON_STORAGE_REGION","NEON_STORAGE_ACCESS_KEY_ID","NEON_STORAGE_SECRET_ACCESS_KEY"])
   if(!String(process.env[key]||"").trim())cloudMediaReadinessBlockers.push(key);
 }else if(cloudMediaStorageProvider==="r2"){
  for(const key of ["R2_ACCOUNT_ID","R2_ACCESS_KEY_ID","R2_SECRET_ACCESS_KEY"])
