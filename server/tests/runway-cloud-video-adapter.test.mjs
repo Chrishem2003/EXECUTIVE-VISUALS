@@ -1168,7 +1168,7 @@ test("quarantines ambiguous Runway submission responses instead of risking a dup
     durationSeconds: 5, aspectRatio: "16:9"
   };
   for (const response of [
-    new Response("upstream error", { status: 500 }),
+    new Response("upstream error", { status: 520 }),
     new Response("{not-json", { status: 200 }),
     new Response("{}", { status: 200 })
   ]) {
@@ -1188,7 +1188,7 @@ test("preserves documented retryable Runway load-shedding responses", async () =
     provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
     durationSeconds: 5, aspectRatio: "16:9"
   };
-  for (const status of [502, 503, 504]) {
+  for (const status of [500, 502, 503, 504]) {
     const adapter = createRunwayCloudVideoAdapter({
       ...base,
       fetchImpl: async () => new Response("temporary", { status })
@@ -1198,4 +1198,19 @@ test("preserves documented retryable Runway load-shedding responses", async () =
       error => error.code === "RUNWAY_SERVER_ERROR"
     );
   }
+});
+
+test("quarantines undocumented Runway server responses during task creation", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("unknown upstream failure", { status: 520 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+  );
 });
