@@ -274,6 +274,7 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
  url:process.env.SUPABASE_URL,serviceRoleKey:process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,
  fetchImpl:globalThis.fetch,maxUploadBytes:CLOUD_MEDIA_MAX_UPLOAD_BYTES,env:process.env,mediaJobsEnabled:cloudMediaJobsApiEnabled,
  workflowNodeDispatch:input=>neonWorkflowNodeDispatch?neonWorkflowNodeDispatch(input):null,
+ workflowNodeDispatchEnabled:()=>typeof neonWorkflowNodeDispatch==="function",
  workflowJobLookup:input=>neonWorkflowJobLookup?neonWorkflowJobLookup(input):null,
  workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null
 }) : null;
