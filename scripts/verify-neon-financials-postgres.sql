@@ -181,3 +181,50 @@ begin
 end $neon_readiness_check$;
 
 select 'NEON_FINANCIAL_POSTGRES_INTEGRATION_OK' as result;
+
+
+-- A provider's documented explicit retryable rejection may reset only the
+-- current leased submission to prepared. Ambiguous outcomes remain unknown.
+insert into executive_visuals.jobs(id,owner_id,job_type,status,input,idempotency_key)
+values (
+ '33333333-3333-4333-8333-333333333333',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'video.generate','queued',
+ '{"provider":"runway","model":"gen4.5","requestHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}',
+ 'ci-safe-submission-retry'
+);
+select lease_token as retry_lease from executive_visuals.claim_next_job_v2('ci-worker',90,array['video.generate'])
+where id='33333333-3333-4333-8333-333333333333' \gset
+insert into executive_visuals.video_generation_submissions(job_id,owner_id,provider,model,request_hash,state)
+values (
+ '33333333-3333-4333-8333-333333333333',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'runway','gen4.5',
+ 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+ 'prepared'
+);
+do $neon_safe_retry$
+declare began boolean; retried boolean; state_value text; error_value text; lease_value uuid;
+begin
+ select lease_token into lease_value from executive_visuals.jobs where id='33333333-3333-4333-8333-333333333333';
+ select executive_visuals.begin_video_generation_submission_v2(
+  '33333333-3333-4333-8333-333333333333','ci-worker',lease_value
+ ) into began;
+ if not began then raise exception 'submission begin failed before safe retry test'; end if;
+ select executive_visuals.retry_video_generation_submission_v1(
+  '33333333-3333-4333-8333-333333333333','ci-worker',lease_value,'RUNWAY_SERVER_ERROR'
+ ) into retried;
+ if not retried then raise exception 'lease-fenced retry transition was rejected'; end if;
+ select state,last_error_code into state_value,error_value
+ from executive_visuals.video_generation_submissions
+ where job_id='33333333-3333-4333-8333-333333333333';
+ if state_value<>'prepared' or error_value<>'RUNWAY_SERVER_ERROR' then
+  raise exception 'safe retry did not restore prepared state: %, %',state_value,error_value;
+ end if;
+ select executive_visuals.retry_video_generation_submission_v1(
+  '33333333-3333-4333-8333-333333333333','ci-worker',lease_value,'RUNWAY_SERVER_ERROR'
+ ) into retried;
+ if retried then raise exception 'retry transition accepted a second transition without a new begin'; end if;
+end $neon_safe_retry$;
+
+select 'NEON_SAFE_SUBMISSION_RETRY_OK' as result;
