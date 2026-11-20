@@ -62,3 +62,31 @@ test("rejects a runtime whose branch identity does not match staging",async()=>{
   }),/identity/);
   assert.equal(runtime.state.closed,true);
 });
+
+test("forwards isolated worker, authorization and storage dependencies without allowing credit-policy override",async()=>{
+  const runtime=readyRuntime();
+  const workerAdapters=[{provider:"test",model:"test-model"}];
+  const authorizeJob=async()=>true;
+  const storageOptions={endpoint:"https://storage.example.test"};
+  let received;
+  const createRuntime=async(args)=>{
+    received=args;
+    return runtime.factory(args);
+  };
+  const result=await createNeonStagingApprovalDispatch({
+    env:baseEnv,db:{prepare(){}},canWriteProject:()=>true,createRuntime,
+    runtimeOptions:{includeStorage:true,storageOptions,workerAdapters,workerAuthorizeJob:authorizeJob,workerId:"neon-staging-worker"}
+  });
+  assert.equal(received.includeStorage,true);
+  assert.equal(received.storageOptions,storageOptions);
+  assert.equal(received.workerAdapters,workerAdapters);
+  assert.equal(received.workerAuthorizeJob,authorizeJob);
+  assert.equal(received.workerId,"neon-staging-worker");
+  assert.equal(typeof received.quoteCustomerCredits,"function");
+  await result.close();
+});
+test("rejects malformed runtime options before opening Neon connections",async()=>{
+  await assert.rejects(createNeonStagingApprovalDispatch({
+    env:baseEnv,db:{prepare(){}},canWriteProject:()=>true,runtimeOptions:null
+  }),/runtime options/);
+});
