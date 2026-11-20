@@ -15,6 +15,12 @@ on:
       - "server/tests/neon-postgres-video-financials.test.mjs"
       - "server/neon-postgres-pool.mjs"
       - "server/neon-postgres-queue.mjs"
+      - "server/neon-staging-application-dispatch.mjs"
+      - "server/tests/neon-staging-application-dispatch.test.mjs"
+      - "server/tests/neon-queued-cancellation.test.mjs"
+      - "server/index.mjs"
+      - "src/platform/app.ts"
+      - "scripts/verify-neon-queued-cancellation-postgres.sql"
       - "server/neon-postgres-video-submissions.mjs"
       - "server/neon-staging-runtime.mjs"
       - "server/neon-staging-provider-adapters.mjs"
@@ -46,6 +52,12 @@ on:
       - "server/tests/neon-postgres-video-financials.test.mjs"
       - "server/neon-postgres-pool.mjs"
       - "server/neon-postgres-queue.mjs"
+      - "server/neon-staging-application-dispatch.mjs"
+      - "server/tests/neon-staging-application-dispatch.test.mjs"
+      - "server/tests/neon-queued-cancellation.test.mjs"
+      - "server/index.mjs"
+      - "src/platform/app.ts"
+      - "scripts/verify-neon-queued-cancellation-postgres.sql"
       - "server/neon-postgres-video-submissions.mjs"
       - "server/neon-staging-runtime.mjs"
       - "server/neon-staging-provider-adapters.mjs"
@@ -118,8 +130,11 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0006_atomic_video_enqueue.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0007_video_approval_bridge.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0008_retryable_submission_recovery.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0009_safe_queued_video_cancellation.sql
       - name: Verify PostgreSQL reservation, settlement, verified release and lease-fenced safe retry
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
+      - name: Verify queued video cancellation and atomic verified-no-submission credit release
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queued-cancellation-postgres.sql
       - name: Verify real PostgreSQL queue admission, deferral, quarantine and event history
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-queue-postgres.sql
       - name: Verify concurrent workers, lease fencing, stale callbacks and retry ceilings
