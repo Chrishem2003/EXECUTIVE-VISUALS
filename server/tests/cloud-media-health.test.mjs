@@ -43,7 +43,8 @@ test("cloud media is ready only after private storage verification succeeds", ()
     ready: true,
     storage: "private",
     provider: "b2",
-    uploadLimitBytes: 600 * 1024 * 1024
+    uploadLimitBytes: 600 * 1024 * 1024,
+    blockers: []
   });
 });
 
