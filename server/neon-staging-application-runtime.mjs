@@ -27,9 +27,9 @@ function quoteUsdCredits({currency,amountMicros},rate){
 
 /**
  * Explicitly gated composition for the existing authenticated approval route.
- * Worker adapters, owner/project authorization and private storage are supplied
- * by the application host; this module never invents credentials or silently
- * substitutes the active Supabase worker for the isolated Neon worker.
+ * Private storage and the approval/financial ledger are supplied by the
+ * application host. Provider execution runs in a separate gated background
+ * worker; this API process never substitutes the active Supabase worker.
  */
 export async function createNeonStagingApprovalDispatch({
   env=process.env,db,canWriteProject,audit,createRuntime=createNeonStagingRuntime,
@@ -62,7 +62,7 @@ export async function createNeonStagingApprovalDispatch({
     }
     const readiness=await runtime.checkReadiness();
     if(readiness?.applicationDispatchReady!==true){
-      throw new Error("Neon staging approval dispatch is not ready; required migrations, financial controls, approval tables, worker authorization and private storage must pass readiness.");
+      throw new Error("Neon staging approval dispatch is not ready; required migrations, financial controls, approval tables and private storage must pass readiness.");
     }
     const dispatch=createNeonStagingApplicationDispatch({db,runtime,canWriteProject,audit});
     return Object.freeze({enabled:true,dispatch,runtime,readiness,close:()=>runtime.close()});
