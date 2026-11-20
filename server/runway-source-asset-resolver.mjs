@@ -28,6 +28,8 @@ export function createRunwaySourceAssetResolver({
   r2Bucket = process.env.R2_BUCKET || "executive-visuals-media",
   b2Region = process.env.B2_REGION,
   b2Bucket = process.env.B2_BUCKET || "executive-visuals-media",
+  neonEndpoint = process.env.NEON_STORAGE_ENDPOINT,
+  neonBucket = process.env.NEON_STORAGE_BUCKET || "executive-visuals-media",
   ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
   execFileImpl = execFile,
   maxBytes = 200 * 1024 * 1024,
@@ -49,6 +51,12 @@ export function createRunwaySourceAssetResolver({
       if (!/^[a-z0-9]+-[a-z0-9]+-\d{3}$/.test(String(b2Region || "")) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(b2Bucket))) throw new Error();
       expectedOrigin = "https://s3." + b2Region + ".backblazeb2.com";
       expectedPathPrefix = "/" + b2Bucket + "/";
+    } else if (String(storageProvider).toLowerCase() === "neon") {
+      const base = new URL(neonEndpoint);
+      if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash ||
+          !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/i.test(String(neonBucket || ""))) throw new Error();
+      expectedOrigin = base.origin;
+      expectedPathPrefix = "/" + neonBucket + "/";
     } else {
       const base = new URL(supabaseUrl);
       if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error();

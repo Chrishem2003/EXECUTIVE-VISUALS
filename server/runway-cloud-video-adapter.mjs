@@ -111,16 +111,47 @@ export function createRunwayCloudVideoAdapter({
           error?.name === "AbortError" ? "RUNWAY_TIMEOUT" : "RUNWAY_UNAVAILABLE"
         );
       }
-      if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
+      if (response.status === 429) throw Object.assign(fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED"), { retryable: true, retryAfterSeconds: 60 });
       if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
-      if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
+      if ([502, 503, 504].includes(response.status)) {
+        // Runway Dev documents these load-shedding responses as retryable.
+        // The durable queue owns bounded backoff and jitter.
+        throw Object.assign(fail("Runway returned a retryable server error.", "RUNWAY_SERVER_ERROR"), { retryable: true, retryAfterSeconds: 30 });
+      }
+      if (response.status === 500) {
+        // HTTP 500 is not listed in the Runway Dev retry matrix. A submission
+        // response without a documented no-task guarantee must be reconciled.
+        if (submission) throw fail("Runway returned an undocumented HTTP 500 during submission; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway returned an undocumented internal server error.", "RUNWAY_UNAVAILABLE");
+      }
+      if (response.status >= 500) {
+        if (submission) throw fail("Runway returned an undocumented server error during submission; task creation is unknown and must be reconciled before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway API is temporarily unavailable.", "RUNWAY_UNAVAILABLE");
+      }
       if (!response.ok) throw fail("Runway rejected the task request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
-      const raw = await response.text();
-      if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_INVALID_RESPONSE");
+      let raw;
+      try { raw = await response.text(); }
+      catch {
+        if (submission) throw fail("Runway accepted or may have accepted the submission but its response could not be read; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway task response could not be read.", "RUNWAY_INVALID_RESPONSE");
+      }
+      if (Buffer.byteLength(raw) > 1024 * 1024) {
+        if (submission) throw fail("Runway submission response exceeded the limit; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_INVALID_RESPONSE");
+      }
       let data;
       try { data = raw ? JSON.parse(raw) : {}; }
-      catch { throw fail("Runway returned invalid JSON.", "RUNWAY_INVALID_RESPONSE"); }
-      if (!data || typeof data !== "object" || Array.isArray(data)) throw fail("Runway returned an invalid response object.", "RUNWAY_INVALID_RESPONSE");
+      catch {
+        if (submission) throw fail("Runway submission response was invalid; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway returned invalid JSON.", "RUNWAY_INVALID_RESPONSE");
+      }
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        if (submission) throw fail("Runway submission response was invalid; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway returned an invalid response object.", "RUNWAY_INVALID_RESPONSE");
+      }
+      if (submission && (path === "/uploads" ? !isRunwayUri(data.runwayUri) : typeof data.id !== "string" || !data.id.trim())) {
+        throw fail("Runway submission response did not include its required task or upload identifier; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+      }
       return data;
     } finally {
       clearTimeout(timer);

@@ -144,6 +144,30 @@ test("cloud executor defers transient or active status after exactly one check p
   assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
 });
 
+test("cloud executor enforces provider minimum polling intervals and honors longer provider retry hints", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running", retryAfterSeconds: 7 } });
+  f.adapter.minimumPollIntervalMs = 15000;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 15
+  );
+  const unavailable = fixture({ state: "submitted", status: new Error("temporary provider outage") });
+  unavailable.adapter.minimumPollIntervalMs = 12000;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...unavailable }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 12
+  );
+});
+
+test("cloud executor rejects unsafe provider polling intervals", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running" } });
+  f.adapter.minimumPollIntervalMs = 4999;
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_ADAPTER_CONFIGURATION_INVALID"
+  );
+});
+
 test("cloud executor quarantines failed Veo tasks until potentially billable usage is reconciled", async () => {
   const f = fixture({ state: "submitted", status: {
     taskId, status: "failed", failure: "Input moderation rejected the task.",
@@ -272,4 +296,33 @@ test("cloud executor preserves bounded provider retry-after hints for later work
     executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
     error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED" && error.retryAfterSeconds === 120
   );
+});
+
+test("documented retryable provider rejection resets the Neon submission ledger and defers safely", async () => {
+  const f = fixture({ submitError: Object.assign(new Error("Runway is shedding load"), {
+    code: "RUNWAY_SERVER_ERROR", retryable: true, retryAfterSeconds: 45
+  }) });
+  f.ledger.retry = async (id, worker, token, code) => {
+    f.calls.push(["retry", id, worker, token, code]);
+    return true;
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE" && error.retryAfterSeconds === 45
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "retry"]);
+  assert.equal(f.calls.some(call => call[0] === "unknown"), false);
+});
+
+test("ambiguous provider timeout is never reset to a retryable prepared submission", async () => {
+  const f = fixture({ submitError: Object.assign(new Error("socket timeout"), {
+    code: "RUNWAY_TIMEOUT", retryable: true, retryAfterSeconds: 30
+  }) });
+  f.ledger.retry = async (...args) => { f.calls.push(["retry", ...args]); return true; };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION"
+  );
+  assert.equal(f.calls.some(call => call[0] === "retry"), false);
+  assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
 });

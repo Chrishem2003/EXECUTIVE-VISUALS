@@ -32,3 +32,11 @@ export function shouldPollCloudJobs(approval:CloudJobPollingApproval,visible=tru
 export function isCloudJobTerminal(status:unknown):boolean{
  return typeof status==="string"&&TERMINAL_CLOUD_JOB_STATES.has(status.toLowerCase());
 }
+
+/** Select the owner-scoped status endpoint for the queue that accepted the job. */
+export function cloudJobStatusPath(backend: string | undefined, jobId: string): string {
+ const id=encodeURIComponent(jobId);
+ return backend==="neon-postgres"
+  ? "/api/neon-staging/video-generation-jobs/"+id
+  : "/api/cloud/jobs/"+id;
+}

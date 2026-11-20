@@ -1160,3 +1160,87 @@ test("uploads and submits Seedance first and last keyframes as distinct position
   assert.equal(uploadCount, 2);
   assert.deepEqual(submittedBody.promptImage, prepared.promptImageKeyframes);
 });
+
+
+test("quarantines ambiguous Runway submission responses instead of risking a duplicate paid task", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  for (const response of [
+    new Response("upstream error", { status: 520 }),
+    new Response("{not-json", { status: 200 }),
+    new Response("{}", { status: 200 })
+  ]) {
+    const adapter = createRunwayCloudVideoAdapter({
+      ...base,
+      fetchImpl: async () => response
+    });
+    await assert.rejects(
+      () => adapter.submit(input),
+      error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+    );
+  }
+});
+
+test("preserves documented retryable Runway load-shedding responses", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  for (const status of [502, 503, 504]) {
+    const adapter = createRunwayCloudVideoAdapter({
+      ...base,
+      fetchImpl: async () => new Response("temporary", { status })
+    });
+    await assert.rejects(
+      () => adapter.submit(input),
+      error => error.code === "RUNWAY_SERVER_ERROR" && error.retryable === true && error.retryAfterSeconds === 30
+    );
+  }
+});
+
+test("quarantines undocumented Runway server responses during task creation", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("unknown upstream failure", { status: 520 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+  );
+});
+
+test("quarantines undocumented HTTP 500 task-creation responses", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("internal error", { status: 500 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+  );
+});
+
+test("marks documented Runway 429 rate limits as explicitly retryable", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("rate limited", { status: 429 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_RATE_LIMITED" && error.retryable === true && error.retryAfterSeconds === 60
+  );
+});

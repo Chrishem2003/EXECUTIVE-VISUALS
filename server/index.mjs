@@ -39,6 +39,7 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudPublicationAuditApi } from "./cloud-publication-audit-api.mjs";
 import { createCloudVideoGenerationRepositories } from "./cloud-video-generation-repositories.mjs";
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
+import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -304,6 +305,23 @@ const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createClo
  db,queue:createCloudQueue(),repositories:createCloudVideoGenerationRepositories(),canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
  audit:(ownerId,...args)=>audit(db,ownerId,...args)
 }):null;
+const neonStagingApprovalRuntime=await createNeonStagingApprovalDispatch({
+ env:process.env,db,canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
+ audit:(ownerId,...args)=>audit(db,ownerId,...args),
+ runtimeOptions:{
+  includeStorage:true,
+  storageOptions:{
+   endpoint:process.env.NEON_STORAGE_ENDPOINT,
+   region:process.env.NEON_STORAGE_REGION,
+   accessKeyId:process.env.NEON_STORAGE_ACCESS_KEY_ID,
+   secretAccessKey:process.env.NEON_STORAGE_SECRET_ACCESS_KEY,
+   bucket:process.env.NEON_STORAGE_BUCKET||"executive-visuals-media"
+  }
+ }
+});
+const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled
+ ?neonStagingApprovalRuntime.dispatch
+ :cloudVideoGenerationDispatch;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -1210,10 +1228,30 @@ export function createAppServer() {
       }
       const videoSubmitMatch=path.match(/^\/api\/video-production-approvals\/([0-9a-f-]{36})\/submit$/i);
       if(videoSubmitMatch&&req.method==="POST"){
-        if(!cloudVideoGenerationDispatch){fail(res,503,"CLOUD_VIDEO_DISPATCH_DISABLED","Cloud generation dispatch is disabled. No cloud jobs or provider requests were created.");return;}
+        if(!videoApprovalSubmitDispatch){fail(res,503,"VIDEO_GENERATION_DISPATCH_DISABLED","Video generation dispatch is disabled. No jobs or provider requests were created.");return;}
         if(!rateAllowed("video-production-submit:"+user.id,10,60000)){fail(res,429,"RATE_LIMITED","Too many generation submissions. Try again shortly.");return;}
-        const result=await cloudVideoGenerationDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
+        const result=await videoApprovalSubmitDispatch.submit({approvalId:videoSubmitMatch[1],ownerId:user.id});
         send(res,result.status,result.body,cors);return;
+      }
+      const neonVideoJobStatusMatch=path.match(/^\/api\/neon-staging\/video-generation-jobs\/([0-9a-f-]{36})$/i);
+      if(neonVideoJobStatusMatch&&req.method==="GET"){
+        if(!neonStagingApprovalRuntime.enabled){fail(res,503,"NEON_STAGING_STATUS_DISABLED","Neon staging job status is not enabled.");return;}
+        if(!rateAllowed("neon-video-job-status:"+user.id,120,60000)){fail(res,429,"RATE_LIMITED","Too many job status requests. Try again shortly.");return;}
+        const job=await neonStagingApprovalRuntime.runtime.queue.getOwnedJob(neonVideoJobStatusMatch[1],user.id);
+        if(!job){fail(res,404,"VIDEO_JOB_NOT_FOUND","Video job not found.");return;}
+        const events=await neonStagingApprovalRuntime.runtime.queue.listOwnedJobEvents(job.id,user.id,100);
+        const output=job.output||{},error=job.error||{};
+        send(res,200,{job:{
+          id:job.id,projectId:job.projectId,jobType:job.jobType,status:job.status,progress:job.progress,
+          attemptCount:job.attemptCount,maxAttempts:job.maxAttempts,createdAt:job.createdAt,
+          updatedAt:job.updatedAt,completedAt:job.completedAt,
+          output:job.status==="succeeded"?{assetIds:Array.isArray(output.assetIds)?output.assetIds:[],provider:output.provider||null,model:output.model||null,actualAmount:output.actualAmount??null,currency:output.currency||null}:null,
+          error:error&&typeof error.code==="string"?{code:error.code,message:typeof error.message==="string"?error.message.slice(0,300):"Generation requires attention."}:null
+        },events:events.map(event=>({id:event.id,type:event.type,createdAt:event.createdAt,data:{
+          status:event.data?.status||null,code:event.data?.code||null,
+          retryable:event.data?.retryable===true,
+          retryDelaySeconds:Number.isSafeInteger(event.data?.retryDelaySeconds)?event.data.retryDelaySeconds:null
+        }}))},cors);return;
       }
       const cloudVideoJobCancelMatch=path.match(/^\/api\/video-generation-jobs\/([0-9a-f-]{36})\/cancel$/i);
       if(cloudVideoJobCancelMatch&&req.method==="POST"){
@@ -2119,6 +2157,6 @@ if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
   let shuttingDown=false;
-  const shutdown=async()=>{if(shuttingDown)return;shuttingDown=true;if(workerTimer)clearInterval(workerTimer);if(cloudWorkflowResumeTimer)clearInterval(cloudWorkflowResumeTimer);if(embeddedCloudWorkerSupervisor){try{await embeddedCloudWorkerSupervisor.stop();}catch(error){process.stderr.write("Embedded cloud worker shutdown failed: "+String(error?.message||error)+"\\n");}}for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  const shutdown=async()=>{if(shuttingDown)return;shuttingDown=true;if(workerTimer)clearInterval(workerTimer);if(cloudWorkflowResumeTimer)clearInterval(cloudWorkflowResumeTimer);if(embeddedCloudWorkerSupervisor){try{await embeddedCloudWorkerSupervisor.stop();}catch(error){process.stderr.write("Embedded cloud worker shutdown failed: "+String(error?.message||error)+"\\n");}}for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(async()=>{try{await neonStagingApprovalRuntime.close();}catch(error){process.stderr.write("Neon staging shutdown failed: "+String(error?.message||error)+"\\n");}db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }

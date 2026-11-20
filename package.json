@@ -39,6 +39,7 @@
     "verify:cloud-queue": "node --test server/tests/cloud-video-worker.test.mjs server/tests/luma-ray32-video-adapter.test.mjs server/tests/luma-actual-cost-resolver.test.mjs server/tests/cloud-queue.test.mjs server/tests/cloud-storage.test.mjs server/tests/backblaze-b2-storage.test.mjs server/tests/b2-multipart-upload-store.test.mjs server/tests/b2-multipart-upload-api.test.mjs server/tests/b2-multipart-upload-migration.test.mjs server/tests/backblaze-b2-integration.test.mjs server/tests/cloud-worker.test.mjs server/tests/cloud-assets.test.mjs server/tests/cloud-publication-sql-contract.test.mjs server/tests/cloud-publication-audit.test.mjs server/tests/cloud-publication-audit-api.test.mjs server/tests/cloud-publication-cleanup.test.mjs server/tests/cloud-publication-cleanup-worker.test.mjs server/tests/cloud-asset-auth.test.mjs server/tests/cloud-asset-service.test.mjs server/tests/cloud-media-io.test.mjs server/tests/cloud-media-executor.test.mjs server/tests/cloud-media-output-validation.test.mjs server/tests/cloud-media-worker.test.mjs server/tests/cloud-timelines.test.mjs server/tests/cloud-timeline-executor.test.mjs server/tests/cloud-timeline-worker.test.mjs server/tests/cloud-ffmpeg-timeline-renderer.test.mjs server/tests/cloud-timeline-api.test.mjs server/tests/cloud-media-jobs-api.test.mjs server/tests/timeline-revision-history.test.mjs server/tests/cloud-projects.test.mjs server/tests/cloud-worker-process.test.mjs server/tests/cloud-media-health.test.mjs && npm run verify:b2-upload-client && npm run verify:b2-cleanup && npm run verify:neon-storage",
     "verify:ai-workflow": "node scripts/verify-ai-workflow.mjs",
     "start:cloud-worker": "node server/cloud-worker-process.mjs",
+    "start:neon-staging-worker": "node server/neon-staging-worker-process.mjs",
     "verify:series": "node --experimental-strip-types --test server/tests/series-production.test.mjs",
     "verify:shot-readiness": "node --experimental-strip-types --test server/tests/series-production.test.mjs",
     "verify:ai-upscale": "node --test server/tests/ai-upscale-engine.test.mjs",
@@ -101,7 +102,7 @@
     "verify:storyboard-compiler": "node --test server/tests/storyboard-compiler.test.mjs server/tests/storyboard-compiler-api.test.mjs",
     "verify:storyboard-timeline": "node --experimental-strip-types scripts/verify-storyboard-timeline.mjs",
     "verify:model-storyboard-generation": "node --experimental-strip-types scripts/verify-model-storyboard-generation.mjs",
-    "verify:batch:01": "npm run verify:cloudflare-edge && npm run verify:d1 && npm run verify:staging-local-auth && npm run verify:persistence-readiness && npm run verify:runtime-capabilities && npm run verify:control-remediation-api && npm run verify:control-remediation && npm run verify:financial-governance && npm run verify:financial-executive-intelligence && npm run verify:neon-storage",
+    "verify:batch:01": "npm run verify:cloudflare-edge && npm run verify:d1 && npm run verify:staging-local-auth && npm run verify:persistence-readiness && npm run verify:runtime-capabilities && npm run verify:control-remediation-api && npm run verify:control-remediation && npm run verify:financial-governance && npm run verify:financial-executive-intelligence && npm run verify:neon-storage && npm run verify:neon-postgres",
     "verify:batch:02": "npm run verify:financial-scenario-intelligence && npm run verify:customer-lifetime-acquisition-economics && npm run verify:subscription-economics && npm run verify:workload-telemetry && npm run verify:workload-economics && npm run verify:workload-variance && npm run verify:provider-rate-cards && npm run verify:video-shot-preflight && npm run verify:video-generation-approval",
     "verify:batch:03": "npm run verify:runway-durable-tasks && npm run verify:cloud-video-generation && npm run verify:deployment && npm run verify:cloud && npm run verify:queue && npm run verify:cloud-queue && npm run verify:cloud-job-polling && npm run verify:cloud-render-selection && npm run verify:cloud-render-polling && npm run verify:cloud-upload-queue",
     "verify:batch:04": "npm run verify:creative-artifacts && npm run verify:cloud-video-workers && npm run verify:media-operations && npm run verify:recipes && npm run verify:transformations && npm run verify:video-pipeline && npm run verify:media-quality && npm run verify:media-signals && npm run verify:creative-intent && npm run verify:creative-director && npm run verify:media-batch",
@@ -135,7 +136,9 @@
     "verify:timeline-transitions": "node --experimental-strip-types --test server/tests/timeline-transitions.test.mjs server/tests/timeline-transition-validation.test.mjs server/tests/cloud-video-transitions.test.mjs",
     "verify:cloud-staging-runtime": "node scripts/verify-cloud-staging-runtime.mjs",
     "verify:creative-artifacts": "node --test server/tests/creative-project-artifacts.test.mjs server/tests/creative-project-artifacts-postgres.test.mjs server/tests/creative-director-api.test.mjs server/tests/storyboard-compiler-api.test.mjs",
-    "verify:neon-storage": "node --test server/tests/neon-object-storage.test.mjs server/tests/cloud-asset-service.test.mjs"
+    "verify:neon-storage": "node --test server/tests/neon-object-storage.test.mjs server/tests/cloud-asset-service.test.mjs",
+    "verify:neon-postgres": "node --test server/tests/neon-staging-provider-adapters.test.mjs server/tests/neon-staging-worker-process.test.mjs server/tests/luma-provider-file-service.test.mjs server/tests/runway-source-asset-resolver.test.mjs server/tests/cloud-video-provider-worker-composition.test.mjs server/tests/runway-cloud-video-adapter.test.mjs server/tests/cloud-video-generation-executor.test.mjs server/tests/cloud-video-worker.test.mjs server/tests/neon-postgres-queue.test.mjs server/tests/neon-postgres-video-submissions.test.mjs server/tests/neon-postgres-video-financials.test.mjs server/tests/neon-staging-runtime.test.mjs server/tests/neon-postgres-pool-runtime.test.mjs server/tests/neon-cloud-video-worker.test.mjs server/tests/cloud-video-worker-process.test.mjs server/tests/neon-postgres-video-enqueue.test.mjs server/tests/cloud-video-enqueue.test.mjs server/tests/neon-postgres-video-approvals.test.mjs server/tests/neon-staging-application-dispatch.test.mjs server/tests/neon-staging-application-runtime.test.mjs",
+    "verify:neon-runtime": "node --test server/tests/neon-staging-runtime.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
@@ -147,7 +150,8 @@
   "dependencies": {
     "@contentauth/c2pa-node": "0.12.0",
     "@noble/hashes": "2.4.0",
-    "google-auth-library": "11.3.4"
+    "google-auth-library": "11.3.4",
+    "pg": "8.23.1"
   },
   "engines": {
     "node": ">=22.23.4 <23"

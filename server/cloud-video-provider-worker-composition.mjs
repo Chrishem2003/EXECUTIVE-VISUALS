@@ -49,7 +49,14 @@ export function createProviderAwareCloudVideoWorkerComposition({
   timeoutMs = 15000,
   maxBytesPerOutput = 250 * 1024 * 1024,
   maxTotalBytes = 500 * 1024 * 1024,
-  deferSeconds = 30
+  deferSeconds = 30,
+  neon = {
+    endpoint: env.NEON_STORAGE_ENDPOINT,
+    region: env.NEON_STORAGE_REGION,
+    accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
+    bucket: env.NEON_STORAGE_BUCKET || "executive-visuals-media"
+  }
 } = {}) {
   if (env.CLOUD_VIDEO_WORKER_ENABLED !== "true") {
     throw new Error("Provider-aware cloud video worker is disabled; explicit CLOUD_VIDEO_WORKER_ENABLED=true is required.");
@@ -82,6 +89,8 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const customerCredits = createCloudCustomerCreditLedger(clientOptions);
   const privateAssets = createCloudAssetService({
     ...clientOptions,
+    storageProvider: env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+    neon,
     storageTimeoutMs: Math.min(timeoutMs, 30000),
     metadataTimeoutMs: timeoutMs,
     authorizationTimeoutMs: Math.min(timeoutMs, 8000),
@@ -101,7 +110,9 @@ export function createProviderAwareCloudVideoWorkerComposition({
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
   const sourceResolver = createRunwaySourceAssetResolver({
-    assets: privateAssets.assets, fetchImpl, supabaseUrl: url, ffprobePath
+    assets: privateAssets.assets, fetchImpl, supabaseUrl: url, ffprobePath,
+    storageProvider: env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
+    neonEndpoint: neon.endpoint, neonBucket: neon.bucket
   });
   const prepareInput = prepareRunwayInput || sourceResolver.prepare;
   const resolveSourceMetadata = resolveRunwaySourceMetadata || sourceResolver.resolveMetadata;
@@ -244,7 +255,8 @@ export function createProviderAwareCloudVideoWorkerComposition({
           assets: privateAssets.assets, adapter: lumaClient, repository: lumaFileRepository,
           fetchImpl, timeoutMs: Math.min(timeoutMs, 30000), maxBytes: maxBytesPerOutput,
           supabaseUrl: url, storageProvider: env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
-          r2AccountId: env.R2_ACCOUNT_ID, r2Bucket: env.R2_BUCKET || "executive-visuals-media"
+          r2AccountId: env.R2_ACCOUNT_ID, r2Bucket: env.R2_BUCKET || "executive-visuals-media",
+          neonEndpoint: neon.endpoint, neonBucket: neon.bucket
         });
         lumaPrepareInput = lumaFileService.resolveInput;
       }
