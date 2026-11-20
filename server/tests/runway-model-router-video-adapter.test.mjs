@@ -91,8 +91,8 @@ test("never treats dry-run estimates as actual customer/provider settlement", as
   });
   assert.equal(cost.amount, 0.48);
   assert.equal(cost.currency, "USD");
-  assert.equal(cost.model, "gen4.5");
-  assert.match(cost.evidenceReference, /credits:48$/);
+  assert.equal(cost.model, "model-router");
+  assert.match(cost.evidenceReference, /actual-model:gen4\.5:task-cost-credits:48$/);
 });
 
 test("holds settlement when durable route metadata or completed task cost is missing", async () => {
@@ -224,3 +224,24 @@ test("Model Router submits a source video with the documented source role", asyn
   );
 });
 
+
+test("keeps model-router budget identity while preserving routed Seedance and Kling model evidence", async () => {
+  for (const actualModel of ["seedance2_5", "kling_4", "kling_4_flash"]) {
+    const selectedRouting = { ...routing, model: actualModel };
+    const adapter = createRunwayModelRouterVideoAdapter({
+      ...base,
+      fetchImpl: async () => new Response(JSON.stringify({ id, routing: selectedRouting }))
+    });
+    const submitted = await adapter.submit({
+      provider: "runway", model: "model-router", prompt: "A cinematic sequence"
+    });
+    const cost = await adapter.resolveActualCost({
+      submissionMetadata: submitted.metadata,
+      providerTaskId: id,
+      task: { taskId: id, status: "succeeded", estimatedCost: { credits: 60 }, cost: { credits: 48 } }
+    });
+    assert.equal(cost.model, "model-router", "the settled model must match the approved budget policy key");
+    assert.equal(cost.amount, 0.48);
+    assert.ok(cost.evidenceReference.includes("actual-model:" + actualModel + ":"));
+  }
+});
