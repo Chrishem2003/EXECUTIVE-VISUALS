@@ -1,5 +1,7 @@
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
+
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export function createCloudAssetAuthorizer({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timeoutMs=8000}={}){
+export function createCloudAssetAuthorizer({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,timeoutMs=8000}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud asset authorization requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud asset authorization requires fetch.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)throw new Error("Cloud asset authorization timeout is invalid.");
