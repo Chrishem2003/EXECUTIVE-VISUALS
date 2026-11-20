@@ -45,12 +45,14 @@ test("Vertex client submits an approved Omni 1.2 interaction to the project-scop
   assert.equal(calls[0].body.model, "gemini-omni-1.2-flash");
   assert.equal(calls[0].body.store, true);
   assert.equal(calls[0].body.background, true);
-  assert.equal(calls[0].body.response_format.delivery, "uri");
-  assert.equal(calls[0].body.response_format.gcs_uri,
+  assert.equal(Array.isArray(calls[0].body.response_format), true);
+  assert.equal(calls[0].body.response_format.length, 1);
+  assert.equal(calls[0].body.response_format[0].delivery, "uri");
+  assert.equal(calls[0].body.response_format[0].gcs_uri,
     "gs://" + bucket + "/executive-visuals/omni-12/" + jobId + "/" + requestHash + "/");
   assert.deepEqual(events, [{
     interactionId, status: "in_progress", model: "gemini-omni-1.2-flash",
-    outputUri: calls[0].body.response_format.gcs_uri
+    outputUri: calls[0].body.response_format[0].gcs_uri
   }]);
 });
 
