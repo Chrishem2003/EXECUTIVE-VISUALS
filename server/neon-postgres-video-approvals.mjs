@@ -162,7 +162,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
    const jobs=await approvals.enqueue(quoteId,ownerId);
    if(!Array.isArray(jobs)||jobs.length!==1||!UUID.test(String(jobs[0]?.jobId||"")))throw fail("Neon workflow enqueue did not return one durable job receipt.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
    return Object.freeze({backend:"neon-postgres",approvalId:quoteId,jobId:jobs[0].jobId,status:jobs[0].status,
-    idempotentReplay:jobs[0].idempotentReplay===true,providerRequestsSubmitted:false});
+    idempotentReplay:jobs[0].idempotentReplay===true,queuedForWorker:true,providerCallMadeByApi:false});
   }
  });
  return Object.freeze({approvals});
