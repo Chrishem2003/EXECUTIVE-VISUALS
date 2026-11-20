@@ -22,7 +22,8 @@ function attemptKey(identity){
 export function createLumaProviderFileService({
  assets,adapter,repository,fetchImpl=globalThis.fetch,timeoutMs=30000,maxBytes=MAX_BYTES,now=()=>Date.now(),
  supabaseUrl=process.env.SUPABASE_URL,storageProvider=process.env.CLOUD_MEDIA_STORAGE_PROVIDER||"supabase",
- r2AccountId=process.env.R2_ACCOUNT_ID,r2Bucket=process.env.R2_BUCKET||"executive-visuals-media"
+ r2AccountId=process.env.R2_ACCOUNT_ID,r2Bucket=process.env.R2_BUCKET||"executive-visuals-media",
+ neonEndpoint=process.env.NEON_STORAGE_ENDPOINT,neonBucket=process.env.NEON_STORAGE_BUCKET||"executive-visuals-media"
 }={}){
  if(!assets||typeof assets.get!=="function"||typeof assets.createSignedUrl!=="function")throw new TypeError("Luma file service requires the authorized private asset repository.");
  for(const method of ["createFileUpload","uploadFileBytes","completeFileUpload","getFile","deleteFile"])if(typeof adapter?.[method]!=="function")throw new TypeError("Luma file service requires a complete Files API adapter.");
@@ -33,6 +34,11 @@ export function createLumaProviderFileService({
   if(String(storageProvider).toLowerCase()==="r2"){
    if(!/^[a-f0-9]{32}$/i.test(String(r2AccountId||""))||!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(r2Bucket)))throw new Error();
    expectedOrigin="https://"+r2AccountId+".r2.cloudflarestorage.com";expectedPathPrefix="/"+r2Bucket+"/";
+  }else if(String(storageProvider).toLowerCase()==="neon"){
+   const base=new URL(neonEndpoint);
+   if(base.protocol!=="https:"||base.username||base.password||base.search||base.hash||
+    !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/i.test(String(neonBucket||"")))throw new Error();
+   expectedOrigin=base.origin;expectedPathPrefix="/"+neonBucket+"/";
   }else{
    const base=new URL(supabaseUrl);
    if(base.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(base.hostname))throw new Error();
