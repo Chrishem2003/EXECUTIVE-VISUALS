@@ -1,6 +1,6 @@
 # Executive Visuals — persistence and release blockers
 
-**Audit date:** 13 November 2026  
+**Audit date:** 20 November 2026  
 **Purpose:** Record the live infrastructure facts that prevent the hosted app from being certified as a durable, multi-user production system. This is an architecture decision record, not a claim that storage has been implemented.
 
 ## Observed infrastructure
@@ -13,6 +13,14 @@
 | Cloudflare D1 `executive-visuals-staging` | 126,976 bytes at the last recorded size check; migration `0001_initial.sql` recorded; seven `ev_*` tables; bound only to the staging Worker; latest read-only aggregate query found 5 users, 5 projects and 5 workspace documents, with 0 memberships, assets, jobs and audit events | Authenticated project create/list and revisioned workspace save/reload are verified through the staging same-origin bridge. Aggregate counts are not attributed to one smoke run. This remains isolated staging metadata, not the production source of truth. |
 | Cloudflare R2 | Not activated; listing buckets returns Cloudflare error 10042 asking to enable R2 in the dashboard | No durable object store is currently available for uploaded source media and rendered outputs. |
 | Supabase organisation `Chrishem Autos` | Free plan; two existing projects already occupy the free-project allowance | Both existing projects contain NEMA/platform tables. They must not be repurposed for Executive Visuals or have their auth/storage settings changed for this app. |
+
+## New observations — 20 November 2026
+
+- Main commit `9e3a2ffa104958930093518f64c1ef300237521e` includes the opt-in Workflow Canvas → Neon staging bridge (PR #741). The existing Cloud Timeline API now revalidates quotes and can dispatch one approved `video.generate` node to the existing Neon approval/queue/financial ledger, with scoped job polling, safe queued cancellation and private output-origin validation.
+- Exact-head GitHub CI passed all seven required workflows before merge. Render reports the merged commit deployed as `live` on both the existing production service and the separately named cloud-staging service. This is deployment evidence only; it is not live browser, worker lease/recovery, private bucket, or provider-generation acceptance.
+- The bridge's workflow dispatch and worker readiness flags remain disabled by default. No Render environment values, credentials, Neon branches/migrations, object-storage buckets, or paid provider requests were changed or created by the merge.
+- The codebase now has a Neon private object-storage adapter and the Workflow Canvas output validator can recognize configured Neon storage origins/buckets. **No dedicated production media bucket or durable production data plane has been provisioned or verified.** The adapter being present in source does not remove the storage release gate.
+- Existing Cloudflare D1 staging remains a separate metadata-only staging system. It is not the Neon execution queue, not the production data plane, and not a substitute for durable private media storage.
 
 ## New observations — 13 November 2026
 
