@@ -1195,7 +1195,7 @@ test("preserves documented retryable Runway load-shedding responses", async () =
     });
     await assert.rejects(
       () => adapter.submit(input),
-      error => error.code === "RUNWAY_SERVER_ERROR"
+      error => error.code === "RUNWAY_SERVER_ERROR" && error.retryable === true && error.retryAfterSeconds === 30
     );
   }
 });
@@ -1227,5 +1227,20 @@ test("quarantines undocumented HTTP 500 task-creation responses", async () => {
   await assert.rejects(
     () => adapter.submit(input),
     error => error.code === "RUNWAY_SUBMISSION_UNKNOWN"
+  );
+});
+
+test("marks documented Runway 429 rate limits as explicitly retryable", async () => {
+  const input = {
+    provider: "runway", model: "gen4.5", prompt: "A cinematic sunrise",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response("rate limited", { status: 429 })
+  });
+  await assert.rejects(
+    () => adapter.submit(input),
+    error => error.code === "RUNWAY_RATE_LIMITED" && error.retryable === true && error.retryAfterSeconds === 60
   );
 });
