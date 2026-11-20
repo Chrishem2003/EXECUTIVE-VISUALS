@@ -70,7 +70,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
     ...listRunwayVideoModels().map(model=>{
       const allowlisted=runwayAllowlist.includes(model.id);
       const ready=video.status==="ready"&&!runwayRouterConfigured&&allowlisted;
-      return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":allowlisted?video.status:"not_configured",
+      return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":runwayRouterConfigured?"router_active":allowlisted?video.status:"not_configured",
         reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":runwayRouterConfigured?"The configured Runway Model Router takes precedence over direct-model selection.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
     }),
     ...(runwayRouterRequested?[{
