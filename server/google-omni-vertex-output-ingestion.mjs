@@ -126,7 +126,7 @@ export function createGoogleOmniVertexOutputIngestor({
     const interactionId = String(interaction?.id || "");
     if (!/^v1_[A-Za-z0-9_-]{6,200}$/.test(interactionId) ||
         !UUID.test(String(context.ownerId || "")) || !UUID.test(String(context.jobId || "")) ||
-        !HASH.test(String(context.requestHash || "")) || !UUID.test(String(context.workerId || "")) ||
+        !HASH.test(String(context.requestHash || "")) || (typeof context.workerId !== "string" || !context.workerId.trim() || context.workerId.length > 160) ||
         !UUID.test(String(context.leaseToken || "")) || typeof context.assertLease !== "function") {
       throw fail("Gemini Omni 1.2 output ingestion context is invalid.", "GOOGLE_VERTEX_OUTPUT_CONTEXT_INVALID");
     }
