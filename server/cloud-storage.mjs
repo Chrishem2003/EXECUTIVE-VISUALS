@@ -70,7 +70,6 @@ export function createCloudStorage({
       const response = await fetchImpl(base + path, {
         method,
         headers: {
-          apikey: serviceRoleKey,
           ...supabaseServerAuthHeaders(serviceRoleKey),
           ...headers
         },
@@ -132,7 +131,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,...supabaseServerAuthHeaders(serviceRoleKey),"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          headers:{...supabaseServerAuthHeaders(serviceRoleKey),"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
