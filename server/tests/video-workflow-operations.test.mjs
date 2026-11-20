@@ -43,18 +43,18 @@ test("workflow editor uses the shared operation policy and reveals the draft sou
 });
 
 
-test("Runway Model Router exposes only its verified text and first-frame operations",()=>{
+test("Runway Model Router exposes text, first-frame and source-video operations",()=>{
   assert.deepEqual(getVideoWorkflowOperationOptions("runway","model-router").map(option=>option.id),[
-    "text-to-video","image-to-video"
+    "text-to-video","image-to-video","video-to-video"
   ]);
 });
 
 
-test("workflow editor enables first-frame input and keeps unsupported Runway Model Router modes unavailable",()=>{
+test("workflow editor enables first-frame and source-video input for Runway Model Router",()=>{
   const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
   assert.match(ui,/routerRunway&&operation==="image-to-video"/);
   assert.match(ui,/routerRunway&&activeOperation==="image-to-video"/);
   assert.match(ui,/Choose a private first-frame image from this project/);
-  assert.match(ui,/Runway Model Router video-to-video is not available until the saved route capability is verified/);
-  assert.doesNotMatch(ui,/routerRunway&&activeOperation==="video-to-video"/);
+  assert.match(ui,/routerRunway&&activeOperation==="video-to-video"/);
+  assert.match(ui,/routerRunway&&operation==="video-to-video"/);
 });
