@@ -47,3 +47,19 @@ test("composes Neon Object Storage without provisioning or changing the configur
  assert.equal(service.storage.endpoint,base.neon.endpoint);
  assert.throws(()=>createCloudAssetService({...base,neon:{...base.neon,bucket:"custom-media"} }),/NEON_STORAGE_BUCKET/);
 });
+
+test("Cloud Timeline Service passes explicit Neon branch credentials into its private storage adapter", async () => {
+ const { createCloudTimelineService } = await import("../cloud-timeline-service.mjs");
+ const neon={
+  endpoint:"https://br-staging.storage.c-9.us-east-2.aws.neon.tech",
+  region:"us-east-2",accessKeyId:"neon_test_key_123",
+  secretAccessKey:"s".repeat(40),bucket:"executive-visuals-media"
+ };
+ const service=createCloudTimelineService({
+  url:"https://example.supabase.co",serviceRoleKey:"private",
+  storageProvider:"neon",neon,
+  fetchImpl:async()=>{throw new Error("metadata network must not run during composition");}
+ });
+ assert.equal(service.storage.endpoint,neon.endpoint);
+ assert.equal(service.storage.bucket,"executive-visuals-media");
+});
