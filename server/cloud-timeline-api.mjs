@@ -533,12 +533,16 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
      if(typeof workflowNodeDispatch==="function"){
-      const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_amount,currency,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
+      const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
       const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
       if(!storedQuote||storedQuote.id!==quoteId||storedQuote.owner_id!==ownerId||storedQuote.project_id!==projectId||
          storedQuote.request_id!==requestId||storedQuote.request_hash!==workflowRequest.requestHash||
          storedQuote.provider!==workflowRequest.provider||storedQuote.model!==workflowRequest.model||
          storedQuote.operation!==workflowRequest.operation||storedQuote.currency!=="USD"||
+         storedQuote.config_id!==configId||storedQuote.pricing_source!=="runway_model_router_dry_run"||
+         typeof storedQuote.routed_provider!=="string"||!storedQuote.routed_provider.trim()||
+         typeof storedQuote.routed_model!=="string"||!storedQuote.routed_model.trim()||
+         !Number.isSafeInteger(Number(storedQuote.estimated_credits))||Number(storedQuote.estimated_credits)<1||
          !Number.isFinite(Number(storedQuote.estimated_amount))||Number(storedQuote.estimated_amount)<=0||
          !["quoted","consumed"].includes(String(storedQuote.state||""))){
        return response(409,{error:{code:"VIDEO_WORKFLOW_QUOTE_MISMATCH",message:"The stored quote no longer matches this exact owner, project, model, operation and request. Request a fresh quote."}});
