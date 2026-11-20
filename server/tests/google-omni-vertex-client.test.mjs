@@ -97,3 +97,14 @@ test("Vertex client rejects invalid project, bucket, output path and mismatched 
   await assert.rejects(() => wrong.getInteractionForIngestion(interactionId, context),
     error => error.code === "GOOGLE_VERTEX_RESPONSE_INVALID");
 });
+
+test("Vertex client rejects oversized interaction responses before parsing", async () => {
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient, maxResponseBytes: 1024,
+    fetchImpl: async () => new Response("x".repeat(2048), {
+      status: 200, headers: { "content-type": "application/json", "content-length": "2048" }
+    })
+  });
+  await assert.rejects(() => client.getInteractionForIngestion(interactionId, context),
+    error => error.code === "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+});
