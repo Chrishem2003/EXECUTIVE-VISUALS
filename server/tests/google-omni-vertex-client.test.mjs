@@ -15,7 +15,8 @@ const plan = {
   payload: {
     model: "gemini-omni-1.2-flash",
     input: [{ type: "text", text: "A cinematic sunrise over Kampala." }],
-    response_format: { type: "video", aspect_ratio: "16:9", resolution: "720p" }
+    response_format: { type: "video", aspect_ratio: "16:9", resolution: "720p", duration: "15s" },
+    generation_config: { video_config: { task: "text_to_video" } }
   }
 };
 const context = { jobId, ownerId, requestHash };
@@ -109,4 +110,43 @@ test("Vertex client rejects oversized interaction responses before parsing", asy
   });
   await assert.rejects(() => client.getInteractionForIngestion(interactionId, context),
     error => error.code === "GOOGLE_VERTEX_RESPONSE_TOO_LARGE");
+});
+
+test("Vertex client preserves non-video response formats while enforcing a single private video destination", async () => {
+  let sent;
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async (_url, options) => {
+      sent = JSON.parse(options.body);
+      return new Response(JSON.stringify({ id: interactionId, model: "gemini-omni-1.2-flash", status: "in_progress" }), { status: 200 });
+    }
+  });
+  const multiFormatPlan = {
+    ...plan,
+    payload: {
+      ...plan.payload,
+      response_format: [
+        { type: "text", format: "text" },
+        { type: "video", aspect_ratio: "9:16", duration: "15s", resolution: "4k" }
+      ]
+    }
+  };
+  await client.createInteraction(multiFormatPlan, context, { onInteractionCreated: async () => {} });
+  assert.deepEqual(sent.response_format[0], { type: "text", format: "text" });
+  assert.equal(sent.response_format[1].type, "video");
+  assert.equal(sent.response_format[1].delivery, "uri");
+  assert.equal(sent.response_format[1].gcs_uri, client.outputUri(context));
+  assert.equal(sent.response_format[1].duration, "15s");
+  assert.equal(sent.generation_config.video_config.task, "text_to_video");
+});
+
+test("Vertex client rejects requests without an explicit video task", async () => {
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async () => { throw new Error("must not submit"); }
+  });
+  await assert.rejects(() => client.createInteraction({
+    ...plan, payload: { ...plan.payload, generation_config: {} }
+  }, context, { onInteractionCreated: async () => {} }),
+  error => error.code === "GOOGLE_VERTEX_PLAN_INVALID");
 });
