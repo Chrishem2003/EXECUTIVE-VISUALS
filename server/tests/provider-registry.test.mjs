@@ -256,3 +256,75 @@ test("Runway durable worker allowlist can expose multiple exact model profiles",
  for(const id of ["seedance2_5","kling_4","kling3.0_standard","kling3.0_4k"])assert.equal(models.find(model=>model.id===id).available,true);
  assert.equal(models.find(model=>model.id==="kling3.0_pro").available,false);
 });
+
+
+test("Runway Model Router is selectable from the provider catalogue without requiring a direct model allowlist",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"never-return-this"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"ready");
+ assert.equal(video.provider,"runway");
+ assert.equal(video.model,"model-router");
+ assert.equal(video.modelCapabilities.minDurationSeconds,2);
+ assert.equal(video.modelCapabilities.maxDurationSeconds,30);
+ const router=video.availableModels.find(model=>model.id==="model-router");
+ assert.ok(router);
+ assert.equal(router.available,true);
+ assert.equal(router.executionVerified,true);
+ assert.equal(router.readiness,"ready");
+ assert.deepEqual(findProviderForCapability(catalog,"video.generate",{allowRemote:true}),{
+  provider:"runway",model:"model-router",remote:true
+ });
+ assert.equal(catalog.policy.requestsSubmitted,false);
+ assert.equal(JSON.stringify(catalog).includes("never-return-this"),false);
+});
+
+test("Runway Model Router remains blocked when either remote gate is missing",()=>{
+ const base={
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"server-only"
+ };
+ for(const patch of [{VIDEO_GATEWAY_ALLOW_REMOTE:"false"},{RUNWAY_VIDEO_ALLOW_REMOTE:"false"}]){
+  const video=getProviderCatalog({...base,...patch}).providers.find(item=>item.id==="video");
+  assert.equal(video.status,"remote_opt_in_required");
+  assert.equal(video.availableModels.find(model=>model.id==="model-router").available,false);
+  assert.equal(findProviderForCapability(getProviderCatalog({...base,...patch}),"video.generate",{allowRemote:true}),null);
+ }
+});
+
+test("Runway Model Router readiness requires the actual cloud video worker gates and a valid saved router",()=>{
+ const base={
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"server-only"
+ };
+ for(const patch of [{CLOUD_WORKER_ENABLED:"false"},{CLOUD_VIDEO_WORKER_ENABLED:"false"}]){
+  const video=getProviderCatalog({...base,...patch}).providers.find(item=>item.id==="video");
+  assert.equal(video.status,"needs_configuration");
+  assert.equal(video.availableModels.find(model=>model.id==="model-router").available,false);
+ }
+ for(const patch of [{RUNWAY_API_KEY:""},{RUNWAY_VIDEO_ROUTER_CONFIG:"Invalid Slug"}]){
+  const video=getProviderCatalog({...base,...patch}).providers.find(item=>item.id==="video");
+  assert.equal(video.status,"needs_configuration");
+  assert.equal(video.availableModels.find(model=>model.id==="model-router").readiness,"needs_configuration");
+ }
+});
+
+test("Runway direct adapter accepts the current RUNWAY_API_KEY variable as well as the legacy secret name",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"ready");
+ assert.equal(video.model,"seedance2_5");
+ assert.equal(JSON.stringify(catalog).includes("server-only"),false);
+});
