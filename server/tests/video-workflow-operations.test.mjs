@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getVideoWorkflowOperationOptions } from "../../src/core/video-workflow-operations.mjs";
+import { getVideoWorkflowOperationOptions, validateRunwayRouterVideoSourceInput } from "../../src/core/video-workflow-operations.mjs";
 
 test("Seedance 2.5 exposes generation, video transformation and draft enhancement", () => {
   assert.deepEqual(getVideoWorkflowOperationOptions("runway", "seedance2_5").map(option => option.id), [
@@ -57,4 +57,39 @@ test("workflow editor enables first-frame and source-video input for Runway Mode
   assert.match(ui,/Choose a private first-frame image from this project/);
   assert.match(ui,/routerRunway&&activeOperation==="video-to-video"/);
   assert.match(ui,/routerRunway&&operation==="video-to-video"/);
+  assert.match(ui,/routerRunway\?\["text-to-video","image-to-video","video-to-video"\]\.includes\(operation\)/);
+});
+
+
+test("Runway Model Router video-to-video requires a private source and explicit rights", () => {
+  assert.equal(validateRunwayRouterVideoSourceInput({
+    sourceVideoAssetId: " private-source-asset ",
+    rightsConfirmed: true
+  }), "private-source-asset");
+  assert.throws(() => validateRunwayRouterVideoSourceInput({ rightsConfirmed: true }), /private source-video asset/);
+  assert.throws(() => validateRunwayRouterVideoSourceInput({
+    sourceVideoAssetId: "private-source-asset", rightsConfirmed: false
+  }), /Confirm rights/);
+});
+
+test("Runway Model Router video-to-video rejects incompatible image and keyframe references", () => {
+  const base = { sourceVideoAssetId: "private-source-asset", rightsConfirmed: true };
+  assert.throws(() => validateRunwayRouterVideoSourceInput({ ...base, startFrameAssetId: "first-frame" }), /cannot be combined/);
+  assert.throws(() => validateRunwayRouterVideoSourceInput({ ...base, endFrameAssetId: "last-frame" }), /cannot be combined/);
+  assert.throws(() => validateRunwayRouterVideoSourceInput({ ...base, referenceImageAssetIds: ["image-ref"] }), /cannot be combined/);
+  assert.throws(() => validateRunwayRouterVideoSourceInput({ ...base, keyframeIndexes: ["12"] }), /cannot be combined/);
+});
+
+test("workflow editor delegates Runway Router source-video validation to the tested core contract", () => {
+  const ui = readFileSync(new URL("../../src/platform/workflow-workspace.ts", import.meta.url), "utf8");
+  assert.match(ui, /validateRunwayRouterVideoSourceInput\(/);
+});
+
+
+test("main Video Studio uses the shared operation policy for source-video edits", () => {
+  const app = readFileSync(new URL("../../src/platform/app.ts", import.meta.url), "utf8");
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",selected\.model\.id\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",requestedModel\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",id\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /if\(runwayVideoEdit&&!sourceVideoAssetId\)throw new Error\("Choose a private project source video for this edit operation\."\)/);
 });
