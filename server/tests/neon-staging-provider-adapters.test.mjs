@@ -22,7 +22,7 @@ const env = {
   FAL_BILLING_KEY: "fal-billing-test-key"
 };
 
-test("composes an exact FAL model, private Neon storage and Supabase authorization without network calls", () => {
+test("composes an exact FAL model, private Neon storage and Supabase authorization without network calls", async () => {
   let networkCalls = 0;
   const fetchImpl = async () => {
     networkCalls += 1;
