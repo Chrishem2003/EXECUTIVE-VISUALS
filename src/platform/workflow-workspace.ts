@@ -394,7 +394,7 @@ document.addEventListener("submit",event=>{
  const supportedRunway=["model-router","gen4.5","seedance2_5","kling_4","kling_4_flash","kling3.0_standard","kling3.0_pro","kling3.0_4k","gemini_omni_flash_1.2"];
  if(!(provider==="runway"&&supportedRunway.includes(model))&&!(luma&&model==="ray-3.2"))throw new Error("Choose a supported provider/model pair.");
  const operation=luma||directRunway?String(data.get("videoOperation")||"generate"):routerRunway?String(data.get("videoOperation")||"text-to-video"):"generate";
- if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&(operation==="video-to-video"||model==="seedance2_5"&&operation==="draft-enhancement")):routerRunway?["text-to-video","image-to-video"].includes(operation):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
+ if(!(luma?["generate","edit","reframe"].includes(operation):directRunway?(operation==="generate"||directVideoEdit&&(operation==="video-to-video"||model==="seedance2_5"&&operation==="draft-enhancement")):routerRunway?["text-to-video","image-to-video","video-to-video"].includes(operation):operation==="generate"))throw new Error("Choose a supported operation for the selected Runway model.");
  const durationSeconds=Number(data.get("videoDuration")||5);
  const minDuration=luma&&operation==="generate"?5:model==="seedance2_5"?4:model==="kling_4"||model==="kling_4_flash"||model==="gemini_omni_flash_1.2"||model.startsWith("kling3.0_")?3:2;
  const maxDuration=luma?10:model==="seedance2_5"||model==="kling_4"?30:model==="kling_4_flash"?20:model==="gemini_omni_flash_1.2"?15:model.startsWith("kling3.0_")?15:model==="gen4.5"?10:30;
@@ -481,10 +481,16 @@ document.addEventListener("submit",event=>{
    if(!startFrameAssetId)throw new Error("Choose a private first-frame image from this project.");
    if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the first-frame image before saving.");
    config.startFrameAssetId=startFrameAssetId;delete config.sourceVideoAssetId;
+  }else if(operation==="video-to-video"){
+   if(!sourceVideoAssetId)throw new Error("Choose a private source-video asset from this project.");
+   if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the source video before saving this operation.");
+   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video transformations cannot be combined with image or keyframe inputs.");
+   config.sourceVideoAssetId=sourceVideoAssetId;
+   delete config.startFrameAssetId;
   }else if(operation==="text-to-video"){
    if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Clear source and reference assets when generating from text.");
    delete config.sourceVideoAssetId;delete config.startFrameAssetId;
-  }else throw new Error("Runway Model Router source-video input is validated against the saved route before approval.");
+  }
   delete config.endFrameAssetId;delete config.keyframeAssetIds;delete config.keyframeIndexes;delete config.draft;delete config.draftTargetResolution;
  }else{
   if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("This provider/model does not accept these source asset roles.");
