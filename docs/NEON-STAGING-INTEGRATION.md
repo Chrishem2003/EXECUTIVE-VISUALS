@@ -89,7 +89,16 @@ The connected Neon account was inspected without changing resources:
 
 This evidence supersedes any assumption that a ready branch record means the application database is reachable or safe for staging. The staging release gate remains blocked until database connectivity, data isolation, private bucket configuration and worker execution are independently verified.
 
-## Current repository implementation\n\n- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.\n- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.\n- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.\n- `npm run verify:neon-storage` — focused adapter and composition test command.\n\nThese tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.\n\n## Atomic video enqueue — migration 0006
+## Current repository implementation
+
+- `server/neon-object-storage.mjs` — server-side Neon S3-compatible adapter.
+- `server/cloud-asset-service.mjs` — explicit `neon` provider selection; existing Supabase/R2/B2 providers remain available.
+- `server/tests/neon-object-storage.test.mjs` — request signing, path-style addressing, signed downloads, streamed upload, integrity verification, deletion and path validation tests.
+- `npm run verify:neon-storage` — focused adapter and composition test command.
+
+These tests use mocked S3 responses. They prove the local adapter contract, not live Neon credentials, bucket provisioning, or deployed connectivity.
+
+## Atomic video enqueue — migration 0006
 
 Migration `0006_atomic_video_enqueue.sql` adds `enqueue_video_generation_job_v1`, a single transaction boundary for application admission:
 
