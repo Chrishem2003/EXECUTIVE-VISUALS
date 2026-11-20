@@ -154,7 +154,7 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
     estimatedProviderCredits:Number.isSafeInteger(raw.estimatedCredits)&&raw.estimatedCredits>0?raw.estimatedCredits:null,
     approvalNote:typeof raw.approvalNote==="string"?raw.approvalNote.slice(0,1000):"Approved in Video Studio"};
    const snapshotJson={shots:[shot],workflow:{kind:"video.generate",quoteId,requestId,requestHash,operation}};
-   const registered=await approvals.register({id:quoteId,ownerId,projectId,idempotencyKey:requestId,requestHash,
+   const registered=await approvals.register({id:quoteId,ownerId,projectId,idempotencyKey:requestId+":"+quoteId,requestHash,
     snapshotJson,currency:"USD",quotedAmountMicros,budgetCeilingMicros});
    if(!registered||registered.id!==quoteId||registered.ownerId!==ownerId||registered.projectId!==projectId||
       registered.requestHash!==requestHash||registered.quotedAmountMicros!==quotedAmountMicros||
