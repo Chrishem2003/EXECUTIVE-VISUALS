@@ -113,14 +113,33 @@ export function createRunwayCloudVideoAdapter({
       }
       if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
       if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
-      if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
+      if (response.status >= 500) {
+        if (submission && ![502, 503, 504].includes(response.status)) {
+          throw fail("Runway returned an undocumented server error during submission; task creation is unknown and must be reconciled before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        }
+        throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
+      }
       if (!response.ok) throw fail("Runway rejected the task request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
-      const raw = await response.text();
-      if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_INVALID_RESPONSE");
+      let raw;
+      try { raw = await response.text(); }
+      catch {
+        if (submission) throw fail("Runway accepted or may have accepted the submission but its response could not be read; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway task response could not be read.", "RUNWAY_INVALID_RESPONSE");
+      }
+      if (Buffer.byteLength(raw) > 1024 * 1024) {
+        if (submission) throw fail("Runway submission response exceeded the limit; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_INVALID_RESPONSE");
+      }
       let data;
       try { data = raw ? JSON.parse(raw) : {}; }
-      catch { throw fail("Runway returned invalid JSON.", "RUNWAY_INVALID_RESPONSE"); }
-      if (!data || typeof data !== "object" || Array.isArray(data)) throw fail("Runway returned an invalid response object.", "RUNWAY_INVALID_RESPONSE");
+      catch {
+        if (submission) throw fail("Runway submission response was invalid; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway returned invalid JSON.", "RUNWAY_INVALID_RESPONSE");
+      }
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        if (submission) throw fail("Runway submission response was invalid; task creation is unknown and must be reconciled.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway returned an invalid response object.", "RUNWAY_INVALID_RESPONSE");
+      }
       return data;
     } finally {
       clearTimeout(timer);
