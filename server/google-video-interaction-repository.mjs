@@ -70,7 +70,6 @@ export function createGoogleVideoInteractionRepository({
       const response = await fetchImpl(base + "/rest/v1/" + TABLE + query, {
         method,
         headers: {
-          apikey: serviceRoleKey,
           ...supabaseServerAuthHeaders(serviceRoleKey),
           "accept-profile": "executive_visuals",
           "content-profile": "executive_visuals",
