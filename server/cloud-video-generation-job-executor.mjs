@@ -1,4 +1,5 @@
 const fail = (message, code) => Object.assign(new Error(message), { code });
+const RETRYABLE_SUBMISSION_CODES = new Set(["RUNWAY_RATE_LIMITED", "RUNWAY_SERVER_ERROR"]);
 function jobInput(job) {
   const value = job?.input;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -112,6 +113,21 @@ export async function executeCloudVideoGenerationJob({
       await ensureLease();
       submitted = await selectedAdapter.submit(providerInput, { job, preflightQuote, signal });
     } catch (error) {
+      // Only explicit provider responses documented as safe to retry may reset
+      // the Neon ledger from submitting to prepared. A timeout, malformed
+      // success, missing task ID, or undocumented response stays quarantined.
+      if (error?.retryable === true && RETRYABLE_SUBMISSION_CODES.has(error?.code) &&
+          typeof ledger.retry === "function") {
+        await ensureLease();
+        let reset = false;
+        try { reset = await ledger.retry(job.id, workerId, job.lease_token, error.code); } catch {}
+        if (reset === true) {
+          const deferred = fail("Provider explicitly rejected the submission as retryable; the durable submission has been reset for a bounded retry.", "VIDEO_PROVIDER_SUBMISSION_RETRYABLE");
+          deferred.retryAfterSeconds = Number.isSafeInteger(error.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
+            ? error.retryAfterSeconds : 30;
+          throw deferred;
+        }
+      }
       try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN", job.lease_token); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
