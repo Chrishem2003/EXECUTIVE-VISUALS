@@ -39,7 +39,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
   textToVideo:true,imageToVideo:true,videoToVideo:false,videoEdit:false,videoExtend:false,videoReframe:false,
   nativeAudio:false,negativePrompt:true,seed:false,startFrame:false,endFrame:false,motionReference:false,
   referenceImages:true,referenceVideos:false,referenceAudio:false,maxReferenceImages:4,
-  audioModes:[],aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
+  audioModes:["none"],aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
   resolutions:["provider_default"],minDurationSeconds:2,maxDurationSeconds:30
  };
  const video=videoProvider==="runway"
