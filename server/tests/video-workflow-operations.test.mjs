@@ -43,9 +43,9 @@ test("workflow editor uses the shared operation policy and reveals the draft sou
 });
 
 
-test("Runway Model Router exposes its exact text, first-frame and source-video operations",()=>{
+test("Runway Model Router exposes only its verified text and first-frame operations",()=>{
   assert.deepEqual(getVideoWorkflowOperationOptions("runway","model-router").map(option=>option.id),[
-    "text-to-video","image-to-video","video-to-video"
+    "text-to-video","image-to-video"
   ]);
 });
 
