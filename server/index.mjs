@@ -307,7 +307,17 @@ const cloudVideoGenerationDispatch=cloudVideoGenerationDispatchEnabled?createClo
 }):null;
 const neonStagingApprovalRuntime=await createNeonStagingApprovalDispatch({
  env:process.env,db,canWriteProject:(ownerId,projectId)=>canWriteProject(db,ownerId,projectId),
- audit:(ownerId,...args)=>audit(db,ownerId,...args)
+ audit:(ownerId,...args)=>audit(db,ownerId,...args),
+ runtimeOptions:{
+  includeStorage:true,
+  storageOptions:{
+   endpoint:process.env.NEON_STORAGE_ENDPOINT,
+   region:process.env.NEON_STORAGE_REGION,
+   accessKeyId:process.env.NEON_STORAGE_ACCESS_KEY_ID,
+   secretAccessKey:process.env.NEON_STORAGE_SECRET_ACCESS_KEY,
+   bucket:process.env.NEON_STORAGE_BUCKET||"executive-visuals-media"
+  }
+ }
 });
 const videoApprovalSubmitDispatch=neonStagingApprovalRuntime.enabled
  ?neonStagingApprovalRuntime.dispatch
