@@ -3,7 +3,7 @@ import { createNeonStagingApplicationDispatch } from "./neon-staging-application
 
 function parseCreditRate(value){
   const text=String(value??"").trim();
-  if(!/^\\d+$/.test(text))throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be an explicitly configured positive integer.");
+  if(!/^\d+$/.test(text))throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be an explicitly configured positive integer.");
   const rate=Number(text);
   if(!Number.isSafeInteger(rate)||rate<1||rate>1_000_000)throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be between 1 and 1,000,000.");
   return BigInt(rate);
