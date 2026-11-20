@@ -95,7 +95,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
 
 test("Runway adapter exposes verified text-to-video and first-frame image-to-video models",()=>{
  const catalog=getProviderCatalog({
-  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
   RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"seedance2_5"
  });
  const video=catalog.providers.find(item=>item.id==="video");
