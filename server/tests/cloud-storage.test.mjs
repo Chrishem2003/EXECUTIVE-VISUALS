@@ -11,6 +11,24 @@ const uuid="123e4567-e89b-42d3-a456-426614174000";
 const path=uuid+"/assets/master.mp4";
 function response(body={},status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 
+test("private storage supports opaque Supabase secret keys for buffered and streamed uploads",async()=>{
+ const calls=[];
+ const secretStorage=createCloudStorage({...config,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{
+  if(options.body&&typeof options.body[Symbol.asyncIterator]==="function"){for await(const chunk of options.body){}}
+  calls.push({url,headers:options.headers});return response({Key:"ok"});
+ }});
+ await secretStorage.upload(path,new Uint8Array([1,2,3]),"video/mp4");
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-secret-")),file=join(root,"render.mp4");
+ await writeFile(file,Buffer.from("render"));
+ await secretStorage.uploadFile(path,file,"video/mp4");
+ assert.equal(calls.length,2);
+ for(const call of calls){
+  assert.equal(call.headers.apikey,"sb_secret_modern");
+  assert.equal("authorization" in call.headers,false);
+ }
+ await rm(root,{recursive:true,force:true});
+});
+
 test("uploads private assets to the fixed bucket using server credentials",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({Key:"ok"});}});

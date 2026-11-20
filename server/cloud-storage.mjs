@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -51,12 +52,12 @@ function safeObjectPath(value) {
 
 export function createCloudStorage({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024
 } = {}) {
-  if (!url || !serviceRoleKey) throw new Error("Cloud storage requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  if (!url || !serviceRoleKey) throw new Error("Cloud storage requires SUPABASE_URL and a server-side SUPABASE_SECRET_KEY (or legacy service-role key).");
   if (typeof fetchImpl !== "function") throw new Error("Cloud storage requires a fetch implementation.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Cloud storage timeout must be between 1000 and 120000 milliseconds.");
   if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 1024 * 1024 * 1024) throw new Error("Cloud storage size limit is invalid.");
@@ -69,8 +70,7 @@ export function createCloudStorage({
       const response = await fetchImpl(base + path, {
         method,
         headers: {
-          apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           ...headers
         },
         ...(body === null ? {} : { body }),
@@ -135,7 +135,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":upsert?"true":"false"},
+          headers:{...supabaseServerAuthHeaders(serviceRoleKey),"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":upsert?"true":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
