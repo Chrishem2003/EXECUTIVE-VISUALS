@@ -8,6 +8,11 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
+test("cloud worker accepts the modern Supabase secret without the legacy variable",()=>{
+ const modern={...env,SUPABASE_SECRET_KEY:"sb_secret_modern"};delete modern.SUPABASE_SERVICE_ROLE_KEY;
+ const config=readCloudWorkerConfig(modern);assert.equal(config.media,true);assert.equal(config.timeline,true);
+});
+
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
  const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_HEARTBEAT_MS:"90000"}),/heartbeat/);
