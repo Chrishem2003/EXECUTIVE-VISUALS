@@ -211,6 +211,7 @@ test("dedicated worker can start without the web process approval bridge", async
   const runtime = await createNeonStagingRuntime({
     env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
     pool, storage, includeStorage: true,
+    quoteCustomerCredits: () => 100,
     workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker-test"
   });
   const status = await runtime.checkReadiness();
