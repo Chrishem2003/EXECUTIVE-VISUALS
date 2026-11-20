@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { normalizeReviewCreate,normalizeReviewPatch } from "./review-contract.mjs";
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const id=(v)=>typeof v==="string"&&UUID.test(v);
 const stable=value=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stable(value[key])).join(",")+"}":JSON.stringify(value);
 const map=row=>({id:row.id,projectId:row.project_id,assetId:row.asset_id||null,assetSha256:row.asset_sha256||null,timelineId:row.timeline_id||null,timelineRevision:row.timeline_revision??null,frameNumber:row.frame_number===null?null:Number(row.frame_number),durationFrames:row.duration_frames??null,timecodeSeconds:row.timecode_seconds===null?null:Number(row.timecode_seconds),body:row.body,decision:row.decision,status:row.status,visibility:row.visibility||"project",annotation:row.annotation||null,authorId:row.reviewer_id||row.owner_id,createdAt:row.created_at,updatedAt:row.updated_at||row.created_at,editedAt:row.edited_at||null,resolvedAt:row.resolved_at||null,resolvedBy:row.resolved_by||null});
-export function createCloudReviewRepository({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,authorize,projects,assets,timelines,timeoutMs=12000}={}){
+export function createCloudReviewRepository({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,authorize,projects,assets,timelines,timeoutMs=12000}={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function"||typeof authorize!=="function"||!projects||!assets||!timelines)throw new Error("Cloud review repository requires credentials, authorization and cloud repositories.");
  const parsed=new URL(url);if(parsed.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(parsed.hostname))throw new Error("Cloud review URL must use HTTPS.");
  const base=parsed.origin;

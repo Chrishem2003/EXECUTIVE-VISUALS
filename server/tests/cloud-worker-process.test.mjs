@@ -4,6 +4,14 @@ import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-work
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
+test("cloud worker accepts the modern Supabase secret key without the legacy service-role variable",()=>{
+ const modern={...env,SUPABASE_SECRET_KEY:"sb_secret_modern"};
+ delete modern.SUPABASE_SERVICE_ROLE_KEY;
+ const config=readCloudWorkerConfig(modern);
+ assert.equal(config.media,true);
+ assert.equal(config.timeline,true);
+});
+
 test("cloud worker config requires a selected worker family and server credentials",()=>{
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);

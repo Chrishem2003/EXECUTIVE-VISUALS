@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const validId=(value,label)=>{if(typeof value!=="string"||!UUID.test(value))throw new Error(label+" must be a UUID.");return value;};
 const map=row=>({id:row.id,ownerId:row.owner_id,name:row.name,description:row.description||"",settings:row.settings||{},revision:Number(row.revision),createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at||null});
 
-export function createCloudProjectRepository({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,authorize,timeoutMs=12000}={}){
+export function createCloudProjectRepository({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,authorize,timeoutMs=12000}={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function"||typeof authorize!=="function")throw new Error("Cloud project repository requires credentials, fetch and authorization.");
  const base=new URL(url).origin;
  async function request(path,{method="GET",body=null}={}){

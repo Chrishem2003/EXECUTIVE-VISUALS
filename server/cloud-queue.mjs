@@ -1,3 +1,5 @@
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
+
 const SCHEMA = "executive_visuals";
 const RPC = new Set(["claim_next_job_v2","renew_job_lease_v2","recover_expired_jobs","finish_job_v2","assert_job_lease_v2"]);
 const LEASE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -14,11 +16,11 @@ function endpoint(value) {
 
 export function createCloudQueue({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000
 } = {}) {
-  if (!url || !serviceRoleKey) throw new Error("Cloud queue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  if (!url || !serviceRoleKey) throw new Error("Cloud queue requires SUPABASE_URL and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) as a server-side credential.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud queue requires a fetch implementation.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Cloud queue timeout must be between 1000 and 120000 milliseconds.");
   const base = endpoint(url);
@@ -32,7 +34,7 @@ export function createCloudQueue({
         method: "POST",
         headers: {
           apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...(String(serviceRoleKey).startsWith("sb_secret_") ? {} : { authorization: "Bearer " + serviceRoleKey }),
           "content-type": "application/json",
           "accept-profile": SCHEMA,
           "content-profile": SCHEMA,
@@ -113,7 +115,7 @@ export function createCloudQueue({
           method: "GET",
           headers: {
             apikey: serviceRoleKey,
-            authorization: "Bearer " + serviceRoleKey,
+            ...(String(serviceRoleKey).startsWith("sb_secret_") ? {} : { authorization: "Bearer " + serviceRoleKey }),
             "accept-profile": SCHEMA,
             accept: "application/json"
           },

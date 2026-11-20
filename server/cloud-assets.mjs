@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { buildCloudAssetObjectPath } from "./cloud-storage.mjs";
+import { resolveSupabaseServerKey } from "./supabase-server-credentials.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXTENSIONS = new Map([
@@ -47,7 +48,7 @@ function publicAsset(row) {
 
 export function createCloudAssetRepository({
   url=process.env.SUPABASE_URL,
-  serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey=resolveSupabaseServerKey(process.env),
   storage,
   authorize,
   fetchImpl=globalThis.fetch,
