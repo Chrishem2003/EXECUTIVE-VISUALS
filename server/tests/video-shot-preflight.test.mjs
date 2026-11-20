@@ -205,7 +205,7 @@ test("Runway Model Router catalogue profile passes the real shot preflight contr
 });
 
 
-test("Runway Model Router supports first-frame image preflight and blocks unsupported source-video mode",()=>{
+test("Runway Model Router preflight supports first-frame and private source-video operations",()=>{
  const catalog=getProviderCatalog({
   VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
   CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
@@ -225,7 +225,16 @@ test("Runway Model Router supports first-frame image preflight and blocks unsupp
  const missingFrame=preflightVideoProduction({shots:[{...imageShot,referenceImageCount:0}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
  assert.equal(missingFrame.status,"blocked");
  assert.equal(missingFrame.shots[0].checks.find(check=>check.id==="references").status,"failed");
- const unsupported=preflightVideoProduction({shots:[{...imageShot,operation:"video-to-video"}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
- assert.equal(unsupported.status,"blocked");
- assert.equal(unsupported.shots[0].checks.find(check=>check.id==="operation").status,"failed");
+ const sourceVideoAssetId="a2f40e12-9d7e-4f42-9a16-83c5d9a1a004";
+ const sourceShot={...shot,model:"model-router",operation:"video-to-video",durationSeconds:12,resolution:"provider_default",referenceImageCount:0,audioMode:"none",sourceVideoAssetId};
+ const sourceResult=preflightVideoProduction({shots:[sourceShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(sourceResult.status,"ready_for_approval");
+ assert.equal(sourceResult.requestsSubmitted,false);
+ assert.ok(sourceResult.shots[0].checks.every(check=>check.status==="passed"));
+ const missingSource=preflightVideoProduction({shots:[{...sourceShot,sourceVideoAssetId:""}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(missingSource.status,"blocked");
+ assert.equal(missingSource.shots[0].checks.find(check=>check.id==="source_video").status,"failed");
+ const invalidSource=preflightVideoProduction({shots:[{...sourceShot,sourceVideoAssetId:"not-a-uuid"}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(invalidSource.status,"blocked");
+ assert.equal(invalidSource.shots[0].checks.find(check=>check.id==="source_video").status,"failed");
 });
