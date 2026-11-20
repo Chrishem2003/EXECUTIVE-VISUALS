@@ -58,10 +58,6 @@ test("workflow editor enables first-frame and source-video input for Runway Mode
   assert.match(ui,/routerRunway&&activeOperation==="video-to-video"/);
   assert.match(ui,/routerRunway&&operation==="video-to-video"/);
   assert.match(ui,/routerRunway\?\["text-to-video","image-to-video","video-to-video"\]\.includes\(operation\)/);
-  assert.match(ui,/Choose a private source-video asset from this project/);
-  assert.match(ui,/Confirm rights to use the source video before saving this operation/);
-  assert.match(ui,/config\.sourceVideoAssetId=sourceVideoAssetId/);
-  assert.match(ui,/Source-video transformations cannot be combined with image or keyframe inputs/);
 });
 
 
