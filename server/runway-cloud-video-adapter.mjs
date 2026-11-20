@@ -113,11 +113,15 @@ export function createRunwayCloudVideoAdapter({
       }
       if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
       if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
+      if ([500, 502, 503, 504].includes(response.status)) {
+        // Runway documents these server responses as retryable. The durable
+        // queue owns bounded backoff; do not turn an explicit provider error
+        // response into an unknown submission outcome.
+        throw fail("Runway returned a retryable server error.", "RUNWAY_SERVER_ERROR");
+      }
       if (response.status >= 500) {
-        if (submission && ![502, 503, 504].includes(response.status)) {
-          throw fail("Runway returned an undocumented server error during submission; task creation is unknown and must be reconciled before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
-        }
-        throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
+        if (submission) throw fail("Runway returned an undocumented server error during submission; task creation is unknown and must be reconciled before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+        throw fail("Runway API is temporarily unavailable.", "RUNWAY_UNAVAILABLE");
       }
       if (!response.ok) throw fail("Runway rejected the task request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
       let raw;
