@@ -20,6 +20,14 @@ test("cloud queue uses server credentials and pins PostgREST to the private sche
   assert.deepEqual(JSON.parse(requests[0].options.body),{p_worker_id:"worker-1",p_lease_seconds:90,p_job_types:["media.color"]});
 });
 
+test("opaque Supabase secret keys are sent as apikey without Bearer authorization",async()=>{
+ const calls=[];
+ const queue=createCloudQueue({url:base.url,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response([]);}});
+ assert.equal(await queue.claim("worker-1"),null);
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("claim accepts an empty queue and rejects malformed or foreign leases",async()=>{
   const empty=createCloudQueue({...base,fetchImpl:async()=>response([])});
   assert.equal(await empty.claim("worker-1"),null);
