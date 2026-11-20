@@ -16,8 +16,8 @@ function safeOrigin(value){
 
 export function createGoogleOmniWorkerDependencies({
  url=process.env.SUPABASE_URL,
- serviceRoleKey=resolveSupabaseServerKey(process.env),
  env=process.env,
+ serviceRoleKey=resolveSupabaseServerKey(env),
  fetchImpl=globalThis.fetch,
  queue,
  ledger,
