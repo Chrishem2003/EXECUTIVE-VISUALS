@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 import { getVideoProviderModel } from "./video-provider-registry.mjs";
 import { assertVideoCapabilities, normalizeVideoGenerationRequest } from "./video-generation-contract.mjs";
@@ -52,7 +53,7 @@ async function readResponseTextBounded(response, maximumBytes = 1024 * 1024) {
 
 export function createCloudVideoEnqueue({
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000,
   env = process.env,
@@ -75,8 +76,7 @@ export function createCloudVideoEnqueue({
       const response = await fetchImpl(base + "/rest/v1/rpc/" + name, {
         method: "POST",
         headers: {
-          apikey: serviceRoleKey,
-          authorization: "Bearer " + serviceRoleKey,
+          ...supabaseServerAuthHeaders(serviceRoleKey),
           "content-type": "application/json",
           "accept-profile": SCHEMA,
           "content-profile": SCHEMA,
