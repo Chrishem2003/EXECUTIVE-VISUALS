@@ -186,7 +186,9 @@ export function createNeonStagingApplicationDispatch({
       }};
     }catch(error){
       const detail=safeError(error);
-      const status=detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
+      const status=detail.code==="VIDEO_WORKFLOW_APPROVAL_INVALID"?400:
+        detail.code==="VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT"?409:
+        detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
         detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"?422:
         detail.code==="VIDEO_REPOSITORY_TIMEOUT"?503:502;
       return {status,body:{error:detail,backend:"neon-postgres",providerRequestsSubmitted:false}};
