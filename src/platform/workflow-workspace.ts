@@ -3,7 +3,7 @@ import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type Medi
 import { createTranscriptionCaptionWorkflow, createVideoCaptionLocalizationWorkflow } from "../core/workflow-templates";
 import { getVideoWorkflowModelOptions, isVideoWorkflowModelReleaseBlocked } from "../core/video-workflow-model-policy.mjs";
 import { isWorkflowQuoteExpired } from "../core/workflow-quote-expiry.mjs";
-import { getVideoWorkflowOperationOptions } from "../core/video-workflow-operations.mjs";
+import { getVideoWorkflowOperationOptions, validateRunwayRouterVideoSourceInput } from "../core/video-workflow-operations.mjs";
 import { getLatestWorkflowRunId, normalizeWorkflowRunHistory } from "../core/workflow-run-selection.mjs";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
@@ -482,10 +482,11 @@ document.addEventListener("submit",event=>{
    if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the first-frame image before saving.");
    config.startFrameAssetId=startFrameAssetId;delete config.sourceVideoAssetId;
   }else if(operation==="video-to-video"){
-   if(!sourceVideoAssetId)throw new Error("Choose a private source-video asset from this project.");
-   if(config.rightsConfirmed!==true)throw new Error("Confirm rights to use the source video before saving this operation.");
-   if(startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Source-video transformations cannot be combined with image or keyframe inputs.");
-   config.sourceVideoAssetId=sourceVideoAssetId;
+   config.sourceVideoAssetId=validateRunwayRouterVideoSourceInput({
+    sourceVideoAssetId,rightsConfirmed:config.rightsConfirmed===true,startFrameAssetId,endFrameAssetId,
+    referenceImageAssetIds:assetText.split(",").map(value=>value.trim()).filter(Boolean),
+    keyframeIndexes:indexText.split(",").map(value=>value.trim()).filter(Boolean)
+   });
    delete config.startFrameAssetId;
   }else if(operation==="text-to-video"){
    if(sourceVideoAssetId||startFrameAssetId||endFrameAssetId||assetText||indexText)throw new Error("Clear source and reference assets when generating from text.");
