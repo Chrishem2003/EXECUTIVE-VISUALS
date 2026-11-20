@@ -1163,7 +1163,7 @@ test("Neon workflow approval validates the persisted exact quote before durable 
  const quoteId="723e4567-e89b-42d3-a456-426614174000",requestId="workflow-neon-node-001";
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
  const values={prompt:"A cinematic product launch"};
- const contract=createVideoWorkflowCloudRequest({node,values,projectId,requestId});
+ const contract=createVideoWorkflowCloudRequest({node,values,projectId:project,requestId});
  const calls=[],dispatched=[];
  const expiresAt=new Date(Date.now()+60000).toISOString();
  const api=createCloudTimelineApi({
@@ -1207,7 +1207,7 @@ test("Neon workflow approval rejects a mismatched quote and delegates expiry rep
  const quoteId="723e4567-e89b-42d3-a456-426614174000",requestId="workflow-neon-node-002";
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8},inputs:[],outputs:[]};
  const values={prompt:"A cinematic product launch"};
- const contract=createVideoWorkflowCloudRequest({node,values,projectId,requestId});
+ const contract=createVideoWorkflowCloudRequest({node,values,projectId:project,requestId});
  for(const quote of [
   {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
   {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
