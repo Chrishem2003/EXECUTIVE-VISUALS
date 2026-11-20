@@ -84,3 +84,12 @@ test("workflow editor delegates Runway Router source-video validation to the tes
   const ui = readFileSync(new URL("../../src/platform/workflow-workspace.ts", import.meta.url), "utf8");
   assert.match(ui, /validateRunwayRouterVideoSourceInput\(/);
 });
+
+
+test("main Video Studio uses the shared operation policy for source-video edits", () => {
+  const app = readFileSync(new URL("../../src/platform/app.ts", import.meta.url), "utf8");
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",selected\.model\.id\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",requestedModel\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /getVideoWorkflowOperationOptions\("runway",id\)\.some\(value=>value\.id==="video-to-video"\)/);
+  assert.match(app, /if\(runwayVideoEdit&&!sourceVideoAssetId\)throw new Error\("Choose a private project source video for this edit operation\."\)/);
+});
