@@ -46,6 +46,18 @@ test("cloud media is ready only after private storage verification succeeds", ()
   });
 });
 
+test("Neon is a recognized private storage provider in safe health output", () => {
+  assert.deepEqual(buildCloudMediaHealth({
+    enabled: true,
+    readiness: { ready: true, storage: "private" },
+    storageProvider: "neon",
+    uploadLimitBytes: 250 * 1024 * 1024
+  }), {
+    enabled: true, ready: true, storage: "private", provider: "neon",
+    uploadLimitBytes: 250 * 1024 * 1024
+  });
+});
+
 test("health output never exposes credentials or accepts invalid provider and upload-limit values", () => {
   const health = buildCloudMediaHealth({
     enabled: true,
