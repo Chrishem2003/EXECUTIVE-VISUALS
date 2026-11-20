@@ -92,7 +92,7 @@ function renderVideoWorkflowConfig(selected:WorkflowNode){
  const operationOptions=modelReleaseBlocked?[{id:"generate",label:"Generate new video"}]:getVideoWorkflowOperationOptions(provider,model);
  const directVideoEdit=directRunway&&operationOptions.some(value=>value.id==="video-to-video"),routerVideoEdit=routerRunway&&operationOptions.some(value=>value.id==="video-to-video");
  const resolutions=modelReleaseBlocked?["provider_default"]:luma?(operation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
-  model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
+  model==="model-router"?["provider_default","480p","720p","1080p","4k"]:model==="seedance2_5"?["480p","720p","1080p","4k"]:model==="kling_4"?["720p","1080p"]:
   model==="kling_4_flash"?["720p"]:model==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:model.startsWith("kling3.0_")?["provider_default"]:
   model==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
  const selectedResolution=resolutions.includes(String(config.resolution||""))?String(config.resolution):(modelReleaseBlocked?"provider_default":luma?"720p":model==="seedance2_5"?"1080p":model==="kling_4"?"720p":"provider_default");
@@ -555,7 +555,7 @@ document.addEventListener("change",event=>{
   for(const name of ["endFrameAssetId","keyframeAssetPicker","keyframeAssetIds","keyframeIndexes"]) {const input=form?.querySelector<HTMLElement>('[name="'+name+'"]') as HTMLInputElement|HTMLSelectElement|null;if(input)input.disabled=!luma||activeOperation!=="generate";}
   const draft=form?.querySelector<HTMLInputElement>('[name="videoDraft"]');if(draft)draft.disabled=!(provider==="runway"&&modelValue==="seedance2_5");
   const values=luma?(activeOperation==="reframe"?["360p","540p","720p"]:["360p","540p","720p","1080p"]):
-   modelValue==="seedance2_5"?["480p","720p","1080p","4k"]:modelValue==="kling_4"?["720p","1080p"]:
+   modelValue==="model-router"?["provider_default","480p","720p","1080p","4k"]:modelValue==="seedance2_5"?["480p","720p","1080p","4k"]:modelValue==="kling_4"?["720p","1080p"]:
    modelValue==="kling_4_flash"?["720p"]:modelValue==="gemini_omni_flash_1.2"?["360p","720p","1080p","4k"]:modelValue.startsWith("kling3.0_")?["provider_default"]:
    modelValue==="gen4.5"?["provider_default","720p","1080p","4k"]:["provider_default","480p","720p","1080p"];
   const activeMode=videoMode?.value||"reference";
