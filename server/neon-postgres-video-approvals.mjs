@@ -136,15 +136,19 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
    if(provider!=="runway"||model!=="model-router"||!["text-to-video","image-to-video","video-to-video"].includes(operation))throw fail("This Neon workflow adapter only admits the explicitly registered Runway Model Router contract.","VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
    if(!input||typeof input!=="object"||Array.isArray(input)||Buffer.byteLength(JSON.stringify(input),"utf8")>1024*1024)throw fail("Neon workflow input must be a bounded JSON object.","VIDEO_WORKFLOW_INPUT_INVALID");
    const expiry=Date.parse(String(expiresAt||""));
-   if(!Number.isFinite(expiry)||expiry<=Date.now())throw fail("The approved workflow quote has expired.","VIDEO_WORKFLOW_QUOTE_EXPIRED");
+   const existing=await approvals.get(quoteId,{ownerId,projectId});
+   if((!existing||existing.requestHash!==requestHash)&&(!Number.isFinite(expiry)||expiry<=Date.now())){
+    throw fail("The approved workflow quote has expired.","VIDEO_WORKFLOW_QUOTE_EXPIRED");
+   }
    const quotedAmountMicros=Math.round(Number(estimatedAmount)*1000000);
    const budgetCeilingMicros=Math.round(Number(approvedMaxAmount)*1000000);
    if(!Number.isSafeInteger(quotedAmountMicros)||quotedAmountMicros<1||Math.abs(quotedAmountMicros/1000000-Number(estimatedAmount))>0.0000001||
       !Number.isSafeInteger(budgetCeilingMicros)||budgetCeilingMicros<quotedAmountMicros||budgetCeilingMicros>1000000000000||
       Math.abs(budgetCeilingMicros/1000000-Number(approvedMaxAmount))>0.0000001)throw fail("The workflow quote and approved USD ceiling must use bounded six-decimal amounts.","VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
    const shot={...input,provider,model,operation,estimatedCostMicros:quotedAmountMicros,
-    approvedMaxAmountMicros:budgetCeilingMicros,workflowQuoteId:quoteId,workflowRequestId:requestId,
-    workflowRequestHash:requestHash,quoteExpiresAt:new Date(expiry).toISOString(),
+    approvedMaxAmountMicros:budgetCeilingMicros,approvedMaxAmount:budgetCeilingMicros/1000000,
+    workflowQuoteId:quoteId,workflowRequestId:requestId,
+    workflowRequestHash:requestHash,quoteExpiresAt:Number.isFinite(expiry)?new Date(expiry).toISOString():null,
     routedProvider:typeof raw.routedProvider==="string"?raw.routedProvider.slice(0,100):"runway",
     routedModel:typeof raw.routedModel==="string"?raw.routedModel.slice(0,160):"model-router",
     estimatedProviderCredits:Number.isSafeInteger(raw.estimatedCredits)&&raw.estimatedCredits>0?raw.estimatedCredits:null,
