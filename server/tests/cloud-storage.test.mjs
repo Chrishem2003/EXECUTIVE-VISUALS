@@ -11,6 +11,14 @@ const uuid="123e4567-e89b-42d3-a456-426614174000";
 const path=uuid+"/assets/master.mp4";
 function response(body={},status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 
+test("opaque Supabase secret uses apikey only for private storage uploads",async()=>{
+ const calls=[];
+ const storage=createCloudStorage({url:config.url,serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return response({Key:"ok"});}});
+ await storage.upload(path,new Uint8Array([1,2,3]),"video/mp4");
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("uploads private assets to the fixed bucket using server credentials",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({Key:"ok"});}});
