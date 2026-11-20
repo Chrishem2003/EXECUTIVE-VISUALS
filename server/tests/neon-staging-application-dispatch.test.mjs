@@ -151,7 +151,7 @@ test("submits one quote-bound workflow node through the Neon ledger after projec
  assert.equal(result.body.job.id,job);
  assert.equal(result.body.providerRequestsSubmitted,false);
  assert.ok(f.calls.some(x=>x[0]==="enqueueWorkflowNode"&&x[1].requestHash===quote.requestHash));
- assert.ok(f.calls.some(x=>x[0]==="audit"&&x[1]==="workflow.video_generation.neon_job_enqueued"));
+ assert.ok(f.calls.some(x=>x[0]==="audit"&&x[2]==="workflow.video_generation.neon_job_enqueued"),"audit receives ownerId before event name");
 });
 
 test("workflow-node dispatch rejects unauthorized projects before contacting the Neon queue",async()=>{
