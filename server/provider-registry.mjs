@@ -32,13 +32,15 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const runwayRouterMisconfigured=runwayRouterRequested&&!runwayRouterConfigured;
  const runwayDirectConfigured=runwayApiKeyConfigured&&runwayAllowlist.length>0;
  const runwayConfigured=!runwayRouterMisconfigured&&(runwayDirectConfigured||runwayRouterConfigured);
- const runwaySelectedModel=runwayPrimaryModel||(runwayRouterRequested?"model-router":"");
+ const runwaySelectedModel=runwayRouterConfigured?"model-router":runwayPrimaryModel;
  const runwayRouterCapabilities={
-  textToVideo:true,imageToVideo:true,videoToVideo:true,videoEdit:true,videoExtend:true,videoReframe:false,
-  nativeAudio:true,negativePrompt:true,seed:true,startFrame:true,endFrame:false,motionReference:false,
-  referenceImages:true,referenceVideos:true,referenceAudio:true,maxReferenceImages:4,maxReferenceVideos:2,maxReferenceAudio:1,
-  audioModes:["generated","none","reference"],aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
-  resolutions:["provider_default","480p","720p","1080p","4k"],minDurationSeconds:2,maxDurationSeconds:30
+  // Keep the catalogue conservative: only advertise capabilities documented
+  // by the routed-video contract. The selected model can vary per request.
+  textToVideo:true,imageToVideo:true,videoToVideo:false,videoEdit:false,videoExtend:false,videoReframe:false,
+  nativeAudio:false,negativePrompt:true,seed:false,startFrame:false,endFrame:false,motionReference:false,
+  referenceImages:true,referenceVideos:false,referenceAudio:false,maxReferenceImages:4,
+  audioModes:[],aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
+  resolutions:["provider_default"],minDurationSeconds:2,maxDurationSeconds:30
  };
  const video=videoProvider==="runway"
   ?gatewayState({
