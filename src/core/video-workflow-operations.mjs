@@ -26,3 +26,28 @@ export function getVideoWorkflowOperationOptions(provider, model) {
   }
   return [{ id: "generate", label: "Generate new video" }];
 }
+
+
+/**
+ * Validate the source-video input contract for a Runway Model Router edit.
+ * Asset ownership and media verification remain server-side responsibilities.
+ */
+export function validateRunwayRouterVideoSourceInput({
+  sourceVideoAssetId,
+  rightsConfirmed,
+  startFrameAssetId,
+  endFrameAssetId,
+  referenceImageAssetIds = [],
+  keyframeIndexes = []
+} = {}) {
+  const sourceId = typeof sourceVideoAssetId === "string" ? sourceVideoAssetId.trim() : "";
+  if (!sourceId) throw new Error("Choose a private source-video asset from this project.");
+  if (rightsConfirmed !== true) throw new Error("Confirm rights to use the source video before saving this operation.");
+  if (!Array.isArray(referenceImageAssetIds) || !Array.isArray(keyframeIndexes)) {
+    throw new Error("Source-video reference selections are invalid.");
+  }
+  if (startFrameAssetId || endFrameAssetId || referenceImageAssetIds.some(value => String(value || "").trim()) || keyframeIndexes.length) {
+    throw new Error("Source-video transformations cannot be combined with image or keyframe inputs.");
+  }
+  return sourceId;
+}
