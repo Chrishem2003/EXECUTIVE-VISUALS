@@ -35,8 +35,8 @@ import { createLumaProviderFileService } from "./luma-provider-file-service.mjs"
 export function createProviderAwareCloudVideoWorkerComposition({
   workerId,
   url = process.env.SUPABASE_URL,
-  serviceRoleKey = resolveSupabaseServerKey(process.env),
   env = process.env,
+  serviceRoleKey = resolveSupabaseServerKey(env),
   fetchImpl = globalThis.fetch,
   createAdapters,
   providerDependencies = {},
