@@ -28,7 +28,7 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const runwayRouterRequested=env.RUNWAY_MODEL_ROUTER_ENABLED==="true";
  const runwayRouterConfig=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"").trim();
  const runwayRouterConfigValid=/^[a-z][a-z0-9_-]{0,63}$/.test(runwayRouterConfig);
- const runwayRouterConfigured=runwayRouterRequested&&runwayRouterConfigValid&&runwayApiKeyConfigured;
+ const runwayRouterConfigured=runwayRouterRequested&&runwayRouterConfigValid&&runwayApiKeyConfigured&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
  const runwayRouterMisconfigured=runwayRouterRequested&&!runwayRouterConfigured;
  const runwayDirectConfigured=runwayApiKeyConfigured&&runwayAllowlist.length>0;
  const runwayConfigured=!runwayRouterMisconfigured&&(runwayDirectConfigured||runwayRouterConfigured);
@@ -54,7 +54,9 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
     provider:"runway",
     capabilities:["video.generate"],
     reasonIfMissing:runwayRouterRequested
-      ?"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and a valid RUNWAY_VIDEO_ROUTER_CONFIG for the enabled Model Router."
+      ?String(env.RUNWAY_VIDEO_MODELS||"").trim()
+        ?"Clear RUNWAY_VIDEO_MODELS when enabling the Runway Model Router; direct-model allowlists and router mode cannot be active together."
+        :"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and a valid RUNWAY_VIDEO_ROUTER_CONFIG for the enabled Model Router."
       :"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."
   })
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),id:"video",url:"https://queue.fal.run",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
@@ -83,7 +85,9 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
       readiness:runwayRouterConfigured?video.status:"needs_configuration",
       capabilities:runwayRouterCapabilities,
       reason:runwayRouterConfigured?video.reason:
-        "Enable RUNWAY_MODEL_ROUTER_ENABLED and configure a valid saved router slug plus RUNWAY_API_KEY."
+        String(env.RUNWAY_VIDEO_MODELS||"").trim()
+          ?"Clear RUNWAY_VIDEO_MODELS before enabling the Runway Model Router."
+          :"Enable RUNWAY_MODEL_ROUTER_ENABLED and configure a valid saved router slug plus RUNWAY_API_KEY."
     }]:[])
   ]
   :[];
