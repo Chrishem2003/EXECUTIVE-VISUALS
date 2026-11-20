@@ -91,3 +91,14 @@ test("cloud video worker preserves blocked status from backend-specific quaranti
   assert.equal(result.status, "blocked");
   assert.equal(events.at(-1).type, "video.job.blocked");
 });
+
+test("cloud video worker defers a safely reset provider submission using its bounded retry hint", async () => {
+  const f = fixture(75, "VIDEO_PROVIDER_SUBMISSION_RETRYABLE");
+  const result = await runCloudVideoWorkerCycle({
+    ...f, workerId: "worker-1", heartbeatIntervalMs: 1000, execute: f.execute
+  });
+  assert.equal(result.status, "queued");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].delaySeconds, 75);
+  assert.equal(f.calls[0].reasonCode, "VIDEO_PROVIDER_SUBMISSION_RETRYABLE");
+});
