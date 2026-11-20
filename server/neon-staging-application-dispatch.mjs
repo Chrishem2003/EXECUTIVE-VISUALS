@@ -159,5 +159,36 @@ export function createNeonStagingApplicationDispatch({
     }};
   }
 
-  return Object.freeze({submit,cancelJob});
+  async function submitWorkflowNode(input={}){
+    const {quoteId,ownerId,projectId}=input;
+    if(!UUID.test(String(quoteId||""))||!UUID.test(String(ownerId||""))||!UUID.test(String(projectId||""))){
+      return {status:400,body:{error:{code:"VIDEO_WORKFLOW_APPROVAL_INVALID",message:"A valid quote, authenticated account and project are required."},providerRequestsSubmitted:false}};
+    }
+    let allowed=false;
+    try{allowed=await canWriteProject(ownerId,projectId)===true;}catch{}
+    if(!allowed)return {status:404,body:{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."},providerRequestsSubmitted:false}};
+    if(typeof runtime?.videoApprovals?.approvals?.enqueueWorkflowNode!=="function"){
+      return {status:503,body:{error:{code:"VIDEO_WORKFLOW_DISPATCH_UNAVAILABLE",message:"The Neon workflow-node adapter is not configured."},providerRequestsSubmitted:false}};
+    }
+    try{
+      const receipt=await runtime.videoApprovals.approvals.enqueueWorkflowNode(input);
+      if(!receipt||receipt.backend!=="neon-postgres"||receipt.approvalId!==quoteId||!UUID.test(String(receipt.jobId||""))){
+        throw fail("Neon workflow dispatch returned an invalid durable job receipt.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
+      }
+      audit(ownerId,"workflow.video_generation.neon_job_enqueued","workflow_video_quote",quoteId,
+        {projectId,jobId:receipt.jobId,requestHash:input.requestHash,providerRequestsSubmitted:false},projectId);
+      return {status:receipt.idempotentReplay?200:202,body:{
+        job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,currency:"USD"},
+        backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,providerRequestsSubmitted:false
+      }};
+    }catch(error){
+      const detail=safeError(error);
+      const status=detail.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID"||detail.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED"||
+        detail.code==="VIDEO_WORKFLOW_INPUT_INVALID"||detail.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED"?422:
+        detail.code==="VIDEO_REPOSITORY_TIMEOUT"?503:502;
+      return {status,body:{error:detail,backend:"neon-postgres",providerRequestsSubmitted:false}};
+    }
+  }
+
+  return Object.freeze({submit,submitWorkflowNode,cancelJob});
 }
