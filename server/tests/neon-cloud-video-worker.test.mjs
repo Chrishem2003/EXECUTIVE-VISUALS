@@ -66,6 +66,7 @@ test("Neon worker contracts finalize success with measured credits and provider 
   const [, args] = f.calls[0];
   assert.equal(args.ownerId, jobId);
   assert.equal(args.actualCredits, 250, "customer credits must be derived from the verified USD charge, not provider credits supplied by the adapter");
+  assert.equal(args.output.actualCredits, 250, "the settled customer-credit amount must be persisted with the job output");
   assert.equal(args.financialEvidence.evidenceId, "task-1");
   assert.equal(args.financialEvidence.evidenceReference, "provider-receipt-1");
 });
