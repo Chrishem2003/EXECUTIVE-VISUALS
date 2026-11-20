@@ -193,9 +193,9 @@ test("Runway Model Router catalogue profile passes the real shot preflight contr
  const routerPricing=[{
   provider:"runway",model:"model-router",currency:"USD",sourceUrl:"https://docs.dev.runwayml.com/pricing/",
   observedAt:"2026-11-11T00:00:00.000Z",expiresAt:"2026-12-11T00:00:00.000Z",
-  ratesPerSecond:{"720p":0.1},billingIncrementSeconds:1
+  ratesPerSecond:{"provider_default":0.1},billingIncrementSeconds:1
  }];
- const routerShot={...shot,model:"model-router",durationSeconds:8,resolution:"720p",referenceImageCount:1,audioMode:"generated"};
+ const routerShot={...shot,model:"model-router",durationSeconds:8,resolution:"provider_default",referenceImageCount:1,audioMode:"none"};
  const result=preflightVideoProduction({shots:[routerShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
  assert.equal(result.status,"ready_for_approval");
  assert.equal(result.readyForApproval,true);
