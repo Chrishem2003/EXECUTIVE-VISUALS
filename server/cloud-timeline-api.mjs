@@ -1,3 +1,4 @@
+import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
@@ -19,7 +20,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -31,7 +32,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-  const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
+  const headers={...supabaseServerAuthHeaders(serviceRoleKey),"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
   if(body!==null)headers["content-type"]="application/json";
   const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
   const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
@@ -222,7 +223,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   }
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
+   const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{...supabaseServerAuthHeaders(serviceRoleKey),accept:"application/json"},signal:controller.signal});
    if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
    const bucket=await result.json();
    if(bucket.public!==false)throw new Error("Cloud timeline API refuses a media bucket that is not confirmed private.");
