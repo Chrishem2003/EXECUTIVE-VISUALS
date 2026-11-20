@@ -48,7 +48,6 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
     configured:runwayConfigured,
     id:"video",
     url:"https://api.dev.runwayml.com",
-    id:"video",
     allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
     model:runwaySelectedModel,
     provider:"runway",
