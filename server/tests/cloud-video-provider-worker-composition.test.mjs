@@ -28,6 +28,12 @@ const base = {
   }]
 };
 
+test("provider-aware composition resolves modern Supabase secret from injected environment",()=>{
+ const modernEnv={...env,SUPABASE_SECRET_KEY:"sb_secret_modern"};
+ const worker=createProviderAwareCloudVideoWorkerComposition({...base,serviceRoleKey:undefined,env:modernEnv});
+ assert.ok(worker);
+});
+
 test("provider-aware worker composition is disabled without explicit cloud-worker opt-in", () => {
   assert.throws(
     () => createProviderAwareCloudVideoWorkerComposition({ ...base, env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "false" } }),
