@@ -87,7 +87,7 @@ function timelineDurationSeconds(timeline){
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false,workflowNodeDispatch=null,workflowJobLookup=null,workflowJobCancel=null}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false,workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -532,7 +532,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      const prepared=quoteAdapter?await quoteAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId,project_id:projectId}}):workflowRequest.input;
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
-     if(typeof workflowNodeDispatch==="function"){
+     if(typeof workflowNodeDispatch==="function"&&workflowNodeDispatchEnabled()===true){
       const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
       const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
       if(!storedQuote||storedQuote.id!==quoteId||storedQuote.owner_id!==ownerId||storedQuote.project_id!==projectId||
