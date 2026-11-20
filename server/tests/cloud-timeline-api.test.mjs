@@ -6,7 +6,7 @@ import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 test("cloud timeline API uses modern Supabase secret without Bearer authorization",async()=>{
  const calls=[];
- const api=createCloudTimelineApi({url:"https://project.supabase.co",serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return new Response(JSON.stringify({buckets:[]}),{status:200});}});
+ const api=createCloudTimelineApi({url:"https://project.supabase.co",serviceRoleKey:"sb_secret_modern",fetchImpl:async(url,options)=>{calls.push(options);return String(url).includes("/storage/v1/bucket/")?new Response(JSON.stringify({public:false}),{status:200}):new Response("[]",{status:200});}});
  await api.checkReadiness();
  assert.equal(calls[0].headers.apikey,"sb_secret_modern");
  assert.equal("authorization" in calls[0].headers,false);
