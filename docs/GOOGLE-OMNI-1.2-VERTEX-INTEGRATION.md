@@ -4,7 +4,7 @@ Status: transport and private-output ingestion implemented on a feature branch; 
 
 ## Why this is a separate integration
 
-Gemini Omni 1.2 Flash is listed as a GA model on the Gemini Enterprise Agent Platform Interactions API. The supported model ID is `gemini-omni-1.2-flash`. The Vertex Interactions API uses a project-scoped endpoint:
+Gemini Omni 1.2 Flash is listed as a GA model on the Gemini Enterprise Agent Platform Interactions API. The supported model ID is `gemini-omni-1.2-flash`. The Vertex Interactions API currently documents a project-scoped `v1beta1` endpoint (do not substitute the unrelated general Vertex `v1` API surface):
 
 `POST https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/interactions`
 
@@ -36,7 +36,7 @@ The bucket must be private. Do not use public object ACLs, public buckets, or br
 - Model: `gemini-omni-1.2-flash`.
 - Native generation/edit duration: 3–15 seconds; first/last-frame interpolation and extension have narrower documented limits.
 - Output resolutions: 360p, 720p, 1080p and 4K; cost preflight must reject any resolution without a verified rate card.
-- URI output requires a `gcs_uri` destination. The worker generates that destination from its own bucket/prefix and the durable job ID + request hash; callers cannot supply an arbitrary GCS path.
+- URI output requires a `gcs_uri` destination inside a `response_format` list. The documented request shape uses an array of response-format objects, not a single object. The worker generates that destination from its own bucket/prefix and the durable job ID + request hash; callers cannot supply an arbitrary GCS path.
 - The Vertex interaction ID and output URI must be durably associated with the exact owner, project, job, request hash and current worker lease.
 - Downloaded output must pass byte limits, MP4 content-type checks, SHA-256 calculation and private asset publication before the job can complete.
 
@@ -61,6 +61,6 @@ Do not enable 1.2 paid execution until the exact Vertex pricing dimensions for i
 
 - Google Cloud Interactions API: https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/models/interactions-api
 - Gemini Omni 1.2 model page: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/omni-1-2-flash
-- Video generation request/response and GCS URI delivery: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-text
+- Video generation request/response and GCS URI delivery: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-an-image
 - Gemini Omni 1.2 launch and published 720p price: https://cloud.google.com/blog/products/ai-machine-learning/gemini-omni-1-2-flash-generally-available
 - Google Cloud Generative AI pricing: https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing
