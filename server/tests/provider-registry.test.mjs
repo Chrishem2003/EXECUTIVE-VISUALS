@@ -376,3 +376,17 @@ test("Runway Model Router cannot be advertised ready when a direct-model allowli
  assert.match(video.reason,/Clear RUNWAY_VIDEO_MODELS/);
  assert.equal(JSON.stringify(catalog).includes("server-only"),false);
 });
+
+test("Runway Model Router refuses a conflicting explicit multi-model allowlist",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",
+  RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_MODELS:"seedance2_5,kling_4"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"needs_configuration");
+ assert.equal(video.availableModels.find(model=>model.id==="model-router").available,false);
+ assert.match(video.reason,/Clear RUNWAY_VIDEO_MODELS/);
+ assert.equal(findProviderForCapability(catalog,"video.generate",{allowRemote:true}),null);
+});
