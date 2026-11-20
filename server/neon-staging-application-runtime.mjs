@@ -3,7 +3,7 @@ import { createNeonStagingApplicationDispatch } from "./neon-staging-application
 
 function parseCreditRate(value){
   const text=String(value??"").trim();
-  if(!/^\d+$/.test(text))throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be an explicitly configured positive integer.");
+  if(!/^\\d+$/.test(text))throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be an explicitly configured positive integer.");
   const rate=Number(text);
   if(!Number.isSafeInteger(rate)||rate<1||rate>1_000_000)throw new Error("NEON_CUSTOMER_CREDITS_PER_USD must be between 1 and 1,000,000.");
   return BigInt(rate);
@@ -27,12 +27,13 @@ function quoteUsdCredits({currency,amountMicros},rate){
 
 /**
  * Explicitly gated composition for the existing authenticated approval route.
- * It opens no provider connection and never starts a worker. The Neon schema
- * must already be migrated and pass read-only readiness before the route can
- * submit approvals to the isolated staging ledger.
+ * Worker adapters, owner/project authorization and private storage are supplied
+ * by the application host; this module never invents credentials or silently
+ * substitutes the active Supabase worker for the isolated Neon worker.
  */
 export async function createNeonStagingApprovalDispatch({
-  env=process.env,db,canWriteProject,audit,createRuntime=createNeonStagingRuntime
+  env=process.env,db,canWriteProject,audit,createRuntime=createNeonStagingRuntime,
+  runtimeOptions={}
 }={}){
   if(env.NEON_STAGING_APPLICATION_DISPATCH_ENABLED!=="true"){
     return Object.freeze({enabled:false,dispatch:null,runtime:null,close:async()=>{}});
@@ -45,10 +46,14 @@ export async function createNeonStagingApprovalDispatch({
     throw new Error("Neon application dispatch requires the existing verified Supabase authentication boundary.");
   }
   if(!db||typeof canWriteProject!=="function")throw new Error("Neon application dispatch requires the application database and project authorization.");
+  if(!runtimeOptions||typeof runtimeOptions!=="object"||Array.isArray(runtimeOptions)){
+    throw new Error("Neon application runtime options must be a plain configuration object.");
+  }
   const rate=parseCreditRate(env.NEON_CUSTOMER_CREDITS_PER_USD);
   let runtime=null;
   try{
     runtime=await createRuntime({
+      ...runtimeOptions,
       env,
       quoteCustomerCredits:({currency,amountMicros})=>quoteUsdCredits({currency,amountMicros},rate)
     });
@@ -57,7 +62,7 @@ export async function createNeonStagingApprovalDispatch({
     }
     const readiness=await runtime.checkReadiness();
     if(readiness?.applicationDispatchReady!==true){
-      throw new Error("Neon staging approval dispatch is not ready; required migrations, financial controls and approval tables must pass readiness.");
+      throw new Error("Neon staging approval dispatch is not ready; required migrations, financial controls, approval tables, worker authorization and private storage must pass readiness.");
     }
     const dispatch=createNeonStagingApplicationDispatch({db,runtime,canWriteProject,audit});
     return Object.freeze({enabled:true,dispatch,runtime,readiness,close:()=>runtime.close()});
