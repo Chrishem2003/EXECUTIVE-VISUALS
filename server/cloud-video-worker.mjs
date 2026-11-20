@@ -112,7 +112,7 @@ export async function runCloudVideoWorkerCycle({
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
-    if (code === "VIDEO_PROVIDER_POLL_DEFERRED") {
+    if (code === "VIDEO_PROVIDER_POLL_DEFERRED" || code === "VIDEO_PROVIDER_SUBMISSION_RETRYABLE") {
       const delaySeconds = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds >= 5 && error.retryAfterSeconds <= 900
         ? error.retryAfterSeconds : deferSeconds;
       const deferred = await enqueue.defer({ jobId: job.id, workerId, leaseToken: job.lease_token, delaySeconds, reasonCode: code });
