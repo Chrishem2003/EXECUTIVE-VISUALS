@@ -135,7 +135,7 @@ test("Neon worker composition requires private storage and a complete authorizat
     async submit() {}, async getStatus() {}, async ingestOutputs() {}, async resolveActualCost() {} };
   await assert.rejects(createNeonStagingRuntime({
     env: { ...env, CLOUD_VIDEO_WORKER_ENABLED: "true", VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
-    pool, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
+    pool, quoteCustomerCredits: () => 100, workerAdapters: [adapter], workerAuthorizeJob: async () => true, workerId: "worker"
   }), /private object storage/);
 });
 
