@@ -557,7 +557,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        input:workflowRequest.input,estimatedAmount:Number(storedQuote.estimated_amount),
        approvedMaxAmount,expiresAt:storedQuote.expires_at,
        estimatedCredits:Number(storedQuote.estimated_credits),
-       routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,approvalNote
+       routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,
+       quoteState:storedQuote.state,approvalNote
       });
       if(neonResult){
        if(neonResult.status>=200&&neonResult.status<300&&!alreadyConsumed){
