@@ -129,7 +129,7 @@ test("Vertex output ingestion enforces MP4 content type and configured bucket", 
       })
     });
     await assert.rejects(() => ingestor.ingestInteraction(raw(), { ...context, assertLease: context.assertLease }),
-      error => error.code === "GOOGLE_VERTEX_OUTPUT_INGEST_FAILED");
+      error => error.code === "GOOGLE_VERTEX_OUTPUT_INVALID");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
