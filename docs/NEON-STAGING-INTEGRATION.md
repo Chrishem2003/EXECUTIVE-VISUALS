@@ -328,3 +328,13 @@ After the ledger reset, the worker defers the queue job using a bounded retry de
 Network timeouts, malformed success responses, missing task IDs, HTTP 500 and undocumented 5xx responses are not eligible for this path. They remain quarantined because task creation may have occurred.
 
 The Neon PostgreSQL CI workflow applies migration 0008 and verifies the transition, lease fencing, and one-shot state change against disposable PostgreSQL. No connected Neon branch is migrated by CI.
+
+
+## Private source media compatibility
+
+The Neon storage path is now recognized by both the Runway source-asset resolver and the Luma private-file resolver. Each resolver validates the signed URL against the exact configured Neon endpoint origin and the configured path-style bucket prefix before fetching. A signed URL on another host, another bucket, or a non-HTTPS origin is rejected before network access.
+
+- Runway reads owner/project-scoped source images, videos and audio through the existing asset metadata/authorization repository and the Neon private storage adapter.
+- Luma verifies the stored SHA-256 and byte size before transferring the selected private asset to the Luma Files API; durable provider-file recovery remains in place.
+- The provider-aware Supabase worker composition now passes the Neon endpoint/bucket settings into those source resolvers when Neon storage is explicitly selected.
+- This is a storage/source compatibility improvement, not proof that the Neon PostgreSQL worker is wired into the live application process. The separate application-side Neon worker adapter registry and lifecycle integration still require completion and end-to-end staging verification.
