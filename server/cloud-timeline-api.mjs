@@ -544,10 +544,9 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        return response(409,{error:{code:"VIDEO_WORKFLOW_QUOTE_MISMATCH",message:"The stored quote no longer matches this exact owner, project, model, operation and request. Request a fresh quote."}});
       }
       const alreadyConsumed=storedQuote.state==="consumed";
-      const quoteExpiry=Date.parse(String(storedQuote.expires_at||""));
-      if(!alreadyConsumed&&(!Number.isFinite(quoteExpiry)||quoteExpiry<=Date.now())){
-       return response(409,{error:{code:"VIDEO_WORKFLOW_QUOTE_EXPIRED",message:"This quote has expired. Request a new non-billable quote before approving generation."}});
-      }
+      // The Neon approval repository checks expiry against its durable
+      // idempotency record: expired first-time approvals fail, while a retry
+      // of an approval already registered before expiry returns the same job.
       const neonResult=await workflowNodeDispatch({
        quoteId,ownerId,projectId,requestId,requestHash:workflowRequest.requestHash,
        provider:workflowRequest.provider,model:workflowRequest.model,operation:workflowRequest.operation,
