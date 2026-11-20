@@ -75,3 +75,17 @@ test("Neon provider registry requires a server-side FAL model and billing config
     env: { ...env, FAL_VIDEO_MODEL: "" }, storage
   }), /FAL_VIDEO_MODEL/);
 });
+
+
+test("Neon worker registry refuses a noncanonical bucket even when storage is injected", () => {
+  const storage = createNeonObjectStorage({
+    endpoint: env.NEON_STORAGE_ENDPOINT, region: env.NEON_STORAGE_REGION,
+    accessKeyId: env.NEON_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: env.NEON_STORAGE_SECRET_ACCESS_KEY,
+    bucket: env.NEON_STORAGE_BUCKET,
+    fetchImpl: async () => { throw new Error("not called"); }
+  });
+  assert.throws(() => createNeonStagingProviderAdapters({
+    env: { ...env, NEON_STORAGE_BUCKET: "custom-media" }, storage
+  }), /canonical executive-visuals-media bucket/);
+});
