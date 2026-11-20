@@ -23,19 +23,76 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  image.availableModels=imageGemini?listGeminiImageModels():[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
  const runwayAllowlist=String(env.RUNWAY_VIDEO_MODELS||env.RUNWAY_VIDEO_MODEL||"").split(",").map(value=>value.trim()).filter(Boolean);
+ const runwayApiKeyConfigured=Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
  const runwayPrimaryModel=String(env.RUNWAY_VIDEO_MODEL||runwayAllowlist[0]||"").trim();
+ const runwayRouterRequested=env.RUNWAY_MODEL_ROUTER_ENABLED==="true";
+ const runwayRouterConfig=String(env.RUNWAY_VIDEO_ROUTER_CONFIG||"").trim();
+ const runwayRouterConfigValid=/^[a-z][a-z0-9_-]{0,63}$/.test(runwayRouterConfig);
+ const runwayRouterConfigured=runwayRouterRequested&&runwayRouterConfigValid&&runwayApiKeyConfigured&&!String(env.RUNWAY_VIDEO_MODELS||"").trim();
+ const runwayRouterMisconfigured=runwayRouterRequested&&!runwayRouterConfigured;
+ const runwayDirectConfigured=runwayApiKeyConfigured&&runwayAllowlist.length>0;
+ const runwayConfigured=!runwayRouterMisconfigured&&(runwayDirectConfigured||runwayRouterConfigured);
+ const runwaySelectedModel=runwayRouterConfigured?"model-router":runwayPrimaryModel;
+ const runwayRouterCapabilities={
+  // Model-agnostic capabilities accepted by the routed-video API and mapped
+  // by the durable adapter. Per-request eligibility is decided by Runway.
+  textToVideo:true,imageToVideo:true,videoToVideo:true,videoEdit:true,videoExtend:false,videoReframe:false,
+  nativeAudio:true,negativePrompt:true,seed:true,startFrame:true,endFrame:true,motionReference:false,
+  referenceImages:true,referenceVideos:true,referenceAudio:true,
+  maxReferenceImages:4,maxReferenceVideos:2,maxReferenceAudio:1,
+  audioModes:["generated","none","reference"],
+  aspectRatios:["16:9","9:16","1:1","4:3","3:4","21:9"],
+  resolutions:["provider_default","480p","720p","1080p","4k"],
+  minDurationSeconds:2,maxDurationSeconds:30
+ };
  const video=videoProvider==="runway"
-  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&runwayAllowlist.length),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:runwayPrimaryModel,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."})
-  :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
+  ?gatewayState({
+    enabled:env.VIDEO_GATEWAY_ENABLED==="true",
+    configured:runwayConfigured,
+    id:"video",
+    url:"https://api.dev.runwayml.com",
+    allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
+    model:runwaySelectedModel,
+    provider:"runway",
+    capabilities:["video.generate"],
+    reasonIfMissing:runwayRouterRequested
+      ?String(env.RUNWAY_VIDEO_MODELS||"").trim()
+        ?"Clear RUNWAY_VIDEO_MODELS when enabling the Runway Model Router; direct-model allowlists and router mode cannot be active together."
+        :"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and a valid RUNWAY_VIDEO_ROUTER_CONFIG for the enabled Model Router."
+      :"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and RUNWAY_VIDEO_MODEL or RUNWAY_VIDEO_MODELS on the server."
+  })
+  :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),id:"video",url:"https://queue.fal.run",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
- if(videoProvider==="runway"&&video.status==="ready"&&(env.CLOUD_VIDEO_WORKER_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true")){video.status="needs_configuration";video.reason="Enable the durable cloud worker and RUNWAY_VIDEO_ALLOW_REMOTE before Runway models can be selected.";}
- video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(runwayPrimaryModel):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
- video.availableModels=videoProvider==="runway"?listRunwayVideoModels().map(model=>{
-  const allowlisted=runwayAllowlist.includes(model.id);
-  const ready=video.status==="ready"&&allowlisted;
-  return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":"not_configured",
-   reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
- }):[];
+ if(videoProvider==="runway"&&video.status==="ready"&&
+    (env.CLOUD_WORKER_ENABLED!=="true"||env.CLOUD_VIDEO_WORKER_ENABLED!=="true")){
+  video.status="needs_configuration";
+  video.reason="Enable CLOUD_WORKER_ENABLED and CLOUD_VIDEO_WORKER_ENABLED before Runway models can be selected by the durable worker.";
+ }
+ video.modelCapabilities=videoProvider==="runway"
+  ?(runwaySelectedModel==="model-router"?runwayRouterCapabilities:getRunwayVideoCapabilities(runwaySelectedModel))
+  :getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
+ video.availableModels=videoProvider==="runway"
+  ?[
+    ...listRunwayVideoModels().map(model=>{
+      const allowlisted=runwayAllowlist.includes(model.id);
+      const ready=video.status==="ready"&&!runwayRouterConfigured&&allowlisted;
+      return {...model,available:ready,executionVerified:ready,readiness:ready?"ready":runwayRouterConfigured?"router_active":allowlisted?video.status:"not_configured",
+        reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":runwayRouterConfigured?"The configured Runway Model Router takes precedence over direct-model selection.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
+    }),
+    ...(runwayRouterRequested?[{
+      id:"model-router",name:"Runway Model Router",label:"Runway Model Router",
+      ...runwayRouterCapabilities,
+      available:video.status==="ready"&&runwayRouterConfigured,
+      executionVerified:video.status==="ready"&&runwayRouterConfigured,
+      readiness:runwayRouterConfigured?video.status:"needs_configuration",
+      capabilities:runwayRouterCapabilities,
+      reason:runwayRouterConfigured?video.reason:
+        String(env.RUNWAY_VIDEO_MODELS||"").trim()
+          ?"Clear RUNWAY_VIDEO_MODELS before enabling the Runway Model Router."
+          :"Enable RUNWAY_MODEL_ROUTER_ENABLED and configure a valid saved router slug plus RUNWAY_API_KEY."
+    }]:[])
+  ]
+  :[];
  const lumaRate=String(env.LUMA_USD_PER_CREDIT||"").trim();
  const lumaRateValid=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?$/.test(lumaRate)&&Number(lumaRate)>0&&Number(lumaRate)<=1000;
  const lumaSchemaReady=env.LUMA_PROVIDER_FILES_SCHEMA_READY==="true";

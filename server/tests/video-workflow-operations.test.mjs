@@ -41,3 +41,20 @@ test("workflow editor uses the shared operation policy and reveals the draft sou
   assert.match(ui, /draftPanel\.hidden=activeOperation!=="draft-enhancement"/);
   assert.match(ui, /draftInput\.disabled=activeOperation!=="draft-enhancement"/);
 });
+
+
+test("Runway Model Router exposes text, first-frame and source-video operations",()=>{
+  assert.deepEqual(getVideoWorkflowOperationOptions("runway","model-router").map(option=>option.id),[
+    "text-to-video","image-to-video","video-to-video"
+  ]);
+});
+
+
+test("workflow editor enables first-frame and source-video input for Runway Model Router",()=>{
+  const ui=readFileSync(new URL("../../src/platform/workflow-workspace.ts",import.meta.url),"utf8");
+  assert.match(ui,/routerRunway&&operation==="image-to-video"/);
+  assert.match(ui,/routerRunway&&activeOperation==="image-to-video"/);
+  assert.match(ui,/Choose a private first-frame image from this project/);
+  assert.match(ui,/routerRunway&&activeOperation==="video-to-video"/);
+  assert.match(ui,/routerRunway&&operation==="video-to-video"/);
+});

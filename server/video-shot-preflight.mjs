@@ -32,6 +32,7 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
   else pass("provider","Server-side provider is configured and remote opt-in is enabled.");
   const provider=String(shot.provider||"");
   const model=String(shot.model||"");
+  const routerModel=provider==="runway"&&model==="model-router";
   if(provider!==video.provider)fail("provider_match","Shot provider does not match the configured video provider.");
   else pass("provider_match","Shot provider matches the configured provider.");
   if(!CLOUD_WORKER_VIDEO_PROVIDERS.has(provider))fail("worker_adapter","The durable cloud worker has no restart-safe task adapter for this provider yet. Select Runway, Fal or Luma, or wait until this provider's asynchronous submit, poll and reconciliation adapter is verified.");
@@ -58,12 +59,17 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
    durationsSeconds:modelProfile.durationsSeconds||video.modelCapabilities?.durationsSeconds||[],
    operations:modelProfile.operations||video.modelCapabilities?.operations||[]
   }:null;
-  const operation=String(shot.operation||"generate");
-  if(video.provider==="luma"&&caps&&!caps.operations.includes(operation))fail("operation","Operation is not supported by the selected Ray 3.2 adapter.");
-  else if(!["generate","edit","reframe","extend"].includes(operation))fail("operation","Select a supported generation, edit, reframe or extend operation.");
+  const operation=String(shot.operation||(routerModel?"text-to-video":"generate"));
+  if(routerModel&&!["text-to-video","image-to-video","video-to-video"].includes(operation))fail("operation","Runway Model Router supports text-to-video, first-frame image-to-video and source-video transformation.");
+  else if(video.provider==="luma"&&caps&&!caps.operations.includes(operation))fail("operation","Operation is not supported by the selected Ray 3.2 adapter.");
+  else if(!routerModel&&!["generate","edit","reframe","extend"].includes(operation))fail("operation","Select a supported generation, edit, reframe or extend operation.");
   else pass("operation","Selected operation is supported by the provider adapter.");
-  if(video.provider==="luma"&&(operation==="edit"||operation==="reframe")&&
-     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(shot.sourceVideoAssetId||"")))
+  const validSourceVideoId=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(shot.sourceVideoAssetId||""));
+  if(routerModel&&operation==="video-to-video"&&!validSourceVideoId)
+   fail("source_video","Runway Model Router video-to-video requires an authorized private source-video asset.");
+  else if(routerModel&&operation!=="video-to-video"&&shot.sourceVideoAssetId)
+   fail("source_video","A source-video asset can only be connected to the video-to-video operation.");
+  else if(video.provider==="luma"&&(operation==="edit"||operation==="reframe")&&!validSourceVideoId)
    fail("source_video","Video editing and reframing require an authorized private source-video asset.");
   else if(video.provider==="luma"&&operation==="extend"&&
      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(shot.sourceGenerationId||"")))
@@ -83,7 +89,8 @@ export function preflightVideoProduction({shots,providerCatalog,pricingCatalog,l
   if(caps&&!caps.resolutions.includes(resolution))fail("resolution","Resolution is not supported by the selected model.");
   else pass("resolution","Resolution is supported.");
   const referenceImageCount=shot.referenceImageCount??0;
-  if(!Number.isInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>12)fail("references","Reference image count must be 0–12.");
+  if(routerModel&&operation==="image-to-video"&&referenceImageCount<1)fail("references","Runway Model Router image-to-video requires at least one verified private first-frame image.");
+  else if(!Number.isInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>12)fail("references","Reference image count must be 0–12.");
   else if(referenceImageCount>0&&caps&&!caps.referenceImages)fail("references","Selected model does not support reference images.");
   else if(caps&&Number.isInteger(caps.maxReferenceImages)&&referenceImageCount>caps.maxReferenceImages)fail("references","Reference image count exceeds the selected model's maximum.");
   else pass("references","Reference image requirements are compatible.");

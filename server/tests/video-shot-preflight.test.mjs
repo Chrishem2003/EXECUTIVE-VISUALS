@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { preflightVideoProduction } from "../video-shot-preflight.mjs";
+import { getProviderCatalog } from "../provider-registry.mjs";
 
 const video={id:"video",provider:"runway",model:"seedance2_5",status:"ready",reason:"configured",
  availableModels:[{id:"seedance2_5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default","480p","720p","1080p"],constraints:{multipleReferenceImages:true}}]};
@@ -179,4 +180,61 @@ test("Luma edit, reframe and extension preflight reject missing or malformed sou
   assert.equal(result.status,"blocked");
   assert.equal(result.shots[0].checks.find(x=>x.id==="source_video").status,"failed");
  }
+});
+
+
+test("Runway Model Router catalogue profile passes the real shot preflight contract without submitting a provider request",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"server-only"
+ });
+ const routerPricing=[{
+  provider:"runway",model:"model-router",currency:"USD",sourceUrl:"https://docs.dev.runwayml.com/pricing/",
+  observedAt:"2026-11-11T00:00:00.000Z",expiresAt:"2026-12-11T00:00:00.000Z",
+  ratesPerSecond:{"provider_default":0.1},billingIncrementSeconds:1
+ }];
+ const routerShot={...shot,model:"model-router",durationSeconds:8,resolution:"provider_default",referenceImageCount:1,audioMode:"none"};
+ const result=preflightVideoProduction({shots:[routerShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(result.status,"ready_for_approval");
+ assert.equal(result.readyForApproval,true);
+ assert.equal(result.requestsSubmitted,false);
+ assert.equal(result.pricing.quote.amount,0.8);
+ assert.ok(result.shots[0].checks.every(check=>check.status==="passed"));
+});
+
+
+test("Runway Model Router preflight supports first-frame and private source-video operations",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  CLOUD_WORKER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",
+  RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"server-only"
+ });
+ const routerPricing=[{
+  provider:"runway",model:"model-router",currency:"USD",sourceUrl:"https://docs.dev.runwayml.com/pricing/",
+  observedAt:"2026-11-11T00:00:00.000Z",expiresAt:"2026-12-11T00:00:00.000Z",
+  ratesPerSecond:{"provider_default":0.1},billingIncrementSeconds:1
+ }];
+ const imageShot={...shot,model:"model-router",operation:"image-to-video",durationSeconds:8,resolution:"provider_default",referenceImageCount:1,audioMode:"none"};
+ const imageResult=preflightVideoProduction({shots:[imageShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(imageResult.status,"ready_for_approval");
+ assert.equal(imageResult.requestsSubmitted,false);
+ assert.ok(imageResult.shots[0].checks.every(check=>check.status==="passed"));
+ const missingFrame=preflightVideoProduction({shots:[{...imageShot,referenceImageCount:0}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(missingFrame.status,"blocked");
+ assert.equal(missingFrame.shots[0].checks.find(check=>check.id==="references").status,"failed");
+ const sourceVideoAssetId="a2f40e12-9d7e-4f42-9a16-83c5d9a1a004";
+ const sourceShot={...shot,model:"model-router",operation:"video-to-video",durationSeconds:12,resolution:"provider_default",referenceImageCount:0,audioMode:"none",sourceVideoAssetId};
+ const sourceResult=preflightVideoProduction({shots:[sourceShot],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(sourceResult.status,"ready_for_approval");
+ assert.equal(sourceResult.requestsSubmitted,false);
+ assert.ok(sourceResult.shots[0].checks.every(check=>check.status==="passed"));
+ const missingSource=preflightVideoProduction({shots:[{...sourceShot,sourceVideoAssetId:""}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(missingSource.status,"blocked");
+ assert.equal(missingSource.shots[0].checks.find(check=>check.id==="source_video").status,"failed");
+ const invalidSource=preflightVideoProduction({shots:[{...sourceShot,sourceVideoAssetId:"not-a-uuid"}],providerCatalog:catalog,pricingCatalog:routerPricing,now});
+ assert.equal(invalidSource.status,"blocked");
+ assert.equal(invalidSource.shots[0].checks.find(check=>check.id==="source_video").status,"failed");
 });
