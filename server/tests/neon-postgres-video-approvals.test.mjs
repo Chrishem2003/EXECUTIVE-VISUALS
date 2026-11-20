@@ -117,6 +117,7 @@ test("workflow-node enqueue rejects expired quotes, changed model families and c
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,expiresAt:new Date(Date.now()-1000).toISOString()}),e=>e.code==="VIDEO_WORKFLOW_QUOTE_EXPIRED");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,model:"kling_4"}),e=>e.code==="VIDEO_WORKFLOW_MODEL_UNSUPPORTED");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,approvedMaxAmount:1.2}),e=>e.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
+ await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,quoteState:"consumed"}),e=>e.code==="VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID");
  assert.equal(f.calls.length,0);
 });
 
