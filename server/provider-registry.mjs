@@ -72,7 +72,8 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
         reason:ready?"Exact model profile is allowlisted and the server-side gateway is ready.":allowlisted?video.reason:"Add this exact model ID to RUNWAY_VIDEO_MODELS before it can be selected."};
     }),
     ...(runwayRouterRequested?[{
-      id:"model-router",label:"Runway Model Router",
+      id:"model-router",name:"Runway Model Router",label:"Runway Model Router",
+      ...runwayRouterCapabilities,
       available:video.status==="ready"&&runwayRouterConfigured,
       executionVerified:video.status==="ready"&&runwayRouterConfigured,
       readiness:runwayRouterConfigured?video.status:"needs_configuration",
