@@ -30,6 +30,15 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row};
 }
 
+test("opaque Supabase secret uses apikey only for private asset metadata requests",async()=>{
+ const calls=[];
+ const storage={async upload(path,data,type){return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},async remove(){return true;},async createSignedUrl(){return"https://example.supabase.co/signed";}};
+ const repo=createCloudAssetRepository({url:config.url,serviceRoleKey:"sb_secret_modern",storage,authorize:async()=>true,fetchImpl:async(url,options)=>{calls.push(options);return response([]);}});
+ await repo.list({ownerId,projectId});
+ assert.equal(calls[0].headers.apikey,"sb_secret_modern");
+ assert.equal("authorization" in calls[0].headers,false);
+});
+
 test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
  let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
  const asset=await f.repo.create({ownerId,projectId,originalName:"final cut.mp4",mediaType:"video/mp4",bytes,metadata:{role:"master"}});
