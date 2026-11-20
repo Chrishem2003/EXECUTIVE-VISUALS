@@ -170,6 +170,10 @@ export function createGoogleOmniVertexClient({
       throw fail("Google Omni 1.2 submission requires an approved, scoped worker plan.", "GOOGLE_VERTEX_PLAN_INVALID");
     }
     const gcsUri = outputUri(context);
+    const videoTask = plan.payload.generation_config?.video_config?.task;
+    if (typeof videoTask !== "string" || !/^[a-z][a-z0-9_]{2,63}$/.test(videoTask)) {
+      throw fail("Google Omni 1.2 requires an explicit video task in generation_config.video_config.task.", "GOOGLE_VERTEX_PLAN_INVALID");
+    }
     const configuredFormats = Array.isArray(plan.payload.response_format)
       ? plan.payload.response_format
       : plan.payload.response_format ? [plan.payload.response_format] : [];
