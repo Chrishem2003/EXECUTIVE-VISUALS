@@ -296,8 +296,10 @@ export function createPrivateVideoOutputIngestor({
           });
           if (existing) {
             if (!UUID.test(String(existing.id || "")) || existing.ownerId !== job.owner_id ||
-                (existing.projectId || null) !== (job.project_id || null) || !String(existing.mediaType || "").startsWith("video/")) {
-              throw fail("Existing provider output asset does not match the job scope.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
+                (existing.projectId || null) !== (job.project_id || null) || !String(existing.mediaType || "").startsWith("video/") ||
+                existing.metadata?.jobId !== String(job.id || "") ||
+                typeof input?.requestHash === "string" && /^[a-f0-9]{64}$/i.test(input.requestHash) && existing.metadata?.requestHash !== input.requestHash) {
+              throw fail("Existing provider output asset does not match the job and request lineage.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
             }
             if (!Number.isSafeInteger(existing.size) || existing.size < 1 || existing.size > maxBytesPerOutput) {
               throw fail("Existing provider output asset size is invalid.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
@@ -331,6 +333,8 @@ export function createPrivateVideoOutputIngestor({
               provider: String(input?.provider || "").slice(0, 100),
               model: String(input?.model || "").slice(0, 160),
               providerTaskId: task.taskId.slice(0, 256),
+              jobId: String(job.id || "").slice(0, 128),
+              requestHash: typeof input?.requestHash === "string" && /^[a-f0-9]{64}$/i.test(input.requestHash) ? input.requestHash : null,
               outputIndex: index,
               validated: true,
               validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) &&

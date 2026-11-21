@@ -82,24 +82,33 @@ export type GeneratedStoryboardAsset = {
  id:string;
  projectId?:string|null;
  mediaType:string;
+ sha256?:string;
  metadata?:Record<string,unknown>;
 };
 export function matchGeneratedStoryboardAssets<T extends GeneratedStoryboardAsset>(
  shots:readonly EpisodeShot[],
  assets:readonly T[],
  approvalId:string,
- projectId:string
+ projectId:string,
+ jobIdsByShotIndex:readonly string[]
 ):Array<{shot:EpisodeShot;asset:T;shotIndex:number}>{
  if(!approvalId.trim()||!projectId.trim())throw new Error("A cloud project and approved production are required to match generated shots.");
  if(!shots.length)throw new Error("The storyboard contains no shots to place on the timeline.");
+ if(!Array.isArray(jobIdsByShotIndex)||jobIdsByShotIndex.length!==shots.length||jobIdsByShotIndex.some(id=>typeof id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))||new Set(jobIdsByShotIndex).size!==shots.length)throw new Error("Every storyboard shot must have one unique durable cloud job identity.");
  const byIndex=new Map<number,T>();
  for(const asset of assets){
   const metadata=asset.metadata||{};
   if(metadata.operation!=="video.generate"||metadata.approvalId!==approvalId)continue;
   if(asset.projectId!==projectId)throw new Error("A generated storyboard asset belongs to a different cloud project.");
-  const shotIndex=Number(metadata.shotIndex);
-  if(!Number.isInteger(shotIndex)||shotIndex<0||shotIndex>=shots.length)throw new Error("A generated storyboard asset has an invalid shot index.");
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(asset.id||"")))throw new Error("A generated storyboard asset has an invalid cloud asset identity.");
+  const shotIndex=metadata.shotIndex;
+  if(typeof shotIndex!=="number"||!Number.isSafeInteger(shotIndex)||shotIndex<0||shotIndex>=shots.length)throw new Error("A generated storyboard asset has an invalid shot index.");
   if(!String(asset.mediaType||"").startsWith("video/"))throw new Error("A generated storyboard output is not a video asset.");
+  if(typeof asset.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(asset.sha256))throw new Error("A generated storyboard output is missing its verified SHA-256 checksum.");
+  if(metadata.jobId!==jobIdsByShotIndex[shotIndex])throw new Error("Generated storyboard output does not belong to the durable job assigned to shot "+(shotIndex+1)+".");
+  if(typeof metadata.provider!=="string"||!metadata.provider.trim()||typeof metadata.model!=="string"||!metadata.model.trim()||typeof metadata.providerTaskId!=="string"||!metadata.providerTaskId.trim())throw new Error("A generated storyboard output is missing its provider execution lineage.");
+  if(metadata.requestHash!=null&&(typeof metadata.requestHash!=="string"||!/^[a-f0-9]{64}$/i.test(metadata.requestHash)))throw new Error("A generated storyboard output has invalid request-hash lineage.");
+  if(metadata.approvedRequestHash!=null&&(typeof metadata.approvedRequestHash!=="string"||!/^[a-f0-9]{64}$/i.test(metadata.approvedRequestHash)))throw new Error("A generated storyboard output has invalid approved-request lineage.");
   if(byIndex.has(shotIndex))throw new Error("More than one generated asset matches storyboard shot "+(shotIndex+1)+".");
   byIndex.set(shotIndex,asset);
  }

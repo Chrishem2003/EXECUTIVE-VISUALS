@@ -326,3 +326,103 @@ test("ambiguous provider timeout is never reset to a retryable prepared submissi
   assert.equal(f.calls.some(call => call[0] === "retry"), false);
   assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
 });
+
+
+test("cloud executor propagates the current lease assertion into provider output ingestion", async () => {
+  const f = fixture();
+  let ingestionContext;
+  f.ingestOutputs = async value => {
+    ingestionContext = value;
+    assert.equal(await value.assertLease(), true);
+    return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } };
+  };
+  const result = await executeCloudVideoGenerationJob({ job, workerId: "worker-lease-fence", ...f });
+  assert.equal(result.assetIds.length, 1);
+  assert.equal(typeof ingestionContext.assertLease, "function");
+  assert.equal(ingestionContext.job.id, job.id);
+  assert.equal(ingestionContext.providerTaskId, taskId);
+});
+
+
+test("cloud executor retains the Vertex Omni reservation when a failed task may still be billable", async () => {
+  const f = fixture({ status: { taskId, status: "failed", failure: "provider moderation" } });
+  const vertexJob = {
+    ...job,
+    input: { ...job.input, provider: "google", model: "gemini-omni-1.2-flash" }
+  };
+  f.adapter.provider = "google";
+  f.adapter.model = "gemini-omni-1.2-flash";
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: vertexJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cost"), false);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
+
+test("cloud executor stops before provider submission when the owner cancellation flag is set", async () => {
+  const f = fixture();
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION"
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare"]);
+  assert.equal(f.calls.some(call => call[0] === "submit"), false);
+});
+
+test("cloud executor forwards owner cancellation to an accepted provider task before polling", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running" } });
+  f.adapter.cancel = async (id, context) => {
+    f.calls.push(["cancel", id, context?.job?.id, context?.workerId]);
+    return { status: "cancel_requested" };
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED"
+  );
+  assert.deepEqual(f.calls.filter(call => ["cancel", "poll"].includes(call[0])).map(call => call[0]), ["cancel", "poll"]);
+  assert.deepEqual(f.calls.find(call => call[0] === "cancel"), ["cancel", taskId, job.id, "worker-1"]);
+});
+
+
+test("cloud executor rechecks owner cancellation after private input preparation and preflight", async () => {
+  const f = fixture();
+  let checks = 0;
+  f.adapter.prepareInput = async input => { f.calls.push(["prepareInput"]); return input; };
+  f.adapter.preflight = async () => {
+    f.calls.push(["preflight"]);
+    return { billable: false, estimatedUsd: 1, currency: "USD", model: "gen4.5" };
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => ++checks > 1
+    }),
+    error => error.code === "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION"
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "preflight"]);
+  assert.equal(f.calls.some(call => call[0] === "begin" || call[0] === "submit"), false);
+});
+
+
+test("cloud executor holds a provider success that races with an owner cancellation request", async () => {
+  const f = fixture({ state: "submitted" });
+  f.adapter.cancel = async id => { f.calls.push(["cancel", id]); return { status: "cancel_requested" }; };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cancel"), true);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+  assert.equal(f.calls.some(call => call[0] === "cost"), false);
+});

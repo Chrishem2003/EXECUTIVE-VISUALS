@@ -18,6 +18,9 @@ import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video
 import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
 import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
 import { createGoogleInteractionRetentionPolicy } from "./google-interaction-retention-policy.mjs";
+import { createGoogleOmniVertexClient } from "./google-omni-vertex-client.mjs";
+import { createGoogleOmniVertexOutputIngestor } from "./google-omni-vertex-output-ingestion.mjs";
+import { createGoogleOmniVertexCloudVideoIntegration } from "./google-omni-vertex-cloud-video-adapter.mjs";
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
 import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
 import { createLumaProviderFileRepository } from "./luma-provider-file-repository.mjs";
@@ -123,7 +126,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
     resolveRunwaySourceMetadata: resolveSourceMetadata,
     resolveRunwayReferenceVideoMetadata: resolveReferenceVideoMetadata
   });
-  const googleEnabled = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
+  const googleOmniVertexEnabled = env.GOOGLE_OMNI_VERTEX_VIDEO_ENABLED === "true" ||
+    env.GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE === "true";
+  const sharedGoogleRequested = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
+  const googleEnabled = env.GEMINI_OMNI_ENABLED === "true" || env.GEMINI_OMNI_ALLOW_REMOTE === "true" ||
+    (sharedGoogleRequested && !googleOmniVertexEnabled);
   let googleOmniIntegration = providerDependencies.googleOmniIntegration;
   if (googleOmniIntegration && !googleEnabled) throw new Error("Google Omni integration cannot be injected while its explicit provider gates are disabled.");
   if (googleEnabled && (
@@ -192,6 +199,86 @@ export function createProviderAwareCloudVideoWorkerComposition({
       maxOutputBytes: maxBytesPerOutput
     });
   }
+  let googleOmniVertexIntegration = providerDependencies.googleOmniVertexIntegration;
+  if (googleOmniVertexIntegration && !googleOmniVertexEnabled) {
+    throw new Error("Vertex Omni integration cannot be injected while its explicit provider gates are disabled.");
+  }
+  if (googleOmniVertexEnabled && (
+      env.GOOGLE_OMNI_VIDEO_ENABLED !== "true" ||
+      env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE !== "true" ||
+      env.GOOGLE_OMNI_VERTEX_VIDEO_ENABLED !== "true" ||
+      env.GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE !== "true"
+  )) {
+    throw new Error("Vertex Omni requires both shared Google and Vertex-specific remote execution gates.");
+  }
+  const googleOmniVertexAssertConnection = providerDependencies.googleOmniVertexAssertConnection;
+  if (googleOmniVertexEnabled && env.GOOGLE_OMNI_VERTEX_CONNECTION_STATUS !== "connected") {
+    throw new Error("Vertex Omni remains gated until its external Google Cloud connection is complete and verified.");
+  }
+  if (googleOmniVertexEnabled && typeof googleOmniVertexAssertConnection !== "function") {
+    throw new Error("Vertex Omni requires a live Google Cloud connection verifier before worker execution.");
+  }
+  async function assertGoogleOmniVertexConnection(job, operation) {
+    let connection;
+    try {
+      connection = await googleOmniVertexAssertConnection({
+        provider: "google", model: "gemini-omni-1.2-flash", job: job || null, operation
+      });
+    } catch {
+      throw Object.assign(new Error("Google Cloud Vertex connection verification failed; remote execution remains blocked."),
+        { code: "GOOGLE_VERTEX_CONNECTION_REQUIRED" });
+    }
+    if (!connection || connection.connected !== true || connection.verified !== true ||
+        typeof connection.connectionId !== "string" || !connection.connectionId.trim() ||
+        connection.connectionId.length > 200) {
+      throw Object.assign(new Error("Google Cloud Vertex account connection is not verified for worker execution."),
+        { code: "GOOGLE_VERTEX_CONNECTION_REQUIRED" });
+    }
+    return true;
+  }
+  if (googleOmniVertexEnabled && !googleOmniVertexIntegration) {
+    const {
+      googleOmniVertexPreparePlan,
+      googleOmniVertexAssertApprovedSubmission,
+      googleOmniVertexClient,
+      googleOmniVertexInteractions,
+      googleOmniVertexRetentionExpiresAt
+    } = providerDependencies;
+    if (typeof googleOmniVertexPreparePlan !== "function" || typeof googleOmniVertexAssertApprovedSubmission !== "function") {
+      throw new Error("Vertex Omni bootstrap requires an owner/project-scoped private-input planner and durable approval validator.");
+    }
+    const interactions = googleOmniVertexInteractions || createGoogleVideoInteractionRepository({
+      ...clientOptions,
+      timeoutMs: Math.min(timeoutMs, 30000),
+      allowedModels: ["gemini-omni-1.2-flash"]
+    });
+    const client = googleOmniVertexClient || createGoogleOmniVertexClient({
+      projectId: env.GOOGLE_CLOUD_PROJECT,
+      outputBucket: env.GOOGLE_OMNI_OUTPUT_BUCKET,
+      outputPrefix: env.GOOGLE_OMNI_OUTPUT_PREFIX || "executive-visuals/omni-12",
+      fetchImpl,
+      timeoutMs: Math.min(timeoutMs, 120000)
+    });
+    const vertexOutputIngestor = createGoogleOmniVertexOutputIngestor({
+      assets: privateAssets.assets,
+      interactions,
+      outputBucket: env.GOOGLE_OMNI_OUTPUT_BUCKET,
+      outputPrefix: env.GOOGLE_OMNI_OUTPUT_PREFIX || "executive-visuals/omni-12",
+      fetchImpl,
+      maxOutputBytes: maxBytesPerOutput,
+      timeoutMs: Math.min(timeoutMs, 120000)
+    });
+    const retention = createGoogleInteractionRetentionPolicy({ env });
+    googleOmniVertexIntegration = createGoogleOmniVertexCloudVideoIntegration({
+      client,
+      interactions,
+      outputIngestor: vertexOutputIngestor,
+      preparePlan: googleOmniVertexPreparePlan,
+      assertApprovedSubmission: googleOmniVertexAssertApprovedSubmission,
+      retentionExpiresAt: googleOmniVertexRetentionExpiresAt || retention.expiresAt
+    });
+  }
+
   const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
     const adapters = [];
     const falConfigured = Boolean(providerEnv.FAL_VIDEO_MODEL && providerEnv.FAL_KEY && providerEnv.FAL_BILLING_KEY);
@@ -339,6 +426,42 @@ export function createProviderAwareCloudVideoWorkerComposition({
     ...providerDependencies,
     googleOmniIntegration
   })];
+  if (googleOmniVertexIntegration) {
+    const vertexAdapter = googleOmniVertexIntegration.adapter;
+    adapters.push(Object.freeze({
+      provider: vertexAdapter.provider,
+      model: vertexAdapter.model,
+      async prepareInput(input, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "prepare");
+        return vertexAdapter.prepareInput(input, context);
+      },
+      async preflight(input, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "preflight");
+        return vertexAdapter.preflight(input, context);
+      },
+      async submit(input, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "submit");
+        return vertexAdapter.submit(input, context);
+      },
+      async getStatus(taskId, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "poll");
+        return vertexAdapter.getStatus(taskId, context);
+      },
+      async cancel(taskId, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "cancel");
+        if (typeof vertexAdapter.cancel !== "function") throw new Error("Vertex Omni cancellation is not configured.");
+        return vertexAdapter.cancel(taskId, context);
+      },
+      async ingestOutputs(args) {
+        await assertGoogleOmniVertexConnection(args?.job, "ingest");
+        return googleOmniVertexIntegration.ingestOutputs(args);
+      },
+      async resolveActualCost(args) {
+        await assertGoogleOmniVertexConnection(args?.job, "reconcile_cost");
+        return googleOmniVertexIntegration.resolveActualCost(args);
+      }
+    }));
+  }
   if (googleOmniIntegration) {
     const googleAdapter = googleOmniIntegration.adapter;
     adapters.push(Object.freeze({
