@@ -98,3 +98,26 @@ test("accepts valid adjacent dip-to-black transitions and rejects invalid transi
  const audioRepo=setup({assetLookup:async()=>({...asset,mediaType:"audio/mpeg"})});
  await assert.rejects(()=>audioRepo.repo.create({ownerId:owner,timeline:audio}),error=>error.code==="CLOUD_TIMELINE_INVALID");
 });
+
+
+test("replays cloud timeline creation by supplied ID without creating a duplicate",async()=>{
+ const f=setup();
+ const requested={...document,id:timelineId};
+ const first=await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:requested});
+ const postCount=f.calls.filter(call=>call.options.method==="POST").length;
+ const replay=await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:requested});
+ assert.equal(first.id,timelineId);
+ assert.equal(replay.id,first.id);
+ assert.equal(replay.revision,first.revision);
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,postCount);
+});
+
+test("rejects reuse of an existing cloud timeline ID for different content",async()=>{
+ const f=setup();
+ await f.repo.create({ownerId:owner,projectId:project,name:"Generated assembly",timeline:{...document,id:timelineId}});
+ await assert.rejects(
+  ()=>f.repo.create({ownerId:owner,projectId:project,name:"Different assembly",timeline:{...document,id:timelineId}}),
+  error=>error.code==="CLOUD_TIMELINE_IDEMPOTENCY_CONFLICT"
+ );
+ assert.equal(f.calls.filter(call=>call.options.method==="POST").length,1);
+});
