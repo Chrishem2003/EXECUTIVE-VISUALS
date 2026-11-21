@@ -24,7 +24,7 @@ This differs from the existing Gemini Developer API 1.1 worker, which uses the G
 - `supabase/migrations/20261121100000_google_omni_vertex_interaction_records.sql`: extends the existing model and output-URI constraints without changing existing 1.1 records. It is source-controlled only and must be applied only after isolated staging review.
 - `server/tests/google-omni-vertex-client.test.mjs` and `server/tests/google-omni-vertex-output-ingestion.test.mjs`: request, authorization, path confinement, download, content-type, size and lease tests.
 
-The worker integration is now composed but remains disabled by default. The interaction repository still defaults to the 1.1 model allowlist; the Vertex worker explicitly requests the 1.2 allowlist. A real Google Cloud connection, private GCS IAM, approved plan callback and all explicit provider gates are required before remote execution can be registered.
+The worker integration is now composed but remains disabled by default. The provider adapter exposes a verified Vertex cancellation request, but the queue-level owner-cancellation orchestration is a separate remaining task; do not represent cancellation as fully end-to-end until that worker path is completed. The interaction repository still defaults to the 1.1 model allowlist; the Vertex worker explicitly requests the 1.2 allowlist. A real Google Cloud connection, private GCS IAM, approved plan callback and all explicit provider gates are required before remote execution can be registered.
 
 ## Configuration prerequisites — do not add until staging is approved
 
