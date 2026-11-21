@@ -12,7 +12,7 @@ function providerState(status) {
   if (status === "completed") return "succeeded";
   if (status === "failed") return "failed";
   if (status === "cancelled" || status === "canceled") return "canceled";
-  if (status === "queued" || status === "in_progress" || status === "running") return "running";
+  if (status === "queued" || status === "in_progress" || status === "requires_action" || status === "running") return "running";
   if (status === "incomplete") return "failed";
   throw fail("Vertex returned an unsupported interaction state.", "VIDEO_PROVIDER_STATUS_INVALID");
 }
