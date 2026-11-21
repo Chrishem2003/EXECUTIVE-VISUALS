@@ -74,7 +74,7 @@ test("lists active cloud timelines for an authorized project with bounded pagina
  const f=setup();await f.repo.create({ownerId:owner,projectId:project,name:"Episode master",timeline:document});
  const result=await f.repo.list({ownerId:owner,projectId:project,limit:500,offset:5});
  assert.equal(result.length,1);assert.equal(result[0].projectId,project);
- const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.options.method==="GET");
+ const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.url.includes("order=updated_at.desc")&&x.options.method==="GET");
  assert.ok(listCall.url.includes("project_id=eq."+project));assert.ok(listCall.url.includes("limit=100"));assert.ok(listCall.url.includes("offset=5"));
 });
 test("does not list cloud timelines when project read permission is denied",async()=>{
