@@ -171,6 +171,30 @@ export function createProviderAwareCloudVideoWorkerComposition({
       googleOmniInteractions,
       googleOmniRetentionExpiresAt
     } = providerDependencies;
+    if (typeof googleOmniAssertApprovedSubmission !== "function" ||
+        typeof googleOmniAuthorizeInteraction !== "function" ||
+        typeof googleOmniPreparePlan !== "function") {
+      throw new Error("Google Omni worker bootstrap requires durable approval, owner/project authorization and private-input planning callbacks.");
+    }
+    const interactions = googleOmniInteractions || createGoogleVideoInteractionRepository({
+      ...clientOptions, timeoutMs: Math.min(timeoutMs, 30000)
+    });
+    const client = googleOmniClient || createGeminiOmniFlashClient({
+      env, fetchImpl,
+      assertApprovedSubmission: googleOmniAssertApprovedSubmission,
+      authorizeInteraction: googleOmniAuthorizeInteraction,
+      timeoutMs: Math.min(timeoutMs, 30000)
+    });
+    const retention = createGoogleInteractionRetentionPolicy({ env });
+    googleOmniIntegration = createGoogleOmniCloudVideoComposition({
+      assets: privateAssets.assets, client, interactions,
+      preparePlan: googleOmniPreparePlan,
+      retentionExpiresAt: googleOmniRetentionExpiresAt || retention.expiresAt,
+      authorizeOutputIngestion: providerDependencies.googleOmniAuthorizeOutputIngestion,
+      env, fetchImpl, timeoutMs: Math.min(timeoutMs, 120000),
+      maxOutputBytes: maxBytesPerOutput
+    });
+  }
   const googleOmniVertexEnabled = env.GOOGLE_OMNI_VERTEX_VIDEO_ENABLED === "true" ||
     env.GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE === "true";
   let googleOmniVertexIntegration = providerDependencies.googleOmniVertexIntegration;
@@ -251,30 +275,6 @@ export function createProviderAwareCloudVideoWorkerComposition({
     });
   }
 
-    if (typeof googleOmniAssertApprovedSubmission !== "function" ||
-        typeof googleOmniAuthorizeInteraction !== "function" ||
-        typeof googleOmniPreparePlan !== "function") {
-      throw new Error("Google Omni worker bootstrap requires durable approval, owner/project authorization and private-input planning callbacks.");
-    }
-    const interactions = googleOmniInteractions || createGoogleVideoInteractionRepository({
-      ...clientOptions, timeoutMs: Math.min(timeoutMs, 30000)
-    });
-    const client = googleOmniClient || createGeminiOmniFlashClient({
-      env, fetchImpl,
-      assertApprovedSubmission: googleOmniAssertApprovedSubmission,
-      authorizeInteraction: googleOmniAuthorizeInteraction,
-      timeoutMs: Math.min(timeoutMs, 30000)
-    });
-    const retention = createGoogleInteractionRetentionPolicy({ env });
-    googleOmniIntegration = createGoogleOmniCloudVideoComposition({
-      assets: privateAssets.assets, client, interactions,
-      preparePlan: googleOmniPreparePlan,
-      retentionExpiresAt: googleOmniRetentionExpiresAt || retention.expiresAt,
-      authorizeOutputIngestion: providerDependencies.googleOmniAuthorizeOutputIngestion,
-      env, fetchImpl, timeoutMs: Math.min(timeoutMs, 120000),
-      maxOutputBytes: maxBytesPerOutput
-    });
-  }
   const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
     const adapters = [];
     const falConfigured = Boolean(providerEnv.FAL_VIDEO_MODEL && providerEnv.FAL_KEY && providerEnv.FAL_BILLING_KEY);
