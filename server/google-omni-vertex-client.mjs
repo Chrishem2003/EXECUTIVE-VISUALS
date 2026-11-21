@@ -231,7 +231,7 @@ export function createGoogleOmniVertexClient({
     if (!UUID.test(String(context?.jobId || "")) || !UUID.test(String(context?.ownerId || ""))) {
       throw fail("Google Vertex interaction cancellation requires an authorized job context.", "GOOGLE_VERTEX_CONTEXT_INVALID");
     }
-    const cancelUrl = ORIGIN + "/v1beta1/interactions/" + encodeURIComponent(safeId) + "/cancel";
+    const cancelUrl = ORIGIN + "/v1/projects/" + encodeURIComponent(project) + "/locations/global/interactions/" + encodeURIComponent(safeId) + "/cancel";
     await request(cancelUrl, { method: "POST", signal });
     return Object.freeze({ interactionId: safeId, status: "cancel_requested" });
   }
