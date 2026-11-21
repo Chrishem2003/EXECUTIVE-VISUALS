@@ -40,3 +40,18 @@ export function cloudJobStatusPath(backend: string | undefined, jobId: string): 
   ? "/api/neon-staging/video-generation-jobs/"+id
   : "/api/cloud/jobs/"+id;
 }
+
+export type CloudJobProgressSnapshot={status:string;progress?:number};
+/** Compact, stable batch summary for the generation workspace. */
+export function summarizeCloudJobProgress(jobs:readonly CloudJobProgressSnapshot[]):string{
+ if(!jobs.length)return "No generation jobs";
+ const completed=jobs.filter(job=>["succeeded","completed"].includes(String(job.status||"").toLowerCase())).length;
+ const failed=jobs.filter(job=>String(job.status||"").toLowerCase()==="failed").length;
+ const cancelled=jobs.filter(job=>["cancelled","canceled"].includes(String(job.status||"").toLowerCase())).length;
+ const active=jobs.length-completed-failed-cancelled;
+ const parts=[completed+" of "+jobs.length+" complete"];
+ if(active)parts.push(active+" active");
+ if(failed)parts.push(failed+" failed");
+ if(cancelled)parts.push(cancelled+" cancelled");
+ return parts.join(" · ");
+}
