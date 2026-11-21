@@ -160,7 +160,7 @@ export function createGoogleOmniVertexCloudVideoIntegration({
       return { taskId: accepted.interactionId, status: state === "succeeded" ? "succeeded" : state };
     },
 
-    async getStatus(providerTaskId, { job } = {}) {
+    async getStatus(providerTaskId, { job, signal } = {}) {
       if (typeof providerTaskId !== "string" || !ID.test(providerTaskId) ||
           !job?.id || !job?.owner_id || job.job_type !== "video.generate") {
         throw fail("Vertex polling requires a valid task ID and leased job context.", "GOOGLE_VERTEX_JOB_INVALID");
@@ -200,7 +200,7 @@ export function createGoogleOmniVertexCloudVideoIntegration({
       });
     },
 
-    async cancel(providerTaskId, { job } = {}) {
+    async cancel(providerTaskId, { job, signal } = {}) {
       if (!job?.id || !job?.owner_id) throw fail("Vertex cancellation requires an authorized job.", "GOOGLE_VERTEX_JOB_INVALID");
       const stored = await interactions.findInteraction({
         interactionId: providerTaskId, ownerId: job.owner_id,
@@ -209,7 +209,7 @@ export function createGoogleOmniVertexCloudVideoIntegration({
       if (!stored || stored.model !== MODEL) throw fail("Vertex cancellation is not authorized for this job.", "GOOGLE_VERTEX_INTERACTION_FORBIDDEN");
       return client.cancelInteraction(providerTaskId, {
         ownerId: job.owner_id, projectId: job.project_id || null, jobId: job.id
-      });
+      }, { signal });
     }
   });
 
