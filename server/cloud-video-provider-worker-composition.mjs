@@ -126,7 +126,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
     resolveRunwaySourceMetadata: resolveSourceMetadata,
     resolveRunwayReferenceVideoMetadata: resolveReferenceVideoMetadata
   });
-  const googleEnabled = env.GEMINI_OMNI_ENABLED === "true" || env.GEMINI_OMNI_ALLOW_REMOTE === "true";
+  const googleOmniVertexEnabled = env.GOOGLE_OMNI_VERTEX_VIDEO_ENABLED === "true" ||
+    env.GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE === "true";
+  const sharedGoogleRequested = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
+  const googleEnabled = env.GEMINI_OMNI_ENABLED === "true" || env.GEMINI_OMNI_ALLOW_REMOTE === "true" ||
+    (sharedGoogleRequested && !googleOmniVertexEnabled);
   let googleOmniIntegration = providerDependencies.googleOmniIntegration;
   if (googleOmniIntegration && !googleEnabled) throw new Error("Google Omni integration cannot be injected while its explicit provider gates are disabled.");
   if (googleEnabled && (
@@ -195,8 +199,6 @@ export function createProviderAwareCloudVideoWorkerComposition({
       maxOutputBytes: maxBytesPerOutput
     });
   }
-  const googleOmniVertexEnabled = env.GOOGLE_OMNI_VERTEX_VIDEO_ENABLED === "true" ||
-    env.GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE === "true";
   let googleOmniVertexIntegration = providerDependencies.googleOmniVertexIntegration;
   if (googleOmniVertexIntegration && !googleOmniVertexEnabled) {
     throw new Error("Vertex Omni integration cannot be injected while its explicit provider gates are disabled.");
