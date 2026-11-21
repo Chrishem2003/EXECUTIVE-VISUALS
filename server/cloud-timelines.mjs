@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const object=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const seconds=value=>Number(value?.value)/Number(value?.rate);
+function stableJson(value){if(Array.isArray(value))return "["+value.map(stableJson).join(",")+"]";if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}";return JSON.stringify(value);}
 
 function validateDocument(document){
   const issues=[];
@@ -112,11 +113,31 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
     async create({ownerId,projectId=null,name="Untitled timeline",timeline,otio=null}={}){
       ownerId=validOwner(ownerId);if(projectId!==null&&projectId!==undefined&&projectId!==""){if(typeof projectId!=="string"||!UUID.test(projectId))throw new Error("Project ID must be a UUID.");}else projectId=null;
       if(typeof name!=="string"||name.trim().length<1||name.trim().length>160)throw new Error("Timeline name must contain 1–160 characters.");
+      const timelineId=timeline?.id===undefined?randomUUID():timeline.id;
+      if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
       await allowed(ownerId,projectId,"write");await checkedDocument(ownerId,timeline);
       if(otio!==null&&!object(otio))throw new Error("OTIO document must be a JSON object.");
-      const rows=await request("timelines?select=id,owner_id,project_id,name,revision,timeline,otio,created_at,updated_at",{method:"POST",body:{id:randomUUID(),owner_id:ownerId,project_id:projectId,name:name.trim(),revision:1,timeline,otio}});
-      if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud timeline creation returned an invalid record.");
-      return map(rows[0]);
+      const findIdempotentExisting=async()=>{
+        const existing=await getTimeline({ownerId,timelineId});
+        if(!existing)return null;
+        if(existing.projectId!==projectId||existing.name!==name.trim()||stableJson(existing.timeline)!==stableJson(timeline)||stableJson(existing.otio)!==stableJson(otio)){
+          const conflict=new Error("This timeline ID already belongs to a different saved timeline.");
+          conflict.code="CLOUD_TIMELINE_IDEMPOTENCY_CONFLICT";
+          throw conflict;
+        }
+        return existing;
+      };
+      const existing=await findIdempotentExisting();
+      if(existing)return existing;
+      try{
+        const rows=await request("timelines?select=id,owner_id,project_id,name,revision,timeline,otio,created_at,updated_at",{method:"POST",body:{id:timelineId,owner_id:ownerId,project_id:projectId,name:name.trim(),revision:1,timeline,otio}});
+        if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud timeline creation returned an invalid record.");
+        return map(rows[0]);
+      }catch(error){
+        const replay=await findIdempotentExisting();
+        if(replay)return replay;
+        throw error;
+      }
     },
     async list({ownerId,projectId=null,limit=50,offset=0}={}){
       ownerId=validOwner(ownerId);
