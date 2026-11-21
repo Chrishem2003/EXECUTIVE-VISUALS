@@ -70,11 +70,11 @@ function harness({ stored = true, status = completed } = {}) {
       await onInteractionCreated({ interactionId, status: "in_progress", model: "gemini-omni-1.2-flash", outputUri });
       return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.2-flash", status: "in_progress", outputUri };
     },
-    async getInteractionForIngestion(id, scope) {
-      calls.push(["poll", id, scope]);
+    async getInteractionForIngestion(id, scope, options) {
+      calls.push(["poll", id, scope, options]);
       return status;
     },
-    async cancelInteraction(id, scope) { calls.push(["cancel", id, scope]); return { id, status: "cancelled" }; }
+    async cancelInteraction(id, scope, options) { calls.push(["cancel", id, scope, options]); return { id, status: "cancelled" }; }
   };
   const outputIngestor = {
     async ingestInteraction(raw, context) {
@@ -201,4 +201,18 @@ test("Vertex adapter refuses submission when the durable budget approval validat
   const prepared = await denied.adapter.prepareInput(job.input, { job });
   await assert.rejects(() => denied.adapter.submit(prepared, { job }), error =>
     error.code === "GOOGLE_VERTEX_APPROVAL_REQUIRED");
+});
+
+
+test("Vertex adapter forwards worker abort signals to status and cancellation transport", async () => {
+  const h = harness();
+  const prepared = await h.adapter.prepareInput(job.input, { job });
+  await h.adapter.submit(prepared, { job });
+  const controller = new AbortController();
+  await h.adapter.getStatus(interactionId, { job, signal: controller.signal });
+  await h.adapter.cancel(interactionId, { job, signal: controller.signal });
+  const poll = h.calls.find(call => call[0] === "poll");
+  const cancel = h.calls.find(call => call[0] === "cancel");
+  assert.equal(poll[3].signal, controller.signal);
+  assert.equal(cancel[3].signal, controller.signal);
 });
