@@ -71,7 +71,7 @@ test("Vertex client retrieves only the requested model interaction", async () =>
   const result = await client.getInteractionForIngestion(interactionId, context);
   assert.equal(result.id, interactionId);
   assert.equal(result.status, "completed");
-  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + ":poll");
+  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId + "/locations/global/interactions/" + interactionId);
 });
 
 test("Vertex client rejects an unapproved plan before obtaining credentials or calling Google", async () => {
@@ -164,7 +164,7 @@ test("Vertex client uses the documented interactions cancel endpoint with an emp
   });
   const result = await client.cancelInteraction(interactionId, context);
   assert.equal(result.status, "cancelled");
-  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + ":cancel");
+  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId + "/locations/global/interactions/" + interactionId + "/cancel");
   assert.equal(sent.options.method, "POST");
   assert.deepEqual(sent.body, {});
 });
