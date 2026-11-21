@@ -68,7 +68,7 @@ function parseInteraction(raw, expectedId, expectedModel) {
   }
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       (expectedId && value.id !== expectedId) || value.model !== expectedModel ||
-      !["queued", "in_progress", "running", "completed", "failed", "cancelled", "canceled", "incomplete"].includes(value.status)) {
+      !["queued", "in_progress", "requires_action", "running", "completed", "failed", "cancelled", "canceled", "incomplete"].includes(value.status)) {
     throw fail("Google Vertex interaction response did not match the expected job and model.", "GOOGLE_VERTEX_RESPONSE_INVALID");
   }
   interactionId(value.id);
