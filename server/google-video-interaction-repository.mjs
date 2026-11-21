@@ -4,7 +4,7 @@ const MODEL = "gemini-omni-1.1-flash";
 const SUPPORTED_MODELS = new Set([MODEL, "gemini-omni-1.2-flash"]);
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
 const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
-const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/[A-Za-z0-9/_-]{1,180}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/$/i;
+const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/[A-Za-z0-9/_-]{1,180}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,179})?$/i;
 function validOutputUri(value, models) {
   if (value === null) return true;
   if (models.has("gemini-omni-1.1-flash") && OUTPUT_URI.test(value)) return true;
