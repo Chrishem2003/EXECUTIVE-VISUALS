@@ -253,6 +253,16 @@ async function restoreCreativeArtifacts(project:Project){
   }else throw error;
  }
 }
+
+function renderCloudGenerationJobRows(jobs:Array<{jobId:string;shotIndex:number;status:string;progress:number;errorMessage?:string;outputAssetCount?:number;updatedAt?:string}>,backend?:"cloud"|"neon-postgres"):string {
+ return jobs.map(job => {
+  const progress=Math.max(0,Math.min(100,Math.round(Number(job.progress)||0)));
+  const lower=String(job.status||"unknown").toLowerCase();
+  const canCancel=backend==="neon-postgres"?lower==="queued":["queued","processing","running"].includes(lower);
+  const status=String(job.status||"unknown").split("_").join(" ");
+  return '<article class="video-generation-job"><div class="video-generation-job-main"><div class="video-generation-job-heading"><b>Shot '+(job.shotIndex+1)+'</b><span>'+esc(status)+' · '+progress+'%</span></div><div class="video-generation-progress" role="progressbar" aria-label="Shot '+(job.shotIndex+1)+' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div>'+(job.errorMessage?'<p class="video-generation-error">'+esc(job.errorMessage)+'</p>':'')+(job.outputAssetCount?'<small class="muted">'+job.outputAssetCount+' generated asset(s) registered</small>':'')+'</div>'+(canCancel?'<button class="secondary" data-storyboard-cancel="'+esc(job.jobId)+'">Cancel job</button>':'')+'</article>';
+ }).join("");
+}
 async function refreshCloudGenerationJobs(showErrors=false){
  const approval=state.videoApproval;
  if(!shouldPollCloudJobs(approval,document.visibilityState==="visible")||cloudJobsRefreshBusy)return;
