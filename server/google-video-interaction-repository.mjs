@@ -4,7 +4,7 @@ const MODEL = "gemini-omni-1.1-flash";
 const SUPPORTED_MODELS = new Set([MODEL, "gemini-omni-1.2-flash"]);
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
 const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
-const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/([A-Za-z0-9/_-]{1,180})\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/i;
+const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/[A-Za-z0-9/_-]{1,180}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/$/i;
 function validOutputUri(value, models) {
   if (value === null) return true;
   if (models.has("gemini-omni-1.1-flash") && OUTPUT_URI.test(value)) return true;
@@ -70,7 +70,11 @@ export function createGoogleVideoInteractionRepository({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) {
     throw new Error("Google interaction repository timeout is invalid.");
   }
-  if (!Array.isArray(allowedModels) || allowedModels.length < 1 || allowedModels.length > SUPPORTED_MODELS.size ||\n      allowedModels.some(model => !SUPPORTED_MODELS.has(model)) || new Set(allowedModels).size !== allowedModels.length) {\n    throw new Error("Google interaction repository requires an explicit supported model allowlist.");\n  }\n  const models = new Set(allowedModels);\n  const base = safeOrigin(url);
+  if (!Array.isArray(allowedModels) || allowedModels.length < 1 || allowedModels.length > SUPPORTED_MODELS.size ||
+      allowedModels.some(model => !SUPPORTED_MODELS.has(model)) || new Set(allowedModels).size !== allowedModels.length) {
+    throw new Error("Google interaction repository requires an explicit supported model allowlist.");\n  }
+  const models = new Set(allowedModels);
+  const base = safeOrigin(url);
   const columns = "id,provider,model,interaction_id,job_id,owner_id,project_id,request_hash,parent_interaction_id,state,output_file_name,output_uri,submitted_at,expires_at,deleted_at,metadata";
 
   async function request(query, { method = "GET", body, prefer } = {}) {
