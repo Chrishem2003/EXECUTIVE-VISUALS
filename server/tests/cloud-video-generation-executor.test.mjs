@@ -390,3 +390,23 @@ test("cloud executor forwards owner cancellation to an accepted provider task be
   assert.deepEqual(f.calls.filter(call => ["cancel", "poll"].includes(call[0])).map(call => call[0]), ["cancel", "poll"]);
   assert.deepEqual(f.calls.find(call => call[0] === "cancel"), ["cancel", taskId, job.id, "worker-1"]);
 });
+
+
+test("cloud executor rechecks owner cancellation after private input preparation and preflight", async () => {
+  const f = fixture();
+  let checks = 0;
+  f.adapter.prepareInput = async input => { f.calls.push(["prepareInput"]); return input; };
+  f.adapter.preflight = async () => {
+    f.calls.push(["preflight"]);
+    return { billable: false, estimatedUsd: 1, currency: "USD", model: "gen4.5" };
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => ++checks > 1
+    }),
+    error => error.code === "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION"
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "preflight"]);
+  assert.equal(f.calls.some(call => call[0] === "begin" || call[0] === "submit"), false);
+});
