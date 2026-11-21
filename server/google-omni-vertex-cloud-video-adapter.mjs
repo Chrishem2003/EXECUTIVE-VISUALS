@@ -177,7 +177,7 @@ export function createGoogleOmniVertexCloudVideoIntegration({
       }
       const rawInteraction = await client.getInteractionForIngestion(providerTaskId, {
         ownerId: job.owner_id, projectId: job.project_id || null, jobId: job.id
-      });
+      }, { signal });
       const state = providerState(rawInteraction.status);
       const outputUri = videoOutputUri(rawInteraction);
       if (state === "succeeded" && !outputUri) {
