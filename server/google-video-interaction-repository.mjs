@@ -5,10 +5,10 @@ const SUPPORTED_MODELS = new Set([MODEL, "gemini-omni-1.2-flash"]);
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
 const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
 const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/[A-Za-z0-9/_-]{1,180}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,179})?$/i;
-function validOutputUri(value, models) {
+function validOutputUri(value, model) {
   if (value === null) return true;
-  if (models.has("gemini-omni-1.1-flash") && OUTPUT_URI.test(value)) return true;
-  if (models.has("gemini-omni-1.2-flash") && VERTEX_OUTPUT_URI.test(value)) return true;
+  if (model === "gemini-omni-1.1-flash") return OUTPUT_URI.test(value);
+  if (model === "gemini-omni-1.2-flash") return VERTEX_OUTPUT_URI.test(value);
   return false;
 }
 const STATES = new Set(["running", "waiting", "succeeded", "failed", "canceled", "incomplete", "unknown", "deleting", "deleted"]);
@@ -34,7 +34,7 @@ function iso(value, label) {
 }
 function mapRow(row, models = SUPPORTED_MODELS) {
   if (!row || typeof row !== "object" || !ID.test(String(row.interaction_id || "")) ||
-      !models.has(row.model) || !STATES.has(row.state)) {
+      !models.has(row.model) || !STATES.has(row.state) ||\n      (row.output_uri != null && !validOutputUri(row.output_uri, row.model))) {
     throw new Error("Google interaction repository returned an invalid record.");
   }
   return Object.freeze({
@@ -152,7 +152,7 @@ export function createGoogleVideoInteractionRepository({
       const expiresAt = iso(record.expiresAt, "Interaction expiry");
       if (Date.parse(expiresAt) <= Date.now()) throw new Error("Interaction expiry must be in the future.");
       const outputUri = record.outputUri ?? null;
-      if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, models))) throw new Error("Google output URI is invalid for the configured model allowlist.");
+      if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, record.model))) throw new Error("Google output URI is invalid for the configured model allowlist.");
       const metadata = record.metadata ?? {};
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || Buffer.byteLength(JSON.stringify(metadata)) > 4000) {
         throw new Error("Google interaction metadata must be a bounded JSON object.");
@@ -180,13 +180,13 @@ export function createGoogleVideoInteractionRepository({
       return rows.length ? mapRow(rows[0], models) : null;
     },
 
-    async updateInteraction({ interactionId, ownerId, projectId = null, jobId, state, outputFileName, outputUri, metadata } = {}) {
+    async updateInteraction({ interactionId, ownerId, projectId = null, jobId, model = models.size === 1 ? [...models][0] : null, state, outputFileName, outputUri, metadata } = {}) {
       const scope = { interactionId, ownerId, projectId, jobId };
-      if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
+      if (!models.has(model)) throw new Error("Google interaction update requires an explicit supported model.");\n      if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
       const body = { state, updated_at: new Date().toISOString() };
       if (outputFileName !== undefined) body.output_file_name = outputFileName;
       if (outputUri !== undefined) {
-        if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, models))) throw new Error("Google output URI is invalid for the configured model allowlist.");
+        if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, model))) throw new Error("Google output URI is invalid for the configured model allowlist.");
         body.output_uri = outputUri;
       }
       if (metadata !== undefined) {
