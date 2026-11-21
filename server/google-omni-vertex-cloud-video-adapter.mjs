@@ -125,7 +125,8 @@ export function createGoogleOmniVertexCloudVideoIntegration({
           state: "running", submittedAt, expiresAt, outputUri: event.outputUri,
           metadata: {
             outputDelivery: "gcs_uri", captureMethod: "vertex_interactions_poll",
-            outputUriCapturedAtSubmission: true, billingModel: "modality_tokens"
+            outputUriCapturedAtSubmission: true, billingModel: "modality_tokens",
+            billingLabels: { application: "executive_visuals", component: "video_generation", provider: "google", model: "omni_1_2_flash" }
           }
         });
       };
