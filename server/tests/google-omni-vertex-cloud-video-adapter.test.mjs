@@ -89,6 +89,7 @@ function harness({ stored = true, status = completed } = {}) {
       calls.push(["preparePlan", input.requestHash, scope.job.id]);
       return plan;
     },
+    assertApprovedSubmission: async () => true,
     retentionExpiresAt: async () => new Date(Date.now() + 86400000).toISOString()
   });
   return { ...integration, calls, records };
@@ -169,8 +170,33 @@ test("Vertex adapter refuses unapproved or mismatched plans before provider subm
     interactions: { recordInteraction: async () => {}, findInteraction: async () => null, updateInteraction: async () => {} },
     outputIngestor: { ingestInteraction: async () => ({}) },
     preparePlan: async () => ({ ...plan, policy: { ...plan.policy, requiresApproval: false } }),
+    assertApprovedSubmission: async () => true,
     retentionExpiresAt: async () => new Date(Date.now() + 86400000).toISOString()
   });
   await assert.rejects(() => bad.adapter.prepareInput(job.input, { job }), error =>
     error.code === "GOOGLE_VERTEX_PLAN_INVALID");
+});
+
+
+test("Vertex adapter refuses submission when the durable budget approval validator denies the job", async () => {
+  const h = harness();
+  const denied = createGoogleOmniVertexCloudVideoIntegration({
+    client: h.adapter && {
+      createInteraction: async () => { throw new Error("must not submit"); },
+      getInteractionForIngestion: async () => completed,
+      cancelInteraction: async () => completed
+    },
+    interactions: {
+      recordInteraction: async () => { throw new Error("must not persist"); },
+      findInteraction: async () => null,
+      updateInteraction: async () => {}
+    },
+    outputIngestor: { ingestInteraction: async () => ({}) },
+    preparePlan: async () => plan,
+    assertApprovedSubmission: async () => false,
+    retentionExpiresAt: async () => new Date(Date.now() + 86400000).toISOString()
+  });
+  const prepared = await denied.adapter.prepareInput(job.input, { job });
+  await assert.rejects(() => denied.adapter.submit(prepared, { job }), error =>
+    error.code === "GOOGLE_VERTEX_APPROVAL_REQUIRED");
 });
