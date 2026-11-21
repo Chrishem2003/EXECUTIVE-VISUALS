@@ -41,6 +41,7 @@ export async function executeCloudVideoGenerationJob({
   }
   const ensureLease = async () => {
     if (signal?.aborted || await assertLease() !== true) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+    return true;
   };
   const input = jobInput(job);
   let selectedAdapter = adapter;
