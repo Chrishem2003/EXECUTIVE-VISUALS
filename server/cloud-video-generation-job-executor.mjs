@@ -190,6 +190,9 @@ export async function executeCloudVideoGenerationJob({
     throw deferred;
   }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (task.status === "succeeded" && await isCancellationRequested()) {
+    throw fail("Provider completed while owner cancellation was being processed; hold output and reconcile provider charges before finalization.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+  }
   if (task.status === "canceled") {
     // Provider cancellation is not proof of a refund. Runway may still charge
     // when cancellation races with a transition to RUNNING, so retain the
