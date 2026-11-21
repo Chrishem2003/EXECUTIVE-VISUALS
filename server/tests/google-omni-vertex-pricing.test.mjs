@@ -65,3 +65,32 @@ test("Vertex Omni 1.2 rejects unknown priced modalities and model usage beyond p
     } } }
   }), error => error.code === "GOOGLE_OMNI_VERTEX_USAGE_EVIDENCE_MISSING");
 });
+
+
+test("Vertex Omni 1.2 includes thought tokens in billable text reasoning usage", () => {
+  const result = resolveGoogleOmniVertexActualCost({
+    providerTaskId: interactionId,
+    task: { rawInteraction: { usage: {
+      total_input_tokens: 10,
+      total_output_tokens: 100,
+      total_thought_tokens: 50,
+      output_tokens_by_modality: [{ modality: "text", tokens: 40 }, { modality: "video", tokens: 60 }]
+    } } }
+  });
+  assert.equal(result.textOutputTokens, 40);
+  assert.equal(result.thoughtTokens, 50);
+  assert.equal(result.billableTextOutputTokens, 90);
+  assert.equal(result.amount, 0.00108);
+});
+
+test("Vertex Omni 1.2 refuses output plus thought usage beyond its published output token limit", () => {
+  assert.throws(() => resolveGoogleOmniVertexActualCost({
+    providerTaskId: interactionId,
+    task: { rawInteraction: { usage: {
+      total_input_tokens: 1,
+      total_output_tokens: 260640,
+      total_thought_tokens: 1,
+      output_tokens_by_modality: [{ modality: "video", tokens: 260640 }]
+    } } }
+  }), error => error.code === "GOOGLE_OMNI_VERTEX_USAGE_EVIDENCE_MISSING");
+});
