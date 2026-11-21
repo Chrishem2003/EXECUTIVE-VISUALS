@@ -29,6 +29,8 @@ alter table executive_visuals.google_video_interactions
     or (
       model = 'gemini-omni-1.2-flash'
       and output_uri ~ '^gs://[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]/[A-Za-z0-9/_-]{1,180}/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[a-f0-9]{64}/$'
-      and output_uri !~ '//|/\.\.?/'
+      and substring(output_uri from 6) not like '%//%'
+      and substring(output_uri from 6) not like '%/../%'
+      and substring(output_uri from 6) not like '%/./%'
     )
   );
