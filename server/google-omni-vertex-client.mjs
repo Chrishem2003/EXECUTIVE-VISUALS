@@ -221,7 +221,7 @@ export function createGoogleOmniVertexClient({
     if (!UUID.test(String(context?.jobId || "")) || !UUID.test(String(context?.ownerId || ""))) {
       throw fail("Google Vertex interaction retrieval requires an authorized job context.", "GOOGLE_VERTEX_CONTEXT_INVALID");
     }
-    const pollUrl = ORIGIN + "/v1beta1/interactions/" + encodeURIComponent(safeId) + ":poll";
+    const pollUrl = base + "/" + encodeURIComponent(safeId);
     const raw = await request(pollUrl, { signal });
     return parseInteraction(raw, safeId, MODEL);
   }
@@ -231,7 +231,7 @@ export function createGoogleOmniVertexClient({
     if (!UUID.test(String(context?.jobId || "")) || !UUID.test(String(context?.ownerId || ""))) {
       throw fail("Google Vertex interaction cancellation requires an authorized job context.", "GOOGLE_VERTEX_CONTEXT_INVALID");
     }
-    const cancelUrl = ORIGIN + "/v1beta1/interactions/" + encodeURIComponent(safeId) + ":cancel";
+    const cancelUrl = base + "/" + encodeURIComponent(safeId) + "/cancel";
     const raw = await request(cancelUrl, { method: "POST", body: {}, signal });
     return parseInteraction(raw, safeId, MODEL);
   }
