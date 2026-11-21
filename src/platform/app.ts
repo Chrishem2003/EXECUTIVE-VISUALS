@@ -1369,7 +1369,8 @@ if(storyboardBuildTimeline){void (async()=>{
    if(approval.jobStatuses.length!==modelShots.length||approval.jobStatuses.some(job=>job.status!=="succeeded"))throw new Error("Every approved model-storyboard shot must finish successfully before it can be placed on a timeline.");
    const assets=await apiRequest<{assets:Array<{id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;metadata?:Record<string,unknown>}>}>("/api/cloud/assets?projectId="+encodeURIComponent(link.id));
    const episodeShots=modelShots.map(shot=>({id:shot.id,durationSeconds:shot.durationSeconds,prompt:[shot.action,shot.visualPrompt,shot.motionPrompt].filter(Boolean).join("\\n\\n"),status:"planned" as const,camera:shot.angle,framing:shot.framing,movement:shot.movement,negativePrompt:shot.negativePrompt}));
-   const matched=matchGeneratedStoryboardAssets(episodeShots,assets.assets||[],approval.id,link.id);
+   const jobIdsByShotIndex=Array.from({length:episodeShots.length},(_,index)=>approval.jobStatuses.find(item=>item.shotIndex===index)?.jobId||"");
+   const matched=matchGeneratedStoryboardAssets(episodeShots,assets.assets||[],approval.id,link.id,jobIdsByShotIndex);
    const timeline=createStoryboardTimeline(link.id,timelineId,modelBoard,project.name+" — Generated assembly");
    const plan=(timeline.metadata as Record<string,any>)?.storyboardPlan;
    const pictureTrack=timeline.tracks.find(track=>track.id===plan?.trackIds?.picture);
@@ -1379,7 +1380,7 @@ if(storyboardBuildTimeline){void (async()=>{
     const planned=plannedShots.find((item:any)=>item.id===shot.id),original=modelShots[shotIndex];
     if(!planned||!original)throw new Error("The generated output could not be matched to its exact planned storyboard frame.");
     const metadata=asset.metadata||{};
-    pictureTrack.clips.push(createGeneratedVideoClip({id:crypto.randomUUID(),assetId:asset.id,name:original.framing||("Shot "+(shotIndex+1)),durationSeconds:original.durationSeconds,frameRate:timeline.frameRate,startFrame:planned.startFrame,metadata:{source:"model-storyboard",approvalId:approval.id,shotIndex,storyboardShotId:shot.id,provider:String(metadata.provider||"unknown"),model:String(metadata.model||"unknown"),cloudAssetId:asset.id,cloudSha256:asset.sha256}}));
+    pictureTrack.clips.push(createGeneratedVideoClip({id:crypto.randomUUID(),assetId:asset.id,name:original.framing||("Shot "+(shotIndex+1)),durationSeconds:original.durationSeconds,frameRate:timeline.frameRate,startFrame:planned.startFrame,metadata:{source:"model-storyboard",approvalId:approval.id,shotIndex,storyboardShotId:shot.id,provider:String(metadata.provider||"unknown"),model:String(metadata.model||"unknown"),cloudAssetId:asset.id,cloudSha256:asset.sha256,jobId:String(metadata.jobId)}}));
    }
    const generatedTimeline={...timeline,name:timeline.name+" · Generated shots",metadata:{...(timeline.metadata||{}),source:"model-storyboard-generated",approvalId:approval.id,storyboardShotCount:modelShots.length}};
    state.tab="video";render();await createCloudTimelineFromDocument(link.id,generatedTimeline);
@@ -1393,7 +1394,8 @@ if(storyboardBuildTimeline){void (async()=>{
   const shots=episode.scenes.flatMap(scene=>scene.shots);
   if(approval.jobStatuses.length!==shots.length||approval.jobStatuses.some(job=>job.status!=="succeeded"))throw new Error("Every approved shot must finish successfully before it can be placed on a timeline.");
   const assets=await apiRequest<{assets:Array<{id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;metadata?:Record<string,unknown>}>}>("/api/cloud/assets?projectId="+encodeURIComponent(link.id));
-  const matched=matchGeneratedStoryboardAssets(shots,assets.assets||[],approval.id,link.id);
+  const jobIdsByShotIndex=Array.from({length:shots.length},(_,index)=>approval.jobStatuses.find(item=>item.shotIndex===index)?.jobId||"");
+  const matched=matchGeneratedStoryboardAssets(shots,assets.assets||[],approval.id,link.id,jobIdsByShotIndex);
   const document={...buildEpisodeTimelineDocument(plan,episode,link.id),id:timelineId},videoTrack=document.tracks.find(track=>track.kind==="video");
   if(!videoTrack)throw new Error("The storyboard timeline is missing its picture track.");
   const fps=document.frameRate.numerator/document.frameRate.denominator;
