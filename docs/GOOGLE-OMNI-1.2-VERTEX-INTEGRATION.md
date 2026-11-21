@@ -80,3 +80,8 @@ Do not enable 1.2 paid execution until the exact Vertex pricing dimensions for i
 - Google Cloud Generative AI pricing: https://cloud.google.com/model-garden/pricing
 - Vertex Interactions HTTP get/cancel reference: https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/v1beta1/projects.locations.interactionsHttp/get
 - Google Cloud Omni 1.2 GA pricing announcement: https://cloud.google.com/blog/products/ai-machine-learning/gemini-omni-1-2-flash-generally-available
+
+
+### Cloud Billing attribution
+
+Vertex Interactions creation requests include stable, low-cardinality request labels (`application`, `component`, `provider`, and `model`) for cost grouping. They intentionally exclude owner IDs, project IDs, job IDs, prompts and other per-user data. Google documents request-body labels for `interactions.create`; labels are forwarded to Cloud Billing for PayGo traffic. Provisioned Throughput traffic may ignore request labels, so labels are attribution metadata and are not a substitute for per-interaction usage evidence or billing export reconciliation. The authoritative per-interaction token usage record remains the source for customer usage settlement.
