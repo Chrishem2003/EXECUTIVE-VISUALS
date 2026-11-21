@@ -22,7 +22,8 @@ export async function executeCloudVideoGenerationJob({
   resolveActualCost,
   customerCredits,
   signal,
-  assertLease = async () => true
+  assertLease = async () => true,
+  isCancellationRequested = async () => false
 } = {}) {
   if (!job?.id || !job?.owner_id || job.job_type !== "video.generate" ||
       typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
@@ -87,6 +88,7 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
+    if (await isCancellationRequested()) throw fail("Video generation was cancelled before provider submission.", "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION");
     const providerInput = typeof selectedAdapter.prepareInput === "function"
       ? await selectedAdapter.prepareInput(input, { job })
       : input;
@@ -167,9 +169,20 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (await isCancellationRequested()) {
+    if (typeof selectedAdapter.cancel !== "function") {
+      throw fail("Owner cancellation was requested but this provider cannot cancel the accepted task; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+    }
+    try {
+      await ensureLease();
+      await selectedAdapter.cancel(providerTaskId, { job, workerId, signal });
+    } catch {
+      throw fail("Provider cancellation could not be confirmed; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+    }
+  }
   let task;
   try {
-    task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
+    task = await selectedAdapter.getStatus(providerTaskId, { job, workerId, signal });
   } catch {
     const deferred = fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
     deferred.retryAfterSeconds = minimumPollSeconds;
