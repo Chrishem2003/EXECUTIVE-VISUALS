@@ -162,7 +162,7 @@ test("Vertex client uses the documented interactions cancel endpoint with an emp
   });
   const result = await client.cancelInteraction(interactionId, context);
   assert.equal(result.status, "cancel_requested");
-  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + "/cancel");
+  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1/projects/" + projectId + "/locations/global/interactions/" + interactionId + "/cancel");
   assert.equal(sent.options.method, "POST");
   assert.equal(sent.options.body, undefined);
 });
