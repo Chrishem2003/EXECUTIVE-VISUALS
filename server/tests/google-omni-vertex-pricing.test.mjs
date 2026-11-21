@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   estimateGoogleOmniVertexVideoCost,
   resolveGoogleOmniVertexActualCost
-} from "../google-omni-vertex-pricing.mjs";
+} from "../google-omni-vertex-usage-pricing.mjs";
 
 const interactionId = "v1_abcdef123456";
 
