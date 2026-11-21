@@ -115,6 +115,10 @@ test("Vertex adapter submits once and records interaction ownership before worke
   assert.equal(h.records.get(interactionId).projectId, projectId);
   assert.equal(h.records.get(interactionId).outputUri, outputUri);
   assert.equal(h.records.get(interactionId).state, "running");
+  assert.deepEqual(h.records.get(interactionId).metadata.billingLabels, {
+    application: "executive_visuals", component: "video_generation",
+    provider: "google", model: "omni_1_2_flash"
+  });
 });
 
 test("Vertex adapter polls the exact owned interaction and persists the completed GCS object URI", async () => {
