@@ -195,7 +195,15 @@ export function createGoogleOmniVertexClient({
       model: MODEL,
       store: true,
       background: true,
-      response_format: responseFormat
+      response_format: responseFormat,
+      // Stable, low-cardinality labels enable Cloud Billing attribution on PayGo.
+      // Never include owner IDs, job IDs, prompts or other per-user data.
+      labels: {
+        application: "executive_visuals",
+        component: "video_generation",
+        provider: "google",
+        model: "omni_1_2_flash"
+      }
     };
     const raw = await request(base, { method: "POST", body: payload, signal });
     const interaction = parseInteraction(raw, null, MODEL);
