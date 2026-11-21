@@ -326,3 +326,19 @@ test("ambiguous provider timeout is never reset to a retryable prepared submissi
   assert.equal(f.calls.some(call => call[0] === "retry"), false);
   assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
 });
+
+
+test("cloud executor propagates the current lease assertion into provider output ingestion", async () => {
+  const f = fixture();
+  let ingestionContext;
+  f.ingestOutputs = async value => {
+    ingestionContext = value;
+    assert.equal(await value.assertLease(), true);
+    return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } };
+  };
+  const result = await executeCloudVideoGenerationJob({ job, workerId: "worker-lease-fence", ...f });
+  assert.equal(result.assetIds.length, 1);
+  assert.equal(typeof ingestionContext.assertLease, "function");
+  assert.equal(ingestionContext.job.id, job.id);
+  assert.equal(ingestionContext.providerTaskId, taskId);
+});
