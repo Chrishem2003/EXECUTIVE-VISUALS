@@ -50,7 +50,7 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   });
   const result = await ingest.ingest({
     job: { id: "job-1", owner_id: ownerId, project_id: projectId },
-    task, input: { provider: "runway", model: "gen4.5" }
+    task, input: { provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }
   });
   assert.equal(result.assetIds.length, 1);
   assert.equal(result.assetIds[0], assets.created[0].id);
@@ -58,6 +58,8 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   assert.equal(assets.created[0].value.projectId, projectId);
   assert.equal(assets.created[0].value.metadata.validated, true);
   assert.equal(assets.created[0].value.metadata.outputIndex, 0);
+  assert.equal(assets.created[0].value.metadata.jobId, "job-1");
+  assert.equal(assets.created[0].value.metadata.requestHash, "a".repeat(64));
   assert.equal(calls.length, 1);
   assert.equal(calls[0].address.address, "93.184.216.34");
 });
