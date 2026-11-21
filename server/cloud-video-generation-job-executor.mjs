@@ -244,7 +244,7 @@ export async function executeCloudVideoGenerationJob({
     }
   }
   let ingested;
-  try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
+  try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId, signal, assertLease: ensureLease }); }
   catch (error) {
     const cleanupPending = error?.cleanupPending === true;
     const held = fail(
