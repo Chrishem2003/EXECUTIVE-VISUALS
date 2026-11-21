@@ -342,3 +342,18 @@ test("cloud executor propagates the current lease assertion into provider output
   assert.equal(ingestionContext.job.id, job.id);
   assert.equal(ingestionContext.providerTaskId, taskId);
 });
+
+
+test("cloud executor retains the Vertex Omni reservation when a failed task may still be billable", async () => {
+  const f = fixture({ status: { taskId, status: "failed", failure: "provider moderation" } });
+  const vertexJob = {
+    ...job,
+    input: { ...job.input, provider: "google", model: "gemini-omni-1.2-flash" }
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job: vertexJob, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cost"), false);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
