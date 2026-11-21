@@ -28,7 +28,8 @@ function harness(handler, repositoryOptions = {}) {
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), options });
       return handler(url, options);
-    }
+    },
+    ...repositoryOptions
   });
   return { repository, calls };
 }
