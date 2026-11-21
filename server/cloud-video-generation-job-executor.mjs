@@ -182,6 +182,14 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provider task is canceled, but its final billable amount is not yet verified; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
   }
   if (task.status === "failed") {
+    if (input.provider === "google" && input.model === "gemini-omni-1.2-flash") {
+      // Vertex Omni failures can still have billable input or partial output
+      // usage. Retain the approved reservation until usage is reconciled.
+      throw fail(
+        "Google Vertex Omni task failed; provider usage may still be billable. Keep the reservation for billing reconciliation.",
+        "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
+      );
+    }
     if (input.provider === "runway" && ["veo3.1", "veo3.1_fast"].includes(input.model)) {
       // Veo moderation failures may still incur provider charges. Do not
       // release the approved reservation until linked-workspace usage has
