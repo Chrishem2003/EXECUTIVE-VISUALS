@@ -177,7 +177,7 @@ export function createGoogleVideoInteractionRepository({
     async findInteraction(scope = {}) {
       const rows = await request("?" + scopeParams(scope).toString());
       if (!Array.isArray(rows) || rows.length > 1) throw new Error("Google interaction lookup returned an invalid result.");
-      return rows.length ? mapRow(rows[0]) : null;
+      return rows.length ? mapRow(rows[0], models) : null;
     },
 
     async updateInteraction({ interactionId, ownerId, projectId = null, jobId, state, outputFileName, outputUri, metadata } = {}) {
@@ -201,7 +201,7 @@ export function createGoogleVideoInteractionRepository({
         method: "PATCH", body, prefer: "return=representation"
       });
       if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google interaction update did not match one authorized job record.");
-      return mapRow(rows[0]);
+      return mapRow(rows[0], models);
     },
 
     async markInteractionDeleted({ interactionId, ownerId, projectId = null, jobId } = {}) {
@@ -214,7 +214,7 @@ export function createGoogleVideoInteractionRepository({
         prefer: "return=representation"
       });
       if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google interaction deletion did not match one authorized job record.");
-      return mapRow(rows[0]);
+      return mapRow(rows[0], models);
     },
 
     async listExpired({ before = new Date().toISOString(), limit = 100 } = {}) {
