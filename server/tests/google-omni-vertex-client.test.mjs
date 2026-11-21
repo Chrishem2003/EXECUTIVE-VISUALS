@@ -71,8 +71,7 @@ test("Vertex client retrieves only the requested model interaction", async () =>
   const result = await client.getInteractionForIngestion(interactionId, context);
   assert.equal(result.id, interactionId);
   assert.equal(result.status, "completed");
-  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId +
-    "/locations/global/interactions/" + interactionId);
+  assert.equal(calls[0], "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + ":poll");
 });
 
 test("Vertex client rejects an unapproved plan before obtaining credentials or calling Google", async () => {
@@ -149,4 +148,36 @@ test("Vertex client rejects requests without an explicit video task", async () =
     ...plan, payload: { ...plan.payload, generation_config: {} }
   }, context, { onInteractionCreated: async () => {} }),
   error => error.code === "GOOGLE_VERTEX_PLAN_INVALID");
+});
+
+
+test("Vertex client uses the documented interactions cancel endpoint with an empty JSON body", async () => {
+  let sent;
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async (url, options) => {
+      sent = { url: String(url), options, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({
+        id: interactionId, model: "gemini-omni-1.2-flash", status: "cancelled"
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  const result = await client.cancelInteraction(interactionId, context);
+  assert.equal(result.status, "cancelled");
+  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + ":cancel");
+  assert.equal(sent.options.method, "POST");
+  assert.deepEqual(sent.body, {});
+});
+
+test("Vertex client refuses polling and cancellation without an authorized job scope", async () => {
+  let requests = 0;
+  const client = createGoogleOmniVertexClient({
+    projectId, outputBucket: bucket, authClient,
+    fetchImpl: async () => { requests++; throw new Error("must not call"); }
+  });
+  await assert.rejects(() => client.getInteractionForIngestion(interactionId, { ownerId }), error =>
+    error.code === "GOOGLE_VERTEX_CONTEXT_INVALID");
+  await assert.rejects(() => client.cancelInteraction(interactionId, { jobId }), error =>
+    error.code === "GOOGLE_VERTEX_CONTEXT_INVALID");
+  assert.equal(requests, 0);
 });
