@@ -153,3 +153,18 @@ test("Vertex Omni 1.2 repository rejects arbitrary GCS paths and 1.1 model recor
   }));
   assert.equal(h.calls.length, 0);
 });
+
+
+test("accepts a completed Vertex output object only inside its job/request GCS prefix", async () => {
+  const outputUri = "gs://executive-visuals-test/executive-visuals/omni-12/" + jobId + "/" + requestHash + "/finished-video.mp4";
+  const h = harness(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.output_uri, outputUri);
+    return response(201, [row({ model: "gemini-omni-1.2-flash", output_uri: outputUri })]);
+  }, { allowedModels: ["gemini-omni-1.2-flash"] });
+  const result = await h.repository.recordInteraction({
+    provider: "google", model: "gemini-omni-1.2-flash",
+    ...scope, requestHash, state: "succeeded", expiresAt: now, outputUri
+  });
+  assert.equal(result.outputUri, outputUri);
+});
