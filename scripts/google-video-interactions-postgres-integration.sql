@@ -56,12 +56,28 @@ begin
   end if;
 
   if not exists (
-    select 1 from pg_constraint
+    select 1
+      from pg_constraint
      where conrelid = v_table
        and conname = 'google_video_interactions_output_uri_check'
        and contype = 'c'
+       and pg_get_constraintdef(oid) like '%generativelanguage.googleapis.com%'
+       and pg_get_constraintdef(oid) like '%gs://%'
+       and pg_get_constraintdef(oid) like '%gemini-omni-1.2-flash%'
   ) then
-    raise exception 'Google output URI must be constrained to the trusted Files API origin and path';
+    raise exception 'Google output URI must enforce the model-specific Files API and private Vertex GCS contracts';
+  end if;
+
+  if not exists (
+    select 1
+      from pg_constraint
+     where conrelid = v_table
+       and conname = 'google_video_interactions_model_check'
+       and contype = 'c'
+       and pg_get_constraintdef(oid) like '%gemini-omni-1.1-flash%'
+       and pg_get_constraintdef(oid) like '%gemini-omni-1.2-flash%'
+  ) then
+    raise exception 'Google interaction ledger must explicitly allow only supported Omni models';
   end if;
 end
 $google_interactions_migration$;
