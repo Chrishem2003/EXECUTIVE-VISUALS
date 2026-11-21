@@ -83,3 +83,43 @@ test("successful cloud video output persists authoritative actual cost and curre
   assert.equal(calls[0].output.currency, "USD");
   assert.equal(calls[0].output.costEvidenceReference, "runway:model-router:task-123:task-cost-credits:72");
 });
+
+
+test("owner cancellation is polled against the exact lease and prevents an unsubmitted paid generation", async () => {
+  const job = {
+    id: "423e4567-e89b-42d3-a456-426614174000",
+    owner_id: "123e4567-e89b-42d3-a456-426614174000",
+    job_type: "video.generate",
+    status: "processing",
+    lease_token: "923e4567-e89b-42d3-a456-426614174000"
+  };
+  const calls = [];
+  const queue = {
+    async claim() { return job; },
+    async renew() { return true; },
+    async assertLease() { return true; },
+    async cancellationRequested(...args) { calls.push(["cancellationRequested", ...args]); return true; }
+  };
+  const enqueue = {
+    async finish(args) { calls.push(["finish", args]); return true; },
+    async defer() { throw new Error("must not defer"); },
+    async quarantine() { throw new Error("must not quarantine"); },
+    async recoverExpiredVideo() { return 0; }
+  };
+  const result = await runCloudVideoWorkerCycle({
+    queue, enqueue, workerId: "video-worker",
+    leaseSeconds: 15, heartbeatIntervalMs: 1000,
+    execute: async ({ isCancellationRequested }) => {
+      assert.equal(await isCancellationRequested(), true);
+      throw Object.assign(new Error("cancelled before provider submission"), {
+        code: "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION"
+      });
+    }
+  });
+  assert.equal(result.finished, true);
+  assert.equal(result.status, "cancelled");
+  assert.deepEqual(calls.find(call => call[0] === "cancellationRequested"), [
+    "cancellationRequested", job.id, "video-worker", job.lease_token
+  ]);
+  assert.equal(calls.find(call => call[0] === "finish")[1].status, "cancelled");
+});
