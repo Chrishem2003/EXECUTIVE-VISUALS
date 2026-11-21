@@ -331,6 +331,8 @@ export function createPrivateVideoOutputIngestor({
               provider: String(input?.provider || "").slice(0, 100),
               model: String(input?.model || "").slice(0, 160),
               providerTaskId: task.taskId.slice(0, 256),
+              jobId: String(job.id || "").slice(0, 128),
+              requestHash: typeof input?.requestHash === "string" && /^[a-f0-9]{64}$/i.test(input.requestHash) ? input.requestHash : null,
               outputIndex: index,
               validated: true,
               validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) &&
