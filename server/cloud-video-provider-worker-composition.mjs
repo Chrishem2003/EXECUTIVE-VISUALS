@@ -447,6 +447,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
         await assertGoogleOmniVertexConnection(context?.job, "poll");
         return vertexAdapter.getStatus(taskId, context);
       },
+      async cancel(taskId, context) {
+        await assertGoogleOmniVertexConnection(context?.job, "cancel");
+        if (typeof vertexAdapter.cancel !== "function") throw new Error("Vertex Omni cancellation is not configured.");
+        return vertexAdapter.cancel(taskId, context);
+      },
       async ingestOutputs(args) {
         await assertGoogleOmniVertexConnection(args?.job, "ingest");
         return googleOmniVertexIntegration.ingestOutputs(args);
