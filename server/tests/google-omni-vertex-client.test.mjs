@@ -46,6 +46,11 @@ test("Vertex client submits an approved Omni 1.2 interaction to the project-scop
   assert.equal(calls[0].body.model, "gemini-omni-1.2-flash");
   assert.equal(calls[0].body.store, true);
   assert.equal(calls[0].body.background, true);
+  assert.deepEqual(calls[0].body.labels, {
+    application: "executive_visuals", component: "video_generation",
+    provider: "google", model: "omni_1_2_flash"
+  });
+  assert.equal(JSON.stringify(calls[0].body.labels).includes(jobId), false);
   assert.equal(Array.isArray(calls[0].body.response_format), true);
   assert.equal(calls[0].body.response_format.length, 1);
   assert.equal(calls[0].body.response_format[0].delivery, "uri");
