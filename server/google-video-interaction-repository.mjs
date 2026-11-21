@@ -32,9 +32,9 @@ function iso(value, label) {
   if (!Number.isFinite(date.getTime())) throw new Error(label + " must be a valid timestamp.");
   return date.toISOString();
 }
-function mapRow(row) {
+function mapRow(row, models = SUPPORTED_MODELS) {
   if (!row || typeof row !== "object" || !ID.test(String(row.interaction_id || "")) ||
-      !SUPPORTED_MODELS.has(row.model) || !STATES.has(row.state)) {
+      !models.has(row.model) || !STATES.has(row.state)) {
     throw new Error("Google interaction repository returned an invalid record.");
   }
   return Object.freeze({
@@ -132,6 +132,7 @@ export function createGoogleVideoInteractionRepository({
       limit: "1"
     });
     params.set("project_id", projectId ? "eq." + required(projectId, "Project ID") : "is.null");
+    params.set("model", models.size === 1 ? "eq." + [...models][0] : "in.(" + [...models].join(",") + ")");
     return params;
   }
 
@@ -170,7 +171,7 @@ export function createGoogleVideoInteractionRepository({
         method: "POST", body, prefer: "return=representation"
       });
       if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google interaction ownership record was not durably persisted.");
-      return mapRow(rows[0]);
+      return mapRow(rows[0], models);
     },
 
     async findInteraction(scope = {}) {
@@ -220,6 +221,7 @@ export function createGoogleVideoInteractionRepository({
       if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Expired interaction page size is invalid.");
       const params = new URLSearchParams({
         select: columns,
+        model: models.size === 1 ? "eq." + [...models][0] : "in.(" + [...models].join(",") + ")",
         expires_at: "lte." + iso(before, "Expiry cutoff"),
         state: "not.eq.deleted",
         order: "expires_at.asc",
@@ -227,7 +229,7 @@ export function createGoogleVideoInteractionRepository({
       });
       const rows = await request("?" + params.toString());
       if (!Array.isArray(rows)) throw new Error("Expired Google interaction query returned an invalid result.");
-      return rows.map(mapRow);
+      return rows.map(row => mapRow(row, models));
     }
   });
 }
