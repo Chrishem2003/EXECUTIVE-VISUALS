@@ -285,3 +285,19 @@ test("FFprobe validator fails closed when the binary is missing or output is mal
   });
   assert.equal((await malformed({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "FFPROBE_INVALID_JSON");
 });
+
+test("rejects idempotent asset reuse when durable job lineage no longer matches", async () => {
+  const assets = assetRepo();
+  const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
+  const request = {
+    job: { id: "job-1", owner_id: ownerId, project_id: projectId },
+    task, input: { provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }
+  };
+  await ingest.ingest(request);
+  assets.created[0].value.metadata.jobId = "different-job";
+  await assert.rejects(
+    ingest.ingest(request),
+    error => error.code === "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID"
+  );
+  assert.equal(assets.created.length, 1);
+});
