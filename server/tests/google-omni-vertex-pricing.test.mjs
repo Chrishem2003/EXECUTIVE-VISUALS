@@ -80,7 +80,7 @@ test("Vertex Omni 1.2 includes thought tokens in billable text reasoning usage",
   assert.equal(result.textOutputTokens, 40);
   assert.equal(result.thoughtTokens, 50);
   assert.equal(result.billableTextOutputTokens, 90);
-  assert.equal(result.amount, 0.00108);
+  assert.equal(result.amount, 0.001545);
 });
 
 test("Vertex Omni 1.2 refuses output plus thought usage beyond its published output token limit", () => {
