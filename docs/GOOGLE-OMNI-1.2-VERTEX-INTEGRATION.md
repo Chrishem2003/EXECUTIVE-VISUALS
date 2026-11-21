@@ -8,7 +8,7 @@ Gemini Omni 1.2 Flash is listed as a GA model on the Gemini Enterprise Agent Pla
 
 `POST https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/interactions`
 
-The video-generation guide's project-scoped status retrieval is `GET https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/interactions/{INTERACTION_ID}`. Background cancellation uses the documented Interactions HTTP cancellation resource `POST https://aiplatform.googleapis.com/v1beta1/interactions/{INTERACTION_ID}/cancel` with an empty request body.
+The video-generation guide's project-scoped status retrieval is `GET https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/interactions/{INTERACTION_ID}`. Background cancellation uses the Interactions API project-scoped route `POST https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/interactions/{INTERACTION_ID}/cancel` with an empty request body. The create and video-specific retrieval routes remain on the documented `v1beta1` video surface.
 
 This differs from the existing Gemini Developer API 1.1 worker, which uses the Generative Language API, API-key authentication and Google Files resources. Do not point the 1.2 model at the 1.1 client or assume a Google Files URI is a Vertex output.
 
