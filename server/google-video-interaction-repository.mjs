@@ -62,7 +62,8 @@ export function createGoogleVideoInteractionRepository({
   url = process.env.SUPABASE_URL,
   serviceRoleKey = resolveSupabaseServerKey(process.env),
   fetchImpl = globalThis.fetch,
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  allowedModels = [MODEL]
 } = {}) {
   if (!url || !serviceRoleKey || typeof fetchImpl !== "function") {
     throw new Error("Google interaction repository requires server-side Supabase credentials and fetch.");
