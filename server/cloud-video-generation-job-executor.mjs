@@ -108,6 +108,7 @@ export async function executeCloudVideoGenerationJob({
         throw fail("Provider preflight quote is invalid or exceeds the approved reservation; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
       }
     }
+    if (await isCancellationRequested()) throw fail("Video generation was cancelled before provider submission.", "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION");
     await ensureLease();
     const began = await ledger.begin(job.id, workerId, job.lease_token);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
