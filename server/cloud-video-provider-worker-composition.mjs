@@ -237,12 +237,13 @@ export function createProviderAwareCloudVideoWorkerComposition({
   if (googleOmniVertexEnabled && !googleOmniVertexIntegration) {
     const {
       googleOmniVertexPreparePlan,
+      googleOmniVertexAssertApprovedSubmission,
       googleOmniVertexClient,
       googleOmniVertexInteractions,
       googleOmniVertexRetentionExpiresAt
     } = providerDependencies;
-    if (typeof googleOmniVertexPreparePlan !== "function") {
-      throw new Error("Vertex Omni bootstrap requires an owner/project-scoped approved private-input planning callback.");
+    if (typeof googleOmniVertexPreparePlan !== "function" || typeof googleOmniVertexAssertApprovedSubmission !== "function") {
+      throw new Error("Vertex Omni bootstrap requires an owner/project-scoped private-input planner and durable approval validator.");
     }
     const interactions = googleOmniVertexInteractions || createGoogleVideoInteractionRepository({
       ...clientOptions,
@@ -271,6 +272,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
       interactions,
       outputIngestor: vertexOutputIngestor,
       preparePlan: googleOmniVertexPreparePlan,
+      assertApprovedSubmission: googleOmniVertexAssertApprovedSubmission,
       retentionExpiresAt: googleOmniVertexRetentionExpiresAt || retention.expiresAt
     });
   }
