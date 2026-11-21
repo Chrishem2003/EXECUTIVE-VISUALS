@@ -1,7 +1,7 @@
 import {
   estimateGoogleOmniVertexVideoCost,
   resolveGoogleOmniVertexActualCost
-} from "./google-omni-vertex-pricing.mjs";
+} from "./google-omni-vertex-usage-pricing.mjs";
 
 const PROVIDER = "google";
 const MODEL = "gemini-omni-1.2-flash";
