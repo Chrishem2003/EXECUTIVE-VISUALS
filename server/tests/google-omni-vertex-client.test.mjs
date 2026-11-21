@@ -151,12 +151,12 @@ test("Vertex client rejects requests without an explicit video task", async () =
 });
 
 
-test("Vertex client uses the documented interactions cancel endpoint with an empty JSON body", async () => {
+test("Vertex client uses the documented interactions cancel endpoint with an empty request body", async () => {
   let sent;
   const client = createGoogleOmniVertexClient({
     projectId, outputBucket: bucket, authClient,
     fetchImpl: async (url, options) => {
-      sent = { url: String(url), options, body: JSON.parse(options.body) };
+      sent = { url: String(url), options };
       return new Response(null, { status: 200 });
     }
   });
