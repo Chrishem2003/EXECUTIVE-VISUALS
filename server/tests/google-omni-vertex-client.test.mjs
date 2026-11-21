@@ -157,16 +157,14 @@ test("Vertex client uses the documented interactions cancel endpoint with an emp
     projectId, outputBucket: bucket, authClient,
     fetchImpl: async (url, options) => {
       sent = { url: String(url), options, body: JSON.parse(options.body) };
-      return new Response(JSON.stringify({
-        id: interactionId, model: "gemini-omni-1.2-flash", status: "cancelled"
-      }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(null, { status: 200 });
     }
   });
   const result = await client.cancelInteraction(interactionId, context);
-  assert.equal(result.status, "cancelled");
-  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/projects/" + projectId + "/locations/global/interactions/" + interactionId + "/cancel");
+  assert.equal(result.status, "cancel_requested");
+  assert.equal(sent.url, "https://aiplatform.googleapis.com/v1beta1/interactions/" + interactionId + "/cancel");
   assert.equal(sent.options.method, "POST");
-  assert.deepEqual(sent.body, {});
+  assert.equal(sent.options.body, undefined);
 });
 
 test("Vertex client refuses polling and cancellation without an authorized job scope", async () => {
