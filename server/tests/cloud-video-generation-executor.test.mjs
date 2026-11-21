@@ -410,3 +410,19 @@ test("cloud executor rechecks owner cancellation after private input preparation
   assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "preflight"]);
   assert.equal(f.calls.some(call => call[0] === "begin" || call[0] === "submit"), false);
 });
+
+
+test("cloud executor holds a provider success that races with an owner cancellation request", async () => {
+  const f = fixture({ state: "submitted" });
+  f.adapter.cancel = async id => { f.calls.push(["cancel", id]); return { status: "cancel_requested" }; };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cancel"), true);
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+  assert.equal(f.calls.some(call => call[0] === "cost"), false);
+});
