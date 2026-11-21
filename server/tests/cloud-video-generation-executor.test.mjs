@@ -359,3 +359,34 @@ test("cloud executor retains the Vertex Omni reservation when a failed task may 
   assert.equal(f.calls.some(call => call[0] === "cost"), false);
   assert.equal(f.calls.some(call => call[0] === "ingest"), false);
 });
+
+
+test("cloud executor stops before provider submission when the owner cancellation flag is set", async () => {
+  const f = fixture();
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_JOB_CANCELLED_BEFORE_SUBMISSION"
+  );
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare"]);
+  assert.equal(f.calls.some(call => call[0] === "submit"), false);
+});
+
+test("cloud executor forwards owner cancellation to an accepted provider task before polling", async () => {
+  const f = fixture({ state: "submitted", status: { taskId, status: "running" } });
+  f.adapter.cancel = async (id, context) => {
+    f.calls.push(["cancel", id, context?.job?.id, context?.workerId]);
+    return { status: "cancel_requested" };
+  };
+  await assert.rejects(
+    executeCloudVideoGenerationJob({
+      job, workerId: "worker-1", ...f,
+      isCancellationRequested: async () => true
+    }),
+    error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED"
+  );
+  assert.deepEqual(f.calls.filter(call => ["cancel", "poll"].includes(call[0])).map(call => call[0]), ["cancel", "poll"]);
+  assert.deepEqual(f.calls.find(call => call[0] === "cancel"), ["cancel", taskId, job.id, "worker-1"]);
+});
