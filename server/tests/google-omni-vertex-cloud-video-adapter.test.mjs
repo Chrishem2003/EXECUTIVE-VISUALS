@@ -129,6 +129,8 @@ test("Vertex adapter polls the exact owned interaction and persists the complete
   assert.equal(task.rawInteraction, completed);
   assert.equal(h.records.get(interactionId).state, "succeeded");
   assert.equal(h.records.get(interactionId).outputUri, outputUri);
+  assert.equal(h.records.get(interactionId).metadata.usageEvidence.total_input_tokens, 100);
+  assert.equal(h.records.get(interactionId).metadata.usageEvidence.total_output_tokens, 1000);
 });
 
 test("Vertex adapter rejects polling if the durable interaction does not belong to the leased job", async () => {
