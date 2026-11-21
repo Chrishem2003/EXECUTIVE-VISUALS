@@ -272,12 +272,26 @@ async function refreshCloudGenerationJobs(showErrors=false){
   const results=await Promise.all(ids.map(id=>apiRequest<{job:{id:string;status:string;progress:number;error?:unknown;output?:unknown}}>(cloudJobStatusPath(approval?.backend,id))));
   if(state.videoApproval?.id!==approval?.id||ids.some((id,index)=>results[index]?.job?.id!==id))return;
   const previous=ids.map((id,index)=>approval?.jobStatuses?.find(item=>item.jobId===id)||{jobId:id,shotIndex:index,status:"queued",progress:0});
-  const next=results.map((result,index)=>({jobId:result.job.id,shotIndex:previous.find(item=>item.jobId===result.job.id)?.shotIndex??index,status:String(result.job.status||"unknown"),progress:Math.max(0,Math.min(100,Number(result.job.progress)||0))}));
+  const latestStatuses=new Map((state.videoApproval?.jobStatuses||[]).map(item=>[item.jobId,item.status]));
+  const next=results.map((result,index)=>{
+   const raw=result.job.error&&typeof result.job.error==="object"?result.job.error as {message?:unknown}:null;
+   const received=String(result.job.status||"unknown");
+   const latest=latestStatuses.get(result.job.id)||"";
+   const status=latest==="cancel_requested"&&["queued","processing","running"].includes(received.toLowerCase())?latest:received;
+   const output=result.job.output&&typeof result.job.output==="object"?result.job.output as {assetIds?:unknown}:null;
+   return{
+    jobId:result.job.id,shotIndex:previous.find(item=>item.jobId===result.job.id)?.shotIndex??index,
+    status,progress:Math.max(0,Math.min(100,Number(result.job.progress)||0)),
+    ...(status.toLowerCase()==="failed"&&typeof raw?.message==="string"?{errorMessage:raw.message.slice(0,240)}:{}),
+    ...(Array.isArray(output?.assetIds)?{outputAssetCount:output.assetIds.length}:{}),
+    ...(typeof result.job.updatedAt==="string"?{updatedAt:result.job.updatedAt}:{})
+   };
+  });
   const allTerminal=next.length>0&&next.every(item=>isCloudJobTerminal(item.status));
   const allSucceeded=allTerminal&&next.every(item=>["succeeded","completed"].includes(item.status.toLowerCase()));
   const anyFailed=next.some(item=>item.status.toLowerCase()==="failed");
   const allCancelled=allTerminal&&next.every(item=>["cancelled","canceled"].includes(item.status.toLowerCase()));
-  const summary=next.map(item=>"Shot "+(item.shotIndex+1)+": "+item.status+" · "+item.progress+"%").join(" | ");
+  const summary=summarizeCloudJobProgress(next);
   state.videoApproval={...approval!,status:allSucceeded?"succeeded":anyFailed?"failed":allCancelled?"cancelled":allTerminal?"completed":"processing",jobStatuses:next,statusSummary:summary};
   save();
   if(hasCloudJobFinished(previous,next))await loadCloudWorkspace();
