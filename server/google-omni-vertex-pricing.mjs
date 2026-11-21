@@ -41,8 +41,10 @@ export function resolveGoogleOmniVertexActualCost({ task, providerTaskId } = {})
   const inputTokens = usage?.total_input_tokens;
   const outputTokens = usage?.total_output_tokens;
   const outputBreakdown = usage?.output_tokens_by_modality;
+  const thoughtTokens = usage?.total_thought_tokens ?? 0;
   if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || inputTokens > MAX_INPUT_TOKENS ||
       !Number.isSafeInteger(outputTokens) || outputTokens < 0 || outputTokens > MAX_OUTPUT_TOKENS ||
+      !Number.isSafeInteger(thoughtTokens) || thoughtTokens < 0 || outputTokens + thoughtTokens > MAX_OUTPUT_TOKENS ||
       !Array.isArray(outputBreakdown) || outputBreakdown.length < 1 || outputBreakdown.length > 8) {
     throw fail("Vertex did not return bounded token usage with output modality breakdown.", "GOOGLE_OMNI_VERTEX_USAGE_EVIDENCE_MISSING");
   }
@@ -85,17 +87,19 @@ export function resolveGoogleOmniVertexActualCost({ task, providerTaskId } = {})
     throw fail("Vertex output modality totals do not reconcile to total_output_tokens.", "GOOGLE_OMNI_VERTEX_USAGE_EVIDENCE_MISSING");
   }
 
+  const billableTextOutputTokens = textOutputTokens + thoughtTokens;
   const halfMicroDollars = BigInt(inputTokens) * 3n +
-    BigInt(textOutputTokens) * 18n + BigInt(videoOutputTokens) * 24n;
+    BigInt(billableTextOutputTokens) * 18n + BigInt(videoOutputTokens) * 24n;
   const amount = Number((halfMicroDollars + 1n) / 2n) / 1_000_000;
   return Object.freeze({
     amount, actualCredits: credits(amount), customerCreditsPerUsd: CUSTOMER_CREDITS_PER_USD,
     currency: "USD",
     evidenceReference: "google-vertex-interaction-usage:" + providerTaskId +
       ":input=" + inputTokens + ":text=" + textOutputTokens + ":video=" + videoOutputTokens,
-    inputTokens, outputTokens, textOutputTokens, videoOutputTokens,
+    inputTokens, outputTokens, textOutputTokens, thoughtTokens,
+    billableTextOutputTokens, videoOutputTokens,
     inputAmount: money(inputTokens * INPUT_USD_PER_MILLION / 1_000_000),
-    textOutputAmount: money(textOutputTokens * TEXT_OUTPUT_USD_PER_MILLION / 1_000_000),
+    textOutputAmount: money(billableTextOutputTokens * TEXT_OUTPUT_USD_PER_MILLION / 1_000_000),
     videoOutputAmount: money(videoOutputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000),
     pricingSource: PRICING_SOURCE
   });
