@@ -218,10 +218,10 @@ for(const {shot,asset,shotIndex} of matchedGenerated){
   id:"generated-clip-"+shotIndex,assetId:asset.id,name:shot.framing||("Shot "+(shotIndex+1)),
   durationSeconds:shot.durationSeconds,frameRate:generatedTimeline.frameRate,
   startFrame:Math.round(marker.start.value/marker.start.rate*fps),
-  metadata:{source:"creative-storyboard",approvalId:"approval-1",shotIndex,cloudAssetId:asset.id,cloudSha256:"a".repeat(64)}
+  metadata:{source:"creative-storyboard",approvalId:"approval-1",shotIndex,jobId:asset.metadata?.jobId,cloudAssetId:asset.id,cloudSha256:asset.sha256}
  }));
 }
 assert.equal(generatedVideoTrack.clips.length,generatedShots.length);
 assert.equal(validateTimeline(generatedTimeline).valid,true);
-assert.deepEqual(generatedVideoTrack.clips.map(clip=>clip.assetId),generatedShots.map((_,index)=>"asset-"+index));
+assert.deepEqual(generatedVideoTrack.clips.map(clip=>clip.assetId),generatedAssets.map(asset=>asset.id));
 console.log("Generated storyboard timeline verification passed: validated video clips align with their original shot markers and approved cloud assets.");
