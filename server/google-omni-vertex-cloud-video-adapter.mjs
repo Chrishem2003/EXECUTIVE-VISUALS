@@ -183,7 +183,15 @@ export function createGoogleOmniVertexCloudVideoIntegration({
       if (state === "succeeded" && !outputUri) {
         throw fail("Vertex completed without its private GCS video URI.", "GOOGLE_VERTEX_OUTPUT_URI_MISSING");
       }
-      await interactions.updateInteraction({ ...scope, model: MODEL, state, ...(outputUri ? { outputUri } : {}) });
+      const usage = rawInteraction.usage && typeof rawInteraction.usage === "object" &&
+        !Array.isArray(rawInteraction.usage) && Buffer.byteLength(JSON.stringify(rawInteraction.usage)) <= 4096
+        ? rawInteraction.usage : null;
+      const previousMetadata = stored.metadata && typeof stored.metadata === "object" && !Array.isArray(stored.metadata)
+        ? stored.metadata : {};
+      await interactions.updateInteraction({
+        ...scope, model: MODEL, state, ...(outputUri ? { outputUri } : {}),
+        ...(usage ? { metadata: { ...previousMetadata, usageEvidence: usage, usageCapturedAt: new Date().toISOString() } } : {})
+      });
       return Object.freeze({
         taskId: providerTaskId, status: state,
         provider: PROVIDER, model: MODEL,
