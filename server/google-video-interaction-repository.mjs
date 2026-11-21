@@ -34,7 +34,8 @@ function iso(value, label) {
 }
 function mapRow(row, models = SUPPORTED_MODELS) {
   if (!row || typeof row !== "object" || !ID.test(String(row.interaction_id || "")) ||
-      !models.has(row.model) || !STATES.has(row.state) ||\n      (row.output_uri != null && !validOutputUri(row.output_uri, row.model))) {
+      !models.has(row.model) || !STATES.has(row.state) ||
+      (row.output_uri != null && !validOutputUri(row.output_uri, row.model))) {
     throw new Error("Google interaction repository returned an invalid record.");
   }
   return Object.freeze({
@@ -182,7 +183,8 @@ export function createGoogleVideoInteractionRepository({
 
     async updateInteraction({ interactionId, ownerId, projectId = null, jobId, model = models.size === 1 ? [...models][0] : null, state, outputFileName, outputUri, metadata } = {}) {
       const scope = { interactionId, ownerId, projectId, jobId };
-      if (!models.has(model)) throw new Error("Google interaction update requires an explicit supported model.");\n      if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
+      if (!models.has(model)) throw new Error("Google interaction update requires an explicit supported model.");
+      if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
       const body = { state, updated_at: new Date().toISOString() };
       if (outputFileName !== undefined) body.output_file_name = outputFileName;
       if (outputUri !== undefined) {
