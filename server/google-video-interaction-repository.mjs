@@ -1,8 +1,16 @@
 import { resolveSupabaseServerKey, supabaseServerAuthHeaders } from "./supabase-server-credentials.mjs";
 const TABLE = "google_video_interactions";
 const MODEL = "gemini-omni-1.1-flash";
+const SUPPORTED_MODELS = new Set([MODEL, "gemini-omni-1.2-flash"]);
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
 const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
+const VERTEX_OUTPUT_URI = /^gs:\/\/[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]\/([A-Za-z0-9/_-]{1,180})\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[a-f0-9]{64}\/i;
+function validOutputUri(value, models) {
+  if (value === null) return true;
+  if (models.has("gemini-omni-1.1-flash") && OUTPUT_URI.test(value)) return true;
+  if (models.has("gemini-omni-1.2-flash") && VERTEX_OUTPUT_URI.test(value)) return true;
+  return false;
+}
 const STATES = new Set(["running", "waiting", "succeeded", "failed", "canceled", "incomplete", "unknown", "deleting", "deleted"]);
 
 function safeOrigin(value) {
@@ -26,7 +34,7 @@ function iso(value, label) {
 }
 function mapRow(row) {
   if (!row || typeof row !== "object" || !ID.test(String(row.interaction_id || "")) ||
-      row.model !== MODEL || !STATES.has(row.state)) {
+      !SUPPORTED_MODELS.has(row.model) || !STATES.has(row.state)) {
     throw new Error("Google interaction repository returned an invalid record.");
   }
   return Object.freeze({
@@ -62,7 +70,7 @@ export function createGoogleVideoInteractionRepository({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) {
     throw new Error("Google interaction repository timeout is invalid.");
   }
-  const base = safeOrigin(url);
+  if (!Array.isArray(allowedModels) || allowedModels.length < 1 || allowedModels.length > SUPPORTED_MODELS.size ||\n      allowedModels.some(model => !SUPPORTED_MODELS.has(model)) || new Set(allowedModels).size !== allowedModels.length) {\n    throw new Error("Google interaction repository requires an explicit supported model allowlist.");\n  }\n  const models = new Set(allowedModels);\n  const base = safeOrigin(url);
   const columns = "id,provider,model,interaction_id,job_id,owner_id,project_id,request_hash,parent_interaction_id,state,output_file_name,output_uri,submitted_at,expires_at,deleted_at,metadata";
 
   async function request(query, { method = "GET", body, prefer } = {}) {
@@ -125,7 +133,7 @@ export function createGoogleVideoInteractionRepository({
     async recordInteraction(record = {}) {
       const interactionId = required(record.interactionId, "Interaction ID", 220);
       if (!ID.test(interactionId)) throw new Error("Google interaction ID is invalid.");
-      if (record.provider !== "google" || record.model !== MODEL) throw new Error("Google interaction provider/model is invalid.");
+      if (record.provider !== "google" || !models.has(record.model)) throw new Error("Google interaction provider/model is invalid.");
       const ownerId = required(record.ownerId, "Owner ID");
       const jobId = required(record.jobId, "Job ID");
       const projectId = record.projectId ? required(record.projectId, "Project ID") : null;
@@ -137,13 +145,13 @@ export function createGoogleVideoInteractionRepository({
       const expiresAt = iso(record.expiresAt, "Interaction expiry");
       if (Date.parse(expiresAt) <= Date.now()) throw new Error("Interaction expiry must be in the future.");
       const outputUri = record.outputUri ?? null;
-      if (outputUri !== null && (typeof outputUri !== "string" || !OUTPUT_URI.test(outputUri))) throw new Error("Google output URI is invalid.");
+      if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, models))) throw new Error("Google output URI is invalid for the configured model allowlist.");
       const metadata = record.metadata ?? {};
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || Buffer.byteLength(JSON.stringify(metadata)) > 4000) {
         throw new Error("Google interaction metadata must be a bounded JSON object.");
       }
       const body = {
-        provider: "google", model: MODEL, interaction_id: interactionId, job_id: jobId,
+        provider: "google", model: record.model, interaction_id: interactionId, job_id: jobId,
         owner_id: ownerId, project_id: projectId, request_hash: requestHash,
         parent_interaction_id: parent, state: record.state,
         output_file_name: record.outputFileName || null,
@@ -171,7 +179,7 @@ export function createGoogleVideoInteractionRepository({
       const body = { state, updated_at: new Date().toISOString() };
       if (outputFileName !== undefined) body.output_file_name = outputFileName;
       if (outputUri !== undefined) {
-        if (outputUri !== null && (typeof outputUri !== "string" || !OUTPUT_URI.test(outputUri))) throw new Error("Google output URI is invalid.");
+        if (outputUri !== null && (typeof outputUri !== "string" || !validOutputUri(outputUri, models))) throw new Error("Google output URI is invalid for the configured model allowlist.");
         body.output_uri = outputUri;
       }
       if (metadata !== undefined) {
