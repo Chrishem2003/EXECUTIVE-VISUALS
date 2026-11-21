@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cloudJobStatusPath } from "../../src/platform/cloud-job-polling.ts";
+import { cloudJobStatusPath, summarizeCloudJobProgress } from "../../src/platform/cloud-job-polling.ts";
 
 test("routes Neon jobs to the owner-scoped Neon status endpoint", () => {
   assert.equal(
@@ -21,7 +21,6 @@ test("defaults historical records without a backend to the existing cloud endpoi
 });
 
 
-import { summarizeCloudJobProgress } from "../../src/platform/cloud-job-polling.ts";
 
 test("summarizes completed, active, failed and cancelled generation jobs without hiding failures", () => {
   assert.equal(summarizeCloudJobProgress([
