@@ -1406,7 +1406,7 @@ if(storyboardBuildTimeline){void (async()=>{
    videoTrack.clips.push(createGeneratedVideoClip({
     id:crypto.randomUUID(),assetId:asset.id,name:shot.framing||("Shot "+(shotIndex+1)),durationSeconds:shot.durationSeconds,
     frameRate:document.frameRate,startFrame,
-    metadata:{source:"creative-storyboard",approvalId:approval.id,shotIndex,storyboardShotId:shot.id,provider:String(metadata.provider||"unknown"),model:String(metadata.model||"unknown"),cloudAssetId:asset.id,cloudSha256:asset.sha256}
+    metadata:{source:"creative-storyboard",approvalId:approval.id,shotIndex,storyboardShotId:shot.id,provider:String(metadata.provider||"unknown"),model:String(metadata.model||"unknown"),cloudAssetId:asset.id,cloudSha256:asset.sha256,jobId:String(metadata.jobId)}
    }));
   }
   const timeline={...document,name:document.name+" · Generated shots",metadata:{source:"creative-storyboard-generated",approvalId:approval.id,storyboardShotCount:shots.length}};
