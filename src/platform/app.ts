@@ -256,11 +256,12 @@ async function restoreCreativeArtifacts(project:Project){
 
 function renderCloudGenerationJobRows(jobs:Array<{jobId:string;shotIndex:number;status:string;progress:number;errorMessage?:string;outputAssetCount?:number;updatedAt?:string;attemptCount?:number;maxAttempts?:number}>,backend?:"cloud"|"neon-postgres"):string {
  return jobs.map(job => {
-  const progress=Math.max(0,Math.min(100,Math.round(Number(job.progress)||0)));
   const lower=String(job.status||"unknown").toLowerCase();
+  const progress=["succeeded","completed"].includes(lower)?100:Math.max(0,Math.min(100,Math.round(Number(job.progress)||0)));
+  const updated=job.updatedAt&&Number.isFinite(Date.parse(job.updatedAt))?new Date(job.updatedAt).toLocaleTimeString():"";
   const canCancel=backend==="neon-postgres"?lower==="queued":["queued","processing","running"].includes(lower);
   const status=String(job.status||"unknown").split("_").join(" ");
-  return '<article class="video-generation-job"><div class="video-generation-job-main"><div class="video-generation-job-heading"><b>Shot '+(job.shotIndex+1)+'</b><span>'+esc(status)+' · '+progress+'%</span></div><div class="video-generation-progress" role="progressbar" aria-label="Shot '+(job.shotIndex+1)+' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div>'+(job.errorMessage?'<p class="video-generation-error">'+esc(job.errorMessage)+'</p>':'')+(job.outputAssetCount?'<small class="muted">'+job.outputAssetCount+' generated asset(s) registered</small>':'')+(job.attemptCount?'<small class="muted">Attempt '+job.attemptCount+(job.maxAttempts? ' of '+job.maxAttempts:'')+'</small>':'')+'</div>'+(canCancel?'<button class="secondary" data-storyboard-cancel="'+esc(job.jobId)+'">Cancel job</button>':'')+'</article>';
+  return '<article class="video-generation-job"><div class="video-generation-job-main"><div class="video-generation-job-heading"><b>Shot '+(job.shotIndex+1)+'</b><span>'+esc(status)+' · '+progress+'%</span></div><div class="video-generation-progress" role="progressbar" aria-label="Shot '+(job.shotIndex+1)+' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><i style="width:'+progress+'%"></i></div>'+(job.errorMessage?'<p class="video-generation-error">'+esc(job.errorMessage)+'</p>':'')+(job.outputAssetCount?'<small class="muted">'+job.outputAssetCount+' generated asset(s) registered</small>':'')+(job.attemptCount?'<small class="muted">Attempt '+job.attemptCount+(job.maxAttempts? ' of '+job.maxAttempts:'')+'</small>':'')+(updated?'<small class="muted">Updated '+esc(updated)+'</small>':'')+'</div>'+(canCancel?'<button class="secondary" data-storyboard-cancel="'+esc(job.jobId)+'">Cancel job</button>':'')+'</article>';
  }).join("");
 }
 async function refreshCloudGenerationJobs(showErrors=false){
