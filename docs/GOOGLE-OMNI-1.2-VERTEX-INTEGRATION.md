@@ -1,6 +1,6 @@
 # Gemini Omni 1.2 Flash — Vertex worker integration
 
-Status: Vertex transport and lease-fenced private-output ingestion are implemented. This branch adds model-aware durable interaction repository support and a source-controlled schema migration. Provider worker composition, exact 1.2 billing reconciliation, staging IAM validation and end-to-end acceptance remain incomplete.
+Status: Vertex transport, model-scoped durable interaction records, worker composition, model-specific token pricing, lease-fenced private GCS output ingestion, and fail-closed provider gates are implemented on this feature branch. Staging IAM validation, real credential verification, provider smoke tests, and end-to-end acceptance remain incomplete.
 
 ## Why this is a separate integration
 
@@ -13,12 +13,12 @@ This differs from the existing Gemini Developer API 1.1 worker, which uses the G
 ## Current implementation
 
 - `server/google-omni-vertex-client.mjs`: OAuth/ADC transport for project-scoped Vertex Interactions API requests. Requests are stored and run in the background. URI delivery writes into a deterministic per-job GCS prefix.
-- `server/google-omni-vertex-output-ingestion.mjs`: downloads only objects under the exact configured bucket/prefix/job/request hash and publishes through the existing private, lease-fenced Cloud Asset repository.
+- `server/google-omni-vertex-output-ingestion.mjs`: downloads only objects under the exact configured bucket/prefix/job/request hash and publishes through the existing private, lease-fenced Cloud Asset repository.\n- `server/google-omni-vertex-cloud-video-adapter.mjs`: binds approved plans, durable submission records, status polling, cancellation, private output ingestion and usage settlement to the cloud worker contract.\n- `server/google-omni-vertex-pricing.mjs`: uses the published Omni 1.2 token rate card, reserves the full 131,072-input / 260,640-output ceiling, includes thought tokens in text-output billing, and rejects inconsistent or over-limit usage. The maximum preflight reservation is $3.324288 before customer-credit conversion; it is a ceiling, not a per-video price.\n- `server/cloud-video-provider-worker-composition.mjs`: registers Omni 1.2 separately behind shared Google gates, Vertex-specific gates, a verified Google Cloud connection and a live connection verifier.\n- `server/cloud-video-generation-job-executor.mjs`: now passes the active worker lease assertion and abort signal into private output ingestion; failed Omni 1.2 tasks retain their reservation for usage reconciliation.
 - `server/google-video-interaction-repository.mjs`: supports a caller-supplied allowlist for the 1.1 Files API URI contract and the 1.2 private GCS output URI contract. The default remains 1.1 only.
 - `supabase/migrations/20261121100000_google_omni_vertex_interaction_records.sql`: extends the existing model and output-URI constraints without changing existing 1.1 records. It is source-controlled only and must be applied only after isolated staging review.
 - `server/tests/google-omni-vertex-client.test.mjs` and `server/tests/google-omni-vertex-output-ingestion.test.mjs`: request, authorization, path confinement, download, content-type, size and lease tests.
 
-The new transport is not yet composed into `cloud-video-provider-worker-composition.mjs`. No provider is enabled by these modules. The interaction repository defaults to the 1.1 model allowlist; the Vertex worker must explicitly request the 1.2 allowlist after its connection, approval, cost and private-output gates are composed.
+The worker integration is now composed but remains disabled by default. The interaction repository still defaults to the 1.1 model allowlist; the Vertex worker explicitly requests the 1.2 allowlist. A real Google Cloud connection, private GCS IAM, approved plan callback and all explicit provider gates are required before remote execution can be registered.
 
 ## Configuration prerequisites — do not add until staging is approved
 
@@ -26,7 +26,7 @@ The worker will require:
 
 - `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID.
 - `GOOGLE_OMNI_OUTPUT_BUCKET`: dedicated private GCS bucket.
-- `GOOGLE_OMNI_OUTPUT_PREFIX`: optional prefix; defaults to `executive-visuals/omni-12`.
+- `GOOGLE_OMNI_OUTPUT_PREFIX`: optional prefix; defaults to `executive-visuals/omni-12`.\n- `GOOGLE_OMNI_VERTEX_VIDEO_ENABLED=true` and `GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE=true`, in addition to `GOOGLE_OMNI_VIDEO_ENABLED=true` and `GOOGLE_OMNI_VIDEO_ALLOW_REMOTE=true`.\n- `GOOGLE_OMNI_VERTEX_CONNECTION_STATUS=connected` plus a live `googleOmniVertexAssertConnection` callback.\n- `googleOmniVertexPreparePlan`: an owner/project-scoped planner that returns an explicitly approved `gemini-omni-1.2-flash` plan.\n- `GOOGLE_CLOUD_PROJECT` and `GOOGLE_OMNI_OUTPUT_BUCKET` must be set before the default client/ingestor can be constructed.
 - Application Default Credentials for the Vertex AI and Cloud Storage APIs. Prefer workload identity/federation where the hosting platform supports it; otherwise use a protected service-account credential mechanism. Never commit credentials or expose them to browser code.
 
 The Google identity that submits Vertex interactions must have the minimum Vertex AI permissions required to call Interactions API. The Vertex model service identity must be authorized to create objects in the configured output prefix. The worker identity must have read-only access to that prefix. Do not grant project-wide Storage Admin merely to make the integration work.
@@ -66,5 +66,5 @@ Do not enable 1.2 paid execution until the exact Vertex pricing dimensions for i
 - Gemini Omni 1.2 model page: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/omni-1-2-flash
 - Video generation request/response and GCS URI delivery: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-an-image
 - Gemini Omni 1.2 launch and published 720p price: https://cloud.google.com/blog/products/ai-machine-learning/gemini-omni-1-2-flash-generally-available
-- Google Cloud Generative AI pricing: https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing
+- Google Cloud Generative AI pricing: https://cloud.google.com/model-garden/pricing\n- Vertex Interactions HTTP get/cancel reference: https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/v1beta1/projects.locations.interactionsHttp/get
 - Google Cloud Omni 1.2 GA pricing announcement: https://cloud.google.com/blog/products/ai-machine-learning/gemini-omni-1-2-flash-generally-available
