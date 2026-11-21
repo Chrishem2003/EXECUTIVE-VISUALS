@@ -35,7 +35,7 @@ The worker will require:
 - `GOOGLE_OMNI_OUTPUT_PREFIX`: optional prefix; defaults to `executive-visuals/omni-12`.
 - `GOOGLE_OMNI_VERTEX_VIDEO_ENABLED=true` and `GOOGLE_OMNI_VERTEX_VIDEO_ALLOW_REMOTE=true`, in addition to `GOOGLE_OMNI_VIDEO_ENABLED=true` and `GOOGLE_OMNI_VIDEO_ALLOW_REMOTE=true`.
 - `GOOGLE_OMNI_VERTEX_CONNECTION_STATUS=connected` plus a live `googleOmniVertexAssertConnection` callback.
-- `googleOmniVertexPreparePlan`: an owner/project-scoped planner that returns an explicitly approved `gemini-omni-1.2-flash` plan.
+- `googleOmniVertexPreparePlan`: an owner/project-scoped planner that returns a `gemini-omni-1.2-flash` plan.\n- `googleOmniVertexAssertApprovedSubmission`: a durable approval and budget-reservation validator. The worker will not POST to Vertex unless it returns `true`.
 - `GOOGLE_CLOUD_PROJECT` and `GOOGLE_OMNI_OUTPUT_BUCKET` must be set before the default client/ingestor can be constructed.
 - Application Default Credentials for the Vertex AI and Cloud Storage APIs. Prefer workload identity/federation where the hosting platform supports it; otherwise use a protected service-account credential mechanism. Never commit credentials or expose them to browser code.
 
