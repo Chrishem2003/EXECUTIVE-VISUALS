@@ -1,6 +1,6 @@
 # Gemini Omni 1.2 Flash — Vertex worker integration
 
-Status: transport and private-output ingestion implemented on a feature branch; worker composition and staging activation are not yet complete.
+Status: Vertex transport and lease-fenced private-output ingestion are implemented. This branch adds model-aware durable interaction repository support and a source-controlled schema migration. Provider worker composition, exact 1.2 billing reconciliation, staging IAM validation and end-to-end acceptance remain incomplete.
 
 ## Why this is a separate integration
 
@@ -14,9 +14,11 @@ This differs from the existing Gemini Developer API 1.1 worker, which uses the G
 
 - `server/google-omni-vertex-client.mjs`: OAuth/ADC transport for project-scoped Vertex Interactions API requests. Requests are stored and run in the background. URI delivery writes into a deterministic per-job GCS prefix.
 - `server/google-omni-vertex-output-ingestion.mjs`: downloads only objects under the exact configured bucket/prefix/job/request hash and publishes through the existing private, lease-fenced Cloud Asset repository.
+- `server/google-video-interaction-repository.mjs`: supports a caller-supplied allowlist for the 1.1 Files API URI contract and the 1.2 private GCS output URI contract. The default remains 1.1 only.
+- `supabase/migrations/20261121100000_google_omni_vertex_interaction_records.sql`: extends the existing model and output-URI constraints without changing existing 1.1 records. It is source-controlled only and must be applied only after isolated staging review.
 - `server/tests/google-omni-vertex-client.test.mjs` and `server/tests/google-omni-vertex-output-ingestion.test.mjs`: request, authorization, path confinement, download, content-type, size and lease tests.
 
-The new transport is not yet composed into `cloud-video-provider-worker-composition.mjs`. No provider is enabled by these modules.
+The new transport is not yet composed into `cloud-video-provider-worker-composition.mjs`. No provider is enabled by these modules. The interaction repository defaults to the 1.1 model allowlist; the Vertex worker must explicitly request the 1.2 allowlist after its connection, approval, cost and private-output gates are composed.
 
 ## Configuration prerequisites — do not add until staging is approved
 
@@ -43,7 +45,7 @@ The bucket must be private. Do not use public object ACLs, public buckets, or br
 
 ## Pricing and billing gate
 
-Google's November 5, 2026 GA announcement states $0.07 per second for 720p video. However, the currently published Agent Platform pricing table exposes token-rate rows for Gemini Omni Flash / Omni 1.1, and does not yet give a complete model-specific 1.2 Vertex rate and usage-settlement contract. Treat $0.07/second as a published 720p reference price only, not as proof of all-resolution, input-modality or billing semantics.
+Google's November 5, 2026 GA announcement states $0.07 per second for 720p video. The current Agent Platform pricing table still lists token-rate rows for Gemini Omni Flash / Omni 1.1 rather than a complete 1.2 Vertex usage schedule. Treat $0.07/second as a published 720p reference price only, not as proof of all-resolution or input-modality billing semantics.
 
 Do not enable 1.2 paid execution until the exact Vertex pricing dimensions for input modalities, text output, video output, output resolution, and returned usage evidence are verified against the current Google Cloud rate card. Do not settle customer credits using a flat $0.07/second estimate where actual usage evidence is required. The provider must remain disabled until the preflight reservation and actual-usage resolver are model-specific, tested, and reconciled.
 
