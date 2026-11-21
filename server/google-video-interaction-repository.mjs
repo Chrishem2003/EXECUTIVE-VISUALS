@@ -73,7 +73,8 @@ export function createGoogleVideoInteractionRepository({
   }
   if (!Array.isArray(allowedModels) || allowedModels.length < 1 || allowedModels.length > SUPPORTED_MODELS.size ||
       allowedModels.some(model => !SUPPORTED_MODELS.has(model)) || new Set(allowedModels).size !== allowedModels.length) {
-    throw new Error("Google interaction repository requires an explicit supported model allowlist.");\n  }
+    throw new Error("Google interaction repository requires an explicit supported model allowlist.");
+  }
   const models = new Set(allowedModels);
   const base = safeOrigin(url);
   const columns = "id,provider,model,interaction_id,job_id,owner_id,project_id,request_hash,parent_interaction_id,state,output_file_name,output_uri,submitted_at,expires_at,deleted_at,metadata";
