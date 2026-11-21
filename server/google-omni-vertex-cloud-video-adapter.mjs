@@ -32,6 +32,7 @@ export function createGoogleOmniVertexCloudVideoIntegration({
   interactions,
   outputIngestor,
   preparePlan,
+  assertApprovedSubmission,
   retentionExpiresAt
 } = {}) {
   if (!client || typeof client.createInteraction !== "function" ||
@@ -47,8 +48,8 @@ export function createGoogleOmniVertexCloudVideoIntegration({
   if (!outputIngestor || typeof outputIngestor.ingestInteraction !== "function") {
     throw new TypeError("Vertex Omni 1.2 integration requires private GCS output ingestion.");
   }
-  if (typeof preparePlan !== "function" || typeof retentionExpiresAt !== "function") {
-    throw new TypeError("Vertex Omni 1.2 integration requires an approved request planner and retention policy.");
+  if (typeof preparePlan !== "function" || typeof assertApprovedSubmission !== "function" || typeof retentionExpiresAt !== "function") {
+    throw new TypeError("Vertex Omni 1.2 integration requires an approved request planner, durable approval validator and retention policy.");
   }
 
   const adapter = Object.freeze({
@@ -128,6 +129,12 @@ export function createGoogleOmniVertexCloudVideoIntegration({
           }
         });
       };
+      let approved = false;
+      try { approved = await assertApprovedSubmission({ plan: prepared.plan, context: prepared.context, job }); }
+      catch {}
+      if (approved !== true) {
+        throw fail("A durable owner approval and budget reservation are required before Vertex Omni submission.", "GOOGLE_VERTEX_APPROVAL_REQUIRED");
+      }
       const accepted = await client.createInteraction(prepared.plan, prepared.context, {
         onInteractionCreated: persistCreated, signal
       });
