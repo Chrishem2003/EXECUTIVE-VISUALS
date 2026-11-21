@@ -350,6 +350,8 @@ test("cloud executor retains the Vertex Omni reservation when a failed task may 
     ...job,
     input: { ...job.input, provider: "google", model: "gemini-omni-1.2-flash" }
   };
+  f.adapter.provider = "google";
+  f.adapter.model = "gemini-omni-1.2-flash";
   await assert.rejects(
     executeCloudVideoGenerationJob({ job: vertexJob, workerId: "worker-1", ...f }),
     error => error.code === "VIDEO_PROVIDER_FAILURE_COST_UNRESOLVED"
