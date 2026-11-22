@@ -106,6 +106,6 @@ test("billing workspace renders authoritative usage, reserved spend and gated al
  assert.match(app,/SPENDING & BUDGET CONTROL/);
  assert.match(app,/Settled generation spend/);
  assert.match(app,/Reserved for active jobs/);
- assert.match(app,/credit_allowance_published/);
+ assert.match(app,/allowancePublished/);
  assert.match(css,/\.credit-usage-panel/);
 });
