@@ -178,5 +178,5 @@ export function compareCommercialProductionCandidates({candidates,minQualityScor
   throw fail("COMMERCIAL_CANDIDATE_ID_INVALID","Every production candidate needs a unique identifier.");
  const eligible=rows.filter(row=>row.eligible).sort((a,b)=>a.customerCredits-b.customerCredits||b.qualityScore-a.qualityScore||a.p95LatencyMs-b.p95LatencyMs);
  return Object.freeze({mode:"recommendation_only",automaticRouting:false,recommended:eligible[0]||null,
-  candidates:Object.freeze(rows),reason:eligible.length?"Lowest-credit candidate with qualifying independent quality evidence.":"No candidate has enough verified quality evidence; choose manually or collect more evaluations."});
+  candidates:Object.freeze(rows),reason:eligible.length?"Lowest-credit candidate with qualifying independent quality evidence.":"No candidate satisfied all verified quality, sample-count, latency and current customer-credit quote requirements."});
 }
