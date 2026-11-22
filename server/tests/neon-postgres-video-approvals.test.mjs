@@ -103,7 +103,7 @@ test("workflow-node enqueue binds the exact request to one Neon job and reserves
   quoteId:approval,ownerId:owner,projectId:project,requestId:"workflow-approval-001",
   requestHash:"c".repeat(64),provider:"runway",model:"model-router",operation:"text-to-video",
   input:{prompt:"A cinematic sunrise",durationSeconds:5,resolution:"1080p"},
-  estimatedAmount:1.25,approvedMaxAmount:2.5,customerCreditBudgetCredits:350,expiresAt:new Date(Date.now()+60000).toISOString(),
+  estimatedAmount:1.25,approvedMaxAmount:2.5,customerCreditBudgetCredits:350,requiredCustomerCredits:300,expiresAt:new Date(Date.now()+60000).toISOString(),
   estimatedCredits:125,routedProvider:"runway",routedModel:"seedance2_5"
  });
  assert.equal(result.backend,"neon-postgres");
@@ -140,6 +140,7 @@ test("workflow-node enqueue rejects expired quotes, changed model families and c
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,approvedMaxAmount:1.2}),e=>e.code==="VIDEO_WORKFLOW_APPROVED_AMOUNT_INVALID");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,quoteState:"consumed"}),e=>e.code==="VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,customerCreditBudgetCredits:299}),e=>e.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+ await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,requiredCustomerCredits:151}),e=>e.code==="VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
  await assert.rejects(()=>f.repos.approvals.enqueueWorkflowNode({...baseQuote,customerCreditBudgetCredits:undefined}),e=>e.code==="VIDEO_WORKFLOW_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
  assert.equal(f.calls.length,0);
 });
