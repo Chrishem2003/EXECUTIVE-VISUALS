@@ -15,7 +15,7 @@ const pricingEnv={
  CUSTOMER_PAYMENT_FEE_BPS:"300",CUSTOMER_SUPPORT_RESERVE_BPS:"500",
  CUSTOMER_FIXED_PAYMENT_FEE_MICROS:"0"
 };
-const scenario={provider:"runway",model:"gen4.5",durationSeconds:10,resolution:"1080p",audio:false,outputFormat:"mp4",pricingDate:"2026-11-22"};
+const scenario={provider:"runway",model:"gen4.5",durationSeconds:10,resolution:"1080p",audio:false,outputFormat:"mp4"};
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json"}});}
 function api(fetchImpl,env=pricingEnv){return createFinancialIntelligenceApi({
  supabaseUrl:"https://project.supabase.co",serviceRoleKey:"service-role-test",
@@ -34,7 +34,7 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
   body:{creditBudgetShareBps:7000,scenarios:[
    scenario,
-   {provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:"2026-11-22"}
+   {provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p"}
   ]}});
  assert.equal(result.status,200,JSON.stringify(result.body));
  const economics=result.body.economics;
@@ -104,6 +104,18 @@ test("subscription economics refuses unsupported model pricing instead of invent
   body:{creditBudgetShareBps:7000,scenarios:[{...scenario,model:"unlisted-model"}]}});
  assert.equal(result.status,422);
  assert.match(result.body.error.code,/VIDEO_PRICE_UNVERIFIED|VIDEO_PRICE_INPUT_INVALID/);
+});
+
+test("subscription economics rejects unknown scenario fields rather than silently ignoring them",async()=>{
+ const service=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(String(url).includes("/subscription_plans?"))return json(plans);
+  throw new Error("Unexpected request");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{...scenario,estimatedCostUsd:0.01}]}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID");
 });
 
 test("subscription economics does not write or activate private draft plan hypotheses",async()=>{
