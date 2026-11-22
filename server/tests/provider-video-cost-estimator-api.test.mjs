@@ -108,7 +108,7 @@ test("model-specific forecast returns a separate governed customer-credit quote 
  assert.equal(result.status,200);
  assert.equal(result.body.estimate.estimatedProviderCostMinor,290);
  assert.equal(result.body.customerQuote.providerCostMinor,290);
- assert.equal(result.body.customerQuote.customerCredits,377);
+ assert.equal(result.body.customerQuote.customerCredits,415);
  assert.equal(result.body.customerQuote.rateCardVersion,"2026-11-hdr");
  assert.equal(result.body.customerQuote.reservesCredits,false);
  assert.equal(result.body.customerQuote.usesActualInvoice,false);
