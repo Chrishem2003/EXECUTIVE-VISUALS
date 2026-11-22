@@ -68,6 +68,8 @@ test("coverage migration requires invoice-backed matches and never converts cred
   assert.match(sql,/count\(\*\) filter\(where r\.match_status<>'matched'\)=0/);
   assert.match(sql,/billing_credit_reservations/);
   assert.match(sql,/state='settled'/);
+  assert.match(sql,/negative_invoice_line_count/);
+  assert.match(sql,/negative_invoice_adjustment_review/);
   assert.match(sql,/recognized_revenue_minor/);
   assert.match(sql,/revenue_allocation_required/);
   assert.match(sql,/profitabilityAvailable',false/);
