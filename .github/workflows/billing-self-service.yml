@@ -35,6 +35,7 @@ on:
       - feat/pesapal-credit-topup-checkout-batch-66-2026-11-22
       - feat/customer-credit-wallet-billing-ui-batch-67-2026-11-22
       - feat/credit-unit-economics-pricing-engine-batch-68-2026-11-22
+      - feat/credit-pricing-control-centre-batch-69-2026-11-22
   pull_request:
 
 permissions:
