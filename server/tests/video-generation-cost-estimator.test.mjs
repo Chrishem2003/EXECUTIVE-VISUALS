@@ -34,7 +34,7 @@ test("shared preflight applies current Kling 4.0 list pricing, input-video billi
   });
   assert.equal(text.credits,235);
   assert.equal(text.amount,2.35);
-  assert.equal(text.discount,null);
+  assert.equal(Object.hasOwn(text,"discount"),false);
   const edit=estimateVideoGenerationCost({
     provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",
     inputType:"video",inputVideoSeconds:6,pricingDate:"2026-11-22"
