@@ -15,6 +15,7 @@ on:
       - feat/persistent-provider-rate-cards-batch-35
       - feat/model-specific-provider-cost-estimates-2026-11-22
       - feat/verified-job-profitability-batch-43-2026-11-22
+      - feat/verified-job-cost-coverage-batch-70-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
       - feat/financial-governance-batch-48
@@ -46,6 +47,7 @@ jobs:
           node --check server/provider-video-cost-estimator.mjs
           node --check server/workload-cost-variance.mjs
           node --check server/verified-job-profitability.mjs
+          node --check server/financial-intelligence-api.mjs
           node --check server/financial-reconciliation.mjs
           node --check server/financial-close-readiness.mjs
           node --check server/financial-audit-ledger.mjs
@@ -54,6 +56,6 @@ jobs:
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/verified-job-profitability.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+        run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/verified-job-profitability.test.mjs server/tests/verified-job-cost-coverage.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
