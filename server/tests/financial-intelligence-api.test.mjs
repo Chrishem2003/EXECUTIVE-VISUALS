@@ -1715,3 +1715,51 @@ test("subscription cancellation reconciliation keeps ambiguous provider identity
  assert.equal(result.body.error.code,"SUBSCRIPTION_RECONCILIATION_REQUIRES_REVIEW");
  assert.equal(result.body.reconciliation.reviewRequired,true);
 });
+
+
+test("billing plans endpoint returns a validated versioned catalogue with active provider mappings",async()=>{
+ const requests=[];
+ const service=api(async(url)=>{
+  const target=String(url);requests.push(target);
+  if(target.includes("/rest/v1/subscription_plans?"))return json([{
+   id:"plan-professional-v2",plan_code:"professional",name:"Professional Creator",description:"For serious creators.",
+   billing_interval:"monthly",amount_minor:2900,currency:"USD",included_credits:9000,
+   entitlements:{features:{videoGeneration:true},limits:{maxConcurrentJobs:3}},version:2,status:"active",is_public:true
+  }]);
+  if(target.includes("/rest/v1/subscription_plan_provider_prices?"))return json([
+   {plan_id:"plan-professional-v2",provider:"paddle",provider_price_id:"pri_01Professional",amount_minor:2900,currency:"USD",active:true},
+   {plan_id:"plan-professional-v2",provider:"pesapal",provider_price_id:null,amount_minor:110000,currency:"UGX",active:true}
+  ]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.catalogueVersion,1);
+ assert.equal(result.body.checkoutEnabled,true);
+ assert.equal(result.body.plans.length,1);
+ assert.equal(result.body.plans[0].planCode,"professional");
+ assert.equal(result.body.plans[0].version,2);
+ assert.equal(result.body.plans[0].amount_minor,2900);
+ assert.equal(result.body.plans[0].prices.length,2);
+ assert.deepEqual(result.body.plans[0].checkoutProviders,["paddle","pesapal"]);
+ assert.equal(result.body.plans[0].includedCredits,null);
+ assert.equal(result.body.plans[0].creditAllowancePublished,false);
+ assert.equal(requests.length,2);
+});
+
+test("billing plans endpoint does not publish a plan with an invalid provider price mapping",async()=>{
+ const service=api(async(url)=>{
+  const target=String(url);
+  if(target.includes("/rest/v1/subscription_plans?"))return json([{
+   id:"plan-starter-v1",plan_code:"starter",name:"Starter Creator",description:"Starter.",
+   billing_interval:"monthly",amount_minor:900,currency:"USD",included_credits:0,
+   entitlements:{features:{videoGeneration:true}},version:1,status:"active",is_public:true
+  }]);
+  if(target.includes("/rest/v1/subscription_plan_provider_prices?"))return json([
+   {plan_id:"plan-starter-v1",provider:"paddle",provider_price_id:"bad-price-id",amount_minor:900,currency:"USD",active:true}
+  ]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
+ assert.equal(result.status,500);
+});
