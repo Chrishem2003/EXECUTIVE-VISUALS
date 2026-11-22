@@ -17,7 +17,8 @@ Added `server/customer-credit-economics.mjs`.
 - Marks every result as preview-only. It cannot reserve credits, authorize a generation, or settle a provider invoice.
 
 Required server-side configuration (do not set from browser input):
-- `CUSTOMER_CREDIT_CURRENCY` — exact ISO currency for this credit price book; quotes in another currency fail closed until an explicit FX policy exists\n- `CUSTOMER_CREDIT_VALUE_MINOR`
+- `CUSTOMER_CREDIT_CURRENCY` — exact ISO currency for this credit price book; quotes in another currency fail closed until an explicit FX policy exists
+- `CUSTOMER_CREDIT_VALUE_MINOR`
 - `CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR`
 - `CUSTOMER_CREDIT_TARGET_MARGIN_BPS`
 - `CUSTOMER_CREDIT_PAYMENT_FEE_BPS`
