@@ -13,7 +13,7 @@ const micros=value=>Math.round(value*1_000_000);
  * Build an immutable approval snapshot after a fresh server-side preflight.
  * This is an approval record only: it never submits a provider request.
  */
-export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}={}) {
+export function buildVideoGenerationApproval({shots,preflight,budget,customerCreditBudgetCredits,confirmed}={}) {
  if(confirmed!==true)throw Object.assign(new Error("Explicit generation budget approval is required."),{code:"VIDEO_APPROVAL_CONFIRMATION_REQUIRED"});
  if(!Array.isArray(shots)||shots.length<1||shots.length>12)throw Object.assign(new Error("Approval requires between 1 and 12 shots."),{code:"VIDEO_APPROVAL_INVALID_SHOTS"});
  if(!preflight||preflight.status!=="ready_for_approval"||preflight.readyForApproval!==true||preflight.requestsSubmitted!==false)throw Object.assign(new Error("A fresh successful dry-run preflight is required before approval."),{code:"VIDEO_APPROVAL_PREFLIGHT_REQUIRED"});
@@ -25,6 +25,18 @@ export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}=
  if(ceilingMicros<quoteMicros)throw Object.assign(new Error("The verified quote exceeds the approved budget ceiling."),{code:"VIDEO_APPROVAL_BUDGET_EXCEEDED"});
  const quoteShots=Array.isArray(quote.shots)?quote.shots:[];
  if(quoteShots.length!==shots.length)throw Object.assign(new Error("The verified production quote must contain an independently priced record for every approved shot."),{code:"VIDEO_APPROVAL_SHOT_PRICING_MISSING"});
+ const customerQuote=quote.customerCreditQuote;
+ if(!customerQuote||customerQuote.unit!=="customer_credits"||!Number.isSafeInteger(customerQuote.totalCredits)||
+   customerQuote.totalCredits<1||customerQuote.totalCredits>100000000||!Array.isArray(customerQuote.perShot)||
+   customerQuote.perShot.length!==shots.length)
+  throw Object.assign(new Error("A server-calculated customer-credit quote for every shot is required before approval."),{code:"VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_REQUIRED"});
+ if(!Number.isSafeInteger(customerCreditBudgetCredits)||customerCreditBudgetCredits<1||customerCreditBudgetCredits>100000000)
+  throw Object.assign(new Error("An explicit positive customer-credit spending ceiling is required."),{code:"VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_REQUIRED"});
+ if(customerCreditBudgetCredits<customerQuote.totalCredits)
+  throw Object.assign(new Error("The customer-credit quote exceeds the approved credit ceiling."),{code:"VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_EXCEEDED"});
+ const creditTotal=customerQuote.perShot.reduce((sum,item)=>sum+(Number.isSafeInteger(item?.credits)&&item.credits>0?item.credits:0),0);
+ if(creditTotal!==customerQuote.totalCredits||customerQuote.perShot.some((item,index)=>item.shotId!==shots[index].id||!Number.isSafeInteger(item.credits)||item.credits<1))
+  throw Object.assign(new Error("Per-shot customer credits must exactly match the approved shot order and aggregate."),{code:"VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_INVALID"});
  const snapshot=canonical(shots.map((shot,index)=>{
   const shotQuote=quoteShots[index];
   if(!shotQuote||shotQuote.shotId!==shot.id||shotQuote.provider!==shot.provider||shotQuote.model!==shot.model||shotQuote.currency!==quote.currency||!Number.isFinite(shotQuote.amount)||shotQuote.amount<0||!shotQuote.pricing||typeof shotQuote.pricing.sourceUrl!=="string"||!/^https:\/\//i.test(shotQuote.pricing.sourceUrl)||!Number.isFinite(Date.parse(shotQuote.pricing.observedAt))||!Number.isFinite(Date.parse(shotQuote.pricing.expiresAt))||Date.parse(shotQuote.pricing.expiresAt)<=Date.parse(shotQuote.pricing.observedAt))
@@ -36,14 +48,16 @@ export function buildVideoGenerationApproval({shots,preflight,budget,confirmed}=
  const shotTotalMicros=snapshot.reduce((total,shot)=>total+shot.estimatedCostMicros,0);
  if(!Number.isSafeInteger(shotTotalMicros)||shotTotalMicros!==quoteMicros)throw Object.assign(new Error("The sum of independently priced shots must exactly match the aggregate production quote."),{code:"VIDEO_APPROVAL_SHOT_TOTAL_MISMATCH"});
  const canonicalQuote=canonical(quote);
- const requestHash=createHash("sha256").update(JSON.stringify({shots:snapshot,quote:canonicalQuote})).digest("hex");
+ const requestHash=createHash("sha256").update(JSON.stringify({shots:snapshot,quote:canonicalQuote,customerCreditBudgetCredits})).digest("hex");
  return Object.freeze({
   requestHash,
   shotCount:shots.length,
   currency:quote.currency,
   quotedAmountMicros:quoteMicros,
   budgetCeilingMicros:ceilingMicros,
-  snapshotJson:JSON.stringify({shots:snapshot,quote:canonicalQuote}),
+  customerCreditQuote:canonical(customerQuote),
+  customerCreditBudgetCredits,
+  snapshotJson:JSON.stringify({shots:snapshot,quote:canonicalQuote,customerCreditBudgetCredits}),
   status:"approved_pending_submission",
   requestsSubmitted:false
  });
