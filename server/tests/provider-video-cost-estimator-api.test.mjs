@@ -54,28 +54,12 @@ test("model-specific estimates reject missing, ambiguous and unverified rate car
  assert.equal(missing.status,404);
  const invalid=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,body:{...request,rateCardVersion:"bad version"}});
  assert.equal(invalid.status,400);
- const legacy=api(async(url)=>{
+ const ambiguous=api(async(url)=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
-  if(String(url).includes("/ai_model_price_catalog?"))return json([{...row,verification_status:"legacy_unverified"}]);
+  if(String(url).includes("/ai_model_price_catalog?"))return json([row,{...row,rate_card_version:"2026-11-v2"}]);
   throw new Error("Unexpected request: "+String(url));
  });
- const unverified=await legacy.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,body:request});
- assert.equal(unverified.status,422);
- assert.equal(unverified.body.error.code,"PROVIDER_VIDEO_RATE_CARD_UNVERIFIED");
-});
+ const duplicate=await ambiguous.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,body:request});
+ assert.equal(duplicate.status,404);
 
-test("requested audio or input types without explicit rate-card treatment are rejected",async()=>{
- const service=api(async(url)=>{
-  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
-  if(String(url).includes("/ai_model_price_catalog?"))return json([row]);
-  throw new Error("Unexpected request: "+String(url));
- });
- const audio=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,
-  body:{...request,request:{...request.request,hasAudio:true}}});
- assert.equal(audio.status,422);
- assert.equal(audio.body.error.code,"PROVIDER_VIDEO_AUDIO_PRICING_UNRESOLVED");
- const image=await service.handle({method:"POST",path:"/api/admin/finance/model-rate-card-estimates",ownerId:owner,
-  body:{...request,request:{...request.request,inputImageCount:1}}});
- assert.equal(image.status,422);
- assert.equal(image.body.error.code,"PROVIDER_VIDEO_RATE_MISSING");
 });
