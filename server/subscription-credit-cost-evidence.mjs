@@ -18,7 +18,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
  const monthDate=new Date(periodMonth+"T00:00:00.000Z");
  monthDate.setUTCMonth(monthDate.getUTCMonth()+1);
  const periodEnd=monthDate.toISOString();
- if(!sampleComplete)return Object.freeze({status:"sample_incomplete",periodMonth,periodStart,periodEnd,sampleJobs:0,sampleCredits:0,totalProviderCostMinor:0,providerCostPerCustomerCreditMinor:null,excludedJobs:0,minimumSampleJobs:MIN_SAMPLE_JOBS});
+ if(!sampleComplete)return Object.freeze({status:"sample_incomplete",periodMonth,periodStart,periodEnd,sampleJobs:0,sampleCredits:null,totalProviderCostMinor:null,providerCostPerCustomerCreditMinor:null,excludedJobs:null,minimumSampleJobs:MIN_SAMPLE_JOBS});
  const events=Array.isArray(usageEvents)?usageEvents:[];
  const attributions=Array.isArray(invoiceAttributions)?invoiceAttributions:[];
  const reservations=Array.isArray(creditReservations)?creditReservations:[];
@@ -26,7 +26,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
  const byJob=new Map();
  for(const event of events){
   const id=String(event?.id||""),jobId=String(event?.job_id||"");
-  if(!UUID.test(id)||!UUID.test(jobId)||event.status!=="succeeded"||eventIds.has(id))continue;
+  if(!UUID.test(id)||!UUID.test(jobId)||eventIds.has(id))continue;
   eventIds.add(id);
   if(!byJob.has(jobId))byJob.set(jobId,[]);
   byJob.get(jobId).push(event);
@@ -47,6 +47,7 @@ export function deriveInvoiceBackedCreditCostEvidence({
  }
  let totalCost=0n,totalCredits=0n,sampleJobs=0,excludedJobs=0;
  for(const [jobId,jobEvents] of byJob){
+  if(jobEvents.some(event=>event.status!=="succeeded")){excludedJobs++;continue;}
   const jobReservations=reservationsByJob.get(jobId)||[];
   if(jobReservations.length!==1){excludedJobs++;continue;}
   const reservation=jobReservations[0];
@@ -69,8 +70,8 @@ export function deriveInvoiceBackedCreditCostEvidence({
  const safeCost=totalCost<=BigInt(MAX_MINOR)&&totalCredits<=BigInt(Number.MAX_SAFE_INTEGER);
  const enough=sampleJobs>=MIN_SAMPLE_JOBS&&totalCost>0n&&totalCredits>0n&&safeCost;
  const perCredit=enough?Number((totalCost+totalCredits-1n)/totalCredits):null;
- const sampleCredits=safeCost?Number(totalCredits):null;
- const totalProviderCostMinor=safeCost?Number(totalCost):null;
+ const sampleCredits=sampleJobs&&safeCost?Number(totalCredits):null;
+ const totalProviderCostMinor=sampleJobs&&safeCost?Number(totalCost):null;
  const evidence=enough?Object.freeze({
   status:"verified_measured",approved:false,
   source:"immutable invoice attribution links + settled job credit reservations",
