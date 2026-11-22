@@ -54,7 +54,9 @@ export function quoteCustomerCredits(providerQuote,rawPolicy){
   return Object.freeze({available:false,reason:"A current, source-attributed provider estimate is required before customer credits can be quoted.",billable:false});
  }
  if(!policy)return Object.freeze({available:false,reason:"Customer credit pricing is not configured with a verified credit value, fees, reserves and margin target.",billable:false});
- const major=BigInt(Math.round(providerQuote.amount*1e6));
+ const scaledAmount=Math.round(providerQuote.amount*1e6);
+ if(!Number.isSafeInteger(scaledAmount))return Object.freeze({available:false,reason:"The provider estimate exceeds supported monetary precision.",billable:false});
+ const major=BigInt(scaledAmount);
  const minor=ceilDiv(major*BigInt(policy.minorUnitsPerMajor),1000000n);
  const retry=ceilDiv(minor*BigInt(policy.retryReserveBps),10000n);
  const infrastructure=ceilDiv(minor*BigInt(policy.infrastructureReserveBps),10000n);
