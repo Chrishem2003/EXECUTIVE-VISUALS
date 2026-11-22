@@ -262,7 +262,27 @@ begin
   perform executive_visuals.expire_due_subscription_credits(p_owner_id,clock_timestamp());
 
   select jsonb_build_object(
-    'availableCredits',coalesce((select sum(l.amount) from billing_credit_ledger l where l.owner_id=p_owner_id),0),
+    'availableCredits',greatest(0,
+      coalesce((select sum(l.amount) from billing_credit_ledger l where l.owner_id=p_owner_id),0)
+      -coalesce((select sum(greatest(0,s.credits_granted-
+        coalesce((select sum(a.credits_consumed) from billing_credit_revenue_allocations a where a.source_id=s.id),0)))
+        from billing_credit_revenue_sources s
+       where s.owner_id=p_owner_id and s.source_type='subscription_allowance'
+         and s.expires_at is not null and s.expires_at<=clock_timestamp()
+         and not exists(select 1 from billing_credit_source_expirations e where e.source_id=s.id)),0)
+    ),
+    'pendingExpiryCredits',coalesce((select sum(greatest(0,s.credits_granted-
+      coalesce((select sum(a.credits_consumed) from billing_credit_revenue_allocations a where a.source_id=s.id),0)))
+      from billing_credit_revenue_sources s where s.owner_id=p_owner_id
+       and s.source_type='subscription_allowance' and s.expires_at is not null
+       and s.expires_at<=clock_timestamp()
+       and not exists(select 1 from billing_credit_source_expirations e where e.source_id=s.id)),0),
+    'expiryDeferred',exists(select 1 from billing_credit_reservations r
+      where r.owner_id=p_owner_id and r.state='reserved')
+      and exists(select 1 from billing_credit_revenue_sources s
+       where s.owner_id=p_owner_id and s.source_type='subscription_allowance'
+         and s.expires_at is not null and s.expires_at<=clock_timestamp()
+         and not exists(select 1 from billing_credit_source_expirations e where e.source_id=s.id)),
     'reservedCredits',coalesce((select sum(r.reserved_credits) from billing_credit_reservations r where r.owner_id=p_owner_id and r.state='reserved'),0),
     'consumedCredits',coalesce((select sum(r.actual_credits) from billing_credit_reservations r where r.owner_id=p_owner_id and r.state='settled'),0),
     'expiringWithinSevenDays',coalesce((select sum(s.credits_granted-
