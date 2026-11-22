@@ -79,3 +79,14 @@ Cloud team membership is managed through the same verified cloud-project boundar
 - `DELETE /api/cloud/projects/:projectId/members/:memberId` removes future project access while preserving historical job and credit-ledger attribution.
 
 The recipient must already have an Executive Visuals account. This API does not send invitation emails. Membership and spend-policy changes are owner-only and rechecked by the database.
+
+
+## Account-wide agency team seats
+
+The team directory is now bounded by the paying account's trusted subscription entitlement at `limits.teamSeats`. The owner consumes one seat; each distinct collaborator across all projects owned by that account consumes one additional seat. Adding the same collaborator to another workspace does not consume another seat.
+
+A database trigger enforces the entitlement for every project membership insert/update, not only the application endpoint. It locks the account's one active/trialing subscription row before counting unique members, serializing concurrent additions across separate workspaces. Missing, malformed, expired or ambiguous subscription entitlements fail closed. Existing collaborators remain visible and can be removed when a plan no longer has an available seat.
+
+The cloud workspace reads an owner-scoped seat summary and shows used, total and available seats. If no trusted `limits.teamSeats` value exists, adding members is disabled; the server independently enforces the same rule. The membership API still supports existing registered accounts only and does not claim to send invitation emails.
+
+Team seats, project shared credit pools and per-member generation spend caps are separate controls: a seat grants project membership, not automatic generation permission or additional credits. The new migration and PostgreSQL integration are CI-only until separately approved for staging.

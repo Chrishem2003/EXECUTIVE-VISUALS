@@ -222,7 +222,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(project.ownerId!==ownerId)return response(403,{error:{code:"PROJECT_CREDIT_POOL_OWNER_REQUIRED",message:"Only the project owner can manage project membership."}});
      if(method==="GET"&&!memberId){
       const members=await projectCreditPoolApi.listMembers({ownerId,projectId});
-      return response(200,{members});
+      let seatSummary=null,seatSummaryError=null;
+      if(typeof projectCreditPoolApi.getTeamSeatSummary==="function"){
+       try{seatSummary=await projectCreditPoolApi.getTeamSeatSummary({ownerId,projectId});}
+       catch(error){
+        const code=String(error?.code||"SUBSCRIPTION_TEAM_SEAT_LOOKUP_UNAVAILABLE");
+        const message=code==="SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"||code==="SUBSCRIPTION_REQUIRED_FOR_TEAM_SEATS"
+         ?"The active plan has no verified team-seat allowance. Choose a plan with team seats before adding members."
+         :code==="SUBSCRIPTION_RECORD_AMBIGUOUS"
+          ?"Multiple active subscriptions need billing reconciliation before team membership can expand."
+          :"Team seat capacity could not be verified. Adding members is disabled until the subscription can be checked.";
+        seatSummaryError={code,message};
+       }
+      }else seatSummaryError={code:"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED",message:"Team seat entitlement reporting is unavailable in this runtime."};
+      return response(200,{members,seatSummary,seatSummaryError});
      }
      if(method==="POST"&&!memberId){
       const member=await projectCreditPoolApi.addMember({ownerId,projectId,email:body.email,role:body.role||"viewer"});
@@ -936,8 +949,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(error.code==="REVIEW_ASSET_VERSION_STALE"||error.code==="REVIEW_ASSET_VERSION_UNAVAILABLE"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
-   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")){
-    return response(error.status||400,{error:{code:error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED",message:String(error.message||"Project credit pool operation failed.").slice(0,300)}});
+   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")||String(error.code||"").startsWith("SUBSCRIPTION_TEAM_SEAT_")||["SUBSCRIPTION_REQUIRED_FOR_TEAM_SEATS","SUBSCRIPTION_RECORD_AMBIGUOUS"].includes(String(error.code||""))){
+    const code=String(error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED");const status=code==="SUBSCRIPTION_TEAM_SEAT_LIMIT_REACHED"||code==="SUBSCRIPTION_RECORD_AMBIGUOUS"?409:["SUBSCRIPTION_REQUIRED_FOR_TEAM_SEATS","SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"].includes(code)?403:(error.status||400);return response(status,{error:{code,message:String(error.message||"Project credit pool operation failed.").slice(0,300)}});
    }
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_STORAGE_QUOTA_CONFIG_MISSING"||error.code==="CLOUD_ASSET_STORAGE_USAGE_INVALID")return response(503,{error:{code:"CLOUD_ASSET_QUOTA_UNAVAILABLE",message:"Private media storage quota is not ready."}});

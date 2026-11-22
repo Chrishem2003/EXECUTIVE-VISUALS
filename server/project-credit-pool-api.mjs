@@ -45,6 +45,10 @@ export function createProjectCreditPoolApi({url=process.env.SUPABASE_URL,service
   async listMembers({ownerId,projectId}={}){
    return rpc("list_project_members",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID")});
   },
+  async getTeamSeatSummary({ownerId,projectId}={}){
+   const rows=await rpc("get_project_team_seat_summary",{p_owner_id:validId(ownerId,"Owner ID"),p_project_id:validId(projectId,"Project ID")});
+   return Array.isArray(rows)?rows[0]||null:rows;
+  },
   async addMember({ownerId,projectId,email,role="viewer"}={}){
    const normalizedEmail=typeof email==="string"?email.trim().toLowerCase():"";
    if(normalizedEmail.length<3||normalizedEmail.length>320||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)||!["editor","reviewer","viewer"].includes(role)){

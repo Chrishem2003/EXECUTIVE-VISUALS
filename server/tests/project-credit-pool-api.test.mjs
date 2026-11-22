@@ -45,6 +45,14 @@ test("member usage is read through the owner-scoped database function",async()=>
  assert.ok(f.calls[0].url.endsWith("/rpc/list_project_credit_pool_member_usage"));
 });
 
+test("team seat summary is read from the owner-scoped entitlement RPC",async()=>{
+ const f=fixture({payload:[{seat_limit:5,used_seats:3,available_seats:2}]});
+ const result=await f.api.getTeamSeatSummary({ownerId:owner,projectId:project});
+ assert.deepEqual(result,{seat_limit:5,used_seats:3,available_seats:2});
+ assert.ok(f.calls[0].url.endsWith("/rpc/get_project_team_seat_summary"));
+ assert.deepEqual(JSON.parse(f.calls[0].options.body),{p_owner_id:owner,p_project_id:project});
+});
+
 test("invalid IDs, credit amounts, limits, statuses and idempotency keys fail before network access",async()=>{
  const f=fixture();
  await assert.rejects(()=>f.api.configure({ownerId:"bad",projectId:project}));
@@ -78,6 +86,8 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
  assert.match(app,/project-credit-pool-fund/);
  assert.match(app,/data-project-credit-member-policy/);
  assert.match(app,/project-member-add/);
+ assert.match(app,/Account team seats/);
+ assert.match(app,/limits\.teamSeats/);
  assert.match(app,/data-project-member-remove/);
  assert.match(cloudApi,/projectMembersMatch/);
 });
