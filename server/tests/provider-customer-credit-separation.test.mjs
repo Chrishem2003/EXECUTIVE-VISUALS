@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const root = new URL("../../", import.meta.url);
-const [migration, api, index, app, policy, billingApi] = await Promise.all([
+const [migration, api, index, app, policy, billingApi, shotDispatch] = await Promise.all([
   readFile(new URL("supabase/migrations/20261122120000_provider_customer_credit_separation.sql", root), "utf8"),
   readFile(new URL("server/cloud-timeline-api.mjs", root), "utf8"),
   readFile(new URL("server/index.mjs", root), "utf8"),
   readFile(new URL("src/platform/app.ts", root), "utf8"),
   readFile(new URL("server/neon-customer-credit-policy.mjs", root), "utf8"),
-  readFile(new URL("server/financial-intelligence-api.mjs", root), "utf8")
+  readFile(new URL("server/financial-intelligence-api.mjs", root), "utf8"),
+  readFile(new URL("server/cloud-video-generation-dispatch.mjs", root), "utf8")
 ]);
 
 test("cloud workflow quote schema stores provider credits and customer credits separately", () => {
@@ -54,4 +55,9 @@ test("storyboard preflight requires a configured customer quote before approval"
   assert.match(index, /Customer credit pricing is not configured\. No approval or paid submission is allowed\./);
   assert.match(index, /Per-shot customer credit quote is outside safe bounds/);
   assert.match(app, /Estimated customer credits:/);
+});
+
+test("legacy cloud shot queue is held until atomic customer-credit settlement exists", () => {
+  assert.match(shotDispatch, /VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED/);
+  assert.match(shotDispatch, /customerCreditSettlementReady/);
 });
