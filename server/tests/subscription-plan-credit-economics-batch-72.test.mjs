@@ -37,6 +37,9 @@ test("prices private draft tiers without persisting or activating included credi
  assert.equal(plans.every(plan=>plan.included_credits===0),true);
  assert.equal(result.scenarios[0].billable,false);
  assert.equal(result.scenarios[0].settlementEligible,false);
+ assert.deepEqual(result.pricingPolicy,{
+  creditsPerUsd:100,targetMarginBps:6500,paymentFeeBps:300,supportReserveBps:500,fixedPaymentFeeMicros:0
+ });
 });
 
 test("uses the same customer-credit margin, payment-fee and support-reserve policy as workflow quotes",()=>{
