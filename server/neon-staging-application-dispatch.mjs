@@ -189,7 +189,8 @@ export function createNeonStagingApplicationDispatch({
       audit(ownerId,"workflow.video_generation.neon_job_enqueued","workflow_video_quote",quoteId,
         {projectId,jobId:receipt.jobId,requestHash:input.requestHash,providerRequestsSubmitted:false},projectId);
       return {status:receipt.idempotentReplay?200:202,body:{
-        job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,currency:"USD"},
+        job:{id:receipt.jobId,status:receipt.status},approval:{id:quoteId,approvedMaxAmount:input.approvedMaxAmount,
+          customerCreditBudgetCredits:input.customerCreditBudgetCredits,requiredCustomerCredits:input.requiredCustomerCredits,currency:"USD"},
         backend:"neon-postgres",idempotentReplay:receipt.idempotentReplay,queuedForWorker:true,providerCallMadeByApi:false,providerRequestsSubmitted:false
       }};
     }catch(error){
