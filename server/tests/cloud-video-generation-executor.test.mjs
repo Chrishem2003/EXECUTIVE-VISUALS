@@ -84,6 +84,18 @@ test("workflow settlement converts verified USD cost with the shared policy, not
   assert.equal(result.providerCredits, 75);
 });
 
+test("rounds realized provider USD costs upward to integer micro-units before pricing", async () => {
+  const f = fixture({ cost: { amount: 0.7500001, currency: "USD", evidenceReference: "provider-invoice:line-10" } });
+  f.quoteCustomerCredits = ({ currency, amountMicros }) => {
+    assert.equal(currency, "USD");
+    assert.equal(amountMicros, 750001);
+    return 13;
+  };
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  const result = await executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f });
+  assert.equal(result.actualCredits, 13);
+});
+
 test("workflow generation refuses customer-credit settlement when shared pricing policy is missing", async () => {
   const f = fixture();
   const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
