@@ -3,6 +3,7 @@ const DIMENSION_KEYS = new Set([
   "minimumGenerationMinor","referenceVideoSecondMinor","audioSurchargeSecondMinor",
   "audioIncluded","inputVideoSecondMinor","inputVideoBillingMode","inputImageMinor",
   ...[...RESOLUTIONS].flatMap(value=>[
+    "resolutionSupported_"+value,
     "videoSecondMinor_"+value,
     "referenceVideoSecondMinor_"+value,
     "inputVideoSecondMinor_"+value
@@ -81,6 +82,14 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     fail("PROVIDER_VIDEO_RATE_CARD_INVALID","Rate-card pricing dimensions contain unsupported or invalid fields.");
   const resolution=String(request.resolution||"").trim().toLowerCase();
   if(!RESOLUTIONS.has(resolution))fail("PROVIDER_VIDEO_RESOLUTION_INVALID","Choose a supported output resolution.");
+  // When a rate card publishes an explicit capability matrix, an omitted or
+  // false resolution is unsupported. Legacy cards without a matrix retain
+  // their previous behavior until replaced by a fully evidenced version.
+  if(Object.entries(dimensions).some(([key,value])=>key.startsWith("resolutionSupported_")&&value!==0&&value!==1))
+    fail("PROVIDER_VIDEO_RATE_CARD_INVALID","Resolution capability flags must be numeric 0 or 1.");
+  const resolutionCapabilities=[...RESOLUTIONS].filter(value=>Object.hasOwn(dimensions,"resolutionSupported_"+value));
+  if(resolutionCapabilities.length>0&&dimensions["resolutionSupported_"+resolution]!==1)
+    fail("PROVIDER_VIDEO_RESOLUTION_UNSUPPORTED","The selected provider rate card does not attest support for this output resolution.");
   const outputSeconds=seconds(request.outputSeconds,"outputSeconds",{required:true,max:60});
   if(outputSeconds<=0)fail("PROVIDER_VIDEO_QUANTITY_INVALID","outputSeconds must be greater than zero.");
   const referenceVideoSeconds=seconds(request.referenceVideoSeconds,"referenceVideoSeconds");

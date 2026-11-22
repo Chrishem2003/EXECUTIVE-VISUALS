@@ -18,6 +18,7 @@ on:
       - feat/subscription-customer-economics-batch-37
       - feat/audited-subscription-publication-batch-60-2026-11-22
       - feat/provider-cost-to-customer-quote-batch-61-2026-11-22
+      - feat/strict-provider-video-capabilities-batch-62-2026-11-22
       - feat/financial-governance-batch-48
   pull_request:
 
