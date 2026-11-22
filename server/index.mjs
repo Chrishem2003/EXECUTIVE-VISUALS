@@ -950,11 +950,11 @@ export function createAppServer() {
         }
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin:isPlatformAdministrator(user)}},cors);return;}
-      if(["/api/billing/subscription/provider-checkout","/api/billing/subscription/provider-renewal-checkout","/api/billing/subscription/provider-portal"].includes(path)&&req.method==="POST"){
+      if(["/api/billing/subscription/provider-checkout","/api/billing/subscription/provider-renewal-checkout","/api/billing/subscription/provider-portal","/api/billing/credits/topup-checkout"].includes(path)&&req.method==="POST"){
         if(!providerSubscriptionBilling){fail(res,503,"PADDLE_PESAPAL_BILLING_DISABLED","Paddle/Pesapal billing is not configured for this environment.");return;}
         const body=await readJson(req,32*1024);
         const result=await providerSubscriptionBilling.handle({method:req.method,path,ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||"")});
-        if(result.status<300&&result.body?.checkout)audit(db,user.id,"subscription.provider_checkout.created","subscription_payment",String(result.body?.checkout?.paymentId||"unknown"),{provider:result.body?.checkout?.provider||String(body.provider||"")});
+        if(result.status<300&&result.body?.checkout)audit(db,user.id,path==="/api/billing/credits/topup-checkout"?"billing.credit_pack_checkout.created":"subscription.provider_checkout.created",path==="/api/billing/credits/topup-checkout"?"credit_pack_payment":"subscription_payment",String(result.body?.checkout?.paymentId||"unknown"),{provider:result.body?.checkout?.provider||String(body.provider||""),productCode:path==="/api/billing/credits/topup-checkout"?String(body.productCode||""):undefined});
         send(res,result.status,result.body,cors);return;
       }
       if(path==="/api/creative/director"&&req.method==="POST"){
