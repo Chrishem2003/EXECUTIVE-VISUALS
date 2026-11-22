@@ -918,7 +918,8 @@ export function createFinancialIntelligenceApi({
         ]);
         const attributions=Array.isArray(attributionResult.data)?attributionResult.data:[];
         const reservations=Array.isArray(reservationResult.data)?reservationResult.data:[];
-        const eventsOut=events.map(row=>{
+        let eventsOut;
+        try{eventsOut=events.map(row=>{
           const links=attributions.filter(link=>String(link.usage_event_id)===String(row.id));
           const invoiceConfirmed=links.length===1?links[0]:null;
           const reservation=reservations.find(item=>row.job_id&&String(item.job_id)===String(row.job_id))||null;
@@ -952,6 +953,7 @@ export function createFinancialIntelligenceApi({
             providerReportedNotInvoicePosted:eventsOut.filter(x=>x.costBasis==="provider_reported"&&x.invoiceEvidenceStatus==="not_invoice_posted").length,
             unpriced:eventsOut.filter(x=>x.costBasis==="unpriced").length,
             ambiguousInvoiceAttribution:eventsOut.filter(x=>x.invoiceEvidenceStatus==="ambiguous_invoice_attribution").length}});
+        }catch(err){throw Object.assign(err instanceof Error?err:new Error("Reconciliation mapping failed."),{code:err?.code||"AI_USAGE_RECONCILIATION_TRANSFORM_FAILED"});}
       }
       if(path==="/api/admin/finance/ai-cost-intelligence"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
