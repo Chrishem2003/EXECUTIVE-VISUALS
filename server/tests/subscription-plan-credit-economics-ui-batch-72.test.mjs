@@ -38,6 +38,14 @@ test("mixed workload results render fee-aware contribution, margin target and cr
  assert.match(app,/not net profit/);
 });
 
+test("model-specific invoice-backed actual costs render with coverage and verification state",()=>{
+ assert.match(app,/Invoice-backed model and operation actual costs/);
+ assert.match(app,/modelActualCostEvidence/);
+ assert.match(app,/invoiceCoverage/);
+ assert.match(app,/Verified actual cost/);
+ assert.match(app,/partial groups show coverage without extrapolating missing costs/);
+});
+
 test("plan simulator is a scenario-only control and does not activate plans or grant credits",()=>{
  const start=app.indexOf("Plan credit allowance simulator");
  const end=app.indexOf("REVENUE ASSURANCE · ADMIN ONLY",start);
