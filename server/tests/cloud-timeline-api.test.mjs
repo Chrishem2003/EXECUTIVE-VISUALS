@@ -1238,7 +1238,7 @@ test("unreleased direct Runway models are rejected by quote and approval APIs ev
         quoteId: "723e4567-e89b-42d3-a456-426614174000",
         requestId: "blocked-approval-" + model, node,
         values: { prompt: "A cinematic product launch" },
-        approvedMaxAmount: 2.75, approvalNote: "Test release gate"
+        approvedMaxAmount: 2.75, customerCreditBudgetCredits: 3000, approvalNote: "Test release gate"
       }
     });
     assert.equal(approval.status, 422, model);
