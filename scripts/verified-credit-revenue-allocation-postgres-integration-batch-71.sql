@@ -85,14 +85,14 @@ begin
   select reservation_id into v_paid_reservation
     from executive_visuals.reserve_generation_credits(v_owner,v_job_paid,50,'batch71-reserve-paid');
   select reservation_id into v_pending_reservation
-    from executive_visuals.reserve_generation_credits(v_owner,v_job_pending,120,'batch71-reserve-pending');
+    from executive_visuals.reserve_generation_credits(v_owner,v_job_pending,100,'batch71-reserve-pending');
 
   perform * from executive_visuals.settle_generation_credit_reservation(
     v_paid_reservation,40,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-paid-job-invoice"}'
   );
   perform * from executive_visuals.settle_generation_credit_reservation(
-    v_pending_reservation,120,
+    v_pending_reservation,100,
     '{"provider":"runway","evidenceType":"provider_invoice","evidenceId":"batch71-pending-job-invoice"}'
   );
   -- Move the second settled job into December to verify cumulative source rounding across reporting periods.
@@ -116,7 +116,7 @@ begin
   if not exists(
     select 1 from executive_visuals.billing_credit_revenue_allocation_runs
     where reservation_id=v_pending_reservation and status='pending_subscription_split'
-      and actual_credits=120 and allocated_credits=120 and pending_split_credits=50
+      and actual_credits=100 and allocated_credits=100 and pending_split_credits=30
   ) then raise exception 'Mixed paid/promo/subscription credits were not conservatively flagged'; end if;
 
   if not exists(
@@ -198,7 +198,7 @@ begin
   v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-12-01',100);
   select value into v_row from jsonb_array_elements(v_report->'rows')
     where value->>'job_id'='71717171-7171-4171-8171-717171717102';
-  if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>1200
+  if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>960
      or v_row->>'revenue_currency'<>'USD' then
     raise exception 'Approved subscription credit split was not allocated to historical consumed credits: %',v_row;
   end if;
