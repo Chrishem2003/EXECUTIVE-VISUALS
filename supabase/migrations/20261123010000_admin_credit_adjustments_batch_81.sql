@@ -38,7 +38,6 @@ declare
   v_adjustment_id uuid:=gen_random_uuid();
   v_ledger_id uuid;
   v_balance bigint;
-  v_reserved bigint;
   v_evidence jsonb;
   v_ledger_key text;
 begin
@@ -89,13 +88,11 @@ begin
 
   select coalesce(sum(l.amount),0)::bigint into v_balance
     from executive_visuals.billing_credit_ledger l where l.owner_id=p_owner_id;
-  select coalesce(sum(r.reserved_credits),0)::bigint into v_reserved
-    from executive_visuals.billing_credit_reservations r
-   where r.owner_id=p_owner_id and r.state='reserved';
-
-  if p_delta_credits<0 and v_balance-v_reserved < abs(p_delta_credits) then
+  -- Active generation reservations already have negative ledger entries, so
+  -- the ledger sum is the spendable balance. Do not subtract reservation rows twice.
+  if p_delta_credits<0 and v_balance < abs(p_delta_credits) then
     raise exception 'ADMIN_CREDIT_ADJUSTMENT_EXCEEDS_AVAILABLE_BALANCE' using errcode='23514',
-      detail=jsonb_build_object('availableCredits',greatest(0,v_balance-v_reserved),
+      detail=jsonb_build_object('availableCredits',greatest(0,v_balance),
         'requestedDebit',abs(p_delta_credits))::text;
   end if;
 
