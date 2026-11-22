@@ -53,11 +53,13 @@ function normalizePrice(row){
  const active=row.active===true;
  if(!PROVIDERS.has(provider)||!/^[A-Z]{3}$/.test(currency))throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Provider price currency or provider is invalid.");
  const priceId=text(row.provider_price_id??row.providerPriceId);
+ const planId=text(row.plan_id??row.planId);
+ if(!planId||planId.length>128)throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Provider price must reference a valid plan ID.");
  if(provider==="paddle"&&(!/^pri_[A-Za-z0-9]+$/.test(priceId)||!["USD","EUR","GBP"].includes(currency)))
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Paddle prices require a valid price ID and USD, EUR or GBP currency.");
  if(provider==="pesapal"&&(priceId!==""||currency!=="UGX"))
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Pesapal prices require UGX and no provider price ID.");
- return {planId:text(row.plan_id??row.planId),provider,currency,amountMinor,active,hasProviderPriceId:Boolean(priceId)};
+ return {planId,provider,currency,amountMinor,active,hasProviderPriceId:Boolean(priceId)};
 }
 
 /**
