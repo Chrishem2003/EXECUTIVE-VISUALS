@@ -705,11 +705,28 @@ $batch25$;
 
 
 -- Batch 57: verify customer spend accounting, published allowance gates and threshold alerts.
+reset role;
+insert into auth.users(id) values('55555555-5555-4555-8555-555555555555');
+insert into executive_visuals.billing_credit_accounts(owner_id)
+ values('55555555-5555-4555-8555-555555555555');
+insert into executive_visuals.customer_subscriptions(
+ owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
+ included_credits,entitlements_snapshot,current_period_start,current_period_end
+)
+select '55555555-5555-4555-8555-555555555555',id,'creator-monthly',1,'active','monthly',25000,'UGX',
+ 100,'{"credit_allowance_published":true}'::jsonb,
+ clock_timestamp()-interval '1 day',clock_timestamp()+interval '29 days'
+ from executive_visuals.subscription_plans where plan_code='creator-monthly';
+insert into executive_visuals.billing_credit_reservations(
+ owner_id,idempotency_key,reserved_credits,actual_credits,state
+) values
+ ('55555555-5555-4555-8555-555555555555','batch57-settled-usage-001',50,40,'settled'),
+ ('55555555-5555-4555-8555-555555555555','batch57-active-reserve-001',20,null,'reserved');
+
 set role service_role;
 do $batch57$
 declare
  v_owner constant uuid:='55555555-5555-4555-8555-555555555555';
- v_plan uuid;
  v_summary jsonb;
 begin
  if has_function_privilege('anon','executive_visuals.get_customer_credit_spend_summary(uuid)','EXECUTE')
@@ -717,26 +734,6 @@ begin
     or not has_function_privilege('service_role','executive_visuals.get_customer_credit_spend_summary(uuid)','EXECUTE') then
   raise exception 'Customer credit spend summary must be service-role-only';
  end if;
-
- insert into auth.users(id) values(v_owner);
- select id into v_plan from executive_visuals.subscription_plans where plan_code='creator-monthly';
- if v_plan is null then raise exception 'Batch 57 integration requires the seeded creator-monthly plan'; end if;
-
- insert into executive_visuals.customer_subscriptions(
-  owner_id,plan_id,plan_code,plan_version,status,billing_interval,amount_minor,currency,
-  included_credits,entitlements_snapshot,current_period_start,current_period_end
- ) values(
-  v_owner,v_plan,'creator-monthly',1,'active','monthly',25000,'UGX',
-  100,'{"credit_allowance_published":true}'::jsonb,
-  clock_timestamp()-interval '1 day',clock_timestamp()+interval '29 days'
- );
-
- insert into executive_visuals.billing_credit_accounts(owner_id) values(v_owner);
- insert into executive_visuals.billing_credit_reservations(
-  owner_id,idempotency_key,reserved_credits,actual_credits,state
- ) values
-  (v_owner,'batch57-settled-usage-001',50,40,'settled'),
-  (v_owner,'batch57-active-reserve-001',20,null,'reserved');
 
  v_summary:=executive_visuals.get_customer_credit_spend_summary(v_owner);
  if (v_summary->>'allowancePublished')::boolean is not true
