@@ -43,6 +43,7 @@ on:
       - feat/strict-premium-media-flags-batch-85-2026-11-23
       - feat/governed-customer-credit-quotes-batch-86-2026-11-23
       - feat/customer-credit-approval-ceilings-batch-87-2026-11-23
+      - feat/customer-credit-wallet-approval-ceilings-batch-88-2026-11-23
       - feat/strict-premium-media-flags-batch-85-2026-11-23
   pull_request:
 
