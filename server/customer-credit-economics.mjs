@@ -157,7 +157,7 @@ export function compareCommercialProductionCandidates({candidates,minQualityScor
  if(!Array.isArray(candidates)||candidates.length<2||candidates.length>20)
   throw fail("COMMERCIAL_CANDIDATE_COUNT_INVALID","Provide between 2 and 20 production candidates.");
  if(typeof minQualityScore!=="number"||!Number.isFinite(minQualityScore)||minQualityScore<0||minQualityScore>1||
-    !safeInt(minSamples,1,100000))
+    !safeInt(minSamples,1,100000)||!safeInt(maxLatencyMs,1,86400000))
   throw fail("COMMERCIAL_QUALITY_GATE_INVALID","Quality thresholds are invalid.");
  const rows=candidates.map(candidate=>{
   const quote=candidate?.creditQuote;
