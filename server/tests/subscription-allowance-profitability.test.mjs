@@ -8,7 +8,7 @@ const base={
 };
 const evidence={
  status:"verified_measured",approved:false,source:"reconciled provider usage ledger",
- rateCardVersion:"runway-2026-11-v1",sampleJobs:100,
+ rateCardVersion:"runway-2026-11-v1",sampleJobs:100,sampleCredits:50000,totalProviderCostMinor:1000,evidenceDigest:"b".repeat(64),
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
 
@@ -42,6 +42,8 @@ test("rejects approval-marked, incomplete or time-inverted cost evidence",()=>{
   {...evidence,source:""},
   {...evidence,rateCardVersion:""},
   {...evidence,sampleJobs:0},
+  {...evidence,evidenceDigest:"bad"},
+  {...evidence,totalProviderCostMinor:0},
   {...evidence,periodEnd:evidence.periodStart}
  ]){
   assert.throws(()=>simulateSubscriptionAllowances({...base,providerCostPerCustomerCreditMinor:2,costEvidence}),
