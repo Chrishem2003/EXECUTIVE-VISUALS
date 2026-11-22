@@ -12,7 +12,7 @@ const evidence={
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
 
-test("uses the five proposed price points but leaves allowances unset without approved measured cost evidence",()=>{
+test("uses the four fixed-price tiers but leaves allowances unset without approved measured cost evidence",()=>{
  const result=simulateSubscriptionAllowances(base);
  assert.deepEqual(PROPOSED_SUBSCRIPTION_PLANS.map(p=>p.monthlyPriceMinor),[900,2900,7900,19900]);
  assert.equal(result.estimateType,"scenario_forecast_not_actual");
