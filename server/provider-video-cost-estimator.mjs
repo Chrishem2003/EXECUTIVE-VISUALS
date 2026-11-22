@@ -73,7 +73,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
     !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version)||!["video_second","mixed"].includes(billingUnit)||
     !["source_linked","contract_attested","admin_attested"].includes(verificationStatus)||
     !Number.isFinite(from)||!Number.isFinite(clock)||from>clock||to<=clock||
-    (verificationStatus==="source_linked"&&(!/^https:\/\//.test(sourceUrl)||!sourceCheckedAt||!Number.isFinite(Date.parse(sourceCheckedAt)))))
+    (verificationStatus==="source_linked"&&(!/^https:\/\//.test(sourceUrl)||!sourceCheckedAt||!Number.isFinite(Date.parse(sourceCheckedAt))||Date.parse(sourceCheckedAt)>clock||clock-Date.parse(sourceCheckedAt)>45*24*60*60*1000)))
     fail("PROVIDER_VIDEO_RATE_CARD_UNVERIFIED","A currently effective, governed rate card with matching evidence is required.");
   const dimensions=rateCard.pricingDimensions??rateCard.pricing_dimensions??{};
   if(!dimensions||typeof dimensions!=="object"||Array.isArray(dimensions)||
@@ -99,7 +99,7 @@ export function estimateProviderVideoCost({rateCard,request,now=new Date()}={}){
   const outputRate=dimensions["videoSecondMinor_"+resolution]??baseRate;
   positiveRate(outputRate,"videoSecondMinor");
   const lines=[];
-  const add=(driver,quantity,rate)=>{if(quantity<=0)return;positiveRate(rate,driver);lines.push({driver,quantity,rateMinor:rate,amountMinor:costFor(rate,quantity)});};
+  const add=(driver,quantity,rate)=>{if(quantity<=0)return;positiveRate(rate,driver,{allowZero:true});lines.push({driver,quantity,rateMinor:rate,amountMinor:costFor(rate,quantity)});};
   add("output_video_seconds",outputSeconds,outputRate);
   if(referenceVideoSeconds>0){
     const rate=dimensions["referenceVideoSecondMinor_"+resolution]??dimensions.referenceVideoSecondMinor;
