@@ -40,7 +40,7 @@ jobs:
       - name: Check financial modules
         run: |
           node --check server/financial-intelligence-api.mjs
-          node --check server/subscription-allowance-approval.mjs
+          node --check server/subscription-allowance-approval.mjs\n          node --check server/financial-intelligence-api.mjs
           node --check server/ai-workload-telemetry.mjs
           node --check server/ai-workload-economics.mjs
           node --check server/provider-video-cost-estimator.mjs
@@ -53,6 +53,6 @@ jobs:
           node --check server/flutterwave-auth.mjs
           node --check server/payment-intelligence.mjs
       - name: Run financial intelligence tests
-        run: node --test server/tests/subscription-allowance-approval.test.mjs server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+        run: node --test server/tests/subscription-allowance-approval.test.mjs server/tests/subscription-allowance-persistence-batch-59.test.mjs server/tests/financial-intelligence-api.test.mjs server/tests/ai-workload-economics.test.mjs server/tests/workload-cost-variance.test.mjs server/tests/provider-rate-cards.test.mjs server/tests/provider-video-cost-estimator.test.mjs server/tests/provider-video-cost-estimator-api.test.mjs server/tests/ai-workload-telemetry.test.mjs server/tests/subscription-customer-economics.test.mjs server/tests/financial-reconciliation.test.mjs server/tests/financial-close-readiness.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
       - name: Test Batch 48 financial governance rules and UI integration
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
