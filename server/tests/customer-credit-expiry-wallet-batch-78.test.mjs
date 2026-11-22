@@ -26,7 +26,7 @@ test("expiry is append-only, idempotent and limited to the unconsumed source rem
  assert.match(migration,/credits_expired bigint not null check\(credits_expired>=0\)/);
  assert.match(migration,/source_row\.credits_granted-v_consumed/);
  assert.match(migration,/credit-expiry:/);
- assert.match(migration,/event_type='expiry'/);
+ assert.match(migration,/'expiry',source_row\.grant_ledger_id/);
  assert.match(migration,/not exists\(select 1 from executive_visuals\.billing_credit_source_expirations e where e\.source_id=s\.id\)/);
  assert.match(walletFoundation,/event_type in\('grant','admin_adjustment','generation_reserve','generation_refund','generation_settlement','expiry'\)/);
 });
