@@ -89,18 +89,23 @@ test("subscription allowance simulation rejects browser-supplied provider cost e
 
 test("subscription allowance simulation derives measured cost only from invoice-attributed settled jobs",async()=>{
  const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
- const usageEvents=[],invoiceAttributions=[],creditReservations=[];
+ const candidateEvents=[],allUsageEvents=[],invoiceAttributions=[],creditReservations=[];
  for(let i=1;i<=5;i++){
   const jobId=uuid(100+i),usageId=uuid(200+i);
-  usageEvents.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"});
+  const event={id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"};
+  candidateEvents.push(event);allUsageEvents.push(event);
   invoiceAttributions.push({usage_event_id:usageId,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)});
   creditReservations.push({job_id:jobId,actual_credits:1000,state:"settled"});
  }
+ const extraEvent={id:uuid(206),job_id:uuid(101),status:"succeeded",period_month:"2026-10-01"};
+ allUsageEvents.push(extraEvent);
+ invoiceAttributions.push({usage_event_id:extraEvent.id,amount_minor:100,currency:"USD",invoice_import_id:uuid(306),invoice_line_id:uuid(406)});
  const calls=[];
  const service=api(async(url,options={})=>{
   const target=String(url);calls.push({target,method:options.method||"GET"});
   if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
-  if(target.includes("ai_usage_cost_events?"))return json(usageEvents);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("period_month=eq."))return json(candidateEvents);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("job_id=in."))return json(allUsageEvents);
   if(target.includes("financial_cost_attribution_links?"))return json(invoiceAttributions);
   if(target.includes("billing_credit_reservations?"))return json(creditReservations);
   throw new Error("Unexpected request: "+target);
@@ -111,12 +116,13 @@ test("subscription allowance simulation derives measured cost only from invoice-
  assert.equal(result.body.costEvidenceSummary.status,"verified_measured");
  assert.equal(result.body.costEvidenceSummary.sampleJobs,5);
  assert.equal(result.body.costEvidenceSummary.sampleCredits,5000);
- assert.equal(result.body.costEvidenceSummary.totalProviderCostMinor,500);
+ assert.equal(result.body.costEvidenceSummary.totalProviderCostMinor,600);
  assert.equal(result.body.costEvidenceSummary.providerCostPerCustomerCreditMinor,1);
  assert.equal(result.body.simulation.creditAllowanceCalculated,true);
  assert.ok(result.body.simulation.plans.every(plan=>Number.isSafeInteger(plan.estimatedIncludedCredits)&&plan.publishable===false));
  assert.ok(calls.every(call=>call.method==="GET"));
  assert.ok(calls.some(call=>call.target.includes("period_month=eq.2026-11-01")));
+ assert.ok(calls.some(call=>call.target.includes("job_id=in.(")));
 });
 
 test("subscription allowance simulation fails closed when invoice evidence query exceeds its bounded sample",async()=>{
