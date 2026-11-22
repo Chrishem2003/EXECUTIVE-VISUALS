@@ -128,7 +128,9 @@ $get_project_team_seat_summary$;
 revoke all on function executive_visuals.resolve_project_team_seat_entitlement(uuid,boolean)
  from public,anon,authenticated;
 revoke all on function executive_visuals.enforce_project_team_seat_entitlement()
- from public,anon,authenticated,service_role;
+ from public,anon,authenticated;
+grant execute on function executive_visuals.enforce_project_team_seat_entitlement()
+ to service_role;
 revoke all on function executive_visuals.get_project_team_seat_summary(uuid,uuid)
  from public,anon,authenticated;
 grant execute on function executive_visuals.resolve_project_team_seat_entitlement(uuid,boolean)
