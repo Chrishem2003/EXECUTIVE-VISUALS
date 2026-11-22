@@ -990,7 +990,7 @@ export function createFinancialIntelligenceApi({
               if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!model||model.length>160||
                 currency!=="USD"||!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version))
                 throw Object.assign(new Error("A rate-card scenario requires an exact provider, model, USD currency and version."),{code:"SUBSCRIPTION_ECONOMICS_RATE_CARD_REFERENCE_INVALID"});
-              const rateRows=await dbRequest("ai_model_price_catalog?select=provider,model,currency,rate_card_version,billing_unit,verification_status,source_url,source_checked_at,source_fingerprint,effective_from,effective_to,pricing_dimensions"+
+              const rateRows=await dbRequest("ai_model_price_catalog?select=provider,model,currency,video_second_minor,rate_card_version,billing_unit,verification_status,source_url,source_checked_at,source_fingerprint,effective_from,effective_to,pricing_dimensions"+
                 "&provider=eq."+encodeURIComponent(provider)+"&model=eq."+encodeURIComponent(model)+
                 "&currency=eq.USD&rate_card_version=eq."+encodeURIComponent(version)+"&limit=1");
               const rateCard=Array.isArray(rateRows.data)?rateRows.data[0]:null;
