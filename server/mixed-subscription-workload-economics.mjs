@@ -17,6 +17,14 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
   fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","The plan and provider scenario collections must be bounded and non-empty.");
  if(!Array.isArray(workloads)||workloads.length<1||workloads.length>20)
   fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Provide between one and twenty named monthly workload mixes.");
+ const policy=planEconomics.pricingPolicy;
+ if(!policy||typeof policy!=="object"||Array.isArray(policy))
+  fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","The shared customer-credit pricing policy is required for margin analysis.");
+ const targetMarginBps=integer(policy.targetMarginBps,"target margin basis points",{min:1000,max:9000});
+ const paymentFeeBps=integer(policy.paymentFeeBps,"payment fee basis points",{min:0,max:2000});
+ const supportReserveBps=integer(policy.supportReserveBps,"support reserve basis points",{min:0,max:5000});
+ const fixedPaymentFeeMicros=integer(policy.fixedPaymentFeeMicros,"fixed payment fee micros",{min:0,max:100000000});
+ const ceilDiv=(numerator,denominator)=>Math.floor((numerator+denominator-1)/denominator);
  const scenarios=planEconomics.scenarios;
  const normalized=workloads.map(workload=>{
   if(!workload||typeof workload!=="object"||Array.isArray(workload))fail("SUBSCRIPTION_WORKLOAD_MIX_INVALID","Each workload must be an object.");
@@ -59,14 +67,30 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
  });
  const plans=planEconomics.plans.map(plan=>{
   if(!plan||typeof plan!=="object"||Array.isArray(plan))fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","Each draft plan must be an object.");
-  const amountMinor=integer(plan.amountMinor,"draft plan price in minor units",{min:0,max:Number.MAX_SAFE_INTEGER});
+  const amountMinor=integer(plan.amountMinor,"draft plan price in minor units",{min:0,max:100_000_000});
   const priceUsd=amountMinor/100;
   const monthlyCreditAllowance=integer(plan.proposedMonthlyCreditAllowance,"hypothetical monthly credit allowance",{min:0,max:100000000});
   const mixes=normalized.map(workload=>{
    const creditShortfall=Math.max(0,workload.totalCredits-monthlyCreditAllowance);
+   const providerCostMinor=priceUsd>0?Math.ceil(workload.providerSpendUsd*100-1e-9):null;
+   const paymentFeeMinor=priceUsd>0
+    ?ceilDiv(amountMinor*paymentFeeBps,10000)+ceilDiv(fixedPaymentFeeMicros,10000):null;
+   const supportReserveMinor=priceUsd>0?ceilDiv(amountMinor*supportReserveBps,10000):null;
+   const modeledContributionMinor=priceUsd>0
+    ?amountMinor-providerCostMinor-paymentFeeMinor-supportReserveMinor:null;
+   const modeledContributionMarginBps=priceUsd>0
+    ?Math.floor(modeledContributionMinor*10000/amountMinor):null;
+   const marginAssessment=priceUsd<=0?"custom_price_required":
+    creditShortfall>0?"not_applicable_credit_shortfall":
+    modeledContributionMarginBps>=targetMarginBps?"meets_target_before_other_costs":"below_target_before_other_costs";
    return Object.freeze({workloadName:workload.name,monthlyCreditAllowance,creditsRequired:workload.totalCredits,
     creditsRemaining:Math.max(0,monthlyCreditAllowance-workload.totalCredits),creditShortfall,
     fitsCreditAllowance:creditShortfall===0,estimatedProviderSpendUsd:workload.providerSpendUsd,
+    estimatedProviderCostMinor:providerCostMinor,
+    estimatedPaymentFeeMinor:paymentFeeMinor,estimatedSupportReserveMinor:supportReserveMinor,
+    estimatedContributionAfterProviderPaymentAndSupportUsd:modeledContributionMinor===null?null:Number((modeledContributionMinor/100).toFixed(2)),
+    estimatedContributionMarginBps:modeledContributionMarginBps,targetMarginBps,
+    marginAssessment,targetMarginMet:marginAssessment==="meets_target_before_other_costs",
     providerCostRatioOfPlanRevenue:priceUsd>0?Number((workload.providerSpendUsd/priceUsd).toFixed(6)):null,
     estimatedContributionBeforePaymentFeesSupportStorageAndOtherCostsUsd:priceUsd>0?Number((priceUsd-workload.providerSpendUsd).toFixed(6)):null,
     lines:workload.lines});
@@ -75,10 +99,13 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
  });
  return Object.freeze({calculationType:"mixed_monthly_workload_scenario_not_forecast_or_activation",
   workloadDefinitions:Object.freeze(normalized),plans:Object.freeze(plans),
+  pricingAssumptions:Object.freeze({targetMarginBps,paymentFeeBps,supportReserveBps,fixedPaymentFeeMicros}),
   limitations:Object.freeze([
    "Workloads are illustrative monthly scenarios supplied by an administrator, not measured customer behavior or demand forecasts.",
    "Provider spend uses dated list-price estimates; retries, failed-but-billable tasks, reference media, taxes, foreign exchange and provider invoice variance may change actual cost.",
-   "Contribution is shown before payment processing, support, storage, delivery, refunds, taxes, infrastructure, acquisition and other operating costs; it is not net profit.",
+   "Modeled contribution deducts forecast provider spend, configured payment-fee assumptions and support reserve only; storage, delivery, refunds, taxes, infrastructure, acquisition and other operating costs remain excluded. It is not net profit.",
+   "The target-margin check is a scenario signal before excluded operating costs, not an approval to publish plan prices or allowances.",
+   "A workload exceeding included credits is marked not applicable for included-plan margin; any top-up revenue and top-up credit economics must be modeled separately.",
    "The plan credit allowance is hypothetical and derived from the explicit Batch 72 credit-budget-share assumption; this calculation does not approve or grant credits.",
    "Enterprise plans with a custom price are not evaluated as a priced subscription until a contract price is supplied through a separately approved process."
   ])});
