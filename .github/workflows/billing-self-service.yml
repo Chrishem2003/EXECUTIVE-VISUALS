@@ -34,6 +34,7 @@ on:
       - feat/verified-credit-pack-topups-batch-65-2026-11-22
       - feat/pesapal-credit-topup-checkout-batch-66-2026-11-22
       - feat/customer-credit-wallet-billing-ui-batch-67-2026-11-22
+      - feat/credit-unit-economics-pricing-engine-batch-68-2026-11-22
   pull_request:
 
 permissions:
@@ -83,6 +84,7 @@ jobs:
           node --check server/scripts/verify-financial-audit-export.mjs
           node --check server/ai-cost-metering.mjs
           node --check server/ai-resource-economics.mjs
+          node --check server/credit-unit-economics.mjs
           node --check server/media.mjs
           node --check server/workflow-executor.mjs
           node --check server/flutterwave-auth.mjs
@@ -251,6 +253,8 @@ jobs:
         run: node --experimental-strip-types --test server/tests/financial-governance-batch-48.test.mjs
       - name: Run financial API tests
         run: node --test server/tests/financial-intelligence-api.test.mjs server/tests/financial-command-centre.test.mjs server/tests/ai-cost-metering.test.mjs server/tests/ai-resource-economics.test.mjs server/tests/financial-audit-ledger.test.mjs server/tests/financial-audit-export.test.mjs
+      - name: Test Batch 68 evidence-based credit pricing and subscription ceilings
+        run: node --test server/tests/credit-unit-economics.test.mjs
       - name: Test Batch 66 Pesapal credit-pack checkout and verified IPN settlement
         run: node --test server/tests/credit-pack-topup-checkout.test.mjs
       - name: Test Batch 39 revenue movement and cohort API
