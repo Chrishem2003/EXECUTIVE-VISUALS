@@ -153,6 +153,7 @@ declare
   v_job_paid constant uuid:='71717171-7171-4171-8171-717171717101';
   v_report jsonb;
   v_row jsonb;
+  v_source uuid;
 begin
   v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-11-01',100);
   select value into v_row from jsonb_array_elements(v_report->'rows')
@@ -162,7 +163,26 @@ begin
     raise exception 'Verified paid revenue was not exposed by the job cost report: %',v_row;
   end if;
   if (v_report->>'profitabilityAvailable')::boolean is distinct from false then
-    raise exception 'Profitability must remain blocked while other job rows lack verified provider cost or subscription split';
+    raise exception 'Profitability must remain blocked while provider invoice costs are missing';
+  end if;
+
+  -- Subscription revenue must be assigned to its credit component by a billing administrator.
+  select id into v_source from executive_visuals.billing_credit_revenue_sources
+   where source_type='subscription_allowance' and owner_id=v_owner;
+  perform executive_visuals.approve_subscription_credit_revenue_split(
+    v_owner,v_source,600,'Approved credit component of the verified subscription price',
+    '{"review":"batch71_subscription_credit_component","approvedBy":"billing_admin"}'
+  );
+  v_report:=executive_visuals.get_verified_job_cost_coverage(v_owner,'2026-11-01',100);
+  select value into v_row from jsonb_array_elements(v_report->'rows')
+    where value->>'job_id'='71717171-7171-4171-8171-717171717102';
+  if v_row is null or (v_row->>'recognized_revenue_minor')::bigint<>840
+     or v_row->>'revenue_currency'<>'USD' then
+    raise exception 'Approved subscription credit split was not allocated to historical consumed credits: %',v_row;
+  end if;
+  if (v_report->>'revenueAllocationAvailable')::boolean is distinct from true
+     or (v_report->>'profitabilityAvailable')::boolean is distinct from false then
+    raise exception 'Revenue coverage and profitability gates were not independently enforced: %',v_report;
   end if;
 end
 $batch71_verify$;
