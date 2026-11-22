@@ -6,7 +6,7 @@ const app=readFileSync(new URL("../../src/platform/app.ts",import.meta.url),"utf
 const api=readFileSync(new URL("../financial-intelligence-api.mjs",import.meta.url),"utf8");
 
 test("customer billing wallet renders live available, reserved, consumed and expiry balances",()=>{
- for(const label of ["Available to use","Reserved for jobs","Consumed","Expiring in 7 days","Pending expiry","Posted ledger balance"])
+ for(const label of ["Available to use","Reserved for jobs","Consumed","Expiring in 7 days","Pending expiry","Total ledger balance"])
   assert.ok(app.includes(label),`missing wallet metric: ${label}`);
  assert.match(app,/Your creator credits/);
  assert.match(app,/Ready for generation/);
