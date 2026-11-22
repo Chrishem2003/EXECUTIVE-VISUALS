@@ -528,7 +528,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      }
      const quoteId=randomUUID();
      const expiresAt=new Date(Date.now()+5*60*1000).toISOString();
-     const quoteRecord=await request("rpc/record_video_workflow_quote",{method:"POST",body:{
+     const quoteRecord=await request("rpc/record_video_workflow_quote_with_customer_credits",{method:"POST",body:{
       p_quote_id:quoteId,p_owner_id:ownerId,p_project_id:projectId,
       p_request_id:workflowRequest.requestId,p_request_hash:workflowRequest.requestHash,
       p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
