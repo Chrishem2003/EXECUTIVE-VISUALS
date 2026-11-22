@@ -56,14 +56,17 @@ export function parseVideoModelQualityEvidence(raw){
      item.verified!==true||!safeInt(item.sampleCount,25,1000000)||
      typeof item.qualityScore!=="number"||!Number.isFinite(item.qualityScore)||item.qualityScore<0||item.qualityScore>1||
      typeof item.p95LatencyMs!=="number"||!safeInt(item.p95LatencyMs,1,86400000)||
-     typeof item.evaluationVersion!=="string"||!/^[A-Za-z0-9._-]{1,100}$/.test(item.evaluationVersion)){
+     typeof item.evaluationVersion!=="string"||!/^[A-Za-z0-9._-]{1,100}$/.test(item.evaluationVersion)||
+     typeof item.evidenceReference!=="string"||item.evidenceReference.length>1000||
+     typeof item.evidenceSha256!=="string"||!/^[a-f0-9]{64}$/i.test(item.evidenceSha256)){
    rejectedCount++;continue;
   }
   const provider=item.provider.toLowerCase(),model=item.model.trim(),key=provider+"\\0"+model;
   if(seen.has(key)){rejectedCount++;continue;}
   seen.add(key);
   records.push(Object.freeze({provider,model,verified:true,sampleCount:item.sampleCount,
-   qualityScore:item.qualityScore,p95LatencyMs:item.p95LatencyMs,evaluationVersion:item.evaluationVersion}));
+   qualityScore:item.qualityScore,p95LatencyMs:item.p95LatencyMs,evaluationVersion:item.evaluationVersion,
+   evidenceReference:item.evidenceReference,evidenceSha256:item.evidenceSha256}));
  }
  return Object.freeze({configured:records.length>0,records:Object.freeze(records),rejectedCount});
 }
