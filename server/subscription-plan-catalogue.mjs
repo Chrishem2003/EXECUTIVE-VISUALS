@@ -41,9 +41,13 @@ function normalizePlan(row,nowMs){
  if(effectiveFrom!==null&&effectiveUntil!==null&&effectiveUntil<=effectiveFrom)
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Plan effective_until must be later than effective_from.");
  const credits=integer(Number(row.included_credits??row.includedCredits??0),"included credits",{max:1_000_000_000});
+ const baseAmountRaw=row.amount_minor??row.amountMinor;
+ const baseAmountMinor=baseAmountRaw===undefined||baseAmountRaw===null?null:integer(baseAmountRaw,"base plan amount",{min:1,max:9_000_000_000_000});
+ const baseCurrency=text(row.currency).toUpperCase();
+ if(baseCurrency&&!/^[A-Z]{3}$/.test(baseCurrency))throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Base plan currency must be an ISO currency code.");
  const entitlements=jsonSnapshot(row.entitlements??row.entitlements_snapshot??row.entitlementsSnapshot,"plan entitlements");
  const eligible=status==="active"&&isPublic&&(effectiveFrom===null||effectiveFrom<=nowMs)&&(effectiveUntil===null||effectiveUntil>nowMs);
- return {id:text(row.id),planCode:code,name,description,version,billingInterval:interval,includedCredits:credits,
+ return {id,planCode:code,name,description,version,billingInterval:interval,includedCredits:credits,baseAmountMinor,baseCurrency,
   creditAllowancePublished:row.credit_allowance_published===true&&credits>0,
   entitlements,effectiveFrom,effectiveUntil,eligible};
 }
@@ -92,6 +96,8 @@ export function buildPublicSubscriptionCatalogue({plans,providerPrices,now=()=>n
   return Object.freeze({
    planCode:plan.planCode,name:plan.name,description:plan.description,version:plan.version,
    billingInterval:plan.billingInterval,
+   amount_minor:plan.baseAmountMinor,
+   currency:plan.baseCurrency||null,
    includedCredits:plan.creditAllowancePublished?plan.includedCredits:null,
    creditAllowancePublished:plan.creditAllowancePublished,
    entitlements:plan.entitlements,
