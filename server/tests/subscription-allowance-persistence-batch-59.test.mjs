@@ -159,3 +159,71 @@ test("proposal creation rejects browser-supplied provider cost evidence",async()
  assert.equal(result.body.error.code,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_INPUT_INVALID");
  assert.equal(calls,1);
 });
+
+const publisherActor="55555555-5555-4555-8555-555555555555";
+
+test("audited publication requires an independent owner and exact dual-approved proposal",async()=>{
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url),body=options.body?JSON.parse(options.body):null;calls.push({target,body});
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.endsWith("/rpc/get_subscription_allowance_approval_status"))return json({
+   proposal:{id:proposalId,proposal_hash:proposalHash,plan_code:"starter_creator",plan_version:1},
+   approvals:[{stage:"finance",decision:"approved"},{stage:"product",decision:"approved"}],
+   status:"approved",eligibleToPublish:true,publishable:false
+  });
+  if(target.endsWith("/rpc/get_financial_audit_head"))return json({sequence:0,headHash:"0".repeat(64)});
+  if(target.endsWith("/rpc/publish_subscription_allowance_proposal"))return json({
+   duplicate:false,publicationId:"66666666-6666-4666-8666-666666666666",
+   proposalHash,planCode:"starter_creator",sourcePlanVersion:1,publishedPlanVersion:2,
+   cataloguePublished:true,checkoutEnabled:false,creditsGranted:false
+  });
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals/"+proposalId+"/publish",
+  ownerId:publisherActor,idempotencyKey:"batch60-publish-01",body:{proposalHash,planVersion:1}});
+ assert.equal(result.status,201,JSON.stringify(result.body));
+ assert.equal(result.body.publication.cataloguePublished,true);
+ assert.equal(result.body.publication.checkoutEnabled,false);
+ assert.equal(result.body.publication.creditsGranted,false);
+ const command=calls.find(x=>x.target.endsWith("/rpc/publish_subscription_allowance_proposal"));
+ assert.equal(command.body.p_actor_id,publisherActor);
+ assert.equal(command.body.p_proposal_id,proposalId);
+ assert.equal(command.body.p_expected_proposal_hash,proposalHash);
+ assert.equal(command.body.p_expected_plan_version,1);
+ assert.equal(command.body.p_event_envelope.eventType,"subscription_allowance.published");
+ assert.equal(command.body.p_event_envelope.payload.proposalHash,proposalHash);
+});
+
+test("publication refuses incomplete dual approval before writing an audit event",async()=>{
+ let calls=0;
+ const service=api(async(url)=>{
+  calls++;
+  if(String(url).includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(String(url).endsWith("/rpc/get_subscription_allowance_approval_status"))return json({
+   proposal:{id:proposalId,proposal_hash:proposalHash,plan_code:"starter_creator",plan_version:1},
+   approvals:[{stage:"finance",decision:"approved"}],
+   status:"awaiting_dual_approval",eligibleToPublish:false,publishable:false
+  });
+  throw new Error("Incomplete approvals must stop before audit or publication.");
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals/"+proposalId+"/publish",
+  ownerId:publisherActor,idempotencyKey:"batch60-publish-02",body:{proposalHash,planVersion:1}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ALLOWANCE_DUAL_APPROVAL_REQUIRED");
+ assert.equal(calls,2);
+});
+
+test("publication rejects stale proposal hashes and non-publisher roles",async()=>{
+ let calls=0;
+ const service=api(async(url)=>{
+  calls++;
+  if(String(url).includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  throw new Error("Finance administrator must not publish.");
+ });
+ const forbidden=await service.handle({method:"POST",path:"/api/admin/finance/subscription-allowance-proposals/"+proposalId+"/publish",
+  ownerId:financeActor,idempotencyKey:"batch60-publish-03",body:{proposalHash,planVersion:1}});
+ assert.equal(forbidden.status,403);
+ assert.equal(forbidden.body.error.code,"SUBSCRIPTION_ALLOWANCE_PUBLISHER_ROLE_REQUIRED");
+ assert.equal(calls,1);
+});
