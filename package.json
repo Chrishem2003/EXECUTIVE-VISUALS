@@ -141,7 +141,8 @@
     "verify:neon-storage": "node --test server/tests/neon-object-storage.test.mjs server/tests/cloud-asset-service.test.mjs",
     "verify:neon-postgres": "node --test server/tests/runway-model-router-video-adapter.test.mjs server/tests/neon-customer-credit-policy.test.mjs server/tests/neon-staging-provider-adapters.test.mjs server/tests/neon-staging-worker-process.test.mjs server/tests/luma-provider-file-service.test.mjs server/tests/runway-source-asset-resolver.test.mjs server/tests/cloud-video-provider-worker-composition.test.mjs server/tests/runway-cloud-video-adapter.test.mjs server/tests/cloud-video-generation-executor.test.mjs server/tests/cloud-video-worker.test.mjs server/tests/neon-postgres-queue.test.mjs server/tests/neon-queued-cancellation.test.mjs server/tests/neon-postgres-video-submissions.test.mjs server/tests/neon-postgres-video-financials.test.mjs server/tests/neon-staging-runtime.test.mjs server/tests/neon-postgres-pool-runtime.test.mjs server/tests/neon-cloud-video-worker.test.mjs server/tests/cloud-video-worker-process.test.mjs server/tests/neon-postgres-video-enqueue.test.mjs server/tests/cloud-video-enqueue.test.mjs server/tests/neon-postgres-video-approvals.test.mjs server/tests/neon-staging-application-dispatch.test.mjs server/tests/neon-staging-application-runtime.test.mjs server/tests/cloud-timeline-api.test.mjs server/tests/workflow-cloud-video-bridge.test.mjs",
     "verify:neon-runtime": "node --test server/tests/neon-staging-runtime.test.mjs",
-    "verify:subscription-allowance-profitability": "node --test server/tests/subscription-allowance-profitability.test.mjs"
+    "verify:subscription-allowance-profitability": "node --test server/tests/subscription-allowance-profitability.test.mjs",
+    "verify:smart-generation-credit-preflight": "node --test server/tests/project-scoped-generation-credit-preflight.test.mjs server/tests/cloud-timeline-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
