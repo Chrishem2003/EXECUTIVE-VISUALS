@@ -16,6 +16,7 @@ on:
       - feat/model-specific-provider-cost-estimates-2026-11-22
       - feat/live-workload-telemetry-batch-36
       - feat/subscription-customer-economics-batch-37
+      - feat/audited-subscription-publication-batch-60-2026-11-22
       - feat/financial-governance-batch-48
   pull_request:
 
