@@ -27,6 +27,9 @@ test("calculates conservative credit scenarios from verified evidence while keep
  assert.deepEqual(result.plans.map(p=>p.estimatedIncludedCredits),[98,381,1090,2791]);
  assert.deepEqual(result.plans.map(p=>p.providerCostBudgetMinor),[196,763,2180,5582]);
  assert.ok(result.plans.every(p=>p.publishable===false));
+ assert.ok(result.plans.every(p=>p.approvalPacket?.status==="awaiting_dual_approval"));
+ assert.ok(result.plans.every(p=>p.approvalPacket?.publishable===false));
+ assert.ok(result.plans.every(p=>/^[a-f0-9]{64}$/.test(p.approvalPacket?.proposalHash||"")));
  assert.equal(result.costEvidence.status,"verified_measured");
  assert.equal(result.costEvidence.approved,false);
  assert.equal(result.costEvidence.rateCardVersion,"runway-2026-11-v1");
