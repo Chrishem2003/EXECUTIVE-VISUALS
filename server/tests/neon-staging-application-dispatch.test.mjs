@@ -9,7 +9,7 @@ const job="423e4567-e89b-42d3-a456-426614174000";
 const snapshot={shots:[
   {id:"shot-1",provider:"runway",model:"gen4.5",estimatedCostMicros:1250000},
   {id:"shot-2",provider:"runway",model:"gen4.5",estimatedCostMicros:750000}
-],quote:{currency:"USD",amount:2}};
+],quote:{currency:"USD",amount:2,customerCreditQuote:{unit:"customer_credits",totalCredits:200,perShot:[{shotId:"shot-1",credits:125},{shotId:"shot-2",credits:75}],pricingBasis:"server-side cost, margin and fee policy"}},customerCreditBudgetCredits:240};
 const local={
   id:approval,owner_id:owner,project_id:project,idempotency_key:"production-key-01",
   request_hash:"a".repeat(64),snapshot_json:JSON.stringify(snapshot),currency:"USD",
@@ -54,6 +54,8 @@ test("submits only a project-authorized immutable approval to Neon and marks it 
  const registered=f.calls.find(x=>x[0]==="register")[1];
  assert.equal(registered.id,approval);assert.equal(registered.projectId,project);
  assert.equal(registered.quotedAmountMicros,2000000);
+ assert.equal(registered.snapshotJson.customerCreditBudgetCredits,240);
+ assert.equal(registered.snapshotJson.quote.customerCreditQuote.totalCredits,200);
  assert.ok(f.calls.some(x=>x[0]==="audit"));
 });
 
