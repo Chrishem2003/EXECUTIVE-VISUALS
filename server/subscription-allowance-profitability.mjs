@@ -1,3 +1,5 @@
+import {createSubscriptionAllowanceApprovalPacket} from "./subscription-allowance-approval.mjs";
+
 const BPS=10_000;
 const MAX_MINOR=9_000_000_000_000;
 const PROPOSED_SUBSCRIPTION_PLANS=Object.freeze([
@@ -86,13 +88,22 @@ export function simulateSubscriptionAllowances({
   const providerCostBudgetMinor=Math.max(0,totalCostCeilingMinor-fixedDeliveryReserveMinor);
   const maxProviderCostAtTargetMarginMinor=providerCostBudgetMinor;
   const estimatedIncludedCredits=costPerCredit===null?null:Number(BigInt(providerCostBudgetMinor)/BigInt(costPerCredit));
+  const approvalPacket=estimatedIncludedCredits>0&&evidence
+   ?createSubscriptionAllowanceApprovalPacket({
+     plan,planVersion:1,allowanceCredits:estimatedIncludedCredits,
+     providerCostPerCustomerCreditMinor:costPerCredit,costEvidence:evidence,
+     targetGrossMarginBps:margin,paymentFeeBps:payment,refundReserveBps:refund,
+     fixedPaymentFeeMinor:fixedFee,supportReserveMinor:support,
+     infrastructureReserveMinor:infrastructure
+    })
+   :null;
   return Object.freeze({
    ...plan,paymentFeeMinor,refundReserveMinor:refundReserveAmountMinor,
    netAfterPaymentAndRefundMinor,targetGrossMarginBps:margin,
    totalCostCeilingMinor,fixedDeliveryReserveMinor,
    providerCostBudgetMinor,maxProviderCostAtTargetMarginMinor,
    providerCostPerCustomerCreditMinor:costPerCredit,
-   estimatedIncludedCredits,
+   estimatedIncludedCredits,approvalPacket,
    allowanceStatus:costPerCredit===null?"awaiting_approved_cost_evidence":"scenario_only_requires_product_finance_approval",
    publishable:false
   });
