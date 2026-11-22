@@ -16,6 +16,7 @@ import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancial
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
 import { buildPublicSubscriptionCatalogue } from "./subscription-plan-catalogue.mjs";
+import { simulateSubscriptionAllowances } from "./subscription-allowance-profitability.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -1280,6 +1281,25 @@ export function createFinancialIntelligenceApi({
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
         const result=await rpc("financial_profitability_overview",{p_actor_id:ownerId});
         return response(200,{profitability:result||{byCurrency:[],customers:[],sharedCosts:[],limitations:[]}});
+      }
+      if(path==="/api/admin/finance/subscription-allowance-simulation"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        const allowed=new Set(["targetGrossMarginBps","paymentFeeBps","fixedPaymentFeeMinor","refundReserveBps","supportReserveMinor","infrastructureReserveMinor"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowed.has(key)))
+          return error(400,"SUBSCRIPTION_ECONOMICS_INPUT_INVALID","Only scenario assumptions are accepted. Provider cost evidence must come from verified invoice reconciliation, never browser input.");
+        try{
+          const simulation=simulateSubscriptionAllowances({
+            targetGrossMarginBps:body.targetGrossMarginBps,
+            paymentFeeBps:body.paymentFeeBps,
+            fixedPaymentFeeMinor:body.fixedPaymentFeeMinor??0,
+            refundReserveBps:body.refundReserveBps??0,
+            supportReserveMinor:body.supportReserveMinor??0,
+            infrastructureReserveMinor:body.infrastructureReserveMinor??0
+          });
+          return response(200,{simulation,source:"read-only scenario using proposed test prices",providerCostEvidence:"not supplied; verified invoice evidence required before calculating credit allowances"});
+        }catch(err){
+          return error(400,err.code||"SUBSCRIPTION_ECONOMICS_INPUT_INVALID",err.message||"Subscription allowance assumptions are invalid.");
+        }
       }
       if(path==="/api/admin/finance/scenario-baseline"&&method==="GET"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
