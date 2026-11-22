@@ -318,12 +318,19 @@ test("Uganda mobile-money checkout uses server-priced active catalogue and idemp
   const calls=[];
   const service=api(async(url,options={})=>{
     const target=String(url);calls.push({target,options});
-    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
-      return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+    if(target==="https://project.supabase.co/rest/v1/billing_products?select=product_code,product_type,name,description,amount_minor,currency,credit_units&product_code=eq.creator_credits&active=eq.true&limit=1")
+      return json([{product_code:"creator_credits",product_type:"credit_pack",name:"Creator credits",description:"Test pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
     if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
       return json([]);
-    if(target.endsWith("/payment_transactions")&&options.method==="POST")
-      return json([{id:paymentId,metadata:{product_code:"creator_credits",credit_units:100,idempotency_key:"checkout-key-0001",mobile_money_network:"MTN"}}],201);
+    if(target.endsWith("/payment_transactions")&&options.method==="POST"){
+      const payload=JSON.parse(options.body);
+      assert.equal(payload.metadata.payment_purpose,"credit_pack_purchase");
+      assert.equal(payload.metadata.credit_pack_applied,false);
+      assert.deepEqual(payload.metadata.credit_pack_snapshot,{
+        productCode:"creator_credits",productType:"credit_pack",amountMinor:5000,currency:"UGX",creditUnits:100
+      });
+      return json([{id:paymentId,metadata:payload.metadata}],201);
+    }
     if(target==="https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token")
       return json({access_token:"provider-test-token",expires_in:600});
     if(target==="https://developersandbox-api.flutterwave.com/orchestration/direct-charges"&&options.method==="POST")
