@@ -13,7 +13,7 @@ Connect a verified customer payment to the exact generation-credit grant it fund
 - A successful, verified one-time credit-pack payment is a paid source. Its gross payment amount and ISO currency are allocated proportionally across the granted credits as those credits are consumed.
 - A verified subscription purchase or renewal creates a subscription-allowance source, but its credit-revenue amount remains pending. Finance must approve the share of subscription revenue attributable to included generation credits. The whole subscription payment is never assumed to be generation revenue.
 - Promotional and administrator-compensated grants are explicit zero-revenue sources.
-- Existing grants without source evidence, project-pool transfers and otherwise unlinked credits remain unattributed. They cannot inherit revenue from a paid source.
+- Existing grants without source evidence, project-pool transfers and otherwise unlinked credits remain unattributed. A migration backfills pre-existing generation-wallet grant rows as provenance-only unattributed source records; it does not add credits or revenue. They cannot inherit revenue from a paid source.
 - All amounts use integer minor units. No automatic FX conversion is performed.
 
 ## Transaction flow
@@ -52,7 +52,7 @@ The Financial Command Centre shows these fields beside provider cost and consume
 ## Still required before production
 
 - Integrate the Batch 65/66 top-up checkout stack with this migration and run the complete combined PR stack; the trigger is designed to pick up its verified credit_ledger grant.
-- Reconcile historical wallet grants separately; this migration does not backfill old payments or silently grant historical balances.
+- Reconcile historical legacy payment-ledger entries and project-pool transfers separately; existing generation-wallet grants are only marked unattributed, with no balance changes or historical payment grants.
 - Add payment-fee, refund and chargeback allocation and project shared-pool source transfers.
 - Add the finance-admin UI for subscription credit-component split approvals and review history.
 - Verify the entire combined billing, wallet, provider invoice and profitability stack on a clean disposable PostgreSQL database.
