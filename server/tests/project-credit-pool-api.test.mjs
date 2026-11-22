@@ -77,3 +77,16 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
  assert.match(app,/project-credit-pool-fund/);
  assert.match(app,/data-project-credit-member-policy/);
 });
+
+test("cloud team API validates registered-account member invitations and removal identities",async()=>{
+ const f=fixture({payload:{memberId,role:"editor"}});
+ await f.api.addMember({ownerId:owner,projectId:project,email:"  editor@example.test  ",role:"editor"});
+ await f.api.listMembers({ownerId:owner,projectId:project});
+ await f.api.removeMember({ownerId:owner,projectId:project,memberId});
+ assert.ok(f.calls[0].url.endsWith("/rpc/add_project_member"));
+ assert.deepEqual(JSON.parse(f.calls[0].options.body),{p_owner_id:owner,p_project_id:project,p_email:"editor@example.test",p_role:"editor"});
+ assert.ok(f.calls[1].url.endsWith("/rpc/list_project_members"));
+ assert.ok(f.calls[2].url.endsWith("/rpc/remove_project_member"));
+ await assert.rejects(()=>f.api.addMember({ownerId:owner,projectId:project,email:"not-an-email",role:"admin"}));
+ assert.equal(f.calls.length,3);
+});
