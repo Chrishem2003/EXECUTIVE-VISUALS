@@ -49,15 +49,15 @@ begin
   if payment_row.provider<>'flutterwave' then
     raise exception 'Unsupported payment provider' using errcode='23514';
   end if;
-  if payment_row.metadata->>'payment_purpose'<>'credit_pack_purchase'
+  if payment_row.metadata->>'payment_purpose' is distinct from 'credit_pack_purchase'
      or coalesce((payment_row.metadata->>'credit_pack_applied')::boolean,false) then
     raise exception 'CREDIT_PACK_PURPOSE_OR_STATE_INVALID' using errcode='23514';
   end if;
 
   v_snapshot:=payment_row.metadata->'credit_pack_snapshot';
-  if jsonb_typeof(v_snapshot)<>'object'
-     or v_snapshot->>'productType'<>'credit_pack'
-     or v_snapshot->>'currency'<>'UGX'
+  if jsonb_typeof(v_snapshot) is distinct from 'object'
+     or v_snapshot->>'productType' is distinct from 'credit_pack'
+     or v_snapshot->>'currency' is distinct from 'UGX'
      or (v_snapshot->>'productCode') is distinct from payment_row.metadata->>'product_code'
      or (v_snapshot->>'creditUnits') !~ '^[1-9][0-9]{0,17}$'
      or (v_snapshot->>'amountMinor') !~ '^[1-9][0-9]{0,17}$'
@@ -68,10 +68,38 @@ begin
   v_product_code:=v_snapshot->>'productCode';
   v_credit_units:=(v_snapshot->>'creditUnits')::bigint;
   v_amount_minor:=(v_snapshot->>'amountMinor')::bigint;
-  if v_credit_units is distinct from (payment_row.metadata->>'credit_units')::bigint
+  if v_product_code is null
+     or v_credit_units is distinct from (payment_row.metadata->>'credit_units')::bigint
      or v_amount_minor is distinct from payment_row.amount_minor
      or v_snapshot->>'currency' is distinct from payment_row.currency
-     or v_product_code !~ '^[a-z0-9][a-z0-9_-]{2,59}$' then
+     or v_product_code !~ '^[a-z0-9][a-z0-9_-]{2,59}
+    raise exception 'CREDIT_PACK_SNAPSHOT_PAYMENT_MISMATCH' using errcode='23514';
+  end if;
+
+  -- Set the verified source marker in the same transaction immediately before
+  -- the original finalizer inserts the legacy grant. Batch 71's trigger now
+  -- recognizes this as paid revenue and mirrors the exact same grant once.
+  update executive_visuals.payment_transactions
+     set metadata=metadata||jsonb_build_object(
+       'credit_pack_applied',true,
+       'credit_pack_applied_at',p_verified_at
+     )
+   where id=p_payment_id;
+
+  return executive_visuals.finalize_payment_purchase_pre_batch80(
+    p_payment_id,p_provider_transaction_id,p_provider_payload,p_verified_at
+  );
+end;
+$finalize_payment_purchase$;
+
+revoke all on function executive_visuals.finalize_payment_purchase(uuid,text,jsonb,timestamptz)
+  from public,anon,authenticated;
+grant execute on function executive_visuals.finalize_payment_purchase(uuid,text,jsonb,timestamptz)
+  to service_role;
+
+comment on function executive_visuals.finalize_payment_purchase(uuid,text,jsonb,timestamptz)
+  is 'Verifies the server-owned credit-pack snapshot and marks paid credit provenance atomically before grant triggers run.';
+ then
     raise exception 'CREDIT_PACK_SNAPSHOT_PAYMENT_MISMATCH' using errcode='23514';
   end if;
 
