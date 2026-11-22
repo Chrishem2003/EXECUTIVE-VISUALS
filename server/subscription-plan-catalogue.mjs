@@ -34,7 +34,7 @@ function normalizePlan(row,nowMs){
  const status=text(row.status).toLowerCase();
  const interval=text(row.billing_interval??row.billingInterval).toLowerCase();
  const isPublic=row.is_public??row.isPublic;
- if(!PLAN_CODE.test(code)||!name||name.length>100||description.length>1000||!["monthly","yearly"].includes(interval)||typeof isPublic!=="boolean"||!["active","inactive","archived"].includes(status))
+ if(!PLAN_CODE.test(code)||!name||name.length>100||description.length>1000||!["none","monthly","yearly"].includes(interval)||typeof isPublic!=="boolean"||!["active","inactive","archived"].includes(status))
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Plan identity, visibility, status or billing interval is invalid.");
  const effectiveFrom=timestamp(row.effective_from??row.effectiveFrom,"plan effective_from",{optional:true});
  const effectiveUntil=timestamp(row.effective_until??row.effectiveUntil,"plan effective_until",{optional:true});
@@ -42,7 +42,7 @@ function normalizePlan(row,nowMs){
   throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Plan effective_until must be later than effective_from.");
  const credits=integer(Number(row.included_credits??row.includedCredits??0),"included credits",{max:1_000_000_000});
  const baseAmountRaw=row.amount_minor??row.amountMinor;
- const baseAmountMinor=baseAmountRaw===undefined||baseAmountRaw===null?null:integer(baseAmountRaw,"base plan amount",{min:1,max:9_000_000_000_000});
+ const baseAmountMinor=baseAmountRaw===undefined||baseAmountRaw===null?null:integer(baseAmountRaw,"base plan amount",{min:interval==="none"?0:1,max:9_000_000_000_000});
  const baseCurrency=text(row.currency).toUpperCase();
  if(baseCurrency&&!/^[A-Z]{3}$/.test(baseCurrency))throw fail("SUBSCRIPTION_CATALOGUE_INVALID","Base plan currency must be an ISO currency code.");
  const entitlements=jsonSnapshot(row.entitlements??row.entitlements_snapshot??row.entitlementsSnapshot,"plan entitlements");
@@ -91,7 +91,7 @@ export function buildPublicSubscriptionCatalogue({plans,providerPrices,now=()=>n
   priceKeys.add(key);
  }
  return Object.freeze(normalizedPlans.filter(plan=>plan.eligible).map(plan=>{
-  const prices=normalizedPrices.filter(price=>price.planId===plan.id&&price.active)
+  const prices=normalizedPrices.filter(price=>plan.billingInterval!=="none"&&price.planId===plan.id&&price.active)
    .map(price=>Object.freeze({provider:price.provider,currency:price.currency,amountMinor:price.amountMinor}));
   return Object.freeze({
    planCode:plan.planCode,name:plan.name,description:plan.description,version:plan.version,
