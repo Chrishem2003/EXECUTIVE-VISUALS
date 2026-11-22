@@ -592,7 +592,7 @@ export function createRunwayCloudVideoAdapter({
       if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
-      const promptLimit = selectedModel === "seedance2_5" ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
+      const promptLimit = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) ? 15000 : ["kling_4", "kling_4_flash"].includes(selectedModel) ? 26000 : selectedModel === "gemini_omni_flash_1.2" ? 4000 : selectedModel.startsWith("kling3.0_") ? 2500 : 1000;
       const hasMultiPrompt = Array.isArray(input.multiPrompt) && input.multiPrompt.length > 0;
       const hasSeedanceReferences = ["seedance2_5", "seedance2_5_flash"].includes(selectedModel) &&
         (Array.isArray(input.references) && input.references.length > 0 ||
