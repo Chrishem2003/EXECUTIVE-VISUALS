@@ -85,6 +85,10 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Type-check customer billing UI and application
         run: npm run typecheck
+      - name: Test customer-credit production approval ceilings
+        run: node --test server/tests/video-generation-approval.test.mjs
+      - name: Check customer-credit approval route syntax
+        run: node --check server/index.mjs
       - name: Check financial API syntax
         run: |
           node --check server/index.mjs
