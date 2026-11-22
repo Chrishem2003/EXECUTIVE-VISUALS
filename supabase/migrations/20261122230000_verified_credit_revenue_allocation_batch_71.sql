@@ -332,6 +332,80 @@ create trigger ev_sync_verified_payment_credit_grant
 after insert on executive_visuals.credit_ledger
 for each row execute function executive_visuals.sync_verified_payment_credit_grant_to_generation_wallet();
 
+-- Every wallet grant receives a source record. Unknown or legacy grants are
+-- explicitly unattributed so newer paid grants cannot absorb their consumption.
+create or replace function executive_visuals.sync_generation_wallet_grant_source()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $sync_generation_wallet_grant_source$
+declare
+  source_kind text;
+  payment_id uuid;
+  payment_row executive_visuals.payment_transactions%rowtype;
+  source_revenue bigint;
+  source_currency text;
+begin
+  if new.event_type<>'grant' then return new; end if;
+  source_kind:=coalesce(new.evidence->>'sourceType','unattributed');
+  if source_kind='paid_credit_pack' or source_kind='subscription_allowance' then
+    begin
+      payment_id:=(new.evidence->>'paymentTransactionId')::uuid;
+    exception when others then
+      raise exception 'CREDIT_REVENUE_PAYMENT_REFERENCE_INVALID' using errcode='22023';
+    end;
+    select * into payment_row from payment_transactions
+     where id=payment_id and owner_id=new.owner_id
+       and status='successful' and verified_at is not null;
+    if not found then
+      raise exception 'CREDIT_REVENUE_PAYMENT_NOT_VERIFIED' using errcode='23514';
+    end if;
+    source_currency:=payment_row.currency;
+    if source_kind='paid_credit_pack' then
+      source_revenue:=payment_row.amount_minor;
+    else
+      source_revenue:=null;
+    end if;
+    perform register_generation_credit_revenue_source(
+      new.owner_id,new.id,source_kind,payment_id,source_revenue,source_currency,
+      jsonb_build_object('walletGrantId',new.id,'paymentTransactionId',payment_id,'provider',payment_row.provider,'verifiedAt',payment_row.verified_at)
+    );
+  elsif source_kind in('promotional','admin_compensation') then
+    perform register_generation_credit_revenue_source(
+      new.owner_id,new.id,source_kind,null,0,null,
+      jsonb_build_object('walletGrantId',new.id,'sourceType',source_kind)
+    );
+  else
+    perform register_generation_credit_revenue_source(
+      new.owner_id,new.id,'unattributed',null,null,null,
+      jsonb_build_object('walletGrantId',new.id,'sourceType','unattributed','reason','Grant has no verified revenue provenance')
+    );
+  end if;
+  return new;
+end;
+$sync_generation_wallet_grant_source$;
+revoke all on function executive_visuals.sync_generation_wallet_grant_source()
+  from public,anon,authenticated;
+grant execute on function executive_visuals.sync_generation_wallet_grant_source()
+  to service_role;
+drop trigger if exists ev_sync_generation_wallet_grant_source on executive_visuals.billing_credit_ledger;
+create trigger ev_sync_generation_wallet_grant_source
+after insert on executive_visuals.billing_credit_ledger
+for each row execute function executive_visuals.sync_generation_wallet_grant_source();
+
+-- Existing wallet grants are provenance-mapped only; no credits or revenue are posted.
+insert into executive_visuals.billing_credit_revenue_sources(
+  owner_id,grant_ledger_id,source_type,source_reference_id,credits_granted,
+  allocatable_revenue_minor,currency,revenue_status,evidence,created_at
+)
+select l.owner_id,l.id,'unattributed',null,l.amount,null,null,'unattributed',
+  jsonb_build_object('sourceType','unattributed','reason','Pre-Batch71 grant; payment provenance was not reconstructed'),
+  l.created_at
+from executive_visuals.billing_credit_ledger l
+where l.event_type='grant'
+  and not exists(select 1 from executive_visuals.billing_credit_revenue_sources s where s.grant_ledger_id=l.id);
+
 create or replace function executive_visuals.allocate_generation_credit_revenue_for_reservation(p_reservation_id uuid)
 returns jsonb
 language plpgsql
