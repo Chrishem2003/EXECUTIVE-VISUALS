@@ -1299,7 +1299,10 @@ export function createAppServer() {
           approval=buildVideoGenerationApproval({shots:body.shots,preflight,budget:body.budget,
             customerCreditBudgetCredits:body.customerCreditBudgetCredits,confirmed:body.confirm===true});
         }catch(error){
-          const status=error.code==="VIDEO_APPROVAL_CONFIRMATION_REQUIRED"?400:error.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED"?409:error.code==="VIDEO_APPROVAL_PREFLIGHT_REQUIRED"||error.code==="VIDEO_APPROVAL_PRICE_UNVERIFIED"?409:400;
+          const status=error.code==="VIDEO_APPROVAL_CONFIRMATION_REQUIRED"||error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_REQUIRED"?400:
+            error.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED"||error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_EXCEEDED"||
+            error.code==="VIDEO_APPROVAL_PREFLIGHT_REQUIRED"||error.code==="VIDEO_APPROVAL_PRICE_UNVERIFIED"||
+            error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_REQUIRED"?409:400;
           fail(res,status,error.code||"VIDEO_APPROVAL_INVALID",error.message||"Production approval could not be created.");return;
         }
         const existing=db.prepare("SELECT * FROM video_generation_approvals WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
@@ -1307,12 +1310,13 @@ export function createAppServer() {
           if(existing.request_hash!==approval.requestHash||existing.project_id!==projectId||existing.currency!==approval.currency||existing.quoted_amount_micros!==approval.quotedAmountMicros||existing.budget_ceiling_micros!==approval.budgetCeilingMicros){
             fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different approval request.");return;
           }
-          send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
+          const replaySnapshot=JSON.parse(existing.snapshot_json||"{}");
+          send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,customerCredits:replaySnapshot.quote?.customerCreditQuote?.totalCredits??null,customerCreditCeiling:replaySnapshot.customerCreditBudgetCredits??null,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
         }
         const id=randomUUID();
         db.prepare("INSERT INTO video_generation_approvals(id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros,status) VALUES(?,?,?,?,?,?,?,?,?,'approved_pending_submission')")
           .run(id,user.id,projectId,idempotencyKey,approval.requestHash,approval.snapshotJson,approval.currency,approval.quotedAmountMicros,approval.budgetCeilingMicros);
-        audit(db,user.id,"video_generation.approved","video_generation_approval",id,{requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmountMicros:approval.quotedAmountMicros,budgetCeilingMicros:approval.budgetCeilingMicros,status:approval.status},projectId);
+        audit(db,user.id,"video_generation.approved","video_generation_approval",id,{requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmountMicros:approval.quotedAmountMicros,budgetCeilingMicros:approval.budgetCeilingMicros,customerCredits:approval.customerCreditQuote.totalCredits,customerCreditBudgetCredits:approval.customerCreditBudgetCredits,status:approval.status},projectId);
         send(res,201,{approval:{id,status:approval.status,requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmount:approval.quotedAmountMicros/1000000,budgetCeiling:approval.budgetCeilingMicros/1000000,customerCredits:approval.customerCreditQuote.totalCredits,customerCreditCeiling:approval.customerCreditBudgetCredits},requestsSubmitted:false,message:"Budget and customer-credit ceiling approval recorded. No provider request, credit reservation or generation job was submitted."},cors);return;
       }
       if(path==="/api/video-production-approvals"&&req.method==="GET"){
