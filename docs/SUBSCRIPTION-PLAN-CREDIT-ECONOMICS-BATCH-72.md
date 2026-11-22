@@ -89,6 +89,7 @@ Official evidence:
 
 The response includes:
 - the explicit credit-budget share and conversion rate;
+- the immutable server-side target margin, payment-fee, support-reserve and fixed-fee assumptions used by the shared quote policy;
 - provider/model/duration/resolution and dated pricing source;
 - estimated provider cost and customer credits per generation;
 - hypothetical monthly plan credit allowance;
