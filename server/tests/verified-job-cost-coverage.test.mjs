@@ -64,9 +64,9 @@ test("verified job cost coverage calls the read-only report with authenticated a
 test("financial command centre renders invoice-backed job cost coverage and revenue gate",async()=>{
   const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
   assert.match(app,/\/api\/admin\/finance\/job-cost-coverage/);
-  assert.match(app,/Verified job cost & credit coverage/);
-  assert.match(app,/Profitability: blocked pending revenue evidence/);
-  assert.match(app,/Revenue and gross margin are deliberately not inferred from credits/);
+  assert.match(app,/Verified job revenue, cost & margin/);
+  assert.match(app,/Revenue allocation: /);
+  assert.match(app,/Revenue is recognized against consumed credits/);
 });
 
 test("coverage migration requires invoice-backed matches and never converts credits into revenue",async()=>{
