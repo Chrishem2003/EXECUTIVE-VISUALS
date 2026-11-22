@@ -2,8 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
-import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
+import { createCloudTimelineApi as createCloudTimelineApiBase } from "../cloud-timeline-api.mjs";
 import { createVideoWorkflowCloudRequest } from "../video-workflow-cloud-contract.mjs";
+
+// Deterministic test-only pricing policy: 1,000 customer credits per USD.
+// Production always injects the validated server-side margin/fee policy.
+function createCloudTimelineApi(options={}){
+ return createCloudTimelineApiBase({quoteCustomerCredits:({currency,amountMicros})=>{
+  if(currency!=="USD"||!Number.isSafeInteger(amountMicros)||amountMicros<1)throw new Error("Invalid test quote");
+  return Math.ceil(amountMicros/1000);
+ },...options});
+}
+
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
@@ -379,7 +389,7 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     const args=JSON.parse(options.body);persisted.push(args);
     return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
    }
@@ -398,6 +408,8 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(result.body.quote.paidExecutionEnabled,false);
  assert.equal(result.body.quote.estimatedAmount,2.75);
  assert.equal(result.body.quote.estimatedCredits,275);
+ assert.equal(result.body.quote.estimatedProviderCredits,275);
+ assert.equal(result.body.quote.estimatedCustomerCredits,2750);
  assert.match(result.body.quote.requestHash,/^[a-f0-9]{64}$/);
  assert.equal(prepared.length,1);
  assert.equal(prepared[0].context.job.owner_id,owner);
@@ -408,6 +420,8 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(persisted[0].p_project_id,project);
  assert.equal(persisted[0].p_request_hash,result.body.quote.requestHash);
  assert.equal(persisted[0].p_estimated_amount,2.75);
+ assert.equal(persisted[0].p_estimated_credits,275);
+ assert.equal(persisted[0].p_estimated_customer_credits,2750);
  assert.equal(persisted[0].p_pricing_source,"runway_model_router_dry_run");
  assert.equal(persisted[0].p_quote_id,result.body.quote.id);
 });
@@ -481,7 +495,7 @@ test("cloud workflow video quote fails closed when durable persistence is unavai
  let providerCalls=0;
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote")
+  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")
    ?{ok:false,status:503,async text(){return JSON.stringify({message:"database unavailable"});}}
    :{ok:true,status:200,async text(){return"[]";}},
   timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},authorize:async()=>true,
@@ -672,7 +686,7 @@ test("paid workflow quotes require the complete provider-aware worker launch con
       serviceRoleKey: "test-service-role-key",
       env,
       fetchImpl: async (url, options) => {
-        if (url.endsWith("/rpc/record_video_workflow_quote")) {
+        if (url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")) {
           const args = JSON.parse(options.body);
           return { ok: true, status: 200, async text() { return JSON.stringify(args.p_quote_id); } };
         }
@@ -793,7 +807,7 @@ test("Luma Ray 3.2 workflow quote validates private frame assets and records acc
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
   fetchImpl:async(url,options)=>{
    const route=url.split("/rest/v1/")[1]||"";
-   if(route==="rpc/record_video_workflow_quote"){
+   if(route==="rpc/record_video_workflow_quote_with_customer_credits"){
     writes.push(JSON.parse(options.body));
     return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
    }
@@ -837,7 +851,7 @@ test("Luma source-video edit and reframe quotes use private metadata and operati
    return{ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:metadataByOperation[activeOperation]};
   }},
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     const args=JSON.parse(options.body);writes.push(args);
     return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
    }
@@ -905,7 +919,7 @@ test("Luma multi-keyframe quotes revalidate every private anchor in the exact pr
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env:lumaWorkerEnv,
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits"))return{ok:true,status:200,async text(){return JSON.stringify(JSON.parse(options.body).p_quote_id);}};
    return{ok:true,status:200,async text(){return"[]";}};
   },
   timelineService:{
@@ -931,7 +945,7 @@ test("Luma quote stays blocked until schema and private frame scope are ready",a
  const makeApi=(env,assetProject=project)=>createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"server-service-key",env,
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){writes++;return{ok:true,status:200,async text(){return JSON.stringify(lumaQuote);}};}
    return{ok:true,status:200,async text(){return"[]";}};
   },
   timelineService:{
@@ -980,7 +994,7 @@ test("direct Seedance workflow quote uses the official list-price estimator and 
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
-   if(url.endsWith("/rpc/record_video_workflow_quote")){
+   if(url.endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     persisted=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(persisted.p_quote_id);}};
    }
@@ -1020,7 +1034,7 @@ test("Seedance draft enhancement quote verifies the original succeeded project j
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
-   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+   if(String(url).endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     quoteArgs=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
    }
@@ -1059,7 +1073,7 @@ test("Seedance video-to-video draft enhancement quote includes the verified inpu
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",runwaySourceResolver:sourceResolver,
   fetchImpl:async(url,options)=>{
    if(String(url).includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([sourceJob]);}};
-   if(String(url).endsWith("/rpc/record_video_workflow_quote")){
+   if(String(url).endsWith("/rpc/record_video_workflow_quote_with_customer_credits")){
     quoteArgs=JSON.parse(options.body);
     return{ok:true,status:200,async text(){return JSON.stringify(quoteArgs.p_quote_id);}};
    }
@@ -1244,7 +1258,7 @@ test("Neon workflow approval validates the persisted exact quote before durable 
    if(url.includes("/video_workflow_quotes?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([{
     id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,
     provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",
-    routed_model:"seedance2_5",estimated_credits:275,estimated_amount:"2.750000",currency:"USD",
+    routed_model:"seedance2_5",estimated_credits:275,estimated_customer_credits:2750,estimated_amount:"2.750000",currency:"USD",
     config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:expiresAt
    }]);}};
    if(url.includes("/video_workflow_quotes?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return"[]";}};
@@ -1280,8 +1294,8 @@ test("Neon workflow approval rejects a mismatched quote and delegates expiry rep
  const values={prompt:"A cinematic product launch"};
  const contract=createVideoWorkflowCloudRequest({node,values,projectId:project,requestId});
  for(const quote of [
-  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
-  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
+  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:"f".repeat(64),provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_customer_credits:1000,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()+60000).toISOString()},
+  {id:quoteId,owner_id:owner,project_id:project,request_id:requestId,request_hash:contract.requestHash,provider:"runway",model:"model-router",operation:contract.operation,routed_provider:"runway",routed_model:"seedance2_5",estimated_credits:100,estimated_customer_credits:1000,estimated_amount:"1.000000",currency:"USD",config_id:"studio-video",pricing_source:"runway_model_router_dry_run",state:"quoted",expires_at:new Date(Date.now()-1000).toISOString()}
  ]){
   let dispatched=0;
   const api=createCloudTimelineApi({
@@ -1323,4 +1337,24 @@ test("cloud job status and cancellation can be served by the gated Neon workflow
  const cancelled=await api.handle({method:"POST",path:"/api/cloud/jobs/823e4567-e89b-42d3-a456-426614174000/cancel",ownerId:owner});
  assert.equal(cancelled.status,409);
  assert.deepEqual(calls,[]);
+});
+
+test("cloud workflow quote fails closed when customer-credit pricing is not configured",async()=>{
+ let writes=0,preflights=0;
+ const api=createCloudTimelineApi({
+  quoteCustomerCredits:null,
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url)=>{if(String(url).includes("/rpc/record_video_workflow_quote_with_customer_credits"))writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(input){return input;},async preflight(){preflights++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"workflow-credit-policy-missing",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}
+ }});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"CUSTOMER_CREDIT_PRICING_UNCONFIGURED");
+ assert.equal(preflights,1);
+ assert.equal(writes,0);
 });

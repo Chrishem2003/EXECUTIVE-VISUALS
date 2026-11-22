@@ -104,7 +104,7 @@ function timelineDurationSeconds(timeline){
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false,workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=resolveSupabaseServerKey(process.env),fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=50*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,runwayRouterAdapter=null,env=process.env,timelineCreditsPerSecond=Number(process.env.CLOUD_TIMELINE_CREDITS_PER_SECOND||0),mediaJobsEnabled=false,workflowNodeDispatch=null,workflowNodeDispatchEnabled=()=>false,workflowJobLookup=null,workflowJobCancel=null,quoteCustomerCredits=null}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -507,14 +507,33 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
         typeof estimate.provider!=="string"||!estimate.provider.trim()){
       return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
      }
+     // Provider credits are not customer credits. Convert the verified provider
+     // cost through the same server-owned margin/fee policy used by staging.
+     if(typeof quoteCustomerCredits!=="function"){
+      return response(503,{error:{code:"CUSTOMER_CREDIT_PRICING_UNCONFIGURED",message:"Customer credit pricing is not configured; no paid workflow quote can be issued."}});
+     }
+     const providerCostMicros=Math.round(estimate.estimatedUsd*1000000);
+     if(!Number.isSafeInteger(providerCostMicros)||providerCostMicros<1||
+        Math.abs(estimate.estimatedUsd*1000000-providerCostMicros)>0.0001){
+      return response(503,{error:{code:"CUSTOMER_CREDIT_COST_INVALID",message:"Provider cost could not be normalized to safe USD micro-units."}});
+     }
+     let estimatedCustomerCredits;
+     try{
+      estimatedCustomerCredits=quoteCustomerCredits({currency:"USD",amountMicros:providerCostMicros});
+     }catch{
+      return response(503,{error:{code:"CUSTOMER_CREDIT_QUOTE_UNAVAILABLE",message:"The server could not calculate a safe customer credit quote."}});
+     }
+     if(!Number.isSafeInteger(estimatedCustomerCredits)||estimatedCustomerCredits<1||estimatedCustomerCredits>100000000){
+      return response(503,{error:{code:"CUSTOMER_CREDIT_QUOTE_INVALID",message:"The server returned an invalid customer credit quote."}});
+     }
      const quoteId=randomUUID();
      const expiresAt=new Date(Date.now()+5*60*1000).toISOString();
-     const quoteRecord=await request("rpc/record_video_workflow_quote",{method:"POST",body:{
+     const quoteRecord=await request("rpc/record_video_workflow_quote_with_customer_credits",{method:"POST",body:{
       p_quote_id:quoteId,p_owner_id:ownerId,p_project_id:projectId,
       p_request_id:workflowRequest.requestId,p_request_hash:workflowRequest.requestHash,
       p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
       p_routed_provider:estimate.provider,p_routed_model:estimate.model,
-      p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
+      p_estimated_credits:estimate.estimatedCredits,p_estimated_customer_credits:estimatedCustomerCredits,p_estimated_amount:estimate.estimatedUsd,
       p_currency:estimate.currency,p_config_id:String(estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):"")),
       p_pricing_source:String(estimate.pricingSource||"runway_model_router_dry_run"),p_expires_at:expiresAt
      }});
@@ -524,7 +543,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
       model:workflowRequest.model,operation:workflowRequest.operation,
       routedProvider:estimate.provider,routedModel:estimate.model,
-      estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
+      estimatedCredits:estimate.estimatedCredits,estimatedProviderCredits:estimate.estimatedCredits,estimatedCustomerCredits,estimatedAmount:estimate.estimatedUsd,
       currency:estimate.currency,configId:estimate.configId||(directRunway?directRunwayConfigId(workflowRequest.model):null),
       pricingSource:String(estimate.pricingSource||"runway_model_router_dry_run"),pricingUrl:estimate.pricingUrl||null,billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:workflowProviderLaunchConfigured(env,workflowRequest),
@@ -594,7 +613,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
      if(!prepared||typeof prepared!=="object"||Array.isArray(prepared))return response(503,{error:{code:"VIDEO_INPUT_ASSET_RESOLUTION_FAILED",message:"Private workflow inputs could not be revalidated for approval."}});
      const input={...workflowRequest.input,workflowQuoteId:quoteId,workflowRequestId:requestId,approvedMaxAmount};
      if(typeof workflowNodeDispatch==="function"&&workflowNodeDispatchEnabled()===true){
-      const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
+      const storedQuotes=await request("video_workflow_quotes?select=id,owner_id,project_id,request_id,request_hash,provider,model,operation,routed_provider,routed_model,estimated_credits,estimated_customer_credits,estimated_amount,currency,config_id,pricing_source,state,expires_at&id=eq."+encodeURIComponent(quoteId)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
       const storedQuote=Array.isArray(storedQuotes)?storedQuotes[0]:null;
       if(!storedQuote||storedQuote.id!==quoteId||storedQuote.owner_id!==ownerId||storedQuote.project_id!==projectId||
          storedQuote.request_id!==requestId||storedQuote.request_hash!==workflowRequest.requestHash||
@@ -604,6 +623,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
          storedQuote.routed_provider!=="runway"||
          typeof storedQuote.routed_model!=="string"||!storedQuote.routed_model.trim()||
          !Number.isSafeInteger(Number(storedQuote.estimated_credits))||Number(storedQuote.estimated_credits)<1||
+         !Number.isSafeInteger(Number(storedQuote.estimated_customer_credits))||Number(storedQuote.estimated_customer_credits)<1||
          !Number.isFinite(Number(storedQuote.estimated_amount))||Number(storedQuote.estimated_amount)<=0||
          !["quoted","consumed"].includes(String(storedQuote.state||""))){
        return response(409,{error:{code:"VIDEO_WORKFLOW_QUOTE_MISMATCH",message:"The stored quote no longer matches this exact owner, project, model, operation and request. Request a fresh quote."}});
@@ -617,7 +637,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
        provider:workflowRequest.provider,model:workflowRequest.model,operation:workflowRequest.operation,
        input:workflowRequest.input,estimatedAmount:Number(storedQuote.estimated_amount),
        approvedMaxAmount,expiresAt:storedQuote.expires_at,
-       estimatedCredits:Number(storedQuote.estimated_credits),
+       estimatedCredits:Number(storedQuote.estimated_credits),estimatedCustomerCredits:Number(storedQuote.estimated_customer_credits),
        routedProvider:storedQuote.routed_provider,routedModel:storedQuote.routed_model,
        quoteState:storedQuote.state,approvalNote
       });

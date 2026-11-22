@@ -11,14 +11,14 @@ function parseSnapshot(value){
 }
 function safeError(error){
  const code=String(error?.code||"CLOUD_VIDEO_DISPATCH_FAILED").slice(0,80);
- const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS"]);
+ const known=new Set(["VIDEO_APPROVAL_IDEMPOTENCY_CONFLICT","VIDEO_APPROVAL_PROJECT_SCOPE_INVALID","VIDEO_APPROVAL_INVALID","VIDEO_APPROVAL_SNAPSHOT_INVALID","VIDEO_APPROVAL_NOT_EXECUTABLE","VIDEO_JOB_IDEMPOTENCY_CONFLICT","VIDEO_REPOSITORY_TIMEOUT","SUBSCRIPTION_ENTITLEMENT_REQUIRED","SUBSCRIPTION_ENTITLEMENT_LOOKUP_UNAVAILABLE","SUBSCRIPTION_RECORD_AMBIGUOUS","VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED"]);
  return {code:known.has(code)?code:"CLOUD_VIDEO_DISPATCH_FAILED",message:known.has(code)?String(error?.message||"Cloud generation dispatch failed.").slice(0,300):"Cloud generation dispatch could not be confirmed. Retry the same approval safely."};
 }
 /**
  * Mirrors a locally budget-approved snapshot into the cloud ledger and queues
  * its shots. It never calls a model provider; the separately gated worker does.
  */
-export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject,authorizeSubscription=null,requireSubscription=false}={}){
+export function createCloudVideoGenerationDispatch({db,repositories,queue=null,audit=()=>{},canWriteProject,authorizeSubscription=null,requireSubscription=false,customerCreditSettlementReady=null}={}){
  if(typeof db?.prepare!=="function"||typeof repositories?.approvals?.register!=="function"||typeof repositories?.approvals?.enqueue!=="function"||typeof canWriteProject!=="function")
   throw new Error("Cloud video dispatch requires the local approval database, cloud repositories and project authorization.");
  if(requireSubscription&&typeof authorizeSubscription!=="function")throw new Error("Subscription enforcement requires a trusted server-side entitlement reader.");
@@ -63,6 +63,17 @@ export function createCloudVideoGenerationDispatch({db,repositories,queue=null,a
    try{snapshot=parseSnapshot(local.snapshot_json);}catch(error){return {status:409,body:{error:safeError(error)}};}
    if(typeof local.idempotency_key!=="string"||local.idempotency_key.length<8||! /^[a-f0-9]{64}$/i.test(String(local.request_hash||"")))
     return {status:409,body:{error:{code:"VIDEO_APPROVAL_SNAPSHOT_INVALID",message:"The saved approval is missing its durable idempotency or request hash."}}};
+   // The legacy shot queue has no atomic customer-credit reservation plus
+   // authoritative settlement path. Do not dispatch billable cloud shots until
+   // the host explicitly supplies that complete financial boundary.
+   let creditSettlementReady=false;
+   try{
+    creditSettlementReady=typeof customerCreditSettlementReady==="function"&&
+     await customerCreditSettlementReady({ownerId,projectId:local.project_id,approvalId,snapshot})===true;
+   }catch{}
+   if(!creditSettlementReady){
+    return {status:503,body:{error:{code:"VIDEO_CUSTOMER_CREDIT_SETTLEMENT_NOT_CONFIGURED",message:"Cloud shot execution is held until customer credits can be reserved atomically and reconciled against authoritative provider usage. Use the customer-credit-gated workflow route for paid cloud generation."},providerRequestsSubmitted:false}};
+   }
    try{
     const cloud=await repositories.approvals.register({
      id:local.id,ownerId,projectId:local.project_id,idempotencyKey:local.idempotency_key,

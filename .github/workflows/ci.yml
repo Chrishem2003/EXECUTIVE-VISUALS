@@ -227,6 +227,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Verify cloud-video submission, budget and recovery contracts
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Separate provider and customer credit units
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122120000_provider_customer_credit_separation.sql
+      - name: Verify provider and customer credit reservations remain distinct
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-credit-unit-separation-postgres-integration.sql
       - name: Apply private Gemini provider-file mappings
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
       - name: Apply durable Gemini upload-attempt ledger

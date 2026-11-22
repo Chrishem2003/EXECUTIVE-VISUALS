@@ -197,7 +197,7 @@ test("rejects Veo registration without authoritative task-level billing evidence
     ...base,
     createAdapters: undefined,
     env: { ...env, RUNWAY_VIDEO_MODELS: "veo3.1", RUNWAY_API_KEY: "runway-test-key" }
-  }), /authoritative task-level billing resolver/);
+  }), /Enterprise workspace usage gate/);
 });
 
 test("Veo worker composition creates the exact-task Enterprise billing resolver only behind its opt-in", () => {
@@ -227,20 +227,18 @@ test("Veo worker composition creates the exact-task Enterprise billing resolver 
   }), /Enterprise workspace usage gate/);
 });
 
-test("refuses Runway worker registration without authoritative task-level cost resolution", () => {
-  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+test("uses the task-receipt cost resolver by default for supported non-Veo Runway models", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
     createAdapters: undefined,
     env: {
       ...env,
-      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
-      FAL_KEY: "queue-test-key",
-      FAL_BILLING_KEY: "billing-test-key",
-      RUNWAY_VIDEO_MODELS: "aleph2",
-      RUNWAY_API_KEY: "runway-test-key"
-    },
-    prepareRunwayInput: async () => ({})
-  }), /authoritative task-level billing resolver/);
+      RUNWAY_VIDEO_MODELS: "gen4.5",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "false"
+    }
+  });
+  assert.ok(worker.listSupported().includes("runway:gen4.5"));
 });
 
 test("Aleph2 worker registration composes the built-in owner-scoped private source resolver", () => {

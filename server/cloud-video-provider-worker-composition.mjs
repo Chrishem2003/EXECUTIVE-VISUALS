@@ -14,6 +14,8 @@ import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs"
 import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createRunwayTaskActualCostResolver } from "./runway-task-actual-cost-resolver.mjs";
+import { createRunwayTaskReceiptCostResolver } from "./runway-task-receipt-cost-resolver.mjs";
+import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video-composition.mjs";
 import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
 import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
@@ -23,6 +25,18 @@ import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
 import { createLumaProviderFileRepository } from "./luma-provider-file-repository.mjs";
 import { createLumaProviderFileService } from "./luma-provider-file-service.mjs";
 import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
+
+function createCustomerCreditQuotePolicyFromEnv(env) {
+  const policyEnv = {
+    NEON_CUSTOMER_CREDITS_PER_USD: env.CUSTOMER_CREDITS_PER_USD || env.NEON_CUSTOMER_CREDITS_PER_USD,
+    NEON_CUSTOMER_TARGET_MARGIN_BPS: env.CUSTOMER_TARGET_MARGIN_BPS || env.NEON_CUSTOMER_TARGET_MARGIN_BPS,
+    NEON_CUSTOMER_PAYMENT_FEE_BPS: env.CUSTOMER_PAYMENT_FEE_BPS || env.NEON_CUSTOMER_PAYMENT_FEE_BPS,
+    NEON_CUSTOMER_SUPPORT_RESERVE_BPS: env.CUSTOMER_SUPPORT_RESERVE_BPS || env.NEON_CUSTOMER_SUPPORT_RESERVE_BPS,
+    NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS: env.CUSTOMER_FIXED_PAYMENT_FEE_MICROS || env.NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS
+  };
+  if (!policyEnv.NEON_CUSTOMER_CREDITS_PER_USD || !policyEnv.NEON_CUSTOMER_TARGET_MARGIN_BPS) return null;
+  return createCustomerCreditQuotePolicy({ env: policyEnv });
+}
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -93,6 +107,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const queue = createCloudQueue(clientOptions);
   const ledger = createCloudVideoSubmissionLedger(clientOptions);
   const customerCredits = createCloudCustomerCreditLedger(clientOptions);
+  const quoteCustomerCredits = providerDependencies.quoteCustomerCredits || createCustomerCreditQuotePolicyFromEnv(env);
   const privateAssets = createCloudAssetService({
     ...clientOptions,
     storageProvider: env.CLOUD_MEDIA_STORAGE_PROVIDER || "supabase",
@@ -205,14 +220,17 @@ export function createProviderAwareCloudVideoWorkerComposition({
     }
     if (runwayModels.length) {
       const veoOnly = runwayModels.every(model => model === "veo3.1" || model === "veo3.1_fast");
-      const runwayActualCostResolver = resolveRunwayActualCost || (veoOnly && providerEnv.RUNWAY_WORKSPACE_USAGE_ENABLED === "true"
-        ? createRunwayTaskActualCostResolver({
-            apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
-            enabled: true, fetchImpl: providerFetch, timeoutMs: Math.min(timeoutMs, 30000)
-          })
-        : null);
-      if (typeof runwayActualCostResolver !== "function") {
-        throw new Error("Runway cloud registration requires an authoritative task-level billing resolver; Veo requires the linked Enterprise workspace usage gate.");
+      const runwayActualCostResolver = resolveRunwayActualCost || createRunwayTaskReceiptCostResolver();
+      const runwayBillingReadiness = veoOnly
+        ? (runwayActualCostResolver.assertAvailable || (providerEnv.RUNWAY_WORKSPACE_USAGE_ENABLED === "true"
+            ? createRunwayTaskActualCostResolver({
+                apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
+                enabled: true, fetchImpl: providerFetch, timeoutMs: Math.min(timeoutMs, 30000)
+              }).assertAvailable
+            : null))
+        : null;
+      if (veoOnly && typeof runwayBillingReadiness !== "function") {
+        throw new Error("Veo cloud registration requires the linked Enterprise workspace usage gate for task-receipt settlement readiness.");
       }
       if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby", "seedance2_5", "kling_4", "kling_4_flash", "kling3.0_standard", "kling3.0_pro", "kling3.0_4k"].includes(model)) &&
           typeof prepareInput !== "function") {
@@ -232,7 +250,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           prepareInput,
           ingestOutputs: ingest,
           resolveActualCost: runwayActualCostResolver,
-          assertActualCostReady: runwayActualCostResolver.assertAvailable,
+          assertActualCostReady: runwayBillingReadiness,
           timeoutMs: Math.min(timeoutMs, 30000)
         }));
       }
@@ -381,6 +399,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
     enqueue,
     ledger,
     customerCredits,
+    quoteCustomerCredits,
     authorizeSubscription,
     requireSubscription,
     adapters,

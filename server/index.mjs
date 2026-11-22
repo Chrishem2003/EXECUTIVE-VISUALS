@@ -42,6 +42,7 @@ import { createCloudVideoGenerationRepositories } from "./cloud-video-generation
 import { createCloudVideoGenerationDispatch } from "./cloud-video-generation-dispatch.mjs";
 import { createSubscriptionEntitlementReader } from "./subscription-entitlements.mjs";
 import { createNeonStagingApprovalDispatch } from "./neon-staging-application-runtime.mjs";
+import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
@@ -271,6 +272,17 @@ let neonWorkflowJobLookup=null;
 let neonWorkflowJobCancel=null;
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
+const customerCreditPolicyEnv={
+ NEON_CUSTOMER_CREDITS_PER_USD:process.env.CUSTOMER_CREDITS_PER_USD||process.env.NEON_CUSTOMER_CREDITS_PER_USD,
+ NEON_CUSTOMER_TARGET_MARGIN_BPS:process.env.CUSTOMER_TARGET_MARGIN_BPS||process.env.NEON_CUSTOMER_TARGET_MARGIN_BPS,
+ NEON_CUSTOMER_PAYMENT_FEE_BPS:process.env.CUSTOMER_PAYMENT_FEE_BPS||process.env.NEON_CUSTOMER_PAYMENT_FEE_BPS,
+ NEON_CUSTOMER_SUPPORT_RESERVE_BPS:process.env.CUSTOMER_SUPPORT_RESERVE_BPS||process.env.NEON_CUSTOMER_SUPPORT_RESERVE_BPS,
+ NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS:process.env.CUSTOMER_FIXED_PAYMENT_FEE_MICROS||process.env.NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS
+};
+const customerCreditPricingConfigured=Boolean(customerCreditPolicyEnv.NEON_CUSTOMER_CREDITS_PER_USD&&customerCreditPolicyEnv.NEON_CUSTOMER_TARGET_MARGIN_BPS);
+const quoteCustomerCredits=customerCreditPricingConfigured
+ ?createCustomerCreditQuotePolicy({env:customerCreditPolicyEnv})
+ :null;
 const projectCreditPoolApiEnabled=process.env.PROJECT_CREDIT_POOL_API_ENABLED==="true";
 if(projectCreditPoolApiEnabled&&(!cloudTimelineApiEnabled||AUTH_MODE!=="supabase")){
  throw new Error("Project credit pool API requires the verified cloud timeline API and Supabase authentication.");
@@ -283,7 +295,8 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({
  workflowNodeDispatch:input=>neonWorkflowNodeDispatch?neonWorkflowNodeDispatch(input):null,
  workflowNodeDispatchEnabled:()=>typeof neonWorkflowNodeDispatch==="function",
  workflowJobLookup:input=>neonWorkflowJobLookup?neonWorkflowJobLookup(input):null,
- workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null
+ workflowJobCancel:input=>neonWorkflowJobCancel?neonWorkflowJobCancel(input):null,
+ quoteCustomerCredits
 }) : null;
 const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : { ready:false, storage:"disabled" };
 const cloudMediaReadinessBlockers=[];
@@ -1340,6 +1353,37 @@ export function createAppServer() {
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const catalog=getProviderCatalog(process.env);
         const result=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing,lumaUsdPerCredit:process.env.LUMA_USD_PER_CREDIT});
+        if(result.readyForApproval===true&&result.pricing?.quote){
+          if(typeof quoteCustomerCredits!=="function"){
+            result.status="pricing_unverified";result.readyForApproval=false;
+            result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
+            result.reason="Provider pricing is available, but customer-credit pricing is not configured. No approval or paid submission is allowed.";
+          }else{
+            try{
+              const pricedShots=result.pricing.quote.shots;
+              if(!Array.isArray(pricedShots)||pricedShots.length!==body.shots.length)throw new Error("Per-shot provider cost evidence is incomplete.");
+              const perShotCredits=pricedShots.map((shot,index)=>{
+                const amountMicros=Math.round(Number(shot.amount)*1000000);
+                if(shot.currency!=="USD"||!Number.isSafeInteger(amountMicros)||amountMicros<1||
+                   Math.abs(Number(shot.amount)*1000000-amountMicros)>0.0001)throw new Error("Per-shot USD cost could not be normalized.");
+                const credits=quoteCustomerCredits({currency:"USD",amountMicros});
+                if(!Number.isSafeInteger(credits)||credits<1||credits>100000000)throw new Error("Per-shot customer credit quote is outside safe bounds.");
+                return{shotId:String(shot.shotId||body.shots[index]?.id||"shot-"+(index+1)),credits};
+              });
+              const totalCredits=perShotCredits.reduce((sum,item)=>sum+item.credits,0);
+              if(!Number.isSafeInteger(totalCredits)||totalCredits<1||totalCredits>100000000)throw new Error("Total customer credit quote is outside safe bounds.");
+              result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
+                unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
+              }}};
+              result.status="customer_credit_settlement_pending";result.readyForApproval=false;
+              result.reason="Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held until atomic customer-credit reservation and authoritative provider-usage settlement are implemented. Use the customer-credit-gated workflow route for paid cloud generation.";
+            }catch{
+              result.status="pricing_unverified";result.readyForApproval=false;
+              result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
+              result.reason="Customer credits could not be calculated safely for every shot. No approval or paid submission is allowed.";
+            }
+          }
+        }
         send(res,200,result,cors);return;
       }
       if(path==="/api/capabilities"&&req.method==="GET"){
@@ -1791,7 +1835,9 @@ export function createAppServer() {
             if(access?.access_role!=="owner"||!run.project_id||!cloudTimelineApi){fail(res,403,"VIDEO_WORKFLOW_PROJECT_OWNER_REQUIRED","Only the project owner with an authenticated cloud workspace can approve this paid generation quote.");return;}
             const quote=waitingOutput.videoQuote;
             if(!quote||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(quote.quoteId||""))||!/^[A-Za-z0-9._:-]{1,160}$/.test(String(quote.requestId||""))||!/^[a-f0-9]{64}$/.test(String(quote.requestHash||""))||
-               !Number.isFinite(Number(quote.estimatedAmount))||Number(quote.estimatedAmount)<=0||!quote.cloudNode||!quote.cloudValues){
+               !Number.isFinite(Number(quote.estimatedAmount))||Number(quote.estimatedAmount)<=0||
+               !Number.isSafeInteger(Number(quote.estimatedCustomerCredits))||Number(quote.estimatedCustomerCredits)<=0||
+               !quote.cloudNode||!quote.cloudValues){
               fail(res,409,"VIDEO_WORKFLOW_QUOTE_NOT_PENDING","This workflow has no valid pending cloud video quote. Refresh the workflow and request a new quote.");return;
             }
             const approvalBody=await readJson(req,32*1024);
@@ -1810,7 +1856,9 @@ export function createAppServer() {
             const cloudJobId=String(approval.body?.job?.id||"");
             if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cloudJobId)){fail(res,502,"VIDEO_WORKFLOW_JOB_RECEIPT_INVALID","Cloud approval did not return a valid durable job receipt.");return;}
             const receipt={cloudJobId,quoteId:quote.quoteId,requestId:quote.requestId,requestHash:quote.requestHash,
-              routedModel:quote.routedModel,approvedMaxAmount,status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
+              routedModel:quote.routedModel,estimatedProviderCredits:Number(quote.estimatedProviderCredits||quote.estimatedCredits),
+              estimatedCustomerCredits:Number(quote.estimatedCustomerCredits),approvedMaxAmount,
+              status:approval.body?.job?.status||"queued",approvedBy:user.id,approvedAt:now()};
             const enqueueApprovedRun=db.transaction(()=>{
               const claimed=db.prepare("UPDATE workflow_node_runs SET status='blocked',output_json=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='awaiting_approval'").run(json(receipt),waiting.id);
               if(claimed.changes!==1)return null;
