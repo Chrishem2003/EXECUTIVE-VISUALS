@@ -26,7 +26,8 @@ Do not set these values by copying a guessed provider credit rate. Confirm the i
 4. The resulting minimum sale price is converted to integer customer credits, rounded up.
 5. The quote persists provider credits and customer credits in separate fields.
 6. Approval reserves the customer credit amount atomically with the job and provider budget reservation.
-7. Completion reconciles the reservation using authoritative provider usage evidence. Ambiguous outcomes remain pending reconciliation.
+7. Completion verifies task-correlated provider cost in USD, then applies the same server-owned margin, payment-fee and support-reserve policy to that realized USD amount to calculate the final customer-credit debit. Provider credits are retained separately and are never used as customer-credit units.
+8. Ambiguous outcomes or a missing pricing policy remain pending reconciliation; the worker quarantines rather than guessing.
 
 Provider credits are never used as customer credits. The client cannot submit a price, margin, credit rate or credit amount that the server trusts.
 
