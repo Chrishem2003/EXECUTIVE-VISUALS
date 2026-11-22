@@ -181,6 +181,73 @@ revoke all on function executive_visuals.register_generation_credit_revenue_sour
 grant execute on function executive_visuals.register_generation_credit_revenue_source(uuid,uuid,text,uuid,bigint,text,jsonb)
   to service_role;
 
+-- Mirror only verified payment-backed legacy grants into the generation wallet.
+-- This trigger keeps checkout/webhook implementations independent of wallet internals.
+create or replace function executive_visuals.sync_verified_payment_credit_grant_to_generation_wallet()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,executive_visuals
+as $sync_verified_payment_credit_grant_to_generation_wallet$
+declare
+  payment_row executive_visuals.payment_transactions%rowtype;
+  wallet_grant_id uuid;
+  source_kind text;
+  source_revenue bigint;
+  source_currency text;
+  source_evidence jsonb;
+begin
+  if new.entry_type<>'purchase_grant' or new.payment_transaction_id is null then
+    return new;
+  end if;
+
+  select * into payment_row from payment_transactions
+   where id=new.payment_transaction_id and owner_id=new.owner_id
+     and status='successful' and verified_at is not null;
+  if not found then return new; end if;
+
+  if payment_row.metadata->>'payment_purpose'='credit_pack_purchase'
+     and coalesce((payment_row.metadata->>'credit_pack_applied')::boolean,false) then
+    source_kind:='paid_credit_pack';
+    source_revenue:=payment_row.amount_minor;
+    source_currency:=payment_row.currency;
+  elsif payment_row.metadata->>'payment_purpose' in('subscription_purchase','subscription_renewal')
+     and coalesce((payment_row.metadata->>'subscription_applied')::boolean,false) then
+    source_kind:='subscription_allowance';
+    source_revenue:=null;
+    source_currency:=payment_row.currency;
+  else
+    return new;
+  end if;
+
+  source_evidence:=jsonb_build_object(
+    'sourceType',source_kind,
+    'paymentTransactionId',payment_row.id,
+    'legacyCreditLedgerId',new.id,
+    'provider',payment_row.provider,
+    'verifiedAt',payment_row.verified_at
+  );
+  select ledger_id into wallet_grant_id
+    from grant_generation_credits(
+      new.owner_id,new.credit_delta,'payment-credit-ledger:'||new.id::text,
+      new.reason,source_evidence
+    );
+  perform register_generation_credit_revenue_source(
+    new.owner_id,wallet_grant_id,source_kind,payment_row.id,
+    source_revenue,source_currency,source_evidence
+  );
+  return new;
+end;
+$sync_verified_payment_credit_grant_to_generation_wallet$;
+revoke all on function executive_visuals.sync_verified_payment_credit_grant_to_generation_wallet()
+  from public,anon,authenticated;
+grant execute on function executive_visuals.sync_verified_payment_credit_grant_to_generation_wallet()
+  to service_role;
+drop trigger if exists ev_sync_verified_payment_credit_grant on executive_visuals.credit_ledger;
+create trigger ev_sync_verified_payment_credit_grant
+after insert on executive_visuals.credit_ledger
+for each row execute function executive_visuals.sync_verified_payment_credit_grant_to_generation_wallet();
+
 create or replace function executive_visuals.allocate_generation_credit_revenue_for_reservation(p_reservation_id uuid)
 returns jsonb
 language plpgsql
