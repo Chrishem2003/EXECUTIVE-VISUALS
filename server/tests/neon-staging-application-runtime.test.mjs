@@ -9,7 +9,8 @@ const baseEnv={
   AUTH_MODE:"supabase",
   SUPABASE_URL:"https://auth.example.test",
   SUPABASE_PUBLISHABLE_KEY:"public-test-key",
-  NEON_CUSTOMER_CREDITS_PER_USD:"100"
+  NEON_CUSTOMER_CREDITS_PER_USD:"100",
+  NEON_CUSTOMER_MIN_GROSS_MARGIN_BPS:"3000"
 };
 function readyRuntime(){
   const state={closed:false,quote:null};
@@ -40,7 +41,7 @@ test("builds a deterministic server-side USD credit quote using integer arithmet
   const runtime=readyRuntime();
   const result=await createNeonStagingApprovalDispatch({env:baseEnv,db:{prepare(){}},canWriteProject:()=>true,createRuntime:runtime.factory});
   assert.equal(result.enabled,true);
-  assert.equal(runtime.state.quote({currency:"USD",amountMicros:1_250_000}),125);
+  assert.equal(runtime.state.quote({currency:"USD",amountMicros:1_250_000}),179);
   assert.equal(runtime.state.quote({currency:"USD",amountMicros:1}),1);
   assert.throws(()=>runtime.state.quote({currency:"EUR",amountMicros:1_000_000}),/requires a verified USD quote/);
   assert.throws(()=>runtime.state.quote({currency:"USD",amountMicros:1_000_000_000_001}),/exceeds/);
