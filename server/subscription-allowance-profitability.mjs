@@ -6,7 +6,7 @@ const PROPOSED_SUBSCRIPTION_PLANS=Object.freeze([
  Object.freeze({planCode:"studio",name:"Studio",monthlyPriceMinor:7900,currency:"USD"}),
  Object.freeze({planCode:"agency",name:"Agency",monthlyPriceMinor:19900,currency:"USD"})
 ]);
-const fail=(code,message)=>Object.assign(new Error(message),{code});
+const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 function integer(value,label,{min=0,max=MAX_MINOR}={}){
  if(!Number.isSafeInteger(value)||value<min||value>max)fail("SUBSCRIPTION_ECONOMICS_INPUT_INVALID",label+" must be a bounded integer.");
  return value;
