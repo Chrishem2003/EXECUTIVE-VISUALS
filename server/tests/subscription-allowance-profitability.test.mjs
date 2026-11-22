@@ -7,7 +7,7 @@ const base={
  refundReserveBps:200,supportReserveMinor:20,infrastructureReserveMinor:30
 };
 const evidence={
- status:"approved_measured",approved:true,source:"reconciled provider usage ledger",
+ status:"verified_measured",approved:false,source:"reconciled provider usage ledger",
  rateCardVersion:"runway-2026-11-v1",sampleJobs:100,
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
@@ -21,18 +21,20 @@ test("uses the four fixed-price tiers but leaves allowances unset without approv
  assert.ok(result.plans.every(p=>p.publishable===false&&p.allowanceStatus==="awaiting_approved_cost_evidence"));
 });
 
-test("calculates conservative credit scenarios from approved cost evidence and integer minor-unit arithmetic",()=>{
+test("calculates conservative credit scenarios from verified evidence while keeping plans unpublished",()=>{
  const result=simulateSubscriptionAllowances({...base,providerCostPerCustomerCreditMinor:2,costEvidence:evidence});
  assert.equal(result.creditAllowanceCalculated,true);
  assert.deepEqual(result.plans.map(p=>p.estimatedIncludedCredits),[98,381,1090,2791]);
  assert.deepEqual(result.plans.map(p=>p.providerCostBudgetMinor),[196,763,2180,5582]);
  assert.ok(result.plans.every(p=>p.publishable===false));
+ assert.equal(result.costEvidence.status,"verified_measured");
+ assert.equal(result.costEvidence.approved,false);
  assert.equal(result.costEvidence.rateCardVersion,"runway-2026-11-v1");
 });
 
-test("never accepts unapproved, incomplete or time-inverted cost evidence",()=>{
+test("rejects approval-marked, incomplete or time-inverted cost evidence",()=>{
  for(const costEvidence of [
-  {...evidence,approved:false},
+  {...evidence,approved:true},
   {...evidence,status:"forecast"},
   {...evidence,source:""},
   {...evidence,rateCardVersion:""},

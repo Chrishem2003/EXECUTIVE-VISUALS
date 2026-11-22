@@ -24,16 +24,16 @@ function validateEvidence(evidence,costPerCreditMinor){
  if(costPerCreditMinor===undefined||costPerCreditMinor===null)return null;
  integer(costPerCreditMinor,"provider cost per customer credit",{min:1});
  if(!evidence||typeof evidence!=="object"||Array.isArray(evidence)||
-    evidence.status!=="approved_measured"||evidence.approved!==true||
+    evidence.status!=="verified_measured"||evidence.approved!==false||
     typeof evidence.source!=="string"||evidence.source.trim().length<3||
     typeof evidence.rateCardVersion!=="string"||evidence.rateCardVersion.trim().length<1||
     !Number.isSafeInteger(evidence.sampleJobs)||evidence.sampleJobs<1)
-  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require explicitly approved measured provider-cost evidence, a source, rate-card version and sample size.");
+  fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Credit allowances require server-verified measured provider-cost evidence; finance/product approval is a separate release gate. A source, calculation-method version and sample size are also required.");
  const start=date(evidence.periodStart,"evidence periodStart");
  const end=date(evidence.periodEnd,"evidence periodEnd");
  if(end<=start)fail("SUBSCRIPTION_ECONOMICS_EVIDENCE_INVALID","Evidence periodEnd must follow periodStart.");
  return Object.freeze({
-  status:"approved_measured",source:evidence.source.trim().slice(0,240),
+  status:"verified_measured",approved:false,source:evidence.source.trim().slice(0,240),
   rateCardVersion:evidence.rateCardVersion.trim().slice(0,100),
   sampleJobs:evidence.sampleJobs,periodStart:new Date(start).toISOString(),
   periodEnd:new Date(end).toISOString()
