@@ -66,15 +66,6 @@ test("Kling 4.0 input video uses the published combined-duration formula and HDR
   assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",audio:false,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:"yes",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
-test("Kling 4.0 input video adds its lower input rate to output and applies HDR surcharge",()=>{
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,inputVideoSeconds:6,resolution:"1080p",pricingDate:date}).estimatedCredits,376);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",pricingDate:date}).estimatedCredits,549);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"4k",hdr:true,pricingDate:date}).estimatedCredits,627);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:true,pricingDate:date}).estimatedCredits,282);
-  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",audio:false,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
-  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",hdr:"yes",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
-});
-
 test("refuses unsupported models and malformed or missing price inputs",()=>{
   assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
