@@ -54,6 +54,7 @@ test("billing workspace shows available, reserved and total customer credits", (
 test("storyboard preflight requires a configured customer quote before approval", () => {
   assert.match(index, /Customer credit pricing is not configured\. No approval or paid submission is allowed\./);
   assert.match(index, /Per-shot customer credit quote is outside safe bounds/);
+  assert.match(index, /customer_credit_settlement_pending/);
   assert.match(app, /Estimated customer credits:/);
 });
 
