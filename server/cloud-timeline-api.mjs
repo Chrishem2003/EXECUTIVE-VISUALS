@@ -223,8 +223,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(method==="GET"&&!memberId){
       const members=await projectCreditPoolApi.listMembers({ownerId,projectId});
       let seatSummary=null,seatSummaryError=null;
-      try{seatSummary=await projectCreditPoolApi.getTeamSeatSummary({ownerId,projectId});}
-      catch(error){seatSummaryError={code:String(error?.code||"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"),message:String(error?.message||"A valid team seat entitlement is required to add members.").slice(0,300)};}
+      if(typeof projectCreditPoolApi.getTeamSeatSummary==="function"){
+       try{seatSummary=await projectCreditPoolApi.getTeamSeatSummary({ownerId,projectId});}
+       catch(error){seatSummaryError={code:String(error?.code||"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"),message:String(error?.message||"A valid team seat entitlement is required to add members.").slice(0,300)};}
+      }else seatSummaryError={code:"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED",message:"Team seat entitlement reporting is unavailable in this runtime."};
       return response(200,{members,seatSummary,seatSummaryError});
      }
      if(method==="POST"&&!memberId){
