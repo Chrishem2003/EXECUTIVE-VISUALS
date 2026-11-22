@@ -413,7 +413,7 @@ export function createFinancialIntelligenceApi({
         return response(201,{subscription:{id:subscriptionId,status:"active",planCode},message:"Subscription entitlement granted and audited."});
       }
       if(path==="/api/billing/credits"&&method==="GET"){
-        const result=await rpc("get_credit_balance",{p_owner_id:ownerId});
+        const result=await rpc("get_generation_credit_balance",{p_owner_id:ownerId});
         const balance=Array.isArray(result)?result[0]:result;
         if(!balance||!Number.isSafeInteger(Number(balance.ledger_balance))||
           !Number.isSafeInteger(Number(balance.reserved_credits))||
