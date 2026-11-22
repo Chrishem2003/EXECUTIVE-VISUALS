@@ -7,7 +7,7 @@ const base={
  refundReserveBps:200,supportReserveMinor:20,infrastructureReserveMinor:30
 };
 const evidence={
- status:"approved_measured",approved:true,source:"reconciled provider usage ledger",
+ status:"verified_measured",approved:false,source:"reconciled provider usage ledger",
  rateCardVersion:"runway-2026-11-v1",sampleJobs:100,
  periodStart:"2026-10-01T00:00:00.000Z",periodEnd:"2026-11-01T00:00:00.000Z"
 };
