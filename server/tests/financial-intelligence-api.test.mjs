@@ -375,6 +375,44 @@ test("credit checkout idempotency key cannot replay for a different customer ema
  assert.equal(providerCalled,false);
 });
 
+test("credit checkout refuses non-credit-pack products before contacting Flutterwave",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))return json([]);
+  if(target.includes("billing_products?select=product_code,product_type"))return json([{
+   product_code:"creator_credits",product_type:"subscription",name:"Not a pack",
+   amount_minor:5000,currency:"UGX",credit_units:100
+  }]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,
+  idempotencyKey:"credit-product-type-01",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"BILLING_PRODUCT_INVALID");
+ assert.equal(providerCalled,false);
+});
+
+test("legacy pending credit checkout without immutable snapshot is held for reconciliation",async()=>{
+ let providerCalled=false;
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("payment_transactions?select=id,customer_email,tx_ref,status,provider_transaction_id,metadata"))
+   return json([{id:paymentId,customer_email:"buyer@example.com",tx_ref:"EVSprior",status:"pending",
+    metadata:{product_code:"creator_credits",mobile_money_network:"MTN"}}]);
+  if(target.includes("flutterwave"))providerCalled=true;
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/billing/checkout",ownerId:owner,
+  idempotencyKey:"credit-legacy-pending-01",
+  body:{productCode:"creator_credits",network:"MTN",email:"buyer@example.com",firstName:"Test",lastName:"Buyer",phoneNumber:"0771234567"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"CREDIT_PACK_CHECKOUT_RECONCILIATION_REQUIRED");
+ assert.equal(providerCalled,false);
+});
+
 test("payment webhook verifies Flutterwave charge and atomically fulfils once",async()=>{
   const rawBody=Buffer.from(JSON.stringify({type:"charge.completed",data:{id:"chg_paid",status:"succeeded"}}));
   const signature=createHmac("sha256",secret).update(rawBody).digest("base64");
