@@ -71,9 +71,9 @@ alter table executive_visuals.billing_credit_revenue_allocation_runs enable row 
 revoke all on executive_visuals.billing_credit_revenue_sources from public,anon,authenticated;
 revoke all on executive_visuals.billing_credit_revenue_allocations from public,anon,authenticated;
 revoke all on executive_visuals.billing_credit_revenue_allocation_runs from public,anon,authenticated;
-grant select,insert on executive_visuals.billing_credit_revenue_sources to service_role;
-grant select,insert on executive_visuals.billing_credit_revenue_allocations to service_role;
-grant select,insert on executive_visuals.billing_credit_revenue_allocation_runs to service_role;
+revoke all on executive_visuals.billing_credit_revenue_sources from service_role;
+revoke all on executive_visuals.billing_credit_revenue_allocations from service_role;
+revoke all on executive_visuals.billing_credit_revenue_allocation_runs from service_role;
 
 create or replace function executive_visuals.register_generation_credit_revenue_source(
   p_owner_id uuid,
@@ -436,6 +436,8 @@ revoke all on function executive_visuals.allocate_generation_credit_revenue_for_
 -- rolls back the credit settlement as well, preventing unaccounted successful jobs.
 alter function executive_visuals.settle_generation_credit_reservation(uuid,bigint,jsonb)
   rename to settle_generation_credit_reservation_pre_revenue_batch71;
+revoke all on function executive_visuals.settle_generation_credit_reservation_pre_revenue_batch71(uuid,bigint,jsonb)
+  from public,anon,authenticated,service_role;
 create or replace function executive_visuals.settle_generation_credit_reservation(
   p_reservation_id uuid,p_actual_credits bigint,p_evidence jsonb
 ) returns table(balance bigint,adjustment bigint,replayed boolean)
