@@ -426,6 +426,25 @@ export function createFinancialIntelligenceApi({
           available:Number(balance.available_credits)
         }});
       }
+      if(path==="/api/billing/credits/history"&&method==="GET"){
+        const limit=query.limit==null?50:Number(query.limit);
+        const offset=query.offset==null?0:Number(query.offset);
+        if(!Number.isSafeInteger(limit)||limit<1||limit>100||
+          !Number.isSafeInteger(offset)||offset<0||offset>100000)
+          return error(400,"CREDIT_HISTORY_PAGINATION_INVALID","Credit history limit must be 1–100 and offset must be between 0 and 100,000.");
+        const result=await dbRequest("billing_credit_ledger?select=id,amount,event_type,reference_id,description,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&order=created_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset);
+        const rows=Array.isArray(result.data)?result.data:[];
+        const entries=rows.slice(0,limit).map(row=>({
+          id:String(row.id||""),amount:Number(row.amount),eventType:String(row.event_type||""),
+          referenceId:row.reference_id==null?null:String(row.reference_id),
+          description:String(row.description||""),createdAt:String(row.created_at||"")
+        }));
+        if(entries.some(row=>!UUID.test(row.id)||!Number.isSafeInteger(row.amount)||row.amount===0||
+          !["grant","admin_adjustment","generation_reserve","generation_refund","generation_settlement","expiry"].includes(row.eventType)||
+          !Number.isFinite(Date.parse(row.createdAt))))
+          throw Object.assign(new Error("Credit history returned an invalid ledger record."),{code:"CREDIT_HISTORY_INVALID"});
+        return response(200,{entries,hasMore:rows.length>limit,limit,offset});
+      }
       if(path==="/api/billing/products"&&method==="GET"){
         const result=await dbRequest("billing_products?select=product_code,name,description,product_type,amount_minor,currency,credit_units&active=eq.true&order=amount_minor.asc");
         return response(200,{products:Array.isArray(result.data)?result.data:[]});

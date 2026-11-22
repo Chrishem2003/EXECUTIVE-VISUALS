@@ -414,6 +414,46 @@ test("credit balance endpoint fails closed on malformed database values",async()
 });
 
 
+test("customer credit activity history is owner-scoped, bounded and omits private evidence",async()=>{
+ let requestUrl="";
+ const ledger=[{
+  id:"44444444-4444-4444-8444-444444444444",amount:500,event_type:"grant",
+  reference_id:"55555555-5555-4555-8555-555555555555",description:"Monthly subscription grant",
+  created_at:"2026-11-22T08:00:00Z",idempotency_key:"private-key",evidence:{providerToken:"must-not-leak"}
+ }];
+ const service=api(async url=>{
+  requestUrl=String(url);return json(ledger);
+ });
+ const result=await service.handle({method:"GET",path:"/api/billing/credits/history",ownerId:owner,query:{limit:"20",offset:"0"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.entries.length,1);
+ assert.equal(result.body.entries[0].amount,500);
+ assert.equal(result.body.entries[0].eventType,"grant");
+ assert.equal(result.body.hasMore,false);
+ assert.ok(requestUrl.includes("/billing_credit_ledger?"));
+ assert.ok(requestUrl.includes("owner_id=eq."+owner));
+ assert.ok(requestUrl.includes("limit=21"));
+ assert.ok(requestUrl.includes("order=created_at.desc,id.desc"));
+ assert.equal(Object.hasOwn(result.body.entries[0],"evidence"),false);
+ assert.equal(Object.hasOwn(result.body.entries[0],"idempotency_key"),false);
+});
+
+test("customer credit activity history rejects invalid pagination before database access",async()=>{
+ const service=api(async()=>{throw new Error("Invalid pagination must not query the ledger.");});
+ for(const query of [{limit:"0"},{limit:"101"},{offset:"-1"},{offset:"100001"},{limit:"1.5"}]){
+  const result=await service.handle({method:"GET",path:"/api/billing/credits/history",ownerId:owner,query});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"CREDIT_HISTORY_PAGINATION_INVALID");
+ }
+});
+
+test("customer credit activity history fails closed on malformed ledger rows",async()=>{
+ const service=api(async()=>json([{id:"not-a-uuid",amount:0,event_type:"grant",created_at:"invalid"}]));
+ const result=await service.handle({method:"GET",path:"/api/billing/credits/history",ownerId:owner});
+ assert.equal(result.status,502);
+ assert.equal(result.body.error.code,"CREDIT_HISTORY_INVALID");
+});
+
 test("customer invoice history is owner-scoped and never exposes private object paths",async()=>{
   let requestUrl="";
   const service=api(async(url)=>{
