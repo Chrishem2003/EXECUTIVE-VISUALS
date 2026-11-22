@@ -62,7 +62,6 @@ on:
       - "supabase/migrations/20261122160000_audited_subscription_allowance_publication_batch_60.sql"
       - "scripts/prepare-subscription-allowance-approvals-postgres.sql"
       - "scripts/verify-subscription-allowance-approvals-postgres.sql"
-      - "scripts/prepare-subscription-allowance-approvals-postgres.sql"
       - "server/tests/subscription-allowance-persistence-batch-59.test.mjs"
       - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
@@ -122,6 +121,7 @@ on:
       - "scripts/verify-neon-worker-concurrency.mjs"
       - "supabase/migrations/20261112090000_persistent_financial_audit_ledger_batch_30.sql"
       - "supabase/migrations/20261122150000_persistent_subscription_allowance_approvals_batch_59.sql"
+      - "supabase/migrations/20261122160000_audited_subscription_allowance_publication_batch_60.sql"
       - "scripts/prepare-subscription-allowance-approvals-postgres.sql"
       - "scripts/verify-subscription-allowance-approvals-postgres.sql"
       - "server/tests/subscription-allowance-persistence-batch-59.test.mjs"
