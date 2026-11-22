@@ -16,9 +16,10 @@ export function createProjectCreditPoolApi({url=process.env.SUPABASE_URL,service
    const raw=await response.text();let data=null;
    if(raw){try{data=JSON.parse(raw);}catch{throw Object.assign(new Error("Project credit pool service returned invalid database data."),{code:"PROJECT_CREDIT_POOL_RESPONSE_INVALID",status:502});}}
    if(!response.ok){
-    const code=typeof data?.code==="string"&&/^[A-Z0-9_]{1,100}$/.test(data.code)?data.code:"PROJECT_CREDIT_POOL_DATABASE_ERROR";
     const message=typeof data?.message==="string"&&data.message.length<=300?data.message:"Project credit pool operation failed.";
-    throw Object.assign(new Error(message),{code,status:response.status});
+    const businessCode=/^[A-Z][A-Z0-9_]{1,100}$/.test(message)?message:
+     (typeof data?.code==="string"&&/^[A-Z][A-Z0-9_]{1,100}$/.test(data.code)?data.code:"PROJECT_CREDIT_POOL_DATABASE_ERROR");
+    throw Object.assign(new Error(message),{code:businessCode,status:response.status});
    }
    return data;
   }catch(error){
