@@ -1271,11 +1271,38 @@ export function createAppServer() {
         const pricing=parseVideoPricingCatalog(process.env.VIDEO_MODEL_PRICING_JSON||"");
         const catalog=getProviderCatalog(process.env);
         const preflight=preflightVideoProduction({shots:body.shots,providerCatalog:catalog,pricingCatalog:pricing,lumaUsdPerCredit:process.env.LUMA_USD_PER_CREDIT});
+        if(preflight.readyForApproval===true&&preflight.pricing?.quote){
+          try{
+            if(typeof quoteCustomerCredits!=="function")throw new Error("Customer-credit pricing is not configured.");
+            const pricedShots=preflight.pricing.quote.shots;
+            if(!Array.isArray(pricedShots)||pricedShots.length!==body.shots.length)throw new Error("Per-shot provider cost evidence is incomplete.");
+            const perShot=pricedShots.map((shot,index)=>{
+              const amountMicros=Math.round(Number(shot.amount)*1000000);
+              if(shot.currency!=="USD"||!Number.isSafeInteger(amountMicros)||amountMicros<1||
+                Math.abs(Number(shot.amount)*1000000-amountMicros)>0.0001)throw new Error("Per-shot USD cost could not be normalized.");
+              const credits=quoteCustomerCredits({currency:"USD",amountMicros});
+              if(!Number.isSafeInteger(credits)||credits<1||credits>100000000)throw new Error("Per-shot customer credit quote is outside safe bounds.");
+              return{shotId:String(shot.shotId||body.shots[index]?.id||"shot-"+(index+1)),credits};
+            });
+            const totalCredits=perShot.reduce((sum,item)=>sum+item.credits,0);
+            if(!Number.isSafeInteger(totalCredits)||totalCredits<1||totalCredits>100000000)throw new Error("Total customer credit quote is outside safe bounds.");
+            preflight.pricing={...preflight.pricing,quote:{...preflight.pricing.quote,customerCreditQuote:{
+              unit:"customer_credits",totalCredits,perShot,pricingBasis:"server-side cost, margin and fee policy"
+            }}};
+          }catch{
+            preflight.status="pricing_unverified";preflight.readyForApproval=false;
+            preflight.reason="Customer-credit pricing is unavailable or could not be calculated safely. No approval or paid submission is allowed.";
+          }
+        }
         let approval;
         try{
-          approval=buildVideoGenerationApproval({shots:body.shots,preflight,budget:body.budget,confirmed:body.confirm===true});
+          approval=buildVideoGenerationApproval({shots:body.shots,preflight,budget:body.budget,
+            customerCreditBudgetCredits:body.customerCreditBudgetCredits,confirmed:body.confirm===true});
         }catch(error){
-          const status=error.code==="VIDEO_APPROVAL_CONFIRMATION_REQUIRED"?400:error.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED"?409:error.code==="VIDEO_APPROVAL_PREFLIGHT_REQUIRED"||error.code==="VIDEO_APPROVAL_PRICE_UNVERIFIED"?409:400;
+          const status=error.code==="VIDEO_APPROVAL_CONFIRMATION_REQUIRED"||error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_REQUIRED"?400:
+            error.code==="VIDEO_APPROVAL_BUDGET_EXCEEDED"||error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_EXCEEDED"||
+            error.code==="VIDEO_APPROVAL_PREFLIGHT_REQUIRED"||error.code==="VIDEO_APPROVAL_PRICE_UNVERIFIED"||
+            error.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_REQUIRED"?409:400;
           fail(res,status,error.code||"VIDEO_APPROVAL_INVALID",error.message||"Production approval could not be created.");return;
         }
         const existing=db.prepare("SELECT * FROM video_generation_approvals WHERE owner_id=? AND idempotency_key=?").get(user.id,idempotencyKey);
@@ -1283,13 +1310,14 @@ export function createAppServer() {
           if(existing.request_hash!==approval.requestHash||existing.project_id!==projectId||existing.currency!==approval.currency||existing.quoted_amount_micros!==approval.quotedAmountMicros||existing.budget_ceiling_micros!==approval.budgetCeilingMicros){
             fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different approval request.");return;
           }
-          send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
+          const replaySnapshot=JSON.parse(existing.snapshot_json||"{}");
+          send(res,200,{approval:{id:existing.id,status:existing.status,requestHash:existing.request_hash,currency:existing.currency,quotedAmount:existing.quoted_amount_micros/1000000,budgetCeiling:existing.budget_ceiling_micros/1000000,customerCredits:replaySnapshot.quote?.customerCreditQuote?.totalCredits??null,customerCreditCeiling:replaySnapshot.customerCreditBudgetCredits??null,createdAt:existing.created_at},idempotentReplay:true,requestsSubmitted:false},cors);return;
         }
         const id=randomUUID();
         db.prepare("INSERT INTO video_generation_approvals(id,owner_id,project_id,idempotency_key,request_hash,snapshot_json,currency,quoted_amount_micros,budget_ceiling_micros,status) VALUES(?,?,?,?,?,?,?,?,?,'approved_pending_submission')")
           .run(id,user.id,projectId,idempotencyKey,approval.requestHash,approval.snapshotJson,approval.currency,approval.quotedAmountMicros,approval.budgetCeilingMicros);
-        audit(db,user.id,"video_generation.approved","video_generation_approval",id,{requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmountMicros:approval.quotedAmountMicros,budgetCeilingMicros:approval.budgetCeilingMicros,status:approval.status},projectId);
-        send(res,201,{approval:{id,status:approval.status,requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmount:approval.quotedAmountMicros/1000000,budgetCeiling:approval.budgetCeilingMicros/1000000},requestsSubmitted:false,message:"Budget approval recorded. No provider request, credit reservation or generation job was submitted."},cors);return;
+        audit(db,user.id,"video_generation.approved","video_generation_approval",id,{requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmountMicros:approval.quotedAmountMicros,budgetCeilingMicros:approval.budgetCeilingMicros,customerCredits:approval.customerCreditQuote.totalCredits,customerCreditBudgetCredits:approval.customerCreditBudgetCredits,status:approval.status},projectId);
+        send(res,201,{approval:{id,status:approval.status,requestHash:approval.requestHash,shotCount:approval.shotCount,currency:approval.currency,quotedAmount:approval.quotedAmountMicros/1000000,budgetCeiling:approval.budgetCeilingMicros/1000000,customerCredits:approval.customerCreditQuote.totalCredits,customerCreditCeiling:approval.customerCreditBudgetCredits},requestsSubmitted:false,message:"Budget and customer-credit ceiling approval recorded. No provider request, credit reservation or generation job was submitted."},cors);return;
       }
       if(path==="/api/video-production-approvals"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
@@ -1375,8 +1403,8 @@ export function createAppServer() {
               result.pricing={...result.pricing,quote:{...result.pricing.quote,customerCreditQuote:{
                 unit:"customer_credits",totalCredits,perShot:perShotCredits,pricingBasis:"server-side cost, margin and fee policy"
               }}};
-              result.status="customer_credit_settlement_pending";result.readyForApproval=false;
-              result.reason="Provider cost and customer credit estimates are available, but the direct storyboard shot queue is held until atomic customer-credit reservation and authoritative provider-usage settlement are implemented. Use the customer-credit-gated workflow route for paid cloud generation.";
+              result.status="ready_for_approval";result.readyForApproval=true;
+              result.reason="Provider cost and customer-credit estimates are ready for explicit USD and credit-ceiling approval. This records an approval snapshot only; paid cloud submission remains blocked until atomic customer-credit reservation and authoritative provider-usage settlement are configured.";
             }catch{
               result.status="pricing_unverified";result.readyForApproval=false;
               result.pricing={...result.pricing,customerCreditQuote:{status:"unavailable"}};
