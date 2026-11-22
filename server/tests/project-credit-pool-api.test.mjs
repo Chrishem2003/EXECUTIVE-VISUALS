@@ -76,6 +76,9 @@ test("cloud project routes parse mutation bodies and expose the guarded shared c
  assert.match(app,/project-credit-pool-configure/);
  assert.match(app,/project-credit-pool-fund/);
  assert.match(app,/data-project-credit-member-policy/);
+ assert.match(app,/project-member-add/);
+ assert.match(app,/data-project-member-remove/);
+ assert.match(cloudApi,/projectMembersMatch/);
 });
 
 test("cloud team API validates registered-account member invitations and removal identities",async()=>{
