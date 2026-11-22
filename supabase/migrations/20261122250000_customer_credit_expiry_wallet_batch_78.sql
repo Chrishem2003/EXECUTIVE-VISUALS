@@ -10,6 +10,22 @@ create index if not exists billing_credit_revenue_sources_expiry_idx
   on executive_visuals.billing_credit_revenue_sources(owner_id,expires_at,id)
   where expires_at is not null;
 
+create or replace function executive_visuals.try_parse_credit_period_end(p_value text)
+returns timestamptz
+language plpgsql
+immutable
+set search_path=pg_catalog
+as $try_parse_credit_period_end$
+begin
+  if p_value is null or btrim(p_value)='' then return null; end if;
+  return p_value::timestamptz;
+exception when others then
+  return null;
+end;
+$try_parse_credit_period_end$;
+revoke all on function executive_visuals.try_parse_credit_period_end(text)
+  from public,anon,authenticated,service_role;
+
 create or replace function executive_visuals.set_generation_credit_source_expiry()
 returns trigger
 language plpgsql
@@ -32,7 +48,7 @@ begin
   end;
 
   if legacy_grant_id is not null then
-    select nullif(metadata->>'period_end','')::timestamptz
+    select executive_visuals.try_parse_credit_period_end(metadata->>'period_end')
       into period_end
       from executive_visuals.credit_ledger
      where id=legacy_grant_id and owner_id=new.owner_id
@@ -86,7 +102,7 @@ update executive_visuals.billing_credit_revenue_sources s
       where l.owner_id=s.owner_id
         and l.payment_transaction_id=s.source_reference_id
         and l.entry_type='purchase_grant'
-        and nullif(l.metadata->>'period_end','') is not null
+        and executive_visuals.try_parse_credit_period_end(l.metadata->>'period_end') is not null
    );
 
 create table if not exists executive_visuals.billing_credit_source_expirations (
@@ -202,6 +218,19 @@ set search_path=pg_catalog,executive_visuals
 as $reserve_generation_credits$
 begin
   perform executive_visuals.expire_due_subscription_credits(p_owner_id,clock_timestamp());
+  -- If expiry was deferred because another job is still open, block additional
+  -- reservations rather than letting stale subscription credits be spent.
+  if exists(
+    select 1 from executive_visuals.billing_credit_reservations r
+     where r.owner_id=p_owner_id and r.state='reserved'
+  ) and exists(
+    select 1 from executive_visuals.billing_credit_revenue_sources s
+     where s.owner_id=p_owner_id and s.source_type='subscription_allowance'
+       and s.expires_at is not null and s.expires_at<=clock_timestamp()
+       and not exists(select 1 from executive_visuals.billing_credit_source_expirations e where e.source_id=s.id)
+  ) then
+    raise exception 'BILLING_CREDIT_EXPIRY_DEFERRED_OPEN_RESERVATION' using errcode='55000';
+  end if;
   return query
     select * from executive_visuals.reserve_generation_credits_pre_batch78(
       p_owner_id,p_job_id,p_credits,p_idempotency_key
