@@ -7,14 +7,22 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 
 const now=new Date();
-const pricing=[{
- provider:"runway",model:"kling_4",currency:"USD",
- sourceUrl:"https://dev.runway.com/pricing",
- observedAt:new Date(now.getTime()-3600000).toISOString(),
- expiresAt:new Date(now.getTime()+86400000).toISOString(),
- ratesPerSecond:{"1080p":0.235},
- minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1
-}];
+const pricing=[
+ {provider:"runway",model:"kling_4",currency:"USD",sourceUrl:"https://dev.runway.com/pricing",
+  observedAt:new Date(now.getTime()-3600000).toISOString(),expiresAt:new Date(now.getTime()+86400000).toISOString(),
+  ratesPerSecond:{"1080p":0.235},minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1},
+ {provider:"runway",model:"gen4.5",currency:"USD",sourceUrl:"https://dev.runway.com/pricing",
+  observedAt:new Date(now.getTime()-3600000).toISOString(),expiresAt:new Date(now.getTime()+86400000).toISOString(),
+  ratesPerSecond:{"1080p":0.12},minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1},
+ {provider:"runway",model:"wan3",currency:"USD",sourceUrl:"https://dev.runway.com/pricing",
+  observedAt:new Date(now.getTime()-3600000).toISOString(),expiresAt:new Date(now.getTime()+86400000).toISOString(),
+  ratesPerSecond:{"1080p":0.10},minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1}
+];
+const qualityEvidence=[
+ {provider:"runway",model:"kling_4",verified:true,sampleCount:45,qualityScore:0.96,p95LatencyMs:5500,evaluationVersion:"studio-eval-2026-11"},
+ {provider:"runway",model:"gen4.5",verified:true,sampleCount:60,qualityScore:0.94,p95LatencyMs:4200,evaluationVersion:"studio-eval-2026-11"},
+ {provider:"runway",model:"wan3",verified:true,sampleCount:70,qualityScore:0.86,p95LatencyMs:3500,evaluationVersion:"studio-eval-2026-11"}
+];
 const policy={
  CUSTOMER_CREDIT_CURRENCY:"USD",
  CUSTOMER_CREDIT_VALUE_MINOR:"1",
@@ -35,7 +43,7 @@ const child=spawn(process.execPath,["server/index.mjs"],{
  cwd:process.cwd(),
  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",
   API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),
-  WEB_ROOT:webDir,DISABLE_WORKER:"true",VIDEO_MODEL_PRICING_JSON:JSON.stringify(pricing),...policy},
+  WEB_ROOT:webDir,DISABLE_WORKER:"true",VIDEO_MODEL_PRICING_JSON:JSON.stringify(pricing),VIDEO_MODEL_QUALITY_EVIDENCE_JSON:JSON.stringify(qualityEvidence),...policy},
  stdio:["ignore","pipe","pipe"]
 });
 let stderr="";
@@ -91,6 +99,20 @@ test("multi-shot production quote aggregates provider costs and returns a single
  assert.equal(body.customerCreditQuote.available,true);
  assert.equal(body.customerCreditQuote.billable,false);
  assert.ok(body.customerCreditQuote.customerCredits>255);
+});
+
+test("model recommendations require trusted quality evidence and never auto-route",async()=>{
+ const cookie=await register("commercial-model-owner@example.test");
+ const response=await post("/api/video-model-recommendations",{
+  provider:"runway",model:"kling_4",durationSeconds:10,resolution:"1080p",audioMode:"none",referenceImageCount:0
+ },cookie);
+ assert.equal(response.status,200,await response.text());
+ const body=await response.json();
+ assert.equal(body.evidenceConfigured,true);
+ assert.equal(body.automaticRouting,false);
+ assert.equal(body.recommendation.automaticRouting,false);
+ assert.equal(body.recommendation.recommended.model,"gen4.5");
+ assert.equal(body.recommendation.candidates.find(item=>item.model==="wan3").eligible,false);
 });
 
 test("unknown provider rates never receive a guessed customer-credit quote",async()=>{
