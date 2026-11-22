@@ -37,6 +37,7 @@ on:
       - feat/customer-credit-wallet-dashboard-batch-79-2026-11-22
       - feat/verified-credit-pack-topups-batch-80-2026-11-22
       - feat/admin-credit-adjustments-batch-81-2026-11-23
+      - feat/provider-cost-credit-price-floors-batch-82-2026-11-23
   pull_request:
 
 permissions:
@@ -218,6 +219,8 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/admin-credit-adjustments-postgres-integration-batch-81.sql
       - name: Test Batch 81 administrator credit adjustment API and database contract
         run: npm run verify:admin-credit-adjustments
+      - name: Verify Batch 82 provider-backed video credit price floors
+        run: npm run verify:provider-cost-credit-price-floors
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
