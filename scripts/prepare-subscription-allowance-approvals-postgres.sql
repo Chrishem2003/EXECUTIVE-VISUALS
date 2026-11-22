@@ -19,3 +19,29 @@ create table if not exists executive_visuals.platform_admins(
  reason text not null,
  created_at timestamptz not null default now()
 );
+
+create table if not exists executive_visuals.subscription_plans(
+ id uuid primary key default gen_random_uuid(),
+ plan_code text not null unique,
+ name text not null,
+ description text not null default '',
+ status text not null default 'draft' check(status in('draft','active','archived')),
+ billing_interval text not null default 'none' check(billing_interval in('none','monthly','yearly')),
+ amount_minor bigint not null default 0,
+ currency text not null default 'USD',
+ included_credits bigint not null default 0,
+ entitlements jsonb not null default '{}'::jsonb,
+ is_public boolean not null default false,
+ version integer not null default 1,
+ credit_allowance_published boolean not null default false,
+ updated_at timestamptz not null default now()
+);
+create table if not exists executive_visuals.subscription_plan_provider_prices(
+ id uuid primary key default gen_random_uuid(),
+ plan_id uuid not null references executive_visuals.subscription_plans(id) on delete restrict,
+ provider text not null,
+ provider_price_id text,
+ amount_minor bigint not null,
+ currency text not null,
+ active boolean not null default false
+);

@@ -1383,7 +1383,49 @@ export function createFinancialIntelligenceApi({
             err.message||"The subscription allowance proposal could not be persisted.");
         }
       }
-      const allowanceApprovalMatch=String(path||"").match(/^\/api\/admin\/finance\/subscription-allowance-proposals\/([0-9a-f-]{36})(?:\/(approvals))?$/i);
+      const allowanceApprovalMatch=String(path||"").match(/^\/api\/admin\/finance\/subscription-allowance-proposals\/([0-9a-f-]{36})(?:\/(approvals|publish))?$/i);
+      if(allowanceApprovalMatch&&allowanceApprovalMatch[2]==="publish"&&method==="POST"){
+        const proposalId=allowanceApprovalMatch[1];
+        if(!body||typeof body!=="object"||Array.isArray(body)||
+          Object.keys(body).some(key=>!["proposalHash","planVersion"].includes(key))||
+          typeof body.proposalHash!=="string"||! /^[a-f0-9]{64}$/.test(body.proposalHash)||
+          !Number.isSafeInteger(body.planVersion)||body.planVersion<1)
+          return error(400,"SUBSCRIPTION_ALLOWANCE_PUBLICATION_INPUT_INVALID","Provide the exact approved proposal hash and source plan version.");
+        const publisherRole=await getAdminRole(ownerId);
+        if(!["owner","platform_admin"].includes(publisherRole))
+          return error(403,"SUBSCRIPTION_ALLOWANCE_PUBLISHER_ROLE_REQUIRED","Publication requires an owner or platform administrator.");
+        try{
+          const current=await rpc("get_subscription_allowance_approval_status",{p_proposal_id:proposalId});
+          if(!current?.proposal)return error(404,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_NOT_FOUND","The subscription allowance proposal was not found.");
+          if(current.status!=="approved"||current.eligibleToPublish!==true)
+            return error(409,"SUBSCRIPTION_ALLOWANCE_DUAL_APPROVAL_REQUIRED","Both distinct finance and product approvals must be accepted before publication.");
+          if(current.proposal.proposal_hash!==body.proposalHash||
+            Number(current.proposal.plan_version)!==body.planVersion)
+            return error(409,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_STALE","The approved proposal hash or source plan version no longer matches.");
+          const key=String(idempotencyKey||"");
+          if(key.length<8||key.length>160||!/^[A-Za-z0-9:_-]+$/.test(key))
+            return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key using letters, numbers, colon, underscore or hyphen.");
+          const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
+          const event=createFinancialAuditEvent({
+            ownerId,actorId:ownerId,eventType:"subscription_allowance.published",
+            payload:{proposalId,proposalHash:body.proposalHash,planCode:current.proposal.plan_code,
+              sourcePlanVersion:body.planVersion},
+            idempotencyKey:key,occurredAt:new Date().toISOString(),
+            sequence:Number(head?.sequence||0)+1,previousHash:head?.headHash||"0".repeat(64)
+          });
+          const envelope=Object.fromEntries(Object.entries(event).filter(([field])=>!["eventHash","canonicalEvent"].includes(field)));
+          const result=await rpc("publish_subscription_allowance_proposal",{
+            p_actor_id:ownerId,p_proposal_id:proposalId,p_expected_proposal_hash:body.proposalHash,
+            p_expected_plan_version:body.planVersion,p_event_envelope:envelope,
+            p_canonical_event:event.canonicalEvent,p_event_hash:event.eventHash
+          });
+          return response(result?.duplicate?200:201,{publication:result});
+        }catch(err){
+          const code=String(err?.code||"");
+          return error(err.status||(code.startsWith("SUBSCRIPTION_")?409:409),code||"SUBSCRIPTION_ALLOWANCE_PUBLICATION_FAILED",
+            err.message||"The approved subscription allowance could not be published.");
+        }
+      }
       if(allowanceApprovalMatch&&allowanceApprovalMatch[2]&&method==="POST"){
         const proposalId=allowanceApprovalMatch[1];
         const stage=String(body.stage||"");
