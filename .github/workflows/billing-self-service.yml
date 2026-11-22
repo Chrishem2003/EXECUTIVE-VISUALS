@@ -32,7 +32,7 @@ on:
       - feat/financial-governance-batch-48
       - feat/revenue-movement-cohort-intelligence-batch-39
       - feat/verified-job-cost-coverage-batch-70-2026-11-22
-      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22
+      - feat/verified-credit-revenue-allocation-batch-71-2026-11-22\n      - feat/customer-credit-expiry-wallet-batch-78-2026-11-22
   pull_request:
 
 permissions:
@@ -192,6 +192,12 @@ jobs:
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/subscription-credit-wallet-bridge-postgres-integration-batch-77.sql
       - name: Test Batch 77 subscription credit wallet bridge and idempotency
         run: npm run verify:subscription-credit-wallet-bridge
+      - name: Apply Batch 78 customer credit expiry and wallet summary
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261122250000_customer_credit_expiry_wallet_batch_78.sql
+      - name: Verify Batch 78 subscription allowance expiry, wallet summary and purchase-pack preservation
+        run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/customer-credit-expiry-wallet-postgres-integration-batch-78.sql
+      - name: Test Batch 78 customer credit expiry and wallet contract
+        run: npm run verify:customer-credit-expiry-wallet
       - name: Verify Paddle and Pesapal reservation, activation, renewal and lifecycle settlement
         run: psql "$BILLING_TEST_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/paddle-pesapal-subscription-postgres-integration.sql
       - name: Verify resource economics and shadow model routing
