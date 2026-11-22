@@ -49,6 +49,9 @@ declare
   paddle_provider_subscription text;
   paddle_provider_customer text;
   paddle_status text;
+  expected_credits bigint;
+  grant_count bigint;
+  granted_credits bigint;
 begin
   result:=executive_visuals.reserve_subscription_purchase_for_provider(
     paddle_owner,'creator-monthly','paddle-integration@example.com','paddle',
@@ -80,6 +83,15 @@ begin
   );
   if result->>'status'<>'active' then raise exception 'Verified Paddle initial purchase did not activate'; end if;
 
+  select included_credits into expected_credits from executive_visuals.customer_subscriptions where id=paddle_subscription_id;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=paddle_owner
+      and idempotency_key='subscription-purchase:'||paddle_payment_id::text;
+  if (expected_credits>0 and (grant_count<>1 or granted_credits<>expected_credits))
+     or (expected_credits=0 and grant_count<>0) then
+    raise exception 'Paddle initial subscription credit grant does not match the verified plan allowance';
+  end if;
+
   select status,provider_subscription_id,provider_customer_id
     into paddle_status,paddle_provider_subscription,paddle_provider_customer
     from executive_visuals.customer_subscriptions where id=paddle_subscription_id;
@@ -96,6 +108,13 @@ begin
     now()
   );
   if replay->>'idempotentReplay'<>'true' then raise exception 'Paddle initial settlement replay was not idempotent'; end if;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=paddle_owner
+      and idempotency_key='subscription-purchase:'||paddle_payment_id::text;
+  if grant_count<>(case when expected_credits>0 then 1 else 0 end)
+     or granted_credits<>expected_credits then
+    raise exception 'Paddle initial settlement replay duplicated or changed its customer credit grant';
+  end if;
 
   result:=executive_visuals.reserve_paddle_subscription_renewal(
     paddle_owner,paddle_subscription_key,paddle_renewal_tx,
@@ -117,6 +136,27 @@ begin
     now()+interval '1 day'
   );
   if result->>'status'<>'active' then raise exception 'Paddle recurring renewal did not settle'; end if;
+  select included_credits into expected_credits from executive_visuals.customer_subscriptions where id=paddle_subscription_id;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=paddle_owner
+      and idempotency_key='subscription-renewal:'||paddle_renewal_payment_id::text;
+  if (expected_credits>0 and (grant_count<>1 or granted_credits<>expected_credits))
+     or (expected_credits=0 and grant_count<>0) then
+    raise exception 'Paddle recurring renewal credit grant does not match the active plan allowance';
+  end if;
+  replay:=executive_visuals.finalize_paddle_subscription_renewal(
+    paddle_renewal_payment_id,paddle_renewal_tx,
+    jsonb_build_object('status','succeeded','amount_minor',2500,'currency','USD','reference',paddle_renewal_reference),
+    now()+interval '1 day'
+  );
+  if replay->>'idempotentReplay'<>'true' then raise exception 'Paddle renewal settlement replay was not idempotent'; end if;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=paddle_owner
+      and idempotency_key='subscription-renewal:'||paddle_renewal_payment_id::text;
+  if grant_count<>(case when expected_credits>0 then 1 else 0 end)
+     or granted_credits<>expected_credits then
+    raise exception 'Paddle renewal settlement replay duplicated or changed its customer credit grant';
+  end if;
   select current_period_end into period_after
     from executive_visuals.customer_subscriptions where id=paddle_subscription_id;
   if period_after<=period_before then raise exception 'Paddle recurring renewal did not extend the period'; end if;
@@ -167,6 +207,14 @@ begin
     now()
   );
   if result->>'status'<>'active' then raise exception 'Verified Pesapal initial purchase did not activate'; end if;
+  select included_credits into expected_credits from executive_visuals.customer_subscriptions where id=pesapal_subscription_id;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=pesapal_owner
+      and idempotency_key='subscription-purchase:'||pesapal_payment_id::text;
+  if (expected_credits>0 and (grant_count<>1 or granted_credits<>expected_credits))
+     or (expected_credits=0 and grant_count<>0) then
+    raise exception 'Pesapal initial subscription credit grant does not match the verified plan allowance';
+  end if;
 
   result:=executive_visuals.reserve_pesapal_subscription_renewal(
     pesapal_owner,pesapal_subscription_id,'pesapal-renewal-key-0001',
@@ -188,6 +236,14 @@ begin
     now()+interval '1 day'
   );
   if result->>'status'<>'active' then raise exception 'Verified Pesapal manual renewal did not settle'; end if;
+  select included_credits into expected_credits from executive_visuals.customer_subscriptions where id=pesapal_subscription_id;
+  select count(*),coalesce(sum(credit_delta),0) into grant_count,granted_credits
+    from executive_visuals.credit_ledger where owner_id=pesapal_owner
+      and idempotency_key='subscription-renewal:'||pesapal_renewal_payment_id::text;
+  if (expected_credits>0 and (grant_count<>1 or granted_credits<>expected_credits))
+     or (expected_credits=0 and grant_count<>0) then
+    raise exception 'Pesapal manual renewal credit grant does not match the active plan allowance';
+  end if;
   select current_period_end into period_after
     from executive_visuals.customer_subscriptions where id=pesapal_subscription_id;
   if period_after<=period_before then raise exception 'Pesapal manual renewal did not extend the period'; end if;
