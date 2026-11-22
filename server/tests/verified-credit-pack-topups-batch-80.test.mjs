@@ -24,7 +24,7 @@ test("verified top-up finalizer validates snapshot and payment amount before gra
  assert.match(migration,/CREDIT_PACK_SNAPSHOT_PAYMENT_MISMATCH/);
  assert.match(migration,/payment_row\.amount_minor/);
  assert.match(migration,/credit_pack_applied/);
- assert.ok(migration.indexOf("credit_pack_applied',true")<migration.indexOf("finalize_payment_purchase_pre_batch80("));
+ assert.match(migration,/update executive_visuals\.payment_transactions[\s\S]*?credit_pack_applied',true[\s\S]*?return executive_visuals\.finalize_payment_purchase_pre_batch80/);
 });
 
 test("only the service role can invoke the verified top-up finalizer",()=>{
