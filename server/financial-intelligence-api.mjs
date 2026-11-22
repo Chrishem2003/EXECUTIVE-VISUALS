@@ -1361,7 +1361,8 @@ export function createFinancialIntelligenceApi({
           const packet=plan?.approvalPacket;
           if(!packet||packet.publishable!==false||packet.status!=="awaiting_dual_approval")
             return error(409,"SUBSCRIPTION_ALLOWANCE_COST_EVIDENCE_REQUIRED","This plan has no positive allowance backed by sufficient verified invoice evidence. No proposal was stored.");
-          const key=String(body.idempotencyKey||idempotencyKey||"");
+          const key=String(idempotencyKey||"");
+          if(key.length<8||key.length>160)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key in the request header.");
           const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
           const event=createFinancialAuditEvent({
             ownerId,actorId:ownerId,eventType:"subscription_allowance.proposal_created",
@@ -1396,7 +1397,8 @@ export function createFinancialIntelligenceApi({
           const current=await rpc("get_subscription_allowance_approval_status",{p_proposal_id:proposalId});
           if(!current?.proposal)return error(404,"SUBSCRIPTION_ALLOWANCE_PROPOSAL_NOT_FOUND","The subscription allowance proposal was not found.");
           const proposalHash=current.proposal.proposal_hash;
-          const key=String(body.idempotencyKey||idempotencyKey||"");
+          const key=String(idempotencyKey||"");
+          if(key.length<8||key.length>160)return error(400,"FINANCIAL_AUDIT_IDEMPOTENCY_INVALID","Provide an 8–160 character idempotency key in the request header.");
           const head=await rpc("get_financial_audit_head",{p_owner_id:ownerId});
           const event=createFinancialAuditEvent({
             ownerId,actorId:ownerId,eventType:"subscription_allowance.approval_recorded",
