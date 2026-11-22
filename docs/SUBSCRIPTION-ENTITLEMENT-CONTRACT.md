@@ -29,9 +29,9 @@ This branch adds a fail-closed subscription policy and a read-only plan-catalogu
 ## Remaining integration work
 
 1. The authenticated `/api/billing/plans` endpoint now loads plan rows and active Paddle/Pesapal price mappings through the server database client, validates them with the catalogue policy and returns a versioned customer DTO. The existing billing workspace already consumes this endpoint; its legacy plan fields are preserved.
-2. Inject the entitlement resolver into quote approval and durable worker admission, backed by the same trusted subscription repository.
+2. The cloud video dispatch now has an opt-in fail-closed gate: `CLOUD_VIDEO_SUBSCRIPTION_ENTITLEMENTS_REQUIRED=true` uses a server-only Supabase subscription reader and requires `features.videoGeneration` before a new approval can be registered or enqueued. The flag defaults to false and must remain off until the plan snapshots are populated and staging-verified. Extend the same authorization to quote creation and the worker's final provider-submission reservation before enabling it commercially.
 3. Add verified-renewal idempotent credit grants, lifecycle semantics and agency shared pools.
 4. Add margin-floor scenarios using the existing dated provider rate cards and measured usage telemetry.
 5. Complete isolated Paddle/Pesapal sandbox and Neon/PostgreSQL acceptance before enabling checkout or paid generation.
 
-No migrations, credentials, live checkout, production configuration or deployments are changed by this slice. The UI can display the validated catalogue, but checkout remains separately gated and still reserves its price through the existing database RPC.
+No migrations, credentials, live checkout, production configuration or deployments are changed by this slice. The cloud video subscription gate is opt-in and remains disabled by default; it is not a production activation. The customer catalogue and cloud dispatch integration are covered by automated tests. The UI can display the validated catalogue, but checkout remains separately gated and still reserves its price through the existing database RPC.
