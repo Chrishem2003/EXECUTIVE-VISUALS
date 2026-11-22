@@ -1772,3 +1772,33 @@ test("billing plans endpoint does not publish a plan with an invalid provider pr
  const result=await service.handle({method:"GET",path:"/api/billing/plans",ownerId:owner});
  assert.equal(result.status,502);
 });
+
+
+test("provider invoice history is admin-only, bounded and returns a safe import summary",async()=>{
+ let invoiceUrl="";
+ const imports=[{
+  id:"44444444-4444-4444-8444-444444444444",provider:"runway",invoice_reference:"INV-2026-001",
+  currency:"USD",period_start:"2026-11-01",period_end:"2026-11-30",total_minor:6800,
+  imported_line_count:12,matched_line_count:12,reconciliation_status:"matched",imported_at:"2026-11-22T08:00:00Z"
+ }];
+ const denied=api(async(url)=>{
+  if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
+  throw new Error("Non-admin must not read provider invoice history.");
+ });
+ const blocked=await denied.handle({method:"GET",path:"/api/admin/finance/ai-invoices",ownerId:owner});
+ assert.equal(blocked.status,403);
+ const service=api(async(url)=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  invoiceUrl=target;return json(imports);
+ });
+ const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-invoices",ownerId:owner,query:{limit:"25"}});
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.imports,imports);
+ assert.ok(invoiceUrl.includes("/ai_provider_invoice_imports?"));
+ assert.ok(invoiceUrl.includes("limit=25"));
+ assert.ok(invoiceUrl.includes("order=imported_at.desc"));
+ const invalid=await service.handle({method:"GET",path:"/api/admin/finance/ai-invoices",ownerId:owner,query:{limit:"500"}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"AI_INVOICE_LIST_LIMIT_INVALID");
+});
