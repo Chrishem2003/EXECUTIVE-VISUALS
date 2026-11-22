@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {compareCommercialProductionCandidates,evaluateProductionEntitlement,quoteCustomerCredits,resolveCustomerCreditPolicy} from "../customer-credit-economics.mjs";
 
-const policy={creditValueMinor:1,minorUnitsPerMajor:100,targetMarginBps:6000,paymentFeeBps:300,retryReserveBps:500,infrastructureReserveBps:300,fixedPaymentFeeMinor:30,pricingVersion:"test-v1"};
+const policy={currency:"USD",creditValueMinor:1,minorUnitsPerMajor:100,targetMarginBps:6000,paymentFeeBps:300,retryReserveBps:500,infrastructureReserveBps:300,fixedPaymentFeeMinor:30,pricingVersion:"test-v1"};
 const providerQuote={available:true,estimated:true,currency:"USD",amount:2.35,pricing:{sourceUrl:"https://provider.example/pricing"}};
 
 test("converts a provider estimate to a rounded-up customer credit quote with reserves and margin",()=>{
@@ -21,10 +21,10 @@ test("converts a provider estimate to a rounded-up customer credit quote with re
 
 test("fails closed when provider rates or customer credit pricing are unavailable",()=>{
  assert.equal(quoteCustomerCredits({...providerQuote,available:false},policy).available,false);
- assert.equal(quoteCustomerCredits(providerQuote,null).available,false);
+ assert.equal(quoteCustomerCredits(providerQuote,null).available,false);\n assert.match(quoteCustomerCredits(providerQuote,{...policy,currency:"UGX"}).reason,/currency/);
  assert.equal(resolveCustomerCreditPolicy({}).configured,false);
  assert.equal(resolveCustomerCreditPolicy({
-  CUSTOMER_CREDIT_VALUE_MINOR:"1",CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
+  CUSTOMER_CREDIT_CURRENCY:"USD",\n  CUSTOMER_CREDIT_VALUE_MINOR:"1",CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
   CUSTOMER_CREDIT_TARGET_MARGIN_BPS:"6000",CUSTOMER_CREDIT_PAYMENT_FEE_BPS:"300",
   CUSTOMER_CREDIT_RETRY_RESERVE_BPS:"500",CUSTOMER_CREDIT_INFRA_RESERVE_BPS:"300",
   CUSTOMER_CREDIT_FIXED_PAYMENT_FEE_MINOR:"30",CUSTOMER_CREDIT_PRICING_VERSION:"v1"
