@@ -71,8 +71,8 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
  const usageEvents=[],invoiceAttributions=[],creditReservations=[];
  for(let i=1;i<=5;i++){
   const jobId=uuid(100+i),usageId=uuid(200+i);
-  usageEvents.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"});
-  invoiceAttributions.push({usage_event_id:usageId,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)});
+  usageEvents.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01",provider:"runway",requested_model:"gen4.5",response_model:"gen4.5",operation:"video",currency:"USD",cost_basis:"provider_reported",cost_minor:100});
+  invoiceAttributions.push({usage_event_id:usageId,provider:"runway",model:"gen4.5",operation:"video",amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i),reconciliation_event_id:uuid(500+i),service_cost_event_id:uuid(600+i)});
   creditReservations.push({job_id:jobId,actual_credits:1000,state:"settled"});
  }
  const calls=[];
@@ -95,8 +95,15 @@ test("plan economics exposes separate invoice-backed cost evidence and never tre
  assert.equal(result.body.actualCostEvidence.totalProviderCostMinor,500);
  assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,1);
  assert.equal(result.body.actualCostEvidence.currency,"USD");
- assert.equal(result.body.actualCostEvidence.perModelAttributionAvailable,false);
- assert.equal(result.body.actualCostEvidence.workloadCostStatus,"unpriced_model_operation_attribution_unavailable");
+ assert.equal(result.body.actualCostEvidence.perModelAttributionAvailable,true);
+ assert.equal(result.body.actualCostEvidence.workloadCostStatus,"verified_model_operation_actual_cost_available");
+ assert.equal(result.body.modelActualCostEvidence.status,"verified_measured");
+ assert.equal(result.body.modelActualCostEvidence.verifiedModelGroups,1);
+ assert.equal(result.body.modelActualCostEvidence.models[0].provider,"runway");
+ assert.equal(result.body.modelActualCostEvidence.models[0].model,"gen4.5");
+ assert.equal(result.body.modelActualCostEvidence.models[0].operation,"video");
+ assert.equal(result.body.modelActualCostEvidence.models[0].totalProviderCostMinor,500);
+ assert.equal(result.body.modelActualCostEvidence.models[0].invoiceCoverage,1);
  assert.equal(result.body.allowanceReadiness.publishable,false);
  assert.match(result.body.allowanceReadiness.status,/requires_finance_product_approval/);
  assert.ok(result.body.economics.scenarios.every(row=>row.estimateType==="forecast_not_actual"));
