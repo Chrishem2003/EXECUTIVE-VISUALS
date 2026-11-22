@@ -222,7 +222,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(project.ownerId!==ownerId)return response(403,{error:{code:"PROJECT_CREDIT_POOL_OWNER_REQUIRED",message:"Only the project owner can manage project membership."}});
      if(method==="GET"&&!memberId){
       const members=await projectCreditPoolApi.listMembers({ownerId,projectId});
-      return response(200,{members});
+      let seatSummary=null,seatSummaryError=null;
+      try{seatSummary=await projectCreditPoolApi.getTeamSeatSummary({ownerId,projectId});}
+      catch(error){seatSummaryError={code:String(error?.code||"SUBSCRIPTION_TEAM_SEAT_ENTITLEMENT_REQUIRED"),message:String(error?.message||"A valid team seat entitlement is required to add members.").slice(0,300)};}
+      return response(200,{members,seatSummary,seatSummaryError});
      }
      if(method==="POST"&&!memberId){
       const member=await projectCreditPoolApi.addMember({ownerId,projectId,email:body.email,role:body.role||"viewer"});
@@ -936,7 +939,7 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(error.code==="REVIEW_ASSET_VERSION_STALE"||error.code==="REVIEW_ASSET_VERSION_UNAVAILABLE"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT"||error.code==="CLOUD_REVIEW_CONFLICT")return response(409,{error:{code:error.code,message:String(error.message||"Review changed. Refresh and retry.").slice(0,300)}});
    if(error.code==="CLOUD_REVIEW_TIMEOUT"||error.code==="CLOUD_REVIEW_DATABASE_ERROR")return response(503,{error:{code:error.code,message:String(error.message||"Cloud review service is unavailable.").slice(0,300)}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
-   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")){
+   if(String(error.code||"").startsWith("PROJECT_CREDIT_POOL_")||String(error.code||"").startsWith("PROJECT_MEMBER_")||String(error.code||"").startsWith("PROJECT_OWNER_")||String(error.code||"").startsWith("BILLING_")||String(error.code||"").startsWith("SUBSCRIPTION_TEAM_SEAT_")||["SUBSCRIPTION_REQUIRED_FOR_TEAM_SEATS","SUBSCRIPTION_RECORD_AMBIGUOUS"].includes(String(error.code||""))){
     return response(error.status||400,{error:{code:error.code||"PROJECT_CREDIT_POOL_OPERATION_FAILED",message:String(error.message||"Project credit pool operation failed.").slice(0,300)}});
    }
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
