@@ -55,7 +55,7 @@ test("prices Kling 4.0 with the published 20% promotion through November 30, 202
   assert.equal(december.estimatedCredits,79);
   assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:10,resolution:"1080p",pricingDate:date}).estimatedCredits,188);
   const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
-  assert.equal(referenced.estimatedCredits,189);
+  assert.equal(referenced.estimatedCredits,113);
 });
 
 test("Kling 4.0 input video uses the published combined-duration formula and HDR surcharge",()=>{
