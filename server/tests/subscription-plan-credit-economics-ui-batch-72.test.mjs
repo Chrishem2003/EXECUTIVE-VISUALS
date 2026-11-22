@@ -19,6 +19,7 @@ test("plan simulator displays draft plan allowances, model coverage, provider co
  assert.match(app,/pricingDate/);
  assert.match(app,/pricingSource/);
  assert.match(app,/prefilled 70% budget share is only an example scenario/);
+ assert.match(app,/Custom quote/);
  assert.match(app,/financeState\.planCreditEconomics\.limitations/);
  assert.match(app,/pricingPolicy\?\.targetMarginBps/);
  assert.match(app,/pricingPolicy\?\.paymentFeeBps/);
