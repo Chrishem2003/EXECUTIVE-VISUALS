@@ -214,7 +214,9 @@ test("project shared credit pools are isolated, owner-controlled and append-only
 
 test("project pool top-ups transfer existing personal credits atomically and replay without double debit",()=>{
  assert.match(projectPoolSql,/fund_project_credit_pool/);
- assert.match(projectPoolSql,/insert into billing_credit_ledger[\\s\\S]*?insert into project_credit_pool_ledger/i);
+ assert.ok(projectPoolSql.includes("insert into billing_credit_ledger"));
+ assert.ok(projectPoolSql.includes("insert into project_credit_pool_ledger"));
+ assert.ok(projectPoolSql.indexOf("insert into billing_credit_ledger")<projectPoolSql.indexOf("insert into project_credit_pool_ledger"));
  assert.match(projectPoolSql,/BILLING_INSUFFICIENT_CREDITS/);
  assert.match(projectPoolSql,/PROJECT_CREDIT_POOL_IDEMPOTENCY_CONFLICT/);
  assert.match(projectPoolIntegration,/project pool top-up replay changed either wallet balance/i);
