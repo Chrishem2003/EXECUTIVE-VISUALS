@@ -20,7 +20,8 @@ function normalizePolicy(policy){
 
 export function resolveCustomerCreditPolicy(env=process.env){
  const names={
-  currency:"CUSTOMER_CREDIT_CURRENCY",\n  creditValueMinor:"CUSTOMER_CREDIT_VALUE_MINOR",
+  currency:"CUSTOMER_CREDIT_CURRENCY",
+  creditValueMinor:"CUSTOMER_CREDIT_VALUE_MINOR",
   minorUnitsPerMajor:"CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR",
   targetMarginBps:"CUSTOMER_CREDIT_TARGET_MARGIN_BPS",
   paymentFeeBps:"CUSTOMER_CREDIT_PAYMENT_FEE_BPS",
