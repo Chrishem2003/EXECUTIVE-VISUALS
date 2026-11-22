@@ -81,7 +81,7 @@ begin
     or p_monthly_spend_limit_credits<0 or p_monthly_spend_limit_credits>1000000000 then
   raise exception 'PROJECT_CREDIT_POOL_ARGUMENTS_INVALID' using errcode='22023';
  end if;
- if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id and archived_at is null) then
+ if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
   raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
  end if;
  insert into project_credit_pools(project_id,owner_id,monthly_spend_limit_credits)
@@ -112,7 +112,7 @@ begin
     or p_idempotency_key is null or char_length(p_idempotency_key) not between 8 and 160 then
   raise exception 'PROJECT_CREDIT_POOL_FUND_ARGUMENTS_INVALID' using errcode='22023';
  end if;
- if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id and archived_at is null) then
+ if not exists(select 1 from projects where id=p_project_id and owner_id=p_owner_id) then
   raise exception 'PROJECT_CREDIT_POOL_OWNER_REQUIRED' using errcode='42501';
  end if;
  insert into billing_credit_accounts(owner_id) values(p_owner_id) on conflict(owner_id) do nothing;
