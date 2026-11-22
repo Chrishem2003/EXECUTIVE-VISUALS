@@ -450,7 +450,7 @@ export function createFinancialIntelligenceApi({
         const alerts=alertsEnabled?summary.alerts.filter(item=>item&&[50,80,100].includes(Number(item.threshold))&&
           ["notice","warning","critical"].includes(String(item.level))).map(item=>({
             threshold:Number(item.threshold),level:String(item.level),
-            usedCredits:used,allowance,usagePercent:Number.isSafeInteger(Number(item.usagePercent))?Number(item.usagePercent):Math.floor(used*100/allowance)
+            usedCredits:used,allowance,usagePercent:Math.min(100,Number.isSafeInteger(Number(item.usagePercent))?Number(item.usagePercent):Math.floor(used*100/allowance))
           })):[];
         return response(200,{usage:{
           periodStart,periodEnd,
@@ -458,7 +458,7 @@ export function createFinancialIntelligenceApi({
           subscriptionAmbiguous:summary.subscriptionAmbiguous===true,
           allowance,allowancePublished:summary.allowancePublished===true,
           settledCredits:settled,reservedCredits:reserved,usedCredits:used,
-          usagePercent:allowance===null?null:Math.floor(used*100/allowance),
+          usagePercent:allowance===null?null:Math.min(100,Math.floor(used*100/allowance)),
           alertsEnabled,alerts,
           accountingBasis:"settled_actual_plus_active_reservations"
         }});
