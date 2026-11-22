@@ -69,6 +69,22 @@ test("fails closed for legacy, stale, future, unsupported and missing rate-card 
   {code:"PROVIDER_VIDEO_RATE_CARD_INVALID"});
 });
 
+test("source-linked pricing evidence older than 45 days is not accepted for a new forecast",()=>{
+ assert.throws(()=>estimateProviderVideoCost({
+  rateCard:card({sourceCheckedAt:"2026-10-01T00:00:00Z"}),
+  request:request(),now:"2026-11-22T00:00:00Z"
+ }),{code:"PROVIDER_VIDEO_RATE_CARD_UNVERIFIED"});
+});
+
+test("an explicit zero-cost surcharge is accepted and remains visible in the itemization",()=>{
+ const result=estimateProviderVideoCost({
+  rateCard:card({pricingDimensions:{audioSurchargeSecondMinor:0,minimumGenerationMinor:0}}),
+  request:request({hasAudio:true})
+ });
+ assert.equal(result.costLines.find(x=>x.driver==="audio_output_seconds").amountMinor,0);
+ assert.equal(result.estimatedProviderCostMinor,340);
+});
+
 test("requires explicit prices for requested input types and validates quantities",()=>{
  assert.throws(()=>estimateProviderVideoCost({rateCard:card(),request:request({inputImageCount:1})}),
   {code:"PROVIDER_VIDEO_RATE_MISSING"});
