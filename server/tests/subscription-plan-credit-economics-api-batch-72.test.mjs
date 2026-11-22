@@ -38,6 +38,7 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
   const target=String(url);calls.push({target,method:options.method||"GET",body:options.body});
   if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
   if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("ai_usage_cost_events?"))return json([]);
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
@@ -195,6 +196,7 @@ test("subscription economics does not write or activate private draft plan hypot
   const target=String(url);
   if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
   if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("ai_usage_cost_events?"))return json([]);
   if(options.method&&options.method!=="GET")writes.push({target,method:options.method});
   throw new Error("Unexpected request: "+target);
  });
