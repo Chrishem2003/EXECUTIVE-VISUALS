@@ -84,6 +84,10 @@ revoke all on executive_visuals.billing_credit_revenue_allocation_runs from publ
 revoke all on executive_visuals.billing_credit_revenue_sources from service_role;
 revoke all on executive_visuals.billing_credit_revenue_allocations from service_role;
 revoke all on executive_visuals.billing_credit_revenue_allocation_runs from service_role;
+grant select on executive_visuals.billing_credit_revenue_sources to service_role;
+grant select on executive_visuals.billing_credit_revenue_source_reviews to service_role;
+grant select on executive_visuals.billing_credit_revenue_allocations to service_role;
+grant select on executive_visuals.billing_credit_revenue_allocation_runs to service_role;
 
 create or replace function executive_visuals.register_generation_credit_revenue_source(
   p_owner_id uuid,
