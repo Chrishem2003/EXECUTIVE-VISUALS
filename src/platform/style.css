@@ -1566,3 +1566,34 @@ body{
 .credit-topup .form-grid{margin-top:18px}
 .credit-topup .form-grid button[type=submit]{min-height:46px}
 @media(max-width:760px){.credit-wallet .billing-metrics{grid-template-columns:1fr}.credit-topup .billing-plan-grid{grid-template-columns:1fr}}
+
+/* Batch 69 — evidence-based credit pricing control centre */
+.credit-pricing-panel{position:relative;overflow:hidden;border-color:rgba(196,181,253,.3);background:radial-gradient(ellipse at 92% 0,rgba(124,88,220,.16),transparent 34%),linear-gradient(145deg,rgba(27,24,43,.98),rgba(11,16,29,.99))}
+.credit-pricing-panel>.eyebrow{color:#d8caff;letter-spacing:.19em}
+.credit-pricing-panel .governance-heading{margin-bottom:18px}
+.credit-plan-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:18px 0 24px}
+.credit-plan-card{min-width:0;padding:16px;border:1px solid rgba(196,181,253,.17);border-radius:13px;background:linear-gradient(145deg,rgba(50,42,74,.58),rgba(15,20,34,.86))}
+.credit-plan-card small,.credit-plan-card span{display:block;color:#aaa5bb;font-size:11px;line-height:1.5}
+.credit-plan-card b{display:block;margin:8px 0 5px;color:#f5f0ff;font-size:clamp(20px,2.1vw,27px);letter-spacing:-.04em}
+.credit-plan-card.enterprise b{font-size:22px}
+.credit-pricing-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.credit-pricing-card{min-width:0;padding:18px;border:1px solid rgba(196,181,253,.16);border-radius:15px;background:rgba(8,13,25,.58)}
+.credit-pricing-card h3{margin:7px 0;color:#f0ebfa;font-size:19px}
+.credit-pricing-card>p{color:#aaa5bb;font-size:12px;line-height:1.65}
+.credit-pricing-card .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:16px 0}
+.credit-pricing-card label{display:flex;flex-direction:column;gap:6px;color:#c9c4d5;font-size:11px}
+.credit-pricing-card input,.credit-pricing-card select{width:100%;min-width:0}
+.credit-pricing-card button{margin-top:3px}
+.credit-pricing-result{margin-top:18px;padding:18px;border:1px solid rgba(167,139,250,.28);border-radius:14px;background:rgba(30,24,49,.58)}
+.credit-result-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.credit-result-grid>div{min-width:0;padding:12px;border-radius:10px;background:rgba(255,255,255,.045)}
+.credit-result-grid small{display:block;color:#aaa5bb;font-size:10px}
+.credit-result-grid b{display:block;margin-top:6px;color:#f1ebff;font-size:18px;overflow-wrap:anywhere}
+.credit-pricing-result>p{margin:12px 0 0;color:#aaa5bb;font-size:11px}
+.credit-rate-catalog{margin-top:25px}
+.credit-rate-catalog .governance-section-title{margin-top:0}
+.credit-rate-catalog td small{display:block;margin-top:4px;color:#a9a4ba}
+.credit-rate-catalog a{color:#cbb8ff;text-decoration:underline}
+.credit-pricing-panel .governance-footnote{margin-top:20px;padding-top:15px;border-top:1px solid rgba(196,181,253,.14);color:#a9a4ba;font-size:11px;line-height:1.7}
+@media(max-width:900px){.credit-plan-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.credit-pricing-columns{grid-template-columns:1fr}}
+@media(max-width:560px){.credit-plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.credit-pricing-card .form-grid{grid-template-columns:1fr}.credit-result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
