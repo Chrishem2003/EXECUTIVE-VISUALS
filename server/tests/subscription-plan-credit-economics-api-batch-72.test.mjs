@@ -66,6 +66,60 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  assert.ok(calls.some(call=>call.target.includes("status=eq.draft")&&call.target.includes("is_public=eq.false")));
 });
 
+test("plan economics uses an exact governed provider rate-card version for Seedance cost scenarios",async()=>{
+ const calls=[];
+ const rateCard={
+  provider:"runway",model:"seedance-2.5",currency:"USD",video_second_minor:68,
+  rate_card_version:"2026-11-23.1",billing_unit:"video_second",
+  verification_status:"source_linked",source_url:"https://dev.runway.com/pricing",
+  source_checked_at:"2026-11-22T00:00:00Z",source_fingerprint:"a".repeat(64),
+  effective_from:"2026-11-21T00:00:00Z",effective_to:null,
+  pricing_dimensions:{videoSecondMinor_1080p:68,minimumGenerationMinor:80}
+ };
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,body:options.body});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("/ai_model_price_catalog?"))return json([rateCard]);
+  if(target.includes("ai_usage_cost_events?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{
+   provider:"runway",model:"seedance-2.5",currency:"USD",rateCardVersion:"2026-11-23.1",
+   durationSeconds:10,resolution:"1080p",audio:false
+  }]}});
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ const scenarioResult=result.body.economics.scenarios[0];
+ assert.equal(scenarioResult.providerCostUsd,6.8);
+ assert.equal(scenarioResult.customerCreditsPerGeneration,2232);
+ assert.equal(scenarioResult.rateCardVersion,"2026-11-23.1");
+ assert.equal(result.body.economics.plans[0].modelCoverage[0].rateCardVersion,"2026-11-23.1");
+ const lookup=calls.find(call=>call.target.includes("/ai_model_price_catalog?"));
+ assert.ok(lookup.target.includes("provider=eq.runway"));
+ assert.ok(lookup.target.includes("model=eq.seedance-2.5"));
+ assert.ok(lookup.target.includes("currency=eq.USD"));
+ assert.ok(lookup.target.includes("rate_card_version=eq.2026-11-23.1"));
+ assert.equal(calls.filter(call=>call.body!==undefined).length,0,"plan economics remains read-only");
+});
+
+test("plan economics refuses missing exact rate-card versions instead of silently falling back to static pricing",async()=>{
+ const service=api(async url=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("/ai_model_price_catalog?"))return json([]);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,scenarios:[{
+   provider:"runway",model:"seedance-2.5",currency:"USD",rateCardVersion:"missing-version",
+   durationSeconds:10,resolution:"1080p",audio:false
+  }]}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"SUBSCRIPTION_ECONOMICS_RATE_CARD_NOT_FOUND");
+});
+
 test("plan economics exposes separate invoice-backed cost evidence and never treats blended cost as model pricing",async()=>{
  const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
  const usageEvents=[],invoiceAttributions=[],creditReservations=[];

@@ -976,21 +976,51 @@ export function createFinancialIntelligenceApi({
         if(!Array.isArray(planRows.data)||planRows.data.length===0)
           return error(409,"SUBSCRIPTION_PLAN_HYPOTHESES_NOT_FOUND","No private draft subscription plan hypotheses are available for evaluation.");
         const estimates=[];
-        const allowedScenarioFields=new Set(["provider","model","operation","durationSeconds","outputFormat","resolution","audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange","outputWidth","outputHeight","targetFramerate","inputType","hdr","exrExport"]);
+        const allowedScenarioFields=new Set(["provider","model","operation","durationSeconds","outputFormat","resolution","audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange","outputWidth","outputHeight","targetFramerate","inputType","hdr","exrExport","rateCardVersion","currency"]);
         try{
           for(const scenario of body.scenarios){
             if(!scenario||typeof scenario!=="object"||Array.isArray(scenario)||
               Object.keys(scenario).some(key=>!allowedScenarioFields.has(key)))
               throw Object.assign(new Error("Each provider scenario must be a JSON object containing only supported workload fields."),{code:"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID"});
-            const estimate=estimateVideoGenerationCost(scenario);
-            estimates.push({
-              ...estimate,provider:estimate.provider||scenario.provider,model:estimate.model||scenario.model,
-              operation:estimate.operation||scenario.operation||"video",
-              durationSeconds:estimate.durationSeconds??scenario.durationSeconds,
-              resolution:estimate.resolution||scenario.resolution||"provider_default",
-              pricingSource:estimate.pricingSource||estimate.pricingUrl||"provider_pricing_snapshot",
-              pricingDate:estimate.pricingDate||new Date().toISOString().slice(0,10)
-            });
+            if(scenario.rateCardVersion!==undefined){
+              const provider=String(scenario.provider||"").trim().toLowerCase();
+              const model=String(scenario.model||"").trim();
+              const currency=String(scenario.currency||"").trim().toUpperCase();
+              const version=String(scenario.rateCardVersion||"").trim();
+              if(!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(provider)||!model||model.length>160||
+                currency!=="USD"||!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(version))
+                throw Object.assign(new Error("A rate-card scenario requires an exact provider, model, USD currency and version."),{code:"SUBSCRIPTION_ECONOMICS_RATE_CARD_REFERENCE_INVALID"});
+              const rateRows=await dbRequest("ai_model_price_catalog?select=provider,model,currency,video_second_minor,rate_card_version,billing_unit,verification_status,source_url,source_checked_at,source_fingerprint,effective_from,effective_to,pricing_dimensions"+
+                "&provider=eq."+encodeURIComponent(provider)+"&model=eq."+encodeURIComponent(model)+
+                "&currency=eq.USD&rate_card_version=eq."+encodeURIComponent(version)+"&limit=1");
+              const rateCard=Array.isArray(rateRows.data)?rateRows.data[0]:null;
+              if(!rateCard)
+                throw Object.assign(new Error("The exact governed provider rate-card version was not found."),{code:"SUBSCRIPTION_ECONOMICS_RATE_CARD_NOT_FOUND"});
+              const estimate=estimateProviderVideoCost({rateCard,request:{
+                outputSeconds:Number(scenario.durationSeconds),resolution:scenario.resolution,
+                hasAudio:scenario.audio===true,inputVideoSeconds:scenario.inputVideoSeconds,
+                referenceVideoSeconds:scenario.referenceVideoSeconds,inputImageCount:scenario.referenceImageCount
+              },now:new Date()});
+              estimates.push({
+                provider:estimate.provider,model:estimate.model,operation:scenario.operation||"video",
+                durationSeconds:estimate.request.outputSeconds,resolution:estimate.request.resolution,
+                currency:estimate.currency,amount:estimate.estimatedProviderCostMinor/100,
+                pricingSource:estimate.source.url||("governed_rate_card:"+version),
+                pricingDate:estimate.source.checkedAt||estimate.effectiveFrom,
+                rateCardVersion:estimate.rateCardVersion,estimateType:"forecast_not_actual",
+                billable:false,settlementEligible:false
+              });
+            }else{
+              const estimate=estimateVideoGenerationCost(scenario);
+              estimates.push({
+                ...estimate,provider:estimate.provider||scenario.provider,model:estimate.model||scenario.model,
+                operation:estimate.operation||scenario.operation||"video",
+                durationSeconds:estimate.durationSeconds??scenario.durationSeconds,
+                resolution:estimate.resolution||scenario.resolution||"provider_default",
+                pricingSource:estimate.pricingSource||estimate.pricingUrl||"provider_pricing_snapshot",
+                pricingDate:estimate.pricingDate||new Date().toISOString().slice(0,10)
+              });
+            }
           }
           const economics=calculateSubscriptionPlanCreditEconomics({
             plans:planRows.data,scenarios:estimates,quoteCustomerCredits,

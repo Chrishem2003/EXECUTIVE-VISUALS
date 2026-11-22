@@ -49,6 +49,7 @@ export function calculateSubscriptionPlanCreditEconomics({
   const currency=text(scenario.currency,"provider currency",3).toUpperCase();
   const pricingSource=text(scenario.pricingSource,"pricing source",500);
   const pricingDate=text(scenario.pricingDate,"pricing date",40);
+  const rateCardVersion=scenario.rateCardVersion===undefined?null:text(scenario.rateCardVersion,"rate-card version",80);
   if(currency!=="USD"||scenario.billable!==false||scenario.settlementEligible!==false)
    fail("SUBSCRIPTION_ECONOMICS_PROVIDER_ESTIMATE_INVALID","Scenarios must be non-billable USD forecasts, not settlement evidence.");
   const amount=Number(scenario.amount);
@@ -65,7 +66,8 @@ export function calculateSubscriptionPlanCreditEconomics({
   return Object.freeze({
    provider,model,currency,operation:String(scenario.operation||"video"),durationSeconds,resolution,
    providerCostUsd:Number(amount.toFixed(6)),customerCreditsPerGeneration:customerCredits,
-   pricingSource,pricingDate,estimateType:"forecast_not_actual",billable:false,settlementEligible:false
+   pricingSource,pricingDate,...(rateCardVersion?{rateCardVersion}:{}),
+   estimateType:"forecast_not_actual",billable:false,settlementEligible:false
   });
  });
  const coverage=normalizedPlans.map(plan=>{
@@ -78,7 +80,8 @@ export function calculateSubscriptionPlanCreditEconomics({
     durationSeconds:scenario.durationSeconds,resolution:scenario.resolution,
     customerCreditsPerGeneration:scenario.customerCreditsPerGeneration,
     maximumWholeGenerations:generations,creditsUsed,creditsRemaining:plan.proposedMonthlyCreditAllowance-creditsUsed,
-    estimatedProviderSpendUsd:providerSpendUsd,pricingSource:scenario.pricingSource,pricingDate:scenario.pricingDate
+    estimatedProviderSpendUsd:providerSpendUsd,pricingSource:scenario.pricingSource,pricingDate:scenario.pricingDate,
+    ...(scenario.rateCardVersion?{rateCardVersion:scenario.rateCardVersion}:{})
    });
   });
   return Object.freeze({...plan,modelCoverage:Object.freeze(modelCoverage)});
