@@ -9,6 +9,9 @@ import { normalizeWorkloadTelemetry } from "./ai-workload-telemetry.mjs";
 import { normalizeResourceUsage, normalizeModelPerformance, normalizeShadowRoutingRequest } from "./ai-resource-economics.mjs";
 import { estimateWorkloadEconomics, compareWorkloadCandidates } from "./ai-workload-economics.mjs";
 import { estimateProviderVideoCost } from "./provider-video-cost-estimator.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
+import { createCustomerCreditQuotePolicy } from "./customer-credit-quote-policy.mjs";
+import { calculateSubscriptionPlanCreditEconomics } from "./subscription-plan-credit-economics.mjs";
 import { analyzeWorkloadCostVariance } from "./workload-cost-variance.mjs";
 import { detectDuplicateInvoices, reconcileInvoiceTotals, reconcileProviderInvoiceLines, reconcilePaymentSettlement } from "./financial-reconciliation.mjs";
 import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
@@ -49,6 +52,7 @@ export function createFinancialIntelligenceApi({
   financialAuditSigningPrivateKey=process.env.FINANCIAL_AUDIT_SIGNING_PRIVATE_KEY||null,
   resourceCostMeteringEnabled=process.env.RESOURCE_COST_METERING_ENABLED==="true",
   resourceCostCurrency=process.env.RESOURCE_COST_CURRENCY||null,
+  pricingEnv=process.env,
   fetchImpl=globalThis.fetch
 }={}){
   if(!supabaseUrl||!serviceRoleKey)throw new Error("Financial API requires server-side Supabase credentials.");
@@ -883,6 +887,50 @@ export function createFinancialIntelligenceApi({
           return error(400,"AI_COST_PERIOD_INVALID","Provide a valid reporting month.");
         const result=await rpc("ai_cost_intelligence_overview",{p_actor_id:ownerId,p_period_month:periodMonth});
         return response(200,{intelligence:result||{byProviderModel:[],byCustomer:[],unpricedEvents:0,limitations:[]}});
+      }
+      if(path==="/api/admin/finance/subscription-plan-economics"&&method==="POST"){
+        if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
+        if(!body||typeof body!=="object"||Array.isArray(body)||!Array.isArray(body.scenarios)||body.scenarios.length<1||body.scenarios.length>20)
+          return error(400,"SUBSCRIPTION_ECONOMICS_SCENARIOS_INVALID","Provide between one and twenty provider cost scenarios.");
+        if(!Number.isSafeInteger(body.creditBudgetShareBps)||body.creditBudgetShareBps<1000||body.creditBudgetShareBps>10000)
+          return error(400,"SUBSCRIPTION_ECONOMICS_BUDGET_SHARE_INVALID","Provide an explicit credit-budget share between 1000 and 10000 basis points.");
+        const policyEnv={
+          NEON_CUSTOMER_CREDITS_PER_USD:pricingEnv.CUSTOMER_CREDITS_PER_USD||pricingEnv.NEON_CUSTOMER_CREDITS_PER_USD,
+          NEON_CUSTOMER_TARGET_MARGIN_BPS:pricingEnv.CUSTOMER_TARGET_MARGIN_BPS||pricingEnv.NEON_CUSTOMER_TARGET_MARGIN_BPS,
+          NEON_CUSTOMER_PAYMENT_FEE_BPS:pricingEnv.CUSTOMER_PAYMENT_FEE_BPS||pricingEnv.NEON_CUSTOMER_PAYMENT_FEE_BPS,
+          NEON_CUSTOMER_SUPPORT_RESERVE_BPS:pricingEnv.CUSTOMER_SUPPORT_RESERVE_BPS||pricingEnv.NEON_CUSTOMER_SUPPORT_RESERVE_BPS,
+          NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS:pricingEnv.CUSTOMER_FIXED_PAYMENT_FEE_MICROS||pricingEnv.NEON_CUSTOMER_FIXED_PAYMENT_FEE_MICROS
+        };
+        let quoteCustomerCredits;
+        try{quoteCustomerCredits=createCustomerCreditQuotePolicy({env:policyEnv});}
+        catch{return error(503,"CUSTOMER_CREDIT_PRICING_UNCONFIGURED","Configure the server-owned customer credit conversion and margin policy before evaluating plan allowances.");}
+        const planRows=await dbRequest("subscription_plans?select=plan_code,name,amount_minor,currency,billing_interval,included_credits,status,is_public&status=eq.draft&is_public=eq.false&order=amount_minor.asc");
+        if(!Array.isArray(planRows.data)||planRows.data.length===0)
+          return error(409,"SUBSCRIPTION_PLAN_HYPOTHESES_NOT_FOUND","No private draft subscription plan hypotheses are available for evaluation.");
+        const estimates=[];
+        try{
+          for(const scenario of body.scenarios){
+            if(!scenario||typeof scenario!=="object"||Array.isArray(scenario))throw Object.assign(new Error("Each provider scenario must be a JSON object."),{code:"SUBSCRIPTION_ECONOMICS_SCENARIO_INVALID"});
+            const estimate=estimateVideoGenerationCost(scenario);
+            estimates.push({
+              ...estimate,provider:estimate.provider||scenario.provider,model:estimate.model||scenario.model,
+              operation:estimate.operation||scenario.operation||"video",
+              durationSeconds:estimate.durationSeconds??scenario.durationSeconds,
+              resolution:estimate.resolution||scenario.resolution||"provider_default",
+              pricingSource:estimate.pricingSource||estimate.pricingUrl||"provider_pricing_snapshot",
+              pricingDate:estimate.pricingDate||new Date().toISOString().slice(0,10)
+            });
+          }
+          const economics=calculateSubscriptionPlanCreditEconomics({
+            plans:planRows.data,scenarios:estimates,quoteCustomerCredits,
+            creditsPerUsd:Number(policyEnv.NEON_CUSTOMER_CREDITS_PER_USD),
+            creditBudgetShareBps:body.creditBudgetShareBps
+          });
+          return response(200,{economics});
+        }catch(err){
+          const code=String(err?.code||"SUBSCRIPTION_ECONOMICS_CALCULATION_FAILED");
+          return error(422,code,String(err?.message||"Subscription plan economics could not be calculated safely.").slice(0,300));
+        }
       }
       if(path==="/api/admin/finance/model-rate-card-estimates"&&method==="POST"){
         if(!await requireAdmin(ownerId))return error(403,"FINANCIAL_ADMIN_REQUIRED","A finance administrator role is required.");
