@@ -109,3 +109,21 @@ test("billing workspace renders authoritative usage, reserved spend and gated al
  assert.match(app,/allowancePublished/);
  assert.match(css,/\.credit-usage-panel/);
 });
+
+test("read-only usage stays available while billing remains disabled and non-GET access stays blocked",async()=>{
+ const api=service(async url=>{
+  if(String(url).endsWith("/rpc/get_customer_credit_spend_summary"))return json({
+   periodStart:"2026-11-01T00:00:00.000Z",periodEnd:"2026-12-01T00:00:00.000Z",
+   periodType:"calendar_month",subscriptionAmbiguous:false,allowance:null,
+   allowancePublished:false,settledCredits:0,reservedCredits:0,usedCredits:0,
+   usagePercent:null,alertsEnabled:false,alerts:[],
+   accountingBasis:"settled_actual_plus_active_reservations"
+  });
+  throw new Error("Unexpected request: "+String(url));
+ });
+ const read=await api.handle({method:"GET",path:"/api/billing/credits/usage",ownerId:owner});
+ assert.equal(read.status,200);
+ const write=await api.handle({method:"POST",path:"/api/billing/credits/usage",ownerId:owner,body:{}});
+ assert.equal(write.status,503);
+ assert.equal(write.body.error.code,"BILLING_DISABLED");
+});
