@@ -65,6 +65,65 @@ test("admin-only plan economics uses persisted draft hypotheses and server-owned
  assert.ok(calls.some(call=>call.target.includes("status=eq.draft")&&call.target.includes("is_public=eq.false")));
 });
 
+test("plan economics exposes separate invoice-backed cost evidence and never treats blended cost as model pricing",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const usageEvents=[],invoiceAttributions=[],creditReservations=[];
+ for(let i=1;i<=5;i++){
+  const jobId=uuid(100+i),usageId=uuid(200+i);
+  usageEvents.push({id:usageId,job_id:jobId,status:"succeeded",period_month:"2026-11-01"});
+  invoiceAttributions.push({usage_event_id:usageId,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)});
+  creditReservations.push({job_id:jobId,actual_credits:1000,state:"settled"});
+ }
+ const calls=[];
+ const service=api(async(url,options={})=>{
+  const target=String(url);calls.push({target,method:options.method||"GET"});
+  if(target.includes("/platform_admins?"))return json([{role:"billing_admin"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("period_month=eq.2026-11-01"))return json(usageEvents);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("job_id=in."))return json(usageEvents);
+  if(target.includes("financial_cost_attribution_links?"))return json(invoiceAttributions);
+  if(target.includes("billing_credit_reservations?"))return json(creditReservations);
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,periodMonth:"2026-11-01",scenarios:[scenario]}});
+ assert.equal(result.status,200,JSON.stringify({body:result.body,calls}));
+ assert.equal(result.body.actualCostEvidence.status,"verified_measured");
+ assert.equal(result.body.actualCostEvidence.sampleJobs,5);
+ assert.equal(result.body.actualCostEvidence.sampleCredits,5000);
+ assert.equal(result.body.actualCostEvidence.totalProviderCostMinor,500);
+ assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,1);
+ assert.equal(result.body.actualCostEvidence.currency,"USD");
+ assert.equal(result.body.actualCostEvidence.perModelAttributionAvailable,false);
+ assert.equal(result.body.actualCostEvidence.workloadCostStatus,"unpriced_model_operation_attribution_unavailable");
+ assert.equal(result.body.allowanceReadiness.publishable,false);
+ assert.match(result.body.allowanceReadiness.status,/requires_finance_product_approval/);
+ assert.ok(result.body.economics.scenarios.every(row=>row.estimateType==="forecast_not_actual"));
+ assert.ok(calls.every(call=>call.method==="GET"));
+});
+
+test("plan economics blocks actual-cost readiness when invoice sample is insufficient or truncated",async()=>{
+ const uuid=n=>"00000000-0000-4000-8000-"+String(n).padStart(12,"0");
+ const small=Array.from({length:4},(_,i)=>({id:uuid(200+i),job_id:uuid(100+i),status:"succeeded",period_month:"2026-11-01"}));
+ const service=api(async(url)=>{
+  const target=String(url);
+  if(target.includes("/platform_admins?"))return json([{role:"owner"}]);
+  if(target.includes("/subscription_plans?"))return json(plans);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("period_month=eq."))return json(small);
+  if(target.includes("ai_usage_cost_events?")&&target.includes("job_id=in."))return json(small);
+  if(target.includes("financial_cost_attribution_links?"))return json(small.map((row,i)=>({usage_event_id:row.id,amount_minor:100,currency:"USD",invoice_import_id:uuid(300+i),invoice_line_id:uuid(400+i)})));
+  if(target.includes("billing_credit_reservations?"))return json(small.map(row=>({job_id:row.job_id,actual_credits:1000,state:"settled"})));
+  throw new Error("Unexpected request: "+target);
+ });
+ const result=await service.handle({method:"POST",path:"/api/admin/finance/subscription-plan-economics",ownerId:owner,
+  body:{creditBudgetShareBps:7000,periodMonth:"2026-11-01",scenarios:[scenario]}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.actualCostEvidence.status,"insufficient_sample");
+ assert.equal(result.body.actualCostEvidence.providerCostPerCustomerCreditMinor,null);
+ assert.equal(result.body.allowanceReadiness.status,"blocked_waiting_for_sufficient_complete_invoice_evidence");
+ assert.equal(result.body.allowanceReadiness.publishable,false);
+});
+
 test("subscription economics rejects non-admin users before reading plan or provider data",async()=>{
  const service=api(async(url)=>{
   if(String(url).includes("/platform_admins?"))return json([{role:"support"}]);
