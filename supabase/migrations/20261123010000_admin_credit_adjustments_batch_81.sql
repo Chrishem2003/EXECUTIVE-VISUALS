@@ -56,6 +56,20 @@ begin
     raise exception 'FINANCIAL_ADMIN_REQUIRED' using errcode='42501';
   end if;
 
+  perform pg_advisory_xact_lock(hashtextextended('admin-credit-adjustment:'||p_idempotency_key,0));
+
+  -- Expire due subscription allowance before a debit, unless active reservations
+  -- cause the expiry function to defer the owner safely.
+  perform executive_visuals.expire_due_subscription_credits(p_owner_id,clock_timestamp());
+
+  insert into executive_visuals.billing_credit_accounts(owner_id)
+    values(p_owner_id) on conflict(owner_id) do nothing;
+  select a.status into account_status from executive_visuals.billing_credit_accounts a
+   where a.owner_id=p_owner_id for update;
+  if account_status is distinct from 'active' then
+    raise exception 'BILLING_ACCOUNT_NOT_ACTIVE' using errcode='23514';
+  end if;
+
   select * into existing from executive_visuals.billing_credit_admin_adjustments
    where idempotency_key=p_idempotency_key for update;
   if found then
@@ -72,18 +86,6 @@ begin
       'ownerId',p_owner_id,'deltaCredits',existing.delta_credits,
       'balanceAfter',existing.balance_after,'currentBalance',v_balance,
       'idempotentReplay',true);
-  end if;
-
-  -- Expire due subscription allowance before a debit, unless active reservations
-  -- cause the expiry function to defer the owner safely.
-  perform executive_visuals.expire_due_subscription_credits(p_owner_id,clock_timestamp());
-
-  insert into executive_visuals.billing_credit_accounts(owner_id)
-    values(p_owner_id) on conflict(owner_id) do nothing;
-  select a.status into account_status from executive_visuals.billing_credit_accounts a
-   where a.owner_id=p_owner_id for update;
-  if account_status is distinct from 'active' then
-    raise exception 'BILLING_ACCOUNT_NOT_ACTIVE' using errcode='23514';
   end if;
 
   select coalesce(sum(l.amount),0)::bigint into v_balance
