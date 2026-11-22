@@ -64,9 +64,9 @@ This increment adds database controls and an owner-scoped usage RPC. It does not
 
 The opt-in server API is guarded by `PROJECT_CREDIT_POOL_API_ENABLED=true`, verified Supabase authentication and server-side Supabase credentials. It is disabled by default and must only be enabled after the corresponding migrations are applied to the intended Supabase environment.
 
-- `POST /api/projects/:projectId/credit-pool` configures the pool monthly spend ceiling.
-- `POST /api/projects/:projectId/credit-pool/fund` transfers existing personal credits into the project pool and requires an idempotency key.
-- `GET /api/projects/:projectId/credit-pool/members` returns owner-scoped member usage, limits and remaining monthly allowance.
-- `PUT /api/projects/:projectId/credit-pool/members/:memberId/policy` sets a member monthly cap or pauses new spending.
+- `POST /api/cloud/projects/:projectId/credit-pool` configures the pool monthly spend ceiling.
+- `POST /api/cloud/projects/:projectId/credit-pool/fund` transfers existing personal credits into the project pool and requires an idempotency key.
+- `GET /api/cloud/projects/:projectId/credit-pool/members` returns owner-scoped member usage, limits and remaining monthly allowance.
+- `PUT /api/cloud/projects/:projectId/credit-pool/members/:memberId/policy` sets a member monthly cap or pauses new spending.
 
 Every endpoint requires local project-owner access and repeats owner authorization in the database RPC. Member jobs remain owned by the initiating actor; only the owner-funded project pool pays. API enablement is not a production migration or deployment approval.
