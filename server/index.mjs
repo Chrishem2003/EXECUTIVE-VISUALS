@@ -1253,8 +1253,8 @@ export function createAppServer() {
           const qualityEvidence=evidence.records.find(item=>item.provider===record.provider&&item.model===record.model)||null;
           return {id:record.provider+":"+record.model,provider:record.provider,model:record.model,creditQuote,qualityEvidence};
         });
-        if(candidates.length<2){
-          send(res,200,{recommendation:{mode:"recommendation_only",automaticRouting:false,recommended:null,candidates:[],reason:"At least two current provider rate cards are required for a model comparison."},evidenceConfigured:evidence.configured},cors);return;
+        if(candidates.length<2||candidates.length>20){
+          send(res,200,{recommendation:{mode:"recommendation_only",automaticRouting:false,recommended:null,candidates:[],reason:"Configure between two and twenty current provider rate cards for a model comparison."},evidenceConfigured:evidence.configured},cors);return;
         }
         const parseNumberThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isFinite(value)&&value>=min&&value<=max?value:fallback;};
         const parseIntegerThreshold=(raw,fallback,min,max)=>{const value=raw==null||String(raw).trim()===""?fallback:Number(raw);return Number.isSafeInteger(value)&&value>=min&&value<=max?value:fallback;};
