@@ -13,7 +13,7 @@ Primary sources checked on 2026-11-22:
 - Task status / final task cost and model-router cost explanation: https://dev.runway.com/learn/choosing-the-right-model
 - Task detail and API reference: https://docs.dev.runwayml.com/api/
 - Model Router generation response and dry-run distinction: https://docs.dev.runwayml.com/model-routers/generating/
-- Provider credit denomination: https://docs.dev.runway.com/pricing (Runway Dev pricing states 1 credit = USD $0.01)
+- Provider credit denomination: https://dev.runway.com/pricing (Runway Dev pricing states 1 credit = USD $0.01)
 
 ## Implemented normalization
 
