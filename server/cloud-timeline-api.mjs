@@ -672,7 +672,8 @@ const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
       throw Object.assign(new Error("The durable workflow approval RPC returned an invalid job and reservation receipt."),{code:"VIDEO_WORKFLOW_APPROVAL_RECEIPT_INVALID"});
      }
      const replay=rows[0].idempotent_replay===true;
-     return response(replay?200:202,{job:{id:rows[0].job_id,status:rows[0].job_status},approval:{id:rows[0].approval_id,approvedMaxAmount,currency:"USD"},budgetReservationId:rows[0].budget_reservation_id,idempotentReplay:replay});
+     return response(replay?200:202,{job:{id:rows[0].job_id,status:rows[0].job_status},approval:{id:rows[0].approval_id,approvedMaxAmount,
+      customerCreditBudgetCredits,requiredCustomerCredits,currency:"USD"},budgetReservationId:rows[0].budget_reservation_id,idempotentReplay:replay});
     }catch(error){
      const code=String(error?.code||"VIDEO_WORKFLOW_APPROVAL_FAILED");
      const status=code.includes("INVALID")||code.includes("MISMATCH")||code.includes("REQUIRED")?422:503;
