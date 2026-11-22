@@ -1,3 +1,4 @@
+import {readFile} from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createFinancialIntelligenceApi} from "../financial-intelligence-api.mjs";
@@ -96,4 +97,15 @@ test("customer spend utilization is capped for progress rendering while retainin
  assert.equal(result.body.usage.usedCredits,250);
  assert.equal(result.body.usage.usagePercent,100);
  assert.ok(result.body.usage.alerts.every(item=>item.usagePercent===100));
+});
+
+test("billing workspace renders authoritative usage, reserved spend and gated allowance warnings",async()=>{
+ const app=await readFile(new URL("../../src/platform/app.ts",import.meta.url),"utf8");
+ const css=await readFile(new URL("../../src/platform/style.css",import.meta.url),"utf8");
+ assert.match(app,/\/api\/billing\/credits\/usage/);
+ assert.match(app,/SPENDING & BUDGET CONTROL/);
+ assert.match(app,/Settled generation spend/);
+ assert.match(app,/Reserved for active jobs/);
+ assert.match(app,/credit_allowance_published/);
+ assert.match(css,/\.credit-usage-panel/);
 });
