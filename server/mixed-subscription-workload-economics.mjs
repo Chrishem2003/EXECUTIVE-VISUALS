@@ -67,7 +67,7 @@ export function calculateMixedSubscriptionWorkloadEconomics({planEconomics,workl
  });
  const plans=planEconomics.plans.map(plan=>{
   if(!plan||typeof plan!=="object"||Array.isArray(plan))fail("SUBSCRIPTION_WORKLOAD_ECONOMICS_INPUT_INVALID","Each draft plan must be an object.");
-  const amountMinor=integer(plan.amountMinor,"draft plan price in minor units",{min:0,max:Number.MAX_SAFE_INTEGER});
+  const amountMinor=integer(plan.amountMinor,"draft plan price in minor units",{min:0,max:100_000_000});
   const priceUsd=amountMinor/100;
   const monthlyCreditAllowance=integer(plan.proposedMonthlyCreditAllowance,"hypothetical monthly credit allowance",{min:0,max:100000000});
   const mixes=normalized.map(workload=>{
