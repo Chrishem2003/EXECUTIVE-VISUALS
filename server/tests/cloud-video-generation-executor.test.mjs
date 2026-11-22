@@ -38,6 +38,7 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   };
   return {
     calls, ledger, adapter,
+    quoteCustomerCredits: ({ currency, amountMicros }) => { calls.push(["quoteCustomerCredits", currency, amountMicros]); if (currency !== "USD" || !Number.isSafeInteger(amountMicros)) throw new Error("Invalid test pricing input"); return Math.ceil(amountMicros * 16 / 1000000); },
     customerCredits: { async settleJob(value) { calls.push(["settleCredits", value]); if (creditError) throw creditError; return { balance: 40, adjustment: 2, replayed: false }; } },
     ingestOutputs: async value => { calls.push(["ingest", value.providerTaskId]); if (ingestError) throw ingestError; return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } }; },
     resolveActualCost: async value => { calls.push(["cost", value.providerTaskId, value.submissionMetadata]); if (costError) throw costError; return cost; }
@@ -62,7 +63,7 @@ test("workflow generation settles customer credits with provider task evidence b
   const f = fixture();
   const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
   const result = await executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f });
-  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "settleCredits", "ingest"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "quoteCustomerCredits", "settleCredits", "ingest"]);
   const settlement = f.calls.find(call => call[0] === "settleCredits")[1];
   assert.equal(settlement.jobId, job.id);
   assert.equal(settlement.ownerId, ownerId);
@@ -73,12 +74,22 @@ test("workflow generation settles customer credits with provider task evidence b
   assert.equal(result.customerCreditSettlement.balance, 40);
 });
 
-test("workflow generation refuses to guess customer credits when provider evidence omits actual credits", async () => {
-  const f = fixture({ cost: { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" } });
+test("workflow settlement converts verified USD cost with the shared policy, not provider credit units", async () => {
+  const f = fixture({ cost: { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9", providerCredits: 75, actualCredits: 9999 } });
+  const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
+  const result = await executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f });
+  const settlement = f.calls.find(call => call[0] === "settleCredits")[1];
+  assert.equal(settlement.actualCredits, 12);
+  assert.equal(result.actualCredits, 12);
+  assert.equal(result.providerCredits, 75);
+});
+
+test("workflow generation refuses customer-credit settlement when shared pricing policy is missing", async () => {
+  const f = fixture();
   const workflowJob = { ...job, input: { ...job.input, workflowQuoteId: "523e4567-e89b-42d3-a456-426614174000" } };
   await assert.rejects(
-    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f }),
-    error => error.code === "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED"
+    executeCloudVideoGenerationJob({ job: workflowJob, workerId: "worker-1", ...f, quoteCustomerCredits: null }),
+    error => error.code === "VIDEO_CUSTOMER_CREDIT_POLICY_UNCONFIGURED"
   );
   assert.equal(f.calls.some(call => call[0] === "settleCredits"), false);
   assert.equal(f.calls.some(call => call[0] === "ingest"), false);
