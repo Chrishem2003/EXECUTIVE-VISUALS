@@ -14,6 +14,7 @@ import { assessFinancialCloseReadiness } from "./financial-close-readiness.mjs";
 import { canonicalFinancialAuditJson, createFinancialAuditEvent, verifyFinancialAuditChain, FINANCIAL_AUDIT_EVENT_TYPES } from "./financial-audit-ledger.mjs";
 import { exportFinancialAuditBundle } from "./financial-audit-export.mjs";
 import { calculateFinancialScenarioIntelligence } from "./financial-scenario-intelligence.mjs";
+import { buildPublicSubscriptionCatalogue } from "./subscription-plan-catalogue.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_PAGE=100;
@@ -333,8 +334,15 @@ export function createFinancialIntelligenceApi({
         return response(202,{event:result});
       }
       if(path==="/api/billing/plans"&&method==="GET"){
-        const result=await dbRequest("subscription_plans?select=plan_code,name,description,billing_interval,amount_minor,currency,included_credits,entitlements,version&status=eq.active&is_public=eq.true&order=amount_minor.asc");
-        return response(200,{plans:Array.isArray(result.data)?result.data:[]});
+        const [planRows,priceRows]=await Promise.all([
+          dbRequest("subscription_plans?select=id,plan_code,name,description,billing_interval,amount_minor,currency,included_credits,entitlements,version,status,is_public&status=eq.active&is_public=eq.true&order=amount_minor.asc"),
+          dbRequest("subscription_plan_provider_prices?select=plan_id,provider,provider_price_id,amount_minor,currency,active&active=eq.true")
+        ]);
+        const plans=buildPublicSubscriptionCatalogue({
+          plans:Array.isArray(planRows.data)?planRows.data:[],
+          providerPrices:Array.isArray(priceRows.data)?priceRows.data:[]
+        });
+        return response(200,{plans,catalogueVersion:1,checkoutEnabled:plans.some(plan=>plan.checkoutProviders.length>0)});
       }
       if(path==="/api/billing/subscription"&&method==="GET"){
         const result=await dbRequest("customer_subscriptions?select=id,provider,plan_code,plan_version,status,billing_interval,amount_minor,currency,included_credits,entitlements_snapshot,current_period_start,current_period_end,grace_until,cancel_at_period_end,cancelled_at,scheduled_plan_code,scheduled_plan_version,scheduled_billing_interval,scheduled_amount_minor,scheduled_currency,scheduled_plan_at,created_at&owner_id=eq."+encodeURIComponent(ownerId)+"&status=in.(pending,trialing,active,past_due)&order=created_at.desc&limit=1");
