@@ -43,6 +43,31 @@ export function resolveCustomerCreditPolicy(env=process.env){
  return policy?Object.freeze({configured:true,policy}):Object.freeze({configured:false,invalid:["CUSTOMER_CREDIT_POLICY"]});
 }
 
+export function parseVideoModelQualityEvidence(raw){
+ if(typeof raw!=="string"||!raw.trim())return Object.freeze({configured:false,records:Object.freeze([]),rejectedCount:0});
+ let parsed;
+ try{parsed=JSON.parse(raw);}catch{return Object.freeze({configured:false,records:Object.freeze([]),rejectedCount:1});}
+ if(!Array.isArray(parsed)||parsed.length>100)return Object.freeze({configured:false,records:Object.freeze([]),rejectedCount:1});
+ const records=[],seen=new Set();let rejectedCount=0;
+ for(const item of parsed){
+  if(!item||typeof item!=="object"||Array.isArray(item)||
+     typeof item.provider!=="string"||!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(item.provider)||
+     typeof item.model!=="string"||!item.model.trim()||item.model.length>160||
+     item.verified!==true||!safeInt(item.sampleCount,25,1000000)||
+     typeof item.qualityScore!=="number"||!Number.isFinite(item.qualityScore)||item.qualityScore<0||item.qualityScore>1||
+     typeof item.p95LatencyMs!=="number"||!safeInt(item.p95LatencyMs,1,86400000)||
+     typeof item.evaluationVersion!=="string"||!/^[A-Za-z0-9._-]{1,100}$/.test(item.evaluationVersion)){
+   rejectedCount++;continue;
+  }
+  const provider=item.provider.toLowerCase(),model=item.model.trim(),key=provider+"\\0"+model;
+  if(seen.has(key)){rejectedCount++;continue;}
+  seen.add(key);
+  records.push(Object.freeze({provider,model,verified:true,sampleCount:item.sampleCount,
+   qualityScore:item.qualityScore,p95LatencyMs:item.p95LatencyMs,evaluationVersion:item.evaluationVersion}));
+ }
+ return Object.freeze({configured:records.length>0,records:Object.freeze(records),rejectedCount});
+}
+
 /**
  * Converts a provider cost estimate into a customer-credit quote.
  * This is a preview only: it never reads or mutates a balance, reserves credits,
@@ -128,7 +153,7 @@ export function evaluateProductionEntitlement({subscription,request,creditBalanc
  * when independent, versioned quality evidence meets the configured sample and
  * quality gates. Cost alone must never silently select a lower-quality model.
  */
-export function compareCommercialProductionCandidates({candidates,minQualityScore=0.9,minSamples=25}={}){
+export function compareCommercialProductionCandidates({candidates,minQualityScore=0.9,minSamples=25,maxLatencyMs=30000}={}){
  if(!Array.isArray(candidates)||candidates.length<2||candidates.length>20)
   throw fail("COMMERCIAL_CANDIDATE_COUNT_INVALID","Provide between 2 and 20 production candidates.");
  if(typeof minQualityScore!=="number"||!Number.isFinite(minQualityScore)||minQualityScore<0||minQualityScore>1||
@@ -139,15 +164,15 @@ export function compareCommercialProductionCandidates({candidates,minQualityScor
   const evidence=candidate?.qualityEvidence;
   const evidenceReady=Boolean(evidence&&evidence.verified===true&&typeof evidence.evaluationVersion==="string"&&
     evidence.evaluationVersion.trim()&&safeInt(evidence.sampleCount,1,1000000)&&
-    typeof evidence.qualityScore==="number"&&Number.isFinite(evidence.qualityScore)&&evidence.qualityScore>=minQualityScore&&evidence.sampleCount>=minSamples);
+    typeof evidence.qualityScore==="number"&&Number.isFinite(evidence.qualityScore)&&evidence.qualityScore>=minQualityScore&&evidence.sampleCount>=minSamples&&safeInt(evidence.p95LatencyMs,1,86400000));
   return Object.freeze({id:String(candidate?.id||""),provider:String(candidate?.provider||""),model:String(candidate?.model||""),
    customerCredits:quote?.available===true&&safeInt(quote.customerCredits,1,1000000000)?quote.customerCredits:null,
    evidenceReady,qualityScore:evidence?.qualityScore??null,evaluationVersion:evidence?.evaluationVersion??null,
-   eligible:evidenceReady&&quote?.available===true&&safeInt(quote.customerCredits,1,1000000000)});
+   p95LatencyMs:evidence?.p95LatencyMs??null,eligible:evidenceReady&&evidence.p95LatencyMs<=maxLatencyMs&&quote?.available===true&&safeInt(quote.customerCredits,1,1000000000)});
  });
  if(rows.some(row=>!row.id)||new Set(rows.map(row=>row.id)).size!==rows.length)
   throw fail("COMMERCIAL_CANDIDATE_ID_INVALID","Every production candidate needs a unique identifier.");
- const eligible=rows.filter(row=>row.eligible).sort((a,b)=>a.customerCredits-b.customerCredits||b.qualityScore-a.qualityScore);
+ const eligible=rows.filter(row=>row.eligible).sort((a,b)=>a.customerCredits-b.customerCredits||b.qualityScore-a.qualityScore||a.p95LatencyMs-b.p95LatencyMs);
  return Object.freeze({mode:"recommendation_only",automaticRouting:false,recommended:eligible[0]||null,
   candidates:Object.freeze(rows),reason:eligible.length?"Lowest-credit candidate with qualifying independent quality evidence.":"No candidate has enough verified quality evidence; choose manually or collect more evaluations."});
 }
