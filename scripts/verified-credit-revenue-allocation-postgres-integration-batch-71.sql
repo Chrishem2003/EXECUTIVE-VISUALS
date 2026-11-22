@@ -40,27 +40,30 @@ begin
      'card','batch71-owner@example.invalid','Subscription payment',
      '2026-11-22T09:01:00Z','2026-11-22T09:01:00Z',
      '{"payment_purpose":"subscription_renewal","subscription_applied":true}');
+  -- Source order is paid top-up, promotional grant, then subscription allowance.
+  -- This makes the FIFO test exercise all three source classes in one job.
   insert into executive_visuals.credit_ledger(
     owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
   ) values(v_owner,'purchase_grant',100,'batch71-old-ledger-paid',v_payment_paid,'Verified paid credit pack','{}')
   returning id into v_old_paid_grant;
-  insert into executive_visuals.credit_ledger(
-    owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
-  ) values(v_owner,'purchase_grant',50,'batch71-old-ledger-subscription',v_payment_subscription,'Verified subscription allowance','{}')
-  returning id into v_old_subscription_grant;
-
   select id into v_paid_grant from executive_visuals.billing_credit_ledger
    where idempotency_key='payment-credit-ledger:'||v_old_paid_grant::text;
-  select id into v_subscription_grant from executive_visuals.billing_credit_ledger
-   where idempotency_key='payment-credit-ledger:'||v_old_subscription_grant::text;
-  if v_paid_grant is null or v_subscription_grant is null then
-    raise exception 'Verified payment ledger grants were not mirrored into the generation wallet';
-  end if;
+
   select ledger_id into v_promo_grant
     from executive_visuals.grant_generation_credits(
       v_owner,10,'batch71-wallet-promo','Promotional credits',
       '{"sourceType":"promotional"}'
     );
+
+  insert into executive_visuals.credit_ledger(
+    owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
+  ) values(v_owner,'purchase_grant',50,'batch71-old-ledger-subscription',v_payment_subscription,'Verified subscription allowance','{}')
+  returning id into v_old_subscription_grant;
+  select id into v_subscription_grant from executive_visuals.billing_credit_ledger
+   where idempotency_key='payment-credit-ledger:'||v_old_subscription_grant::text;
+  if v_paid_grant is null or v_subscription_grant is null then
+    raise exception 'Verified payment ledger grants were not mirrored into the generation wallet';
+  end if;
 
   v_source:=executive_visuals.register_generation_credit_revenue_source(
     v_owner,v_paid_grant,'paid_credit_pack',v_payment_paid,1000,'USD',
