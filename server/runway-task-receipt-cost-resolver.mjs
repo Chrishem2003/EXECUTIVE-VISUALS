@@ -1,14 +1,13 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const USD_PER_RUNWAY_CREDIT = 0.01;
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 /**
- * Settle a Runway generation from the cost receipt on GET /v1/tasks/:id.
- * This is task-correlated provider evidence, unlike router dry-run estimates
- * or workspace-level aggregates. The resolver performs no network request:
- * the adapter supplies the cost field from the exact persisted task response.
+ * Settle a Runway generation from cost.credits on GET /v1/tasks/:id.
+ * Provider credits are converted to USD first, then priced into Executive
+ * Visuals customer credits with the same margin/fee policy as the preflight
+ * quote. The provider's credit denomination is never reused as customer units.
  */
-export function createRunwayTaskReceiptCostResolver() {
+export function createRunwayTaskReceiptCostResolver({ quoteCustomerCredits } = {}) {
   const resolve = async function resolveRunwayTaskReceiptCost({
     input, task, providerTaskId
   } = {}) {
@@ -19,18 +18,36 @@ export function createRunwayTaskReceiptCostResolver() {
         task?.taskId !== id || task?.status !== "succeeded") {
       throw fail("Runway settlement requires the exact succeeded task and matching provider/model identity.", "RUNWAY_TASK_RECEIPT_IDENTITY_INVALID");
     }
-    const credits = task.actualCostCredits;
-    if (!Number.isSafeInteger(credits) || credits < 1 || credits > 1000000000) {
+    const providerCredits = task.actualCostCredits;
+    if (!Number.isSafeInteger(providerCredits) || providerCredits < 1 || providerCredits > 1000000000) {
       throw fail("Runway task response did not contain a valid realized cost in provider credits.", "RUNWAY_TASK_RECEIPT_COST_MISSING");
     }
-    const amountMinor = credits;
+    if (typeof quoteCustomerCredits !== "function") {
+      throw fail("Verified provider cost cannot be settled without the configured customer-credit pricing policy.", "VIDEO_CUSTOMER_CREDIT_POLICY_UNCONFIGURED");
+    }
+    // Runway Dev documents one provider credit as USD $0.01. Convert directly
+    // to integer USD micro-units before applying the shared cost-plus policy.
+    const amountMicros = providerCredits * 10000;
+    if (!Number.isSafeInteger(amountMicros) || amountMicros < 1) {
+      throw fail("Runway provider credits exceed safe USD micro-unit bounds.", "RUNWAY_TASK_RECEIPT_COST_INVALID");
+    }
+    let customerCredits;
+    try {
+      customerCredits = quoteCustomerCredits({ currency: "USD", amountMicros });
+    } catch {
+      throw fail("Verified provider cost could not be converted using the approved customer-credit pricing policy.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
+    if (!Number.isSafeInteger(customerCredits) || customerCredits < 1 || customerCredits > 100000000) {
+      throw fail("Customer-credit settlement amount is outside approved bounds.", "VIDEO_CUSTOMER_CREDIT_SETTLEMENT_UNRESOLVED");
+    }
     return Object.freeze({
-      amount: Number((amountMinor / 100).toFixed(2)),
+      amount: Number((providerCredits / 100).toFixed(2)),
       currency: "USD",
-      actualCredits: credits,
-      creditsCharged: credits,
+      actualCredits: customerCredits,
+      customerCredits,
+      providerCredits,
       model: input.model,
-      evidenceReference: "runway-task-receipt:" + id + ":credits:" + credits
+      evidenceReference: "runway-task-receipt:" + id + ":provider-credits:" + providerCredits
     });
   };
   return resolve;
