@@ -406,6 +406,22 @@ test("credit balance endpoint returns server-computed owner balance only",async(
   assert.deepEqual(rpcBody,{p_owner_id:owner});
 });
 
+test("credit-pack catalogue exposes only active server-priced products",async()=>{
+  let requestUrl="";
+  const service=api(async url=>{
+    requestUrl=String(url);
+    return json([{product_code:"creator_credits",name:"Creator credits",description:"Test pack",
+      product_type:"credit_pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+  });
+  const result=await service.handle({method:"GET",path:"/api/billing/products",ownerId:owner});
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body.products,[{product_code:"creator_credits",name:"Creator credits",
+    description:"Test pack",product_type:"credit_pack",amount_minor:5000,currency:"UGX",credit_units:100}]);
+  assert.ok(requestUrl.includes("active=eq.true"));
+  assert.ok(requestUrl.includes("order=amount_minor.asc"));
+  assert.ok(requestUrl.includes("amount_minor,currency,credit_units"));
+});
+
 test("credit balance endpoint fails closed on malformed database values",async()=>{
   const service=api(async()=>json({ledger_balance:"not-a-number",reserved_credits:0,available_credits:0}));
   const result=await service.handle({method:"GET",path:"/api/billing/credits",ownerId:owner});
