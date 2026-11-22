@@ -47,7 +47,7 @@ test("reservation RPC expires due allowances before checking spendable wallet ba
 });
 
 test("wallet summary exposes available, reserved, consumed, expiring, lots and recent ledger history",()=>{
- for(const field of ["availableCredits","reservedCredits","consumedCredits","expiringWithinSevenDays","creditLots","recentTransactions","expiresAt","creditsRemaining"])
+ for(const field of ["availableCredits","pendingExpiryCredits","expiryDeferred","reservedCredits","consumedCredits","expiringWithinSevenDays","creditLots","recentTransactions","expiresAt","creditsRemaining"])
    assert.ok(migration.includes(field),`missing wallet field ${field}`);
  assert.match(migration,/limit 100/);
  assert.match(migration,/get_customer_credit_wallet\(uuid\)/);
