@@ -73,6 +73,7 @@ test("coverage migration requires invoice-backed matches and never converts cred
   const sql=await readFile(new URL("../../supabase/migrations/20261122170000_verified_job_cost_coverage_batch_70.sql",import.meta.url),"utf8");
   assert.match(sql,/ai_provider_invoice_reconciliation_events/);
   assert.match(sql,/e\.match_status='matched'/);
+  assert.match(sql,/i\.reconciliation_status in\('pending','matched'\)/);
   assert.match(sql,/having count\(r\.id\)=i\.imported_line_count/);
   assert.match(sql,/count\(\*\) filter\(where r\.match_status<>'matched'\)=0/);
   assert.match(sql,/billing_credit_reservations/);
