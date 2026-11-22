@@ -57,6 +57,11 @@ on:
       - "scripts/verify-neon-video-approval-bridge-postgres.sql"
       - "scripts/verify-neon-queue-postgres.sql"
       - "scripts/verify-neon-worker-concurrency.mjs"
+      - "supabase/migrations/20261112090000_persistent_financial_audit_ledger_batch_30.sql"
+      - "supabase/migrations/20261122150000_persistent_subscription_allowance_approvals_batch_59.sql"
+      - "scripts/prepare-subscription-allowance-approvals-postgres.sql"
+      - "scripts/verify-subscription-allowance-approvals-postgres.sql"
+      - "server/tests/subscription-allowance-persistence-batch-59.test.mjs"
       - ".github/workflows/neon-postgres-financials.yml"
   pull_request:
     paths:
@@ -169,6 +174,12 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0007_video_approval_bridge.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0008_retryable_submission_recovery.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/neon/migrations/0009_safe_queued_video_cancellation.sql
+      - name: Verify durable subscription allowance proposals and dual approvals
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/prepare-subscription-allowance-approvals-postgres.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261112090000_persistent_financial_audit_ledger_batch_30.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261122150000_persistent_subscription_allowance_approvals_batch_59.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-subscription-allowance-approvals-postgres.sql
       - name: Verify PostgreSQL reservation, settlement, verified release and lease-fenced safe retry
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-neon-financials-postgres.sql
       - name: Verify queued video cancellation and atomic verified-no-submission credit release
