@@ -16,6 +16,7 @@ const pricing=[{
  minimumCharge:0,audioSurchargePerSecond:0,referenceImageFee:0,billingIncrementSeconds:1
 }];
 const policy={
+ CUSTOMER_CREDIT_CURRENCY:"USD",
  CUSTOMER_CREDIT_VALUE_MINOR:"1",
  CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR:"100",
  CUSTOMER_CREDIT_TARGET_MARGIN_BPS:"6000",
