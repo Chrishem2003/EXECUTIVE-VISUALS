@@ -28,10 +28,10 @@ This branch adds a fail-closed subscription policy and a read-only plan-catalogu
 
 ## Remaining integration work
 
-1. Wire the catalogue to a read-only authenticated plans endpoint and the billing workspace UI.
+1. The authenticated `/api/billing/plans` endpoint now loads plan rows and active Paddle/Pesapal price mappings through the server database client, validates them with the catalogue policy and returns a versioned customer DTO. The existing billing workspace already consumes this endpoint; its legacy plan fields are preserved.
 2. Inject the entitlement resolver into quote approval and durable worker admission, backed by the same trusted subscription repository.
 3. Add verified-renewal idempotent credit grants, lifecycle semantics and agency shared pools.
 4. Add margin-floor scenarios using the existing dated provider rate cards and measured usage telemetry.
 5. Complete isolated Paddle/Pesapal sandbox and Neon/PostgreSQL acceptance before enabling checkout or paid generation.
 
-No migrations, credentials, live checkout, production configuration or deployments are changed by this slice.
+No migrations, credentials, live checkout, production configuration or deployments are changed by this slice. The UI can display the validated catalogue, but checkout remains separately gated and still reserves its price through the existing database RPC.
