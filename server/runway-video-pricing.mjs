@@ -33,14 +33,14 @@ export function estimateRunwayVideoCredits(options={}) {
   const allowed=new Set([
     "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
-    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate"
+    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate","hdr"
   ]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length) {
     throw fail("Unsupported pricing options: "+unknown.join(", "),"RUNWAY_PRICE_UNSUPPORTED_OPTION");
   }
   const {
-    model,durationSeconds,resolution:outputResolution,audio:hasAudio,
+    model,durationSeconds,resolution:outputResolution,audio:hasAudio,hdr:hasHdr=false,
     inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
     hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",durationAuto=false,pricingDate
   }=options;
@@ -227,19 +227,19 @@ export function estimateRunwayVideoCredits(options={}) {
       break;
     }
     case "kling_4": {
-      const tier=resolution(outputResolution,["720p","1080p"]);
-      const promo=pricingDate<="2026-11-30";
-      const listRate=tier==="720p"?15.7:23.5;
-      const listInputRate=tier==="720p"?9.4:14.1;
+      if(typeof hasHdr!=="boolean")throw fail("hdr must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+      const tier=resolution(outputResolution,["720p","1080p","4k"]);
+      const outputRate=tier==="720p"?15.7:tier==="1080p"?23.5:54.9;
+      const inputRate=tier==="720p"?9.4:tier==="1080p"?14.1:32.9;
       const billableInputVideo=Math.min(30,inputVideo+referenceVideo);
-      const listCharge=Math.ceil(billableInputVideo>0
-        ? duration*listInputRate+Math.max(billableInputVideo,duration)*listInputRate
-        : duration*listRate);
-      credits=promo?Math.ceil(listCharge*0.8):listCharge;
-      formula=billableInputVideo>0
-        ? "ceil(list price: "+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
-        : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
-      if(promo)discount="20% promotion through 2026-11-30 UTC";
+      const outputCharge=duration*outputRate;
+      const inputCharge=billableInputVideo>0?Math.max(billableInputVideo,duration)*inputRate:0;
+      const hdrRate=tier==="1080p"?4.7:tier==="4k"?7.8:0;
+      const hdrCharge=hasHdr?duration*hdrRate:0;
+      credits=Math.ceil(outputCharge+inputCharge+hdrCharge);
+      formula="ceil("+duration+"s output × "+outputRate+
+        (billableInputVideo>0?" + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output) × "+inputRate:"")+
+        (hasHdr? " + "+duration+"s HDR surcharge × "+hdrRate:"")+")";
       break;
     }
     case "magnific_video_upscaler_creative": {
