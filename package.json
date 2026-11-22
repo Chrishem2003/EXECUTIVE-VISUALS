@@ -148,7 +148,8 @@
     "verify:mixed-subscription-workload-economics": "node --test server/tests/mixed-subscription-workload-economics.test.mjs",
     "verify:subscription-credit-wallet-bridge": "node --test server/tests/subscription-credit-wallet-bridge-batch-77.test.mjs",
     "verify:customer-credit-expiry-wallet": "node --test server/tests/customer-credit-expiry-wallet-batch-78.test.mjs",
-    "verify:customer-credit-wallet-dashboard": "node --test server/tests/customer-credit-wallet-dashboard-batch-79.test.mjs server/tests/financial-intelligence-api.test.mjs"
+    "verify:customer-credit-wallet-dashboard": "node --test server/tests/customer-credit-wallet-dashboard-batch-79.test.mjs server/tests/financial-intelligence-api.test.mjs",
+    "verify:verified-credit-pack-topups": "node --test server/tests/verified-credit-pack-topups-batch-80.test.mjs server/tests/financial-intelligence-api.test.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
