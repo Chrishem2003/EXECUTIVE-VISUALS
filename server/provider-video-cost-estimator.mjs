@@ -3,6 +3,7 @@ const DIMENSION_KEYS = new Set([
   "minimumGenerationMinor","referenceVideoSecondMinor","audioSurchargeSecondMinor",
   "audioIncluded","inputVideoSecondMinor","inputVideoBillingMode","inputImageMinor",
   ...[...RESOLUTIONS].flatMap(value=>[
+    "resolutionSupported_"+value,
     "videoSecondMinor_"+value,
     "referenceVideoSecondMinor_"+value,
     "inputVideoSecondMinor_"+value
