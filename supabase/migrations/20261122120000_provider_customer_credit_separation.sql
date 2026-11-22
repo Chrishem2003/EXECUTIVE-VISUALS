@@ -17,89 +17,46 @@ begin
   end if;
 end $$;
 
--- Old application versions cannot write unpriced quotes. Fail closed while
--- preserving the old RPC signature for safe rolling deployment behavior.
-create or replace function executive_visuals.record_video_workflow_quote(
+-- The original quote recorder retains provider-specific validation (Runway,
+-- Luma, Google and future adapters). This wrapper adds customer credits without
+-- replacing that evolving provider contract.
+create or replace function executive_visuals.record_video_workflow_quote_with_customer_credits(
   p_quote_id uuid,p_owner_id uuid,p_project_id uuid,p_request_id text,p_request_hash text,
   p_provider text,p_model text,p_operation text,p_routed_provider text,p_routed_model text,
-  p_estimated_credits integer,p_estimated_amount numeric,p_currency text,p_config_id text,
-  p_pricing_source text,p_expires_at timestamptz
+  p_estimated_credits integer,p_estimated_customer_credits bigint,p_estimated_amount numeric,
+  p_currency text,p_config_id text,p_pricing_source text,p_expires_at timestamptz
 ) returns uuid
 language plpgsql
 security invoker
 set search_path=pg_catalog,executive_visuals
-as $legacy_record_video_workflow_quote$
+as $record_video_workflow_quote_with_customer_credits$
 begin
-  raise exception 'VIDEO_WORKFLOW_CUSTOMER_CREDIT_PRICING_REQUIRED';
-end;
-$legacy_record_video_workflow_quote$;
+  if p_estimated_customer_credits is null
+     or p_estimated_customer_credits < 1
+     or p_estimated_customer_credits > 100000000 then
+    raise exception 'VIDEO_WORKFLOW_CUSTOMER_CREDIT_QUOTE_INVALID';
+  end if;
 
--- New server API supplies provider credits and customer credits as separate units.
-create or replace function executive_visuals.record_video_workflow_quote(
-  p_quote_id uuid,
-  p_owner_id uuid,
-  p_project_id uuid,
-  p_request_id text,
-  p_request_hash text,
-  p_provider text,
-  p_model text,
-  p_operation text,
-  p_routed_provider text,
-  p_routed_model text,
-  p_estimated_credits integer,
-  p_estimated_customer_credits bigint,
-  p_estimated_amount numeric,
-  p_currency text,
-  p_config_id text,
-  p_pricing_source text,
-  p_expires_at timestamptz
-) returns uuid
-language plpgsql
-security invoker
-set search_path = pg_catalog, executive_visuals
-as $record_video_workflow_quote$
-begin
-  if p_quote_id is null or p_owner_id is null or p_project_id is null
-     or p_provider is null or p_model is null or p_operation is null
-     or p_currency is null or p_pricing_source is null
-     or p_request_id is null or p_request_id !~ '^[A-Za-z0-9._:-]{1,160}$'
-     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
-     or p_provider <> 'runway' or p_model <> 'model-router'
-     or p_operation not in ('text-to-video','image-to-video','video-to-video')
-     or p_routed_provider is null or char_length(p_routed_provider) not between 1 and 100
-     or p_routed_model is null or char_length(p_routed_model) not between 1 and 160
-     or p_estimated_credits is null or p_estimated_credits <= 0
-     or p_estimated_customer_credits is null or p_estimated_customer_credits <= 0 or p_estimated_customer_credits > 100000000
-     or p_estimated_amount is null or p_estimated_amount <= 0 or p_estimated_amount > 1000000
-     or p_currency <> 'USD'
-     or p_config_id is null or char_length(p_config_id) > 64
-     or p_pricing_source <> 'runway_model_router_dry_run'
-     or p_expires_at is null or p_expires_at <= clock_timestamp()
-     or p_expires_at > clock_timestamp() + interval '5 minutes 30 seconds' then
-    raise exception 'VIDEO_WORKFLOW_QUOTE_ARGUMENTS_INVALID';
-  end if;
-  if not exists (
-    select 1 from executive_visuals.projects p where p.id = p_project_id and p.owner_id = p_owner_id
-  ) then
-    raise exception 'VIDEO_WORKFLOW_QUOTE_PROJECT_NOT_FOUND';
-  end if;
-  insert into executive_visuals.video_workflow_quotes(
-    id,owner_id,project_id,request_id,request_hash,provider,model,operation,
-    routed_provider,routed_model,estimated_credits,estimated_customer_credits,estimated_amount,currency,
-    config_id,pricing_source,expires_at
-  ) values (
-    p_quote_id,p_owner_id,p_project_id,p_request_id,p_request_hash,p_provider,p_model,p_operation,
-    p_routed_provider,p_routed_model,p_estimated_credits,p_estimated_customer_credits,p_estimated_amount,p_currency,
-    p_config_id,p_pricing_source,p_expires_at
+  perform executive_visuals.record_video_workflow_quote(
+    p_quote_id,p_owner_id,p_project_id,p_request_id,p_request_hash,
+    p_provider,p_model,p_operation,p_routed_provider,p_routed_model,
+    p_estimated_credits,p_estimated_amount,p_currency,p_config_id,p_pricing_source,p_expires_at
   );
+
+  update executive_visuals.video_workflow_quotes
+  set estimated_customer_credits=p_estimated_customer_credits
+  where id=p_quote_id and owner_id=p_owner_id and project_id=p_project_id
+    and state='quoted';
+  if not found then
+    raise exception 'VIDEO_WORKFLOW_CUSTOMER_CREDIT_QUOTE_PERSISTENCE_FAILED';
+  end if;
   return p_quote_id;
 end;
-$record_video_workflow_quote$;
+$record_video_workflow_quote_with_customer_credits$;
 
-
-revoke all on function executive_visuals.record_video_workflow_quote(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,bigint,numeric,text,text,text,timestamptz)
+revoke all on function executive_visuals.record_video_workflow_quote_with_customer_credits(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,bigint,numeric,text,text,text,timestamptz)
   from public,anon,authenticated;
-grant execute on function executive_visuals.record_video_workflow_quote(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,bigint,numeric,text,text,text,timestamptz)
+grant execute on function executive_visuals.record_video_workflow_quote_with_customer_credits(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,bigint,numeric,text,text,text,timestamptz)
   to service_role;
 
 -- Existing consumed jobs remain idempotently replayable using their original
