@@ -1869,7 +1869,7 @@ test("admin AI usage reconciliation distinguishes catalog estimates from invoice
   throw new Error("Unexpected request: "+target);
  });
  const result=await service.handle({method:"GET",path:"/api/admin/finance/ai-usage-reconciliation",ownerId:owner,query:{limit:"20",periodMonth:"2026-11-01"}});
- assert.equal(result.status,200,JSON.stringify(result.body));
+ assert.equal(result.status,200,JSON.stringify({body:result.body,calls}));
  assert.equal(result.body.events.length,1);
  const event=result.body.events[0];
  assert.equal(event.estimateMinor,340);
