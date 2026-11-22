@@ -27,6 +27,20 @@ function validateApproval(input){
  if(shots.reduce((sum,shot)=>sum+shot.estimatedCostMicros,0)!==input.quotedAmountMicros)throw new Error("Neon approval shot prices do not sum to the approved quote.");
  const approvedTotal=shots.reduce((sum,shot)=>sum+(shot.approvedMaxAmountMicros===undefined?shot.estimatedCostMicros:shot.approvedMaxAmountMicros),0);
  if(!Number.isSafeInteger(approvedTotal)||approvedTotal>input.budgetCeilingMicros)throw new Error("Per-shot approved spending ceilings exceed the production budget ceiling.");
+ const customerQuote=snapshot.quote?.customerCreditQuote;
+ if(customerQuote!==undefined){
+  const creditCeiling=snapshot.customerCreditBudgetCredits;
+  if(!customerQuote||customerQuote.unit!=="customer_credits"||!Number.isSafeInteger(customerQuote.totalCredits)||
+     customerQuote.totalCredits<1||customerQuote.totalCredits>100000000||!Array.isArray(customerQuote.perShot)||
+     customerQuote.perShot.length!==shots.length||!Number.isSafeInteger(creditCeiling)||
+     creditCeiling<customerQuote.totalCredits||creditCeiling>100000000)
+   throw new Error("Neon approval requires a valid immutable customer-credit quote and explicit credit ceiling.");
+  const creditTotal=customerQuote.perShot.reduce((sum,item)=>sum+(Number.isSafeInteger(item?.credits)&&item.credits>0?item.credits:0),0);
+  if(creditTotal!==customerQuote.totalCredits||customerQuote.perShot.some((item,index)=>{
+   const shotId=shots[index].id||shots[index].workflowRequestId||shots[index].workflowQuoteId||input.id;
+   return item?.shotId!==shotId||!Number.isSafeInteger(item.credits)||item.credits<1;
+  }))throw new Error("Neon approval customer-credit entries must match every shot and aggregate exactly.");
+ }
  return {...input,snapshotJson:snapshot};
 }
 
@@ -94,6 +108,9 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
     const snapshot=approval.snapshot_json;
     if(shots.length!==snapshot.shots?.length)throw fail("Neon approval shot ledger is incomplete.","VIDEO_APPROVAL_SNAPSHOT_INVALID");
     const receipts=[];
+    const customerQuote=snapshot.quote?.customerCreditQuote||null;
+    const customerCreditCeiling=snapshot.customerCreditBudgetCredits??null;
+    let totalReservedCredits=0;
     for(const row of shots){
      const shot=snapshot.shots[Number(row.shot_index)];
      if(!shot||shot.provider!==row.provider||shot.model!==row.model||shot.estimatedCostMicros!==Number(row.estimated_cost_micros)||!HASH.test(row.request_hash))throw fail("Neon shot ledger does not match the immutable approval.","VIDEO_APPROVAL_SNAPSHOT_MISMATCH");
@@ -104,6 +121,11 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
       const quote=quoteCustomerCredits({ownerId,projectId:approval.project_id,provider:row.provider,model:row.model,currency:approval.currency,amountMicros:approvedMaxAmountMicros,shot,approvalId:id,shotIndex:Number(row.shot_index)});
       if(quote&&typeof quote.then==="function")throw new Error("Customer-credit quote policy must be synchronous and deterministic.");
       if(!Number.isSafeInteger(quote)||quote<1||quote>100000000)throw fail("Server-side customer-credit quote is unavailable or outside the supported bounds.","VIDEO_CUSTOMER_CREDIT_QUOTE_INVALID");
+      if(customerQuote){
+       const approvedCredit=customerQuote.perShot[Number(row.shot_index)];
+       if(!approvedCredit||approvedCredit.shotId!==shot.id||approvedCredit.credits!==quote)
+        throw fail("The durable provider quote no longer matches the customer-approved per-shot credit amount. Obtain a fresh quote and approval.","VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
+      }
       reservedCredits=quote;budgetApprovalId=randomUUID();
       await client.query("insert into executive_visuals.video_generation_budget_approvals(id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::numeric,$9,clock_timestamp()+make_interval(secs=>$10))",[
        budgetApprovalId,ownerId,approval.project_id,row.provider,row.model,row.request_hash,approval.currency,amountFromMicros(approvedMaxAmountMicros),"Approved production "+id+" shot "+row.shot_index,approvalTtlSeconds
@@ -112,6 +134,12 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
        id,row.shot_index,reservedCredits,budgetApprovalId
       ]);
      }else if(!UUID.test(String(budgetApprovalId||"")))throw fail("Persisted per-shot budget approval is invalid.","VIDEO_APPROVAL_SNAPSHOT_INVALID");
+     if(customerQuote&&reservedCredits!==customerQuote.perShot[Number(row.shot_index)]?.credits)
+      throw fail("Persisted per-shot credit reservation differs from the immutable customer-approved quote.","VIDEO_CUSTOMER_CREDIT_QUOTE_MISMATCH");
+     totalReservedCredits+=reservedCredits;
+     if(!Number.isSafeInteger(totalReservedCredits)||totalReservedCredits>100000000||
+        (customerQuote&&totalReservedCredits>customerCreditCeiling))
+      throw fail("The customer-approved credit ceiling is insufficient for this production.","VIDEO_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
      const idempotencyKey="video-shot:"+id+":"+row.shot_index;
      const input={...shot,provider:row.provider,model:row.model,requestHash:row.request_hash,approvalId:id,approvalRequestHash:approval.request_hash,shotIndex:Number(row.shot_index),estimated_cost:{amount:amountFromMicros(row.estimated_cost_micros),currency:approval.currency}};
      const enqueued=await client.query("select * from executive_visuals.enqueue_video_generation_job_v1($1::uuid,$2::uuid,$3,$4::jsonb,$5::uuid,$6::numeric,$7::bigint,$8)",[
@@ -124,6 +152,8 @@ export function createNeonVideoGenerationRepositories({pool,videoEnqueue,quoteCu
      ]);
      receipts.push({jobId:receipt.job_id,shotIndex:Number(row.shot_index),status:receipt.job_status,idempotentReplay:receipt.idempotent_replay});
     }
+    if(customerQuote&&(totalReservedCredits!==customerQuote.totalCredits||totalReservedCredits>customerCreditCeiling))
+     throw fail("The durable generation reservations do not reconcile to the approved customer-credit quote and ceiling.","VIDEO_CUSTOMER_CREDIT_BUDGET_RECONCILIATION_FAILED");
     await client.query("update executive_visuals.video_generation_approvals set status='processing',updated_at=clock_timestamp() where id=$1::uuid",[id]);
     return receipts;
    });
