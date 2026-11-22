@@ -2,8 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
-import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
+import { createCloudTimelineApi as createCloudTimelineApiBase } from "../cloud-timeline-api.mjs";
 import { createVideoWorkflowCloudRequest } from "../video-workflow-cloud-contract.mjs";
+
+// Deterministic test-only pricing policy: 1,000 customer credits per USD.
+// Production always injects the validated server-side margin/fee policy.
+function createCloudTimelineApi(options={}){
+ return createCloudTimelineApiBase({quoteCustomerCredits:({currency,amountMicros})=>{
+  if(currency!=="USD"||!Number.isSafeInteger(amountMicros)||amountMicros<1)throw new Error("Invalid test quote");
+  return Math.ceil(amountMicros/1000);
+ },...options});
+}
+
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
@@ -398,6 +408,8 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(result.body.quote.paidExecutionEnabled,false);
  assert.equal(result.body.quote.estimatedAmount,2.75);
  assert.equal(result.body.quote.estimatedCredits,275);
+ assert.equal(result.body.quote.estimatedProviderCredits,275);
+ assert.equal(result.body.quote.estimatedCustomerCredits,2750);
  assert.match(result.body.quote.requestHash,/^[a-f0-9]{64}$/);
  assert.equal(prepared.length,1);
  assert.equal(prepared[0].context.job.owner_id,owner);
@@ -408,6 +420,8 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(persisted[0].p_project_id,project);
  assert.equal(persisted[0].p_request_hash,result.body.quote.requestHash);
  assert.equal(persisted[0].p_estimated_amount,2.75);
+ assert.equal(persisted[0].p_estimated_credits,275);
+ assert.equal(persisted[0].p_estimated_customer_credits,2750);
  assert.equal(persisted[0].p_pricing_source,"runway_model_router_dry_run");
  assert.equal(persisted[0].p_quote_id,result.body.quote.id);
 });
@@ -1323,4 +1337,24 @@ test("cloud job status and cancellation can be served by the gated Neon workflow
  const cancelled=await api.handle({method:"POST",path:"/api/cloud/jobs/823e4567-e89b-42d3-a456-426614174000/cancel",ownerId:owner});
  assert.equal(cancelled.status,409);
  assert.deepEqual(calls,[]);
+});
+
+test("cloud workflow quote fails closed when customer-credit pricing is not configured",async()=>{
+ let writes=0,preflights=0;
+ const api=createCloudTimelineApi({
+  quoteCustomerCredits:null,
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url)=>{if(String(url).includes("/rpc/record_video_workflow_quote"))writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{},projects:{async get(){return{id:project,ownerId:owner};}}},
+  authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(input){return input;},async preflight(){preflights++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"workflow-credit-policy-missing",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}
+ }});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"CUSTOMER_CREDIT_PRICING_UNCONFIGURED");
+ assert.equal(preflights,1);
+ assert.equal(writes,0);
 });
