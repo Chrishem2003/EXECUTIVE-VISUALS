@@ -7,6 +7,8 @@ declare
   v_job_pending constant uuid:='71717171-7171-4171-8171-717171717102';
   v_payment_paid constant uuid:='71717171-7171-4171-8171-717171717201';
   v_payment_subscription constant uuid:='71717171-7171-4171-8171-717171717202';
+  v_old_paid_grant uuid;
+  v_old_subscription_grant uuid;
   v_paid_grant uuid;
   v_subscription_grant uuid;
   v_promo_grant uuid;
@@ -39,20 +41,20 @@ begin
      '{"payment_purpose":"subscription_renewal","subscription_applied":true}');
   insert into executive_visuals.credit_ledger(
     owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
-  ) values
-    (v_owner,'purchase_grant',100,'batch71-old-ledger-paid',v_payment_paid,'Verified paid credit pack','{}'),
-    (v_owner,'purchase_grant',50,'batch71-old-ledger-subscription',v_payment_subscription,'Verified subscription allowance','{}');
+  ) values(v_owner,'purchase_grant',100,'batch71-old-ledger-paid',v_payment_paid,'Verified paid credit pack','{}')
+  returning id into v_old_paid_grant;
+  insert into executive_visuals.credit_ledger(
+    owner_id,entry_type,credit_delta,idempotency_key,payment_transaction_id,reason,metadata
+  ) values(v_owner,'purchase_grant',50,'batch71-old-ledger-subscription',v_payment_subscription,'Verified subscription allowance','{}')
+  returning id into v_old_subscription_grant;
 
-  select ledger_id into v_paid_grant
-    from executive_visuals.grant_generation_credits(
-      v_owner,100,'batch71-wallet-paid','Paid credit pack',
-      jsonb_build_object('paymentTransactionId',v_payment_paid,'sourceType','paid_credit_pack')
-    );
-  select ledger_id into v_subscription_grant
-    from executive_visuals.grant_generation_credits(
-      v_owner,50,'batch71-wallet-subscription','Subscription allowance',
-      jsonb_build_object('paymentTransactionId',v_payment_subscription,'sourceType','subscription_allowance')
-    );
+  select id into v_paid_grant from executive_visuals.billing_credit_ledger
+   where idempotency_key='payment-credit-ledger:'||v_old_paid_grant::text;
+  select id into v_subscription_grant from executive_visuals.billing_credit_ledger
+   where idempotency_key='payment-credit-ledger:'||v_old_subscription_grant::text;
+  if v_paid_grant is null or v_subscription_grant is null then
+    raise exception 'Verified payment ledger grants were not mirrored into the generation wallet';
+  end if;
   select ledger_id into v_promo_grant
     from executive_visuals.grant_generation_credits(
       v_owner,20,'batch71-wallet-promo','Promotional credits',
