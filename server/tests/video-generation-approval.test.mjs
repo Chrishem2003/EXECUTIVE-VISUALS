@@ -41,3 +41,42 @@ test("rejects shot quote records for a different provider or model",()=>{
  const mismatch={...preflight,pricing:{...preflight.pricing,quote:{...preflight.pricing.quote,shots:[{...preflight.pricing.quote.shots[0],model:"different-model"}]}}};
  assert.throws(()=>buildVideoGenerationApproval({shots,preflight:mismatch,budget:{currency:"USD",amount:2},confirmed:true}),e=>e.code==="VIDEO_APPROVAL_SHOT_PRICING_MISMATCH");
 });
+
+
+const creditedPreflight={
+ ...preflight,
+ pricing:{...preflight.pricing,quote:{...preflight.pricing.quote,customerCreditQuote:{
+  unit:"customer_credits",totalCredits:125,perShot:[{shotId:"shot-1",credits:125}],
+  pricingBasis:"server-side cost, margin and fee policy"
+ }}}
+};
+
+test("approval snapshot binds the exact customer credit quote and explicit credit ceiling",()=>{
+ const result=buildVideoGenerationApproval({shots,preflight:creditedPreflight,budget:{currency:"USD",amount:2},
+  customerCreditBudgetCredits:150,confirmed:true});
+ assert.equal(result.customerCreditQuote.totalCredits,125);
+ assert.equal(result.customerCreditBudgetCredits,150);
+ const snapshot=JSON.parse(result.snapshotJson);
+ assert.equal(snapshot.quote.customerCreditQuote.totalCredits,125);
+ assert.equal(snapshot.customerCreditBudgetCredits,150);
+ assert.match(result.requestHash,/^[a-f0-9]{64}$/);
+});
+
+test("approval rejects missing customer quote or missing explicit credit ceiling",()=>{
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight,budget:{currency:"USD",amount:2},
+  customerCreditBudgetCredits:150,confirmed:true}),e=>e.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_REQUIRED");
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight:creditedPreflight,budget:{currency:"USD",amount:2},
+  confirmed:true}),e=>e.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_REQUIRED");
+});
+
+test("approval rejects a customer credit ceiling below the server quote",()=>{
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight:creditedPreflight,budget:{currency:"USD",amount:2},
+  customerCreditBudgetCredits:124,confirmed:true}),e=>e.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_BUDGET_EXCEEDED");
+});
+
+test("approval rejects mismatched per-shot credit records and aggregate totals",()=>{
+ const invalid={...creditedPreflight,pricing:{...creditedPreflight.pricing,quote:{...creditedPreflight.pricing.quote,
+  customerCreditQuote:{unit:"customer_credits",totalCredits:125,perShot:[{shotId:"wrong-shot",credits:125}]}}}};
+ assert.throws(()=>buildVideoGenerationApproval({shots,preflight:invalid,budget:{currency:"USD",amount:2},
+  customerCreditBudgetCredits:150,confirmed:true}),e=>e.code==="VIDEO_APPROVAL_CUSTOMER_CREDIT_QUOTE_INVALID");
+});
