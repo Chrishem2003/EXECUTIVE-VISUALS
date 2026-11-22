@@ -6,9 +6,9 @@ const ceilDiv=(a,b)=>{if(b<=0n)throw new Error("Division denominator must be pos
 
 function normalizePolicy(policy){
  if(!policy||typeof policy!=="object"||Array.isArray(policy))return null;
- const required=["creditValueMinor","minorUnitsPerMajor","targetMarginBps","paymentFeeBps","retryReserveBps","infrastructureReserveBps","fixedPaymentFeeMinor","pricingVersion"];
+ const required=["currency","creditValueMinor","minorUnitsPerMajor","targetMarginBps","paymentFeeBps","retryReserveBps","infrastructureReserveBps","fixedPaymentFeeMinor","pricingVersion"];
  for(const key of required)if(!own(policy,key))return null;
- if(!safeInt(policy.creditValueMinor,1,1000000000)||
+ if(typeof policy.currency!=="string"||!/^[A-Z]{3}$/.test(policy.currency)||!safeInt(policy.creditValueMinor,1,1000000000)||
     ![1,10,100,1000,10000].includes(policy.minorUnitsPerMajor)||
     !bps(policy.targetMarginBps)||!bps(policy.paymentFeeBps)||
     !bps(policy.retryReserveBps)||!bps(policy.infrastructureReserveBps)||
@@ -20,7 +20,7 @@ function normalizePolicy(policy){
 
 export function resolveCustomerCreditPolicy(env=process.env){
  const names={
-  creditValueMinor:"CUSTOMER_CREDIT_VALUE_MINOR",
+  currency:"CUSTOMER_CREDIT_CURRENCY",\n  creditValueMinor:"CUSTOMER_CREDIT_VALUE_MINOR",
   minorUnitsPerMajor:"CUSTOMER_CREDIT_MINOR_UNITS_PER_MAJOR",
   targetMarginBps:"CUSTOMER_CREDIT_TARGET_MARGIN_BPS",
   paymentFeeBps:"CUSTOMER_CREDIT_PAYMENT_FEE_BPS",
@@ -53,7 +53,7 @@ export function quoteCustomerCredits(providerQuote,rawPolicy){
     typeof providerQuote.amount!=="number"||!Number.isFinite(providerQuote.amount)||providerQuote.amount<0){
   return Object.freeze({available:false,reason:"A current, source-attributed provider estimate is required before customer credits can be quoted.",billable:false});
  }
- if(!policy)return Object.freeze({available:false,reason:"Customer credit pricing is not configured with a verified credit value, fees, reserves and margin target.",billable:false});
+ if(!policy)return Object.freeze({available:false,reason:"Customer credit pricing is not configured with a verified currency, credit value, fees, reserves and margin target.",billable:false});\n if(policy.currency!==providerQuote.currency)return Object.freeze({available:false,reason:"The customer credit policy currency does not match the provider quote; no FX conversion is configured.",billable:false});
  const scaledAmount=Math.round(providerQuote.amount*1e6);
  if(!Number.isSafeInteger(scaledAmount))return Object.freeze({available:false,reason:"The provider estimate exceeds supported monetary precision.",billable:false});
  const major=BigInt(scaledAmount);
